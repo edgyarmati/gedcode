@@ -1240,42 +1240,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.gedWorkflowGetState]: (input) =>
           observeRpcEffect(
             WS_METHODS.gedWorkflowGetState,
-            Effect.gen(function* () {
-              const uninitializedState = {
-                initialized: false,
-                phase: "inactive" as const,
-                classification: "unclassified" as const,
-                plannerCheckpointValid: false,
-                verifierCheckpointValid: false,
-              };
-              const thread = yield* projectionSnapshotQuery.getThreadShellById(input.threadId).pipe(
-                Effect.map(Option.getOrUndefined),
-                Effect.catch(() => Effect.void),
-              );
-              if (!thread) {
-                yield* Effect.logDebug("ged-workflow: no thread found", {
-                  threadId: input.threadId,
-                });
-                return uninitializedState;
-              }
-              const cwd = thread.worktreePath ?? undefined;
-              if (cwd) {
-                return yield* gedWorkflowService.getState(cwd);
-              }
-              const project = yield* projectionSnapshotQuery
-                .getProjectShellById(thread.projectId)
-                .pipe(
-                  Effect.map(Option.getOrUndefined),
-                  Effect.catch(() => Effect.void),
-                );
-              if (!project) {
-                yield* Effect.logDebug("ged-workflow: no project found", {
-                  projectId: thread.projectId,
-                });
-                return uninitializedState;
-              }
-              return yield* gedWorkflowService.getState(project.workspaceRoot);
-            }),
+            gedWorkflowService.getStateByThreadId(input.threadId),
             { "rpc.aggregate": "gedWorkflow" },
           ),
       });

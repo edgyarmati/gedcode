@@ -24,6 +24,7 @@ export const GedWorkflowGuardLive = Layer.effect(
         const cwd = resolveSessionCwd(input.threadId, sessions);
 
         if (cwd) {
+          yield* workflow.recordThreadCwd(input.threadId, cwd);
           yield* workflow.bootstrap(cwd);
           if (input.input) {
             yield* workflow.classifyTurn(cwd, input.input);

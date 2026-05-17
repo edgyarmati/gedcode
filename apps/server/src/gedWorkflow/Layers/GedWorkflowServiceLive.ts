@@ -60,6 +60,20 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
+  const threadCwdMap = new Map<string, string>();
+
+  const recordThreadCwd: GedWorkflowServiceShape["recordThreadCwd"] = (threadId, cwd) =>
+    Effect.sync(() => {
+      threadCwdMap.set(threadId, cwd);
+    });
+
+  const getStateByThreadId: GedWorkflowServiceShape["getStateByThreadId"] = (threadId) =>
+    Effect.gen(function* () {
+      const cwd = threadCwdMap.get(threadId);
+      if (!cwd) return DEFAULT_STATE;
+      return yield* getState(cwd);
+    });
+
   const bootstrap: GedWorkflowServiceShape["bootstrap"] = (projectRoot) =>
     bootstrapGedDirectory(projectRoot).pipe(
       Effect.provide(
@@ -142,7 +156,9 @@ const make = Effect.gen(function* () {
     bootstrap,
     classifyTurn,
     getState,
+    getStateByThreadId,
     getWorkflowPromptSuffix,
+    recordThreadCwd,
     validateTurnGuards,
   } satisfies GedWorkflowServiceShape;
 });

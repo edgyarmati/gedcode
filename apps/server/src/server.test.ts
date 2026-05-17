@@ -697,7 +697,16 @@ const buildAppUnderTest = (options?: {
               plannerCheckpointValid: false,
               verifierCheckpointValid: false,
             }),
+          getStateByThreadId: () =>
+            Effect.succeed({
+              initialized: false,
+              phase: "inactive" as const,
+              classification: "unclassified" as const,
+              plannerCheckpointValid: false,
+              verifierCheckpointValid: false,
+            }),
           getWorkflowPromptSuffix: () => Effect.succeed(""),
+          recordThreadCwd: () => Effect.void,
           validateTurnGuards: () => Effect.succeed({ valid: true }),
         }),
       ),
