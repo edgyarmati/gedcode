@@ -885,7 +885,7 @@ export default function ChatView(props: ChatViewProps) {
         });
     };
     fetchState();
-    const interval = setInterval(fetchState, 10_000);
+    const interval = setInterval(fetchState, 3_000);
     return () => {
       cancelled = true;
       clearInterval(interval);

@@ -8,6 +8,7 @@ export const GedWorkflowPhase = Schema.Literals([
   "implement",
   "verify",
   "commit",
+  "done",
 ]);
 export type GedWorkflowPhase = typeof GedWorkflowPhase.Type;
 

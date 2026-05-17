@@ -49,7 +49,7 @@ const mapCheckpointStateToWorkflowState = (cp: typeof CheckpointState.Type): Ged
 
   return {
     initialized: true,
-    phase: cp.lifecycleStatus === "closed" ? "inactive" : "implement",
+    phase: cp.lifecycleStatus === "closed" ? "done" : "implement",
     classification: cp.classification === "trivial" ? "trivial" : "non-trivial",
     plannerCheckpointValid: plannerCp?.valid ?? false,
     verifierCheckpointValid: verifierCp?.valid ?? false,
