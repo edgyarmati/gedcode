@@ -32,6 +32,7 @@ const {
       <nav class="nav">
         <div class="nav-inner">
           <a href="/" class="nav-brand" aria-label="GedCode home">
+            <img class="nav-brand-mark" src="/icon.webp" alt="" />
             <span class="nav-brand-name">GedCode</span>
           </a>
           <div class="nav-right">
@@ -308,12 +309,19 @@ const {
   .nav-brand {
     display: inline-flex;
     align-items: center;
+    gap: 9px;
     color: var(--fg);
     transition: color 0.2s ease;
   }
 
   .nav-brand:hover {
     color: #fff;
+  }
+
+  .nav-brand-mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
   }
 
   .nav-brand-name {
