@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "@t3tools/monorepo",
@@ -17,7 +16,7 @@
     },
     "apps/desktop": {
       "name": "@t3tools/desktop",
-      "version": "0.0.23",
+      "version": "0.0.24",
       "dependencies": {
         "@effect/platform-node": "catalog:",
         "@t3tools/contracts": "workspace:*",
@@ -50,7 +49,7 @@
     },
     "apps/server": {
       "name": "t3",
-      "version": "0.0.23",
+      "version": "0.0.24",
       "bin": {
         "t3": "./dist/bin.mjs",
       },
@@ -69,6 +68,7 @@
         "@effect/language-service": "catalog:",
         "@effect/vitest": "catalog:",
         "@t3tools/contracts": "workspace:*",
+        "@t3tools/ged-workflow": "workspace:*",
         "@t3tools/shared": "workspace:*",
         "@t3tools/tailscale": "workspace:*",
         "@t3tools/web": "workspace:*",
@@ -83,7 +83,7 @@
     },
     "apps/web": {
       "name": "@t3tools/web",
-      "version": "0.0.23",
+      "version": "0.0.24",
       "dependencies": {
         "@base-ui/react": "^1.4.1",
         "@dnd-kit/core": "^6.3.1",
@@ -165,7 +165,7 @@
     },
     "packages/contracts": {
       "name": "@t3tools/contracts",
-      "version": "0.0.23",
+      "version": "0.0.24",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -199,6 +199,19 @@
         "@effect/language-service": "catalog:",
         "@effect/openapi-generator": "catalog:",
         "@effect/platform-node": "catalog:",
+        "@effect/vitest": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/ged-workflow": {
+      "name": "@t3tools/ged-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@effect/language-service": "catalog:",
         "@effect/vitest": "catalog:",
         "typescript": "catalog:",
         "vitest": "catalog:",
@@ -791,6 +804,8 @@
     "@t3tools/contracts": ["@t3tools/contracts@workspace:packages/contracts"],
 
     "@t3tools/desktop": ["@t3tools/desktop@workspace:apps/desktop"],
+
+    "@t3tools/ged-workflow": ["@t3tools/ged-workflow@workspace:packages/ged-workflow"],
 
     "@t3tools/marketing": ["@t3tools/marketing@workspace:apps/marketing"],
 
