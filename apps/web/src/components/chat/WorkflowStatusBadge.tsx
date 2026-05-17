@@ -1,28 +1,58 @@
-import type { GedWorkflowState } from "@t3tools/contracts";
+import type { GedWorkflowState, GedWorkflowPhase } from "@t3tools/contracts";
 
 interface WorkflowStatusBadgeProps {
   readonly state: GedWorkflowState | null;
 }
+
+const phaseLabel: Partial<Record<GedWorkflowPhase, string>> = {
+  classify: "classifying",
+  clarify: "clarifying",
+  plan: "planning",
+  implement: "implementing",
+  verify: "verifying",
+  commit: "committing",
+  done: "done",
+};
+
+const phaseIcon: Partial<Record<GedWorkflowPhase, string>> = {
+  classify: "◉",
+  clarify: "❓",
+  plan: "▶",
+  implement: "⚙",
+  verify: "✔",
+  commit: "↑",
+  done: "✓",
+};
 
 export function WorkflowStatusBadge({ state }: WorkflowStatusBadgeProps) {
   if (!state || !state.initialized) return null;
   if (state.phase === "inactive") return null;
 
   const isDone = state.phase === "done";
+  const label = phaseLabel[state.phase] ?? state.phase;
+  const icon = phaseIcon[state.phase] ?? "";
+
   const colorClass = isDone
-    ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+    ? "border-zinc-300 text-zinc-500 dark:border-zinc-600 dark:text-zinc-400"
     : state.plannerCheckpointValid
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-      : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
+      ? "border-emerald-400 text-emerald-700 dark:border-emerald-600 dark:text-emerald-300"
+      : "border-amber-400 text-amber-700 dark:border-amber-600 dark:text-amber-300";
+
+  const dotColor = isDone
+    ? "bg-zinc-400 dark:bg-zinc-500"
+    : state.plannerCheckpointValid
+      ? "bg-emerald-500 dark:bg-emerald-400"
+      : "bg-amber-500 dark:bg-amber-400";
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${colorClass}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium leading-none ${colorClass}`}
+      title={`Ged workflow: ${label}${state.classification !== "unclassified" ? ` (${state.classification})` : ""}`}
     >
-      {state.phase}
-      {!isDone && state.classification !== "unclassified" && (
-        <span className="opacity-60">&middot; {state.classification}</span>
-      )}
+      <span className={`inline-block size-1.5 rounded-full ${dotColor}`} />
+      <span>
+        {icon} {label}
+      </span>
     </span>
   );
 }

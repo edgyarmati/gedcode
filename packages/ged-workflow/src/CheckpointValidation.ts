@@ -1,4 +1,4 @@
-import type { CheckpointState } from "./CheckpointSchema.ts";
+import type { CheckpointRecord, CheckpointState } from "./CheckpointSchema.ts";
 
 export interface ValidationResult {
   readonly valid: boolean;
@@ -42,18 +42,15 @@ export const validateCommitCheckpoints = (
 export const shouldAutoEscalate = (state: CheckpointState, filesChanged: number): boolean =>
   state.classification === "trivial" && filesChanged > 1;
 
-type TaskCheckpointEntry = CheckpointState["taskCheckpoints"][string];
-type TaskCheckpointKey = keyof TaskCheckpointEntry;
-
 export const invalidateVerifierCheckpoints = (state: CheckpointState): CheckpointState => {
-  const updatedTaskCheckpoints: Record<string, TaskCheckpointEntry> = {};
+  const updatedTaskCheckpoints: Record<string, Record<string, CheckpointRecord>> = {};
   for (const [taskId, cps] of Object.entries(state.taskCheckpoints)) {
-    const updatedCps = {} as Record<TaskCheckpointKey, TaskCheckpointEntry[TaskCheckpointKey]>;
-    for (const key of Object.keys(cps) as ReadonlyArray<TaskCheckpointKey>) {
-      const cp = cps[key];
+    if (!cps) continue;
+    const updatedCps: Record<string, CheckpointRecord> = {};
+    for (const [key, cp] of Object.entries(cps)) {
       updatedCps[key] = key === "ged-verifier" ? { ...cp, valid: false } : cp;
     }
-    updatedTaskCheckpoints[taskId] = updatedCps as TaskCheckpointEntry;
+    updatedTaskCheckpoints[taskId] = updatedCps;
   }
   return {
     ...state,

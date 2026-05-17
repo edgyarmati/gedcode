@@ -27,14 +27,11 @@ export const ClarificationRecord = Schema.Struct({
 });
 export type ClarificationRecord = typeof ClarificationRecord.Type;
 
-export const PlanCheckpoints = Schema.Record(
-  Schema.Literals(["ged-explorer", "ged-planner"]),
-  CheckpointRecord,
-);
+export const PlanCheckpoints = Schema.Record(Schema.String, CheckpointRecord);
 
 export const TaskCheckpoints = Schema.Record(
   Schema.String,
-  Schema.Record(Schema.Literals(["ged-explorer", "ged-verifier"]), CheckpointRecord),
+  Schema.Record(Schema.String, CheckpointRecord),
 );
 
 export const CheckpointState = Schema.Struct({

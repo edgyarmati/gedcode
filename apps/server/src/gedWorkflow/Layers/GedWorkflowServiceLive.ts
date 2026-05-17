@@ -68,11 +68,9 @@ const make = Effect.gen(function* () {
     });
 
   const getStateByThreadId: GedWorkflowServiceShape["getStateByThreadId"] = (threadId) =>
-    Effect.gen(function* () {
-      const cwd = threadCwdMap.get(threadId);
-      if (!cwd) return DEFAULT_STATE;
-      return yield* getState(cwd);
-    });
+    Effect.sync(() => threadCwdMap.get(threadId)).pipe(
+      Effect.flatMap((cwd) => (cwd ? getState(cwd) : Effect.succeed(DEFAULT_STATE))),
+    );
 
   const bootstrap: GedWorkflowServiceShape["bootstrap"] = (projectRoot) =>
     bootstrapGedDirectory(projectRoot).pipe(
