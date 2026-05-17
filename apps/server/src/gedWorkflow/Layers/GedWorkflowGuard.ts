@@ -2,10 +2,9 @@ import type { ProviderSession, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ProviderValidationError } from "../../provider/Errors.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { GedWorkflowService } from "../Services/GedWorkflowService.ts";
-import { injectWorkflowContext, validateTurnGuards } from "./GedWorkflowTurnInterceptor.ts";
+import { injectWorkflowContext } from "./GedWorkflowTurnInterceptor.ts";
 
 const resolveSessionCwd = (
   threadId: ThreadId,
@@ -28,16 +27,6 @@ export const GedWorkflowGuardLive = Layer.effect(
           yield* workflow.bootstrap(cwd);
           if (input.input) {
             yield* workflow.classifyTurn(cwd, input.input);
-          }
-
-          const guardResult = yield* validateTurnGuards(cwd).pipe(
-            Effect.provideService(GedWorkflowService, workflow),
-          );
-          if (!guardResult.allowed) {
-            return yield* new ProviderValidationError({
-              operation: "GedWorkflowGuard.sendTurn",
-              issue: guardResult.reason ?? "Ged workflow guard blocked this turn.",
-            });
           }
         }
 
