@@ -10,7 +10,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
-import { DiffIcon, TerminalSquareIcon, WorkflowIcon } from "lucide-react";
+import { DiffIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
@@ -39,14 +39,12 @@ interface ChatHeaderProps {
   gitCwd: string | null;
   diffOpen: boolean;
   workflowState: GedWorkflowState | null;
-  workflowEnabled: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
-  onToggleWorkflow: (enabled: boolean) => void;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -80,14 +78,12 @@ export const ChatHeader = memo(function ChatHeader({
   gitCwd,
   diffOpen,
   workflowState,
-  workflowEnabled,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
   onToggleTerminal,
   onToggleDiff,
-  onToggleWorkflow,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const showOpenInPicker = shouldShowOpenInPicker({
@@ -144,27 +140,6 @@ export const ChatHeader = memo(function ChatHeader({
             {...(draftId ? { draftId } : {})}
           />
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0"
-                pressed={workflowEnabled}
-                onPressedChange={(pressed) => onToggleWorkflow(Boolean(pressed))}
-                aria-label="Toggle Ged workflow"
-                variant="outline"
-                size="xs"
-              >
-                <WorkflowIcon className="size-3" />
-              </Toggle>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {workflowEnabled
-              ? "Ged workflow is on: inject prompts and enforce checkpoints"
-              : "Ged workflow is off: run provider turns normally"}
-          </TooltipPopup>
-        </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={

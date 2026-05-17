@@ -3564,14 +3564,12 @@ export default function ChatView(props: ChatViewProps) {
           gitCwd={gitCwd}
           diffOpen={diffOpen}
           workflowState={workflowState}
-          workflowEnabled={settings.gedWorkflowEnabled}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
-          onToggleWorkflow={(enabled) => updateSettings({ gedWorkflowEnabled: enabled })}
         />
       </header>
 
@@ -3674,7 +3672,7 @@ export default function ChatView(props: ChatViewProps) {
                   planSidebarLabel={planSidebarLabel}
                   planSidebarOpen={planSidebarOpen}
                   runtimeMode={runtimeMode}
-                  interactionMode={interactionMode}
+                  workflowEnabled={settings.gedWorkflowEnabled}
                   lockedProvider={lockedProvider}
                   providerStatuses={providerStatuses as ServerProvider[]}
                   activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
@@ -3707,6 +3705,7 @@ export default function ChatView(props: ChatViewProps) {
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
                   togglePlanSidebar={togglePlanSidebar}
+                  onToggleWorkflow={(enabled) => updateSettings({ gedWorkflowEnabled: enabled })}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}
                   setThreadError={setThreadError}

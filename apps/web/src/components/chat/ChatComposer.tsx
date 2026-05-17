@@ -85,17 +85,16 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
-  BotIcon,
   CircleAlertIcon,
   ListTodoIcon,
   type LucideIcon,
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
+  WorkflowIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
   deriveProviderInstanceEntries,
   resolveProviderDriverKindForInstanceSelection,
@@ -179,13 +178,12 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 }
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
-  showInteractionModeToggle: boolean;
-  interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  workflowEnabled: boolean;
   showPlanToggle: boolean;
   planSidebarLabel: string;
   planSidebarOpen: boolean;
-  onToggleInteractionMode: () => void;
+  onToggleWorkflow: (enabled: boolean) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onTogglePlanSidebar: () => void;
 }) {
@@ -196,29 +194,28 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
     <>
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
-      {props.showInteractionModeToggle ? (
-        <>
-          <Button
-            variant="ghost"
-            className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
-            size="sm"
-            type="button"
-            onClick={props.onToggleInteractionMode}
-            title={
-              props.interactionMode === "plan"
-                ? "Plan mode — click to return to normal build mode"
-                : "Default mode — click to enter plan mode"
-            }
-          >
-            <BotIcon />
-            <span className="sr-only sm:not-sr-only">
-              {props.interactionMode === "plan" ? "Plan" : "Build"}
-            </span>
-          </Button>
+      <Button
+        variant="ghost"
+        className={cn(
+          "shrink-0 whitespace-nowrap px-2 sm:px-3",
+          props.workflowEnabled
+            ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+            : "text-muted-foreground/70 hover:text-foreground/80",
+        )}
+        size="sm"
+        type="button"
+        onClick={() => props.onToggleWorkflow(!props.workflowEnabled)}
+        title={
+          props.workflowEnabled
+            ? "Ged workflow is on: inject prompts and enforce checkpoints"
+            : "Ged workflow is off: run provider turns normally"
+        }
+      >
+        <WorkflowIcon />
+        <span className="sr-only sm:not-sr-only">Ged</span>
+      </Button>
 
-          <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-        </>
-      ) : null}
+      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
       <Select
         value={props.runtimeMode}
@@ -426,7 +423,7 @@ export interface ChatComposerProps {
 
   // Mode
   runtimeMode: RuntimeMode;
-  interactionMode: ProviderInteractionMode;
+  workflowEnabled: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -478,6 +475,7 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   togglePlanSidebar: () => void;
+  onToggleWorkflow: (enabled: boolean) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -522,7 +520,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planSidebarLabel,
     planSidebarOpen,
     runtimeMode,
-    interactionMode,
+    workflowEnabled,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -552,6 +550,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleRuntimeModeChange,
     handleInteractionModeChange,
     togglePlanSidebar,
+    onToggleWorkflow,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -734,15 +733,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
-  const composerProviderControls = useMemo(
-    () => ({
-      showInteractionModeToggle: getProviderInteractionModeToggle(
-        providerStatuses,
-        selectedProvider,
-      ),
-    }),
-    [providerStatuses, selectedProvider],
-  );
   const selectedModelSelection = useMemo<ModelSelection>(
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
@@ -2340,14 +2330,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
                     activePlan={showPlanSidebarToggle}
-                    interactionMode={interactionMode}
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
-                    showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                     traitsMenuContent={providerTraitsMenuContent}
-                    onToggleInteractionMode={toggleInteractionMode}
+                    workflowEnabled={workflowEnabled}
                     onTogglePlanSidebar={togglePlanSidebar}
+                    onToggleWorkflow={onToggleWorkflow}
                     onRuntimeModeChange={handleRuntimeModeChange}
                   />
                 ) : (
@@ -2359,13 +2348,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </>
                     ) : null}
                     <ComposerFooterModeControls
-                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                      interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      workflowEnabled={workflowEnabled}
                       showPlanToggle={showPlanSidebarToggle}
                       planSidebarLabel={planSidebarLabel}
                       planSidebarOpen={planSidebarOpen}
-                      onToggleInteractionMode={toggleInteractionMode}
+                      onToggleWorkflow={onToggleWorkflow}
                       onRuntimeModeChange={handleRuntimeModeChange}
                       onTogglePlanSidebar={togglePlanSidebar}
                     />
