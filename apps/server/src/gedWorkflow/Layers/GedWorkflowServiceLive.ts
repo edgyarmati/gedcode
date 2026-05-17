@@ -25,6 +25,7 @@ import {
   GedWorkflowService,
   type GedWorkflowServiceShape,
 } from "../Services/GedWorkflowService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
 
@@ -35,6 +36,7 @@ const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
 const encodeCheckpointStateToJson = Schema.encodeEffect(Schema.fromJsonString(CheckpointState));
 
 const DEFAULT_STATE: GedWorkflowState = {
+  enabled: true,
   initialized: false,
   phase: "inactive",
   classification: "unclassified",
@@ -42,12 +44,16 @@ const DEFAULT_STATE: GedWorkflowState = {
   verifierCheckpointValid: false,
 };
 
-const mapCheckpointStateToWorkflowState = (cp: typeof CheckpointState.Type): GedWorkflowState => {
+const mapCheckpointStateToWorkflowState = (
+  cp: typeof CheckpointState.Type,
+  enabled: boolean,
+): GedWorkflowState => {
   const plannerCp = cp.planCheckpoints["ged-planner"];
   const firstTaskCps = Object.values(cp.taskCheckpoints)[0];
   const verifierCp = firstTaskCps?.["ged-verifier"];
 
   return {
+    enabled,
     initialized: true,
     phase: cp.lifecycleStatus === "closed" ? "done" : "implement",
     classification: cp.classification === "trivial" ? "trivial" : "non-trivial",
@@ -59,8 +65,21 @@ const mapCheckpointStateToWorkflowState = (cp: typeof CheckpointState.Type): Ged
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const settings = yield* ServerSettingsService;
 
   const threadCwdMap = new Map<string, string>();
+
+  const isEnabled: GedWorkflowServiceShape["isEnabled"] = settings.getSettings.pipe(
+    Effect.map((current) => current.gedWorkflowEnabled),
+    Effect.catch(() => Effect.succeed(true)),
+  );
+
+  const getDefaultState = isEnabled.pipe(
+    Effect.map((enabled) => ({
+      ...DEFAULT_STATE,
+      enabled,
+    })),
+  );
 
   const recordThreadCwd: GedWorkflowServiceShape["recordThreadCwd"] = (threadId, cwd) =>
     Effect.sync(() => {
@@ -69,7 +88,7 @@ const make = Effect.gen(function* () {
 
   const getStateByThreadId: GedWorkflowServiceShape["getStateByThreadId"] = (threadId) =>
     Effect.sync(() => threadCwdMap.get(threadId)).pipe(
-      Effect.flatMap((cwd) => (cwd ? getState(cwd) : Effect.succeed(DEFAULT_STATE))),
+      Effect.flatMap((cwd) => (cwd ? getState(cwd) : getDefaultState)),
     );
 
   const bootstrap: GedWorkflowServiceShape["bootstrap"] = (projectRoot) =>
@@ -143,9 +162,13 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.catch(() => Effect.void));
 
   const getState: GedWorkflowServiceShape["getState"] = (projectRoot) =>
-    readCheckpointState(projectRoot).pipe(
-      Effect.map(mapCheckpointStateToWorkflowState),
-      Effect.catch(() => Effect.succeed(DEFAULT_STATE)),
+    isEnabled.pipe(
+      Effect.flatMap((enabled) =>
+        readCheckpointState(projectRoot).pipe(
+          Effect.map((state) => mapCheckpointStateToWorkflowState(state, enabled)),
+          Effect.catch(() => Effect.succeed({ ...DEFAULT_STATE, enabled })),
+        ),
+      ),
     );
 
   const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
@@ -168,6 +191,7 @@ const make = Effect.gen(function* () {
     getState,
     getStateByThreadId,
     getWorkflowPromptSuffix,
+    isEnabled,
     recordThreadCwd,
     validateTurnGuards,
   } satisfies GedWorkflowServiceShape;

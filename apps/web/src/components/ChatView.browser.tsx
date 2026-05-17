@@ -231,6 +231,7 @@ function createMockEnvironmentApi(input: {
     gedWorkflow: {
       getState: (() =>
         Promise.resolve({
+          enabled: true,
           initialized: false,
           phase: "inactive" as const,
           classification: "unclassified" as const,

@@ -670,6 +670,32 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Ged workflow"
+          description="Inject structured workflow prompts and enforce Ged checkpoints for provider turns."
+          resetAction={
+            settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
+              <SettingResetButton
+                label="Ged workflow"
+                onClick={() =>
+                  updateSettings({
+                    gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.gedWorkflowEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ gedWorkflowEnabled: Boolean(checked) })
+              }
+              aria-label="Enable Ged workflow"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Auto-open task panel"
           description="Open the right-side plan and task panel automatically when steps appear."
           resetAction={

@@ -18,6 +18,7 @@ export interface GedWorkflowServiceShape {
   readonly getState: (projectRoot: string) => Effect.Effect<GedWorkflowState>;
   readonly getStateByThreadId: (threadId: string) => Effect.Effect<GedWorkflowState>;
   readonly getWorkflowPromptSuffix: () => Effect.Effect<string>;
+  readonly isEnabled: Effect.Effect<boolean>;
   readonly recordThreadCwd: (threadId: string, cwd: string) => Effect.Effect<void>;
   readonly validateTurnGuards: (projectRoot: string) => Effect.Effect<ValidationResult>;
 }

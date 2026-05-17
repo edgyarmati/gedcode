@@ -19,6 +19,11 @@ export const GedWorkflowGuardLive = Layer.effect(
 
     const guardedSendTurn: (typeof inner)["sendTurn"] = (input) =>
       Effect.gen(function* () {
+        const enabled = yield* workflow.isEnabled;
+        if (!enabled) {
+          return yield* inner.sendTurn(input);
+        }
+
         const sessions = yield* inner.listSessions();
         const cwd = resolveSessionCwd(input.threadId, sessions);
 

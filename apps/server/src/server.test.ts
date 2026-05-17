@@ -691,6 +691,7 @@ const buildAppUnderTest = (options?: {
           classifyTurn: () => Effect.void,
           getState: () =>
             Effect.succeed({
+              enabled: true,
               initialized: false,
               phase: "inactive" as const,
               classification: "unclassified" as const,
@@ -699,6 +700,7 @@ const buildAppUnderTest = (options?: {
             }),
           getStateByThreadId: () =>
             Effect.succeed({
+              enabled: true,
               initialized: false,
               phase: "inactive" as const,
               classification: "unclassified" as const,
@@ -706,6 +708,7 @@ const buildAppUnderTest = (options?: {
               verifierCheckpointValid: false,
             }),
           getWorkflowPromptSuffix: () => Effect.succeed(""),
+          isEnabled: Effect.succeed(true),
           recordThreadCwd: () => Effect.void,
           validateTurnGuards: () => Effect.succeed({ valid: true }),
         }),
