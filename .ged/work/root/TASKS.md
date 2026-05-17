@@ -1,9 +1,9 @@
 # Tasks
 
-## branding-gc-monogram
+## ged-tracking-and-checkpoint-recorder
 
-1. [x] Generate a reusable `GC` monogram SVG source with Gruvbox color variants.
-2. [x] Render checked-in PNG/ICO/ICNS/WebP assets for production, nightly, dev, web, marketing, and desktop targets.
-3. [x] Update marketing layout markup/styles to show the monogram in nav/footer without disrupting responsive layout.
-4. [x] Verify generated asset dimensions and run required repo checks: `bun fmt`, `bun lint`, `bun typecheck`.
-5. [x] Commit with a conventional commit after verification passes.
+1. [x] Inspect pending server and `.ged` changes.
+2. [x] Confirm the recorder/server integration should not be committed as-is.
+3. [x] Track appropriate `.ged` memory files and ignore runtime state.
+4. [x] Verify formatting, lint, typecheck, and targeted server/Ged tests.
+5. [x] Commit `.ged` tracking with a conventional commit if verification passes.
