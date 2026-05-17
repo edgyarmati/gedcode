@@ -24,6 +24,8 @@ export const GedWorkflowGuardLive = Layer.effect(
         const cwd = resolveSessionCwd(input.threadId, sessions);
 
         if (cwd) {
+          yield* workflow.bootstrap(cwd);
+
           const guardResult = yield* validateTurnGuards(cwd).pipe(
             Effect.provideService(GedWorkflowService, workflow),
           );
