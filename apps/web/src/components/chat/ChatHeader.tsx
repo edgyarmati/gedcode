@@ -112,8 +112,8 @@ export const ChatHeader = memo(function ChatHeader({
             No Git
           </Badge>
         )}
-        <WorkflowStatusBadge state={workflowState} />
       </div>
+      <WorkflowStatusBadge state={workflowState} />
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
         {activeProjectScripts && (
           <ProjectScriptsControl

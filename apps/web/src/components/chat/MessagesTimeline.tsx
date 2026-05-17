@@ -655,7 +655,9 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
 }) {
   if (!turnSummary) return null;
-  const checkpointFiles = turnSummary.files;
+  const checkpointFiles = turnSummary.files.filter(
+    (f) => !f.path.startsWith(".ged/") && !f.path.includes("/.ged/"),
+  );
   if (checkpointFiles.length === 0) return null;
 
   return (
