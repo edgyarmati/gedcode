@@ -62,7 +62,8 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId } from "./baseSchemas.ts";
+import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
+import type { GedWorkflowState } from "./gedWorkflow.ts";
 import { AuthBearerBootstrapResult, AuthSessionState, AuthWebSocketTokenResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
@@ -564,5 +565,8 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+  };
+  gedWorkflow: {
+    getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;
   };
 }

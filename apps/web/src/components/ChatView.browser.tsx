@@ -228,6 +228,16 @@ function createMockEnvironmentApi(input: {
       subscribeThread: (() => () =>
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
+    gedWorkflow: {
+      getState: (() =>
+        Promise.resolve({
+          initialized: false,
+          phase: "inactive" as const,
+          classification: "unclassified" as const,
+          plannerCheckpointValid: false,
+          verifierCheckpointValid: false,
+        })) as EnvironmentApi["gedWorkflow"]["getState"],
+    },
   };
 }
 

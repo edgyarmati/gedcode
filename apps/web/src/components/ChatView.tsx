@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
+  type GedWorkflowState,
   type MessageId,
   type ModelSelection,
   type ProjectScript,
@@ -859,6 +860,36 @@ export default function ChatView(props: ChatViewProps) {
   const activeProject = useStore(
     useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
   );
+
+  const [workflowState, setWorkflowState] = useState<GedWorkflowState | null>(null);
+  useEffect(() => {
+    if (!activeThread) {
+      setWorkflowState(null);
+      return;
+    }
+    const api = readEnvironmentApi(activeThread.environmentId);
+    if (!api) {
+      setWorkflowState(null);
+      return;
+    }
+    let cancelled = false;
+    const fetchState = () => {
+      api.gedWorkflow
+        .getState({ threadId: activeThread.id })
+        .then((state) => {
+          if (!cancelled) setWorkflowState(state);
+        })
+        .catch(() => {
+          if (!cancelled) setWorkflowState(null);
+        });
+    };
+    fetchState();
+    const interval = setInterval(fetchState, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeThread?.environmentId, activeThread?.id]);
 
   useEffect(() => {
     if (routeKind !== "server") {
@@ -3531,6 +3562,7 @@ export default function ChatView(props: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
+          workflowState={workflowState}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}

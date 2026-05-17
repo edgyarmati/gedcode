@@ -102,6 +102,9 @@ const rpcClientMock = {
     ),
     subscribeThread: vi.fn(() => () => undefined),
   },
+  gedWorkflow: {
+    getState: vi.fn(),
+  },
 };
 
 vi.mock("./environments/runtime", () => ({

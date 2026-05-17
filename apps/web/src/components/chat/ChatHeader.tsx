@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type EditorId,
+  type GedWorkflowState,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
@@ -16,6 +17,7 @@ import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScr
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
+import { WorkflowStatusBadge } from "./WorkflowStatusBadge";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
 
 interface ChatHeaderProps {
@@ -36,6 +38,7 @@ interface ChatHeaderProps {
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
   diffOpen: boolean;
+  workflowState: GedWorkflowState | null;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
@@ -74,6 +77,7 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
+  workflowState,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
@@ -108,6 +112,7 @@ export const ChatHeader = memo(function ChatHeader({
             No Git
           </Badge>
         )}
+        <WorkflowStatusBadge state={workflowState} />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
         {activeProjectScripts && (

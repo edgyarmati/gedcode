@@ -53,6 +53,9 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeThread: (input, callback, options) =>
         rpcClient.orchestration.subscribeThread(input, callback, options),
     },
+    gedWorkflow: {
+      getState: rpcClient.gedWorkflow.getState,
+    },
   };
 }
 

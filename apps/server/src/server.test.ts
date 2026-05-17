@@ -117,6 +117,7 @@ import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
+import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 import * as Data from "effect/Data";
 
 const defaultProjectId = ProjectId.make("project-default");
@@ -682,6 +683,21 @@ const buildAppUnderTest = (options?: {
               diff: "",
             }),
           ...options?.layers?.checkpointDiffQuery,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(GedWorkflowService)({
+          bootstrap: () => Effect.void,
+          getState: () =>
+            Effect.succeed({
+              initialized: false,
+              phase: "inactive" as const,
+              classification: "unclassified" as const,
+              plannerCheckpointValid: false,
+              verifierCheckpointValid: false,
+            }),
+          getWorkflowPromptSuffix: () => Effect.succeed(""),
+          validateTurnGuards: () => Effect.succeed({ valid: true }),
         }),
       ),
     );

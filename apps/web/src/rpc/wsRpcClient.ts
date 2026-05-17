@@ -153,6 +153,9 @@ export interface WsRpcClient {
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
   };
+  readonly gedWorkflow: {
+    readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
+  };
 }
 
 export function createWsRpcClient(transport: WsTransport): WsRpcClient {
@@ -318,6 +321,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           listener,
           { ...options, tag: ORCHESTRATION_WS_METHODS.subscribeThread },
         ),
+    },
+    gedWorkflow: {
+      getState: (input) =>
+        transport.request((client) => client[WS_METHODS.gedWorkflowGetState](input)),
     },
   };
 }

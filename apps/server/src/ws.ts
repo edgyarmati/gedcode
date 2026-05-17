@@ -88,6 +88,7 @@ import {
   type SessionCredentialChange,
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
+import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
 
@@ -195,6 +196,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const sessions = yield* SessionCredentialService;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
+      const gedWorkflowService = yield* GedWorkflowService;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -1234,6 +1236,41 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
             }),
             { "rpc.aggregate": "auth" },
+          ),
+        [WS_METHODS.gedWorkflowGetState]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.gedWorkflowGetState,
+            Effect.gen(function* () {
+              const uninitializedState = {
+                initialized: false,
+                phase: "inactive" as const,
+                classification: "unclassified" as const,
+                plannerCheckpointValid: false,
+                verifierCheckpointValid: false,
+              };
+              const thread = yield* projectionSnapshotQuery.getThreadShellById(input.threadId).pipe(
+                Effect.map(Option.getOrUndefined),
+                Effect.catch(() => Effect.void),
+              );
+              if (!thread) {
+                return uninitializedState;
+              }
+              const cwd = thread.worktreePath ?? undefined;
+              if (cwd) {
+                return yield* gedWorkflowService.getState(cwd);
+              }
+              const project = yield* projectionSnapshotQuery
+                .getProjectShellById(thread.projectId)
+                .pipe(
+                  Effect.map(Option.getOrUndefined),
+                  Effect.catch(() => Effect.void),
+                );
+              if (!project) {
+                return uninitializedState;
+              }
+              return yield* gedWorkflowService.getState(project.workspaceRoot);
+            }),
+            { "rpc.aggregate": "gedWorkflow" },
           ),
       });
     }),
