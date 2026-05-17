@@ -8,6 +8,7 @@
  * @module GedWorkflowService
  */
 import type { GedWorkflowState } from "@t3tools/contracts";
+import type { ValidationResult } from "@t3tools/ged-workflow/CheckpointValidation";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
@@ -15,6 +16,7 @@ export interface GedWorkflowServiceShape {
   readonly bootstrap: (projectRoot: string) => Effect.Effect<void>;
   readonly getState: (projectRoot: string) => Effect.Effect<GedWorkflowState>;
   readonly getWorkflowPromptSuffix: () => Effect.Effect<string>;
+  readonly validateTurnGuards: (projectRoot: string) => Effect.Effect<ValidationResult>;
 }
 
 export class GedWorkflowService extends Context.Service<

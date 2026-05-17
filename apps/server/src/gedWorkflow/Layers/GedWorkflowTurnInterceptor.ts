@@ -1,12 +1,3 @@
-/**
- * GedWorkflowTurnInterceptor - Appends Ged workflow context to provider turn input.
- *
- * Pure function that takes a `ProviderSendTurnInput` and enriches the user
- * message with workflow prompt context. Idempotent: if the marker is already
- * present in the input, the original input is returned unchanged.
- *
- * @module GedWorkflowTurnInterceptor
- */
 import type { ProviderSendTurnInput } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
@@ -16,7 +7,6 @@ const WORKFLOW_CONTEXT_MARKER = "[ged-workflow-context-injected]";
 
 export const injectWorkflowContext = (
   input: ProviderSendTurnInput,
-  _projectRoot: string,
 ): Effect.Effect<ProviderSendTurnInput, never, GedWorkflowService> =>
   Effect.gen(function* () {
     const workflow = yield* GedWorkflowService;
@@ -31,4 +21,18 @@ export const injectWorkflowContext = (
       ...input,
       input: enrichedInput,
     };
+  });
+
+export interface TurnGuardResult {
+  readonly allowed: boolean;
+  readonly reason?: string | undefined;
+}
+
+export const validateTurnGuards = (
+  projectRoot: string,
+): Effect.Effect<TurnGuardResult, never, GedWorkflowService> =>
+  Effect.gen(function* () {
+    const workflow = yield* GedWorkflowService;
+    const result = yield* workflow.validateTurnGuards(projectRoot);
+    return { allowed: result.valid, reason: result.reason };
   });

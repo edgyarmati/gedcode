@@ -10,6 +10,8 @@
 import type { GedWorkflowState } from "@t3tools/contracts";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
 import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
+import { validatePlannerCheckpoint } from "@t3tools/ged-workflow/CheckpointValidation";
+import type { ValidationResult } from "@t3tools/ged-workflow/CheckpointValidation";
 import { buildWorkflowPromptSuffix } from "@t3tools/ged-workflow/WorkflowPrompt";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -73,10 +75,22 @@ const make = Effect.gen(function* () {
   const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
     Effect.succeed(buildWorkflowPromptSuffix({ subagentsEnabled: true }));
 
+  const VALID_RESULT: ValidationResult = { valid: true };
+
+  const validateTurnGuards: GedWorkflowServiceShape["validateTurnGuards"] = (projectRoot) =>
+    Effect.gen(function* () {
+      const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
+      const raw = yield* fs.readFileString(checkpointsPath);
+      const cpState = yield* decodeCheckpointStateFromJson(raw);
+      if (cpState.lifecycleStatus === "closed") return VALID_RESULT;
+      return validatePlannerCheckpoint(cpState);
+    }).pipe(Effect.catch(() => Effect.succeed(VALID_RESULT)));
+
   return {
     bootstrap,
     getState,
     getWorkflowPromptSuffix,
+    validateTurnGuards,
   } satisfies GedWorkflowServiceShape;
 });
 

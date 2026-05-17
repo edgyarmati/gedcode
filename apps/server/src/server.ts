@@ -44,6 +44,7 @@ import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import { GedWorkflowServiceLive } from "./gedWorkflow/Layers/GedWorkflowServiceLive.ts";
 import { GedWorkflowEventReactorLive } from "./gedWorkflow/Layers/GedWorkflowEventReactor.ts";
+import { GedWorkflowGuardLive } from "./gedWorkflow/Layers/GedWorkflowGuard.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
@@ -250,6 +251,12 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
+  // GedWorkflowGuardLive wraps ProviderService.sendTurn with checkpoint
+  // validation and prompt enrichment. It depends on both ProviderService
+  // (from ProviderRuntimeLayerLive) and GedWorkflowService — both must be
+  // in scope before the guard is merged.
+  Layer.provideMerge(GedWorkflowGuardLive),
+  Layer.provideMerge(GedWorkflowServiceLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
@@ -279,7 +286,6 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
-  Layer.provideMerge(GedWorkflowServiceLive),
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
