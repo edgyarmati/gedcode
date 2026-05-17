@@ -97,7 +97,19 @@ const make = Effect.gen(function* () {
   const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput) =>
     Effect.gen(function* () {
       const cpState = yield* readCheckpointState(projectRoot);
-      if (cpState.lifecycleStatus === "closed") return;
+
+      if (cpState.lifecycleStatus === "closed") {
+        yield* writeCheckpointState(projectRoot, {
+          ...cpState,
+          lifecycleStatus: "active",
+          classification: "trivial",
+          classificationReason: "New turn on closed lifecycle — reset.",
+          planCheckpoints: {},
+          taskCheckpoints: {},
+        });
+        return;
+      }
+
       if (cpState.classification === "non-trivial") return;
 
       const input = userInput.trim().toLowerCase();
