@@ -688,6 +688,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(GedWorkflowService)({
           bootstrap: () => Effect.void,
+          classifyTurn: () => Effect.void,
           getState: () =>
             Effect.succeed({
               initialized: false,

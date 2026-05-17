@@ -10,8 +10,10 @@
 import type { GedWorkflowState } from "@t3tools/contracts";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
 import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
-import { validatePlannerCheckpoint } from "@t3tools/ged-workflow/CheckpointValidation";
-import type { ValidationResult } from "@t3tools/ged-workflow/CheckpointValidation";
+import {
+  validatePlannerCheckpoint,
+  type ValidationResult,
+} from "@t3tools/ged-workflow/CheckpointValidation";
 import { buildWorkflowPromptSuffix } from "@t3tools/ged-workflow/WorkflowPrompt";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,6 +31,8 @@ const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
 const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(CheckpointState),
 );
+
+const encodeCheckpointStateToJson = Schema.encodeEffect(Schema.fromJsonString(CheckpointState));
 
 const DEFAULT_STATE: GedWorkflowState = {
   initialized: false,
@@ -64,13 +68,61 @@ const make = Effect.gen(function* () {
       Effect.catch(() => Effect.void),
     );
 
-  const getState: GedWorkflowServiceShape["getState"] = (projectRoot) =>
+  const readCheckpointState = (projectRoot: string) =>
     Effect.gen(function* () {
       const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
       const raw = yield* fs.readFileString(checkpointsPath);
-      const cpState = yield* decodeCheckpointStateFromJson(raw);
-      return mapCheckpointStateToWorkflowState(cpState);
-    }).pipe(Effect.catch(() => Effect.succeed(DEFAULT_STATE)));
+      return yield* decodeCheckpointStateFromJson(raw);
+    });
+
+  const writeCheckpointState = (projectRoot: string, state: typeof CheckpointState.Type) =>
+    Effect.gen(function* () {
+      const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
+      const encoded = yield* encodeCheckpointStateToJson(state);
+      yield* fs.writeFileString(checkpointsPath, encoded);
+    });
+
+  const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput) =>
+    Effect.gen(function* () {
+      const cpState = yield* readCheckpointState(projectRoot);
+      if (cpState.lifecycleStatus === "closed") return;
+      if (cpState.classification === "non-trivial") return;
+
+      const input = userInput.trim().toLowerCase();
+      const nonTrivialSignals = [
+        "refactor",
+        "implement",
+        "feature",
+        "build",
+        "create",
+        "add",
+        "migrate",
+        "redesign",
+        "rewrite",
+        "integrate",
+        "multi",
+        "across",
+        "tests",
+        "api",
+        "endpoint",
+      ];
+      const isNonTrivial =
+        input.length > 200 || nonTrivialSignals.some((signal) => input.includes(signal));
+
+      if (!isNonTrivial) return;
+
+      yield* writeCheckpointState(projectRoot, {
+        ...cpState,
+        classification: "non-trivial",
+        classificationReason: "Server-side heuristic: turn input matched non-trivial signals.",
+      });
+    }).pipe(Effect.catch(() => Effect.void));
+
+  const getState: GedWorkflowServiceShape["getState"] = (projectRoot) =>
+    readCheckpointState(projectRoot).pipe(
+      Effect.map(mapCheckpointStateToWorkflowState),
+      Effect.catch(() => Effect.succeed(DEFAULT_STATE)),
+    );
 
   const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
     Effect.succeed(buildWorkflowPromptSuffix({ subagentsEnabled: true }));
@@ -78,16 +130,17 @@ const make = Effect.gen(function* () {
   const VALID_RESULT: ValidationResult = { valid: true };
 
   const validateTurnGuards: GedWorkflowServiceShape["validateTurnGuards"] = (projectRoot) =>
-    Effect.gen(function* () {
-      const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
-      const raw = yield* fs.readFileString(checkpointsPath);
-      const cpState = yield* decodeCheckpointStateFromJson(raw);
-      if (cpState.lifecycleStatus === "closed") return VALID_RESULT;
-      return validatePlannerCheckpoint(cpState);
-    }).pipe(Effect.catch(() => Effect.succeed(VALID_RESULT)));
+    readCheckpointState(projectRoot).pipe(
+      Effect.flatMap((cpState) => {
+        if (cpState.lifecycleStatus === "closed") return Effect.succeed(VALID_RESULT);
+        return Effect.succeed(validatePlannerCheckpoint(cpState));
+      }),
+      Effect.catch(() => Effect.succeed(VALID_RESULT)),
+    );
 
   return {
     bootstrap,
+    classifyTurn,
     getState,
     getWorkflowPromptSuffix,
     validateTurnGuards,

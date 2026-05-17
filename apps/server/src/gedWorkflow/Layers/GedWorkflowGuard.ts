@@ -25,6 +25,9 @@ export const GedWorkflowGuardLive = Layer.effect(
 
         if (cwd) {
           yield* workflow.bootstrap(cwd);
+          if (input.input) {
+            yield* workflow.classifyTurn(cwd, input.input);
+          }
 
           const guardResult = yield* validateTurnGuards(cwd).pipe(
             Effect.provideService(GedWorkflowService, workflow),

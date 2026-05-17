@@ -879,7 +879,8 @@ export default function ChatView(props: ChatViewProps) {
         .then((state) => {
           if (!cancelled) setWorkflowState(state);
         })
-        .catch(() => {
+        .catch((err) => {
+          console.warn("[ged-workflow] getState failed", err);
           if (!cancelled) setWorkflowState(null);
         });
     };

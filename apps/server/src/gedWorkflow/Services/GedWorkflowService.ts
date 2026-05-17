@@ -14,6 +14,7 @@ import type * as Effect from "effect/Effect";
 
 export interface GedWorkflowServiceShape {
   readonly bootstrap: (projectRoot: string) => Effect.Effect<void>;
+  readonly classifyTurn: (projectRoot: string, userInput: string) => Effect.Effect<void>;
   readonly getState: (projectRoot: string) => Effect.Effect<GedWorkflowState>;
   readonly getWorkflowPromptSuffix: () => Effect.Effect<string>;
   readonly validateTurnGuards: (projectRoot: string) => Effect.Effect<ValidationResult>;

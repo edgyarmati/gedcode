@@ -37,6 +37,31 @@ Auto-escalation: if a TRIVIAL task touches >1 source file, it becomes NON-TRIVIA
 - Before commits (non-trivial): verification must be complete
 - Source edits invalidate prior verification
 
+### Recording Checkpoints
+You MUST update \`.ged/runtime/root/checkpoints.json\` at each workflow transition.
+The file uses this schema (schemaVersion 3):
+
+\`\`\`json
+{
+  "schemaVersion": 3,
+  "lifecycleStatus": "active",
+  "classification": "trivial",
+  "classificationReason": "...",
+  "planCheckpoints": {},
+  "taskCheckpoints": {}
+}
+\`\`\`
+
+**When to update:**
+1. **After classification**: set \`classification\` to \`"trivial"\` or \`"non-trivial"\` and update \`classificationReason\`.
+2. **After planning** (non-trivial): add \`"ged-planner"\` to \`planCheckpoints\`:
+   \`"ged-planner": { "recordedAt": "<ISO-8601>", "source": "auto", "valid": true }\`
+3. **After verification** (non-trivial): add \`"ged-verifier"\` to \`taskCheckpoints.<taskId>\`:
+   \`"<taskId>": { "ged-verifier": { "recordedAt": "<ISO-8601>", "source": "auto", "valid": true } }\`
+4. **After completion**: set \`lifecycleStatus\` to \`"closed"\`.
+
+Read the file before writing to preserve existing fields. Always keep \`schemaVersion: 3\`.
+
 ### Conventional Commits
 Format: \`<type>: <description>\`
 Types: feat, fix, refactor, docs, test, chore, perf, ci, build`);

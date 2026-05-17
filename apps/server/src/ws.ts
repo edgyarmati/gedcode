@@ -1253,6 +1253,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 Effect.catch(() => Effect.void),
               );
               if (!thread) {
+                yield* Effect.logDebug("ged-workflow: no thread found", {
+                  threadId: input.threadId,
+                });
                 return uninitializedState;
               }
               const cwd = thread.worktreePath ?? undefined;
@@ -1266,6 +1269,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   Effect.catch(() => Effect.void),
                 );
               if (!project) {
+                yield* Effect.logDebug("ged-workflow: no project found", {
+                  projectId: thread.projectId,
+                });
                 return uninitializedState;
               }
               return yield* gedWorkflowService.getState(project.workspaceRoot);
