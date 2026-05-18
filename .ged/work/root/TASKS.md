@@ -15,3 +15,9 @@
 - [x] Preserve recognition of legacy temp branch refs.
 - [x] Add/update focused tests for config path derivation and branch helpers.
 - [x] Run required verification: `bun fmt`, `bun lint`, `bun typecheck`.
+
+# upstream-push-fallback
+
+- [x] Add fallback handling for permission-denied `pushUpstream`.
+- [x] Add regression coverage for an existing `origin/main` upstream that denies pushes.
+- [x] Run focused VCS tests and required `bun fmt`, `bun lint`, `bun typecheck`.

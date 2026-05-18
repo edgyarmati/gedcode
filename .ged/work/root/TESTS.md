@@ -39,3 +39,20 @@ Results:
 - `bun lint` passed with existing warnings.
 - `bun typecheck` passed: 14 packages.
 - `git diff --check` passed.
+
+# upstream-push-fallback
+
+Planned verification:
+
+- Focused VCS regression test for existing-upstream fallback.
+- `bun fmt`
+- `bun lint`
+- `bun typecheck`
+
+Results:
+
+- `bunx vitest run apps/server/src/vcs/GitVcsDriverCore.test.ts` passed: 1 file, 14 tests.
+- `bun fmt` passed.
+- `bun lint` passed with existing warnings.
+- `bun typecheck` passed: 14 packages.
+- `git diff --check` passed.

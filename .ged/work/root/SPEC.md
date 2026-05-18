@@ -49,3 +49,21 @@ remote and fails before a PR can be created.
 - Pushes continue to honor explicit `branch.<name>.pushRemote` and
   `remote.pushDefault`, then prefer the primary remote as before.
 - Tests cover the new default path and generated temporary branch namespace.
+
+# upstream-push-fallback
+
+## Problem
+
+`GitVcsDriver.pushCurrentBranch` now falls back from permission-denied pushes
+when a branch has no upstream yet, but existing-upstream branches still use
+`pushUpstream` directly. A branch tracking `origin/main` can therefore fail with
+`Permission to <repo> denied` even when another writable remote is configured.
+
+## Desired Behavior
+
+- Existing-upstream pushes preserve the current upstream push path when it works.
+- If the upstream push fails specifically with a permission/remote access error,
+  retry against another configured remote using the same remote branch name.
+- The returned push result reports the fallback upstream and `setUpstream: true`
+  because `git push -u` updates tracking to the writable remote.
+- Non-permission push failures should still surface normally.

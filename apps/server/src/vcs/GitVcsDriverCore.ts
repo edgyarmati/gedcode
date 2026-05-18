@@ -1565,16 +1565,50 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.catch(() => Effect.succeed(null)),
     );
     if (currentUpstream) {
-      yield* runGit("GitVcsDriver.pushCurrentBranch.pushUpstream", cwd, [
-        "push",
-        currentUpstream.remoteName,
-        `HEAD:refs/heads/${currentUpstream.branchName}`,
-      ]);
+      const pushArgs = (remoteName: string, setUpstream: boolean) =>
+        [
+          "push",
+          ...(setUpstream ? ["-u"] : []),
+          remoteName,
+          `HEAD:refs/heads/${currentUpstream.branchName}`,
+        ] as const;
+      const pushResult = yield* runGit(
+        "GitVcsDriver.pushCurrentBranch.pushUpstream",
+        cwd,
+        pushArgs(currentUpstream.remoteName, false),
+      ).pipe(
+        Effect.as({
+          upstreamBranch: currentUpstream.upstreamRef,
+          setUpstream: false,
+        }),
+        Effect.catch((error) =>
+          (isPushPermissionDenied(error)
+            ? resolveFallbackPushRemoteName(cwd, currentUpstream.remoteName)
+            : Effect.succeed(null)
+          ).pipe(
+            Effect.flatMap((fallbackRemoteName) => {
+              if (!fallbackRemoteName) {
+                return Effect.fail(error);
+              }
+              return runGit(
+                "GitVcsDriver.pushCurrentBranch.pushFallbackUpstream",
+                cwd,
+                pushArgs(fallbackRemoteName, true),
+              ).pipe(
+                Effect.as({
+                  upstreamBranch: `${fallbackRemoteName}/${currentUpstream.branchName}`,
+                  setUpstream: true,
+                }),
+              );
+            }),
+          ),
+        ),
+      );
       return {
         status: "pushed" as const,
         branch,
-        upstreamBranch: currentUpstream.upstreamRef,
-        setUpstream: false,
+        upstreamBranch: pushResult.upstreamBranch,
+        setUpstream: pushResult.setUpstream,
       };
     }
 
