@@ -2,27 +2,20 @@
 
 ## Goal
 
-Clean up the remaining Ged workflow worktree changes:
+Make the composer Ged workflow toggle chat-scoped instead of global.
 
-- Remove the pending server checkpoint-recorder wiring because review found it can over-credit verifier checkpoints.
-- Track the `.ged` files that are durable or branch-local workflow memory.
-- Keep runtime/session state ignored automatically.
+## Acceptance Criteria
 
-## Scope
+- Toggling Ged workflow in one chat only changes that chat's effective workflow setting.
+- Existing chats retain their own workflow setting when switching between chats.
+- A newly created draft chat inherits the active chat's current workflow setting, matching the way composer model state is carried forward.
+- A chat created from a chat where Ged is disabled starts disabled without mutating any other chat.
+- Server-side Ged prompt injection and checkpoint enforcement use the target thread's workflow setting, not only the global settings default.
+- Existing historical threads decode as Ged-enabled by default so current behavior is preserved unless a thread opts out.
 
-- `.ged/.gitignore`
-- `.ged` durable memory files
-- `.ged/work/root/*`
+## Constraints
 
-## Decisions
-
-- Do not commit `apps/server/src/server.ts` or `GedWorkflowCheckpointRecorder` in this slice.
-- Commit `.ged` root memory and `.ged/work/root` files because the Ged context map defines root as durable project context and work as branch-local planning artifacts.
-- Do not commit `.ged/runtime`, which remains ignored by `.ged/.gitignore`.
-
-## Non-Goals
-
-- Rework the Ged workflow architecture.
-- Add runtime checkpoint automation.
-- Rename existing Ged concepts or public APIs.
-- Push commits.
+- Keep `packages/contracts` schema-only.
+- Reuse the existing thread/composer draft state patterns for model/runtime/interaction settings.
+- Preserve the global settings switch as the default for threads without a per-thread override.
+- Do not run `bun test`; use `bun run test`.

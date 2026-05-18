@@ -670,8 +670,8 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          title="Ged workflow"
-          description="Inject structured workflow prompts and enforce Ged checkpoints for provider turns."
+          title="Default Ged workflow"
+          description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
           resetAction={
             settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
               <SettingResetButton

@@ -1,6 +1,6 @@
 # State
 
 - **Phase**: complete
-- **Active task**: ged-tracking-and-checkpoint-recorder
+- **Active task**: ged-thread-workflow-toggle
 - **Blockers**: none
-- **Next step**: None.
+- **Next step**: Commit completed change.
