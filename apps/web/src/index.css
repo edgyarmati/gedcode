@@ -112,6 +112,8 @@
   --success-foreground: #79740e;
   --warning: #d79921;
   --warning-foreground: #b57614;
+  --diff-add: #79740e;
+  --diff-remove: #9d0006;
 
   @variant dark {
     color-scheme: dark;
@@ -141,6 +143,8 @@
     --success-foreground: #b8bb26;
     --warning: #fabd2f;
     --warning-foreground: #fabd2f;
+    --diff-add: #b8bb26;
+    --diff-remove: #fb4934;
   }
 }
 
