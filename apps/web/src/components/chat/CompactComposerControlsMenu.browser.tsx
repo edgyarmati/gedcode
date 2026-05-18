@@ -136,11 +136,9 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
   const screen = await render(
     <CompactComposerControlsMenu
       activePlan={false}
-      interactionMode="default"
       planSidebarLabel="Plan"
       planSidebarOpen={false}
       runtimeMode="approval-required"
-      showInteractionModeToggle
       traitsMenuContent={
         <TraitsMenuContent
           provider={provider}
@@ -152,9 +150,10 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
           onPromptChange={onPromptChange}
         />
       }
-      onToggleInteractionMode={vi.fn()}
       onTogglePlanSidebar={vi.fn()}
+      onToggleWorkflow={vi.fn()}
       onRuntimeModeChange={vi.fn()}
+      workflowEnabled
     />,
     { container: host },
   );
@@ -292,20 +291,19 @@ describe("CompactComposerControlsMenu", () => {
     });
   });
 
-  it("can hide the interaction mode section", async () => {
+  it("shows workflow and access controls without interaction mode controls", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const screen = await render(
       <CompactComposerControlsMenu
         activePlan={false}
-        interactionMode="default"
         planSidebarLabel="Plan"
         planSidebarOpen={false}
         runtimeMode="approval-required"
-        showInteractionModeToggle={false}
-        onToggleInteractionMode={vi.fn()}
         onTogglePlanSidebar={vi.fn()}
+        onToggleWorkflow={vi.fn()}
         onRuntimeModeChange={vi.fn()}
+        workflowEnabled
       />,
       { container: host },
     );
@@ -317,6 +315,8 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).not.toContain("Mode");
       expect(text).not.toContain("Chat");
       expect(text).not.toContain("Plan");
+      expect(text).toContain("Workflow");
+      expect(text).toContain("Ged workflow");
       expect(text).toContain("Access");
       expect(text).toContain("Supervised");
       expect(text).toContain("Full access");

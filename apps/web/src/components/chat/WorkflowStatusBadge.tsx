@@ -15,6 +15,7 @@ const phaseLabel: Partial<Record<GedWorkflowPhase, string>> = {
 };
 
 export function WorkflowStatusBadge({ state }: WorkflowStatusBadgeProps) {
+  if (state && !state.enabled) return null;
   if (!state || !state.initialized) return null;
   if (state.phase === "inactive") return null;
 

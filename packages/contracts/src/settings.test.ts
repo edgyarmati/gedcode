@@ -15,6 +15,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
+    expect(decoded.gedWorkflowEnabled).toBe(true);
     expect(decoded.providerInstances).toEqual({});
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
@@ -65,6 +66,11 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 });
 
 describe("ServerSettingsPatch.providerInstances", () => {
+  it("accepts Ged workflow toggles", () => {
+    const patch = decodeServerSettingsPatch({ gedWorkflowEnabled: false });
+    expect(patch.gedWorkflowEnabled).toBe(false);
+  });
+
   it("treats providerInstances as an optional whole-map replacement", () => {
     const patch = decodeServerSettingsPatch({});
     expect(patch.providerInstances).toBeUndefined();

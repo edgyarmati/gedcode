@@ -12,6 +12,7 @@ export const injectWorkflowContext = (
     const workflow = yield* GedWorkflowService;
     if (!input.input) return input;
     if (input.input.includes(WORKFLOW_CONTEXT_MARKER)) return input;
+    if (!(yield* workflow.isEnabled)) return input;
 
     const suffix = yield* workflow.getWorkflowPromptSuffix();
     const enrichedInput =
@@ -33,6 +34,7 @@ export const validateTurnGuards = (
 ): Effect.Effect<TurnGuardResult, never, GedWorkflowService> =>
   Effect.gen(function* () {
     const workflow = yield* GedWorkflowService;
+    if (!(yield* workflow.isEnabled)) return { allowed: true };
     const result = yield* workflow.validateTurnGuards(projectRoot);
     return { allowed: result.valid, reason: result.reason };
   });

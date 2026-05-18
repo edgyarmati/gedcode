@@ -16,6 +16,7 @@ export const GedTaskClassification = Schema.Literals(["trivial", "non-trivial", 
 export type GedTaskClassification = typeof GedTaskClassification.Type;
 
 export const GedWorkflowState = Schema.Struct({
+  enabled: Schema.Boolean,
   initialized: Schema.Boolean,
   phase: GedWorkflowPhase,
   classification: GedTaskClassification,

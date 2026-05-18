@@ -117,7 +117,7 @@ import {
 } from "~/projectScripts";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -633,6 +633,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -3671,7 +3672,7 @@ export default function ChatView(props: ChatViewProps) {
                   planSidebarLabel={planSidebarLabel}
                   planSidebarOpen={planSidebarOpen}
                   runtimeMode={runtimeMode}
-                  interactionMode={interactionMode}
+                  workflowEnabled={settings.gedWorkflowEnabled}
                   lockedProvider={lockedProvider}
                   providerStatuses={providerStatuses as ServerProvider[]}
                   activeProjectDefaultModelSelection={activeProject?.defaultModelSelection}
@@ -3704,6 +3705,7 @@ export default function ChatView(props: ChatViewProps) {
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
                   togglePlanSidebar={togglePlanSidebar}
+                  onToggleWorkflow={(enabled) => updateSettings({ gedWorkflowEnabled: enabled })}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}
                   setThreadError={setThreadError}
