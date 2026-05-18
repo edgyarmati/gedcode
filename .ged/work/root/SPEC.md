@@ -26,3 +26,26 @@ Clean up the remaining Ged workflow worktree changes:
 - Add runtime checkpoint automation.
 - Rename existing Ged concepts or public APIs.
 - Push commits.
+
+# gedcode-worktree-paths-and-push-remotes
+
+## Problem
+
+New agent worktrees currently expose legacy T3 naming in user-facing paths:
+`~/.t3/worktrees/<repo>/<repo>-<token>`. Temporary branch refs also use
+`gedcode/<token>`, which is visible in push commands and pull request flows.
+
+When a local checkout points only at an upstream repository that the authenticated
+user cannot write to, `pushCurrentBranch` attempts to push to that upstream
+remote and fails before a PR can be created.
+
+## Desired Behavior
+
+- Default server home and derived worktree storage use `~/.gedcode`.
+- Generated temporary worktree branches use a GedCode-owned neutral namespace
+  without `t3`.
+- Existing temporary branch detection still recognizes old `gedcode/<token>`
+  refs so current sessions are not stranded.
+- Pushes continue to honor explicit `branch.<name>.pushRemote` and
+  `remote.pushDefault`, then prefer the primary remote as before.
+- Tests cover the new default path and generated temporary branch namespace.

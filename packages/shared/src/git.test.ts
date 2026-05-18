@@ -7,6 +7,7 @@ import {
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
+  TEMP_WORKTREE_BRANCH_PREFIX,
   WORKTREE_BRANCH_PREFIX,
 } from "./git.ts";
 
@@ -55,7 +56,10 @@ describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
 
 describe("isTemporaryWorktreeBranch", () => {
   it("matches the generated temporary worktree refName format", () => {
-    expect(isTemporaryWorktreeBranch(buildTemporaryWorktreeBranchName())).toBe(true);
+    const refName = buildTemporaryWorktreeBranchName();
+
+    expect(refName).toMatch(new RegExp(`^${TEMP_WORKTREE_BRANCH_PREFIX}/[0-9a-f]{8}$`));
+    expect(isTemporaryWorktreeBranch(refName)).toBe(true);
   });
 
   it("matches generated temporary worktree refs", () => {
@@ -68,6 +72,11 @@ describe("isTemporaryWorktreeBranch", () => {
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/feature/demo`)).toBe(false);
     expect(isTemporaryWorktreeBranch("main")).toBe(false);
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/deadbeef-extra`)).toBe(false);
+  });
+
+  it("accepts legacy generated temporary worktree refs", () => {
+    expect(isTemporaryWorktreeBranch("gedcode/deadbeef")).toBe(true);
+    expect(isTemporaryWorktreeBranch(" gedcode/DEADBEEF ")).toBe(true);
   });
 });
 

@@ -56,6 +56,41 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     return fd;
   });
 
+  it.effect("uses ~/.gedcode as the default base directory", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+
+      const resolved = yield* resolveServerConfig(
+        {
+          mode: Option.some("desktop"),
+          port: Option.some(4888),
+          host: Option.none(),
+          baseDir: Option.none(),
+          cwd: Option.none(),
+          devUrl: Option.none(),
+          noBrowser: Option.none(),
+          bootstrapFd: Option.none(),
+          autoBootstrapProjectFromCwd: Option.none(),
+          logWebSocketEvents: Option.none(),
+          tailscaleServeEnabled: Option.none(),
+          tailscaleServePort: Option.none(),
+        },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
+            NetService.layer,
+          ),
+        ),
+      );
+
+      const expectedBaseDir = join(NodeOS.homedir(), ".gedcode");
+      assert.equal(resolved.baseDir, expectedBaseDir);
+      assert.equal(resolved.worktreesDir, join(expectedBaseDir, "worktrees"));
+    }),
+  );
+
   it.effect("falls back to effect/config values when flags are omitted", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;

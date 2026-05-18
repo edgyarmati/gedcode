@@ -425,5 +425,45 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.notEqual(originMain.exitCode, 0);
       }),
     );
+
+    it.effect("falls back to another remote when the primary remote denies the push", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        const originRemote = yield* makeTmpDir("git-origin-remote-");
+        const forkRemote = yield* makeTmpDir("git-fork-remote-");
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(originRemote, ["init", "--bare"]);
+        yield* git(forkRemote, ["init", "--bare"]);
+        const preReceiveHookPath = pathService.join(originRemote, "hooks", "pre-receive");
+        yield* fileSystem.writeFileString(
+          preReceiveHookPath,
+          "#!/bin/sh\necho permission denied >&2\nexit 1\n",
+        );
+        yield* fileSystem.chmod(preReceiveHookPath, 0o755);
+        yield* git(cwd, ["remote", "add", "origin", originRemote]);
+        yield* git(cwd, ["remote", "add", "fork", forkRemote]);
+        yield* git(cwd, ["checkout", "-b", "feature/fallback-push"]);
+        yield* writeTextFile(cwd, "fallback.txt", "fallback\n");
+        yield* driver.prepareCommitContext(cwd);
+        yield* driver.commit(cwd, "Add fallback push", "");
+
+        const pushed = yield* driver.pushCurrentBranch(cwd, null);
+
+        assert.deepInclude(pushed, {
+          status: "pushed",
+          branch: "feature/fallback-push",
+          upstreamBranch: "fork/feature/fallback-push",
+          setUpstream: true,
+        });
+        assert.equal(
+          yield* git(forkRemote, ["log", "-1", "--pretty=%s", "feature/fallback-push"]),
+          "Add fallback push",
+        );
+      }),
+    );
   });
 });

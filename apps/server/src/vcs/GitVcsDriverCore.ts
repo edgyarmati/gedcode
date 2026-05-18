@@ -201,6 +201,15 @@ function normalizeRemoteUrl(value: string): string {
     .toLowerCase();
 }
 
+function isPushPermissionDenied(error: GitCommandError): boolean {
+  const detail = error.detail.toLowerCase();
+  return (
+    detail.includes("permission to ") ||
+    detail.includes("permission denied") ||
+    detail.includes("could not read from remote repository")
+  );
+}
+
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
   for (const line of stdout.split("\n")) {
@@ -1015,6 +1024,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return yield* resolvePrimaryRemoteName(cwd).pipe(Effect.catch(() => Effect.succeed(null)));
   });
 
+  const resolveFallbackPushRemoteName = Effect.fn("resolveFallbackPushRemoteName")(function* (
+    cwd: string,
+    failedRemoteName: string,
+  ) {
+    const remoteFetchUrls = yield* runGitStdout("GitVcsDriver.resolveFallbackPushRemoteName", cwd, [
+      "remote",
+      "-v",
+    ]).pipe(Effect.map(parseRemoteFetchUrls));
+
+    for (const remoteName of remoteFetchUrls.keys()) {
+      if (remoteName !== failedRemoteName) {
+        return remoteName;
+      }
+    }
+
+    return null;
+  });
+
   const ensureRemote: GitVcsDriver.GitVcsDriverShape["ensureRemote"] = Effect.fn("ensureRemote")(
     function* (input) {
       const preferredName = sanitizeRemoteName(input.preferredName);
@@ -1500,16 +1527,36 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         );
       }
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
-      yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithUpstream", cwd, [
-        "push",
-        "-u",
-        publishRemoteName,
-        `HEAD:refs/heads/${publishBranch}`,
-      ]);
+      const pushArgs = (remoteName: string) =>
+        ["push", "-u", remoteName, `HEAD:refs/heads/${publishBranch}`] as const;
+      const pushedRemoteName = yield* runGit(
+        "GitVcsDriver.pushCurrentBranch.pushWithUpstream",
+        cwd,
+        pushArgs(publishRemoteName),
+      ).pipe(
+        Effect.as(publishRemoteName),
+        Effect.catch((error) =>
+          (isPushPermissionDenied(error)
+            ? resolveFallbackPushRemoteName(cwd, publishRemoteName)
+            : Effect.succeed(null)
+          ).pipe(
+            Effect.flatMap((fallbackRemoteName) => {
+              if (!fallbackRemoteName) {
+                return Effect.fail(error);
+              }
+              return runGit(
+                "GitVcsDriver.pushCurrentBranch.pushWithFallbackUpstream",
+                cwd,
+                pushArgs(fallbackRemoteName),
+              ).pipe(Effect.as(fallbackRemoteName));
+            }),
+          ),
+        ),
+      );
       return {
         status: "pushed" as const,
         branch,
-        upstreamBranch: `${publishRemoteName}/${publishBranch}`,
+        upstreamBranch: `${pushedRemoteName}/${publishBranch}`,
         setUpstream: true,
       };
     }

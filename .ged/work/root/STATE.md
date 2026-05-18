@@ -1,6 +1,6 @@
 # State
 
 - **Phase**: complete
-- **Active task**: ged-tracking-and-checkpoint-recorder
+- **Active task**: gedcode-worktree-paths-and-push-remotes
 - **Blockers**: none
 - **Next step**: None.

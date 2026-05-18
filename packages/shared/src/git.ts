@@ -11,7 +11,11 @@ import * as Random from "effect/Random";
 import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "gedcode";
-const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}\\/[0-9a-f]{8}$`);
+export const TEMP_WORKTREE_BRANCH_PREFIX = "worktree";
+const LEGACY_WORKTREE_BRANCH_PREFIX = "gedcode";
+const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
+  `^(?:${TEMP_WORKTREE_BRANCH_PREFIX}|${LEGACY_WORKTREE_BRANCH_PREFIX})\\/[0-9a-f]{8}$`,
+);
 
 /**
  * Sanitize an arbitrary string into a valid, lowercase git refName fragment.
@@ -88,7 +92,7 @@ export function deriveLocalBranchNameFromRemoteRef(branchName: string): string {
 
 export function buildTemporaryWorktreeBranchName(): string {
   const token = Effect.runSync(Random.nextUUIDv4).replace(/-/g, "").slice(0, 8).toLowerCase();
-  return `${WORKTREE_BRANCH_PREFIX}/${token}`;
+  return `${TEMP_WORKTREE_BRANCH_PREFIX}/${token}`;
 }
 
 export function isTemporaryWorktreeBranch(refName: string): boolean {
