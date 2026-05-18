@@ -28,6 +28,7 @@ export function buildLocalDraftThread(
   threadId: ThreadId,
   draftThread: DraftThreadState,
   fallbackModelSelection: ModelSelection,
+  gedWorkflowEnabled: boolean,
   error: string | null,
 ): Thread {
   return {
@@ -37,6 +38,7 @@ export function buildLocalDraftThread(
     projectId: draftThread.projectId,
     title: "New thread",
     modelSelection: fallbackModelSelection,
+    gedWorkflowEnabled,
     runtimeMode: draftThread.runtimeMode,
     interactionMode: draftThread.interactionMode,
     session: null,

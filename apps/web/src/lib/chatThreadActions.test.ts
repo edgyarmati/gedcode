@@ -74,6 +74,31 @@ describe("chatThreadActions", () => {
     });
   });
 
+  it("inherits the active thread Ged workflow state for contextual new threads", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewThreadFromContext(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+          branch: "feature/refactor",
+          worktreePath: "/tmp/worktree",
+          gedWorkflowEnabled: false,
+        },
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      branch: "feature/refactor",
+      worktreePath: "/tmp/worktree",
+      envMode: "worktree",
+      gedWorkflowEnabled: false,
+    });
+  });
+
   it("starts a local thread with the configured default env mode", async () => {
     const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
 
@@ -88,6 +113,30 @@ describe("chatThreadActions", () => {
     expect(didStart).toBe(true);
     expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
       envMode: "worktree",
+    });
+  });
+
+  it("inherits the active thread Ged workflow state for local new threads", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewLocalThreadFromContext(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+          branch: null,
+          worktreePath: null,
+          gedWorkflowEnabled: false,
+        },
+        defaultThreadEnvMode: "local",
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      envMode: "local",
+      gedWorkflowEnabled: false,
     });
   });
 

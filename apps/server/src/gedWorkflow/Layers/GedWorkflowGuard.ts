@@ -19,7 +19,8 @@ export const GedWorkflowGuardLive = Layer.effect(
 
     const guardedSendTurn: (typeof inner)["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const enabled = yield* workflow.isEnabled;
+        const defaultEnabled = yield* workflow.isEnabled;
+        const enabled = input.gedWorkflowEnabled ?? defaultEnabled;
         if (!enabled) {
           return yield* inner.sendTurn(input);
         }

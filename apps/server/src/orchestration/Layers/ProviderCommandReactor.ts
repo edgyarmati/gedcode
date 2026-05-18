@@ -517,6 +517,7 @@ const make = Effect.gen(function* () {
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
+    readonly gedWorkflowEnabled?: boolean;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
   }) {
@@ -569,6 +570,11 @@ const make = Effect.gen(function* () {
       ...(normalizedInput ? { input: normalizedInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
+      ...(input.gedWorkflowEnabled !== undefined
+        ? { gedWorkflowEnabled: input.gedWorkflowEnabled }
+        : thread.gedWorkflowEnabled !== undefined
+          ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
+          : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
     };
   });
@@ -772,6 +778,9 @@ const make = Effect.gen(function* () {
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
+        : {}),
+      ...(event.payload.gedWorkflowEnabled !== undefined
+        ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
         : {}),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,

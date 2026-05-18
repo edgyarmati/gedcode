@@ -1,6 +1,6 @@
 # State
 
 - **Phase**: complete
-- **Active task**: upstream-push-fallback
+- **Active task**: ged-thread-workflow-toggle
 - **Blockers**: none
-- **Next step**: None.
+- **Next step**: Commit completed change.
