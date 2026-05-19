@@ -6,7 +6,6 @@ import { useComposerDraftStore, DraftId } from "../composerDraftStore";
 import { SidebarInset } from "../components/ui/sidebar";
 import { createThreadSelectorAcrossEnvironments } from "../storeSelectors";
 import { useStore } from "../store";
-import { buildThreadRouteParams } from "../threadRoutes";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
@@ -20,38 +19,39 @@ function DraftChatThreadRouteView() {
     ),
   );
   const serverThreadStarted = threadHasStarted(serverThread);
-  const canonicalThreadRef = useMemo(
-    () =>
-      draftSession?.promotedTo
-        ? serverThreadStarted
-          ? draftSession.promotedTo
-          : null
-        : serverThread
-          ? {
-              environmentId: serverThread.environmentId,
-              threadId: serverThread.id,
-            }
-          : null,
-    [draftSession?.promotedTo, serverThread, serverThreadStarted],
-  );
+  const canonicalThreadRef = draftSession?.promotedTo
+    ? serverThreadStarted
+      ? draftSession.promotedTo
+      : null
+    : serverThread
+      ? {
+          environmentId: serverThread.environmentId,
+          threadId: serverThread.id,
+        }
+      : null;
+  const canonicalEnvironmentId = canonicalThreadRef?.environmentId ?? null;
+  const canonicalThreadId = canonicalThreadRef?.threadId ?? null;
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalEnvironmentId || !canonicalThreadId) {
       return;
     }
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(canonicalThreadRef),
+      params: {
+        environmentId: canonicalEnvironmentId,
+        threadId: canonicalThreadId,
+      },
       replace: true,
     });
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalEnvironmentId, canonicalThreadId, navigate]);
 
   useEffect(() => {
-    if (draftSession || canonicalThreadRef) {
+    if (draftSession || canonicalEnvironmentId || canonicalThreadId) {
       return;
     }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate]);
+  }, [canonicalEnvironmentId, canonicalThreadId, draftSession, navigate]);
 
   if (canonicalThreadRef) {
     return (

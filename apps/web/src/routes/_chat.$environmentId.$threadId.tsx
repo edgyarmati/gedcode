@@ -20,7 +20,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
-import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
+import { resolveThreadRouteRef } from "../threadRoutes";
 import { RightPanelSheet } from "../components/RightPanelSheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
@@ -140,9 +140,11 @@ const DiffPanelInlineSidebar = (props: {
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
-  const threadRef = Route.useParams({
-    select: (params) => resolveThreadRouteRef(params),
-  });
+  const { environmentId, threadId } = Route.useParams();
+  const threadRef = useMemo(
+    () => resolveThreadRouteRef({ environmentId, threadId }),
+    [environmentId, threadId],
+  );
   const search = Route.useSearch();
   const bootstrapComplete = useStore(
     (store) => selectEnvironmentState(store, threadRef?.environmentId ?? null).bootstrapComplete,
@@ -158,18 +160,17 @@ function ChatThreadRouteView() {
   const draftThread = useComposerDraftStore((store) =>
     threadRef ? store.getDraftThreadByRef(threadRef) : null,
   );
-  const environmentHasDraftThreads = useComposerDraftStore((store) => {
-    if (!threadRef) {
-      return false;
-    }
-    return store.hasDraftThreadsInEnvironment(threadRef.environmentId);
-  });
+  const promotedEnvironmentId = draftThread?.promotedTo?.environmentId ?? null;
+  const promotedThreadId = draftThread?.promotedTo?.threadId ?? null;
+  const environmentHasDraftThreads = useComposerDraftStore((store) =>
+    threadRef ? store.hasDraftThreadsInEnvironment(threadRef.environmentId) : false,
+  );
   const routeThreadExists = threadExists || draftThreadExists;
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
-  const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
+  const currentThreadKey = `${environmentId}:${threadId}`;
   const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
     threadKey: currentThreadKey,
     hasOpenedDiff: diffOpen,
@@ -190,29 +191,23 @@ function ChatThreadRouteView() {
     });
   }, [currentThreadKey]);
   const closeDiff = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
+      params: { environmentId, threadId },
       search: { diff: undefined },
     });
-  }, [navigate, threadRef]);
+  }, [environmentId, navigate, threadId]);
   const openDiff = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
     markDiffOpened();
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
+      params: { environmentId, threadId },
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
         return { ...rest, diff: "1" };
       },
     });
-  }, [markDiffOpened, navigate, threadRef]);
+  }, [environmentId, markDiffOpened, navigate, threadId]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -222,14 +217,29 @@ function ChatThreadRouteView() {
     if (!routeThreadExists && environmentHasAnyThreads) {
       void navigate({ to: "/", replace: true });
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, routeThreadExists, threadRef]);
+  }, [
+    bootstrapComplete,
+    environmentHasAnyThreads,
+    environmentId,
+    navigate,
+    routeThreadExists,
+    threadId,
+    threadRef,
+  ]);
 
   useEffect(() => {
-    if (!threadRef || !serverThreadStarted || !draftThread?.promotedTo) {
+    if (!threadRef || !serverThreadStarted || !promotedEnvironmentId || !promotedThreadId) {
       return;
     }
     finalizePromotedDraftThreadByRef(threadRef);
-  }, [draftThread?.promotedTo, serverThreadStarted, threadRef]);
+  }, [
+    environmentId,
+    promotedEnvironmentId,
+    promotedThreadId,
+    serverThreadStarted,
+    threadId,
+    threadRef,
+  ]);
 
   if (!threadRef || !bootstrapComplete || !routeThreadExists) {
     return null;
