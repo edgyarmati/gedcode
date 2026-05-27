@@ -1,36 +1,43 @@
 # Tests
 
-## Plan
+## Current Status
 
-No source implementation has started yet. For the initial implementation slice,
-use focused tests before the required repo-wide checks.
+No source implementation for the revised `GedRoleInvocationService` slice has been applied yet.
 
-## Initial Slice Test Coverage
+Existing evidence:
 
-- Service test: invoking `ged-explorer` creates a child thread with copied
-  project/worktree/model context and `gedWorkflowEnabled: false`.
-- Activity test: parent receives an explorer-started activity; child receives a
-  role-child activity referencing the parent and invocation id.
-- Provider reactor integration test: child `thread.turn.start` routes through
-  `ProviderInstanceId` and calls `sendTurn` with `gedWorkflowEnabled: false`.
-- Safety test: child uses constrained runtime mode instead of inheriting a
-  full-access parent mode.
-- Prompt test: explorer prompt states read-only role boundaries and required
-  output shape.
-- Later durable-state test: repeated invocation id does not create duplicate
-  child threads once invocation persistence exists.
+- Explorer confirmed orchestration, provider reactor, Ged guard bypass, and activity surfaces are available.
+- Reviewer blockers addressed in the revised plan: explicit invocation entry point, stale state, invocation id semantics, prompt contract, exact runtime mode, context resolution, and partial-failure behavior.
 
-## Required Completion Checks
+## Prompt Builder Tests
 
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
-- Targeted `bun run test ...` suites for changed server/contracts/web packages.
+Target: `apps/server/src/gedWorkflow/GedExplorerPrompt.test.ts`
 
-## Evidence
+Checks: prompt identifies `ged-explorer`, includes invocation/thread/project/worktree/model context, states read-only boundaries, forbids source/`.ged`/artifact writes and commits, requires plain text not JSON, and includes exact output sections in order.
 
-- `bun fmt` passed: oxfmt completed on 1123 files.
-- `bun lint` passed with 0 errors and 10 existing warnings.
-- `bun typecheck` passed across all 14 Turbo packages.
-- Read-only verifier reviewed the final planning diff and found no blockers.
-- Source implementation is pending user approval of the initial design.
+## Service Unit Tests
+
+Target: `apps/server/src/gedWorkflow/Layers/GedRoleInvocationService.test.ts`
+
+Success checks: child thread has copied parent context/model selection, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`; child turn has prompt output, no attachments, copied model selection, and `gedWorkflowEnabled: false`; parent/child activities have expected kinds and payloads.
+
+Failure checks: unsupported role, invalid `invocationId`, blank request, missing parent, and missing project fail before dispatch; null branch/worktree copy through; partial dispatch failures stop before unsafe later steps and attempt best-effort failure activity where applicable.
+
+## Provider Reactor Integration Test
+
+Target: existing or new server integration test around `ProviderCommandReactor`.
+
+Checks: service-created child turn flows through orchestration, provider session/sendTurn receive copied model instance, cwd/runtime mode are correct, and Ged workflow prompt suffix is not injected.
+
+## Required Commands
+
+```sh
+cd apps/server && bun run test src/gedWorkflow/GedExplorerPrompt.test.ts
+cd apps/server && bun run test src/gedWorkflow/Layers/GedRoleInvocationService.test.ts
+cd apps/server && bun run test src/orchestration/Layers/ProviderCommandReactor.test.ts
+bun fmt
+bun lint
+bun typecheck
+```
+
+Use `bun run test`, never `bun test`.

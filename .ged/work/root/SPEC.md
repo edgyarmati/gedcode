@@ -2,112 +2,94 @@
 
 ## Goal
 
-Design the first implementation slice for a Ged-owned workflow orchestrator in
-gedcode.
+Implement the first bounded Ged workflow orchestration slice: a server-side `GedRoleInvocationService` that can explicitly invoke one read-oriented child role, `ged-explorer`, through the existing orchestration engine.
 
-Gedcode should own the workflow lifecycle end to end: classification,
-clarification, role invocation, planning artifacts, checkpoint provenance,
-guard decisions, verifier invalidation, and eventual commits. Harnesses such as
-Codex, Claude, and a future Pi provider should be execution backends for
-standalone role threads, not owners of the workflow.
+This slice proves parent/child role-thread dispatch, provider-instance routing, workflow-recursion prevention, activity-based linkage, and prompt contract shape without adding a user-facing websocket/native API or automatic parent-turn interception.
 
-## Users
+## Scope
 
-- A gedcode user running normal chat threads who wants stronger agentic workflow
-  guarantees without depending only on prompt instructions.
-- Maintainers extending gedcode providers and orchestration without coupling Ged
-  workflow behavior to a single harness.
+In scope:
 
-## Current Direction
+- Add `GedRoleInvocationService` under `apps/server/src/gedWorkflow`.
+- Support exactly one role: `ged-explorer`.
+- Keep the entry point server-internal and test-only for this slice; no websocket/native/web/contracts API.
+- Require caller-supplied `invocationId`; the service does not generate one yet.
+- Create a child thread and start one child turn via orchestration commands.
+- Copy parent `projectId`, `branch`, `worktreePath`, and exact `modelSelection`, including `instanceId` and options.
+- Force child safety settings: `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false` on child thread and turn.
+- Link parent and child only through existing `thread.activity.append` activities.
+- Define a server-side `ged-explorer` prompt builder with fixed plain-text output sections.
 
-Add a server-side Ged role invocation/orchestration scaffold that can launch a
-single read-oriented `ged-explorer` child thread through existing orchestration
-commands. This first slice proves the parent/child thread model and provider
-routing without yet intercepting all normal user turns.
+Out of scope: user-facing API/UI changes, new contracts schemas, durable invocation store, automatic parent-turn interception, role completion tracking, output parsing, artifact writes, provider-level sandboxing, Pi integration, planner/verifier roles, and worker execution.
 
-The child role thread should:
+## Service API
 
-- be created through the orchestration engine, not by calling provider adapters
-  directly;
-- copy parent project/worktree/model context where available;
-- copy parent `modelSelection`, including its `instanceId`, so routing stays
-  provider-instance based without inventing a parallel routing field;
-- set `gedWorkflowEnabled: false` to avoid recursive Ged prompt injection;
-- create the child thread with a constrained runtime mode such as
-  `approval-required` before starting its turn;
-- emit parent and child activities so users can see what happened through
-  existing timeline surfaces;
-- have a stable `invocationId` even before the full durable invocation store is
-  built.
+Add `GedRoleInvocationService.ts`, `GedRoleInvocationServiceLive.ts`, and `GedExplorerPrompt.ts` under `apps/server/src/gedWorkflow`.
 
-## Integration Points
+Initial input/result shape:
 
-- `packages/contracts/src/orchestration.ts`: existing thread command/event
-  surface for thread creation, turn start, activities, checkpoints, and
-  projected thread metadata.
-- `apps/server/src/orchestration/Layers/OrchestrationEngine.ts`: event-sourced
-  command bus. Ged role invocations should dispatch normal commands here.
-- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`: existing
-  bridge from `thread.turn-start-requested` to provider sessions and
-  `ProviderService.sendTurn`.
-- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`: existing
-  ingestion path for provider messages, tool events, diffs, plans, activities,
-  and runtime failures.
-- `apps/server/src/provider/Services/ProviderService.ts`: provider facade. It
-  should remain the runtime backend, preferably reached through orchestration.
-- `packages/contracts/src/providerInstance.ts`: role invocation routing should
-  preserve the parent `ModelSelection.instanceId` instead of hard-coded provider
-  kinds.
-- `apps/server/src/gedWorkflow/*`: current prompt/guard/checkpoint layer. The
-  orchestrator should live here, but child role turns should bypass recursive
-  Ged workflow injection.
-- `packages/ged-workflow/*`: shared checkpoint and prompt vocabulary. Later
-  slices should upgrade this package to gedpi-like v3 checkpoint semantics.
-- `apps/web/src/components/chat/WorkflowStatusBadge.tsx` and store/types:
-  enough for initial status via existing activities; first-class invocation UI
-  can wait.
+```ts
+export type GedRole = "ged-explorer";
 
-## Key Decisions
+export interface GedRoleInvocationInput {
+  readonly role: "ged-explorer";
+  readonly invocationId: string;
+  readonly parentThreadId: ThreadId;
+  readonly request: string;
+}
 
-- The first implementation should be explicit or feature-gated. It must not
-  automatically listen to every parent `thread.turn-start-requested` yet, because
-  that would run the parent provider turn and child role turn in parallel.
-- Read-only is provider-dependent in this repo today. The first slice should use
-  constrained runtime mode and role prompts as a safety baseline, then defer hard
-  provider-level read-only guarantees to later provider capability work.
-- Pi should not be the initial core dependency. The orchestrator should be
-  provider-agnostic; Pi can become another provider/harness adapter after the
-  invocation contract is stable.
+export interface GedRoleInvocationResult {
+  readonly role: "ged-explorer";
+  readonly invocationId: string;
+  readonly parentThreadId: ThreadId;
+  readonly childThreadId: ThreadId;
+}
+```
 
-## Non-Goals For The First Slice
+`invocationId` is required from caller, validated before dispatch with the same safe alphabet used by derived ids (`[A-Za-z0-9_-]`), and used to derive deterministic child thread id, command ids, and activity ids for testability and best-effort retry behavior.
 
-- Full classify/clarify/plan/verify/commit state machine.
-- Automatic interception or replacement of normal parent turns.
-- Durable checkpoint schema replacement.
-- Parsing explorer output into structured `.ged` artifacts.
-- Role-specific model settings UI.
-- Pi provider integration.
-- Worker execution.
-- Child thread cleanup/archive policy.
+## Context Resolution
 
-## Open Questions
+Inputs do not override parent context.
 
-- Should role child threads be visible in the sidebar, grouped under the parent,
-  or hidden after a durable invocation projection exists?
-- Should role provider/model selection initially copy the parent model or use a
-  dedicated Ged role setting?
-- What is the final output contract for `ged-explorer`: final assistant text,
-  JSON, `.ged` artifact, or durable invocation result?
-- On parent interrupt, should active role children stop, detach, or finish?
-- What restart recovery is required if the server dies after child thread
-  creation but before child turn start?
+1. Resolve parent thread detail by `parentThreadId`.
+2. Resolve parent project shell by parent `projectId`.
+3. Copy parent `projectId`, `modelSelection`, `branch`, and `worktreePath`.
+4. Use project shell only for prompt context and existing provider cwd fallback.
+5. Effective cwd for prompt display is `parent.worktreePath ?? project.workspaceRoot`.
 
-## Acceptance Criteria For Initial Plan Work
+Fail before dispatch with no side effects for unsupported role, invalid `invocationId`, blank request, missing parent thread, missing project, or malformed/missing parent model selection.
 
-- A new branch exists for the design.
-- `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md` describe the initial
-  architecture slice.
-- The first slice is bounded to explicit/test-only or feature-gated
-  `ged-explorer` invocation.
-- Planning records identify integration points, risks, tests, and out-of-scope
-  work.
+## Command Sequence
+
+Dispatch through `OrchestrationEngineService` only:
+
+1. `thread.create` child with deterministic `threadId`, copied context/model selection, title `Ged Explorer`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
+2. Parent `thread.activity.append` kind `ged.role-invocation.started` with invocation/parent/child/project/worktree payload.
+3. Child `thread.activity.append` kind `ged.role-invocation.child` with invocation/parent/child/project payload.
+4. Child `thread.turn.start` with prompt-builder text, no attachments, copied `modelSelection`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
+
+## Explorer Prompt Contract
+
+`buildGedExplorerPrompt` must tell the child role that it is read-only, must inspect and report without modifying files, must not write source files, `.ged` files, plans, tests, commits, or artifacts, and must avoid mutating commands.
+
+The final answer is plain text, not JSON, with exact top-level sections in order: `## Summary`, `## Scope Inspected`, `## Findings`, `## Evidence`, `## Risks And Constraints`, `## Open Questions`, `## Recommended Follow-Up Checks`.
+
+The service does not parse the output.
+
+## Partial-Failure Behavior
+
+- Input/context failures happen before dispatch and leave no side effects.
+- After each successful step, continue to the next step.
+- On dispatch failure, stop immediately.
+- Do not rollback/delete child threads; partial state remains for auditability.
+- Attempt best-effort `ged.role-invocation.failed` activity on parent and child when applicable.
+- Failure activity errors are logged/ignored and must not mask the original error.
+- Once child turn start is accepted, the service returns success; provider/runtime failures are handled by existing ingestion paths.
+
+## Risks
+
+- Read-only is prompt/runtime-mode constrained, not provider-sandbox guaranteed.
+- Partial multi-command state can exist until durable invocation storage exists.
+- Child threads are normal visible threads until a grouping policy exists.
+- Activities are the only parent/child linkage in this slice.
