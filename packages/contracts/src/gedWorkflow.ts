@@ -1,6 +1,12 @@
 import * as Schema from "effect/Schema";
 
-export const GED_SUBAGENT_ROLES = ["ged-explorer"] as const;
+export const GED_SUBAGENT_ROLES = [
+  "ged-explorer",
+  "ged-planner",
+  "ged-plan-reviewer",
+  "ged-verifier",
+  "ged-worker",
+] as const;
 export const GedSubagentRole = Schema.Literals(GED_SUBAGENT_ROLES);
 export type GedSubagentRole = typeof GedSubagentRole.Type;
 

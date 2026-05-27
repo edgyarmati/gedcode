@@ -92,6 +92,20 @@ describe("ged model selection resolver", () => {
     ).toBe(projectRole);
   });
 
+  it("resolves expanded role ids with the same precedence", () => {
+    expect(
+      resolveGedRoleModelSelection({
+        role: "ged-verifier",
+        projectRoleModelSelections: { "ged-verifier": projectRole },
+        globalRoleModelSelections: { "ged-verifier": globalRole },
+        parentThreadModelSelection: parent,
+        projectDefaultModelSelection: projectMain,
+        globalMainModelSelection: globalMain,
+        fallbackModelSelection: fallback,
+      }),
+    ).toBe(projectRole);
+  });
+
   it("updates and clears role maps immutably", () => {
     const original = { "ged-explorer": globalRole };
     const set = setGedRoleModelSelection(original, "ged-explorer", projectRole);
@@ -100,5 +114,11 @@ describe("ged model selection resolver", () => {
     const cleared = clearGedRoleModelSelection(set, "ged-explorer");
     expect(cleared).toEqual({});
     expect(set).toEqual({ "ged-explorer": projectRole });
+  });
+
+  it("updates and clears expanded role ids", () => {
+    const set = setGedRoleModelSelection({}, "ged-worker", projectRole);
+    expect(set).toEqual({ "ged-worker": projectRole });
+    expect(clearGedRoleModelSelection(set, "ged-worker")).toEqual({});
   });
 });

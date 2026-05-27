@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type EditorId,
+  type GedSubagentRole,
   type GedWorkflowState,
   type ModelSelection,
   type ProjectScript,
@@ -31,6 +32,7 @@ import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { WorkflowStatusBadge } from "./WorkflowStatusBadge";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
+import { GED_ROLE_DISPLAY } from "../../gedWorkflowRoles";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import type { ModelEsque } from "./providerIconUtils";
 
@@ -54,9 +56,9 @@ interface ChatHeaderProps {
   diffOpen: boolean;
   workflowState: GedWorkflowState | null;
   projectGedMainModelSelection: ModelSelection | null;
-  projectGedExplorerModelSelection: ModelSelection | null;
   resolvedGedMainModelSelection: ModelSelection | null;
-  resolvedGedExplorerModelSelection: ModelSelection | null;
+  projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
+  resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
   gedModelInstanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   gedModelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -64,7 +66,10 @@ interface ChatHeaderProps {
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onSetProjectGedMainModel: (selection: ModelSelection | null) => Promise<void> | void;
-  onSetProjectGedExplorerModel: (selection: ModelSelection | null) => Promise<void> | void;
+  onSetProjectGedRoleModel: (
+    role: GedSubagentRole,
+    selection: ModelSelection | null,
+  ) => Promise<void> | void;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
 }
@@ -101,9 +106,9 @@ export const ChatHeader = memo(function ChatHeader({
   diffOpen,
   workflowState,
   projectGedMainModelSelection,
-  projectGedExplorerModelSelection,
   resolvedGedMainModelSelection,
-  resolvedGedExplorerModelSelection,
+  projectGedRoleModelSelections,
+  resolvedGedRoleModelSelections,
   gedModelInstanceEntries,
   gedModelOptionsByInstance,
   onRunProjectScript,
@@ -111,7 +116,7 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onSetProjectGedMainModel,
-  onSetProjectGedExplorerModel,
+  onSetProjectGedRoleModel,
   onToggleTerminal,
   onToggleDiff,
 }: ChatHeaderProps) {
@@ -163,20 +168,18 @@ export const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName &&
-          resolvedGedMainModelSelection &&
-          resolvedGedExplorerModelSelection && (
-            <ProjectGedModelSettingsControl
-              projectGedMainModelSelection={projectGedMainModelSelection}
-              projectGedExplorerModelSelection={projectGedExplorerModelSelection}
-              resolvedGedMainModelSelection={resolvedGedMainModelSelection}
-              resolvedGedExplorerModelSelection={resolvedGedExplorerModelSelection}
-              instanceEntries={gedModelInstanceEntries}
-              modelOptionsByInstance={gedModelOptionsByInstance}
-              onSetProjectGedMainModel={onSetProjectGedMainModel}
-              onSetProjectGedExplorerModel={onSetProjectGedExplorerModel}
-            />
-          )}
+        {activeProjectName && resolvedGedMainModelSelection && (
+          <ProjectGedModelSettingsControl
+            projectGedMainModelSelection={projectGedMainModelSelection}
+            resolvedGedMainModelSelection={resolvedGedMainModelSelection}
+            projectGedRoleModelSelections={projectGedRoleModelSelections}
+            resolvedGedRoleModelSelections={resolvedGedRoleModelSelections}
+            instanceEntries={gedModelInstanceEntries}
+            modelOptionsByInstance={gedModelOptionsByInstance}
+            onSetProjectGedMainModel={onSetProjectGedMainModel}
+            onSetProjectGedRoleModel={onSetProjectGedRoleModel}
+          />
+        )}
         {activeProjectName && (
           <GitActionsControl
             gitCwd={gitCwd}
@@ -239,22 +242,25 @@ export const ChatHeader = memo(function ChatHeader({
 
 function ProjectGedModelSettingsControl({
   projectGedMainModelSelection,
-  projectGedExplorerModelSelection,
   resolvedGedMainModelSelection,
-  resolvedGedExplorerModelSelection,
+  projectGedRoleModelSelections,
+  resolvedGedRoleModelSelections,
   instanceEntries,
   modelOptionsByInstance,
   onSetProjectGedMainModel,
-  onSetProjectGedExplorerModel,
+  onSetProjectGedRoleModel,
 }: {
   projectGedMainModelSelection: ModelSelection | null;
-  projectGedExplorerModelSelection: ModelSelection | null;
   resolvedGedMainModelSelection: ModelSelection;
-  resolvedGedExplorerModelSelection: ModelSelection;
+  projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
+  resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onSetProjectGedMainModel: (selection: ModelSelection | null) => Promise<void> | void;
-  onSetProjectGedExplorerModel: (selection: ModelSelection | null) => Promise<void> | void;
+  onSetProjectGedRoleModel: (
+    role: GedSubagentRole,
+    selection: ModelSelection | null,
+  ) => Promise<void> | void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -276,8 +282,8 @@ function ProjectGedModelSettingsControl({
           <DialogHeader>
             <DialogTitle>Project Ged models</DialogTitle>
             <DialogDescription>
-              Override global Ged provider/model defaults for this project. Reset a row to inherit
-              the global setting.
+              Override global Ged provider/model defaults for this project. Explorer is runtime
+              active now; other roles are configuration for upcoming orchestration slices.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -291,16 +297,30 @@ function ProjectGedModelSettingsControl({
               onSelect={(instanceId, model) => onSetProjectGedMainModel({ instanceId, model })}
               onReset={() => onSetProjectGedMainModel(null)}
             />
-            <ProjectGedModelRow
-              title="Ged explorer child thread"
-              description="Used for ged-explorer singular-task child threads in this project."
-              hasOverride={projectGedExplorerModelSelection !== null}
-              selection={projectGedExplorerModelSelection ?? resolvedGedExplorerModelSelection}
-              instanceEntries={instanceEntries}
-              modelOptionsByInstance={modelOptionsByInstance}
-              onSelect={(instanceId, model) => onSetProjectGedExplorerModel({ instanceId, model })}
-              onReset={() => onSetProjectGedExplorerModel(null)}
-            />
+            {GED_ROLE_DISPLAY.map((roleMeta) => {
+              const resolved = resolvedGedRoleModelSelections[roleMeta.role];
+              if (!resolved) return null;
+              const override = projectGedRoleModelSelections[roleMeta.role] ?? null;
+              return (
+                <ProjectGedModelRow
+                  key={roleMeta.role}
+                  title={`Ged ${roleMeta.label.toLowerCase()}`}
+                  description={`${roleMeta.description} ${
+                    roleMeta.runtimeStatus === "active"
+                      ? "Runtime active now."
+                      : "Configuration-only for now."
+                  }`}
+                  hasOverride={override !== null}
+                  selection={override ?? resolved}
+                  instanceEntries={instanceEntries}
+                  modelOptionsByInstance={modelOptionsByInstance}
+                  onSelect={(instanceId, model) =>
+                    onSetProjectGedRoleModel(roleMeta.role, { instanceId, model })
+                  }
+                  onReset={() => onSetProjectGedRoleModel(roleMeta.role, null)}
+                />
+              );
+            })}
           </div>
         </DialogPanel>
       </DialogPopup>

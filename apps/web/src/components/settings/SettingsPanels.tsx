@@ -30,6 +30,7 @@ import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+import { GED_ROLE_DISPLAY } from "../../gedWorkflowRoles";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
   setDesktopUpdateStateQueryData,
@@ -92,6 +93,12 @@ const THEME_OPTIONS = [
     label: "Dark",
   },
 ] as const;
+
+const GED_CRITIQUE_MODE_LABELS = {
+  off: "Off",
+  "risk-based": "Risk-based",
+  always: "Always",
+} as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -516,10 +523,7 @@ export function GeneralSettingsPanel() {
 
   const gedMainModelSelection =
     settings.gedModelSelections.mainThread ?? settings.textGenerationModelSelection;
-  const gedExplorerModelSelection =
-    settings.gedModelSelections.roles["ged-explorer"] ?? gedMainModelSelection;
   const isGedMainModelDirty = settings.gedModelSelections.mainThread !== null;
-  const isGedExplorerModelDirty = settings.gedModelSelections.roles["ged-explorer"] !== undefined;
 
   return (
     <SettingsPageContainer>
@@ -676,123 +680,257 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          title="Default Ged workflow"
-          description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
-          resetAction={
-            settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
-              <SettingResetButton
-                label="Ged workflow"
-                onClick={() =>
-                  updateSettings({
-                    gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
-                  })
+        <SettingsSection title="Ged orchestration">
+          <SettingsRow
+            title="Default Ged workflow"
+            description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
+            resetAction={
+              settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
+                <SettingResetButton
+                  label="Ged workflow"
+                  onClick={() =>
+                    updateSettings({
+                      gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedWorkflowEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedWorkflowEnabled: Boolean(checked) })
                 }
+                aria-label="Enable Ged workflow"
               />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.gedWorkflowEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ gedWorkflowEnabled: Boolean(checked) })
-              }
-              aria-label="Enable Ged workflow"
-            />
-          }
-        />
+            }
+          />
 
-        <SettingsRow
-          title="Ged main thread model"
-          description="Default provider/model for new Ged parent threads when a project does not override it."
-          resetAction={
-            isGedMainModelDirty ? (
-              <SettingResetButton
-                label="Ged main thread model"
-                onClick={() =>
+          <SettingsRow
+            title="Subagents"
+            description="Allow Ged role threads such as explorer to be launched by the workflow harness."
+            resetAction={
+              settings.gedSubagentsEnabled !== DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled ? (
+                <SettingResetButton
+                  label="Ged subagents"
+                  onClick={() =>
+                    updateSettings({
+                      gedSubagentsEnabled: DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedSubagentsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedSubagentsEnabled: Boolean(checked) })
+                }
+                aria-label="Enable Ged subagents"
+              />
+            }
+          />
+
+          <SettingsRow
+            title="Intercom bridge"
+            description="Persist the inter-agent bridge preference for upcoming multi-role orchestration."
+            resetAction={
+              settings.gedIntercomBridgeEnabled !==
+              DEFAULT_UNIFIED_SETTINGS.gedIntercomBridgeEnabled ? (
+                <SettingResetButton
+                  label="Ged intercom bridge"
+                  onClick={() =>
+                    updateSettings({
+                      gedIntercomBridgeEnabled: DEFAULT_UNIFIED_SETTINGS.gedIntercomBridgeEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedIntercomBridgeEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedIntercomBridgeEnabled: Boolean(checked) })
+                }
+                aria-label="Enable Ged intercom bridge"
+              />
+            }
+          />
+
+          <SettingsRow
+            title="Critique mode"
+            description="Controls when plan review should run in upcoming orchestration slices."
+            resetAction={
+              settings.gedCritiqueMode !== DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode ? (
+                <SettingResetButton
+                  label="Ged critique mode"
+                  onClick={() =>
+                    updateSettings({ gedCritiqueMode: DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.gedCritiqueMode}
+                onValueChange={(value) => {
+                  if (value === "off" || value === "risk-based" || value === "always") {
+                    updateSettings({ gedCritiqueMode: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="Ged critique mode">
+                  <SelectValue>{GED_CRITIQUE_MODE_LABELS[settings.gedCritiqueMode]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="off">
+                    {GED_CRITIQUE_MODE_LABELS.off}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="risk-based">
+                    {GED_CRITIQUE_MODE_LABELS["risk-based"]}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="always">
+                    {GED_CRITIQUE_MODE_LABELS.always}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+
+          <SettingsRow
+            title="Ged main thread model"
+            description="Default provider/model for new Ged parent threads when a project does not override it."
+            resetAction={
+              isGedMainModelDirty ? (
+                <SettingResetButton
+                  label="Ged main thread model"
+                  onClick={() =>
+                    updateSettings({
+                      gedModelSelections: {
+                        mainThread: null,
+                        roles: settings.gedModelSelections.roles,
+                      },
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <ProviderModelPicker
+                activeInstanceId={gedMainModelSelection.instanceId}
+                model={gedMainModelSelection.model}
+                lockedProvider={null}
+                instanceEntries={gitModelInstanceEntries}
+                modelOptionsByInstance={getCustomModelOptionsByInstance(
+                  settings,
+                  serverProviders,
+                  gedMainModelSelection.instanceId,
+                  gedMainModelSelection.model,
+                )}
+                triggerVariant="outline"
+                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                onInstanceModelChange={(instanceId, model) =>
                   updateSettings({
                     gedModelSelections: {
-                      mainThread: null,
+                      mainThread: createModelSelection(instanceId, model),
                       roles: settings.gedModelSelections.roles,
                     },
                   })
                 }
               />
-            ) : null
-          }
-          control={
-            <ProviderModelPicker
-              activeInstanceId={gedMainModelSelection.instanceId}
-              model={gedMainModelSelection.model}
-              lockedProvider={null}
-              instanceEntries={gitModelInstanceEntries}
-              modelOptionsByInstance={getCustomModelOptionsByInstance(
-                settings,
-                serverProviders,
-                gedMainModelSelection.instanceId,
-                gedMainModelSelection.model,
-              )}
-              triggerVariant="outline"
-              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-              onInstanceModelChange={(instanceId, model) =>
-                updateSettings({
-                  gedModelSelections: {
-                    mainThread: createModelSelection(instanceId, model),
-                    roles: settings.gedModelSelections.roles,
-                  },
-                })
-              }
-            />
-          }
-        />
+            }
+          />
 
-        <SettingsRow
-          title="Ged explorer model"
-          description="Optional provider/model override for ged-explorer child threads. Clear to inherit the parent thread model at invocation time; the picker shows the main-thread fallback."
-          resetAction={
-            isGedExplorerModelDirty ? (
-              <SettingResetButton
-                label="Ged explorer model"
-                onClick={() => {
-                  const { "ged-explorer": _removed, ...roles } = settings.gedModelSelections.roles;
-                  updateSettings({
-                    gedModelSelections: {
-                      mainThread: settings.gedModelSelections.mainThread,
-                      roles,
-                    },
-                  });
-                }}
+          {GED_ROLE_DISPLAY.map((roleMeta) => {
+            const roleSelection =
+              settings.gedModelSelections.roles[roleMeta.role] ?? gedMainModelSelection;
+            const hasRoleModelOverride =
+              settings.gedModelSelections.roles[roleMeta.role] !== undefined;
+            const roleEnabled = settings.gedRoleSettings[roleMeta.role]?.enabled ?? true;
+            const nextRoleSettings = (enabled: boolean) => ({
+              ...Object.fromEntries(
+                GED_ROLE_DISPLAY.map((meta) => [
+                  meta.role,
+                  { enabled: settings.gedRoleSettings[meta.role]?.enabled ?? true },
+                ]),
+              ),
+              [roleMeta.role]: { enabled },
+            });
+
+            return (
+              <SettingsRow
+                key={roleMeta.role}
+                title={`Ged ${roleMeta.label.toLowerCase()}`}
+                description={`${roleMeta.description} ${
+                  roleMeta.runtimeStatus === "active"
+                    ? "Runtime active now."
+                    : "Configuration-only until this role runtime lands."
+                }`}
+                resetAction={
+                  hasRoleModelOverride ? (
+                    <SettingResetButton
+                      label={`Ged ${roleMeta.label} model`}
+                      onClick={() => {
+                        const { [roleMeta.role]: _removed, ...roles } =
+                          settings.gedModelSelections.roles;
+                        updateSettings({
+                          gedModelSelections: {
+                            mainThread: settings.gedModelSelections.mainThread,
+                            roles,
+                          },
+                        });
+                      }}
+                    />
+                  ) : null
+                }
+                control={
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                      <span>{roleEnabled ? "enabled" : "disabled"}</span>
+                      <Switch
+                        checked={roleEnabled}
+                        onCheckedChange={(checked) =>
+                          updateSettings({
+                            gedRoleSettings: nextRoleSettings(Boolean(checked)),
+                          })
+                        }
+                        aria-label={`Enable Ged ${roleMeta.label}`}
+                      />
+                    </div>
+                    <ProviderModelPicker
+                      activeInstanceId={roleSelection.instanceId}
+                      model={roleSelection.model}
+                      lockedProvider={null}
+                      instanceEntries={gitModelInstanceEntries}
+                      modelOptionsByInstance={getCustomModelOptionsByInstance(
+                        settings,
+                        serverProviders,
+                        roleSelection.instanceId,
+                        roleSelection.model,
+                      )}
+                      triggerVariant="outline"
+                      triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                      onInstanceModelChange={(instanceId, model) =>
+                        updateSettings({
+                          gedModelSelections: {
+                            mainThread: settings.gedModelSelections.mainThread,
+                            roles: {
+                              ...settings.gedModelSelections.roles,
+                              [roleMeta.role]: createModelSelection(instanceId, model),
+                            },
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                }
               />
-            ) : null
-          }
-          control={
-            <ProviderModelPicker
-              activeInstanceId={gedExplorerModelSelection.instanceId}
-              model={gedExplorerModelSelection.model}
-              lockedProvider={null}
-              instanceEntries={gitModelInstanceEntries}
-              modelOptionsByInstance={getCustomModelOptionsByInstance(
-                settings,
-                serverProviders,
-                gedExplorerModelSelection.instanceId,
-                gedExplorerModelSelection.model,
-              )}
-              triggerVariant="outline"
-              triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-              onInstanceModelChange={(instanceId, model) =>
-                updateSettings({
-                  gedModelSelections: {
-                    mainThread: settings.gedModelSelections.mainThread,
-                    roles: {
-                      ...settings.gedModelSelections.roles,
-                      "ged-explorer": createModelSelection(instanceId, model),
-                    },
-                  },
-                })
-              }
-            />
-          }
-        />
+            );
+          })}
+        </SettingsSection>
 
         <SettingsRow
           title="Auto-open task panel"

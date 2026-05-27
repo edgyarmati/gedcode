@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { GED_SUBAGENT_ROLES } from "./gedWorkflow.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -347,9 +348,28 @@ export const GedModelSelections = Schema.Struct({
 });
 export type GedModelSelections = typeof GedModelSelections.Type;
 
+export const GedCritiqueMode = Schema.Literals(["off", "risk-based", "always"]);
+export type GedCritiqueMode = typeof GedCritiqueMode.Type;
+
+export const GedRoleSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type GedRoleSettings = typeof GedRoleSettings.Type;
+
+const defaultGedRoleSettings = (): Record<string, GedRoleSettings> =>
+  Object.fromEntries(GED_SUBAGENT_ROLES.map((role) => [role, { enabled: true }]));
+
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   gedWorkflowEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedSubagentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedIntercomBridgeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedCritiqueMode: GedCritiqueMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("risk-based" as const satisfies GedCritiqueMode)),
+  ),
+  gedRoleSettings: Schema.Record(TrimmedNonEmptyString, GedRoleSettings).pipe(
+    Schema.withDecodingDefault(Effect.succeed(defaultGedRoleSettings())),
+  ),
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
@@ -464,6 +484,10 @@ export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
+  gedSubagentsEnabled: Schema.optionalKey(Schema.Boolean),
+  gedIntercomBridgeEnabled: Schema.optionalKey(Schema.Boolean),
+  gedCritiqueMode: Schema.optionalKey(GedCritiqueMode),
+  gedRoleSettings: Schema.optionalKey(Schema.Record(TrimmedNonEmptyString, GedRoleSettings)),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),

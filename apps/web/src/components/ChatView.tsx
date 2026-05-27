@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
+  type GedSubagentRole,
   type GedWorkflowState,
   type MessageId,
   type ModelSelection,
@@ -47,6 +48,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
 import { usePrimaryEnvironmentId } from "../environments/primary";
+import { GED_ROLE_DISPLAY } from "../gedWorkflowRoles";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -1346,19 +1348,24 @@ export default function ChatView(props: ChatViewProps) {
         : null,
     [activeProject, gedModelFallbackSelection, settings.gedModelSelections.mainThread],
   );
-  const resolvedProjectGedExplorerModelSelection = useMemo(
+  const resolvedProjectGedRoleModelSelections = useMemo(
     () =>
       activeProject
-        ? resolveGedRoleModelSelection({
-            role: "ged-explorer",
-            projectRoleModelSelections: activeProject.roleModelSelections,
-            globalRoleModelSelections: settings.gedModelSelections.roles,
-            parentThreadModelSelection: activeThread?.modelSelection,
-            projectDefaultModelSelection: activeProject.defaultModelSelection,
-            globalMainModelSelection: settings.gedModelSelections.mainThread,
-            fallbackModelSelection: gedModelFallbackSelection,
-          })
-        : null,
+        ? Object.fromEntries(
+            GED_ROLE_DISPLAY.map((roleMeta) => [
+              roleMeta.role,
+              resolveGedRoleModelSelection({
+                role: roleMeta.role,
+                projectRoleModelSelections: activeProject.roleModelSelections,
+                globalRoleModelSelections: settings.gedModelSelections.roles,
+                parentThreadModelSelection: activeThread?.modelSelection,
+                projectDefaultModelSelection: activeProject.defaultModelSelection,
+                globalMainModelSelection: settings.gedModelSelections.mainThread,
+                fallbackModelSelection: gedModelFallbackSelection,
+              }),
+            ]),
+          )
+        : {},
     [
       activeProject,
       activeThread?.modelSelection,
@@ -2116,8 +2123,8 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeProject, environmentId],
   );
-  const setProjectGedExplorerModel = useCallback(
-    async (selection: ModelSelection | null) => {
+  const setProjectGedRoleModel = useCallback(
+    async (role: GedSubagentRole, selection: ModelSelection | null) => {
       if (!activeProject) return;
       const api = readEnvironmentApi(environmentId);
       if (!api) return;
@@ -2127,8 +2134,8 @@ export default function ChatView(props: ChatViewProps) {
         commandId: newCommandId(),
         projectId: activeProject.id,
         roleModelSelections: selection
-          ? setGedRoleModelSelection(activeProject.roleModelSelections, "ged-explorer", selection)
-          : clearGedRoleModelSelection(activeProject.roleModelSelections, "ged-explorer"),
+          ? setGedRoleModelSelection(activeProject.roleModelSelections, role, selection)
+          : clearGedRoleModelSelection(activeProject.roleModelSelections, role),
       });
     },
     [activeProject, environmentId],
@@ -3708,11 +3715,9 @@ export default function ChatView(props: ChatViewProps) {
           diffOpen={diffOpen}
           workflowState={workflowState}
           projectGedMainModelSelection={activeProject?.defaultModelSelection ?? null}
-          projectGedExplorerModelSelection={
-            activeProject?.roleModelSelections?.["ged-explorer"] ?? null
-          }
           resolvedGedMainModelSelection={resolvedProjectGedMainModelSelection}
-          resolvedGedExplorerModelSelection={resolvedProjectGedExplorerModelSelection}
+          projectGedRoleModelSelections={activeProject?.roleModelSelections ?? {}}
+          resolvedGedRoleModelSelections={resolvedProjectGedRoleModelSelections}
           gedModelInstanceEntries={gedModelInstanceEntries}
           gedModelOptionsByInstance={gedModelOptionsByInstance}
           onRunProjectScript={runProjectScript}
@@ -3720,7 +3725,7 @@ export default function ChatView(props: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onSetProjectGedMainModel={setProjectGedMainModel}
-          onSetProjectGedExplorerModel={setProjectGedExplorerModel}
+          onSetProjectGedRoleModel={setProjectGedRoleModel}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
         />

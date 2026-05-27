@@ -130,6 +130,16 @@ const make = Effect.gen(function* () {
         .pipe(Effect.flatMap((option) => failIfNone(option, "Parent project not found")));
 
       const settings = yield* settingsService.getSettings;
+      if (!settings.gedSubagentsEnabled) {
+        return yield* new GedRoleInvocationInputError({
+          detail: "Ged subagents are disabled",
+        });
+      }
+      if (settings.gedRoleSettings[input.role]?.enabled === false) {
+        return yield* new GedRoleInvocationInputError({
+          detail: `Ged role is disabled: ${input.role}`,
+        });
+      }
       const roleModelSelection = resolveGedRoleModelSelection({
         role: input.role,
         projectRoleModelSelections: project.roleModelSelections,
@@ -290,7 +300,7 @@ const make = Effect.gen(function* () {
       );
 
       return {
-        role: "ged-explorer",
+        role: input.role,
         invocationId: input.invocationId,
         parentThreadId: input.parentThreadId,
         childThreadId: childId,

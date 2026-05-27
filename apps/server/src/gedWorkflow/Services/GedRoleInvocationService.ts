@@ -1,11 +1,11 @@
-import type { ServerSettingsError, ThreadId } from "@t3tools/contracts";
+import type { GedSubagentRole, ServerSettingsError, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 
 import type { ProjectionRepositoryError } from "../../persistence/Errors.ts";
 
-export type GedRole = "ged-explorer";
+export type GedRole = GedSubagentRole;
 
 export interface GedRoleInvocationInput {
   readonly role: GedRole;

@@ -21,7 +21,10 @@ import {
   type ProjectionSnapshotQueryShape,
 } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { GedRoleInvocationService } from "../Services/GedRoleInvocationService.ts";
+import {
+  GedRoleInvocationService,
+  type GedRoleInvocationInput,
+} from "../Services/GedRoleInvocationService.ts";
 import { GedRoleInvocationServiceLive } from "./GedRoleInvocationServiceLive.ts";
 
 const projectId = ProjectId.make("project-1");
@@ -98,6 +101,7 @@ const runWith = async (
   commands: OrchestrationCommand[],
   projection: ProjectionSnapshotQueryShape = makeProjection(),
   settingsOverrides: Parameters<typeof ServerSettingsService.layerTest>[0] = {},
+  inputOverrides: Partial<GedRoleInvocationInput> = {},
 ) => {
   const engine: OrchestrationEngineShape = {
     readEvents: () => Stream.empty,
@@ -117,6 +121,7 @@ const runWith = async (
         invocationId: "inv-1",
         parentThreadId,
         request: "Inspect orchestration seams",
+        ...inputOverrides,
       });
     }).pipe(
       Effect.provide(
@@ -286,6 +291,32 @@ describe("GedRoleInvocationServiceLive", () => {
           ),
         ),
       ),
+    ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
+    expect(commands).toEqual([]);
+  });
+
+  it("fails before dispatch for unsupported configured roles", async () => {
+    const commands: OrchestrationCommand[] = [];
+    await expect(
+      runWith(commands, makeProjection(), {}, { role: "ged-planner" }),
+    ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
+    expect(commands).toEqual([]);
+  });
+
+  it("does not dispatch explorer when global subagents are disabled", async () => {
+    const commands: OrchestrationCommand[] = [];
+    await expect(
+      runWith(commands, makeProjection(), { gedSubagentsEnabled: false }),
+    ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
+    expect(commands).toEqual([]);
+  });
+
+  it("does not dispatch explorer when the explorer role is disabled", async () => {
+    const commands: OrchestrationCommand[] = [];
+    await expect(
+      runWith(commands, makeProjection(), {
+        gedRoleSettings: { "ged-explorer": { enabled: false } },
+      }),
     ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
     expect(commands).toEqual([]);
   });

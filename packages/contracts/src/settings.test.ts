@@ -16,6 +16,11 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.gedWorkflowEnabled).toBe(true);
+    expect(decoded.gedSubagentsEnabled).toBe(true);
+    expect(decoded.gedIntercomBridgeEnabled).toBe(true);
+    expect(decoded.gedCritiqueMode).toBe("risk-based");
+    expect(decoded.gedRoleSettings["ged-explorer"]?.enabled).toBe(true);
+    expect(decoded.gedRoleSettings["ged-worker"]?.enabled).toBe(true);
     expect(decoded.providerInstances).toEqual({});
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
@@ -67,8 +72,22 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
 describe("ServerSettingsPatch.providerInstances", () => {
   it("accepts Ged workflow toggles", () => {
-    const patch = decodeServerSettingsPatch({ gedWorkflowEnabled: false });
+    const patch = decodeServerSettingsPatch({
+      gedWorkflowEnabled: false,
+      gedSubagentsEnabled: false,
+      gedIntercomBridgeEnabled: false,
+      gedCritiqueMode: "always",
+      gedRoleSettings: { "ged-explorer": { enabled: false } },
+    });
     expect(patch.gedWorkflowEnabled).toBe(false);
+    expect(patch.gedSubagentsEnabled).toBe(false);
+    expect(patch.gedIntercomBridgeEnabled).toBe(false);
+    expect(patch.gedCritiqueMode).toBe("always");
+    expect(patch.gedRoleSettings?.["ged-explorer"]?.enabled).toBe(false);
+  });
+
+  it("rejects invalid Ged critique modes", () => {
+    expect(() => decodeServerSettingsPatch({ gedCritiqueMode: "sometimes" })).toThrow();
   });
 
   it("treats providerInstances as an optional whole-map replacement", () => {
