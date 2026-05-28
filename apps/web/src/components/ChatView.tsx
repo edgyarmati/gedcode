@@ -182,6 +182,7 @@ import {
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
+  resolveComposerModeModelFallback,
   resolveSendEnvMode,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
@@ -809,30 +810,40 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" && serverThread
       ? null
       : ((draftId ? localDraftErrorsByDraftId[draftId] : null) ?? null);
+  const baseFallbackModelSelection = useMemo<ModelSelection>(
+    () => ({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: DEFAULT_MODEL,
+    }),
+    [],
+  );
+  const draftGedWorkflowEnabled = composerGedWorkflowEnabled ?? settings.gedWorkflowEnabled;
   const localDraftThread = useMemo(
     () =>
       draftThread
         ? buildLocalDraftThread(
             threadId,
             draftThread,
-            resolveGedMainThreadModelSelection({
+            resolveComposerModeModelFallback({
+              gedWorkflowEnabled: draftGedWorkflowEnabled,
               projectDefaultModelSelection: fallbackDraftProject?.defaultModelSelection,
-              globalMainModelSelection: settings.gedModelSelections.mainThread,
-              fallbackModelSelection: {
-                instanceId: ProviderInstanceId.make("codex"),
-                model: DEFAULT_MODEL,
-              },
+              gedMainModelSelection: resolveGedMainThreadModelSelection({
+                projectDefaultModelSelection: fallbackDraftProject?.defaultModelSelection,
+                globalMainModelSelection: settings.gedModelSelections.mainThread,
+                fallbackModelSelection: baseFallbackModelSelection,
+              }),
+              fallbackModelSelection: baseFallbackModelSelection,
             }),
-            composerGedWorkflowEnabled ?? settings.gedWorkflowEnabled,
+            draftGedWorkflowEnabled,
             localDraftError,
           )
         : undefined,
     [
       draftThread,
+      baseFallbackModelSelection,
+      draftGedWorkflowEnabled,
       fallbackDraftProject?.defaultModelSelection,
       settings.gedModelSelections.mainThread,
-      composerGedWorkflowEnabled,
-      settings.gedWorkflowEnabled,
       localDraftError,
       threadId,
     ],
@@ -1188,8 +1199,16 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
-    activeProject?.defaultModelSelection?.instanceId ??
-    settings.gedModelSelections.mainThread?.instanceId ??
+    resolveComposerModeModelFallback({
+      gedWorkflowEnabled,
+      projectDefaultModelSelection: activeProject?.defaultModelSelection,
+      gedMainModelSelection: resolveGedMainThreadModelSelection({
+        projectDefaultModelSelection: activeProject?.defaultModelSelection,
+        globalMainModelSelection: settings.gedModelSelections.mainThread,
+        fallbackModelSelection: baseFallbackModelSelection,
+      }),
+      fallbackModelSelection: baseFallbackModelSelection,
+    }).instanceId ??
     null;
   const lockedProvider = deriveLockedProvider({
     thread: activeThread,
@@ -1322,13 +1341,7 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
-  const gedModelFallbackSelection = useMemo<ModelSelection>(
-    () => ({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: DEFAULT_MODEL,
-    }),
-    [],
-  );
+  const gedModelFallbackSelection = baseFallbackModelSelection;
   const gedModelInstanceEntries = useMemo(
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(providerStatuses)),
     [providerStatuses],
@@ -1339,14 +1352,31 @@ export default function ChatView(props: ChatViewProps) {
   );
   const resolvedProjectGedMainModelSelection = useMemo(
     () =>
-      activeProject
-        ? resolveGedMainThreadModelSelection({
-            projectDefaultModelSelection: activeProject.defaultModelSelection,
-            globalMainModelSelection: settings.gedModelSelections.mainThread,
-            fallbackModelSelection: gedModelFallbackSelection,
-          })
-        : null,
-    [activeProject, gedModelFallbackSelection, settings.gedModelSelections.mainThread],
+      resolveGedMainThreadModelSelection({
+        projectDefaultModelSelection: activeProject?.defaultModelSelection,
+        globalMainModelSelection: settings.gedModelSelections.mainThread,
+        fallbackModelSelection: gedModelFallbackSelection,
+      }),
+    [
+      activeProject?.defaultModelSelection,
+      gedModelFallbackSelection,
+      settings.gedModelSelections.mainThread,
+    ],
+  );
+  const composerProjectModelFallback = useMemo(
+    () =>
+      resolveComposerModeModelFallback({
+        gedWorkflowEnabled,
+        projectDefaultModelSelection: activeProject?.defaultModelSelection,
+        gedMainModelSelection: resolvedProjectGedMainModelSelection,
+        fallbackModelSelection: baseFallbackModelSelection,
+      }),
+    [
+      activeProject?.defaultModelSelection,
+      baseFallbackModelSelection,
+      gedWorkflowEnabled,
+      resolvedProjectGedMainModelSelection,
+    ],
   );
   const resolvedProjectGedRoleModelSelections = useMemo(
     () =>
@@ -3833,9 +3863,7 @@ export default function ChatView(props: ChatViewProps) {
                   workflowEnabled={gedWorkflowEnabled}
                   lockedProvider={lockedProvider}
                   providerStatuses={providerStatuses as ServerProvider[]}
-                  activeProjectDefaultModelSelection={
-                    activeProject?.defaultModelSelection ?? settings.gedModelSelections.mainThread
-                  }
+                  activeProjectDefaultModelSelection={composerProjectModelFallback}
                   activeThreadModelSelection={activeThread?.modelSelection}
                   activeThreadActivities={activeThread?.activities}
                   resolvedTheme={resolvedTheme}

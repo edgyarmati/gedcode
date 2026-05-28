@@ -135,6 +135,21 @@ const runtimeModeConfig: Record<
 };
 
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
+const workflowModeConfig = {
+  normal: {
+    label: "Normal thread",
+    shortLabel: "Normal",
+    description: "Run a normal provider thread with the selected model.",
+  },
+  ged: {
+    label: "Ged workflow",
+    shortLabel: "Ged workflow",
+    description:
+      "Use the selected model for the main thread. Subagent role models come from Ged settings.",
+  },
+} as const;
+type WorkflowMode = keyof typeof workflowModeConfig;
+
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
@@ -189,37 +204,49 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
+  const workflowMode: WorkflowMode = props.workflowEnabled ? "ged" : "normal";
+  const workflowModeOption = workflowModeConfig[workflowMode];
 
   return (
     <>
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              className={cn(
-                "shrink-0 whitespace-nowrap px-2 sm:px-3",
-                props.workflowEnabled
-                  ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-                  : "text-muted-foreground/70 hover:text-foreground/80",
-              )}
-              size="sm"
-              type="button"
-              onClick={() => props.onToggleWorkflow(!props.workflowEnabled)}
-            />
+      <Select
+        value={workflowMode}
+        onValueChange={(value) => {
+          if (value === "normal" || value === "ged") {
+            props.onToggleWorkflow(value === "ged");
           }
+        }}
+      >
+        <SelectTrigger
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "font-medium",
+            props.workflowEnabled
+              ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+              : "text-muted-foreground/80 hover:text-foreground/80",
+          )}
+          aria-label="Thread mode"
+          title={workflowModeOption.description}
         >
-          <WorkflowIcon />
-          <span className="sr-only sm:not-sr-only">Ged</span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">
-          {props.workflowEnabled
-            ? "Ged workflow is on: inject prompts and enforce checkpoints"
-            : "Ged workflow is off: run provider turns normally"}
-        </TooltipPopup>
-      </Tooltip>
+          <WorkflowIcon className="size-4" />
+          <SelectValue>{workflowModeOption.shortLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectPopup alignItemWithTrigger={false}>
+          {Object.entries(workflowModeConfig).map(([mode, option]) => (
+            <SelectItem key={mode} value={mode} className="min-w-72 py-2">
+              <div className="grid min-w-0 gap-0.5">
+                <span className="font-medium text-foreground">{option.label}</span>
+                <span className="text-muted-foreground text-xs leading-4">
+                  {option.description}
+                </span>
+              </div>
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
 
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
@@ -2341,6 +2368,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }}
                   onInstanceModelChange={onProviderModelSelect}
                 />
+
+                {workflowEnabled && !isComposerFooterCompact ? (
+                  <span className="hidden max-w-56 truncate text-emerald-600 text-xs dark:text-emerald-400 lg:inline">
+                    Main thread model; role agents use Ged settings
+                  </span>
+                ) : null}
 
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu

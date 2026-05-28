@@ -55,6 +55,22 @@ export function buildLocalDraftThread(
   };
 }
 
+export function resolveComposerModeModelFallback(input: {
+  gedWorkflowEnabled: boolean;
+  projectDefaultModelSelection: ModelSelection | null | undefined;
+  gedMainModelSelection: ModelSelection | null | undefined;
+  fallbackModelSelection: ModelSelection;
+}): ModelSelection {
+  if (input.gedWorkflowEnabled) {
+    return (
+      input.gedMainModelSelection ??
+      input.projectDefaultModelSelection ??
+      input.fallbackModelSelection
+    );
+  }
+  return input.projectDefaultModelSelection ?? input.fallbackModelSelection;
+}
+
 export function shouldWriteThreadErrorToCurrentServerThread(input: {
   serverThread:
     | {
