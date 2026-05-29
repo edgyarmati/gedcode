@@ -1,4 +1,5 @@
 import {
+  GED_SUBAGENT_ROLES,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -143,7 +144,7 @@ describe("GedRoleInvocationServiceLive", () => {
     const commands: OrchestrationCommand[] = [];
     const result = await runWith(commands);
 
-    expect(result.childThreadId).toBe(ThreadId.make("ged-role-inv-1"));
+    expect(result.childThreadId).toBe(ThreadId.make("ged-role-ged-explorer-inv-1"));
     expect(commands.map((command) => command.type)).toEqual([
       "thread.create",
       "thread.activity.append",
@@ -154,6 +155,7 @@ describe("GedRoleInvocationServiceLive", () => {
     const create = commands[0]!;
     expect(create).toMatchObject({
       type: "thread.create",
+      commandId: "ged-role:ged-explorer:inv-1:child-thread-create",
       threadId: result.childThreadId,
       projectId,
       modelSelection,
@@ -167,8 +169,10 @@ describe("GedRoleInvocationServiceLive", () => {
     const parentActivity = commands[1]!;
     expect(parentActivity).toMatchObject({
       type: "thread.activity.append",
+      commandId: "ged-role:ged-explorer:inv-1:parent-activity-append",
       threadId: parentThreadId,
       activity: {
+        id: "ged-role:ged-explorer:inv-1:parent-started",
         kind: "ged.role-invocation.started",
         payload: { invocationId: "inv-1", parentThreadId, childThreadId: result.childThreadId },
       },
@@ -177,8 +181,10 @@ describe("GedRoleInvocationServiceLive", () => {
     const childActivity = commands[2]!;
     expect(childActivity).toMatchObject({
       type: "thread.activity.append",
+      commandId: "ged-role:ged-explorer:inv-1:child-activity-append",
       threadId: result.childThreadId,
       activity: {
+        id: "ged-role:ged-explorer:inv-1:child-linked",
         kind: "ged.role-invocation.child",
         payload: { invocationId: "inv-1", parentThreadId, childThreadId: result.childThreadId },
       },
@@ -187,6 +193,7 @@ describe("GedRoleInvocationServiceLive", () => {
     const turn = commands[3]!;
     expect(turn).toMatchObject({
       type: "thread.turn.start",
+      commandId: "ged-role:ged-explorer:inv-1:child-turn-start",
       threadId: result.childThreadId,
       modelSelection,
       gedWorkflowEnabled: false,
@@ -197,6 +204,43 @@ describe("GedRoleInvocationServiceLive", () => {
     expect(turn.message.attachments).toEqual([]);
     expect(turn.message.text).toContain("You are ged-explorer");
     expect(turn.message.text).toContain("Do not write source files");
+  });
+
+  it("supports every configured Ged role as a child thread", async () => {
+    for (const role of GED_SUBAGENT_ROLES) {
+      const commands: OrchestrationCommand[] = [];
+      const result = await runWith(commands, makeProjection(), {}, { role });
+
+      expect(result.role).toBe(role);
+      expect(result.childThreadId).toBe(ThreadId.make(`ged-role-${role}-inv-1`));
+      expect(commands[0]).toMatchObject({
+        type: "thread.create",
+        commandId: `ged-role:${role}:inv-1:child-thread-create`,
+        threadId: result.childThreadId,
+        title: expect.stringContaining("Ged"),
+        gedWorkflowEnabled: false,
+      });
+      expect(commands[1]).toMatchObject({
+        type: "thread.activity.append",
+        commandId: `ged-role:${role}:inv-1:parent-activity-append`,
+        activity: { id: `ged-role:${role}:inv-1:parent-started`, payload: { role } },
+      });
+      expect(commands[2]).toMatchObject({
+        type: "thread.activity.append",
+        commandId: `ged-role:${role}:inv-1:child-activity-append`,
+        activity: { payload: { role } },
+      });
+      expect(commands[3]).toMatchObject({
+        type: "thread.turn.start",
+        commandId: `ged-role:${role}:inv-1:child-turn-start`,
+        threadId: result.childThreadId,
+        gedWorkflowEnabled: false,
+      });
+      const turn = commands[3]!;
+      if (turn.type !== "thread.turn.start") throw new Error("expected turn start");
+      expect(turn.message.text).toContain(`You are ${role}`);
+      expect(turn.message.text).toContain("Do not use provider-native subagent");
+    }
   });
 
   it("fails before dispatch when parent context is missing", async () => {
@@ -291,14 +335,6 @@ describe("GedRoleInvocationServiceLive", () => {
           ),
         ),
       ),
-    ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
-    expect(commands).toEqual([]);
-  });
-
-  it("fails before dispatch for unsupported configured roles", async () => {
-    const commands: OrchestrationCommand[] = [];
-    await expect(
-      runWith(commands, makeProjection(), {}, { role: "ged-planner" }),
     ).rejects.toMatchObject({ _tag: "GedRoleInvocationInputError" });
     expect(commands).toEqual([]);
   });

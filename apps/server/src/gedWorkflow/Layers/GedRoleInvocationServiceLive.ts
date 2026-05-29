@@ -3,6 +3,7 @@ import {
   EventId,
   MessageId,
   ThreadId,
+  type GedSubagentRole,
   type OrchestrationCommand,
   type OrchestrationThreadActivity,
 } from "@t3tools/contracts";
@@ -18,7 +19,7 @@ import {
 } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { buildGedExplorerPrompt } from "../GedExplorerPrompt.ts";
+import { buildGedRolePrompt, GED_ROLE_PROMPT_DEFINITIONS } from "../GedRolePrompts.ts";
 import {
   GedRoleInvocationContextError,
   GedRoleInvocationDispatchError,
@@ -33,7 +34,7 @@ const INVOCATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 const validateInput = (input: GedRoleInvocationInput) =>
   Effect.gen(function* () {
-    if (input.role !== "ged-explorer") {
+    if (!(input.role in GED_ROLE_PROMPT_DEFINITIONS)) {
       return yield* new GedRoleInvocationInputError({
         detail: `Unsupported Ged role: ${input.role}`,
       });
@@ -55,14 +56,14 @@ const validateInput = (input: GedRoleInvocationInput) =>
   });
 
 const safeIdPart = (value: string): string => value.replace(/[^A-Za-z0-9_-]/g, "-");
-const commandId = (invocationId: string, step: string): CommandId =>
-  CommandId.make(`ged-role:${safeIdPart(invocationId)}:${step}`);
-const eventId = (invocationId: string, step: string): EventId =>
-  EventId.make(`ged-role:${safeIdPart(invocationId)}:${step}`);
-const childThreadId = (invocationId: string): ThreadId =>
-  ThreadId.make(`ged-role-${safeIdPart(invocationId)}`);
-const messageId = (invocationId: string): MessageId =>
-  MessageId.make(`ged-role:${safeIdPart(invocationId)}:explorer-message`);
+const commandId = (role: GedSubagentRole, invocationId: string, step: string): CommandId =>
+  CommandId.make(`ged-role:${safeIdPart(role)}:${safeIdPart(invocationId)}:${step}`);
+const eventId = (role: GedSubagentRole, invocationId: string, step: string): EventId =>
+  EventId.make(`ged-role:${safeIdPart(role)}:${safeIdPart(invocationId)}:${step}`);
+const childThreadId = (role: GedSubagentRole, invocationId: string): ThreadId =>
+  ThreadId.make(`ged-role-${safeIdPart(role)}-${safeIdPart(invocationId)}`);
+const messageId = (role: GedSubagentRole, invocationId: string): MessageId =>
+  MessageId.make(`ged-role:${safeIdPart(role)}:${safeIdPart(invocationId)}:message`);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -89,22 +90,22 @@ const dispatchStep = (
   );
 
 const failureActivity = (input: {
+  readonly role: GedSubagentRole;
   readonly invocationId: string;
   readonly parentThreadId: ThreadId;
   readonly childThreadId?: ThreadId;
   readonly failedStep: string;
   readonly detail: string;
-  readonly threadId: ThreadId;
   readonly suffix: string;
   readonly createdAt: string;
 }): OrchestrationThreadActivity => ({
-  id: eventId(input.invocationId, `failed-${input.suffix}`),
+  id: eventId(input.role, input.invocationId, `failed-${input.suffix}`),
   tone: "error",
   kind: "ged.role-invocation.failed",
-  summary: `ged-explorer invocation failed at ${input.failedStep}`,
+  summary: `${input.role} invocation failed at ${input.failedStep}`,
   payload: {
     invocationId: input.invocationId,
-    role: "ged-explorer",
+    role: input.role,
     parentThreadId: input.parentThreadId,
     childThreadId: input.childThreadId,
     failedStep: input.failedStep,
@@ -122,6 +123,7 @@ const make = Effect.gen(function* () {
   const invoke: GedRoleInvocationServiceShape["invoke"] = (rawInput) =>
     Effect.gen(function* () {
       const input = yield* validateInput(rawInput);
+      const roleDefinition = GED_ROLE_PROMPT_DEFINITIONS[input.role];
       const parent = yield* projections
         .getThreadDetailById(input.parentThreadId)
         .pipe(Effect.flatMap((option) => failIfNone(option, "Parent thread not found")));
@@ -151,9 +153,10 @@ const make = Effect.gen(function* () {
       });
 
       const createdAt = yield* nowIso;
-      const childId = childThreadId(input.invocationId);
+      const childId = childThreadId(input.role, input.invocationId);
       const effectiveCwd = parent.worktreePath ?? project.workspaceRoot;
-      const prompt = buildGedExplorerPrompt({
+      const prompt = buildGedRolePrompt({
+        role: input.role,
         invocationId: input.invocationId,
         parentThreadId: input.parentThreadId,
         projectId: parent.projectId,
@@ -166,13 +169,13 @@ const make = Effect.gen(function* () {
       });
 
       const parentActivity: OrchestrationThreadActivity = {
-        id: eventId(input.invocationId, "parent-started"),
+        id: eventId(input.role, input.invocationId, "parent-started"),
         tone: "info",
         kind: "ged.role-invocation.started",
-        summary: "Started ged-explorer child thread",
+        summary: `Started ${input.role} child thread`,
         payload: {
           invocationId: input.invocationId,
-          role: "ged-explorer",
+          role: input.role,
           parentThreadId: input.parentThreadId,
           childThreadId: childId,
           projectId: parent.projectId,
@@ -184,13 +187,13 @@ const make = Effect.gen(function* () {
       };
 
       const childActivity: OrchestrationThreadActivity = {
-        id: eventId(input.invocationId, "child-linked"),
+        id: eventId(input.role, input.invocationId, "child-linked"),
         tone: "info",
         kind: "ged.role-invocation.child",
-        summary: "ged-explorer child of parent thread",
+        summary: `${input.role} child of parent thread`,
         payload: {
           invocationId: input.invocationId,
-          role: "ged-explorer",
+          role: input.role,
           parentThreadId: input.parentThreadId,
           childThreadId: childId,
           projectId: parent.projectId,
@@ -206,15 +209,19 @@ const make = Effect.gen(function* () {
             .dispatch({
               type: "thread.activity.append",
               createdAt: failureCreatedAt,
-              commandId: commandId(input.invocationId, `failed-parent-${error.failedStep}`),
+              commandId: commandId(
+                input.role,
+                input.invocationId,
+                `failed-parent-${error.failedStep}`,
+              ),
               threadId: input.parentThreadId,
               activity: failureActivity({
+                role: input.role,
                 invocationId: input.invocationId,
                 parentThreadId: input.parentThreadId,
                 childThreadId: childId,
                 failedStep: error.failedStep,
                 detail: error.detail,
-                threadId: input.parentThreadId,
                 suffix: `parent-${error.failedStep}`,
                 createdAt: failureCreatedAt,
               }),
@@ -225,15 +232,19 @@ const make = Effect.gen(function* () {
               .dispatch({
                 type: "thread.activity.append",
                 createdAt: failureCreatedAt,
-                commandId: commandId(input.invocationId, `failed-child-${error.failedStep}`),
+                commandId: commandId(
+                  input.role,
+                  input.invocationId,
+                  `failed-child-${error.failedStep}`,
+                ),
                 threadId: childId,
                 activity: failureActivity({
+                  role: input.role,
                   invocationId: input.invocationId,
                   parentThreadId: input.parentThreadId,
                   childThreadId: childId,
                   failedStep: error.failedStep,
                   detail: error.detail,
-                  threadId: childId,
                   suffix: `child-${error.failedStep}`,
                   createdAt: failureCreatedAt,
                 }),
@@ -245,14 +256,14 @@ const make = Effect.gen(function* () {
 
       yield* dispatchStep(engine, "child-thread-create", {
         type: "thread.create",
-        commandId: commandId(input.invocationId, "child-thread-create"),
+        commandId: commandId(input.role, input.invocationId, "child-thread-create"),
         threadId: childId,
         projectId: parent.projectId,
-        title: "Ged Explorer",
+        title: roleDefinition.title,
         modelSelection: roleModelSelection,
         gedWorkflowEnabled: false,
-        runtimeMode: "approval-required",
-        interactionMode: "default",
+        runtimeMode: roleDefinition.runtimeMode,
+        interactionMode: roleDefinition.interactionMode,
         branch: parent.branch,
         worktreePath: parent.worktreePath,
         createdAt,
@@ -263,7 +274,7 @@ const make = Effect.gen(function* () {
       yield* dispatchStep(engine, "parent-activity-append", {
         type: "thread.activity.append",
         createdAt,
-        commandId: commandId(input.invocationId, "parent-activity-append"),
+        commandId: commandId(input.role, input.invocationId, "parent-activity-append"),
         threadId: input.parentThreadId,
         activity: parentActivity,
       }).pipe(
@@ -273,7 +284,7 @@ const make = Effect.gen(function* () {
       yield* dispatchStep(engine, "child-activity-append", {
         type: "thread.activity.append",
         createdAt,
-        commandId: commandId(input.invocationId, "child-activity-append"),
+        commandId: commandId(input.role, input.invocationId, "child-activity-append"),
         threadId: childId,
         activity: childActivity,
       }).pipe(
@@ -282,18 +293,18 @@ const make = Effect.gen(function* () {
 
       yield* dispatchStep(engine, "child-turn-start", {
         type: "thread.turn.start",
-        commandId: commandId(input.invocationId, "child-turn-start"),
+        commandId: commandId(input.role, input.invocationId, "child-turn-start"),
         threadId: childId,
         message: {
-          messageId: messageId(input.invocationId),
+          messageId: messageId(input.role, input.invocationId),
           role: "user",
           text: prompt,
           attachments: [],
         },
         modelSelection: roleModelSelection,
         gedWorkflowEnabled: false,
-        runtimeMode: "approval-required",
-        interactionMode: "default",
+        runtimeMode: roleDefinition.runtimeMode,
+        interactionMode: roleDefinition.interactionMode,
         createdAt,
       }).pipe(
         Effect.catchIf((error) => error instanceof GedRoleInvocationDispatchError, dispatchFailure),
