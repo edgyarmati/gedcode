@@ -53,8 +53,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             }
           }}
         >
-          <MenuRadioItem value="normal">Normal thread</MenuRadioItem>
-          <MenuRadioItem value="ged">Ged workflow</MenuRadioItem>
+          <MenuRadioItem value="normal">Normal</MenuRadioItem>
+          <MenuRadioItem value="ged">Ged</MenuRadioItem>
         </MenuRadioGroup>
         <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>

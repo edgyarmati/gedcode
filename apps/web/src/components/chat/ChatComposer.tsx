@@ -143,7 +143,7 @@ const workflowModeConfig = {
   },
   ged: {
     label: "Ged workflow",
-    shortLabel: "Ged workflow",
+    shortLabel: "Ged",
     description:
       "Use the selected model for the main thread. Subagent role models come from Ged settings.",
   },
@@ -2368,12 +2368,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }}
                   onInstanceModelChange={onProviderModelSelect}
                 />
-
-                {workflowEnabled && !isComposerFooterCompact ? (
-                  <span className="hidden max-w-56 truncate text-emerald-600 text-xs dark:text-emerald-400 lg:inline">
-                    Main thread model; role agents use Ged settings
-                  </span>
-                ) : null}
 
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
