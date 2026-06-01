@@ -15,40 +15,20 @@ GedCode is a minimal web GUI for coding agents (currently Codex, Claude, and Ope
 ### Run without installing
 
 ```bash
-npx t3
+npx gedcode
 ```
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-```bash
-yay -S t3code-bin
-```
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/edgyarmati/gedcode/releases).
 
 ## Some notes
 
 We are very very early in this project. Expect bugs.
 
-We are not accepting contributions yet.
-
 Observability guide: [docs/observability.md](./docs/observability.md)
 
-## If you REALLY want to contribute still.... read this first
+## Local development
 
 Before local development, prepare the environment and install dependencies:
 
@@ -59,5 +39,3 @@ bun install .
 ```
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
