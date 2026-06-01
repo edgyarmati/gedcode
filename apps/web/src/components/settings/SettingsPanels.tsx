@@ -30,7 +30,6 @@ import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
-import { GED_ROLE_DISPLAY } from "../../gedWorkflowRoles";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
   setDesktopUpdateStateQueryData,
@@ -521,10 +520,6 @@ export function GeneralSettingsPanel() {
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
 
-  const gedMainModelSelection =
-    settings.gedModelSelections.mainThread ?? settings.textGenerationModelSelection;
-  const isGedMainModelDirty = settings.gedModelSelections.mainThread !== null;
-
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
@@ -734,77 +729,6 @@ export function GeneralSettingsPanel() {
           />
 
           <SettingsRow
-            title="Subagent runtime"
-            description="Choose whether Gedcode launches configured role child threads, or the selected harness creates native subagents. Harness-native mode ignores per-role custom models."
-            resetAction={
-              settings.gedSubagentRuntimeMode !==
-              DEFAULT_UNIFIED_SETTINGS.gedSubagentRuntimeMode ? (
-                <SettingResetButton
-                  label="Ged subagent runtime"
-                  onClick={() =>
-                    updateSettings({
-                      gedSubagentRuntimeMode: DEFAULT_UNIFIED_SETTINGS.gedSubagentRuntimeMode,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.gedSubagentRuntimeMode}
-                onValueChange={(value) => {
-                  if (value === "gedcode-managed" || value === "harness-native") {
-                    updateSettings({ gedSubagentRuntimeMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-48" aria-label="Ged subagent runtime">
-                  <SelectValue>
-                    {settings.gedSubagentRuntimeMode === "harness-native"
-                      ? "Harness-native"
-                      : "Gedcode-managed"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="gedcode-managed">
-                    Gedcode-managed
-                  </SelectItem>
-                  <SelectItem hideIndicator value="harness-native">
-                    Harness-native
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-
-          <SettingsRow
-            title="Intercom bridge"
-            description="Persist the inter-agent bridge preference for upcoming multi-role orchestration."
-            resetAction={
-              settings.gedIntercomBridgeEnabled !==
-              DEFAULT_UNIFIED_SETTINGS.gedIntercomBridgeEnabled ? (
-                <SettingResetButton
-                  label="Ged intercom bridge"
-                  onClick={() =>
-                    updateSettings({
-                      gedIntercomBridgeEnabled: DEFAULT_UNIFIED_SETTINGS.gedIntercomBridgeEnabled,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.gedIntercomBridgeEnabled}
-                onCheckedChange={(checked) =>
-                  updateSettings({ gedIntercomBridgeEnabled: Boolean(checked) })
-                }
-                aria-label="Enable Ged intercom bridge"
-              />
-            }
-          />
-
-          <SettingsRow
             title="Critique mode"
             description="Controls when plan review should run in upcoming orchestration slices."
             resetAction={
@@ -843,146 +767,6 @@ export function GeneralSettingsPanel() {
               </Select>
             }
           />
-
-          <SettingsRow
-            title="Ged main thread model"
-            description="Default provider/model for new Ged parent threads when a project does not override it."
-            resetAction={
-              isGedMainModelDirty ? (
-                <SettingResetButton
-                  label="Ged main thread model"
-                  onClick={() =>
-                    updateSettings({
-                      gedModelSelections: {
-                        mainThread: null,
-                        roles: settings.gedModelSelections.roles,
-                      },
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <ProviderModelPicker
-                activeInstanceId={gedMainModelSelection.instanceId}
-                model={gedMainModelSelection.model}
-                lockedProvider={null}
-                instanceEntries={gitModelInstanceEntries}
-                modelOptionsByInstance={getCustomModelOptionsByInstance(
-                  settings,
-                  serverProviders,
-                  gedMainModelSelection.instanceId,
-                  gedMainModelSelection.model,
-                )}
-                triggerVariant="outline"
-                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                onInstanceModelChange={(instanceId, model) =>
-                  updateSettings({
-                    gedModelSelections: {
-                      mainThread: createModelSelection(instanceId, model),
-                      roles: settings.gedModelSelections.roles,
-                    },
-                  })
-                }
-              />
-            }
-          />
-
-          {GED_ROLE_DISPLAY.map((roleMeta) => {
-            const roleModelControlsDisabled =
-              settings.gedSubagentRuntimeMode === "harness-native" || !settings.gedSubagentsEnabled;
-            const roleModelDisabledReason = !settings.gedSubagentsEnabled
-              ? "Per-role models are ignored while Ged subagents are disabled."
-              : "Per-role models are ignored while harness-native subagents are selected.";
-            const roleSelection =
-              settings.gedModelSelections.roles[roleMeta.role] ?? gedMainModelSelection;
-            const hasRoleModelOverride =
-              settings.gedModelSelections.roles[roleMeta.role] !== undefined;
-            const roleEnabled = settings.gedRoleSettings[roleMeta.role]?.enabled ?? true;
-            const nextRoleSettings = (enabled: boolean) => ({
-              ...Object.fromEntries(
-                GED_ROLE_DISPLAY.map((meta) => [
-                  meta.role,
-                  { enabled: settings.gedRoleSettings[meta.role]?.enabled ?? true },
-                ]),
-              ),
-              [roleMeta.role]: { enabled },
-            });
-
-            return (
-              <SettingsRow
-                key={roleMeta.role}
-                title={`Ged ${roleMeta.label.toLowerCase()}`}
-                description={`${roleMeta.description} ${
-                  roleModelControlsDisabled
-                    ? roleModelDisabledReason
-                    : roleMeta.runtimeStatus === "active"
-                      ? "Runtime active now."
-                      : "Configuration-only until this role runtime lands."
-                }`}
-                resetAction={
-                  hasRoleModelOverride && !roleModelControlsDisabled ? (
-                    <SettingResetButton
-                      label={`Ged ${roleMeta.label} model`}
-                      onClick={() => {
-                        const { [roleMeta.role]: _removed, ...roles } =
-                          settings.gedModelSelections.roles;
-                        updateSettings({
-                          gedModelSelections: {
-                            mainThread: settings.gedModelSelections.mainThread,
-                            roles,
-                          },
-                        });
-                      }}
-                    />
-                  ) : null
-                }
-                control={
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                      <span>{roleEnabled ? "enabled" : "disabled"}</span>
-                      <Switch
-                        checked={roleEnabled}
-                        disabled={roleModelControlsDisabled}
-                        onCheckedChange={(checked) =>
-                          updateSettings({
-                            gedRoleSettings: nextRoleSettings(Boolean(checked)),
-                          })
-                        }
-                        aria-label={`Enable Ged ${roleMeta.label}`}
-                      />
-                    </div>
-                    <ProviderModelPicker
-                      activeInstanceId={roleSelection.instanceId}
-                      model={roleSelection.model}
-                      lockedProvider={null}
-                      instanceEntries={gitModelInstanceEntries}
-                      modelOptionsByInstance={getCustomModelOptionsByInstance(
-                        settings,
-                        serverProviders,
-                        roleSelection.instanceId,
-                        roleSelection.model,
-                      )}
-                      triggerVariant="outline"
-                      triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                      disabled={roleModelControlsDisabled}
-                      onInstanceModelChange={(instanceId, model) =>
-                        updateSettings({
-                          gedModelSelections: {
-                            mainThread: settings.gedModelSelections.mainThread,
-                            roles: {
-                              ...settings.gedModelSelections.roles,
-                              [roleMeta.role]: createModelSelection(instanceId, model),
-                            },
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                }
-              />
-            );
-          })}
         </SettingsSection>
 
         <SettingsRow

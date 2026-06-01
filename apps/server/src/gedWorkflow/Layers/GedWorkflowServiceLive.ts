@@ -176,14 +176,12 @@ const make = Effect.gen(function* () {
       Effect.map((current) =>
         buildWorkflowPromptSuffix({
           subagentsEnabled: current.gedSubagentsEnabled,
-          subagentRuntimeMode: current.gedSubagentRuntimeMode,
         }),
       ),
       Effect.catch(() =>
         Effect.succeed(
           buildWorkflowPromptSuffix({
             subagentsEnabled: true,
-            subagentRuntimeMode: "gedcode-managed",
           }),
         ),
       ),

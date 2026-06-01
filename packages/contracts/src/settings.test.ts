@@ -17,7 +17,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.gedWorkflowEnabled).toBe(true);
     expect(decoded.gedSubagentsEnabled).toBe(true);
-    expect(decoded.gedSubagentRuntimeMode).toBe("gedcode-managed");
+    expect(decoded.gedSubagentRuntimeMode).toBe("harness-native");
     expect(decoded.gedIntercomBridgeEnabled).toBe(true);
     expect(decoded.gedCritiqueMode).toBe("risk-based");
     expect(decoded.gedRoleSettings["ged-explorer"]?.enabled).toBe(true);

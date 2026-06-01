@@ -1,8 +1,6 @@
 import {
   type EnvironmentId,
   type EditorId,
-  type GedSubagentRuntimeMode,
-  type GedSubagentRole,
   type GedWorkflowState,
   type ModelSelection,
   type ProjectScript,
@@ -33,7 +31,6 @@ import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { WorkflowStatusBadge } from "./WorkflowStatusBadge";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
-import { GED_ROLE_DISPLAY } from "../../gedWorkflowRoles";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import type { ModelEsque } from "./providerIconUtils";
 
@@ -58,9 +55,6 @@ interface ChatHeaderProps {
   workflowState: GedWorkflowState | null;
   projectGedMainModelSelection: ModelSelection | null;
   resolvedGedMainModelSelection: ModelSelection | null;
-  projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
-  resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
-  gedSubagentRuntimeMode: GedSubagentRuntimeMode;
   gedModelInstanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   gedModelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -68,10 +62,6 @@ interface ChatHeaderProps {
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onSetProjectGedMainModel: (selection: ModelSelection | null) => Promise<void> | void;
-  onSetProjectGedRoleModel: (
-    role: GedSubagentRole,
-    selection: ModelSelection | null,
-  ) => Promise<void> | void;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
 }
@@ -109,9 +99,6 @@ export const ChatHeader = memo(function ChatHeader({
   workflowState,
   projectGedMainModelSelection,
   resolvedGedMainModelSelection,
-  projectGedRoleModelSelections,
-  resolvedGedRoleModelSelections,
-  gedSubagentRuntimeMode,
   gedModelInstanceEntries,
   gedModelOptionsByInstance,
   onRunProjectScript,
@@ -119,7 +106,6 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onSetProjectGedMainModel,
-  onSetProjectGedRoleModel,
   onToggleTerminal,
   onToggleDiff,
 }: ChatHeaderProps) {
@@ -175,13 +161,9 @@ export const ChatHeader = memo(function ChatHeader({
           <ProjectGedModelSettingsControl
             projectGedMainModelSelection={projectGedMainModelSelection}
             resolvedGedMainModelSelection={resolvedGedMainModelSelection}
-            projectGedRoleModelSelections={projectGedRoleModelSelections}
-            resolvedGedRoleModelSelections={resolvedGedRoleModelSelections}
-            gedSubagentRuntimeMode={gedSubagentRuntimeMode}
             instanceEntries={gedModelInstanceEntries}
             modelOptionsByInstance={gedModelOptionsByInstance}
             onSetProjectGedMainModel={onSetProjectGedMainModel}
-            onSetProjectGedRoleModel={onSetProjectGedRoleModel}
           />
         )}
         {activeProjectName && (
@@ -247,26 +229,15 @@ export const ChatHeader = memo(function ChatHeader({
 function ProjectGedModelSettingsControl({
   projectGedMainModelSelection,
   resolvedGedMainModelSelection,
-  projectGedRoleModelSelections,
-  resolvedGedRoleModelSelections,
-  gedSubagentRuntimeMode,
   instanceEntries,
   modelOptionsByInstance,
   onSetProjectGedMainModel,
-  onSetProjectGedRoleModel,
 }: {
   projectGedMainModelSelection: ModelSelection | null;
   resolvedGedMainModelSelection: ModelSelection;
-  projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
-  resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
-  gedSubagentRuntimeMode: GedSubagentRuntimeMode;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onSetProjectGedMainModel: (selection: ModelSelection | null) => Promise<void> | void;
-  onSetProjectGedRoleModel: (
-    role: GedSubagentRole,
-    selection: ModelSelection | null,
-  ) => Promise<void> | void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -288,11 +259,8 @@ function ProjectGedModelSettingsControl({
           <DialogHeader>
             <DialogTitle>Project Ged models</DialogTitle>
             <DialogDescription>
-              Override global Ged provider/model defaults for this project. Explorer is runtime
-              active now; other roles are configuration for upcoming orchestration slices.
-              {gedSubagentRuntimeMode === "harness-native"
-                ? " Per-role overrides are ignored while harness-native subagents are selected."
-                : ""}
+              Override the main Ged provider/model default for this project. Per-role custom models
+              are disabled; subagents are created by the selected harness when available.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -306,34 +274,10 @@ function ProjectGedModelSettingsControl({
               onSelect={(instanceId, model) => onSetProjectGedMainModel({ instanceId, model })}
               onReset={() => onSetProjectGedMainModel(null)}
             />
-            {GED_ROLE_DISPLAY.map((roleMeta) => {
-              const roleControlsDisabled = gedSubagentRuntimeMode === "harness-native";
-              const resolved = resolvedGedRoleModelSelections[roleMeta.role];
-              if (!resolved) return null;
-              const override = projectGedRoleModelSelections[roleMeta.role] ?? null;
-              return (
-                <ProjectGedModelRow
-                  key={roleMeta.role}
-                  title={`Ged ${roleMeta.label.toLowerCase()}`}
-                  description={`${roleMeta.description} ${
-                    roleControlsDisabled
-                      ? "Per-role project overrides are ignored in harness-native mode."
-                      : roleMeta.runtimeStatus === "active"
-                        ? "Runtime active now."
-                        : "Configuration-only for now."
-                  }`}
-                  hasOverride={override !== null}
-                  selection={override ?? resolved}
-                  instanceEntries={instanceEntries}
-                  modelOptionsByInstance={modelOptionsByInstance}
-                  onSelect={(instanceId, model) =>
-                    onSetProjectGedRoleModel(roleMeta.role, { instanceId, model })
-                  }
-                  onReset={() => onSetProjectGedRoleModel(roleMeta.role, null)}
-                  disabled={roleControlsDisabled}
-                />
-              );
-            })}
+            <div className="rounded-lg border border-border/60 p-3 text-muted-foreground text-xs">
+              Per-role custom models are disabled. Use the selected harness/provider's native
+              subagents when available; otherwise the main thread performs the workflow steps.
+            </div>
           </div>
         </DialogPanel>
       </DialogPopup>

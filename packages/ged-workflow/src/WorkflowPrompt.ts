@@ -1,6 +1,5 @@
 export interface WorkflowPromptOptions {
   readonly subagentsEnabled: boolean;
-  readonly subagentRuntimeMode?: "gedcode-managed" | "harness-native";
 }
 
 export const buildWorkflowPromptSuffix = (options: WorkflowPromptOptions): string => {
@@ -67,24 +66,18 @@ Read the file before writing to preserve existing fields. Always keep \`schemaVe
 Format: \`<type>: <description>\`
 Types: feat, fix, refactor, docs, test, chore, perf, ci, build`);
 
-  if (options.subagentsEnabled && options.subagentRuntimeMode !== "harness-native") {
-    sections.push(`### Subagent Orchestration
-Three read-only subagent roles for non-trivial work:
-1. **ged-explorer** — Codebase discovery. Run BEFORE source inspection.
-2. **ged-planner** — Planning critique. Run BEFORE finalizing SPEC/TASKS/TESTS.
-3. **ged-verifier** — Diff review. Run BEFORE committing.
-
-Subagents are read-only — only you write code.`);
-  }
-
-  if (options.subagentsEnabled && options.subagentRuntimeMode === "harness-native") {
+  if (options.subagentsEnabled) {
     sections.push(`### Harness-Native Subagent Orchestration
-The user has configured Ged to use the selected harness/provider's native subagent mechanism.
+Ged subagents are owned by the selected harness/provider, not by Gedcode-managed child threads.
 
-- Use provider-native subagent, task, worker, or delegation tools when the harness provides them.
-- Do not expect Gedcode to launch separate role child threads or route per-role custom models in this mode.
+When the harness provides native subagent, task, worker, or delegation tools, create native subagents for:
+1. **ged-explorer** — Codebase discovery and evidence gathering. Run BEFORE source inspection.
+2. **ged-planner** — Planning critique or plan drafting. Run BEFORE finalizing SPEC/TASKS/TESTS.
+3. **ged-verifier** — Clean-context diff and verification review. Run BEFORE committing.
+
+- Do not expect Gedcode to launch separate role child threads or route per-role custom models.
 - Keep ownership clear: you remain responsible for final scope decisions, synthesis, verification judgment, and commits.
-- If the selected harness does not provide native subagents, continue directly and report that limitation.`);
+- If the selected harness does not provide native subagents, execute the explorer, planner, and verifier steps yourself in the main thread and state that native subagents were unavailable.`);
   }
 
   return sections.join("\n\n");

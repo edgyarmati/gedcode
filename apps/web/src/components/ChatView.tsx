@@ -3,7 +3,6 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
-  type GedSubagentRole,
   type GedWorkflowState,
   type MessageId,
   type ModelSelection,
@@ -34,12 +33,7 @@ import {
   createModelSelection,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
-import {
-  clearGedRoleModelSelection,
-  resolveGedMainThreadModelSelection,
-  resolveGedRoleModelSelection,
-  setGedRoleModelSelection,
-} from "@t3tools/shared/gedModelSelection";
+import { resolveGedMainThreadModelSelection } from "@t3tools/shared/gedModelSelection";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
@@ -48,7 +42,6 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
 import { usePrimaryEnvironmentId } from "../environments/primary";
-import { GED_ROLE_DISPLAY } from "../gedWorkflowRoles";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -1378,32 +1371,6 @@ export default function ChatView(props: ChatViewProps) {
       resolvedProjectGedMainModelSelection,
     ],
   );
-  const resolvedProjectGedRoleModelSelections = useMemo(
-    () =>
-      activeProject
-        ? Object.fromEntries(
-            GED_ROLE_DISPLAY.map((roleMeta) => [
-              roleMeta.role,
-              resolveGedRoleModelSelection({
-                role: roleMeta.role,
-                projectRoleModelSelections: activeProject.roleModelSelections,
-                globalRoleModelSelections: settings.gedModelSelections.roles,
-                parentThreadModelSelection: activeThread?.modelSelection,
-                projectDefaultModelSelection: activeProject.defaultModelSelection,
-                globalMainModelSelection: settings.gedModelSelections.mainThread,
-                fallbackModelSelection: gedModelFallbackSelection,
-              }),
-            ]),
-          )
-        : {},
-    [
-      activeProject,
-      activeThread?.modelSelection,
-      gedModelFallbackSelection,
-      settings.gedModelSelections.mainThread,
-      settings.gedModelSelections.roles,
-    ],
-  );
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
     selectedProviderByThreadId ?? threadProvider ?? ProviderDriverKind.make("codex"),
@@ -2149,23 +2116,6 @@ export default function ChatView(props: ChatViewProps) {
         commandId: newCommandId(),
         projectId: activeProject.id,
         defaultModelSelection: selection,
-      });
-    },
-    [activeProject, environmentId],
-  );
-  const setProjectGedRoleModel = useCallback(
-    async (role: GedSubagentRole, selection: ModelSelection | null) => {
-      if (!activeProject) return;
-      const api = readEnvironmentApi(environmentId);
-      if (!api) return;
-
-      await api.orchestration.dispatchCommand({
-        type: "project.meta.update",
-        commandId: newCommandId(),
-        projectId: activeProject.id,
-        roleModelSelections: selection
-          ? setGedRoleModelSelection(activeProject.roleModelSelections, role, selection)
-          : clearGedRoleModelSelection(activeProject.roleModelSelections, role),
       });
     },
     [activeProject, environmentId],
@@ -3746,9 +3696,6 @@ export default function ChatView(props: ChatViewProps) {
           workflowState={workflowState}
           projectGedMainModelSelection={activeProject?.defaultModelSelection ?? null}
           resolvedGedMainModelSelection={resolvedProjectGedMainModelSelection}
-          projectGedRoleModelSelections={activeProject?.roleModelSelections ?? {}}
-          resolvedGedRoleModelSelections={resolvedProjectGedRoleModelSelections}
-          gedSubagentRuntimeMode={settings.gedSubagentRuntimeMode}
           gedModelInstanceEntries={gedModelInstanceEntries}
           gedModelOptionsByInstance={gedModelOptionsByInstance}
           onRunProjectScript={runProjectScript}
@@ -3756,7 +3703,6 @@ export default function ChatView(props: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onSetProjectGedMainModel={setProjectGedMainModel}
-          onSetProjectGedRoleModel={setProjectGedRoleModel}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
         />

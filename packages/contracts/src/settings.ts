@@ -368,7 +368,7 @@ export const ServerSettings = Schema.Struct({
   gedSubagentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   gedSubagentRuntimeMode: GedSubagentRuntimeMode.pipe(
     Schema.withDecodingDefault(
-      Effect.succeed("gedcode-managed" as const satisfies GedSubagentRuntimeMode),
+      Effect.succeed("harness-native" as const satisfies GedSubagentRuntimeMode),
     ),
   ),
   gedIntercomBridgeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

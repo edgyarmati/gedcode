@@ -25,10 +25,11 @@ const runPrompt = (settingsOverrides: Parameters<typeof ServerSettingsService.la
   );
 
 describe("GedWorkflowServiceLive", () => {
-  it("builds managed subagent prompt suffix from settings", async () => {
+  it("builds harness-native subagent prompt suffix from settings", async () => {
     const prompt = await runPrompt();
-    expect(prompt).toContain("### Subagent Orchestration");
+    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
     expect(prompt).toContain("ged-explorer");
+    expect(prompt).toContain("native subagents were unavailable");
   });
 
   it("omits subagent instructions when subagents are disabled", async () => {
@@ -37,14 +38,7 @@ describe("GedWorkflowServiceLive", () => {
     expect(prompt).not.toContain("### Harness-Native Subagent Orchestration");
   });
 
-  it("builds harness-native subagent prompt suffix from settings", async () => {
-    const prompt = await runPrompt({ gedSubagentRuntimeMode: "harness-native" });
-    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
-    expect(prompt).toContain("provider-native subagent");
-    expect(prompt).not.toContain("Subagents are read-only");
-  });
-
-  it("falls back to managed prompt defaults when settings cannot be read", async () => {
+  it("falls back to harness-native prompt defaults when settings cannot be read", async () => {
     const failingSettings = {
       start: Effect.void,
       ready: Effect.void,
@@ -75,7 +69,8 @@ describe("GedWorkflowServiceLive", () => {
       ),
     );
 
-    expect(prompt).toContain("### Subagent Orchestration");
+    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
     expect(prompt).toContain("ged-explorer");
+    expect(prompt).toContain("native subagents were unavailable");
   });
 });
