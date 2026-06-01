@@ -1,4 +1,4 @@
-import { describe, it, expect } from "@effect/vitest";
+import { describe, it, expect } from "vitest";
 import { buildWorkflowPromptSuffix } from "./WorkflowPrompt.ts";
 
 describe("WorkflowPrompt", () => {

@@ -12,6 +12,7 @@ import {
   resolveDesktopUpdateChannel,
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
+  createBuildConfig,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 
@@ -68,6 +69,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveMockUpdateServerUrl(undefined), "http://localhost:3000");
     assert.equal(resolveMockUpdateServerUrl(4123), "http://localhost:4123");
   });
+
+  it.effect("uses GedCode identifiers in desktop build config", () =>
+    Effect.gen(function* () {
+      const buildConfig = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.17",
+        false,
+        false,
+        undefined,
+      );
+
+      assert.equal(buildConfig.appId, "com.t3tools.gedcode");
+      assert.equal(buildConfig.productName, "GedCode (Alpha)");
+      assert.deepStrictEqual(buildConfig.linux, {
+        target: ["AppImage"],
+        executableName: "gedcode",
+        icon: "icon.png",
+        category: "Development",
+        desktop: {
+          entry: {
+            StartupWMClass: "gedcode",
+          },
+        },
+      });
+    }),
+  );
 
   it.effect("normalizes mock update server ports from env-style strings", () =>
     Effect.gen(function* () {

@@ -68,6 +68,7 @@ export interface DesktopEnvironmentShape {
   readonly linuxWmClass: string;
   readonly userDataDirName: string;
   readonly legacyUserDataDirName: string;
+  readonly legacyUserDataDirNames: readonly string[];
   readonly defaultDesktopSettings: DesktopSettings;
   readonly runtimeInfo: DesktopRuntimeInfo;
   readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -160,8 +161,11 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   });
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, isDevelopment ? "dev" : "userdata");
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "GedCode (Dev)" : "GedCode (Alpha)";
+  const userDataDirName = isDevelopment ? "gedcode-dev" : "gedcode";
+  const legacyUserDataDirNames = isDevelopment
+    ? ["t3code-dev", "T3 Code (Dev)"]
+    : ["t3code", "T3 Code (Alpha)"];
+  const legacyUserDataDirName = legacyUserDataDirNames[0] ?? userDataDirName;
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -199,11 +203,12 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     otlpExportIntervalMs: config.otlpExportIntervalMs,
     branding,
     displayName,
-    appUserModelId: isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    appUserModelId: isDevelopment ? "com.t3tools.gedcode.dev" : "com.t3tools.gedcode",
+    linuxDesktopEntryName: isDevelopment ? "gedcode-dev.desktop" : "gedcode.desktop",
+    linuxWmClass: isDevelopment ? "gedcode-dev" : "gedcode",
     userDataDirName,
     legacyUserDataDirName,
+    legacyUserDataDirNames,
     defaultDesktopSettings: resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

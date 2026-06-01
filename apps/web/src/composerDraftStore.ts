@@ -2277,6 +2277,19 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           });
         },
         setStickyModelSelection: (modelSelection) => {
+          if (modelSelection === null || modelSelection === undefined) {
+            set((state) =>
+              Object.keys(state.stickyModelSelectionByProvider).length === 0 &&
+              state.stickyActiveProvider === null
+                ? state
+                : {
+                    stickyModelSelectionByProvider: {},
+                    stickyActiveProvider: null,
+                  },
+            );
+            return;
+          }
+
           const normalized = normalizeModelSelection(modelSelection);
           set((state) => {
             if (!normalized) {
