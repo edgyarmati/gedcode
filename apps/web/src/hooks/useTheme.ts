@@ -40,6 +40,14 @@ function getSystemDark() {
   return typeof window !== "undefined" && window.matchMedia(MEDIA_QUERY).matches;
 }
 
+function hasThemeDocumentRoot(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    typeof document.documentElement?.setAttribute === "function" &&
+    typeof document.documentElement.classList?.toggle === "function"
+  );
+}
+
 function getStored(): Theme {
   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -67,7 +75,7 @@ function ensureThemeColorMetaTag(): HTMLMetaElement {
   element = document.createElement("meta");
   element.name = THEME_COLOR_META_NAME;
   element.setAttribute("data-dynamic-theme-color", "true");
-  document.head.append(element);
+  document.head?.append(element);
   return element;
 }
 
@@ -94,7 +102,13 @@ function resolveBrowserChromeSurface(): HTMLElement {
 }
 
 export function syncBrowserChromeTheme() {
-  if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
+  if (
+    typeof document === "undefined" ||
+    typeof getComputedStyle === "undefined" ||
+    !hasThemeDocumentRoot() ||
+    !document.body
+  )
+    return;
   const surfaceColor = normalizeThemeColor(
     getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
   );
@@ -108,13 +122,13 @@ export function syncBrowserChromeTheme() {
 }
 
 function applyTheme(theme: Theme, suppressTransitions = false) {
-  if (typeof document === "undefined" || typeof window === "undefined") return;
+  if (typeof window === "undefined" || !hasThemeDocumentRoot()) return;
   if (suppressTransitions) {
     document.documentElement.classList.add("no-transitions");
   }
   const concreteTheme = resolveConcreteTheme(theme, getSystemDark());
   const isDark = getThemeScheme(concreteTheme) === "dark";
-  document.documentElement.dataset.theme = concreteTheme;
+  document.documentElement.setAttribute("data-theme", concreteTheme);
   document.documentElement.classList.toggle("dark", isDark);
   syncBrowserChromeTheme();
   syncDesktopTheme(getDesktopTheme(theme, concreteTheme));

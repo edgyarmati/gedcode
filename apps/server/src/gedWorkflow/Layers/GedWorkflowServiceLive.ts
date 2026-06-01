@@ -9,7 +9,10 @@
  */
 import type { GedWorkflowState } from "@t3tools/contracts";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
-import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
+import {
+  CheckpointState,
+  type CheckpointState as CheckpointStateValue,
+} from "@t3tools/ged-workflow/CheckpointSchema";
 import {
   validatePlannerCheckpoint,
   type ValidationResult,
@@ -45,7 +48,7 @@ const DEFAULT_STATE: GedWorkflowState = {
 };
 
 const mapCheckpointStateToWorkflowState = (
-  cp: typeof CheckpointState.Type,
+  cp: CheckpointStateValue,
   enabled: boolean,
 ): GedWorkflowState => {
   const plannerCp = cp.planCheckpoints["ged-planner"];
@@ -106,7 +109,7 @@ const make = Effect.gen(function* () {
       return yield* decodeCheckpointStateFromJson(raw);
     });
 
-  const writeCheckpointState = (projectRoot: string, state: typeof CheckpointState.Type) =>
+  const writeCheckpointState = (projectRoot: string, state: CheckpointStateValue) =>
     Effect.gen(function* () {
       const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
       const encoded = yield* encodeCheckpointStateToJson(state);

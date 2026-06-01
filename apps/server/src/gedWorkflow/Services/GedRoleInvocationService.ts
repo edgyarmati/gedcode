@@ -55,4 +55,4 @@ export interface GedRoleInvocationServiceShape {
 export class GedRoleInvocationService extends Context.Service<
   GedRoleInvocationService,
   GedRoleInvocationServiceShape
->()("t3/gedWorkflow/Services/GedRoleInvocationService") {}
+>()("gedcode/gedWorkflow/Services/GedRoleInvocationService") {}

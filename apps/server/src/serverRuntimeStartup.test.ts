@@ -275,5 +275,5 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
 
     assert.strictEqual(error, uuidError);
     assert.deepStrictEqual(yield* Ref.get(dispatchCalls), []);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(ServerSettingsService.layerTest(), NodeServices.layer))),
 );
