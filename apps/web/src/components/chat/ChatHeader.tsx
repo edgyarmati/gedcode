@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type EditorId,
+  type GedSubagentRuntimeMode,
   type GedSubagentRole,
   type GedWorkflowState,
   type ModelSelection,
@@ -59,6 +60,7 @@ interface ChatHeaderProps {
   resolvedGedMainModelSelection: ModelSelection | null;
   projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
   resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
+  gedSubagentRuntimeMode: GedSubagentRuntimeMode;
   gedModelInstanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   gedModelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onRunProjectScript: (script: ProjectScript) => void;
@@ -109,6 +111,7 @@ export const ChatHeader = memo(function ChatHeader({
   resolvedGedMainModelSelection,
   projectGedRoleModelSelections,
   resolvedGedRoleModelSelections,
+  gedSubagentRuntimeMode,
   gedModelInstanceEntries,
   gedModelOptionsByInstance,
   onRunProjectScript,
@@ -174,6 +177,7 @@ export const ChatHeader = memo(function ChatHeader({
             resolvedGedMainModelSelection={resolvedGedMainModelSelection}
             projectGedRoleModelSelections={projectGedRoleModelSelections}
             resolvedGedRoleModelSelections={resolvedGedRoleModelSelections}
+            gedSubagentRuntimeMode={gedSubagentRuntimeMode}
             instanceEntries={gedModelInstanceEntries}
             modelOptionsByInstance={gedModelOptionsByInstance}
             onSetProjectGedMainModel={onSetProjectGedMainModel}
@@ -245,6 +249,7 @@ function ProjectGedModelSettingsControl({
   resolvedGedMainModelSelection,
   projectGedRoleModelSelections,
   resolvedGedRoleModelSelections,
+  gedSubagentRuntimeMode,
   instanceEntries,
   modelOptionsByInstance,
   onSetProjectGedMainModel,
@@ -254,6 +259,7 @@ function ProjectGedModelSettingsControl({
   resolvedGedMainModelSelection: ModelSelection;
   projectGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
   resolvedGedRoleModelSelections: Readonly<Record<string, ModelSelection>>;
+  gedSubagentRuntimeMode: GedSubagentRuntimeMode;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onSetProjectGedMainModel: (selection: ModelSelection | null) => Promise<void> | void;
@@ -284,6 +290,9 @@ function ProjectGedModelSettingsControl({
             <DialogDescription>
               Override global Ged provider/model defaults for this project. Explorer is runtime
               active now; other roles are configuration for upcoming orchestration slices.
+              {gedSubagentRuntimeMode === "harness-native"
+                ? " Per-role overrides are ignored while harness-native subagents are selected."
+                : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
@@ -298,6 +307,7 @@ function ProjectGedModelSettingsControl({
               onReset={() => onSetProjectGedMainModel(null)}
             />
             {GED_ROLE_DISPLAY.map((roleMeta) => {
+              const roleControlsDisabled = gedSubagentRuntimeMode === "harness-native";
               const resolved = resolvedGedRoleModelSelections[roleMeta.role];
               if (!resolved) return null;
               const override = projectGedRoleModelSelections[roleMeta.role] ?? null;
@@ -306,9 +316,11 @@ function ProjectGedModelSettingsControl({
                   key={roleMeta.role}
                   title={`Ged ${roleMeta.label.toLowerCase()}`}
                   description={`${roleMeta.description} ${
-                    roleMeta.runtimeStatus === "active"
-                      ? "Runtime active now."
-                      : "Configuration-only for now."
+                    roleControlsDisabled
+                      ? "Per-role project overrides are ignored in harness-native mode."
+                      : roleMeta.runtimeStatus === "active"
+                        ? "Runtime active now."
+                        : "Configuration-only for now."
                   }`}
                   hasOverride={override !== null}
                   selection={override ?? resolved}
@@ -318,6 +330,7 @@ function ProjectGedModelSettingsControl({
                     onSetProjectGedRoleModel(roleMeta.role, { instanceId, model })
                   }
                   onReset={() => onSetProjectGedRoleModel(roleMeta.role, null)}
+                  disabled={roleControlsDisabled}
                 />
               );
             })}
@@ -337,6 +350,7 @@ function ProjectGedModelRow({
   modelOptionsByInstance,
   onSelect,
   onReset,
+  disabled = false,
 }: {
   title: string;
   description: string;
@@ -346,6 +360,7 @@ function ProjectGedModelRow({
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   onSelect: (instanceId: ProviderInstanceId, model: string) => Promise<void> | void;
   onReset: () => Promise<void> | void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 p-3">
@@ -357,7 +372,7 @@ function ProjectGedModelRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {hasOverride && (
+        {hasOverride && !disabled && (
           <Button variant="ghost" size="xs" onClick={onReset}>
             Reset
           </Button>
@@ -370,6 +385,7 @@ function ProjectGedModelRow({
           modelOptionsByInstance={modelOptionsByInstance}
           triggerVariant="outline"
           triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+          disabled={disabled}
           onInstanceModelChange={onSelect}
         />
       </div>

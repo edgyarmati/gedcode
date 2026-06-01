@@ -351,6 +351,9 @@ export type GedModelSelections = typeof GedModelSelections.Type;
 export const GedCritiqueMode = Schema.Literals(["off", "risk-based", "always"]);
 export type GedCritiqueMode = typeof GedCritiqueMode.Type;
 
+export const GedSubagentRuntimeMode = Schema.Literals(["gedcode-managed", "harness-native"]);
+export type GedSubagentRuntimeMode = typeof GedSubagentRuntimeMode.Type;
+
 export const GedRoleSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
@@ -363,6 +366,11 @@ export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   gedWorkflowEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   gedSubagentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedSubagentRuntimeMode: GedSubagentRuntimeMode.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed("gedcode-managed" as const satisfies GedSubagentRuntimeMode),
+    ),
+  ),
   gedIntercomBridgeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   gedCritiqueMode: GedCritiqueMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("risk-based" as const satisfies GedCritiqueMode)),
@@ -485,6 +493,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   gedSubagentsEnabled: Schema.optionalKey(Schema.Boolean),
+  gedSubagentRuntimeMode: Schema.optionalKey(GedSubagentRuntimeMode),
   gedIntercomBridgeEnabled: Schema.optionalKey(Schema.Boolean),
   gedCritiqueMode: Schema.optionalKey(GedCritiqueMode),
   gedRoleSettings: Schema.optionalKey(Schema.Record(TrimmedNonEmptyString, GedRoleSettings)),

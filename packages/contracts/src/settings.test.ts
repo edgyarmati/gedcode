@@ -17,6 +17,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.gedWorkflowEnabled).toBe(true);
     expect(decoded.gedSubagentsEnabled).toBe(true);
+    expect(decoded.gedSubagentRuntimeMode).toBe("gedcode-managed");
     expect(decoded.gedIntercomBridgeEnabled).toBe(true);
     expect(decoded.gedCritiqueMode).toBe("risk-based");
     expect(decoded.gedRoleSettings["ged-explorer"]?.enabled).toBe(true);
@@ -75,12 +76,14 @@ describe("ServerSettingsPatch.providerInstances", () => {
     const patch = decodeServerSettingsPatch({
       gedWorkflowEnabled: false,
       gedSubagentsEnabled: false,
+      gedSubagentRuntimeMode: "harness-native",
       gedIntercomBridgeEnabled: false,
       gedCritiqueMode: "always",
       gedRoleSettings: { "ged-explorer": { enabled: false } },
     });
     expect(patch.gedWorkflowEnabled).toBe(false);
     expect(patch.gedSubagentsEnabled).toBe(false);
+    expect(patch.gedSubagentRuntimeMode).toBe("harness-native");
     expect(patch.gedIntercomBridgeEnabled).toBe(false);
     expect(patch.gedCritiqueMode).toBe("always");
     expect(patch.gedRoleSettings?.["ged-explorer"]?.enabled).toBe(false);
@@ -88,6 +91,10 @@ describe("ServerSettingsPatch.providerInstances", () => {
 
   it("rejects invalid Ged critique modes", () => {
     expect(() => decodeServerSettingsPatch({ gedCritiqueMode: "sometimes" })).toThrow();
+  });
+
+  it("rejects invalid Ged subagent runtime modes", () => {
+    expect(() => decodeServerSettingsPatch({ gedSubagentRuntimeMode: "custom" })).toThrow();
   });
 
   it("treats providerInstances as an optional whole-map replacement", () => {

@@ -145,7 +145,7 @@ const workflowModeConfig = {
     label: "Ged workflow",
     shortLabel: "Ged",
     description:
-      "Use the selected model for the main thread. Subagent role models come from Ged settings.",
+      "Use the selected model for the main Ged thread; subagent mode comes from settings.",
   },
 } as const;
 type WorkflowMode = keyof typeof workflowModeConfig;

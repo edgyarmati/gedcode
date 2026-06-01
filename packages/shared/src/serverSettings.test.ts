@@ -211,4 +211,24 @@ describe("serverSettings helpers", () => {
       }).gedRoleSettings,
     ).toEqual({ "ged-explorer": { enabled: true } });
   });
+
+  it("updates Ged subagent runtime mode without clearing role model selections", () => {
+    const explorerSelection = createModelSelection(
+      ProviderInstanceId.make("claude_global"),
+      "claude-global",
+    );
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      gedModelSelections: {
+        mainThread: null,
+        roles: { "ged-explorer": explorerSelection },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        gedSubagentRuntimeMode: "harness-native",
+      }).gedModelSelections.roles,
+    ).toEqual({ "ged-explorer": explorerSelection });
+  });
 });

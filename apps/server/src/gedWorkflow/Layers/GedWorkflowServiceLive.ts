@@ -172,7 +172,22 @@ const make = Effect.gen(function* () {
     );
 
   const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
-    Effect.succeed(buildWorkflowPromptSuffix({ subagentsEnabled: true }));
+    settings.getSettings.pipe(
+      Effect.map((current) =>
+        buildWorkflowPromptSuffix({
+          subagentsEnabled: current.gedSubagentsEnabled,
+          subagentRuntimeMode: current.gedSubagentRuntimeMode,
+        }),
+      ),
+      Effect.catch(() =>
+        Effect.succeed(
+          buildWorkflowPromptSuffix({
+            subagentsEnabled: true,
+            subagentRuntimeMode: "gedcode-managed",
+          }),
+        ),
+      ),
+    );
 
   const VALID_RESULT: ValidationResult = { valid: true };
 

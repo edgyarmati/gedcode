@@ -137,6 +137,11 @@ const make = Effect.gen(function* () {
           detail: "Ged subagents are disabled",
         });
       }
+      if (settings.gedSubagentRuntimeMode === "harness-native") {
+        return yield* new GedRoleInvocationInputError({
+          detail: "Ged subagents are configured for harness-native execution",
+        });
+      }
       if (settings.gedRoleSettings[input.role]?.enabled === false) {
         return yield* new GedRoleInvocationInputError({
           detail: `Ged role is disabled: ${input.role}`,

@@ -734,6 +734,50 @@ export function GeneralSettingsPanel() {
           />
 
           <SettingsRow
+            title="Subagent runtime"
+            description="Choose whether Gedcode launches configured role child threads, or the selected harness creates native subagents. Harness-native mode ignores per-role custom models."
+            resetAction={
+              settings.gedSubagentRuntimeMode !==
+              DEFAULT_UNIFIED_SETTINGS.gedSubagentRuntimeMode ? (
+                <SettingResetButton
+                  label="Ged subagent runtime"
+                  onClick={() =>
+                    updateSettings({
+                      gedSubagentRuntimeMode: DEFAULT_UNIFIED_SETTINGS.gedSubagentRuntimeMode,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.gedSubagentRuntimeMode}
+                onValueChange={(value) => {
+                  if (value === "gedcode-managed" || value === "harness-native") {
+                    updateSettings({ gedSubagentRuntimeMode: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-48" aria-label="Ged subagent runtime">
+                  <SelectValue>
+                    {settings.gedSubagentRuntimeMode === "harness-native"
+                      ? "Harness-native"
+                      : "Gedcode-managed"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="gedcode-managed">
+                    Gedcode-managed
+                  </SelectItem>
+                  <SelectItem hideIndicator value="harness-native">
+                    Harness-native
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+
+          <SettingsRow
             title="Intercom bridge"
             description="Persist the inter-agent bridge preference for upcoming multi-role orchestration."
             resetAction={
@@ -845,6 +889,11 @@ export function GeneralSettingsPanel() {
           />
 
           {GED_ROLE_DISPLAY.map((roleMeta) => {
+            const roleModelControlsDisabled =
+              settings.gedSubagentRuntimeMode === "harness-native" || !settings.gedSubagentsEnabled;
+            const roleModelDisabledReason = !settings.gedSubagentsEnabled
+              ? "Per-role models are ignored while Ged subagents are disabled."
+              : "Per-role models are ignored while harness-native subagents are selected.";
             const roleSelection =
               settings.gedModelSelections.roles[roleMeta.role] ?? gedMainModelSelection;
             const hasRoleModelOverride =
@@ -865,12 +914,14 @@ export function GeneralSettingsPanel() {
                 key={roleMeta.role}
                 title={`Ged ${roleMeta.label.toLowerCase()}`}
                 description={`${roleMeta.description} ${
-                  roleMeta.runtimeStatus === "active"
-                    ? "Runtime active now."
-                    : "Configuration-only until this role runtime lands."
+                  roleModelControlsDisabled
+                    ? roleModelDisabledReason
+                    : roleMeta.runtimeStatus === "active"
+                      ? "Runtime active now."
+                      : "Configuration-only until this role runtime lands."
                 }`}
                 resetAction={
-                  hasRoleModelOverride ? (
+                  hasRoleModelOverride && !roleModelControlsDisabled ? (
                     <SettingResetButton
                       label={`Ged ${roleMeta.label} model`}
                       onClick={() => {
@@ -892,6 +943,7 @@ export function GeneralSettingsPanel() {
                       <span>{roleEnabled ? "enabled" : "disabled"}</span>
                       <Switch
                         checked={roleEnabled}
+                        disabled={roleModelControlsDisabled}
                         onCheckedChange={(checked) =>
                           updateSettings({
                             gedRoleSettings: nextRoleSettings(Boolean(checked)),
@@ -913,6 +965,7 @@ export function GeneralSettingsPanel() {
                       )}
                       triggerVariant="outline"
                       triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                      disabled={roleModelControlsDisabled}
                       onInstanceModelChange={(instanceId, model) =>
                         updateSettings({
                           gedModelSelections: {

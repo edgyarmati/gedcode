@@ -3748,6 +3748,7 @@ export default function ChatView(props: ChatViewProps) {
           resolvedGedMainModelSelection={resolvedProjectGedMainModelSelection}
           projectGedRoleModelSelections={activeProject?.roleModelSelections ?? {}}
           resolvedGedRoleModelSelections={resolvedProjectGedRoleModelSelections}
+          gedSubagentRuntimeMode={settings.gedSubagentRuntimeMode}
           gedModelInstanceEntries={gedModelInstanceEntries}
           gedModelOptionsByInstance={gedModelOptionsByInstance}
           onRunProjectScript={runProjectScript}

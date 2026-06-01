@@ -347,6 +347,17 @@ describe("GedRoleInvocationServiceLive", () => {
     expect(commands).toEqual([]);
   });
 
+  it("does not dispatch managed role threads in harness-native mode", async () => {
+    const commands: OrchestrationCommand[] = [];
+    await expect(
+      runWith(commands, makeProjection(), { gedSubagentRuntimeMode: "harness-native" }),
+    ).rejects.toMatchObject({
+      _tag: "GedRoleInvocationInputError",
+      detail: "Ged subagents are configured for harness-native execution",
+    });
+    expect(commands).toEqual([]);
+  });
+
   it("does not dispatch explorer when the explorer role is disabled", async () => {
     const commands: OrchestrationCommand[] = [];
     await expect(
