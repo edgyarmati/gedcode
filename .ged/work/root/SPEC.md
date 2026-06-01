@@ -2,61 +2,94 @@
 
 ## Goal
 
-Make the composer Ged workflow toggle chat-scoped instead of global.
+Implement the first bounded Ged workflow orchestration slice: a server-side `GedRoleInvocationService` that can explicitly invoke one read-oriented child role, `ged-explorer`, through the existing orchestration engine.
 
-## Acceptance Criteria
+This slice proves parent/child role-thread dispatch, provider-instance routing, workflow-recursion prevention, activity-based linkage, and prompt contract shape without adding a user-facing websocket/native API or automatic parent-turn interception.
 
-- Toggling Ged workflow in one chat only changes that chat's effective workflow setting.
-- Existing chats retain their own workflow setting when switching between chats.
-- A newly created draft chat inherits the active chat's current workflow setting, matching the way composer model state is carried forward.
-- A chat created from a chat where Ged is disabled starts disabled without mutating any other chat.
-- Server-side Ged prompt injection and checkpoint enforcement use the target thread's workflow setting, not only the global settings default.
-- Existing historical threads decode as Ged-enabled by default so current behavior is preserved unless a thread opts out.
+## Scope
 
-## Constraints
+In scope:
 
-- Keep `packages/contracts` schema-only.
-- Reuse the existing thread/composer draft state patterns for model/runtime/interaction settings.
-- Preserve the global settings switch as the default for threads without a per-thread override.
-- Do not run `bun test`; use `bun run test`.
+- Add `GedRoleInvocationService` under `apps/server/src/gedWorkflow`.
+- Support exactly one role: `ged-explorer`.
+- Keep the entry point server-internal and test-only for this slice; no websocket/native/web/contracts API.
+- Require caller-supplied `invocationId`; the service does not generate one yet.
+- Create a child thread and start one child turn via orchestration commands.
+- Copy parent `projectId`, `branch`, `worktreePath`, and exact `modelSelection`, including `instanceId` and options.
+- Force child safety settings: `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false` on child thread and turn.
+- Link parent and child only through existing `thread.activity.append` activities.
+- Define a server-side `ged-explorer` prompt builder with fixed plain-text output sections.
 
-# gedcode-worktree-paths-and-push-remotes
+Out of scope: user-facing API/UI changes, new contracts schemas, durable invocation store, automatic parent-turn interception, role completion tracking, output parsing, artifact writes, provider-level sandboxing, Pi integration, planner/verifier roles, and worker execution.
 
-## Problem
+## Service API
 
-New agent worktrees currently expose legacy T3 naming in user-facing paths:
-`~/.t3/worktrees/<repo>/<repo>-<token>`. Temporary branch refs also use
-`gedcode/<token>`, which is visible in push commands and pull request flows.
+Add `GedRoleInvocationService.ts`, `GedRoleInvocationServiceLive.ts`, and `GedExplorerPrompt.ts` under `apps/server/src/gedWorkflow`.
 
-When a local checkout points only at an upstream repository that the authenticated
-user cannot write to, `pushCurrentBranch` attempts to push to that upstream
-remote and fails before a PR can be created.
+Initial input/result shape:
 
-## Desired Behavior
+```ts
+export type GedRole = "ged-explorer";
 
-- Default server home and derived worktree storage use `~/.gedcode`.
-- Generated temporary worktree branches use a GedCode-owned neutral namespace
-  without `t3`.
-- Existing temporary branch detection still recognizes old `gedcode/<token>`
-  refs so current sessions are not stranded.
-- Pushes continue to honor explicit `branch.<name>.pushRemote` and
-  `remote.pushDefault`, then prefer the primary remote as before.
-- Tests cover the new default path and generated temporary branch namespace.
+export interface GedRoleInvocationInput {
+  readonly role: "ged-explorer";
+  readonly invocationId: string;
+  readonly parentThreadId: ThreadId;
+  readonly request: string;
+}
 
-# upstream-push-fallback
+export interface GedRoleInvocationResult {
+  readonly role: "ged-explorer";
+  readonly invocationId: string;
+  readonly parentThreadId: ThreadId;
+  readonly childThreadId: ThreadId;
+}
+```
 
-## Problem
+`invocationId` is required from caller, validated before dispatch with the same safe alphabet used by derived ids (`[A-Za-z0-9_-]`), and used to derive deterministic child thread id, command ids, and activity ids for testability and best-effort retry behavior.
 
-`GitVcsDriver.pushCurrentBranch` now falls back from permission-denied pushes
-when a branch has no upstream yet, but existing-upstream branches still use
-`pushUpstream` directly. A branch tracking `origin/main` can therefore fail with
-`Permission to <repo> denied` even when another writable remote is configured.
+## Context Resolution
 
-## Desired Behavior
+Inputs do not override parent context.
 
-- Existing-upstream pushes preserve the current upstream push path when it works.
-- If the upstream push fails specifically with a permission/remote access error,
-  retry against another configured remote using the same remote branch name.
-- The returned push result reports the fallback upstream and `setUpstream: true`
-  because `git push -u` updates tracking to the writable remote.
-- Non-permission push failures should still surface normally.
+1. Resolve parent thread detail by `parentThreadId`.
+2. Resolve parent project shell by parent `projectId`.
+3. Copy parent `projectId`, `modelSelection`, `branch`, and `worktreePath`.
+4. Use project shell only for prompt context and existing provider cwd fallback.
+5. Effective cwd for prompt display is `parent.worktreePath ?? project.workspaceRoot`.
+
+Fail before dispatch with no side effects for unsupported role, invalid `invocationId`, blank request, missing parent thread, missing project, or malformed/missing parent model selection.
+
+## Command Sequence
+
+Dispatch through `OrchestrationEngineService` only:
+
+1. `thread.create` child with deterministic `threadId`, copied context/model selection, title `Ged Explorer`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
+2. Parent `thread.activity.append` kind `ged.role-invocation.started` with invocation/parent/child/project/worktree payload.
+3. Child `thread.activity.append` kind `ged.role-invocation.child` with invocation/parent/child/project payload.
+4. Child `thread.turn.start` with prompt-builder text, no attachments, copied `modelSelection`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
+
+## Explorer Prompt Contract
+
+`buildGedExplorerPrompt` must tell the child role that it is read-only, must inspect and report without modifying files, must not write source files, `.ged` files, plans, tests, commits, or artifacts, and must avoid mutating commands.
+
+The final answer is plain text, not JSON, with exact top-level sections in order: `## Summary`, `## Scope Inspected`, `## Findings`, `## Evidence`, `## Risks And Constraints`, `## Open Questions`, `## Recommended Follow-Up Checks`.
+
+The service does not parse the output.
+
+## Partial-Failure Behavior
+
+- Input/context failures happen before dispatch and leave no side effects.
+- After each successful step, continue to the next step.
+- On dispatch failure, stop immediately.
+- Do not rollback/delete child threads; partial state remains for auditability.
+- Attempt best-effort `ged.role-invocation.failed` activity on parent and child when applicable.
+- Failure activity errors are logged/ignored and must not mask the original error.
+- Once child turn start is accepted, the service returns success; provider/runtime failures are handled by existing ingestion paths.
+
+## Risks
+
+- Read-only is prompt/runtime-mode constrained, not provider-sandbox guaranteed.
+- Partial multi-command state can exist until durable invocation storage exists.
+- Child threads are normal visible threads until a grouping policy exists.
+- Activities are the only parent/child linkage in this slice.

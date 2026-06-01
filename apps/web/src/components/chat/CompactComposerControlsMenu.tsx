@@ -4,7 +4,6 @@ import { EllipsisIcon, ListTodoIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
-  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuRadioGroup,
@@ -45,14 +44,18 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Workflow</div>
-        <MenuCheckboxItem
-          checked={props.workflowEnabled}
-          variant="switch"
-          onCheckedChange={(checked) => props.onToggleWorkflow(Boolean(checked))}
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Thread mode</div>
+        <MenuRadioGroup
+          value={props.workflowEnabled ? "ged" : "normal"}
+          onValueChange={(value) => {
+            if (value === "normal" || value === "ged") {
+              props.onToggleWorkflow(value === "ged");
+            }
+          }}
         >
-          Ged workflow
-        </MenuCheckboxItem>
+          <MenuRadioItem value="normal">Normal</MenuRadioItem>
+          <MenuRadioItem value="ged">Ged</MenuRadioItem>
+        </MenuRadioGroup>
         <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
         <MenuRadioGroup

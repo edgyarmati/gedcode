@@ -315,8 +315,8 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).not.toContain("Mode");
       expect(text).not.toContain("Chat");
       expect(text).not.toContain("Plan");
-      expect(text).toContain("Workflow");
-      expect(text).toContain("Ged workflow");
+      expect(text).toContain("Thread mode");
+      expect(text).toContain("Ged");
       expect(text).toContain("Access");
       expect(text).toContain("Supervised");
       expect(text).toContain("Full access");

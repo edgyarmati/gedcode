@@ -1,65 +1,43 @@
 # Tests
 
-## Plan
+## Current Status
 
-- `bun run test` targeted suites:
-  - composer draft store tests for per-chat Ged toggle persistence and cleanup.
-  - orchestration contract/projection/server tests for thread-created/meta-updated workflow field.
-  - Ged workflow guard/service tests or provider reactor tests validating disabled threads skip injection/enforcement.
-- Required completion checks:
-  - `bun fmt`
-  - `bun lint`
-  - `bun typecheck`
+No source implementation for the revised `GedRoleInvocationService` slice has been applied yet.
 
-## Evidence
+Existing evidence:
 
-- `bun fmt` passed.
-- `bun lint` passed with 0 errors. Existing warnings remain in unrelated/react-hook lint areas.
-- `bun typecheck` passed across all 14 Turbo packages.
-- `bun run test --filter=@t3tools/web -- src/composerDraftStore.test.ts src/lib/chatThreadActions.test.ts` passed: 71 tests.
-- `bun run test --filter=@t3tools/contracts -- src/orchestration.test.ts src/provider.test.ts` passed: 49 tests.
-- `bun run test --filter=t3 -- src/orchestration/projector.test.ts src/persistence/Layers/ProjectionRepositories.test.ts` passed: 12 tests.
-- Read-only verifier found two medium issues; both were addressed before final required checks:
-  - Contextual new-thread inheritance now passes the active chat Ged state explicitly instead of applying sticky Ged state to unrelated drafts.
-  - Provider turn dispatch now preserves omitted `gedWorkflowEnabled` so the Ged guard can still consult server defaults.
+- Explorer confirmed orchestration, provider reactor, Ged guard bypass, and activity surfaces are available.
+- Reviewer blockers addressed in the revised plan: explicit invocation entry point, stale state, invocation id semantics, prompt contract, exact runtime mode, context resolution, and partial-failure behavior.
 
-# gedcode-worktree-paths-and-push-remotes
+## Prompt Builder Tests
 
-Planned verification:
+Target: `apps/server/src/gedWorkflow/GedExplorerPrompt.test.ts`
 
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
+Checks: prompt identifies `ged-explorer`, includes invocation/thread/project/worktree/model context, states read-only boundaries, forbids source/`.ged`/artifact writes and commits, requires plain text not JSON, and includes exact output sections in order.
 
-Focused coverage to add/update:
+## Service Unit Tests
 
-- CLI config default path resolves under `~/.gedcode`.
-- Temporary worktree branch generation uses the new namespace.
-- Legacy `gedcode/<token>` refs are still recognized as temporary worktree refs.
+Target: `apps/server/src/gedWorkflow/Layers/GedRoleInvocationService.test.ts`
 
-Results:
+Success checks: child thread has copied parent context/model selection, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`; child turn has prompt output, no attachments, copied model selection, and `gedWorkflowEnabled: false`; parent/child activities have expected kinds and payloads.
 
-- `bun fmt` passed.
-- `bunx vitest run packages/shared/src/git.test.ts scripts/dev-runner.test.ts` passed: 2 files, 29 tests.
-- `bunx vitest run apps/server/src/cli/config.test.ts apps/server/src/vcs/GitVcsDriverCore.test.ts packages/ssh/src/tunnel.test.ts` passed: 3 files, 34 tests.
-- `bunx vitest run --config vitest.browser.config.ts src/components/ChatView.browser.tsx` from `apps/web` ran 74/75 passing; one pre-existing unrelated plan-mode lookup failed.
-- `bun lint` passed with existing warnings.
-- `bun typecheck` passed: 14 packages.
-- `git diff --check` passed.
+Failure checks: unsupported role, invalid `invocationId`, blank request, missing parent, and missing project fail before dispatch; null branch/worktree copy through; partial dispatch failures stop before unsafe later steps and attempt best-effort failure activity where applicable.
 
-# upstream-push-fallback
+## Provider Reactor Integration Test
 
-Planned verification:
+Target: existing or new server integration test around `ProviderCommandReactor`.
 
-- Focused VCS regression test for existing-upstream fallback.
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
+Checks: service-created child turn flows through orchestration, provider session/sendTurn receive copied model instance, cwd/runtime mode are correct, and Ged workflow prompt suffix is not injected.
 
-Results:
+## Required Commands
 
-- `bunx vitest run apps/server/src/vcs/GitVcsDriverCore.test.ts` passed: 1 file, 14 tests.
-- `bun fmt` passed.
-- `bun lint` passed with existing warnings.
-- `bun typecheck` passed: 14 packages.
-- `git diff --check` passed.
+```sh
+cd apps/server && bun run test src/gedWorkflow/GedExplorerPrompt.test.ts
+cd apps/server && bun run test src/gedWorkflow/Layers/GedRoleInvocationService.test.ts
+cd apps/server && bun run test src/orchestration/Layers/ProviderCommandReactor.test.ts
+bun fmt
+bun lint
+bun typecheck
+```
+
+Use `bun run test`, never `bun test`.

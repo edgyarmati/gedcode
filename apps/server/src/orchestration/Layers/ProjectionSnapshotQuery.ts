@@ -20,6 +20,7 @@ import {
   type OrchestrationSession,
   type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
+  GedRoleModelSelections,
   ModelSelection,
   ProjectId,
   ThreadId,
@@ -64,6 +65,7 @@ const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
+    roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -234,6 +236,7 @@ function mapProjectShellRow(
     workspaceRoot: row.workspaceRoot,
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
+    roleModelSelections: row.roleModelSelections,
     scripts: row.scripts,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -307,6 +310,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          role_model_selections_json AS "roleModelSelections",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -671,6 +675,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          role_model_selections_json AS "roleModelSelections",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -693,6 +698,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          role_model_selections_json AS "roleModelSelections",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",

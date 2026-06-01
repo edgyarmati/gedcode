@@ -31,6 +31,7 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
+import { isTheme, THEME_OPTIONS } from "../../lib/themeRegistry";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
@@ -80,20 +81,11 @@ import {
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useServerObservability, useServerProviders } from "../../rpc/serverState";
 
-const THEME_OPTIONS = [
-  {
-    value: "system",
-    label: "System",
-  },
-  {
-    value: "light",
-    label: "Light",
-  },
-  {
-    value: "dark",
-    label: "Dark",
-  },
-] as const;
+const GED_CRITIQUE_MODE_LABELS = {
+  off: "Off",
+  "risk-based": "Risk-based",
+  always: "Always",
+} as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -531,7 +523,7 @@ export function GeneralSettingsPanel() {
             <Select
               value={theme}
               onValueChange={(value) => {
-                if (value === "system" || value === "light" || value === "dark") {
+                if (isTheme(value)) {
                   setTheme(value);
                 }
               }}
@@ -671,31 +663,99 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          title="Default Ged workflow"
-          description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
-          resetAction={
-            settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
-              <SettingResetButton
-                label="Ged workflow"
-                onClick={() =>
-                  updateSettings({
-                    gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
-                  })
+        <SettingsSection title="Ged orchestration">
+          <SettingsRow
+            title="Default Ged workflow"
+            description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
+            resetAction={
+              settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
+                <SettingResetButton
+                  label="Ged workflow"
+                  onClick={() =>
+                    updateSettings({
+                      gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedWorkflowEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedWorkflowEnabled: Boolean(checked) })
                 }
+                aria-label="Enable Ged workflow"
               />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.gedWorkflowEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ gedWorkflowEnabled: Boolean(checked) })
-              }
-              aria-label="Enable Ged workflow"
-            />
-          }
-        />
+            }
+          />
+
+          <SettingsRow
+            title="Subagents"
+            description="Allow Ged role threads such as explorer to be launched by the workflow harness."
+            resetAction={
+              settings.gedSubagentsEnabled !== DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled ? (
+                <SettingResetButton
+                  label="Ged subagents"
+                  onClick={() =>
+                    updateSettings({
+                      gedSubagentsEnabled: DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedSubagentsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedSubagentsEnabled: Boolean(checked) })
+                }
+                aria-label="Enable Ged subagents"
+              />
+            }
+          />
+
+          <SettingsRow
+            title="Critique mode"
+            description="Controls when plan review should run in upcoming orchestration slices."
+            resetAction={
+              settings.gedCritiqueMode !== DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode ? (
+                <SettingResetButton
+                  label="Ged critique mode"
+                  onClick={() =>
+                    updateSettings({ gedCritiqueMode: DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.gedCritiqueMode}
+                onValueChange={(value) => {
+                  if (value === "off" || value === "risk-based" || value === "always") {
+                    updateSettings({ gedCritiqueMode: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="Ged critique mode">
+                  <SelectValue>{GED_CRITIQUE_MODE_LABELS[settings.gedCritiqueMode]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="off">
+                    {GED_CRITIQUE_MODE_LABELS.off}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="risk-based">
+                    {GED_CRITIQUE_MODE_LABELS["risk-based"]}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="always">
+                    {GED_CRITIQUE_MODE_LABELS.always}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        </SettingsSection>
 
         <SettingsRow
           title="Auto-open task panel"

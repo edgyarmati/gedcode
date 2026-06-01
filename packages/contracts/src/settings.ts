@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { GED_SUBAGENT_ROLES } from "./gedWorkflow.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -339,9 +340,44 @@ export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 
+export const GedModelSelections = Schema.Struct({
+  mainThread: Schema.NullOr(ModelSelection).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  roles: Schema.Record(TrimmedNonEmptyString, ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+});
+export type GedModelSelections = typeof GedModelSelections.Type;
+
+export const GedCritiqueMode = Schema.Literals(["off", "risk-based", "always"]);
+export type GedCritiqueMode = typeof GedCritiqueMode.Type;
+
+export const GedSubagentRuntimeMode = Schema.Literals(["gedcode-managed", "harness-native"]);
+export type GedSubagentRuntimeMode = typeof GedSubagentRuntimeMode.Type;
+
+export const GedRoleSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type GedRoleSettings = typeof GedRoleSettings.Type;
+
+const defaultGedRoleSettings = (): Record<string, GedRoleSettings> =>
+  Object.fromEntries(GED_SUBAGENT_ROLES.map((role) => [role, { enabled: true }]));
+
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   gedWorkflowEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedSubagentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedSubagentRuntimeMode: GedSubagentRuntimeMode.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed("harness-native" as const satisfies GedSubagentRuntimeMode),
+    ),
+  ),
+  gedIntercomBridgeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  gedCritiqueMode: GedCritiqueMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("risk-based" as const satisfies GedCritiqueMode)),
+  ),
+  gedRoleSettings: Schema.Record(TrimmedNonEmptyString, GedRoleSettings).pipe(
+    Schema.withDecodingDefault(Effect.succeed(defaultGedRoleSettings())),
+  ),
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(
       Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
@@ -351,6 +387,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
   ),
   addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  gedModelSelections: GedModelSelections.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
@@ -409,6 +446,11 @@ export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
 
 // ── Server Settings Patch (replace with a Schema.deepPartial if available) ──────────────────────────────────────────
 
+const GedModelSelectionsPatch = Schema.Struct({
+  mainThread: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  roles: Schema.optionalKey(Schema.Record(TrimmedNonEmptyString, ModelSelection)),
+});
+
 const ModelSelectionPatch = Schema.Struct({
   instanceId: Schema.optionalKey(ProviderInstanceId),
   model: Schema.optionalKey(TrimmedNonEmptyString),
@@ -450,10 +492,16 @@ export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
+  gedSubagentsEnabled: Schema.optionalKey(Schema.Boolean),
+  gedSubagentRuntimeMode: Schema.optionalKey(GedSubagentRuntimeMode),
+  gedIntercomBridgeEnabled: Schema.optionalKey(Schema.Boolean),
+  gedCritiqueMode: Schema.optionalKey(GedCritiqueMode),
+  gedRoleSettings: Schema.optionalKey(Schema.Record(TrimmedNonEmptyString, GedRoleSettings)),
   automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  gedModelSelections: Schema.optionalKey(GedModelSelectionsPatch),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

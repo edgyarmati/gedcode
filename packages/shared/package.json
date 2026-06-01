@@ -90,6 +90,10 @@
     "./keybindings": {
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
+    },
+    "./gedModelSelection": {
+      "types": "./src/gedModelSelection.ts",
+      "import": "./src/gedModelSelection.ts"
     }
   },
   "scripts": {
