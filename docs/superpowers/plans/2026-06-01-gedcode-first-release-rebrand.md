@@ -14,20 +14,20 @@
 
 ## File Structure
 
-| File | Responsibility | Unit |
-|------|----------------|------|
-| `.github/FUNDING.yml` | GitHub native Sponsor button config | 1 |
-| `apps/server/package.json` | published package `name`, `bin`, `repository.url` | 2 |
-| `apps/server/src/bin.ts` | CLI program name (`Command.make`) | 2 |
-| `apps/server/src/bin.test.ts` | assertions on CLI command path | 2 |
-| `package.json` (root) | turbo `--filter` script targets | 2 |
-| `scripts/dev-runner.ts` | turbo `--filter` dev targets | 2 |
-| `.github/workflows/release.yml` | turbo `--filter` release targets | 2 |
-| `README.md` | install instructions, branding, links | 3 |
-| `REMOTE.md` | `npx` command branding | 3 |
-| `docs/observability.md` | `npx` command branding | 3 |
-| `docs/release.md` | npm package name references | 3 |
-| `docs/providers/codex.md` | product naming | 3 |
+| File                            | Responsibility                                    | Unit |
+| ------------------------------- | ------------------------------------------------- | ---- |
+| `.github/FUNDING.yml`           | GitHub native Sponsor button config               | 1    |
+| `apps/server/package.json`      | published package `name`, `bin`, `repository.url` | 2    |
+| `apps/server/src/bin.ts`        | CLI program name (`Command.make`)                 | 2    |
+| `apps/server/src/bin.test.ts`   | assertions on CLI command path                    | 2    |
+| `package.json` (root)           | turbo `--filter` script targets                   | 2    |
+| `scripts/dev-runner.ts`         | turbo `--filter` dev targets                      | 2    |
+| `.github/workflows/release.yml` | turbo `--filter` release targets                  | 2    |
+| `README.md`                     | install instructions, branding, links             | 3    |
+| `REMOTE.md`                     | `npx` command branding                            | 3    |
+| `docs/observability.md`         | `npx` command branding                            | 3    |
+| `docs/release.md`               | npm package name references                       | 3    |
+| `docs/providers/codex.md`       | product naming                                    | 3    |
 
 **Out of scope (do NOT touch):** `apps/desktop/src/electron/ElectronProtocol.ts` (`DESKTOP_SCHEME = "t3"`), internal `@t3tools/*` packages, and the `/__t3code/channel` route + `t3code_web_channel` cookie + `app.t3.codes` domain in `docs/release.md` (these document actual code identifiers that are not being renamed).
 
@@ -36,6 +36,7 @@
 ## Task 1: Sponsor button (FUNDING.yml)
 
 **Files:**
+
 - Create: `.github/FUNDING.yml`
 
 - [ ] **Step 1: Create the funding config**
@@ -62,6 +63,7 @@ git commit -m "chore: add GitHub Sponsors funding config"
 ## Task 2: Rename published CLI `t3` → `gedcode`
 
 **Files:**
+
 - Modify: `apps/server/package.json` (name, bin, repository)
 - Modify: `apps/server/src/bin.ts:16`
 - Modify: `apps/server/src/bin.test.ts:251,354`
@@ -84,13 +86,15 @@ export const cli = Command.make("gedcode", { ...sharedServerCommandFlags }).pipe
 In `apps/server/src/bin.test.ts`, update both assertions that expect the program name as the first element of `commandPath`:
 
 Line ~251:
+
 ```ts
-      assert.deepEqual(error.commandPath, ["gedcode", "auth", "pairing", "create"]);
+assert.deepEqual(error.commandPath, ["gedcode", "auth", "pairing", "create"]);
 ```
 
 Line ~354:
+
 ```ts
-      assert.deepEqual(error.commandPath, ["gedcode", "project", "add"]);
+assert.deepEqual(error.commandPath, ["gedcode", "project", "add"]);
 ```
 
 (both were `["t3", ...]`)
@@ -129,6 +133,7 @@ In `package.json` (root):
 ```json
     "start": "turbo run start --filter=gedcode",
 ```
+
 ```json
     "build:desktop": "turbo run build --filter=@t3tools/desktop --filter=gedcode",
 ```
@@ -142,6 +147,7 @@ In `scripts/dev-runner.ts`, change both occurrences (the `dev` array entry and t
 ```ts
     "--filter=gedcode",
 ```
+
 ```ts
   "dev:server": ["run", "dev", "--filter=gedcode"],
 ```
@@ -151,13 +157,15 @@ In `scripts/dev-runner.ts`, change both occurrences (the `dev` array entry and t
 In `.github/workflows/release.yml`:
 
 Install step (~line 344):
+
 ```yaml
-        run: bun install --frozen-lockfile --filter=gedcode --filter=@t3tools/web --filter=@t3tools/scripts
+run: bun install --frozen-lockfile --filter=gedcode --filter=@t3tools/web --filter=@t3tools/scripts
 ```
 
 Build CLI step (~line 353):
+
 ```yaml
-        run: bun --filter=gedcode run build
+run: bun --filter=gedcode run build
 ```
 
 - [ ] **Step 8: Reinstall so the workspace re-resolves the renamed package**
@@ -182,23 +190,26 @@ git commit -m "refactor: rename published CLI t3 -> gedcode"
 ## Task 3: README rebrand + install accuracy
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Replace the install section (lines ~15–41) with Releases + npm only**
 
 Replace from `### Run without installing` through the Arch Linux block with:
 
-```markdown
+````markdown
 ### Run without installing
 
 ```bash
 npx gedcode
 ```
+````
 
 ### Desktop app
 
 Install the latest version of the desktop app from [GitHub Releases](https://github.com/edgyarmati/gedcode/releases).
-```
+
+````
 
 This removes the Windows (`winget install T3Tools.T3Code`), macOS (`brew install --cask t3-code`), and Arch (`yay -S t3code-bin`) sections and points the Releases link at `edgyarmati/gedcode`.
 
@@ -208,9 +219,10 @@ In the `## Some notes` section, delete this line (and its surrounding blank line
 
 ```markdown
 We are not accepting contributions yet.
-```
+````
 
 The section should now read:
+
 ```markdown
 ## Some notes
 
@@ -244,18 +256,22 @@ git commit -m "docs: rebrand README install instructions for first release"
 ## Task 4: Rebrand `npx t3` in REMOTE.md and observability.md
 
 **Files:**
+
 - Modify: `REMOTE.md` (lines ~67, 89, 96)
 - Modify: `docs/observability.md` (lines ~68, 119)
 
 - [ ] **Step 1: Replace `npx t3` with `npx gedcode` in REMOTE.md**
 
 Update the three command lines:
+
 ```bash
 npx gedcode serve --host "$(tailscale ip -4)"
 ```
+
 ```bash
 npx gedcode serve --tailscale-serve
 ```
+
 ```bash
 npx gedcode serve --tailscale-serve --tailscale-serve-port 8443
 ```
@@ -263,6 +279,7 @@ npx gedcode serve --tailscale-serve --tailscale-serve-port 8443
 - [ ] **Step 2: Replace `npx t3` with `npx gedcode` in docs/observability.md**
 
 Both occurrences (lines ~68 and ~119) become:
+
 ```bash
 npx gedcode
 ```
@@ -284,22 +301,26 @@ git commit -m "docs: update npx t3 -> npx gedcode in REMOTE and observability"
 ## Task 5: Rebrand npm package name in release.md + product name in codex.md
 
 **Files:**
+
 - Modify: `docs/release.md` (lines ~24, 97, 129)
 - Modify: `docs/providers/codex.md` (line ~43)
 
 - [ ] **Step 1: Update npm package references in docs/release.md**
 
 Line ~24:
+
 ```markdown
 - Publishes the CLI package (`apps/server`, npm package `gedcode`) with OIDC trusted publishing from the same workflow file:
 ```
 
 Line ~97:
+
 ```markdown
 - Publishes the CLI package (`apps/server`, npm package `gedcode`) to the `nightly` npm dist-tag using the same nightly version.
 ```
 
 Line ~129:
+
 ```markdown
 1. Confirm npm org/user owns package `gedcode` (or rename package first if needed).
 ```
@@ -309,6 +330,7 @@ Line ~129:
 - [ ] **Step 2: Update product name in docs/providers/codex.md**
 
 Line ~43:
+
 ```markdown
 - both accounts can see the same GedCode/Codex sessions
 ```
@@ -317,9 +339,8 @@ Line ~43:
 
 - [ ] **Step 3: Verify only intended references changed**
 
-Run: `grep -nE "npm package \`t3\`|owns package \`t3\`|T3/Codex" docs/release.md docs/providers/codex.md`
-Expected: no output (exit 1).
-Run: `grep -n "__t3code\|t3code_web_channel\|app.t3.codes" docs/release.md`
+Run: `grep -nE "npm package \`t3\`|owns package \`t3\`|T3/Codex" docs/release.md docs/providers/codex.md`Expected: no output (exit 1).
+Run:`grep -n "\_\_t3code\|t3code_web_channel\|app.t3.codes" docs/release.md`
 Expected: still present (these are intentionally preserved).
 
 - [ ] **Step 4: Commit**
@@ -338,11 +359,13 @@ git commit -m "docs: rebrand npm package name and product references"
 - [ ] **Step 1: Sweep all in-scope docs for missed upstream references**
 
 Run:
+
 ```bash
 grep -rnE "t3code|pingdotgg|npx t3|T3Tools|t3-code|t3code-bin" \
   README.md CONTRIBUTING.md REMOTE.md KEYBINDINGS.md \
   docs/release.md docs/observability.md docs/providers/
 ```
+
 Expected: the ONLY allowed hits are the preserved router identifiers in `docs/release.md` (`__t3code`, `t3code_web_channel`). Anything else must be fixed before continuing.
 
 - [ ] **Step 2: Confirm the renamed CLI builds and runs**
