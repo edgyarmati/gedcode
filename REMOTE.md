@@ -64,7 +64,7 @@ Use this when you want to run the server without a GUI, for example on a remote 
 Run the server with `t3 serve`.
 
 ```bash
-npx t3 serve --host "$(tailscale ip -4)"
+npx gedcode serve --host "$(tailscale ip -4)"
 ```
 
 `t3 serve` starts the server without opening a browser and prints:
@@ -86,14 +86,14 @@ Use `t3 serve --help` for the full flag reference. It supports the same general 
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
 
 ```bash
-npx t3 serve --tailscale-serve
+npx gedcode serve --tailscale-serve
 ```
 
 By default this configures Tailscale Serve on HTTPS port 443 and advertises
 `https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
 
 ```bash
-npx t3 serve --tailscale-serve --tailscale-serve-port 8443
+npx gedcode serve --tailscale-serve --tailscale-serve-port 8443
 ```
 
 > Note
