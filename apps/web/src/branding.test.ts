@@ -54,4 +54,11 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBeNull();
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBeNull();
   });
+
+  it("uses development branding without falling back to Alpha", async () => {
+    const branding = await import("./branding");
+
+    expect(branding.APP_STAGE_LABEL).toBe("Dev");
+    expect(branding.APP_DISPLAY_NAME).toBe("GedCode (Dev)");
+  });
 });
