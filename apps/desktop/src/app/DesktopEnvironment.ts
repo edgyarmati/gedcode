@@ -246,7 +246,9 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
       path.join(resourcesPath, "resources", fileName),
       path.join(resourcesPath, fileName),
     ],
-    developmentDockIconPath: path.join(rootDir, "assets", "GedCode-macOS-Default-1024x1024@1x.png"),
+    // Padded master (macOS app-icon grid) rather than the full-bleed Icon
+    // Composer "Default" export, which renders oversized as a raw dock icon.
+    developmentDockIconPath: path.join(rootDir, "assets", "GedCode-macOS-AppIcon-padded-1024.png"),
   });
 });
 

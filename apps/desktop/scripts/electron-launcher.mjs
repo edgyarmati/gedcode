@@ -25,11 +25,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const desktopDir = resolve(__dirname, "..");
 const repoRoot = resolve(desktopDir, "..", "..");
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
-const developmentMacIconPngPath = join(
-  repoRoot,
-  "assets",
-  "GedCode-macOS-Default-1024x1024@1x.png",
-);
+// Use the padded master, not the full-bleed Icon Composer "Default" export.
+// Icon Composer exports edge-to-edge artwork because the OS adds the standard
+// inset/mask at render time; a raw Electron dock icon gets no such inset, so a
+// full-bleed source renders oversized next to other apps. The padded derivative
+// bakes in the macOS app-icon grid (824/1024 body, ~10% margin).
+const developmentMacIconPngPath = join(repoRoot, "assets", "GedCode-macOS-AppIcon-padded-1024.png");
 
 function setPlistString(plistPath, key, value) {
   const replaceResult = spawnSync("plutil", ["-replace", key, "-string", value, plistPath], {

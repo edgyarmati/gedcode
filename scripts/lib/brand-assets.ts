@@ -1,5 +1,5 @@
 export const BRAND_ASSET_PATHS = {
-  productionMacIconPng: "assets/GedCode-macOS-Default-1024x1024@1x.png",
+  productionMacIconPng: "assets/GedCode-macOS-AppIcon-padded-1024.png",
   productionLinuxIconPng: "assets/gedcode-base-color-1024.png",
   productionWindowsIconIco: "assets/gedcode-windows.ico",
   productionWebFaviconIco: "assets/gedcode-web-favicon.ico",
@@ -7,7 +7,7 @@ export const BRAND_ASSET_PATHS = {
   productionWebFavicon32Png: "assets/gedcode-web-favicon-32x32.png",
   productionWebAppleTouchIconPng: "assets/gedcode-web-apple-touch-180.png",
 
-  nightlyMacIconPng: "assets/GedCode-macOS-Default-1024x1024@1x.png",
+  nightlyMacIconPng: "assets/GedCode-macOS-AppIcon-padded-1024.png",
   nightlyLinuxIconPng: "assets/gedcode-base-color-1024.png",
   nightlyWindowsIconIco: "assets/gedcode-windows.ico",
   nightlyWebFaviconIco: "assets/gedcode-web-favicon.ico",
@@ -15,7 +15,7 @@ export const BRAND_ASSET_PATHS = {
   nightlyWebFavicon32Png: "assets/gedcode-web-favicon-32x32.png",
   nightlyWebAppleTouchIconPng: "assets/gedcode-web-apple-touch-180.png",
 
-  developmentDesktopIconPng: "assets/GedCode-macOS-Default-1024x1024@1x.png",
+  developmentDesktopIconPng: "assets/GedCode-macOS-AppIcon-padded-1024.png",
   developmentWindowsIconIco: "assets/gedcode-windows.ico",
   developmentWebFaviconIco: "assets/gedcode-web-favicon.ico",
   developmentWebFavicon16Png: "assets/gedcode-web-favicon-16x16.png",
