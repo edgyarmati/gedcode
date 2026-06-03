@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import type { CheckpointState } from "./CheckpointSchema.ts";
+import * as Schema from "effect/Schema";
+import {
+  CheckpointState,
+  type CheckpointState as CheckpointStateValue,
+} from "./CheckpointSchema.ts";
 import {
   validateClarificationGate,
   validatePlannerCheckpoint,
@@ -10,15 +14,17 @@ import {
 } from "./CheckpointValidation.ts";
 
 const stubRecord = (
-  overrides?: Partial<CheckpointState["taskCheckpoints"][string]["ged-verifier"]>,
-): CheckpointState["taskCheckpoints"][string]["ged-verifier"] => ({
+  overrides?: Partial<CheckpointStateValue["taskCheckpoints"][string]["ged-verifier"]>,
+): CheckpointStateValue["taskCheckpoints"][string]["ged-verifier"] => ({
   recordedAt: "2026-05-17T10:00:00Z",
   source: "auto",
   valid: true,
   ...overrides,
 });
 
-const makeActiveState = (overrides?: Partial<CheckpointState>): CheckpointState =>
+const decodeCheckpointState = Schema.decodeUnknownSync(CheckpointState);
+
+const makeActiveState = (overrides?: Partial<CheckpointStateValue>): CheckpointStateValue =>
   ({
     schemaVersion: 3,
     lifecycleStatus: "active",
@@ -27,18 +33,18 @@ const makeActiveState = (overrides?: Partial<CheckpointState>): CheckpointState 
     planCheckpoints: {},
     taskCheckpoints: {},
     ...overrides,
-  }) as CheckpointState;
+  }) as CheckpointStateValue;
 
 const makeTaskCheckpoints = (
   taskId: string,
-  verifierOverrides?: Partial<CheckpointState["taskCheckpoints"][string]["ged-verifier"]>,
-): CheckpointState["taskCheckpoints"] =>
+  verifierOverrides?: Partial<CheckpointStateValue["taskCheckpoints"][string]["ged-verifier"]>,
+): CheckpointStateValue["taskCheckpoints"] =>
   ({
     [taskId]: {
       "ged-explorer": stubRecord(),
       "ged-verifier": stubRecord(verifierOverrides),
     },
-  }) as CheckpointState["taskCheckpoints"];
+  }) as CheckpointStateValue["taskCheckpoints"];
 
 describe("validatePlannerCheckpoint", () => {
   it("returns invalid when no planner checkpoint exists for non-trivial", () => {
@@ -58,7 +64,7 @@ describe("validatePlannerCheckpoint", () => {
         planCheckpoints: {
           "ged-planner": stubRecord(),
         },
-      } as Partial<CheckpointState>),
+      } as Partial<CheckpointStateValue>),
     );
     expect(result.valid).toBe(true);
   });
@@ -70,6 +76,24 @@ describe("validatePlannerCheckpoint", () => {
 });
 
 describe("validateClarificationGate", () => {
+  it("decodes legacy clarification records without a decision", () => {
+    const state = decodeCheckpointState({
+      schemaVersion: 3,
+      lifecycleStatus: "active",
+      classification: "non-trivial",
+      classificationReason: "legacy",
+      clarification: {
+        completedAt: "2026-05-17T10:00:00Z",
+        questionCount: 0,
+      },
+      planCheckpoints: {},
+      taskCheckpoints: {},
+    });
+
+    expect(state.clarification?.decision).toBeUndefined();
+    expect(validateClarificationGate(state).valid).toBe(false);
+  });
+
   it("returns invalid when non-trivial task has no clarification", () => {
     expect(validateClarificationGate(makeActiveState()).valid).toBe(false);
   });
