@@ -638,6 +638,23 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]?.label).toBe("Searching for API endpoints");
   });
 
+  it("surfaces runtime.warning payload message as detail", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "runtime-warning",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "runtime.warning",
+        summary: "Runtime warning",
+        tone: "info",
+        payload: { message: "Reconnecting to provider… attempt 2/5" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]?.label).toBe("Runtime warning");
+    expect(entries[0]?.detail).toBe("Reconnecting to provider… attempt 2/5");
+  });
+
   it("uses payload detail as label for task.completed and preserves error tone", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

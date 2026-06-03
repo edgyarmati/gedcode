@@ -982,7 +982,9 @@ function extractToolDetail(
   payload: Record<string, unknown> | null,
   heading: string,
 ): string | null {
-  const rawDetail = asTrimmedString(payload?.detail);
+  // Prefer an explicit `detail`, but fall back to `message` so runtime
+  // events (e.g. runtime.warning) surface their text instead of nothing.
+  const rawDetail = asTrimmedString(payload?.detail) ?? asTrimmedString(payload?.message);
   const detail = rawDetail ? stripTrailingExitCode(rawDetail).output : null;
   const normalizedHeading = normalizePreviewForComparison(heading);
   const normalizedDetail = normalizePreviewForComparison(detail);
