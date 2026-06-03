@@ -1,32 +1,27 @@
 # Tasks
 
-## 1. README Positioning
+## 1. Settings Contract
 
-- [x] Replace "minimal desktop and web GUI" framing with Ged workflow framing.
-- [x] Preserve the current screenshot image line.
-- [x] Add a compact "Ged workflow" section after the screenshot.
-- [x] Keep installation and provider setup links intact.
-- [x] Avoid `docs/superpowers/*` links.
+- [x] Add a Codex Ged subagent preset field to `CodexSettings`.
+- [x] Add patch decoding for the new Codex field.
+- [x] Cover default, decode, and patch behavior in settings tests.
 
-## 2. Public Workflow Guide
+## 2. Prompt Injection
 
-- [x] Create `docs/ged-workflow.md`.
-- [x] Explain clarify, plan, implement, verify, and commit-or-continue phases.
-- [x] Describe `.ged/` memory and checkpoints at a user-facing level.
-- [x] Document what GedCode helps with and what it does not promise.
-- [x] Avoid hard-enforcement and child-thread orchestration claims.
+- [x] Extend `WorkflowPromptOptions` to accept provider and Codex preset context.
+- [x] Render a Codex-only preset section when subagents are enabled and a preset is configured.
+- [x] Pass the active provider session into prompt generation from the Ged workflow guard/interceptor.
+- [x] Add tests for Codex-only prompt behavior and non-Codex omission.
 
-## 3. Marketing Copy
+## 3. Documentation
 
-- [x] Update marketing hero/meta description to mention the Ged workflow.
-- [x] Keep copy concise and consistent with provider support.
-- [x] Avoid layout or styling changes.
+- [x] Update `docs/ged-workflow.md` with a brief Codex preset note if the behavior is user-facing.
 
 ## 4. Verification
 
-- [x] Run targeted documentation checks.
+- [x] Run focused tests for settings and workflow prompt behavior.
 - [x] Run `bun fmt`.
 - [x] Run `bun lint`.
 - [x] Run `bun typecheck`.
-- [x] Run `ged-verifier` before committing.
-- [x] Commit with a conventional docs commit.
+- [x] Run Ged verifier review before committing.
+- [x] Commit scoped changes with a conventional commit.

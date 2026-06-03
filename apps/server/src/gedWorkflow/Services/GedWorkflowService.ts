@@ -7,17 +7,22 @@
  *
  * @module GedWorkflowService
  */
-import type { GedWorkflowState } from "@t3tools/contracts";
+import type { GedWorkflowState, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import type { ValidationResult } from "@t3tools/ged-workflow/CheckpointValidation";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+
+export interface GedWorkflowPromptContext {
+  readonly provider?: ProviderDriverKind | undefined;
+  readonly providerInstanceId?: ProviderInstanceId | undefined;
+}
 
 export interface GedWorkflowServiceShape {
   readonly bootstrap: (projectRoot: string) => Effect.Effect<void>;
   readonly classifyTurn: (projectRoot: string, userInput: string) => Effect.Effect<void>;
   readonly getState: (projectRoot: string) => Effect.Effect<GedWorkflowState>;
   readonly getStateByThreadId: (threadId: string) => Effect.Effect<GedWorkflowState>;
-  readonly getWorkflowPromptSuffix: () => Effect.Effect<string>;
+  readonly getWorkflowPromptSuffix: (context?: GedWorkflowPromptContext) => Effect.Effect<string>;
   readonly isEnabled: Effect.Effect<boolean>;
   readonly recordThreadCwd: (threadId: string, cwd: string) => Effect.Effect<void>;
   readonly validateTurnGuards: (projectRoot: string) => Effect.Effect<ValidationResult>;

@@ -192,13 +192,29 @@ export const CodexSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    gedSubagentPreset: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Ged subagent preset",
+        description:
+          "Codex-only preset for harness-native Ged subagents. Use one role per line with model and reasoning hints.",
+        providerSettingsForm: {
+          control: "textarea",
+          placeholder:
+            "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
+            "ged-planner: model=gpt-5.4, reasoning=high\n" +
+            "ged-verifier: model=gpt-5.5, reasoning=xhigh",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "gedSubagentPreset"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
@@ -462,6 +478,7 @@ const CodexSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
   shadowHomePath: Schema.optionalKey(TrimmedString),
+  gedSubagentPreset: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

@@ -1,33 +1,36 @@
-# Release-Facing Ged Workflow Positioning
+# Codex Ged Subagent Preset
 
 ## Goal
 
-Update public release-facing documentation so GedCode is described around the Ged workflow, not merely as a minimal GUI for coding agents.
+Add a Codex-specific Ged workflow improvement so users can configure a preset describing which harness-native Ged subagents Codex should use and which reasoning/thinking levels those subagents should run with.
 
-The README and public copy should make clear that GedCode helps users run coding-agent work through a predictable loop: clarify, plan, implement, verify, then commit or continue. The documentation should also explain how GedCode keeps this work inspectable and easier to resume across long-running turns, reconnects, restarts, and partial streams.
+## Assumptions
+
+- This is a prompt-level Codex improvement, not a new internal child-thread orchestrator.
+- Codex should receive the preset only when the active provider session is Codex.
+- Non-Codex providers should keep the existing Ged workflow prompt.
+- The first release can use a multiline Codex provider setting instead of a larger role-by-role model picker UI.
 
 ## Scope
 
-- Update `README.md` with product positioning centered on the Ged workflow.
-- Preserve the existing README screenshot line if present:
-  `![GedCode workspace screenshot](./assets/screenshot/workspace.png)`
-- Add a public `docs/ged-workflow.md` guide.
-- Update marketing page/meta copy where it repeats the old generic product description.
-- Keep provider setup and installation instructions accurate.
+- Add a Codex provider setting for a Ged subagent preset.
+- Pass provider context into Ged workflow prompt generation.
+- Append the Codex preset to the harness-native subagent section only for Codex turns and only when subagents are enabled.
+- Add tests for schema decoding, prompt generation, and service-level Codex-only behavior.
+- Update public workflow docs if needed to mention Codex presets.
 
 ## Non-Goals
 
-- No provider behavior changes.
-- No release workflow changes.
-- No links from the public README to historical `docs/superpowers/*` planning docs.
-- No claim that GedCode hard-enforces every workflow phase or guarantees correctness.
-- No claim that GedCode-managed child-thread orchestration is available when the current implementation points users toward harness-native subagents.
+- No provider-native API changes.
+- No automatic spawning of Gedcode-managed child threads.
+- No UI redesign of the global Ged model picker.
+- No changes to Claude, OpenCode, or Cursor behavior.
 
 ## Acceptance Criteria
 
-- README leads with Ged workflow as the selling point.
-- README includes one public link to `docs/ged-workflow.md`.
-- `docs/ged-workflow.md` explains the workflow phases in user-facing language.
-- Public copy stays accurate about current provider support: Codex, Claude, and OpenCode in the README.
-- Marketing copy mentions Ged workflow without overclaiming unsupported orchestration details.
-- Required repo gates pass: `bun fmt`, `bun lint`, `bun typecheck`.
+- Codex settings include a configurable multiline Ged subagent preset.
+- The preset can name Ged roles such as `ged-explorer`, `ged-planner`, and `ged-verifier` and specify model/reasoning hints.
+- Codex Ged workflow prompts include the configured preset.
+- Non-Codex Ged workflow prompts omit the Codex preset.
+- Existing Ged workflow prompt behavior remains unchanged when no preset is configured.
+- Required repo gates pass: `bun fmt`, `bun lint`, and `bun typecheck`.

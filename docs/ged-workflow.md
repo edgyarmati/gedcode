@@ -60,6 +60,16 @@ When a harness provides native subagent or worker tools, Ged can ask for role-sp
 
 When those tools are not available, the same roles can be performed in the main thread.
 
+Codex instances can also define a Ged subagent preset in provider settings. Use one line per role, for example:
+
+```text
+ged-explorer: model=gpt-5.4-mini, reasoning=medium
+ged-planner: model=gpt-5.4, reasoning=high
+ged-verifier: model=gpt-5.5, reasoning=xhigh
+```
+
+GedCode injects this preset only into Codex workflow prompts. The Codex harness still decides which subagent models and reasoning levels are available at runtime.
+
 ## What This Does Not Mean
 
 GedCode does not prove that every agent decision is correct, and it does not remove the need to inspect diffs or run the right checks. The public promise is more practical: GedCode makes the workflow visible, repeatable, and easier to operate.

@@ -26,6 +26,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.codex.gedSubagentPreset).toBe("");
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -97,6 +98,20 @@ describe("ServerSettingsPatch.providerInstances", () => {
     expect(() => decodeServerSettingsPatch({ gedSubagentRuntimeMode: "custom" })).toThrow();
   });
 
+  it("accepts Codex Ged subagent preset patches", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        codex: {
+          gedSubagentPreset: " ged-explorer: model=gpt-5.4-mini, reasoning=medium ",
+        },
+      },
+    });
+
+    expect(patch.providers?.codex?.gedSubagentPreset).toBe(
+      "ged-explorer: model=gpt-5.4-mini, reasoning=medium",
+    );
+  });
+
   it("treats providerInstances as an optional whole-map replacement", () => {
     const patch = decodeServerSettingsPatch({});
     expect(patch.providerInstances).toBeUndefined();
@@ -138,6 +153,7 @@ describe("ServerSettingsPatch string normalization", () => {
         codex: {
           binaryPath: "  /opt/homebrew/bin/codex  ",
           homePath: "  ~/.codex  ",
+          gedSubagentPreset: "  ged-verifier: model=gpt-5.5, reasoning=xhigh  ",
         },
       },
       providerInstances: {
@@ -154,6 +170,9 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(patch.observability?.otlpTracesUrl).toBe("http://localhost:4318/v1/traces");
     expect(patch.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(patch.providers?.codex?.homePath).toBe("~/.codex");
+    expect(patch.providers?.codex?.gedSubagentPreset).toBe(
+      "ged-verifier: model=gpt-5.5, reasoning=xhigh",
+    );
     expect(patch.providerInstances?.[ProviderInstanceId.make("codex_personal")]?.driver).toBe(
       "codex",
     );
@@ -175,11 +194,15 @@ describe("ServerSettingsPatch string normalization", () => {
         codex: {
           ...defaultSettings.providers.codex,
           binaryPath: "  /opt/homebrew/bin/codex  ",
+          gedSubagentPreset: "  ged-planner: model=gpt-5.4, reasoning=high  ",
         },
       },
     });
 
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
+    expect(encoded.providers?.codex?.gedSubagentPreset).toBe(
+      "ged-planner: model=gpt-5.4, reasoning=high",
+    );
   });
 });

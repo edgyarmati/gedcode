@@ -7,7 +7,7 @@
  *
  * @module GedWorkflowServiceLive
  */
-import type { GedWorkflowState } from "@t3tools/contracts";
+import type { GedWorkflowState, ServerSettings } from "@t3tools/contracts";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
 import {
   CheckpointState,
@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 
 import {
   GedWorkflowService,
+  type GedWorkflowPromptContext,
   type GedWorkflowServiceShape,
 } from "../Services/GedWorkflowService.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -45,6 +46,33 @@ const DEFAULT_STATE: GedWorkflowState = {
   classification: "unclassified",
   plannerCheckpointValid: false,
   verifierCheckpointValid: false,
+};
+
+const CODEX_PROVIDER = "codex";
+
+const readStringField = (config: unknown, field: string): string | undefined => {
+  if (config === null || typeof config !== "object") return undefined;
+  const value = (config as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : undefined;
+};
+
+const resolveCodexGedSubagentPreset = (
+  current: ServerSettings,
+  context?: GedWorkflowPromptContext,
+): string | undefined => {
+  if (context?.provider !== CODEX_PROVIDER) return undefined;
+
+  const instance =
+    context.providerInstanceId === undefined
+      ? undefined
+      : current.providerInstances[context.providerInstanceId];
+  if (instance?.driver === CODEX_PROVIDER) {
+    const instancePreset = readStringField(instance.config, "gedSubagentPreset")?.trim();
+    if (instancePreset) return instancePreset;
+  }
+
+  const defaultPreset = current.providers.codex.gedSubagentPreset.trim();
+  return defaultPreset || undefined;
 };
 
 const mapCheckpointStateToWorkflowState = (
@@ -174,16 +202,19 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
+  const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = (context) =>
     settings.getSettings.pipe(
       Effect.map((current) =>
         buildWorkflowPromptSuffix({
+          codexGedSubagentPreset: resolveCodexGedSubagentPreset(current, context),
+          provider: context?.provider,
           subagentsEnabled: current.gedSubagentsEnabled,
         }),
       ),
       Effect.catch(() =>
         Effect.succeed(
           buildWorkflowPromptSuffix({
+            provider: context?.provider,
             subagentsEnabled: true,
           }),
         ),

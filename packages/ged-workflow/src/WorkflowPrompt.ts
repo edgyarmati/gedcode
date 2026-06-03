@@ -1,4 +1,6 @@
 export interface WorkflowPromptOptions {
+  readonly codexGedSubagentPreset?: string | undefined;
+  readonly provider?: string | undefined;
   readonly subagentsEnabled: boolean;
 }
 
@@ -78,6 +80,20 @@ When the harness provides native subagent, task, worker, or delegation tools, cr
 - Do not expect Gedcode to launch separate role child threads or route per-role custom models.
 - Keep ownership clear: you remain responsible for final scope decisions, synthesis, verification judgment, and commits.
 - If the selected harness does not provide native subagents, execute the explorer, planner, and verifier steps yourself in the main thread and state that native subagents were unavailable.`);
+
+    const codexPreset = options.codexGedSubagentPreset?.trim();
+    if (options.provider === "codex" && codexPreset) {
+      sections.push(`### Codex Ged Subagent Preset
+When spawning harness-native Ged subagents in Codex, use this preset unless the user explicitly overrides it in the current request.
+
+\`\`\`text
+${codexPreset}
+\`\`\`
+
+- Treat \`reasoning\` or \`thinking\` entries as Codex reasoning-effort hints when the Codex subagent tool supports them.
+- If a listed model or reasoning level is unavailable, choose the closest supported Codex option and say what changed.
+- Do not spawn roles that are disabled or irrelevant for the current task.`);
+    }
   }
 
   return sections.join("\n\n");
