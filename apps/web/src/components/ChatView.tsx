@@ -119,11 +119,7 @@ import {
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
-import {
-  getCustomModelOptionsByInstance,
-  resolveAppModelSelectionForInstance,
-} from "../modelSelection";
-import { deriveProviderInstanceEntries, sortProviderInstanceEntries } from "../providerInstances";
+import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -1334,25 +1330,16 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchServerLabel,
   ]);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
-  const gedModelFallbackSelection = baseFallbackModelSelection;
-  const gedModelInstanceEntries = useMemo(
-    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(providerStatuses)),
-    [providerStatuses],
-  );
-  const gedModelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, providerStatuses),
-    [settings, providerStatuses],
-  );
   const resolvedProjectGedMainModelSelection = useMemo(
     () =>
       resolveGedMainThreadModelSelection({
         projectDefaultModelSelection: activeProject?.defaultModelSelection,
         globalMainModelSelection: settings.gedModelSelections.mainThread,
-        fallbackModelSelection: gedModelFallbackSelection,
+        fallbackModelSelection: baseFallbackModelSelection,
       }),
     [
       activeProject?.defaultModelSelection,
-      gedModelFallbackSelection,
+      baseFallbackModelSelection,
       settings.gedModelSelections.mainThread,
     ],
   );
@@ -2105,21 +2092,6 @@ export default function ChatView(props: ChatViewProps) {
       }
     },
     [environmentId],
-  );
-  const setProjectGedMainModel = useCallback(
-    async (selection: ModelSelection | null) => {
-      if (!activeProject) return;
-      const api = readEnvironmentApi(environmentId);
-      if (!api) return;
-
-      await api.orchestration.dispatchCommand({
-        type: "project.meta.update",
-        commandId: newCommandId(),
-        projectId: activeProject.id,
-        defaultModelSelection: selection,
-      });
-    },
-    [activeProject, environmentId],
   );
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput) => {
@@ -3695,15 +3667,10 @@ export default function ChatView(props: ChatViewProps) {
           gitCwd={gitCwd}
           diffOpen={diffOpen}
           workflowState={workflowState}
-          projectGedMainModelSelection={activeProject?.defaultModelSelection ?? null}
-          resolvedGedMainModelSelection={resolvedProjectGedMainModelSelection}
-          gedModelInstanceEntries={gedModelInstanceEntries}
-          gedModelOptionsByInstance={gedModelOptionsByInstance}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
-          onSetProjectGedMainModel={setProjectGedMainModel}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
         />
