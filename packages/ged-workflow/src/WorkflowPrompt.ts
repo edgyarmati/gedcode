@@ -1,3 +1,5 @@
+import { getBundledSkill } from "./SkillRegistry.ts";
+
 export interface WorkflowPromptOptions {
   readonly codexGedSubagentPreset?: string | undefined;
   readonly provider?: string | undefined;
@@ -6,6 +8,7 @@ export interface WorkflowPromptOptions {
 
 export const buildWorkflowPromptSuffix = (options: WorkflowPromptOptions): string => {
   const sections: Array<string> = [];
+  const grillMeSkill = getBundledSkill("grill-me");
 
   sections.push(`## Ged Workflow
 
@@ -35,6 +38,7 @@ Auto-escalation: if a TRIVIAL task touches >1 source file, it becomes NON-TRIVIA
 - Record evidence in .ged/work/root/TESTS.md
 
 ### Checkpoint Requirements
+- Before planning (non-trivial): clarification must be recorded as \`needed\` or \`skipped-sufficient\`
 - Before source edits (non-trivial): planning artifacts must have real content
 - Before commits (non-trivial): verification must be complete
 - Source edits invalidate prior verification
@@ -56,13 +60,21 @@ The file uses this schema (schemaVersion 3):
 
 **When to update:**
 1. **After classification**: set \`classification\` to \`"trivial"\` or \`"non-trivial"\` and update \`classificationReason\`.
-2. **After planning** (non-trivial): add \`"ged-planner"\` to \`planCheckpoints\`:
+2. **Before planning** (non-trivial): set \`clarification\` to one of:
+   - \`{"completedAt":"<ISO-8601>","decision":"needed","questionCount":1}\` after asking at least one grill-me question.
+   - \`{"completedAt":"<ISO-8601>","decision":"skipped-sufficient","questionCount":0,"reason":"<non-empty evidence>"}\` when the request and inspected context are already sufficient.
+3. **After planning** (non-trivial): add \`"ged-planner"\` to \`planCheckpoints\`:
    \`"ged-planner": { "recordedAt": "<ISO-8601>", "source": "auto", "valid": true }\`
-3. **After verification** (non-trivial): add \`"ged-verifier"\` to \`taskCheckpoints.<taskId>\`:
+4. **After verification** (non-trivial): add \`"ged-verifier"\` to \`taskCheckpoints.<taskId>\`:
    \`"<taskId>": { "ged-verifier": { "recordedAt": "<ISO-8601>", "source": "auto", "valid": true } }\`
-4. **After completion**: set \`lifecycleStatus\` to \`"closed"\`.
+5. **After completion**: set \`lifecycleStatus\` to \`"closed"\`.
 
 Read the file before writing to preserve existing fields. Always keep \`schemaVersion: 3\`.
+
+### Bundled grill-me Skill
+${grillMeSkill ? grillMeSkill.content : "Ask exactly one clarifying question at a time before planning."}
+
+For non-trivial tasks, do not begin planning until you have recorded either \`needed\` or \`skipped-sufficient\` in the clarification checkpoint.
 
 ### Conventional Commits
 Format: \`<type>: <description>\`

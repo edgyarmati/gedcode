@@ -6,6 +6,17 @@ export interface GedSkillDefinition {
   readonly userTriggeredOnly: boolean;
 }
 
+export const getBundledSkill = (name: string): GedSkillDefinition | undefined =>
+  BUNDLED_SKILLS.find((skill) => skill.name === name);
+
+export const renderBundledSkillMarkdown = (skill: GedSkillDefinition): string => `---
+name: ${skill.name}
+description: ${skill.description}
+---
+
+${skill.content}
+`;
+
 export const BUNDLED_SKILLS: ReadonlyArray<GedSkillDefinition> = [
   {
     name: "grill-me",
@@ -13,7 +24,7 @@ export const BUNDLED_SKILLS: ReadonlyArray<GedSkillDefinition> = [
     autoInstall: true,
     userTriggeredOnly: false,
     content:
-      "Ask clarifying questions one at a time before planning.\n\n## Rules\n1. ONE question per turn.\n2. Provide 2-4 recommended answers.\n3. Continue until enough context for SPEC.md.\n4. Summarize and transition to planning.",
+      "Interview the user relentlessly before planning until there is shared understanding. Walk the decision tree branch by branch and resolve dependencies between decisions one at a time.\n\n## Rules\n1. First decide explicitly: `grill-me: needed` or `grill-me: skipped; reason: <why sufficient>`.\n2. Ask exactly ONE question per turn when clarification is needed.\n3. Include your recommended answer/default with each question, plus 2-4 options when useful.\n4. If a question can be answered by inspecting project files or prior context, inspect that context instead of asking.\n5. Continue until goal, user-visible behavior, constraints, affected areas/files, non-goals, acceptance criteria, and test expectations are sufficiently clear.\n6. Record the clarification decision before planning: `needed` requires questionCount > 0; `skipped-sufficient` requires a non-empty rationale/evidence.\n7. Summarize the shared understanding and only then transition to planning.",
   },
   {
     name: "ged-planning",

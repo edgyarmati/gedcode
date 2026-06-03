@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { getBundledSkill } from "./SkillRegistry.ts";
 import { buildWorkflowPromptSuffix } from "./WorkflowPrompt.ts";
 
 describe("WorkflowPrompt", () => {
@@ -10,6 +11,30 @@ describe("WorkflowPrompt", () => {
   it("includes checkpoint requirements", () => {
     const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: false });
     expect(prompt).toContain("Checkpoint");
+  });
+
+  it("includes bundled grill-me rules from SkillRegistry", () => {
+    const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: false });
+    const grillMeSkill = getBundledSkill("grill-me");
+
+    expect(grillMeSkill).toBeDefined();
+    expect(prompt).toContain(grillMeSkill?.content);
+    expect(prompt).toContain("Interview the user relentlessly");
+    expect(prompt).toContain("Walk the decision tree branch by branch");
+    expect(prompt).toContain("Ask exactly ONE question per turn");
+    expect(prompt).toContain("recommended answer/default");
+    expect(prompt).toContain("inspect that context instead of asking");
+    expect(prompt).toContain("needed");
+    expect(prompt).toContain("skipped-sufficient");
+  });
+
+  it("requires non-trivial clarification before planning", () => {
+    const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: false });
+    expect(prompt).toContain("Before planning (non-trivial)");
+    expect(prompt).toContain("do not begin planning");
+    expect(prompt).toContain('"decision":"needed"');
+    expect(prompt).toContain('"decision":"skipped-sufficient"');
+    expect(prompt).toContain('"reason":"<non-empty evidence>"');
   });
 
   it("includes task classification", () => {

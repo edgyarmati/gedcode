@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CheckpointState } from "./CheckpointSchema.ts";
 import {
+  validateClarificationGate,
   validatePlannerCheckpoint,
   validateCommitCheckpoints,
   shouldAutoEscalate,
@@ -48,6 +49,12 @@ describe("validatePlannerCheckpoint", () => {
   it("returns valid when planner checkpoint exists", () => {
     const result = validatePlannerCheckpoint(
       makeActiveState({
+        clarification: {
+          completedAt: "2026-05-17T10:00:00Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+          reason: "Request is explicit and tests are known.",
+        },
         planCheckpoints: {
           "ged-planner": stubRecord(),
         },
@@ -59,6 +66,87 @@ describe("validatePlannerCheckpoint", () => {
   it("returns valid for trivial tasks regardless", () => {
     const result = validatePlannerCheckpoint(makeActiveState({ classification: "trivial" }));
     expect(result.valid).toBe(true);
+  });
+});
+
+describe("validateClarificationGate", () => {
+  it("returns invalid when non-trivial task has no clarification", () => {
+    expect(validateClarificationGate(makeActiveState()).valid).toBe(false);
+  });
+
+  it("returns invalid when needed has zero questions", () => {
+    const result = validateClarificationGate(
+      makeActiveState({
+        clarification: {
+          completedAt: "2026-05-17T10:00:00Z",
+          decision: "needed",
+          questionCount: 0,
+        },
+      }),
+    );
+    expect(result.valid).toBe(false);
+  });
+
+  it("returns valid when needed has questions", () => {
+    const result = validateClarificationGate(
+      makeActiveState({
+        clarification: {
+          completedAt: "2026-05-17T10:00:00Z",
+          decision: "needed",
+          questionCount: 1,
+        },
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns valid when skipped-sufficient has zero questions and reason", () => {
+    const result = validateClarificationGate(
+      makeActiveState({
+        clarification: {
+          completedAt: "2026-05-17T10:00:00Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+          reason: "The user provided goal, scope, and acceptance criteria.",
+        },
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns invalid when skipped-sufficient has no reason", () => {
+    const result = validateClarificationGate(
+      makeActiveState({
+        clarification: {
+          completedAt: "2026-05-17T10:00:00Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+        },
+      }),
+    );
+    expect(result.valid).toBe(false);
+  });
+
+  it("returns invalid for negative, fractional, or non-finite question counts", () => {
+    for (const questionCount of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        validateClarificationGate(
+          makeActiveState({
+            clarification: {
+              completedAt: "2026-05-17T10:00:00Z",
+              decision: "needed",
+              questionCount,
+            },
+          }),
+        ).valid,
+      ).toBe(false);
+    }
+  });
+
+  it("returns valid for trivial tasks", () => {
+    expect(validateClarificationGate(makeActiveState({ classification: "trivial" })).valid).toBe(
+      true,
+    );
   });
 });
 

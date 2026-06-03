@@ -4,7 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { DEFAULT_STANDARDS_CONTENT } from "./GedMemoryTemplates.ts";
-import { discoverStandards, populateStandards } from "./GedBootstrap.ts";
+import { bootstrapGedDirectory, discoverStandards, populateStandards } from "./GedBootstrap.ts";
 
 const makeTestLayer = (
   existingFiles: ReadonlyArray<string>,
@@ -15,6 +15,10 @@ const makeTestLayer = (
 
   const fsLayer = FileSystem.layerNoop({
     exists: (path) => Effect.succeed(existingSet.has(path)),
+    makeDirectory: (path) =>
+      Effect.sync(() => {
+        existingSet.add(path);
+      }),
     readFileString: (path) => {
       const content = contents[path];
       if (content !== undefined) {
@@ -40,6 +44,7 @@ const makeTestLayer = (
   return {
     layer: Layer.merge(fsLayer, Path.layer),
     getWrittenContent: (path: string) => contents[path],
+    hasPath: (path: string) => existingSet.has(path),
   };
 };
 
@@ -101,6 +106,55 @@ describe("discoverStandards", () => {
         const discovered = yield* Effect.provide(discoverStandards("/project"), layer);
 
         expect(discovered).toEqual(["AGENTS.md", ".editorconfig", "biome.json"]);
+      }),
+    );
+  });
+});
+
+describe("bootstrapGedDirectory bundled skills", () => {
+  it("writes missing grill-me Claude skill with bundled content", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const { layer, getWrittenContent, hasPath } = makeTestLayer([]);
+
+        yield* Effect.provide(bootstrapGedDirectory("/project"), layer);
+
+        const content = getWrittenContent("/project/.claude/skills/grill-me/SKILL.md");
+        expect(hasPath("/project/.claude/skills/grill-me")).toBe(true);
+        expect(content).toContain("name: grill-me");
+        expect(content).toContain("Interview the user relentlessly");
+        expect(content).toContain("Ask exactly ONE question per turn");
+      }),
+    );
+  });
+
+  it("does not overwrite an existing grill-me Claude skill", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const existingSkill = "custom grill-me skill";
+        const { layer, getWrittenContent } = makeTestLayer(
+          ["/project/.claude/skills/grill-me/SKILL.md"],
+          {
+            "/project/.claude/skills/grill-me/SKILL.md": existingSkill,
+          },
+        );
+
+        yield* Effect.provide(bootstrapGedDirectory("/project"), layer);
+
+        expect(getWrittenContent("/project/.claude/skills/grill-me/SKILL.md")).toBe(existingSkill);
+      }),
+    );
+  });
+
+  it("only installs the grill-me bundled skill", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const { layer, getWrittenContent } = makeTestLayer([]);
+
+        yield* Effect.provide(bootstrapGedDirectory("/project"), layer);
+
+        expect(getWrittenContent("/project/.claude/skills/grill-me/SKILL.md")).toBeDefined();
+        expect(getWrittenContent("/project/.claude/skills/ged-planning/SKILL.md")).toBeUndefined();
       }),
     );
   });
