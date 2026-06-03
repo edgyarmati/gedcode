@@ -2,94 +2,43 @@
 
 ## Goal
 
-Implement the first bounded Ged workflow orchestration slice: a server-side `GedRoleInvocationService` that can explicitly invoke one read-oriented child role, `ged-explorer`, through the existing orchestration engine.
-
-This slice proves parent/child role-thread dispatch, provider-instance routing, workflow-recursion prevention, activity-based linkage, and prompt contract shape without adding a user-facing websocket/native API or automatic parent-turn interception.
+Review and polish release-facing documentation so it matches the current GedCode repository before release, and leave exactly one obvious screenshot placeholder for the user to fill later.
 
 ## Scope
 
 In scope:
 
-- Add `GedRoleInvocationService` under `apps/server/src/gedWorkflow`.
-- Support exactly one role: `ged-explorer`.
-- Keep the entry point server-internal and test-only for this slice; no websocket/native/web/contracts API.
-- Require caller-supplied `invocationId`; the service does not generate one yet.
-- Create a child thread and start one child turn via orchestration commands.
-- Copy parent `projectId`, `branch`, `worktreePath`, and exact `modelSelection`, including `instanceId` and options.
-- Force child safety settings: `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false` on child thread and turn.
-- Link parent and child only through existing `thread.activity.append` activities.
-- Define a server-side `ged-explorer` prompt builder with fixed plain-text output sections.
+- Update `README.md` for release-ready introductory copy, provider doc links, and one screenshot placeholder.
+- Rewrite `docs/release.md` around the current `.github/workflows/release.yml`.
+- Update `REMOTE.md` stale SSH launch storage paths.
+- Sync `KEYBINDINGS.md` with `packages/shared/src/keybindings.ts` and `packages/contracts/src/keybindings.ts`.
+- Update `docs/observability.md` stale schema path and metric list.
+- Add an OpenCode provider guide under `docs/providers/` because OpenCode is implemented and advertised.
+- Clean broken absolute links in `docs/effect-fn-checklist.md` without changing its checklist semantics.
 
-Out of scope: user-facing API/UI changes, new contracts schemas, durable invocation store, automatic parent-turn interception, role completion tracking, output parsing, artifact writes, provider-level sandboxing, Pi integration, planner/verifier roles, and worker execution.
+Out of scope:
 
-## Service API
+- Changing release workflows, provider behavior, source code, or release scripts.
+- Editing historical planning material under `docs/superpowers/*`.
+- Renaming real identifiers that still exist, including `@t3tools/*`, `T3CODE_*` env vars, `app.t3.codes`, `/__t3code/channel`, and `t3code_web_channel`.
+- Creating real screenshot assets.
 
-Add `GedRoleInvocationService.ts`, `GedRoleInvocationServiceLive.ts`, and `GedExplorerPrompt.ts` under `apps/server/src/gedWorkflow`.
+## Source Of Truth
 
-Initial input/result shape:
+- Release workflow: `.github/workflows/release.yml`.
+- Keybinding defaults: `packages/shared/src/keybindings.ts`.
+- Keybinding command/schema definitions: `packages/contracts/src/keybindings.ts`.
+- Trace record types: `packages/shared/src/observability.ts`.
+- Metrics definitions: `apps/server/src/observability/Metrics.ts`.
+- Provider support: server provider drivers and settings for Codex, Claude, and OpenCode.
 
-```ts
-export type GedRole = "ged-explorer";
+## Screenshot Placeholder
 
-export interface GedRoleInvocationInput {
-  readonly role: "ged-explorer";
-  readonly invocationId: string;
-  readonly parentThreadId: ThreadId;
-  readonly request: string;
-}
-
-export interface GedRoleInvocationResult {
-  readonly role: "ged-explorer";
-  readonly invocationId: string;
-  readonly parentThreadId: ThreadId;
-  readonly childThreadId: ThreadId;
-}
-```
-
-`invocationId` is required from caller, validated before dispatch with the same safe alphabet used by derived ids (`[A-Za-z0-9_-]`), and used to derive deterministic child thread id, command ids, and activity ids for testability and best-effort retry behavior.
-
-## Context Resolution
-
-Inputs do not override parent context.
-
-1. Resolve parent thread detail by `parentThreadId`.
-2. Resolve parent project shell by parent `projectId`.
-3. Copy parent `projectId`, `modelSelection`, `branch`, and `worktreePath`.
-4. Use project shell only for prompt context and existing provider cwd fallback.
-5. Effective cwd for prompt display is `parent.worktreePath ?? project.workspaceRoot`.
-
-Fail before dispatch with no side effects for unsupported role, invalid `invocationId`, blank request, missing parent thread, missing project, or malformed/missing parent model selection.
-
-## Command Sequence
-
-Dispatch through `OrchestrationEngineService` only:
-
-1. `thread.create` child with deterministic `threadId`, copied context/model selection, title `Ged Explorer`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
-2. Parent `thread.activity.append` kind `ged.role-invocation.started` with invocation/parent/child/project/worktree payload.
-3. Child `thread.activity.append` kind `ged.role-invocation.child` with invocation/parent/child/project payload.
-4. Child `thread.turn.start` with prompt-builder text, no attachments, copied `modelSelection`, `runtimeMode: "approval-required"`, `interactionMode: "default"`, and `gedWorkflowEnabled: false`.
-
-## Explorer Prompt Contract
-
-`buildGedExplorerPrompt` must tell the child role that it is read-only, must inspect and report without modifying files, must not write source files, `.ged` files, plans, tests, commits, or artifacts, and must avoid mutating commands.
-
-The final answer is plain text, not JSON, with exact top-level sections in order: `## Summary`, `## Scope Inspected`, `## Findings`, `## Evidence`, `## Risks And Constraints`, `## Open Questions`, `## Recommended Follow-Up Checks`.
-
-The service does not parse the output.
-
-## Partial-Failure Behavior
-
-- Input/context failures happen before dispatch and leave no side effects.
-- After each successful step, continue to the next step.
-- On dispatch failure, stop immediately.
-- Do not rollback/delete child threads; partial state remains for auditability.
-- Attempt best-effort `ged.role-invocation.failed` activity on parent and child when applicable.
-- Failure activity errors are logged/ignored and must not mask the original error.
-- Once child turn start is accepted, the service returns success; provider/runtime failures are handled by existing ingestion paths.
+Add exactly one placeholder in `README.md` after the product description and before installation. The placeholder must be a Markdown comment rather than a broken image link, so the public README does not render missing media before the user adds the screenshot.
 
 ## Risks
 
-- Read-only is prompt/runtime-mode constrained, not provider-sandbox guaranteed.
-- Partial multi-command state can exist until durable invocation storage exists.
-- Child threads are normal visible threads until a grouping policy exists.
-- Activities are the only parent/child linkage in this slice.
+- Overpromising nightly, hosted web, or OIDC release automation that the workflow does not currently run.
+- Advertising OpenCode without enough setup details for a first-release user.
+- Accidentally changing historical planning docs or real legacy identifiers.
+- Leaving multiple screenshot placeholders or a visible broken image.

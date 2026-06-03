@@ -1,6 +1,8 @@
 # GedCode
 
-GedCode is a minimal web GUI for coding agents (currently Codex, Claude, and OpenCode, more coming soon).
+GedCode is a minimal desktop and web GUI for coding agents. The current release supports Codex, Claude, and OpenCode provider sessions.
+
+<!-- SCREENSHOT PLACEHOLDER: add one GedCode workspace screenshot here before release. -->
 
 ## Installation
 
@@ -8,9 +10,9 @@ GedCode is a minimal web GUI for coding agents (currently Codex, Claude, and Ope
 > GedCode currently supports Codex, Claude, and OpenCode.
 > Install and authenticate at least one provider before use:
 >
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli), run `codex login`, and see [docs/providers/codex.md](./docs/providers/codex.md).
+> - Claude: install [Claude Code](https://claude.com/product/claude-code), run `claude auth login`, and see [docs/providers/claude.md](./docs/providers/claude.md).
+> - OpenCode: install [OpenCode](https://opencode.ai), run `opencode auth login`, and see [docs/providers/opencode.md](./docs/providers/opencode.md).
 
 ### Run without installing
 
