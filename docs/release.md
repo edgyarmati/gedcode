@@ -36,23 +36,31 @@ The current workflow does not include:
 - scheduled nightly releases
 - a separate nightly updater channel
 - Vercel or hosted web app deployment
-- npm OIDC trusted publishing
 
-The workflow has `id-token: write` permission, but the CLI publish step currently authenticates with
-`NPM_TOKEN`.
+The workflow uses npm Trusted Publishing/OIDC for the CLI publish step. The top-level
+`id-token: write` permission is required so GitHub Actions can mint the short-lived OIDC token used
+by npm, and the publish command includes `--provenance` for package provenance.
 
-## Required Secrets
+## Required Release Setup
 
 ### npm CLI Publish
 
-- `NPM_TOKEN`: used as `NODE_AUTH_TOKEN` by `apps/server/scripts/cli.ts publish`
+The `gedcode` npm package must have a Trusted Publisher configured on npmjs.com before the
+release workflow can publish without a token. Configure npm Trusted Publishing for:
+
+- Package: `gedcode`
+- Provider: GitHub Actions
+- Repository: this GitHub repository, currently `edgyarmati/gedcode`
+- Workflow filename: `release.yml`
+- Environment: leave blank unless `.github/workflows/release.yml` is also updated to use a matching GitHub Actions environment
+- Allowed action: `npm publish`
 
 The publish job builds the web package and CLI package before publishing:
 
 ```sh
 bun --filter=@t3tools/web run build
 bun --filter=gedcode run build
-node apps/server/scripts/cli.ts publish --tag latest --app-version "$VERSION" --verbose
+node apps/server/scripts/cli.ts publish --tag latest --app-version "$VERSION" --verbose --provenance
 ```
 
 ### macOS Signing And Notarization
@@ -143,14 +151,17 @@ For a rehearsal, use one of these safer options:
 - run the local repo gates before tagging
 - test the workflow in a fork or temporary private repository
 - temporarily disable the npm publish step on a throwaway branch
-- remove `NPM_TOKEN` only if you specifically want to confirm that publish fails before release
+- test trusted publishing only in a repository/package configured with a matching npm Trusted Publisher; forks or throwaway repositories need their own npm trusted publisher setup
 
 ## Troubleshooting
 
 - Release version rejected:
   - Use `X.Y.Z` or `vX.Y.Z`, optionally with a suffix such as `X.Y.Z-alpha.1`.
 - CLI publish fails:
-  - Check `NPM_TOKEN`, npm package ownership for `gedcode`, and package access policy.
+  - Check that npm Trusted Publishing is configured for package `gedcode`, this repository, and workflow filename `release.yml`.
+  - Check npm package ownership/access for `gedcode`.
+  - Check that the workflow still has `id-token: write` and uses a GitHub-hosted runner.
+  - Check the npm CLI version if authentication/provenance errors mention unsupported OIDC.
 - macOS build unsigned when signing was expected:
   - Check all Apple signing and notarization secrets are populated.
 - Windows build unsigned when signing was expected:
