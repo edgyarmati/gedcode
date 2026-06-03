@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isExplicitRelativePath,
+  isPathInsideDotDirectory,
   isUncPath,
   isWindowsAbsolutePath,
   isWindowsDrivePath,
@@ -30,5 +31,20 @@ describe("path helpers", () => {
     expect(isExplicitRelativePath("./repo")).toBe(true);
     expect(isExplicitRelativePath("..\\repo")).toBe(true);
     expect(isExplicitRelativePath("~/repo")).toBe(false);
+  });
+
+  it("detects paths inside dot directories", () => {
+    expect(isPathInsideDotDirectory(".ged/runtime/root/checkpoints.json")).toBe(true);
+    expect(isPathInsideDotDirectory(".git/index")).toBe(true);
+    expect(isPathInsideDotDirectory("src/.cache/state.json")).toBe(true);
+    expect(isPathInsideDotDirectory("C:\\repo\\.ged\\runtime\\root\\checkpoints.json")).toBe(true);
+    expect(isPathInsideDotDirectory("./.ged/file")).toBe(true);
+    expect(isPathInsideDotDirectory("../.ged/file")).toBe(true);
+    expect(isPathInsideDotDirectory(".ged/")).toBe(true);
+
+    expect(isPathInsideDotDirectory("src/app.ts")).toBe(false);
+    expect(isPathInsideDotDirectory(".env")).toBe(false);
+    expect(isPathInsideDotDirectory(".gitignore")).toBe(false);
+    expect(isPathInsideDotDirectory("src/.env")).toBe(false);
   });
 });
