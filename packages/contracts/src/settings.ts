@@ -175,7 +175,7 @@ export const DEFAULT_CODEX_GED_SUBAGENT_PRESET = {
   "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
 } as const satisfies Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset>;
 
-export const CodexGedSubagentPreset = Schema.Struct({
+const CodexGedSubagentPresetStruct = Schema.Struct({
   "ged-explorer": CodexGedSubagentRolePreset.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-explorer"])),
   ),
@@ -186,7 +186,76 @@ export const CodexGedSubagentPreset = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"])),
   ),
 });
-export type CodexGedSubagentPreset = typeof CodexGedSubagentPreset.Type;
+
+type CodexGedSubagentPresetStructType = typeof CodexGedSubagentPresetStruct.Type;
+
+const isCodexGedSubagentPresetRole = (value: string): value is CodexGedSubagentPresetRole =>
+  (CODEX_GED_SUBAGENT_PRESET_ROLES as readonly string[]).includes(value);
+
+const isCodexGedSubagentReasoning = (value: string): value is CodexGedSubagentReasoning =>
+  (CODEX_GED_SUBAGENT_REASONING_LEVELS as readonly string[]).includes(value);
+
+const parseLegacyCodexGedSubagentPresetString = (
+  value: string,
+): CodexGedSubagentPresetStructType => {
+  const preset: Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset> = {
+    "ged-explorer": { ...DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-explorer"] },
+    "ged-planner": { ...DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-planner"] },
+    "ged-verifier": { ...DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"] },
+  };
+
+  for (const line of value.split(/\r?\n/)) {
+    const match = /^([^:]+):\s*model=([^,\s]+)\s*,\s*reasoning=([^,\s]+)/.exec(line.trim());
+    if (!match) continue;
+    const [, rawRole, rawModel, rawReasoning] = match;
+    const role = rawRole?.trim() ?? "";
+    const model = rawModel?.trim() ?? "";
+    const reasoning = rawReasoning?.trim() ?? "";
+    if (!isCodexGedSubagentPresetRole(role) || model.length === 0) continue;
+    preset[role] = {
+      model,
+      reasoning: isCodexGedSubagentReasoning(reasoning)
+        ? reasoning
+        : DEFAULT_CODEX_GED_SUBAGENT_PRESET[role].reasoning,
+    };
+  }
+
+  return preset;
+};
+
+const normalizeCodexGedSubagentPresetStruct = (
+  value: Partial<Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset>>,
+): CodexGedSubagentPresetStructType => ({
+  "ged-explorer": value["ged-explorer"] ?? DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-explorer"],
+  "ged-planner": value["ged-planner"] ?? DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-planner"],
+  "ged-verifier": value["ged-verifier"] ?? DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"],
+});
+
+const CodexGedSubagentPresetSource = Schema.Union([CodexGedSubagentPresetStruct, TrimmedString]);
+
+export const CodexGedSubagentPreset: typeof CodexGedSubagentPresetStruct =
+  CodexGedSubagentPresetSource.pipe(
+    Schema.decodeTo(
+      CodexGedSubagentPresetStruct,
+      SchemaTransformation.transformOrFail({
+        decode: (value) =>
+          Effect.succeed(
+            typeof value === "string"
+              ? parseLegacyCodexGedSubagentPresetString(value)
+              : normalizeCodexGedSubagentPresetStruct(
+                  value as Partial<Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset>>,
+                ),
+          ),
+        encode: (value) =>
+          Effect.succeed(
+            normalizeCodexGedSubagentPresetStruct(
+              value as Partial<Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset>>,
+            ),
+          ),
+      }) as never,
+    ),
+  ) as never;
+export type CodexGedSubagentPreset = typeof CodexGedSubagentPresetStruct.Type;
 
 declare module "effect/Schema" {
   namespace Annotations {

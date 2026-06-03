@@ -5,6 +5,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   DEFAULT_CODEX_GED_SUBAGENT_PRESET,
   DEFAULT_SERVER_SETTINGS,
+  CodexSettings,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
@@ -32,6 +33,46 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
     expect(decoded.providers.codex.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
+  });
+
+  it("decodes legacy Codex Ged subagent preset strings", () => {
+    const legacyPreset =
+      "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
+      "ged-planner: model=gpt-5.5, reasoning=xhigh\n" +
+      "ged-verifier: model=gpt-5.5, reasoning=low";
+
+    const decoded = decodeServerSettings({
+      providers: {
+        codex: { gedSubagentPreset: legacyPreset },
+      },
+    });
+
+    expect(decoded.providers.codex.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
+    expect(encodeServerSettings(decoded).providers?.codex?.gedSubagentPreset).toEqual(
+      DEFAULT_CODEX_GED_SUBAGENT_PRESET,
+    );
+  });
+
+  it("decodes direct Codex config legacy preset strings for provider instances", () => {
+    const decodeCodexSettings = Schema.decodeUnknownSync(CodexSettings);
+
+    const decoded = decodeCodexSettings({
+      gedSubagentPreset:
+        "ged-explorer: model=gpt-5.4-mini, reasoning=invalid\n" +
+        "ged-planner: model=gpt-5.5, reasoning=xhigh",
+    });
+
+    expect(decoded.gedSubagentPreset["ged-explorer"]).toEqual({
+      model: "gpt-5.4-mini",
+      reasoning: "medium",
+    });
+    expect(decoded.gedSubagentPreset["ged-planner"]).toEqual({
+      model: "gpt-5.5",
+      reasoning: "xhigh",
+    });
+    expect(decoded.gedSubagentPreset["ged-verifier"]).toEqual(
+      DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"],
+    );
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -120,6 +161,21 @@ describe("ServerSettingsPatch.providerInstances", () => {
       model: "gpt-5.4-mini",
       reasoning: "medium",
     });
+  });
+
+  it("accepts legacy Codex Ged subagent preset string patches", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        codex: {
+          gedSubagentPreset:
+            "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
+            "ged-planner: model=gpt-5.5, reasoning=xhigh\n" +
+            "ged-verifier: model=gpt-5.5, reasoning=low",
+        },
+      },
+    });
+
+    expect(patch.providers?.codex?.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
   });
 
   it("accepts full Codex reasoning effort values in Ged subagent preset patches", () => {
