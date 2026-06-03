@@ -841,6 +841,7 @@ export function ProviderInstanceCard({
                 value={instance.config}
                 idPrefix={`provider-instance-${instanceId}`}
                 variant="card"
+                models={modelsForDisplay}
                 onChange={updateConfig}
               />
             ) : null}

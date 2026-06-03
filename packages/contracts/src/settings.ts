@@ -115,7 +115,12 @@ const makeBinaryPathSetting = (fallback: string) =>
     Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
-export type ProviderSettingsFormControl = "text" | "password" | "textarea" | "switch";
+export type ProviderSettingsFormControl =
+  | "text"
+  | "password"
+  | "textarea"
+  | "switch"
+  | "codexGedSubagentPreset";
 
 export interface ProviderSettingsFormAnnotation {
   readonly control?: ProviderSettingsFormControl | undefined;
@@ -127,6 +132,61 @@ export interface ProviderSettingsFormAnnotation {
 export interface ProviderSettingsFormSchemaAnnotation {
   readonly order?: readonly string[] | undefined;
 }
+
+export const CodexGedSubagentPresetRole = Schema.Literals([
+  "ged-explorer",
+  "ged-planner",
+  "ged-verifier",
+]);
+export type CodexGedSubagentPresetRole = typeof CodexGedSubagentPresetRole.Type;
+export const CODEX_GED_SUBAGENT_PRESET_ROLES = [
+  "ged-explorer",
+  "ged-planner",
+  "ged-verifier",
+] as const satisfies ReadonlyArray<CodexGedSubagentPresetRole>;
+
+export const CodexGedSubagentReasoning = Schema.Literals([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+export type CodexGedSubagentReasoning = typeof CodexGedSubagentReasoning.Type;
+export const CODEX_GED_SUBAGENT_REASONING_LEVELS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const satisfies ReadonlyArray<CodexGedSubagentReasoning>;
+
+export const CodexGedSubagentRolePreset = Schema.Struct({
+  model: TrimmedNonEmptyString,
+  reasoning: CodexGedSubagentReasoning,
+});
+export type CodexGedSubagentRolePreset = typeof CodexGedSubagentRolePreset.Type;
+
+export const DEFAULT_CODEX_GED_SUBAGENT_PRESET = {
+  "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
+  "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
+  "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
+} as const satisfies Record<CodexGedSubagentPresetRole, CodexGedSubagentRolePreset>;
+
+export const CodexGedSubagentPreset = Schema.Struct({
+  "ged-explorer": CodexGedSubagentRolePreset.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-explorer"])),
+  ),
+  "ged-planner": CodexGedSubagentRolePreset.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-planner"])),
+  ),
+  "ged-verifier": CodexGedSubagentRolePreset.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"])),
+  ),
+});
+export type CodexGedSubagentPreset = typeof CodexGedSubagentPreset.Type;
 
 declare module "effect/Schema" {
   namespace Annotations {
@@ -192,18 +252,14 @@ export const CodexSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    gedSubagentPreset: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("")),
+    gedSubagentPreset: CodexGedSubagentPreset.pipe(
+      Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODEX_GED_SUBAGENT_PRESET)),
       Schema.annotateKey({
         title: "Ged subagent preset",
         description:
-          "Codex-only preset for harness-native Ged subagents. Use one role per line with model and reasoning hints.",
+          "Codex-only preset for harness-native Ged subagents. Choose the model and reasoning level for each role.",
         providerSettingsForm: {
-          control: "textarea",
-          placeholder:
-            "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
-            "ged-planner: model=gpt-5.4, reasoning=high\n" +
-            "ged-verifier: model=gpt-5.5, reasoning=xhigh",
+          control: "codexGedSubagentPreset",
           clearWhenEmpty: "omit",
         },
       }),
@@ -478,7 +534,7 @@ const CodexSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
   shadowHomePath: Schema.optionalKey(TrimmedString),
-  gedSubagentPreset: Schema.optionalKey(TrimmedString),
+  gedSubagentPreset: Schema.optionalKey(CodexGedSubagentPreset),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

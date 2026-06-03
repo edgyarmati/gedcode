@@ -94,6 +94,10 @@
     "./gedModelSelection": {
       "types": "./src/gedModelSelection.ts",
       "import": "./src/gedModelSelection.ts"
+    },
+    "./gedSubagentPreset": {
+      "types": "./src/gedSubagentPreset.ts",
+      "import": "./src/gedSubagentPreset.ts"
     }
   },
   "scripts": {

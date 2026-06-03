@@ -113,7 +113,7 @@ function createBaseServerConfig(): ServerConfig {
           binaryPath: "",
           homePath: "",
           shadowHomePath: "",
-          gedSubagentPreset: "",
+          gedSubagentPreset: DEFAULT_SERVER_SETTINGS.providers.codex.gedSubagentPreset,
           customModels: [],
         },
         claudeAgent: {

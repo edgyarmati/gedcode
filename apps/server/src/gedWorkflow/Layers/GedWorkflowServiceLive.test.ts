@@ -47,7 +47,11 @@ describe("GedWorkflowServiceLive", () => {
       {
         providers: {
           codex: {
-            gedSubagentPreset: "ged-explorer: model=gpt-5.4-mini, reasoning=medium",
+            gedSubagentPreset: {
+              "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
+              "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
+              "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
+            },
           },
         },
       },
@@ -66,7 +70,11 @@ describe("GedWorkflowServiceLive", () => {
       {
         providers: {
           codex: {
-            gedSubagentPreset: "ged-verifier: model=gpt-5.5, reasoning=xhigh",
+            gedSubagentPreset: {
+              "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
+              "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
+              "ged-verifier": { model: "gpt-5.5", reasoning: "xhigh" },
+            },
           },
         },
       },
@@ -86,14 +94,22 @@ describe("GedWorkflowServiceLive", () => {
       {
         providers: {
           codex: {
-            gedSubagentPreset: "ged-planner: model=gpt-5.4, reasoning=high",
+            gedSubagentPreset: {
+              "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
+              "ged-planner": { model: "gpt-5.4", reasoning: "high" },
+              "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
+            },
           },
         },
         providerInstances: {
           [customInstanceId]: {
             driver: ProviderDriverKind.make("codex"),
             config: {
-              gedSubagentPreset: "ged-verifier: model=gpt-5.5, reasoning=xhigh",
+              gedSubagentPreset: {
+                "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
+                "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
+                "ged-verifier": { model: "gpt-5.5", reasoning: "xhigh" },
+              },
             },
           },
         },

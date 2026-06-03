@@ -7,7 +7,8 @@
  *
  * @module GedWorkflowServiceLive
  */
-import type { GedWorkflowState, ServerSettings } from "@t3tools/contracts";
+import type { CodexGedSubagentPreset, GedWorkflowState, ServerSettings } from "@t3tools/contracts";
+import { formatCodexGedSubagentPreset } from "@t3tools/shared/gedSubagentPreset";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
 import {
   CheckpointState,
@@ -50,10 +51,13 @@ const DEFAULT_STATE: GedWorkflowState = {
 
 const CODEX_PROVIDER = "codex";
 
-const readStringField = (config: unknown, field: string): string | undefined => {
+const readCodexGedSubagentPresetField = (
+  config: unknown,
+  field: string,
+): CodexGedSubagentPreset | undefined => {
   if (config === null || typeof config !== "object") return undefined;
   const value = (config as Record<string, unknown>)[field];
-  return typeof value === "string" ? value : undefined;
+  return value && typeof value === "object" ? (value as CodexGedSubagentPreset) : undefined;
 };
 
 const resolveCodexGedSubagentPreset = (
@@ -67,12 +71,11 @@ const resolveCodexGedSubagentPreset = (
       ? undefined
       : current.providerInstances[context.providerInstanceId];
   if (instance?.driver === CODEX_PROVIDER) {
-    const instancePreset = readStringField(instance.config, "gedSubagentPreset")?.trim();
-    if (instancePreset) return instancePreset;
+    const instancePreset = readCodexGedSubagentPresetField(instance.config, "gedSubagentPreset");
+    if (instancePreset) return formatCodexGedSubagentPreset(instancePreset);
   }
 
-  const defaultPreset = current.providers.codex.gedSubagentPreset.trim();
-  return defaultPreset || undefined;
+  return formatCodexGedSubagentPreset(current.providers.codex.gedSubagentPreset);
 };
 
 const mapCheckpointStateToWorkflowState = (
