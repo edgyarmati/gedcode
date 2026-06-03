@@ -1,8 +1,20 @@
 # GedCode
 
-GedCode is a minimal desktop and web GUI for coding agents. The current release supports Codex, Claude, and OpenCode provider sessions.
+GedCode is a desktop and web workspace for running coding agents through the Ged workflow: clarify the request, plan the change, implement with visible progress, verify the result, and commit or continue from the same place. The current release supports Codex, Claude, and OpenCode provider sessions.
 
-<!-- SCREENSHOT PLACEHOLDER: add one GedCode workspace screenshot here before release. -->
+![GedCode workspace screenshot](./assets/screenshot/workspace.png)
+
+## Ged workflow
+
+The Ged workflow is the reason GedCode exists. It keeps agentic coding work on a predictable path instead of leaving every task as a loose chat thread:
+
+- clarify scope and success criteria before changing files
+- plan non-trivial work in tracked `.ged/` artifacts
+- implement focused slices with visible session state
+- verify with recorded evidence before treating work as done
+- commit or continue with the next bounded change
+
+Read the public workflow guide: [docs/ged-workflow.md](./docs/ged-workflow.md).
 
 ## Installation
 
@@ -24,11 +36,16 @@ npx gedcode
 
 Install the latest version of the desktop app from [GitHub Releases](https://github.com/edgyarmati/gedcode/releases).
 
-## Some notes
+## Project status
 
-We are very very early in this project. Expect bugs.
+GedCode is early and moving quickly. Expect bugs, but the direction is clear: make structured agentic coding work visible, repeatable, and recoverable across long-running sessions.
 
-Observability guide: [docs/observability.md](./docs/observability.md)
+Useful docs:
+
+- Ged workflow: [docs/ged-workflow.md](./docs/ged-workflow.md)
+- Source control integrations: [docs/source-control-providers.md](./docs/source-control-providers.md)
+- Observability guide: [docs/observability.md](./docs/observability.md)
+- Release checklist: [docs/release.md](./docs/release.md)
 
 ## Local development
 

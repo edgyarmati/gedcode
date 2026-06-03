@@ -1,29 +1,32 @@
 # Tasks
 
-## Planning
+## 1. README Positioning
 
-1. [x] Classify request as non-trivial documentation release work.
-2. [x] Run `ged-explorer` documentation discovery.
-3. [x] Run `ged-planner` scope and verification critique.
-4. [x] Replace stale root planning artifacts with documentation-release plan.
-5. [x] Record the planning checkpoint.
+- [x] Replace "minimal desktop and web GUI" framing with Ged workflow framing.
+- [x] Preserve the current screenshot image line.
+- [x] Add a compact "Ged workflow" section after the screenshot.
+- [x] Keep installation and provider setup links intact.
+- [x] Avoid `docs/superpowers/*` links.
 
-## Documentation Edits
+## 2. Public Workflow Guide
 
-1. [x] Update `README.md` introductory copy, provider links, and exactly one screenshot placeholder.
-2. [x] Rewrite `docs/release.md` to match the current release workflow.
-3. [x] Update `REMOTE.md` SSH launch state paths.
-4. [x] Sync `KEYBINDINGS.md` defaults, commands, and `when` conditions.
-5. [x] Update `docs/observability.md` stale schema path and current metrics.
-6. [x] Add `docs/providers/opencode.md`.
-7. [x] Convert broken absolute links in `docs/effect-fn-checklist.md` to repo-relative links.
+- [x] Create `docs/ged-workflow.md`.
+- [x] Explain clarify, plan, implement, verify, and commit-or-continue phases.
+- [x] Describe `.ged/` memory and checkpoints at a user-facing level.
+- [x] Document what GedCode helps with and what it does not promise.
+- [x] Avoid hard-enforcement and child-thread orchestration claims.
 
-## Verification
+## 3. Marketing Copy
 
-1. [x] Run documentation/source consistency `rg` checks from `TESTS.md`.
-2. [x] Run `bun fmt`.
-3. [x] Run `bun lint`.
-4. [x] Run `bun typecheck`.
-5. [x] Run `ged-verifier` clean-context review.
-6. [x] Record verifier checkpoint.
-7. [x] Commit scoped documentation changes with a conventional commit.
+- [x] Update marketing hero/meta description to mention the Ged workflow.
+- [x] Keep copy concise and consistent with provider support.
+- [x] Avoid layout or styling changes.
+
+## 4. Verification
+
+- [x] Run targeted documentation checks.
+- [x] Run `bun fmt`.
+- [x] Run `bun lint`.
+- [x] Run `bun typecheck`.
+- [x] Run `ged-verifier` before committing.
+- [x] Commit with a conventional docs commit.

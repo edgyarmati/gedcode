@@ -1,54 +1,8 @@
 # Tests
 
-## Current Status
+## Verification Plan
 
-Documentation edits are applied. Required repo gates pass on the final docs.
-
-## Targeted Consistency Checks
-
-Release workflow alignment:
-
-```sh
-rg -n "nightly|schedule|Vercel|OIDC|trusted publishing|NPM_TOKEN|workflow_dispatch" docs/release.md .github/workflows/release.yml
-```
-
-Remote SSH launch path:
-
-```sh
-rg -n "\\.t3/ssh-launch|\\.gedcode/ssh-launch" REMOTE.md packages/ssh/src
-```
-
-Keybinding defaults and commands:
-
-```sh
-rg -n "DEFAULT_KEYBINDINGS|diff.toggle|modelPicker|thread.previous|thread.next|modelPickerOpen" KEYBINDINGS.md packages/shared/src/keybindings.ts packages/contracts/src/keybindings.ts
-```
-
-Observability source of truth:
-
-```sh
-rg -n "TraceRecord.ts|t3_db_|Metrics.ts|observability.ts" docs/observability.md apps/server/src/observability/Metrics.ts packages/shared/src/observability.ts
-```
-
-Provider documentation coverage:
-
-```sh
-rg -n "Codex|Claude|OpenCode|opencode|Cursor" README.md docs/providers apps/server/src/provider/Drivers apps/server/src/provider/Layers/OpenCodeProvider.ts
-```
-
-Broken absolute checklist links:
-
-```sh
-rg -n "/Users/julius|codething-mvp" docs/effect-fn-checklist.md
-```
-
-Screenshot placeholder count:
-
-```sh
-rg -n "SCREENSHOT PLACEHOLDER|screenshot placeholder|TODO.*screenshot|!\\[.*screenshot" README.md docs
-```
-
-## Required Repo Gates
+Required repository gates:
 
 ```sh
 bun fmt
@@ -56,30 +10,30 @@ bun lint
 bun typecheck
 ```
 
-Do not run `bun test`; use `bun run test` only if tests are needed. No targeted code tests are expected for a documentation-only change.
+Targeted documentation checks:
+
+```sh
+rg -n '!\[GedCode workspace screenshot\]\(\./assets/screenshot/workspace\.png\)' README.md
+rg -n 'docs/ged-workflow\.md' README.md
+test -f docs/ged-workflow.md
+! rg -n 'docs/superpowers' README.md docs/ged-workflow.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro
+! rg -n 'hard-enforce|hard enforce|automatically enforces|guarantees correctness|child-thread|child thread' README.md docs/ged-workflow.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro
+! rg -n 'Cursor' README.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro
+```
+
+Do not run `bun test`; use `bun run test` only if tests become necessary.
 
 ## Evidence
 
-- `rg -n "nightly|schedule|Vercel|OIDC|trusted publishing|NPM_TOKEN|workflow_dispatch|release:smoke" docs/release.md .github/workflows/release.yml`: exit 0. Expected hits show `workflow_dispatch` and `NPM_TOKEN` in the workflow and show nightly/Vercel/OIDC described only under "What Is Not Automated Today"; no `release:smoke` hit.
-- `rg -n "\\.t3/ssh-launch|\\.gedcode/ssh-launch" REMOTE.md packages/ssh/src`: exit 0. All hits use `~/.gedcode/ssh-launch` / `$HOME/.gedcode/ssh-launch`.
-- `rg -n "/Users/julius|codething-mvp" docs/effect-fn-checklist.md`: exit 1, no output.
-- `rg -n "SCREENSHOT PLACEHOLDER|screenshot placeholder|TODO.*screenshot|!\\[.*screenshot" README.md docs --glob '!docs/superpowers/**'`: exit 0 with exactly one hit, `README.md:5`.
-- `rg -n "TraceRecord.ts|t3_db_query_duration|t3_db_queries_total|~/.t3/ssh-launch|release:smoke" README.md docs REMOTE.md KEYBINDINGS.md --glob '!docs/superpowers/**'`: exit 1, no output.
-- `tail -12 docs/effect-fn-checklist.md`: confirms the checklist no longer ends with stray empty code fences.
+- `rg -n '!\\[GedCode workspace screenshot\\]\\(\\./assets/screenshot/workspace\\.png\\)' README.md`: passed; `README.md:5` contains the screenshot reference.
+- `rg -n 'docs/ged-workflow\\.md' README.md`: passed; README links the public workflow guide.
+- `test -f docs/ged-workflow.md`: passed.
+- `rg -n 'docs/superpowers' README.md docs/ged-workflow.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro`: exit 1, no public links to historical planning docs.
+- `rg -n 'hard-enforce|hard enforce|automatically enforces|guarantees correctness|child-thread|child thread' README.md docs/ged-workflow.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro`: exit 1, no overclaiming language in public surfaces.
+- `rg -n 'Cursor' README.md apps/marketing/src/pages/index.astro apps/marketing/src/layouts/Layout.astro`: exit 1 after provider alignment; README and marketing release-facing copy now both name Codex, Claude, and OpenCode only.
 - `bun fmt`: passed.
-- `bun lint`: passed with existing warnings.
+- `bun lint`: passed with existing warnings only.
 - `bun typecheck`: passed.
-- Post-verifier follow-up: verifier reported `@t3tools/shared:typecheck` failures in its environment.
-  Fresh parent reruns passed:
-  - `bun typecheck`: passed.
-  - `bun --filter=@t3tools/shared run typecheck`: passed.
-
-Extra release-specific check:
-
-- `bun run release:smoke`: failed because the script's temporary workspace fixture cannot currently resolve `@t3tools/ged-workflow`. The release docs no longer recommend this broken rehearsal command.
-
-## Verifier
-
-- `ged-verifier`: found no content-accuracy blockers in scoped docs. It reported a typecheck blocker,
-  but parent follow-up reproduced neither the full nor focused typecheck failure, so the finding is
-  adjudicated as an isolated verifier environment mismatch.
+- `file assets/screenshot/workspace.png`: confirms the README screenshot asset is a PNG at `3456 x 2156`.
+- `view_image assets/screenshot/workspace.png`: inspected visually; it is a GedCode workspace screenshot.
+- `ged-verifier`: passed release-facing content review after Cursor provider-copy alignment; remaining finding was to finalize `.ged/work/root/STATE.md` and `.ged/work/root/TASKS.md` before commit, which is now done.

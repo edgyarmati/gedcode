@@ -1,44 +1,33 @@
-# Spec
+# Release-Facing Ged Workflow Positioning
 
 ## Goal
 
-Review and polish release-facing documentation so it matches the current GedCode repository before release, and leave exactly one obvious screenshot placeholder for the user to fill later.
+Update public release-facing documentation so GedCode is described around the Ged workflow, not merely as a minimal GUI for coding agents.
+
+The README and public copy should make clear that GedCode helps users run coding-agent work through a predictable loop: clarify, plan, implement, verify, then commit or continue. The documentation should also explain how GedCode keeps this work inspectable and easier to resume across long-running turns, reconnects, restarts, and partial streams.
 
 ## Scope
 
-In scope:
+- Update `README.md` with product positioning centered on the Ged workflow.
+- Preserve the existing README screenshot line if present:
+  `![GedCode workspace screenshot](./assets/screenshot/workspace.png)`
+- Add a public `docs/ged-workflow.md` guide.
+- Update marketing page/meta copy where it repeats the old generic product description.
+- Keep provider setup and installation instructions accurate.
 
-- Update `README.md` for release-ready introductory copy, provider doc links, and one screenshot placeholder.
-- Rewrite `docs/release.md` around the current `.github/workflows/release.yml`.
-- Update `REMOTE.md` stale SSH launch storage paths.
-- Sync `KEYBINDINGS.md` with `packages/shared/src/keybindings.ts` and `packages/contracts/src/keybindings.ts`.
-- Update `docs/observability.md` stale schema path and metric list.
-- Add an OpenCode provider guide under `docs/providers/` because OpenCode is implemented and advertised.
-- Clean broken absolute links in `docs/effect-fn-checklist.md` without changing its checklist semantics.
+## Non-Goals
 
-Out of scope:
+- No provider behavior changes.
+- No release workflow changes.
+- No links from the public README to historical `docs/superpowers/*` planning docs.
+- No claim that GedCode hard-enforces every workflow phase or guarantees correctness.
+- No claim that GedCode-managed child-thread orchestration is available when the current implementation points users toward harness-native subagents.
 
-- Changing release workflows, provider behavior, source code, or release scripts.
-- Editing historical planning material under `docs/superpowers/*`.
-- Renaming real identifiers that still exist, including `@t3tools/*`, `T3CODE_*` env vars, `app.t3.codes`, `/__t3code/channel`, and `t3code_web_channel`.
-- Creating real screenshot assets.
+## Acceptance Criteria
 
-## Source Of Truth
-
-- Release workflow: `.github/workflows/release.yml`.
-- Keybinding defaults: `packages/shared/src/keybindings.ts`.
-- Keybinding command/schema definitions: `packages/contracts/src/keybindings.ts`.
-- Trace record types: `packages/shared/src/observability.ts`.
-- Metrics definitions: `apps/server/src/observability/Metrics.ts`.
-- Provider support: server provider drivers and settings for Codex, Claude, and OpenCode.
-
-## Screenshot Placeholder
-
-Add exactly one placeholder in `README.md` after the product description and before installation. The placeholder must be a Markdown comment rather than a broken image link, so the public README does not render missing media before the user adds the screenshot.
-
-## Risks
-
-- Overpromising nightly, hosted web, or OIDC release automation that the workflow does not currently run.
-- Advertising OpenCode without enough setup details for a first-release user.
-- Accidentally changing historical planning docs or real legacy identifiers.
-- Leaving multiple screenshot placeholders or a visible broken image.
+- README leads with Ged workflow as the selling point.
+- README includes one public link to `docs/ged-workflow.md`.
+- `docs/ged-workflow.md` explains the workflow phases in user-facing language.
+- Public copy stays accurate about current provider support: Codex, Claude, and OpenCode in the README.
+- Marketing copy mentions Ged workflow without overclaiming unsupported orchestration details.
+- Required repo gates pass: `bun fmt`, `bun lint`, `bun typecheck`.

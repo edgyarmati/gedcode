@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: complete
-- **Active task**: Release documentation review and polish
-- **Status**: Completed and committed as `docs: polish release documentation`.
-- **Blockers**: None currently.
+- **Active task**: Release-facing Ged workflow positioning
+- **Status**: Completed and committed as `docs: center release docs on ged workflow`.
+- **Blockers**: None.
 - **Next step**: None.
