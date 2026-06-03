@@ -114,7 +114,7 @@ jobs:
             target: dmg
             arch: arm64
           - label: macOS x64
-            runner: macos-13
+            runner: [self-hosted, macOS, X64]
             platform: mac
             target: dmg
             arch: x64
