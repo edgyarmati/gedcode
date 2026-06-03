@@ -15,7 +15,6 @@ This document describes the current GedCode release workflow in `.github/workflo
   - `bun run test`
 - Desktop build matrix:
   - macOS `arm64` DMG
-  - macOS `x64` DMG
   - Linux `x64` AppImage
   - Windows `x64` NSIS installer
 - Published outputs:
@@ -66,7 +65,7 @@ Windows signing is optional. If any required value is missing, Windows artifacts
 - Provider: GitHub Releases (`provider: github`) configured at build time.
 - The workflow publishes `latest*.yml` updater metadata for stable releases.
 - macOS release assets must include both installer DMGs and zip updater payloads.
-- The workflow merges per-arch macOS update manifests into one macOS manifest before publishing.
+- The current release only publishes Apple Silicon (`arm64`) macOS artifacts.
 - The desktop UI does not automatically download or install updates. Users start the download from
   the update button (rocket/update action), then restart/install after download completes.
 
