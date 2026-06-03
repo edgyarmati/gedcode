@@ -26,15 +26,9 @@ Read the public workflow guide: [docs/ged-workflow.md](./docs/ged-workflow.md).
 > - Claude: install [Claude Code](https://claude.com/product/claude-code), run `claude auth login`, and see [docs/providers/claude.md](./docs/providers/claude.md).
 > - OpenCode: install [OpenCode](https://opencode.ai), run `opencode auth login`, and see [docs/providers/opencode.md](./docs/providers/opencode.md).
 
-### Run without installing
-
-```bash
-npx gedcode
-```
-
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/edgyarmati/gedcode/releases).
+Install the latest desktop app from [GitHub Releases](https://github.com/edgyarmati/gedcode/releases). After installing a release build, GedCode can notify you about future updates and let you download/install them from the in-app update button.
 
 ## Project status
 

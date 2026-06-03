@@ -17,6 +17,5 @@ bun run start
 # Build a shareable macOS .dmg (arm64 by default)
 bun run dist:desktop:dmg
 
-# Or from any project directory after publishing:
-npx t3
+# Install packaged desktop builds from GitHub Releases.
 ```

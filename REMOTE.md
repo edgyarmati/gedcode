@@ -61,10 +61,10 @@ For `https://app.t3.codes`, prefer an HTTPS Tailnet or other HTTPS endpoint. A p
 
 Use this when you want to run the server without a GUI, for example on a remote machine over SSH.
 
-Run the server with `gedcode serve`.
+Run the server with `gedcode serve` from an installed/local GedCode build.
 
 ```bash
-npx gedcode serve --host "$(tailscale ip -4)"
+gedcode serve --host "$(tailscale ip -4)"
 ```
 
 `gedcode serve` starts the server without opening a browser and prints:
@@ -86,14 +86,14 @@ Use `gedcode serve --help` for the full flag reference. It supports the same gen
 For hosted web pairing over Tailscale HTTPS, opt in to Tailscale Serve:
 
 ```bash
-npx gedcode serve --tailscale-serve
+gedcode serve --tailscale-serve
 ```
 
 By default this configures Tailscale Serve on HTTPS port 443 and advertises
 `https://machine.tailnet.ts.net/`. Advanced users can choose a different HTTPS port:
 
 ```bash
-npx gedcode serve --tailscale-serve --tailscale-serve-port 8443
+gedcode serve --tailscale-serve --tailscale-serve-port 8443
 ```
 
 > Note

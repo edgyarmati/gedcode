@@ -21,13 +21,9 @@ This document describes the current GedCode release workflow in `.github/workflo
 - Published outputs:
   - one GitHub Release named `GedCode vX.Y.Z`
   - desktop installers, macOS zip updater payloads, update manifests, and blockmaps
-  - the CLI npm package from `apps/server`, package name `gedcode`
 
 Versions matching plain `X.Y.Z` are stable releases. Versions with a suffix, for example
 `X.Y.Z-alpha.1`, are GitHub prereleases and are not marked latest on GitHub.
-
-Important current limitation: the npm publish step always uses npm dist-tag `latest`. Do not use a
-prerelease version for a public release unless publishing that CLI build to `latest` is acceptable.
 
 ## What Is Not Automated Today
 
@@ -37,31 +33,7 @@ The current workflow does not include:
 - a separate nightly updater channel
 - Vercel or hosted web app deployment
 
-The workflow uses npm Trusted Publishing/OIDC for the CLI publish step. The top-level
-`id-token: write` permission is required so GitHub Actions can mint the short-lived OIDC token used
-by npm, and the publish command includes `--provenance` for package provenance.
-
 ## Required Release Setup
-
-### npm CLI Publish
-
-The `gedcode` npm package must have a Trusted Publisher configured on npmjs.com before the
-release workflow can publish without a token. Configure npm Trusted Publishing for:
-
-- Package: `gedcode`
-- Provider: GitHub Actions
-- Repository: this GitHub repository, currently `edgyarmati/gedcode`
-- Workflow filename: `release.yml`
-- Environment: leave blank unless `.github/workflows/release.yml` is also updated to use a matching GitHub Actions environment
-- Allowed action: `npm publish`
-
-The publish job builds the web package and CLI package before publishing:
-
-```sh
-bun --filter=@t3tools/web run build
-bun --filter=gedcode run build
-node apps/server/scripts/cli.ts publish --tag latest --app-version "$VERSION" --verbose --provenance
-```
 
 ### macOS Signing And Notarization
 
@@ -96,7 +68,7 @@ Windows signing is optional. If any required value is missing, Windows artifacts
 - macOS release assets must include both installer DMGs and zip updater payloads.
 - The workflow merges per-arch macOS update manifests into one macOS manifest before publishing.
 - The desktop UI does not automatically download or install updates. Users start the download from
-  the update button, then restart/install after download completes.
+  the update button (rocket/update action), then restart/install after download completes.
 
 Repository slug source:
 
@@ -135,7 +107,6 @@ Temporary private-repo updater auth workaround:
 5. Watch `.github/workflows/release.yml`:
    - preflight passes
    - all desktop matrix builds pass
-   - CLI publish passes
    - GitHub Release is created with expected assets
 6. Download and smoke test each desktop artifact.
 7. For stable `X.Y.Z` releases, confirm the `Finalize release` job updated version strings on
@@ -143,25 +114,16 @@ Temporary private-repo updater auth workaround:
 
 ## Rehearsal Guidance
 
-There is no true dry-run mode in the current workflow. A test tag such as `v0.0.0-test.1` will still
-run the CLI publish job with npm dist-tag `latest`.
-
-For a rehearsal, use one of these safer options:
+There is no true dry-run mode in the current workflow. For a rehearsal, use one of these safer options:
 
 - run the local repo gates before tagging
 - test the workflow in a fork or temporary private repository
-- temporarily disable the npm publish step on a throwaway branch
-- test trusted publishing only in a repository/package configured with a matching npm Trusted Publisher; forks or throwaway repositories need their own npm trusted publisher setup
+- temporarily disable GitHub Release publishing on a throwaway branch
 
 ## Troubleshooting
 
 - Release version rejected:
   - Use `X.Y.Z` or `vX.Y.Z`, optionally with a suffix such as `X.Y.Z-alpha.1`.
-- CLI publish fails:
-  - Check that npm Trusted Publishing is configured for package `gedcode`, this repository, and workflow filename `release.yml`.
-  - Check npm package ownership/access for `gedcode`.
-  - Check that the workflow still has `id-token: write` and uses a GitHub-hosted runner.
-  - Check the npm CLI version if authentication/provenance errors mention unsupported OIDC.
 - macOS build unsigned when signing was expected:
   - Check all Apple signing and notarization secrets are populated.
 - Windows build unsigned when signing was expected:
