@@ -9,6 +9,7 @@ This document describes the current GedCode release workflow in `.github/workflo
   - push a tag matching `v*.*.*`
   - manual `workflow_dispatch` with a required `version` input such as `0.1.0` or `v0.1.0`
 - Preflight gates:
+  - `bun run fmt:check`
   - `bun run lint`
   - `bun run typecheck`
   - `bun run test`
@@ -105,7 +106,8 @@ Temporary private-repo updater auth workaround:
 2. Run the local repo gates:
 
    ```sh
-   bun fmt
+   bun fmt # if formatting changes are needed
+   bun run fmt:check
    bun lint
    bun typecheck
    bun run test
