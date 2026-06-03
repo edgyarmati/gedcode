@@ -224,6 +224,12 @@ function mapProject(
     defaultModelSelection: project.defaultModelSelection
       ? normalizeModelSelection(project.defaultModelSelection)
       : null,
+    roleModelSelections: Object.fromEntries(
+      Object.entries(project.roleModelSelections ?? {}).map(([role, selection]) => [
+        role,
+        normalizeModelSelection(selection),
+      ]),
+    ),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     scripts: mapProjectScripts(project.scripts),
@@ -1229,6 +1235,16 @@ function applyEnvironmentOrchestrationEvent(
               defaultModelSelection: event.payload.defaultModelSelection
                 ? normalizeModelSelection(event.payload.defaultModelSelection)
                 : null,
+            }
+          : {}),
+        ...(event.payload.roleModelSelections !== undefined
+          ? {
+              roleModelSelections: Object.fromEntries(
+                Object.entries(event.payload.roleModelSelections).map(([role, selection]) => [
+                  role,
+                  normalizeModelSelection(selection),
+                ]),
+              ),
             }
           : {}),
         ...(event.payload.scripts !== undefined

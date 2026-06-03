@@ -5,8 +5,67 @@ export interface ValidationResult {
   readonly reason?: string | undefined;
 }
 
+const hasText = (value: string | undefined): boolean => value !== undefined && value.trim() !== "";
+
+const isValidQuestionCount = (value: number): boolean =>
+  Number.isInteger(value) && Number.isFinite(value) && value >= 0;
+
+export const validateClarificationGate = (state: CheckpointState): ValidationResult => {
+  if (state.classification === "trivial") return { valid: true };
+
+  const clarification = state.clarification;
+  if (!clarification) {
+    return {
+      valid: false,
+      reason:
+        "Non-trivial task requires a clarification decision before planning: needed or skipped-sufficient.",
+    };
+  }
+
+  if (!isValidQuestionCount(clarification.questionCount)) {
+    return {
+      valid: false,
+      reason: "Clarification questionCount must be a non-negative integer.",
+    };
+  }
+
+  if (!clarification.decision) {
+    return {
+      valid: false,
+      reason: "Clarification record must include decision: needed or skipped-sufficient.",
+    };
+  }
+
+  if (clarification.decision === "needed" && clarification.questionCount <= 0) {
+    return {
+      valid: false,
+      reason: "Clarification decision needed requires questionCount > 0.",
+    };
+  }
+
+  if (clarification.decision === "skipped-sufficient") {
+    if (clarification.questionCount !== 0) {
+      return {
+        valid: false,
+        reason: "Clarification decision skipped-sufficient requires questionCount === 0.",
+      };
+    }
+    if (!hasText(clarification.reason)) {
+      return {
+        valid: false,
+        reason: "Clarification decision skipped-sufficient requires a non-empty reason/evidence.",
+      };
+    }
+  }
+
+  return { valid: true };
+};
+
 export const validatePlannerCheckpoint = (state: CheckpointState): ValidationResult => {
   if (state.classification === "trivial") return { valid: true };
+  const clarification = validateClarificationGate(state);
+  if (!clarification.valid) return clarification;
+
   const planner = state.planCheckpoints["ged-planner"];
   if (!planner || !planner.valid) {
     return {

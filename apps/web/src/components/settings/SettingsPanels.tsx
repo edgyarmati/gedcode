@@ -14,8 +14,10 @@ import {
 import { scopeThreadRef } from "@t3tools/client-runtime";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
+import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
+import * as Result from "effect/Result";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import {
   canCheckForUpdate,
@@ -29,6 +31,7 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useTheme } from "../../hooks/useTheme";
+import { isTheme, THEME_OPTIONS } from "../../lib/themeRegistry";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
@@ -78,20 +81,11 @@ import {
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useServerObservability, useServerProviders } from "../../rpc/serverState";
 
-const THEME_OPTIONS = [
-  {
-    value: "system",
-    label: "System",
-  },
-  {
-    value: "light",
-    label: "Light",
-  },
-  {
-    value: "dark",
-    label: "Dark",
-  },
-] as const;
+const GED_CRITIQUE_MODE_LABELS = {
+  off: "Off",
+  "risk-based": "Risk-based",
+  always: "Always",
+} as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -529,7 +523,7 @@ export function GeneralSettingsPanel() {
             <Select
               value={theme}
               onValueChange={(value) => {
-                if (value === "system" || value === "light" || value === "dark") {
+                if (isTheme(value)) {
                   setTheme(value);
                 }
               }}
@@ -669,31 +663,99 @@ export function GeneralSettingsPanel() {
           }
         />
 
-        <SettingsRow
-          title="Default Ged workflow"
-          description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
-          resetAction={
-            settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
-              <SettingResetButton
-                label="Ged workflow"
-                onClick={() =>
-                  updateSettings({
-                    gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
-                  })
+        <SettingsSection title="Ged orchestration">
+          <SettingsRow
+            title="Default Ged workflow"
+            description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
+            resetAction={
+              settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
+                <SettingResetButton
+                  label="Ged workflow"
+                  onClick={() =>
+                    updateSettings({
+                      gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedWorkflowEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedWorkflowEnabled: Boolean(checked) })
                 }
+                aria-label="Enable Ged workflow"
               />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.gedWorkflowEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ gedWorkflowEnabled: Boolean(checked) })
-              }
-              aria-label="Enable Ged workflow"
-            />
-          }
-        />
+            }
+          />
+
+          <SettingsRow
+            title="Subagents"
+            description="Allow Ged role threads such as explorer to be launched by the workflow harness."
+            resetAction={
+              settings.gedSubagentsEnabled !== DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled ? (
+                <SettingResetButton
+                  label="Ged subagents"
+                  onClick={() =>
+                    updateSettings({
+                      gedSubagentsEnabled: DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.gedSubagentsEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ gedSubagentsEnabled: Boolean(checked) })
+                }
+                aria-label="Enable Ged subagents"
+              />
+            }
+          />
+
+          <SettingsRow
+            title="Critique mode"
+            description="Controls when plan review should run in upcoming orchestration slices."
+            resetAction={
+              settings.gedCritiqueMode !== DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode ? (
+                <SettingResetButton
+                  label="Ged critique mode"
+                  onClick={() =>
+                    updateSettings({ gedCritiqueMode: DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.gedCritiqueMode}
+                onValueChange={(value) => {
+                  if (value === "off" || value === "risk-based" || value === "always") {
+                    updateSettings({ gedCritiqueMode: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-40" aria-label="Ged critique mode">
+                  <SelectValue>{GED_CRITIQUE_MODE_LABELS[settings.gedCritiqueMode]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="off">
+                    {GED_CRITIQUE_MODE_LABELS.off}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="risk-based">
+                    {GED_CRITIQUE_MODE_LABELS["risk-based"]}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="always">
+                    {GED_CRITIQUE_MODE_LABELS.always}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        </SettingsSection>
 
         <SettingsRow
           title="Auto-open task panel"
@@ -1169,7 +1231,12 @@ export function ProviderSettingsPanel() {
     nextFavoriteModels: ReadonlyArray<string>,
   ) => {
     const favoriteModels = [
-      ...new Set(nextFavoriteModels.map((slug) => slug.trim()).filter((slug) => slug.length > 0)),
+      ...new Set(
+        Arr.filterMap(nextFavoriteModels, (slug) => {
+          const trimmedSlug = slug.trim();
+          return trimmedSlug.length > 0 ? Result.succeed(trimmedSlug) : Result.failVoid;
+        }),
+      ),
     ];
     updateSettings({
       favorites: [
@@ -1275,9 +1342,9 @@ export function ProviderSettingsPanel() {
             hiddenModels: [],
             modelOrder: [],
           };
-          const favoriteModels = (settings.favorites ?? [])
-            .filter((favorite) => favorite.provider === row.instanceId)
-            .map((favorite) => favorite.model);
+          const favoriteModels = Arr.filterMap(settings.favorites ?? [], (favorite) =>
+            favorite.provider === row.instanceId ? Result.succeed(favorite.model) : Result.failVoid,
+          );
           const resetLabel = driverOption?.label ?? String(row.driver);
           const headerAction =
             row.isDefault && row.isDirty ? (
@@ -1395,21 +1462,30 @@ export function ArchivedThreadsPanel() {
       })),
     );
 
-    return [...projectsByEnvironmentAndId.values()]
-      .map((project) => ({
-        project,
-        threads: threads
-          .filter(
-            (thread) =>
-              thread.projectId === project.id && thread.environmentId === project.environmentId,
-          )
-          .toSorted((left, right) => {
+    const archivedProjects = Array.from(projectsByEnvironmentAndId.values());
+    const groups: Array<{
+      readonly project: (typeof archivedProjects)[number];
+      readonly threads: Array<(typeof threads)[number]>;
+    }> = [];
+    for (const project of archivedProjects) {
+      const projectThreads: Array<(typeof threads)[number]> = [];
+      for (const thread of threads) {
+        if (thread.projectId === project.id && thread.environmentId === project.environmentId) {
+          projectThreads.push(thread);
+        }
+      }
+      if (projectThreads.length > 0) {
+        groups.push({
+          project,
+          threads: projectThreads.toSorted((left, right) => {
             const leftKey = left.archivedAt ?? left.createdAt;
             const rightKey = right.archivedAt ?? right.createdAt;
             return rightKey.localeCompare(leftKey) || right.id.localeCompare(left.id);
           }),
-      }))
-      .filter((group) => group.threads.length > 0);
+        });
+      }
+    }
+    return groups;
   }, [archivedSnapshots]);
 
   const handleArchivedThreadContextMenu = useCallback(

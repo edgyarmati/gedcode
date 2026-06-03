@@ -23,6 +23,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
@@ -1106,6 +1107,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const [isExpanded, setIsExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -1120,6 +1122,9 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+  // A row is expandable when it carries detail text (e.g. a runtime warning's
+  // message) beyond its heading. Command rows keep their raw-command tooltip.
+  const expandable = Boolean(preview) && Boolean(workEntry.detail) && !workEntry.command;
 
   return (
     <div className="rounded-lg px-1 py-1">
@@ -1168,6 +1173,38 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
                 )}
               </p>
             </div>
+          ) : expandable ? (
+            <button
+              type="button"
+              className="block w-full min-w-0 text-left"
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((open) => !open)}
+            >
+              <span className="flex min-w-0 items-center gap-1">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-[11px] leading-5 text-muted-foreground/70",
+                    workToneClass(workEntry.tone),
+                  )}
+                >
+                  <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
+                    {heading}
+                  </span>
+                  <span className="text-muted-foreground/55"> - {preview}</span>
+                </span>
+                <ChevronRightIcon
+                  className={cn(
+                    "size-3 shrink-0 text-muted-foreground/45 transition-transform duration-150",
+                    isExpanded && "rotate-90",
+                  )}
+                />
+              </span>
+              {isExpanded && (
+                <span className="mt-1 block whitespace-pre-wrap wrap-break-word text-[11px] leading-4 text-muted-foreground/75">
+                  {workEntry.detail}
+                </span>
+              )}
+            </button>
           ) : (
             <Tooltip>
               <TooltipTrigger

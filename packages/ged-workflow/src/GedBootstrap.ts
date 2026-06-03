@@ -12,6 +12,7 @@ import {
   TIER2_FILES,
   TIER3_FILES,
 } from "./GedMemoryTemplates.ts";
+import { getBundledSkill, renderBundledSkillMarkdown } from "./SkillRegistry.ts";
 
 export const isGedInitialized = (
   projectRoot: string,
@@ -33,6 +34,24 @@ const writeIfMissing = (
     if (!exists) {
       yield* fs.writeFileString(filePath, content);
     }
+  });
+
+export const installBundledGrillMeSkill = (
+  projectRoot: string,
+): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function* () {
+    const grillMeSkill = getBundledSkill("grill-me");
+    if (!grillMeSkill?.autoInstall) return;
+
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const skillDir = path.join(projectRoot, ".claude", "skills", grillMeSkill.name);
+
+    yield* fs.makeDirectory(skillDir, { recursive: true });
+    yield* writeIfMissing(
+      path.join(skillDir, "SKILL.md"),
+      renderBundledSkillMarkdown(grillMeSkill),
+    );
   });
 
 export const discoverStandards = (
@@ -109,6 +128,7 @@ export const bootstrapGedDirectory = (
       yield* writeIfMissing(path.join(runtimeDir, file.path), file.content);
     }
     yield* writeIfMissing(path.join(runtimeDir, "checkpoints.json"), INITIAL_CHECKPOINT_STATE_JSON);
+    yield* installBundledGrillMeSkill(projectRoot);
 
     const discovered = yield* discoverStandards(projectRoot);
     yield* populateStandards(projectRoot, discovered);

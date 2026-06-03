@@ -21,9 +21,14 @@ export type LifecycleStatus = typeof LifecycleStatus.Type;
 export const TaskClassification = Schema.Literals(["trivial", "non-trivial"]);
 export type TaskClassification = typeof TaskClassification.Type;
 
+export const ClarificationDecision = Schema.Literals(["needed", "skipped-sufficient"]);
+export type ClarificationDecision = typeof ClarificationDecision.Type;
+
 export const ClarificationRecord = Schema.Struct({
   completedAt: Schema.String,
+  decision: Schema.optional(ClarificationDecision),
   questionCount: Schema.Number,
+  reason: Schema.optional(Schema.String),
 });
 export type ClarificationRecord = typeof ClarificationRecord.Type;
 

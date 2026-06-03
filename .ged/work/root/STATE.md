@@ -1,6 +1,7 @@
 # State
 
 - **Phase**: complete
-- **Active task**: ged-thread-workflow-toggle
-- **Blockers**: none
-- **Next step**: Commit completed change.
+- **Active task**: Codex Ged subagent preset
+- **Status**: Completed and committed as `feat: add Codex Ged subagent preset`.
+- **Blockers**: None.
+- **Next step**: None.

@@ -1,25 +1,27 @@
 # Tasks
 
-## ged-thread-workflow-toggle
+## 1. Settings Contract
 
-1. [x] Add a per-thread `gedWorkflowEnabled` contract/projection field with historical defaults.
-2. [x] Add composer draft storage/actions for a workflow override and new-draft inheritance.
-3. [x] Wire ChatView to derive/toggle per-chat workflow state and send it through thread creation/meta/turn commands.
-4. [x] Make Ged enforcement consult the projected thread workflow setting for each send.
-5. [x] Add focused contract/store/server tests.
-6. [x] Run `bun fmt`, `bun lint`, `bun typecheck`, and targeted `bun run test` suites.
-7. [x] Commit with a conventional commit after verification.
+- [x] Add a Codex Ged subagent preset field to `CodexSettings`.
+- [x] Add patch decoding for the new Codex field.
+- [x] Cover default, decode, and patch behavior in settings tests.
 
-# gedcode-worktree-paths-and-push-remotes
+## 2. Prompt Injection
 
-- [x] Change default server base directory from `~/.t3` to `~/.gedcode`.
-- [x] Change generated temporary worktree branch namespace away from `gedcode/<token>`.
-- [x] Preserve recognition of legacy temp branch refs.
-- [x] Add/update focused tests for config path derivation and branch helpers.
-- [x] Run required verification: `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] Extend `WorkflowPromptOptions` to accept provider and Codex preset context.
+- [x] Render a Codex-only preset section when subagents are enabled and a preset is configured.
+- [x] Pass the active provider session into prompt generation from the Ged workflow guard/interceptor.
+- [x] Add tests for Codex-only prompt behavior and non-Codex omission.
 
-# upstream-push-fallback
+## 3. Documentation
 
-- [x] Add fallback handling for permission-denied `pushUpstream`.
-- [x] Add regression coverage for an existing `origin/main` upstream that denies pushes.
-- [x] Run focused VCS tests and required `bun fmt`, `bun lint`, `bun typecheck`.
+- [x] Update `docs/ged-workflow.md` with a brief Codex preset note if the behavior is user-facing.
+
+## 4. Verification
+
+- [x] Run focused tests for settings and workflow prompt behavior.
+- [x] Run `bun fmt`.
+- [x] Run `bun lint`.
+- [x] Run `bun typecheck`.
+- [x] Run Ged verifier review before committing.
+- [x] Commit scoped changes with a conventional commit.

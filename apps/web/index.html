@@ -6,32 +6,68 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#fbf1c7" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#282828" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#282828" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0f172a" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       (() => {
-        const LIGHT_BACKGROUND = "#fbf1c7";
-        const DARK_BACKGROUND = "#282828";
+        const THEME_STORAGE_KEY = "t3code:theme:v2";
+        const LEGACY_THEME_STORAGE_KEY = "t3code:theme";
+        const THEMES = new Set([
+          "system",
+          "light",
+          "dark",
+          "gruvbox-light",
+          "gruvbox-dark",
+          "midnight",
+          "dracula",
+        ]);
+        const LEGACY_THEME_MAP = {
+          light: "gruvbox-light",
+          dark: "gruvbox-dark",
+          system: "system",
+        };
+        const THEME_BACKGROUND = {
+          light: "#f8fafc",
+          dark: "#0f172a",
+          "gruvbox-light": "#fbf1c7",
+          "gruvbox-dark": "#282828",
+          midnight: "#050816",
+          dracula: "#282a36",
+        };
+        const DARK_THEMES = new Set(["dark", "gruvbox-dark", "midnight", "dracula"]);
         const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+        const readTheme = () => {
+          const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+          if (THEMES.has(storedTheme)) return storedTheme;
+          return (
+            LEGACY_THEME_MAP[window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)] ?? "system"
+          );
+        };
         try {
-          const storedTheme = window.localStorage.getItem("t3code:theme");
-          const theme =
-            storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
-              ? storedTheme
-              : "system";
+          const theme = readTheme();
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          const isDark = theme === "dark" || (theme === "system" && prefersDark);
+          const concreteTheme = theme === "system" ? (prefersDark ? "dark" : "light") : theme;
+          const isDark = DARK_THEMES.has(concreteTheme);
+          document.documentElement.dataset.theme = concreteTheme;
           document.documentElement.classList.toggle("dark", isDark);
-          const chromeColor = isDark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+          const chromeColor = THEME_BACKGROUND[concreteTheme] ?? THEME_BACKGROUND.light;
           document.documentElement.style.backgroundColor = chromeColor;
+          document.documentElement.style.setProperty("--boot-background", chromeColor);
+          document.documentElement.style.setProperty(
+            "--boot-foreground",
+            isDark ? "#e2e8f0" : "#0f172a",
+          );
           themeColorMeta?.setAttribute("content", chromeColor);
         } catch {
+          document.documentElement.dataset.theme = "dark";
           document.documentElement.classList.add("dark");
-          document.documentElement.style.backgroundColor = DARK_BACKGROUND;
-          themeColorMeta?.setAttribute("content", DARK_BACKGROUND);
+          document.documentElement.style.backgroundColor = THEME_BACKGROUND.dark;
+          document.documentElement.style.setProperty("--boot-background", THEME_BACKGROUND.dark);
+          document.documentElement.style.setProperty("--boot-foreground", "#e2e8f0");
+          themeColorMeta?.setAttribute("content", THEME_BACKGROUND.dark);
         }
       })();
     </script>
@@ -45,8 +81,8 @@
       }
 
       body {
-        background: #fbf1c7;
-        color: #3c3836;
+        background: var(--boot-background, #f8fafc);
+        color: var(--boot-foreground, #0f172a);
         font-family:
           "DM Sans",
           -apple-system,
@@ -57,8 +93,8 @@
       }
 
       html.dark body {
-        background: #282828;
-        color: #ebdbb2;
+        background: var(--boot-background, #0f172a);
+        color: var(--boot-foreground, #e2e8f0);
       }
 
       #boot-shell {
@@ -89,7 +125,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..800;1,9..40,300..800&display=swap"
       rel="stylesheet"
     />
-    <title>GedCode (Alpha)</title>
+    <title>GedCode</title>
   </head>
   <body>
     <div id="root">

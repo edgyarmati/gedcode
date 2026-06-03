@@ -1,62 +1,36 @@
-# Spec
+# Codex Ged Subagent Preset
 
 ## Goal
 
-Make the composer Ged workflow toggle chat-scoped instead of global.
+Add a Codex-specific Ged workflow improvement so users can configure a preset describing which harness-native Ged subagents Codex should use and which reasoning/thinking levels those subagents should run with.
+
+## Assumptions
+
+- This is a prompt-level Codex improvement, not a new internal child-thread orchestrator.
+- Codex should receive the preset only when the active provider session is Codex.
+- Non-Codex providers should keep the existing Ged workflow prompt.
+- The first release can use a multiline Codex provider setting instead of a larger role-by-role model picker UI.
+
+## Scope
+
+- Add a Codex provider setting for a Ged subagent preset.
+- Pass provider context into Ged workflow prompt generation.
+- Append the Codex preset to the harness-native subagent section only for Codex turns and only when subagents are enabled.
+- Add tests for schema decoding, prompt generation, and service-level Codex-only behavior.
+- Update public workflow docs if needed to mention Codex presets.
+
+## Non-Goals
+
+- No provider-native API changes.
+- No automatic spawning of Gedcode-managed child threads.
+- No UI redesign of the global Ged model picker.
+- No changes to Claude, OpenCode, or Cursor behavior.
 
 ## Acceptance Criteria
 
-- Toggling Ged workflow in one chat only changes that chat's effective workflow setting.
-- Existing chats retain their own workflow setting when switching between chats.
-- A newly created draft chat inherits the active chat's current workflow setting, matching the way composer model state is carried forward.
-- A chat created from a chat where Ged is disabled starts disabled without mutating any other chat.
-- Server-side Ged prompt injection and checkpoint enforcement use the target thread's workflow setting, not only the global settings default.
-- Existing historical threads decode as Ged-enabled by default so current behavior is preserved unless a thread opts out.
-
-## Constraints
-
-- Keep `packages/contracts` schema-only.
-- Reuse the existing thread/composer draft state patterns for model/runtime/interaction settings.
-- Preserve the global settings switch as the default for threads without a per-thread override.
-- Do not run `bun test`; use `bun run test`.
-
-# gedcode-worktree-paths-and-push-remotes
-
-## Problem
-
-New agent worktrees currently expose legacy T3 naming in user-facing paths:
-`~/.t3/worktrees/<repo>/<repo>-<token>`. Temporary branch refs also use
-`gedcode/<token>`, which is visible in push commands and pull request flows.
-
-When a local checkout points only at an upstream repository that the authenticated
-user cannot write to, `pushCurrentBranch` attempts to push to that upstream
-remote and fails before a PR can be created.
-
-## Desired Behavior
-
-- Default server home and derived worktree storage use `~/.gedcode`.
-- Generated temporary worktree branches use a GedCode-owned neutral namespace
-  without `t3`.
-- Existing temporary branch detection still recognizes old `gedcode/<token>`
-  refs so current sessions are not stranded.
-- Pushes continue to honor explicit `branch.<name>.pushRemote` and
-  `remote.pushDefault`, then prefer the primary remote as before.
-- Tests cover the new default path and generated temporary branch namespace.
-
-# upstream-push-fallback
-
-## Problem
-
-`GitVcsDriver.pushCurrentBranch` now falls back from permission-denied pushes
-when a branch has no upstream yet, but existing-upstream branches still use
-`pushUpstream` directly. A branch tracking `origin/main` can therefore fail with
-`Permission to <repo> denied` even when another writable remote is configured.
-
-## Desired Behavior
-
-- Existing-upstream pushes preserve the current upstream push path when it works.
-- If the upstream push fails specifically with a permission/remote access error,
-  retry against another configured remote using the same remote branch name.
-- The returned push result reports the fallback upstream and `setUpstream: true`
-  because `git push -u` updates tracking to the writable remote.
-- Non-permission push failures should still surface normally.
+- Codex settings include a configurable multiline Ged subagent preset.
+- The preset can name Ged roles such as `ged-explorer`, `ged-planner`, and `ged-verifier` and specify model/reasoning hints.
+- Codex Ged workflow prompts include the configured preset.
+- Non-Codex Ged workflow prompts omit the Codex preset.
+- Existing Ged workflow prompt behavior remains unchanged when no preset is configured.
+- Required repo gates pass: `bun fmt`, `bun lint`, and `bun typecheck`.

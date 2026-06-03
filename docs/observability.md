@@ -33,7 +33,7 @@ Important fields in each record:
 - `events`: embedded logs and custom events
 - `exit`: `Success`, `Failure`, or `Interrupted`
 
-The schema lives in `apps/server/src/observability/TraceRecord.ts`.
+The trace record types live in `packages/shared/src/observability.ts`.
 
 ### Metrics
 
@@ -65,7 +65,7 @@ You do not need any extra env vars. Just run the app normally and inspect `serve
 Examples:
 
 ```bash
-npx t3
+npx gedcode
 ```
 
 ```bash
@@ -116,7 +116,7 @@ export T3CODE_TRACE_TIMING_ENABLED=true
 CLI:
 
 ```bash
-npx t3
+npx gedcode
 ```
 
 Monorepo web/server dev:
@@ -289,15 +289,21 @@ Good metric families to watch:
 - `t3_orchestration_command_ack_duration`
 - `t3_provider_turn_duration`
 - `t3_git_command_duration`
-- `t3_db_query_duration`
 
 Counters tell you volume and failure rate:
 
 - `t3_rpc_requests_total`
 - `t3_orchestration_commands_total`
+- `t3_orchestration_events_processed_total`
+- `t3_provider_sessions_total`
 - `t3_provider_turns_total`
+- `t3_provider_runtime_events_total`
 - `t3_git_commands_total`
-- `t3_db_queries_total`
+- `t3_terminal_sessions_total`
+- `t3_terminal_restarts_total`
+
+The current metric definitions live in `apps/server/src/observability/Metrics.ts`. SQLite work is
+visible in spans, but there are no dedicated `t3_db_*` metric definitions today.
 
 Use metrics when the question is:
 
@@ -510,10 +516,10 @@ Current high-value span and metric boundaries include:
 - provider session and turn operations
 - git command execution and git hook events
 - terminal session lifecycle
-- sqlite query execution
+- sqlite query spans
 
 ### Current Constraints
 
 - logs outside spans are not persisted
 - metrics are not snapshotted locally
-- the old `serverLogPath` still exists in config for compatibility, but the trace file is the persisted artifact that matters
+- the trace file is the persisted local artifact that matters

@@ -40,7 +40,7 @@ Recommended setup:
 
 The idea is:
 
-- both accounts can see the same T3/Codex sessions
+- both accounts can see the same GedCode/Codex sessions
 - each account keeps its own login
 - existing threads can continue with either account
 

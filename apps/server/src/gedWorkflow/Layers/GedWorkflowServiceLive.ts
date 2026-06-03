@@ -7,9 +7,13 @@
  *
  * @module GedWorkflowServiceLive
  */
-import type { GedWorkflowState } from "@t3tools/contracts";
+import type { CodexGedSubagentPreset, GedWorkflowState, ServerSettings } from "@t3tools/contracts";
+import { formatCodexGedSubagentPreset } from "@t3tools/shared/gedSubagentPreset";
 import { bootstrapGedDirectory } from "@t3tools/ged-workflow";
-import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
+import {
+  CheckpointState,
+  type CheckpointState as CheckpointStateValue,
+} from "@t3tools/ged-workflow/CheckpointSchema";
 import {
   validatePlannerCheckpoint,
   type ValidationResult,
@@ -23,6 +27,7 @@ import * as Schema from "effect/Schema";
 
 import {
   GedWorkflowService,
+  type GedWorkflowPromptContext,
   type GedWorkflowServiceShape,
 } from "../Services/GedWorkflowService.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -44,8 +49,37 @@ const DEFAULT_STATE: GedWorkflowState = {
   verifierCheckpointValid: false,
 };
 
+const CODEX_PROVIDER = "codex";
+
+const readCodexGedSubagentPresetField = (
+  config: unknown,
+  field: string,
+): CodexGedSubagentPreset | undefined => {
+  if (config === null || typeof config !== "object") return undefined;
+  const value = (config as Record<string, unknown>)[field];
+  return value && typeof value === "object" ? (value as CodexGedSubagentPreset) : undefined;
+};
+
+const resolveCodexGedSubagentPreset = (
+  current: ServerSettings,
+  context?: GedWorkflowPromptContext,
+): string | undefined => {
+  if (context?.provider !== CODEX_PROVIDER) return undefined;
+
+  const instance =
+    context.providerInstanceId === undefined
+      ? undefined
+      : current.providerInstances[context.providerInstanceId];
+  if (instance?.driver === CODEX_PROVIDER) {
+    const instancePreset = readCodexGedSubagentPresetField(instance.config, "gedSubagentPreset");
+    if (instancePreset) return formatCodexGedSubagentPreset(instancePreset);
+  }
+
+  return formatCodexGedSubagentPreset(current.providers.codex.gedSubagentPreset);
+};
+
 const mapCheckpointStateToWorkflowState = (
-  cp: typeof CheckpointState.Type,
+  cp: CheckpointStateValue,
   enabled: boolean,
 ): GedWorkflowState => {
   const plannerCp = cp.planCheckpoints["ged-planner"];
@@ -106,7 +140,7 @@ const make = Effect.gen(function* () {
       return yield* decodeCheckpointStateFromJson(raw);
     });
 
-  const writeCheckpointState = (projectRoot: string, state: typeof CheckpointState.Type) =>
+  const writeCheckpointState = (projectRoot: string, state: CheckpointStateValue) =>
     Effect.gen(function* () {
       const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
       const encoded = yield* encodeCheckpointStateToJson(state);
@@ -171,8 +205,24 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = () =>
-    Effect.succeed(buildWorkflowPromptSuffix({ subagentsEnabled: true }));
+  const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = (context) =>
+    settings.getSettings.pipe(
+      Effect.map((current) =>
+        buildWorkflowPromptSuffix({
+          codexGedSubagentPreset: resolveCodexGedSubagentPreset(current, context),
+          provider: context?.provider,
+          subagentsEnabled: current.gedSubagentsEnabled,
+        }),
+      ),
+      Effect.catch(() =>
+        Effect.succeed(
+          buildWorkflowPromptSuffix({
+            provider: context?.provider,
+            subagentsEnabled: true,
+          }),
+        ),
+      ),
+    );
 
   const VALID_RESULT: ValidationResult = { valid: true };
 

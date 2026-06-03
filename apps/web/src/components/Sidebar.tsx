@@ -108,6 +108,7 @@ import {
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
+  shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
@@ -680,11 +681,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       render={
                         <span
                           aria-label={threadEnvironmentLabel ?? "Remote"}
-                          className="inline-flex h-5 items-center justify-center"
+                          className="inline-flex items-center justify-center"
                         />
                       }
                     >
-                      <CloudIcon className="block size-3 text-muted-foreground/60" />
+                      <CloudIcon className="size-3 text-muted-foreground/40" />
                     </TooltipTrigger>
                     <TooltipPopup side="top">{threadEnvironmentLabel}</TooltipPopup>
                   </Tooltip>
@@ -809,7 +810,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
   return (
     <SidebarMenuSub
       ref={attachThreadListAutoAnimateRef}
-      className="mx-1 my-0 w-full translate-x-0 gap-0.5 overflow-hidden px-1.5 py-0"
+      className="mx-0.5 my-0 w-full translate-x-0 gap-0.5 overflow-hidden px-1 py-0 sm:mx-1 sm:px-1.5"
     >
       {shouldShowThreadPanel && showEmptyThreadState ? (
         <SidebarMenuSubItem className="w-full" data-thread-selection-safe>
@@ -2459,9 +2460,11 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
               <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
                 Code
               </span>
-              <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-                {APP_STAGE_LABEL}
-              </span>
+              {APP_STAGE_LABEL ? (
+                <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+                  {APP_STAGE_LABEL}
+                </span>
+              ) : null}
             </Link>
           }
         />
@@ -2516,6 +2519,7 @@ interface SidebarProjectsContentProps {
   arm64IntelBuildWarningDescription: string | null;
   desktopUpdateButtonAction: "download" | "install" | "none";
   desktopUpdateButtonDisabled: boolean;
+  showDesktopUpdateAction: boolean;
   handleDesktopUpdateButtonClick: () => void;
   projectSortOrder: SidebarProjectSortOrder;
   threadSortOrder: SidebarThreadSortOrder;
@@ -2557,6 +2561,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     arm64IntelBuildWarningDescription,
     desktopUpdateButtonAction,
     desktopUpdateButtonDisabled,
+    showDesktopUpdateAction,
     handleDesktopUpdateButtonClick,
     projectSortOrder,
     threadSortOrder,
@@ -2660,6 +2665,29 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 </Button>
               </AlertAction>
             ) : null}
+          </Alert>
+        </SidebarGroup>
+      ) : null}
+      {showDesktopUpdateAction ? (
+        <SidebarGroup className="px-2 pt-2 pb-0">
+          <Alert variant="info" className="rounded-2xl border-primary/30 bg-primary/8">
+            <CloudIcon />
+            <AlertTitle>Update available</AlertTitle>
+            <AlertDescription>
+              {desktopUpdateButtonAction === "install"
+                ? "A GedCode update is downloaded and ready to install."
+                : "A GedCode update is ready to download."}
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                size="xs"
+                variant={desktopUpdateButtonAction === "install" ? "default" : "outline"}
+                disabled={desktopUpdateButtonDisabled}
+                onClick={handleDesktopUpdateButtonClick}
+              >
+                {desktopUpdateButtonAction === "install" ? "Restart to Update" : "Download Update"}
+              </Button>
+            </AlertAction>
           </Alert>
         </SidebarGroup>
       ) : null}
@@ -3314,6 +3342,8 @@ export default function Sidebar() {
     desktopUpdateState && showArm64IntelBuildWarning
       ? getArm64IntelBuildWarningDescription(desktopUpdateState)
       : null;
+  const showDesktopUpdateAction =
+    !showArm64IntelBuildWarning && shouldShowDesktopUpdateButton(desktopUpdateState);
   const commandPaletteShortcutLabel = shortcutLabelForCommand(
     keybindings,
     "commandPalette.toggle",
@@ -3420,6 +3450,7 @@ export default function Sidebar() {
             arm64IntelBuildWarningDescription={arm64IntelBuildWarningDescription}
             desktopUpdateButtonAction={desktopUpdateButtonAction}
             desktopUpdateButtonDisabled={desktopUpdateButtonDisabled}
+            showDesktopUpdateAction={showDesktopUpdateAction}
             handleDesktopUpdateButtonClick={handleDesktopUpdateButtonClick}
             projectSortOrder={sidebarProjectSortOrder}
             threadSortOrder={sidebarThreadSortOrder}

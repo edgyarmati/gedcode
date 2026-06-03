@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
-type Theme = "light" | "dark" | "system";
+import {
+  getDesktopTheme,
+  getThemeScheme,
+  isTheme,
+  LEGACY_THEME_STORAGE_KEY,
+  migrateLegacyTheme,
+  resolveConcreteTheme,
+  type DesktopTheme,
+  type Theme,
+  THEME_STORAGE_KEY,
+} from "../lib/themeRegistry";
 type ThemeSnapshot = {
   theme: Theme;
   systemDark: boolean;
 };
 
-const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
   theme: "system",
@@ -17,7 +26,7 @@ const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data
 
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
-let lastDesktopTheme: Theme | null = null;
+let lastDesktopTheme: DesktopTheme | null = null;
 
 function emitChange() {
   for (const listener of listeners) listener();
@@ -31,10 +40,29 @@ function getSystemDark() {
   return typeof window !== "undefined" && window.matchMedia(MEDIA_QUERY).matches;
 }
 
+function hasThemeDocumentRoot(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    typeof document.documentElement?.setAttribute === "function" &&
+    typeof document.documentElement.classList?.toggle === "function"
+  );
+}
+
 function getStored(): Theme {
   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  if (isTheme(stored)) return stored;
+
+  const migrated = migrateLegacyTheme(localStorage.getItem(LEGACY_THEME_STORAGE_KEY));
+  if (migrated) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, migrated);
+    } catch {
+      // Storage may be readable but not writable in restricted/private contexts.
+    }
+    return migrated;
+  }
+
   return DEFAULT_THEME_SNAPSHOT.theme;
 }
 
@@ -47,7 +75,7 @@ function ensureThemeColorMetaTag(): HTMLMetaElement {
   element = document.createElement("meta");
   element.name = THEME_COLOR_META_NAME;
   element.setAttribute("data-dynamic-theme-color", "true");
-  document.head.append(element);
+  document.head?.append(element);
   return element;
 }
 
@@ -74,7 +102,13 @@ function resolveBrowserChromeSurface(): HTMLElement {
 }
 
 export function syncBrowserChromeTheme() {
-  if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
+  if (
+    typeof document === "undefined" ||
+    typeof getComputedStyle === "undefined" ||
+    !hasThemeDocumentRoot() ||
+    !document.body
+  )
+    return;
   const surfaceColor = normalizeThemeColor(
     getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
   );
@@ -88,14 +122,16 @@ export function syncBrowserChromeTheme() {
 }
 
 function applyTheme(theme: Theme, suppressTransitions = false) {
-  if (typeof document === "undefined" || typeof window === "undefined") return;
+  if (typeof window === "undefined" || !hasThemeDocumentRoot()) return;
   if (suppressTransitions) {
     document.documentElement.classList.add("no-transitions");
   }
-  const isDark = theme === "dark" || (theme === "system" && getSystemDark());
+  const concreteTheme = resolveConcreteTheme(theme, getSystemDark());
+  const isDark = getThemeScheme(concreteTheme) === "dark";
+  document.documentElement.setAttribute("data-theme", concreteTheme);
   document.documentElement.classList.toggle("dark", isDark);
   syncBrowserChromeTheme();
-  syncDesktopTheme(theme);
+  syncDesktopTheme(getDesktopTheme(theme, concreteTheme));
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
@@ -106,7 +142,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 }
 
-function syncDesktopTheme(theme: Theme) {
+function syncDesktopTheme(theme: DesktopTheme) {
   if (typeof window === "undefined") return;
   const bridge = window.desktopBridge;
   if (!bridge || lastDesktopTheme === theme) {
@@ -157,7 +193,7 @@ function subscribe(listener: () => void): () => void {
 
   // Listen for storage changes from other tabs
   const handleStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) {
+    if (e.key === THEME_STORAGE_KEY || e.key === LEGACY_THEME_STORAGE_KEY) {
       applyTheme(getStored(), true);
       emitChange();
     }
@@ -175,12 +211,12 @@ export function useTheme() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const theme = snapshot.theme;
 
-  const resolvedTheme: "light" | "dark" =
-    theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
+  const concreteTheme = resolveConcreteTheme(theme, snapshot.systemDark);
+  const resolvedTheme = getThemeScheme(concreteTheme);
 
   const setTheme = useCallback((next: Theme) => {
     if (!hasThemeStorage()) return;
-    localStorage.setItem(STORAGE_KEY, next);
+    localStorage.setItem(THEME_STORAGE_KEY, next);
     applyTheme(next, true);
     emitChange();
   }, []);
@@ -190,5 +226,5 @@ export function useTheme() {
     applyTheme(theme);
   }, [theme]);
 
-  return { theme, setTheme, resolvedTheme } as const;
+  return { theme, setTheme, resolvedTheme, concreteTheme } as const;
 }

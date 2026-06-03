@@ -88,6 +88,7 @@ export interface Project {
   cwd: string;
   repositoryIdentity?: RepositoryIdentity | null;
   defaultModelSelection: ModelSelection | null;
+  roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];

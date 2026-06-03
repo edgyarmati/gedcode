@@ -18,12 +18,75 @@ import {
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
+  resolveComposerModeModelFallback,
   resolveSendEnvMode,
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+const fallbackModelSelection = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: "fallback-model",
+};
+const projectModelSelection = {
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  model: "project-model",
+};
+const gedMainModelSelection = {
+  instanceId: ProviderInstanceId.make("codex_work"),
+  model: "ged-main-model",
+};
+
+describe("resolveComposerModeModelFallback", () => {
+  it("uses the normal project/default fallback and ignores Ged main in normal mode", () => {
+    expect(
+      resolveComposerModeModelFallback({
+        gedWorkflowEnabled: false,
+        projectDefaultModelSelection: projectModelSelection,
+        gedMainModelSelection,
+        fallbackModelSelection,
+      }),
+    ).toBe(projectModelSelection);
+  });
+
+  it("uses the Ged main fallback in Ged workflow mode", () => {
+    expect(
+      resolveComposerModeModelFallback({
+        gedWorkflowEnabled: true,
+        projectDefaultModelSelection: projectModelSelection,
+        gedMainModelSelection,
+        fallbackModelSelection,
+      }),
+    ).toBe(gedMainModelSelection);
+  });
+
+  it("uses the Ged main fallback in Ged workflow mode even without a project default", () => {
+    expect(
+      resolveComposerModeModelFallback({
+        gedWorkflowEnabled: true,
+        projectDefaultModelSelection: null,
+        gedMainModelSelection,
+        fallbackModelSelection,
+      }),
+    ).toBe(gedMainModelSelection);
+  });
+
+  it("falls back without mutating project or role preset selections", () => {
+    const rolePresets = { "ged-explorer": gedMainModelSelection };
+
+    expect(
+      resolveComposerModeModelFallback({
+        gedWorkflowEnabled: false,
+        projectDefaultModelSelection: null,
+        gedMainModelSelection,
+        fallbackModelSelection,
+      }),
+    ).toBe(fallbackModelSelection);
+    expect(rolePresets).toEqual({ "ged-explorer": gedMainModelSelection });
+  });
+});
 
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {

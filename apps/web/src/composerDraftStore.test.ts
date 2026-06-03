@@ -1326,6 +1326,26 @@ describe("composerDraftStore sticky composer settings", () => {
     expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("codex");
   });
 
+  it("clears sticky model selection when set to null", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setStickyModelSelection(modelSelection(CODEX_DRIVER, "gpt-5.4"));
+    store.setStickyModelSelection(null);
+
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider).toEqual({});
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe(null);
+  });
+
+  it("clears sticky model selection when set to undefined", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setStickyModelSelection(modelSelection(CURSOR_DRIVER, "gpt-5.4"));
+    store.setStickyModelSelection(undefined);
+
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider).toEqual({});
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe(null);
+  });
+
   it("drops empty cursor model options when normalizing sticky state", () => {
     const store = useComposerDraftStore.getState();
 

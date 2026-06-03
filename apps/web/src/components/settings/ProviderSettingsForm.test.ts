@@ -18,7 +18,22 @@ describe("ProviderSettingsForm helpers", () => {
       "binaryPath",
       "homePath",
       "shadowHomePath",
+      "gedSubagentPreset",
     ]);
+  });
+
+  it("derives Codex subagent preset as a structured picker", () => {
+    const codex = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("codex")];
+    expect(codex).toBeDefined();
+
+    const preset = deriveProviderSettingsFields(codex!).find(
+      (field) => field.key === "gedSubagentPreset",
+    );
+
+    expect(preset).toMatchObject({
+      control: "codexGedSubagentPreset",
+      label: "Ged subagent preset",
+    });
   });
 
   it("sources labels and descriptions from schema annotations", () => {

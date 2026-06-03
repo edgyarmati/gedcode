@@ -32,9 +32,7 @@ const makeEnvironment = (
   overrides: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> = {},
   env: Record<string, string | undefined> = {},
 ) =>
-  Effect.gen(function* () {
-    return yield* DesktopEnvironment.DesktopEnvironment;
-  }).pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
+  DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
   it.effect("derives state paths and development identity inside Effect", () =>
@@ -65,8 +63,11 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.userDataDirName, "gedcode-dev");
+      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code-dev", "T3 Code (Dev)"]);
+      assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
+      assert.equal(environment.linuxDesktopEntryName, "gedcode-dev.desktop");
+      assert.equal(environment.linuxWmClass, "gedcode-dev");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -89,6 +90,11 @@ describe("DesktopEnvironment", () => {
       );
 
       assert.equal(environment.isDevelopment, false);
+      assert.equal(environment.userDataDirName, "gedcode");
+      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code", "T3 Code (Alpha)"]);
+      assert.equal(environment.appUserModelId, "com.t3tools.gedcode");
+      assert.equal(environment.linuxDesktopEntryName, "gedcode.desktop");
+      assert.equal(environment.linuxWmClass, "gedcode");
       assert.equal(environment.stateDir, "/tmp/t3/userdata");
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");

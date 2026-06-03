@@ -22,6 +22,8 @@ import {
   isLatestTurnSettled,
 } from "./session-logic";
 
+let nextActivityId = 0;
+
 function makeActivity(overrides: {
   id?: string;
   createdAt?: string;
@@ -34,7 +36,7 @@ function makeActivity(overrides: {
 }): OrchestrationThreadActivity {
   const payload = overrides.payload ?? {};
   return {
-    id: EventId.make(overrides.id ?? crypto.randomUUID()),
+    id: EventId.make(overrides.id ?? `activity-${nextActivityId++}`),
     createdAt: overrides.createdAt ?? "2026-02-23T00:00:00.000Z",
     kind: overrides.kind ?? "tool.started",
     summary: overrides.summary ?? "Tool call",
@@ -634,6 +636,23 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries[0]?.label).toBe("Searching for API endpoints");
+  });
+
+  it("surfaces runtime.warning payload message as detail", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "runtime-warning",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "runtime.warning",
+        summary: "Runtime warning",
+        tone: "info",
+        payload: { message: "Reconnecting to provider… attempt 2/5" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]?.label).toBe("Runtime warning");
+    expect(entries[0]?.detail).toBe("Reconnecting to provider… attempt 2/5");
   });
 
   it("uses payload detail as label for task.completed and preserves error tone", () => {

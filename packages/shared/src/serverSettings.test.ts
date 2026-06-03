@@ -194,4 +194,41 @@ describe("serverSettings helpers", () => {
       config: { homePath: "~/.codex" },
     });
   });
+
+  it("replaces Ged role settings maps so omitted roles are cleared", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      gedRoleSettings: {
+        ...DEFAULT_SERVER_SETTINGS.gedRoleSettings,
+        "ged-explorer": { enabled: false },
+        "ged-worker": { enabled: true },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        gedRoleSettings: { "ged-explorer": { enabled: true } },
+      }).gedRoleSettings,
+    ).toEqual({ "ged-explorer": { enabled: true } });
+  });
+
+  it("updates Ged subagent runtime mode without clearing role model selections", () => {
+    const explorerSelection = createModelSelection(
+      ProviderInstanceId.make("claude_global"),
+      "claude-global",
+    );
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      gedModelSelections: {
+        mainThread: null,
+        roles: { "ged-explorer": explorerSelection },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        gedSubagentRuntimeMode: "harness-native",
+      }).gedModelSelections.roles,
+    ).toEqual({ "ged-explorer": explorerSelection });
+  });
 });

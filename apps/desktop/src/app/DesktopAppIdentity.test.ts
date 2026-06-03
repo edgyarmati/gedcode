@@ -101,6 +101,7 @@ const withIdentity = <A, E, R>(
   input: {
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
+    readonly existingUserDataPaths?: ReadonlyArray<string>;
     readonly legacyPathExists?: boolean;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
@@ -118,7 +119,10 @@ const withIdentity = <A, E, R>(
         Layer.provideMerge(
           FileSystem.layerNoop({
             exists: (path) =>
-              Effect.succeed(input.legacyPathExists === true && path.includes("GedCode (Alpha)")),
+              Effect.succeed(
+                input.existingUserDataPaths?.includes(path) === true ||
+                  (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")),
+              ),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -132,15 +136,74 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("uses the canonical GedCode userData path for fresh installs", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/GedCode (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gedcode");
       }),
-      { legacyPathExists: true },
+    ),
+  );
+
+  it.effect("prefers the canonical GedCode userData path when it already exists", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gedcode");
+      }),
+      {
+        existingUserDataPaths: [
+          "/Users/alice/Library/Application Support/gedcode",
+          "/Users/alice/Library/Application Support/t3code",
+          "/Users/alice/Library/Application Support/T3 Code (Alpha)",
+        ],
+      },
+    ),
+  );
+
+  it.effect("keeps using the legacy slug userData path when it already exists", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
+      }),
+      { existingUserDataPaths: ["/Users/alice/Library/Application Support/t3code"] },
+    ),
+  );
+
+  it.effect("keeps using the legacy display-name userData path when it already exists", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+      }),
+      { existingUserDataPaths: ["/Users/alice/Library/Application Support/T3 Code (Alpha)"] },
+    ),
+  );
+
+  it.effect("keeps using the legacy dev slug userData path when it already exists", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code-dev");
+      }),
+      {
+        environment: {
+          isPackaged: false,
+          env: { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+        },
+        existingUserDataPaths: ["/Users/alice/Library/Application Support/t3code-dev"],
+      },
     ),
   );
 
@@ -156,8 +219,8 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        assert.deepEqual(calls.setName, ["GedCode (Alpha)"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "GedCode (Alpha)");
+        assert.deepEqual(calls.setName, ["GedCode"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "GedCode");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);

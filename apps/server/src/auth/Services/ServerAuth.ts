@@ -82,5 +82,5 @@ export interface ServerAuthShape {
 }
 
 export class ServerAuth extends Context.Service<ServerAuth, ServerAuthShape>()(
-  "t3/auth/Services/ServerAuth",
+  "gedcode/auth/Services/ServerAuth",
 ) {}

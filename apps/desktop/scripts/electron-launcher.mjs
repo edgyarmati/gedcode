@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "T3 Code (Dev)" instead of "electron"
+// This file mostly exists because we want dev mode to say "GedCode (Dev)" instead of "electron"
 
 import { spawnSync } from "node:child_process";
 import {
@@ -17,15 +17,20 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
-const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
-const APP_BUNDLE_ID = isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code";
+const APP_DISPLAY_NAME = isDevelopment ? "GedCode (Dev)" : "GedCode";
+const APP_BUNDLE_ID = isDevelopment ? "com.t3tools.gedcode.dev" : "com.t3tools.gedcode";
 const LAUNCHER_VERSION = 2;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const desktopDir = resolve(__dirname, "..");
 const repoRoot = resolve(desktopDir, "..", "..");
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
-const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
+// Use the padded master, not the full-bleed Icon Composer "Default" export.
+// Icon Composer exports edge-to-edge artwork because the OS adds the standard
+// inset/mask at render time; a raw Electron dock icon gets no such inset, so a
+// full-bleed source renders oversized next to other apps. The padded derivative
+// bakes in the macOS app-icon grid (824/1024 body, ~10% margin).
+const developmentMacIconPngPath = join(repoRoot, "assets", "GedCode-macOS-AppIcon-padded-1024.png");
 
 function setPlistString(plistPath, key, value) {
   const replaceResult = spawnSync("plutil", ["-replace", key, "-string", value, plistPath], {

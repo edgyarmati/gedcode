@@ -56,7 +56,10 @@ describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
 
 describe("isTemporaryWorktreeBranch", () => {
   it("matches the generated temporary worktree refName format", () => {
-    const refName = buildTemporaryWorktreeBranchName();
+    const refName = buildTemporaryWorktreeBranchName((byteLength) => {
+      expect(byteLength).toBe(4);
+      return "DEADBEEF";
+    });
 
     expect(refName).toMatch(new RegExp(`^${TEMP_WORKTREE_BRANCH_PREFIX}/[0-9a-f]{8}$`));
     expect(isTemporaryWorktreeBranch(refName)).toBe(true);

@@ -90,10 +90,18 @@
     "./keybindings": {
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
+    },
+    "./gedModelSelection": {
+      "types": "./src/gedModelSelection.ts",
+      "import": "./src/gedModelSelection.ts"
+    },
+    "./gedSubagentPreset": {
+      "types": "./src/gedSubagentPreset.ts",
+      "import": "./src/gedSubagentPreset.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
@@ -101,11 +109,9 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/language-service": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:",
     "vitest": "catalog:"
   }
 }

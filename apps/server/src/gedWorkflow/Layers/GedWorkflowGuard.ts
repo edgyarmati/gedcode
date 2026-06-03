@@ -6,10 +6,10 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { GedWorkflowService } from "../Services/GedWorkflowService.ts";
 import { injectWorkflowContext } from "./GedWorkflowTurnInterceptor.ts";
 
-const resolveSessionCwd = (
+const resolveSession = (
   threadId: ThreadId,
   sessions: ReadonlyArray<ProviderSession>,
-): string | undefined => sessions.find((s) => s.threadId === threadId)?.cwd;
+): ProviderSession | undefined => sessions.find((s) => s.threadId === threadId);
 
 export const GedWorkflowGuardLive = Layer.effect(
   ProviderService,
@@ -26,7 +26,8 @@ export const GedWorkflowGuardLive = Layer.effect(
         }
 
         const sessions = yield* inner.listSessions();
-        const cwd = resolveSessionCwd(input.threadId, sessions);
+        const session = resolveSession(input.threadId, sessions);
+        const cwd = session?.cwd;
 
         if (cwd) {
           yield* workflow.recordThreadCwd(input.threadId, cwd);
@@ -36,9 +37,12 @@ export const GedWorkflowGuardLive = Layer.effect(
           }
         }
 
-        const enriched = yield* injectWorkflowContext(input).pipe(
-          Effect.provideService(GedWorkflowService, workflow),
-        );
+        const enriched = yield* injectWorkflowContext(
+          input,
+          session
+            ? { provider: session.provider, providerInstanceId: session.providerInstanceId }
+            : undefined,
+        ).pipe(Effect.provideService(GedWorkflowService, workflow));
 
         return yield* inner.sendTurn(enriched);
       });

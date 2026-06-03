@@ -34,7 +34,7 @@ export interface VcsDriverRegistryShape {
 }
 
 export class VcsDriverRegistry extends Context.Service<VcsDriverRegistry, VcsDriverRegistryShape>()(
-  "t3/vcs/VcsDriverRegistry",
+  "gedcode/vcs/VcsDriverRegistry",
 ) {}
 
 const unsupported = (operation: string, kind: VcsDriverKind, detail: string) =>

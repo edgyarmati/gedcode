@@ -1,0 +1,31 @@
+{
+  "fill": {
+    "automatic-gradient": "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "Gemini_Generated_Image_lies56lies56lies (1).png",
+          "name": "Gemini_Generated_Image_lies56lies56lies (1)"
+        },
+        {
+          "hidden": true,
+          "image-name": "Gemini_Generated_Image_lies56lies56lies (2).png",
+          "name": "Gemini_Generated_Image_lies56lies56lies (2)"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": ["macOS"]
+  }
+}
