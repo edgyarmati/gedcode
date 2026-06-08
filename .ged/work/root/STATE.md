@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Codex Ged subagent preset
-- **Status**: Completed and committed as `feat: add Codex Ged subagent preset`.
+- **Phase**: verify
+- **Active task**: Runtime Ged auto-escalation
+- **Status**: Implementation complete and verification passed.
 - **Blockers**: None.
-- **Next step**: None.
+- **Next step**: Review diff and commit if desired.

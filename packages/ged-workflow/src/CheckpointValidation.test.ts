@@ -9,6 +9,7 @@ import {
   validatePlannerCheckpoint,
   validateCommitCheckpoints,
   shouldAutoEscalate,
+  autoEscalateCheckpointState,
   invalidateVerifierCheckpoints,
   closeCheckpointState,
 } from "./CheckpointValidation.ts";
@@ -220,6 +221,43 @@ describe("shouldAutoEscalate", () => {
 
   it("returns false when already non-trivial", () => {
     expect(shouldAutoEscalate(makeActiveState(), 5)).toBe(false);
+  });
+});
+
+describe("autoEscalateCheckpointState", () => {
+  it("invalidates verifier checkpoints without escalating a single-file trivial edit", () => {
+    const state = makeActiveState({
+      classification: "trivial",
+      planCheckpoints: {
+        "ged-planner": stubRecord(),
+      },
+      taskCheckpoints: makeTaskCheckpoints("task-1"),
+    });
+
+    const result = autoEscalateCheckpointState(state, 1);
+
+    expect(result.classification).toBe("trivial");
+    expect(result.planCheckpoints["ged-planner"]?.valid).toBe(true);
+    expect(result.taskCheckpoints["task-1"]?.["ged-verifier"]?.valid).toBe(false);
+  });
+
+  it("promotes trivial state to non-trivial when multiple source files changed", () => {
+    const state = makeActiveState({
+      classification: "trivial",
+      planCheckpoints: {
+        "ged-planner": stubRecord(),
+      },
+      taskCheckpoints: makeTaskCheckpoints("task-1"),
+    });
+
+    const result = autoEscalateCheckpointState(state, 2);
+
+    expect(result.classification).toBe("non-trivial");
+    expect(result.classificationReason).toBe(
+      "Runtime auto-escalation: trivial task changed multiple source files.",
+    );
+    expect(result.planCheckpoints).toEqual({});
+    expect(result.taskCheckpoints["task-1"]?.["ged-verifier"]?.valid).toBe(false);
   });
 });
 

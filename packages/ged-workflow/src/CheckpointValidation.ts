@@ -101,6 +101,21 @@ export const validateCommitCheckpoints = (
 export const shouldAutoEscalate = (state: CheckpointState, filesChanged: number): boolean =>
   state.classification === "trivial" && filesChanged > 1;
 
+export const autoEscalateCheckpointState = (
+  state: CheckpointState,
+  filesChanged: number,
+): CheckpointState => {
+  const invalidated = invalidateVerifierCheckpoints(state);
+  if (!shouldAutoEscalate(state, filesChanged)) return invalidated;
+
+  return {
+    ...invalidated,
+    classification: "non-trivial",
+    classificationReason: "Runtime auto-escalation: trivial task changed multiple source files.",
+    planCheckpoints: {},
+  };
+};
+
 export const invalidateVerifierCheckpoints = (state: CheckpointState): CheckpointState => {
   const updatedTaskCheckpoints: Record<string, Record<string, CheckpointRecord>> = {};
   for (const [taskId, cps] of Object.entries(state.taskCheckpoints)) {

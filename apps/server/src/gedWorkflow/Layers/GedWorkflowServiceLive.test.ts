@@ -1,8 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderDriverKind, ProviderInstanceId, ServerSettingsError } from "@t3tools/contracts";
+import {
+  CheckpointState,
+  type CheckpointState as CheckpointStateValue,
+} from "@t3tools/ged-workflow/CheckpointSchema";
 import { describe, expect, it } from "vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
@@ -27,6 +34,10 @@ const runPrompt = (
       ),
     ),
   );
+
+const checkpointStateJsonCodec = Schema.fromJsonString(CheckpointState);
+const encodeCheckpointStateJson = Schema.encodeSync(checkpointStateJsonCodec);
+const decodeCheckpointStateJson = Schema.decodeSync(checkpointStateJsonCodec);
 
 describe("GedWorkflowServiceLive", () => {
   it("builds harness-native subagent prompt suffix from settings", async () => {
@@ -155,5 +166,69 @@ describe("GedWorkflowServiceLive", () => {
     expect(prompt).toContain("### Harness-Native Subagent Orchestration");
     expect(prompt).toContain("ged-explorer");
     expect(prompt).toContain("native subagents were unavailable");
+  });
+
+  it("runs non-trivial heuristics after resetting a closed lifecycle", async () => {
+    const updated = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const projectRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "ged-workflow-classify-",
+          });
+          const checkpointsDir = path.join(projectRoot, ".ged", "runtime", "root");
+          const checkpointsPath = path.join(checkpointsDir, "checkpoints.json");
+          yield* fs.makeDirectory(checkpointsDir, { recursive: true });
+          yield* fs.writeFileString(
+            checkpointsPath,
+            encodeCheckpointStateJson({
+              schemaVersion: 3,
+              lifecycleStatus: "closed",
+              classification: "non-trivial",
+              classificationReason: "previous task",
+              planCheckpoints: {
+                "ged-planner": {
+                  recordedAt: "2026-06-01T00:00:00.000Z",
+                  source: "auto",
+                  valid: true,
+                },
+              },
+              taskCheckpoints: {
+                "task-1": {
+                  "ged-verifier": {
+                    recordedAt: "2026-06-01T00:00:00.000Z",
+                    source: "auto",
+                    valid: true,
+                  },
+                },
+              },
+            } satisfies CheckpointStateValue),
+          );
+
+          yield* Effect.gen(function* () {
+            const service = yield* GedWorkflowService;
+            yield* service.classifyTurn(projectRoot, "replace DeepSeek with Gemini 3.1 Flash Lite");
+          }).pipe(
+            Effect.provide(
+              Layer.provide(
+                GedWorkflowServiceLive,
+                Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()),
+              ),
+            ),
+          );
+
+          return decodeCheckpointStateJson(yield* fs.readFileString(checkpointsPath));
+        }).pipe(Effect.provide(NodeServices.layer)),
+      ),
+    );
+
+    expect(updated.lifecycleStatus).toBe("active");
+    expect(updated.classification).toBe("non-trivial");
+    expect(updated.classificationReason).toBe(
+      "Server-side heuristic: turn input matched non-trivial signals.",
+    );
+    expect(updated.planCheckpoints).toEqual({});
+    expect(updated.taskCheckpoints).toEqual({});
   });
 });

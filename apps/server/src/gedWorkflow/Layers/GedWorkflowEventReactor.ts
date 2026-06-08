@@ -14,7 +14,7 @@
  */
 import type { ProviderRuntimeEvent, ProviderSession, ThreadId } from "@t3tools/contracts";
 import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
-import { invalidateVerifierCheckpoints } from "@t3tools/ged-workflow/CheckpointValidation";
+import { autoEscalateCheckpointState } from "@t3tools/ged-workflow/CheckpointValidation";
 import { isPathInsideDotDirectory } from "@t3tools/shared/path";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -64,6 +64,18 @@ const MAX_PATH_EXTRACTION_DEPTH = 6;
 type PathExtraction = {
   readonly paths: ReadonlyArray<string>;
   readonly ambiguous: boolean;
+};
+
+export type RuntimeFileChangeImpact = {
+  readonly shouldInvalidateVerifier: boolean;
+  readonly sourcePaths: ReadonlyArray<string>;
+  readonly ambiguousSourceEditCount: number;
+};
+
+type ThreadSourceEditState = {
+  readonly turnId: string | undefined;
+  readonly sourcePaths: Set<string>;
+  readonly ambiguousSourceEditCount: number;
 };
 
 const emptyPathExtraction: PathExtraction = { paths: [], ambiguous: false };
@@ -130,13 +142,62 @@ const extractFileChangePathCandidates = (event: ProviderRuntimeEvent): PathExtra
   return mergePathExtractions(detailExtraction, extractPathCandidatesFromData(payload.data));
 };
 
-export const shouldInvalidateVerifierForRuntimeEvent = (event: ProviderRuntimeEvent): boolean => {
-  if (!isFileChangeEvent(event)) return false;
+export const getRuntimeFileChangeImpact = (
+  event: ProviderRuntimeEvent,
+): RuntimeFileChangeImpact => {
+  if (!isFileChangeEvent(event)) {
+    return {
+      shouldInvalidateVerifier: false,
+      sourcePaths: [],
+      ambiguousSourceEditCount: 0,
+    };
+  }
 
   const extraction = extractFileChangePathCandidates(event);
-  if (extraction.ambiguous || extraction.paths.length === 0) return true;
+  if (extraction.ambiguous || extraction.paths.length === 0) {
+    return {
+      shouldInvalidateVerifier: true,
+      sourcePaths: [],
+      ambiguousSourceEditCount: 1,
+    };
+  }
 
-  return extraction.paths.some((changedPath) => !isPathInsideDotDirectory(changedPath));
+  const sourcePaths = extraction.paths.filter(
+    (changedPath) => !isPathInsideDotDirectory(changedPath),
+  );
+  return {
+    shouldInvalidateVerifier: sourcePaths.length > 0,
+    sourcePaths,
+    ambiguousSourceEditCount: 0,
+  };
+};
+
+export const shouldInvalidateVerifierForRuntimeEvent = (event: ProviderRuntimeEvent): boolean =>
+  getRuntimeFileChangeImpact(event).shouldInvalidateVerifier;
+
+export const recordRuntimeFileChangeImpact = (
+  stateByThread: Map<ThreadId, ThreadSourceEditState>,
+  event: ProviderRuntimeEvent,
+  impact: RuntimeFileChangeImpact,
+): number => {
+  const previous = stateByThread.get(event.threadId);
+  const eventTurnId = event.turnId;
+  const shouldReset = previous && eventTurnId !== undefined && previous.turnId !== eventTurnId;
+  const sourcePaths = shouldReset || !previous ? new Set<string>() : new Set(previous.sourcePaths);
+  let ambiguousSourceEditCount = shouldReset || !previous ? 0 : previous.ambiguousSourceEditCount;
+
+  for (const sourcePath of impact.sourcePaths) {
+    sourcePaths.add(sourcePath);
+  }
+  ambiguousSourceEditCount += impact.ambiguousSourceEditCount;
+
+  stateByThread.set(event.threadId, {
+    turnId: eventTurnId ?? previous?.turnId,
+    sourcePaths,
+    ambiguousSourceEditCount,
+  });
+
+  return sourcePaths.size + ambiguousSourceEditCount;
 };
 
 const resolveSessionCwd = (
@@ -154,9 +215,15 @@ export const GedWorkflowEventReactorLive = Layer.effectDiscard(
     const providerService = yield* ProviderService;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const sourceEditStateByThread = new Map<ThreadId, ThreadSourceEditState>();
 
-    const handleFileChangeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-      Effect.gen(function* () {
+    const handleFileChangeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> => {
+      const impact = getRuntimeFileChangeImpact(event);
+      const sourceEditCount = recordRuntimeFileChangeImpact(sourceEditStateByThread, event, impact);
+
+      if (!impact.shouldInvalidateVerifier) return Effect.void;
+
+      return Effect.gen(function* () {
         const cwd = yield* resolveSessionCwd(event.threadId, providerService.listSessions);
         if (!cwd) return;
 
@@ -166,7 +233,10 @@ export const GedWorkflowEventReactorLive = Layer.effectDiscard(
 
         const raw = yield* fs.readFileString(checkpointsPath);
         const cpState = yield* decodeCheckpointStateFromJson(raw);
-        const updated = invalidateVerifierCheckpoints(cpState);
+        const updated =
+          cpState.lifecycleStatus === "closed"
+            ? cpState
+            : autoEscalateCheckpointState(cpState, sourceEditCount);
         const encoded = yield* encodeCheckpointStateToJson(updated);
         yield* fs.writeFileString(checkpointsPath, encoded);
       }).pipe(
@@ -176,9 +246,10 @@ export const GedWorkflowEventReactorLive = Layer.effectDiscard(
           }),
         ),
       );
+    };
 
     yield* providerService.streamEvents.pipe(
-      Stream.filter(shouldInvalidateVerifierForRuntimeEvent),
+      Stream.filter(isFileChangeEvent),
       Stream.runForEach(handleFileChangeEvent),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {

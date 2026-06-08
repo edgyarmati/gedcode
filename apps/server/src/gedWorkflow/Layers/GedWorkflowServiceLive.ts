@@ -51,6 +51,40 @@ const DEFAULT_STATE: GedWorkflowState = {
 
 const CODEX_PROVIDER = "codex";
 
+const NON_TRIVIAL_SIGNALS = [
+  "refactor",
+  "implement",
+  "feature",
+  "build",
+  "create",
+  "add",
+  "migrate",
+  "redesign",
+  "rewrite",
+  "integrate",
+  "multi",
+  "across",
+  "tests",
+  "api",
+  "endpoint",
+  "replace",
+  "swap",
+  "change",
+  "upgrade",
+  "downgrade",
+  "model",
+  "provider",
+  "dependency",
+  "config",
+  "wire",
+  "support",
+] as const;
+
+const isNonTrivialTurnInput = (userInput: string): boolean => {
+  const input = userInput.trim().toLowerCase();
+  return input.length > 200 || NON_TRIVIAL_SIGNALS.some((signal) => input.includes(signal));
+};
+
 const readCodexGedSubagentPresetField = (
   config: unknown,
   field: string,
@@ -150,46 +184,27 @@ const make = Effect.gen(function* () {
   const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput) =>
     Effect.gen(function* () {
       const cpState = yield* readCheckpointState(projectRoot);
+      const activeState =
+        cpState.lifecycleStatus === "closed"
+          ? ({
+              ...cpState,
+              lifecycleStatus: "active",
+              classification: "trivial",
+              classificationReason: "New turn on closed lifecycle — reset.",
+              planCheckpoints: {},
+              taskCheckpoints: {},
+            } satisfies CheckpointStateValue)
+          : cpState;
 
       if (cpState.lifecycleStatus === "closed") {
-        yield* writeCheckpointState(projectRoot, {
-          ...cpState,
-          lifecycleStatus: "active",
-          classification: "trivial",
-          classificationReason: "New turn on closed lifecycle — reset.",
-          planCheckpoints: {},
-          taskCheckpoints: {},
-        });
-        return;
+        yield* writeCheckpointState(projectRoot, activeState);
       }
 
-      if (cpState.classification === "non-trivial") return;
-
-      const input = userInput.trim().toLowerCase();
-      const nonTrivialSignals = [
-        "refactor",
-        "implement",
-        "feature",
-        "build",
-        "create",
-        "add",
-        "migrate",
-        "redesign",
-        "rewrite",
-        "integrate",
-        "multi",
-        "across",
-        "tests",
-        "api",
-        "endpoint",
-      ];
-      const isNonTrivial =
-        input.length > 200 || nonTrivialSignals.some((signal) => input.includes(signal));
-
-      if (!isNonTrivial) return;
+      if (activeState.classification === "non-trivial") return;
+      if (!isNonTrivialTurnInput(userInput)) return;
 
       yield* writeCheckpointState(projectRoot, {
-        ...cpState,
+        ...activeState,
         classification: "non-trivial",
         classificationReason: "Server-side heuristic: turn input matched non-trivial signals.",
       });
