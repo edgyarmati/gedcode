@@ -1,5 +1,6 @@
 # Tasks
 
-- [x] Split live dev mode from dev app identity in `DesktopEnvironment`.
-- [x] Update tests to cover packaged dev startup semantics.
-- [x] Run required verification: `bun fmt`, `bun lint`, `bun typecheck`.
+1. [x] Add a focused display-gating helper for workflow badge state.
+2. [x] Use the helper when passing `workflowState` to `ChatHeader`.
+3. [x] Add tests for idle/send/running badge visibility.
+4. [ ] Run required verification and record evidence.

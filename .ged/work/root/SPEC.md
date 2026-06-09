@@ -1,23 +1,28 @@
-# Packaged Dev Startup Fix
+# Spec
 
 ## Goal
 
-Packaged `GedCode (Dev)` builds must start like packaged apps while keeping separate dev identity and state.
+Hide the Ged workflow status pill when the current chat is idle.
 
 ## Problem
 
-The previous packaged dev identity change made `environment.isDevelopment` true for `-dev` versions. Startup code uses that flag for live dev server behavior, including requiring `T3CODE_PORT`, loading the Vite dev server, disabling packaged update behavior, and relaunching through the dev launcher path.
+The previous fix made the label more accurate, but the header still renders `workflowState` unconditionally. Since `workflowState` is read from persistent checkpoint files, stale planning/checkpoint state remains visible after an answer has completed.
 
 ## Scope
 
-- Keep `isDevelopment` scoped to live dev server mode.
-- Add a separate dev identity flag for `-dev` packaged versions.
-- Use the identity flag for display name, state paths, user data name, app user model id, Linux desktop identity, and dev icon selection.
-- Keep packaged dev backend/window/update behavior packaged.
+- Gate the header workflow pill by live work state.
+- Show the pill while a turn is actively dispatching or running.
+- Hide it once the thread is idle, even if checkpoint files still describe a pending workflow phase.
+- Add focused client logic coverage for the display gate.
+
+## Non-goals
+
+- Do not change the checkpoint schema.
+- Do not remove checkpoint polling.
+- Do not redesign the header.
 
 ## Acceptance Criteria
 
-- Packaged `0.1.1-dev.1` does not require `T3CODE_PORT`.
-- Packaged `0.1.1-dev.1` still uses `GedCode (Dev)`, `com.t3tools.gedcode.dev`, and dev user-data/state paths.
-- Live `bun dev:desktop` behavior remains unchanged.
-- Required checks pass.
+- The screenshot state shown by the user would not display `planning gate` while the composer is idle.
+- The pill still appears during local send/dispatch or active provider running state.
+- `bun fmt`, `bun lint`, and `bun typecheck` pass.

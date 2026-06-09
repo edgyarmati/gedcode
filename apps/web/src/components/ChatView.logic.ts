@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type GedWorkflowState,
   isProviderDriverKind,
   ProjectId,
   type ModelSelection,
@@ -23,6 +24,17 @@ export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+
+export function deriveVisibleWorkflowState(input: {
+  workflowState: GedWorkflowState | null;
+  phase: SessionPhase;
+  isSendBusy: boolean;
+}): GedWorkflowState | null {
+  if (input.phase !== "running" && !input.isSendBusy) {
+    return null;
+  }
+  return input.workflowState;
+}
 
 export function buildLocalDraftThread(
   threadId: ThreadId,

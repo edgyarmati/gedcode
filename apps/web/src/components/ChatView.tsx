@@ -162,6 +162,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveVisibleWorkflowState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -1459,6 +1460,11 @@ export default function ChatView(props: ChatViewProps) {
     threadError: activeThread?.error,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const visibleWorkflowState = deriveVisibleWorkflowState({
+    workflowState,
+    phase,
+    isSendBusy,
+  });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -3666,7 +3672,7 @@ export default function ChatView(props: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
-          workflowState={workflowState}
+          workflowState={visibleWorkflowState}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
