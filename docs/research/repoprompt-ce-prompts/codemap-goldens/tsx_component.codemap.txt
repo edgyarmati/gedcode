@@ -1,0 +1,25 @@
+File: <ROOT>/tsx/component.tsx
+Imports:
+  - import React from "react";
+---
+
+Interfaces:
+  - ButtonProps
+    Methods:
+      - L5: onClick?(): void
+    Properties:
+      - label: string
+
+Type-aliases:
+  - ButtonState
+
+Functions:
+  - L10: export function Button(props: ButtonProps)
+  - L14: export const Toolbar = ({ children }: { children: React.ReactNode }) =>
+
+Exports:
+  - export interface ButtonProps {
+  - export type ButtonState = "idle" | "busy";
+  - export function Button(props: ButtonProps) {
+  - export const Toolbar = ({ children }: { children: React.ReactNode }) => {
+---

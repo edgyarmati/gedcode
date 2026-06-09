@@ -1,0 +1,17 @@
+File: <ROOT>/py/smoke.py
+Imports:
+  - from enum import Enum
+---
+Classes:
+  - Worker
+    Methods:
+      - L12: def run(self, status: Status) -> str:
+    Properties:
+      - queue_name
+
+Functions:
+  - L16: def build_worker() -> Worker:
+
+Enums:
+  - Status
+---

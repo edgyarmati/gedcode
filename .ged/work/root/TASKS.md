@@ -1,7 +1,6 @@
 # Tasks
 
-- [x] Add shared checkpoint helper for runtime source-edit escalation.
-- [x] Update closed-lifecycle classification to run heuristics after reset.
-- [x] Extend runtime event reactor to count source edits per active thread and auto-escalate.
-- [x] Add focused unit tests for helpers, classification, and runtime event impact.
-- [x] Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`.
+1. [x] Update server workflow-state derivation from checkpoints.
+2. [x] Add focused server tests for trivial, clarify, plan, implement, verify, and done phases.
+3. [x] Improve web badge labels and tooltip copy.
+4. [x] Run required verification and record evidence.

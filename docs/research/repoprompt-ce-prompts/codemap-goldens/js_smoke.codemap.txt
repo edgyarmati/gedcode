@@ -1,0 +1,19 @@
+File: <ROOT>/js/smoke.js
+Imports:
+  - import EventEmitter from "events";
+---
+Classes:
+  - TaskStore
+    Methods:
+      - L4: constructor()
+      - L9: add(task)
+      - L14: get count()
+
+Functions:
+  - L19: export function normalizeTask(input)
+
+Exports:
+  - export class TaskStore extends EventEmitter {
+  - export function normalizeTask(input) {
+  - export const createTask = (title) => ({
+---

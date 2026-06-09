@@ -1,0 +1,19 @@
+File: <ROOT>/swift/smoke.swift
+Imports:
+  - import Foundation
+---
+Classes:
+  - FriendlyGreeter
+    Methods:
+      - L10: func greet(name: String) -> String
+    Properties:
+      - let prefix: String
+
+Interfaces:
+  - Greeter
+    Methods:
+      - L4: func greet(name: String) -> String
+
+Functions:
+  - L15: func makeGreeter(prefix: String) -> Greeter
+---

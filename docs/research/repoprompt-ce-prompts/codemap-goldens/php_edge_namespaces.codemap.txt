@@ -1,0 +1,21 @@
+File: <ROOT>/php/edge_namespaces.php
+Imports:
+---
+Classes:
+  - Task
+    Methods:
+      - L15: public function __construct(string $id, string $title)
+      - L21: public function title(): string
+      - L26: public static function draft(string $title): self
+    Properties:
+      - id
+      - title
+
+Interfaces:
+  - TaskRepository
+    Methods:
+      - L7: public function find(string $id): ?Task;
+
+Functions:
+  - L32: function task_label(Task $task): string
+---

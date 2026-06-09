@@ -5,13 +5,13 @@ interface WorkflowStatusBadgeProps {
 }
 
 const phaseLabel: Partial<Record<GedWorkflowPhase, string>> = {
-  classify: "classifying",
-  clarify: "clarifying",
-  plan: "planning",
-  implement: "implementing",
-  verify: "verifying",
-  commit: "committing",
-  done: "done",
+  classify: "triaged",
+  clarify: "needs shape",
+  plan: "planning gate",
+  implement: "build in flight",
+  verify: "verification",
+  commit: "commit gate",
+  done: "workflow done",
 };
 
 export function WorkflowStatusBadge({ state }: WorkflowStatusBadgeProps) {
@@ -22,6 +22,8 @@ export function WorkflowStatusBadge({ state }: WorkflowStatusBadgeProps) {
   const isDone = state.phase === "done";
   const label = phaseLabel[state.phase] ?? state.phase;
 
+  const detail =
+    state.classification === "unclassified" ? "Ged workflow" : `${state.classification} Ged task`;
   const colorClass = isDone
     ? "border-zinc-300 text-zinc-500 dark:border-zinc-600 dark:text-zinc-400"
     : state.plannerCheckpointValid
@@ -37,7 +39,7 @@ export function WorkflowStatusBadge({ state }: WorkflowStatusBadgeProps) {
   return (
     <span
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${colorClass}`}
-      title={`Ged workflow: ${label}${state.classification !== "unclassified" ? ` (${state.classification})` : ""}`}
+      title={`${detail}: ${label}`}
     >
       <span className={`inline-block size-2 rounded-full ${dotColor}`} />
       {label}

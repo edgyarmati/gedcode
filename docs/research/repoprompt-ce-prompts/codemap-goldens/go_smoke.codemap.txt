@@ -1,0 +1,17 @@
+File: <ROOT>/go/smoke.go
+Imports:
+  - import "context"
+---
+Classes:
+  - Worker
+    Methods:
+      - L9: func (w Worker) Run(ctx context.Context) error
+    Properties:
+      - Name
+
+Functions:
+  - L13: func NewWorker(name string) Worker
+
+Global vars:
+  - DefaultWorker
+---

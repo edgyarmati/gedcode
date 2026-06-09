@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: verify
-- **Active task**: Runtime Ged auto-escalation
+- **Active task**: Workflow status badge accuracy
 - **Status**: Implementation complete and verification passed.
 - **Blockers**: None.
 - **Next step**: Review diff and commit if desired.

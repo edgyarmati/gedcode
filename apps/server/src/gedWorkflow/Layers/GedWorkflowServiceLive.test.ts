@@ -39,6 +39,35 @@ const checkpointStateJsonCodec = Schema.fromJsonString(CheckpointState);
 const encodeCheckpointStateJson = Schema.encodeSync(checkpointStateJsonCodec);
 const decodeCheckpointStateJson = Schema.decodeSync(checkpointStateJsonCodec);
 
+const runGetState = (checkpointState: CheckpointStateValue) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const projectRoot = yield* fs.makeTempDirectoryScoped({
+          prefix: "ged-workflow-state-",
+        });
+        const checkpointsDir = path.join(projectRoot, ".ged", "runtime", "root");
+        const checkpointsPath = path.join(checkpointsDir, "checkpoints.json");
+        yield* fs.makeDirectory(checkpointsDir, { recursive: true });
+        yield* fs.writeFileString(checkpointsPath, encodeCheckpointStateJson(checkpointState));
+
+        return yield* Effect.gen(function* () {
+          const service = yield* GedWorkflowService;
+          return yield* service.getState(projectRoot);
+        }).pipe(
+          Effect.provide(
+            Layer.provide(
+              GedWorkflowServiceLive,
+              Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()),
+            ),
+          ),
+        );
+      }).pipe(Effect.provide(NodeServices.layer)),
+    ),
+  );
+
 describe("GedWorkflowServiceLive", () => {
   it("builds harness-native subagent prompt suffix from settings", async () => {
     const prompt = await runPrompt();
@@ -230,5 +259,121 @@ describe("GedWorkflowServiceLive", () => {
     );
     expect(updated.planCheckpoints).toEqual({});
     expect(updated.taskCheckpoints).toEqual({});
+  });
+
+  it.each([
+    [
+      "trivial active checkpoints as classify",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "active",
+        classification: "trivial",
+        classificationReason: "question",
+        planCheckpoints: {},
+        taskCheckpoints: {},
+      } satisfies CheckpointStateValue,
+      "classify",
+    ],
+    [
+      "non-trivial without clarification as clarify",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "active",
+        classification: "non-trivial",
+        classificationReason: "feature request",
+        planCheckpoints: {},
+        taskCheckpoints: {},
+      } satisfies CheckpointStateValue,
+      "clarify",
+    ],
+    [
+      "non-trivial with clarification before planner as plan",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "active",
+        classification: "non-trivial",
+        classificationReason: "feature request",
+        clarification: {
+          completedAt: "2026-06-09T00:00:00.000Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+          reason: "test has enough context",
+        },
+        planCheckpoints: {},
+        taskCheckpoints: {},
+      } satisfies CheckpointStateValue,
+      "plan",
+    ],
+    [
+      "valid planner before verifier as implement",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "active",
+        classification: "non-trivial",
+        classificationReason: "feature request",
+        clarification: {
+          completedAt: "2026-06-09T00:00:00.000Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+          reason: "test has enough context",
+        },
+        planCheckpoints: {
+          "ged-planner": {
+            recordedAt: "2026-06-09T00:00:00.000Z",
+            source: "auto",
+            valid: true,
+          },
+        },
+        taskCheckpoints: {},
+      } satisfies CheckpointStateValue,
+      "implement",
+    ],
+    [
+      "valid verifier as verify",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "active",
+        classification: "non-trivial",
+        classificationReason: "feature request",
+        clarification: {
+          completedAt: "2026-06-09T00:00:00.000Z",
+          decision: "skipped-sufficient",
+          questionCount: 0,
+          reason: "test has enough context",
+        },
+        planCheckpoints: {
+          "ged-planner": {
+            recordedAt: "2026-06-09T00:00:00.000Z",
+            source: "auto",
+            valid: true,
+          },
+        },
+        taskCheckpoints: {
+          "task-1": {
+            "ged-verifier": {
+              recordedAt: "2026-06-09T00:00:00.000Z",
+              source: "auto",
+              valid: true,
+            },
+          },
+        },
+      } satisfies CheckpointStateValue,
+      "verify",
+    ],
+    [
+      "closed lifecycle as done",
+      {
+        schemaVersion: 3,
+        lifecycleStatus: "closed",
+        classification: "trivial",
+        classificationReason: "complete",
+        planCheckpoints: {},
+        taskCheckpoints: {},
+      } satisfies CheckpointStateValue,
+      "done",
+    ],
+  ])("maps %s", async (_name, checkpointState, expectedPhase) => {
+    const state = await runGetState(checkpointState);
+    expect(state.phase).toBe(expectedPhase);
   });
 });

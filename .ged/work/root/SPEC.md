@@ -1,26 +1,35 @@
-# Spec: Runtime Ged Auto-Escalation
+# Spec
 
 ## Goal
 
-Make Ged workflow enforcement robust when an agent leaves a seeded trivial classification in place while editing multiple source files.
+Make the top Ged workflow status badge accurately reflect checkpoint progress instead of showing `implementing` for every active workflow.
 
-## Behavior
+## Problem
 
-- Closed lifecycle reset must still create a fresh active turn, but then run server-side classification heuristics against the new user input.
-- Trivial active checkpoints must auto-escalate to non-trivial when runtime file-change evidence shows more than one source/worktree file changed.
-- Dot-directory metadata changes such as `.ged/**` and `.git/**` must not count toward source edit thresholds.
-- Ambiguous file-change events fail safe for invalidation and count as one unknown source edit for escalation.
-- Source edits continue to invalidate verifier checkpoints.
+`GedWorkflowServiceLive` maps any active checkpoint lifecycle to `phase: "implement"`. This makes random questions and pre-plan work show an inaccurate `implementing` pill while Ged is running.
 
-## Non-Goals
+## Scope
 
-- Do not build full per-turn orchestration persistence.
-- Do not change checkpoint schema version.
-- Do not rely on provider-specific event payloads.
+- Derive `GedWorkflowState.phase` from checkpoint gates:
+  - closed lifecycle -> `done`
+  - trivial active task -> `classify`
+  - non-trivial with no valid clarification -> `clarify`
+  - non-trivial with clarification but no valid planner checkpoint -> `plan`
+  - non-trivial with valid planner but no valid verifier -> `implement`
+  - verified lifecycle or valid verifier -> `verify`
+- Improve badge copy so it communicates the actual workflow gate, not just a generic verb.
+- Add focused tests for phase derivation.
+
+## Non-goals
+
+- Do not change the checkpoint schema.
+- Do not add a new WebSocket push channel for Ged workflow state.
+- Do not redesign the full chat header.
 
 ## Acceptance Criteria
 
-- A trivial task changing two source files becomes non-trivial in checkpoint state.
-- Post-close turns with obvious non-trivial wording classify as non-trivial immediately.
-- Existing dot-directory filtering behavior remains intact.
-- Required repo checks pass: `bun fmt`, `bun lint`, `bun typecheck`.
+- Random/trivial turns no longer show `implementing`.
+- Non-trivial turns before planning show clarification or planning-oriented copy.
+- Planned-but-unverified work still shows implementation-oriented copy.
+- Verified/closed states are distinguishable.
+- `bun fmt`, `bun lint`, and `bun typecheck` pass.

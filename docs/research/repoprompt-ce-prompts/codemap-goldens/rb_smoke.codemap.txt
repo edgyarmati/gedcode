@@ -1,0 +1,40 @@
+File: <ROOT>/rb/smoke.rb
+Imports:
+  - require "json"
+  - attr_reader :title
+  - new(JSON.parse(json)["title"])
+  - task.title.upcase
+  - Task.new(title)
+---
+Classes:
+  - Task
+    Methods:
+      - L8: def initialize(title)
+    @title = title
+  end
+      - L8: def initialize(title)
+      - L12: def rename(next_title)
+    @title = next_title
+  end
+      - L12: def rename(next_title)
+      - L16: def self.from_json(json)
+    new(JSON.parse(json)["title"])
+  end
+      - L16: def self.from_json(json)
+    Properties:
+      - DEFAULT_STATUS
+      - @title
+      - @title
+  - TaskFormatting
+    Methods:
+      - L22: def self.label(task)
+    task.title.upcase
+  end
+      - L22: def self.label(task)
+
+Functions:
+  - L27: def build_task(title)
+  Task.new(title)
+end
+  - L27: def build_task(title)
+---

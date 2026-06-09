@@ -1,0 +1,29 @@
+File: <ROOT>/ts/smoke.ts
+Imports:
+---
+Classes:
+  - UserCardModel
+    Methods:
+      - L14: constructor(title: string)
+      - L18: render(props: UserCardProps): string
+    Properties:
+      - title: string
+
+Interfaces:
+  - UserCardProps
+    Methods:
+      - L3: onSelect(id: string): void
+    Properties:
+      - user: User
+
+Type-aliases:
+  - User
+
+Functions:
+  - L23: export function formatUser(user: User): string
+
+Exports:
+  - export interface UserCardProps {
+  - export class UserCardModel {
+  - export function formatUser(user: User): string {
+---

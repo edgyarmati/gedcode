@@ -15,6 +15,7 @@ import {
   type CheckpointState as CheckpointStateValue,
 } from "@t3tools/ged-workflow/CheckpointSchema";
 import {
+  validateClarificationGate,
   validatePlannerCheckpoint,
   type ValidationResult,
 } from "@t3tools/ged-workflow/CheckpointValidation";
@@ -119,14 +120,30 @@ const mapCheckpointStateToWorkflowState = (
   const plannerCp = cp.planCheckpoints["ged-planner"];
   const firstTaskCps = Object.values(cp.taskCheckpoints)[0];
   const verifierCp = firstTaskCps?.["ged-verifier"];
+  const plannerCheckpointValid = plannerCp?.valid ?? false;
+  const verifierCheckpointValid = verifierCp?.valid ?? false;
+  const clarificationValid = validateClarificationGate(cp).valid;
+
+  const phase: GedWorkflowState["phase"] =
+    cp.lifecycleStatus === "closed"
+      ? "done"
+      : cp.lifecycleStatus === "verified" || verifierCheckpointValid
+        ? "verify"
+        : cp.classification === "trivial"
+          ? "classify"
+          : !clarificationValid
+            ? "clarify"
+            : !plannerCheckpointValid
+              ? "plan"
+              : "implement";
 
   return {
     enabled,
     initialized: true,
-    phase: cp.lifecycleStatus === "closed" ? "done" : "implement",
+    phase,
     classification: cp.classification === "trivial" ? "trivial" : "non-trivial",
-    plannerCheckpointValid: plannerCp?.valid ?? false,
-    verifierCheckpointValid: verifierCp?.valid ?? false,
+    plannerCheckpointValid,
+    verifierCheckpointValid,
   };
 };
 

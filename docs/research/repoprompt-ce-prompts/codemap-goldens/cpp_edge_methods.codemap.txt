@@ -1,0 +1,11 @@
+File: <ROOT>/cpp/edge_methods.cpp
+Imports:
+  - #include <string>
+  - #include <utility>
+---
+
+Functions:
+  - L21: TaskService::TaskService(std::string name) : name_(std::move(name))
+  - L23: std::string TaskService::label(const Task& task) const
+  - L27: Task TaskService::draft(std::string title)
+---

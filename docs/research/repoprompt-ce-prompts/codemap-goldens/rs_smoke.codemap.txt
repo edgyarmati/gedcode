@@ -1,0 +1,19 @@
+File: <ROOT>/rs/smoke.rs
+Imports:
+  - use std::fmt;
+---
+Classes:
+  - Task
+    Methods:
+      - L13: pub fn new(id: String, title: String) -> Self
+      - L17: pub fn rename(&mut self, title: String)
+      - L23: fn render(&self) -> String
+      - L33: fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+ write!(f, "{}", self.render())
+    Properties:
+      - id
+      - title
+
+Functions:
+  - L28: pub fn default_task() -> Task
+---

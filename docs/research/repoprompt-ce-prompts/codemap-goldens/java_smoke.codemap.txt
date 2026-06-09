@@ -1,0 +1,18 @@
+File: <ROOT>/java/smoke.java
+Imports:
+---
+Classes:
+  - Task
+    Methods:
+      - L19: String label()
+      - L23: void rename(String title)
+  - TaskService
+    Methods:
+      - L35: public List<Task> load()
+
+Interfaces:
+  - TaskRepository
+    Methods:
+      - L6: List<Task> all();
+      - L7: void save(Task task);
+---

@@ -1,6 +1,15 @@
 # Tests
 
+## Required
+
 - `bun fmt` passed.
-- `bun lint` passed with pre-existing warnings only.
+- `bun lint` passed with existing warnings only.
 - `bun typecheck` passed.
-- `bun run test` passed: 14 successful packages; server reported 128 passed/1 skipped test files and 1056 passed/4 skipped tests.
+
+## Focused
+
+- `bun run test -- src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` from `apps/server` passed: 1 file, 13 tests.
+
+## Evidence
+
+- Initial root-level `bun run test apps/server/src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` failed because Turbo treated the file path as a task name; reran the package test script with `--` from `apps/server`.
