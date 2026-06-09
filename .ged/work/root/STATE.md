@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Thread-specific Ged checkpoints
-- **Status**: Implemented and verified.
+- **Phase**: commit
+- **Active task**: Expose Claude Fable 5 in model picker
+- **Status**: Implemented, verified, and reviewed.
 - **Blockers**: None.
-- **Next step**: None.
+- **Next step**: Commit changes.

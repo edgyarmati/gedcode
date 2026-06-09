@@ -1,26 +1,24 @@
-# Spec
+# Spec: Expose Claude Fable 5
 
 ## Goal
 
-Make Ged checkpoint state thread-specific so workflow status cannot leak between chats in the same project.
+Expose the existing Claude Code model id `claude-fable-5` in GedCode's model picker so users can select it without adding a custom model manually.
 
-## Scope
+## User-visible behavior
 
-- Store checkpoints under `.ged/runtime/root/threads/<threadId>/`.
-- Read, write, classify, and validate workflow state using the thread-specific checkpoint path.
-- Remove the project-level fallback and in-memory active-thread workaround.
-- Keep project-level bootstrap for memory/templates, but bootstrap thread checkpoint files when a thread sends a turn.
-- Update tests and prompt text to describe the new source of truth.
+- Claude provider model lists include `claude-fable-5` with display name `Claude Fable 5`.
+- Model normalization accepts convenient Fable aliases and resolves them to `claude-fable-5`.
+- Existing Claude model selection, option descriptor, and custom model behavior remains unchanged.
 
 ## Non-goals
 
-- No legacy project-level checkpoint fallback.
-- No migration path for existing `.ged/runtime/root/checkpoints.json`.
-- No database persistence of checkpoint state.
+- Do not change the default Claude model.
+- Do not implement or validate Claude-side model support; the user confirmed Claude Code already has it.
+- Do not add new Claude Code version gates unless existing code or SDK behavior requires one.
+- Do not change Codex, Cursor, or OpenCode model behavior.
 
 ## Acceptance Criteria
 
-- New threads get independent checkpoint files.
-- A stale checkpoint from another thread cannot affect a new trivial thread.
-- Same-thread non-trivial checkpoints still preserve unfinished workflow state.
-- `bun fmt`, `bun lint`, and `bun typecheck` pass.
+- `claude-fable-5` appears in the Claude built-in model list.
+- `normalizeModelSlug("fable", claudeAgent)` returns `claude-fable-5`.
+- Required repo checks pass: `bun fmt`, `bun lint`, `bun typecheck`.

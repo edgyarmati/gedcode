@@ -1355,6 +1355,29 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
         ),
       );
 
+      it.effect("exposes Claude Fable 5 as a built-in Claude picker model", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          const fable = status.models.find((model) => model.slug === "claude-fable-5");
+          if (!fable) {
+            assert.fail("Expected Claude Fable 5 to be present in Claude models.");
+          }
+          assert.strictEqual(fable.name, "Claude Fable 5");
+          assert.strictEqual(fable.isCustom, false);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
       it.effect(
         "includes Claude Opus 4.7 with xhigh as the default effort on supported versions",
         () =>

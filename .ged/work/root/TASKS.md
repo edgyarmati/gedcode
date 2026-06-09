@@ -1,7 +1,8 @@
 # Tasks
 
-1. [x] Add thread checkpoint path helpers and bootstrap.
-2. [x] Update service API and guard to use thread-specific checkpoint state.
-3. [x] Remove project active-thread workaround and legacy fallback reads.
-4. [x] Update tests and prompt text.
-5. [x] Run required verification and record evidence.
+## claude-fable-5
+
+1. [x] Add `claude-fable-5` to the Claude provider built-in model list.
+2. [x] Add shared Claude aliases for Fable.
+3. [x] Add/update focused tests for alias normalization and provider model exposure.
+4. [x] Run required verification and record evidence.
