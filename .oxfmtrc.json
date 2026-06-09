@@ -11,7 +11,8 @@
     "**/routeTree.gen.ts",
     "apps/web/public/mockServiceWorker.js",
     "apps/web/src/lib/vendor/qrcodegen.ts",
-    "*.icon/**"
+    "*.icon/**",
+    "docs/research"
   ],
   "sortPackageJson": {},
   "overrides": [
