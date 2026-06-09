@@ -14,7 +14,10 @@
  */
 import type { ProviderRuntimeEvent, ProviderSession, ThreadId } from "@t3tools/contracts";
 import { CheckpointState } from "@t3tools/ged-workflow/CheckpointSchema";
-import { autoEscalateCheckpointState } from "@t3tools/ged-workflow/CheckpointValidation";
+import {
+  autoEscalateCheckpointState,
+  protectCheckpointStateTransition,
+} from "@t3tools/ged-workflow/CheckpointValidation";
 import { isPathInsideDotDirectory } from "@t3tools/shared/path";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -30,6 +33,7 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 
 const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
+const TRUSTED_CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.trusted.json";
 
 const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(CheckpointState),
@@ -68,6 +72,7 @@ type PathExtraction = {
 
 export type RuntimeFileChangeImpact = {
   readonly shouldInvalidateVerifier: boolean;
+  readonly changesCheckpointState: boolean;
   readonly sourcePaths: ReadonlyArray<string>;
   readonly ambiguousSourceEditCount: number;
 };
@@ -142,12 +147,20 @@ const extractFileChangePathCandidates = (event: ProviderRuntimeEvent): PathExtra
   return mergePathExtractions(detailExtraction, extractPathCandidatesFromData(payload.data));
 };
 
+const isCheckpointStatePath = (changedPath: string): boolean => {
+  const normalized = changedPath.trim().replaceAll("\\", "/").replace(/^\.\//u, "");
+  return (
+    normalized === CHECKPOINTS_RELATIVE_PATH || normalized.endsWith(`/${CHECKPOINTS_RELATIVE_PATH}`)
+  );
+};
+
 export const getRuntimeFileChangeImpact = (
   event: ProviderRuntimeEvent,
 ): RuntimeFileChangeImpact => {
   if (!isFileChangeEvent(event)) {
     return {
       shouldInvalidateVerifier: false,
+      changesCheckpointState: false,
       sourcePaths: [],
       ambiguousSourceEditCount: 0,
     };
@@ -157,16 +170,19 @@ export const getRuntimeFileChangeImpact = (
   if (extraction.ambiguous || extraction.paths.length === 0) {
     return {
       shouldInvalidateVerifier: true,
+      changesCheckpointState: false,
       sourcePaths: [],
       ambiguousSourceEditCount: 1,
     };
   }
 
+  const changesCheckpointState = extraction.paths.some(isCheckpointStatePath);
   const sourcePaths = extraction.paths.filter(
     (changedPath) => !isPathInsideDotDirectory(changedPath),
   );
   return {
     shouldInvalidateVerifier: sourcePaths.length > 0,
+    changesCheckpointState,
     sourcePaths,
     ambiguousSourceEditCount: 0,
   };
@@ -210,6 +226,13 @@ const resolveSessionCwd = (
     return session?.cwd;
   });
 
+const readCheckpointStateIfExists = (fs: FileSystem.FileSystem, checkpointsPath: string) =>
+  Effect.gen(function* () {
+    if (!(yield* fs.exists(checkpointsPath))) return undefined;
+    const raw = yield* fs.readFileString(checkpointsPath);
+    return yield* decodeCheckpointStateFromJson(raw);
+  });
+
 export const GedWorkflowEventReactorLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const providerService = yield* ProviderService;
@@ -221,24 +244,36 @@ export const GedWorkflowEventReactorLive = Layer.effectDiscard(
       const impact = getRuntimeFileChangeImpact(event);
       const sourceEditCount = recordRuntimeFileChangeImpact(sourceEditStateByThread, event, impact);
 
-      if (!impact.shouldInvalidateVerifier) return Effect.void;
+      if (!impact.shouldInvalidateVerifier && !impact.changesCheckpointState) return Effect.void;
 
       return Effect.gen(function* () {
         const cwd = yield* resolveSessionCwd(event.threadId, providerService.listSessions);
         if (!cwd) return;
 
         const checkpointsPath = path.join(cwd, CHECKPOINTS_RELATIVE_PATH);
+        const trustedCheckpointsPath = path.join(cwd, TRUSTED_CHECKPOINTS_RELATIVE_PATH);
         const exists = yield* fs.exists(checkpointsPath);
         if (!exists) return;
 
         const raw = yield* fs.readFileString(checkpointsPath);
-        const cpState = yield* decodeCheckpointStateFromJson(raw);
+        let cpState = yield* decodeCheckpointStateFromJson(raw);
+
+        if (impact.changesCheckpointState) {
+          const trustedState = yield* readCheckpointStateIfExists(fs, trustedCheckpointsPath);
+          cpState = protectCheckpointStateTransition(trustedState, cpState);
+          const protectedEncoded = yield* encodeCheckpointStateToJson(cpState);
+          yield* fs.writeFileString(checkpointsPath, protectedEncoded);
+          yield* fs.writeFileString(trustedCheckpointsPath, protectedEncoded);
+          if (!impact.shouldInvalidateVerifier) return;
+        }
+
         const updated =
           cpState.lifecycleStatus === "closed"
             ? cpState
             : autoEscalateCheckpointState(cpState, sourceEditCount);
         const encoded = yield* encodeCheckpointStateToJson(updated);
         yield* fs.writeFileString(checkpointsPath, encoded);
+        yield* fs.writeFileString(trustedCheckpointsPath, encoded);
       }).pipe(
         Effect.catch(() =>
           Effect.logDebug("ged-workflow event reactor skipped file change invalidation", {

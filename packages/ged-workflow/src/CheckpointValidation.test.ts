@@ -10,6 +10,7 @@ import {
   validateCommitCheckpoints,
   shouldAutoEscalate,
   autoEscalateCheckpointState,
+  protectCheckpointStateTransition,
   invalidateVerifierCheckpoints,
   closeCheckpointState,
 } from "./CheckpointValidation.ts";
@@ -258,6 +259,68 @@ describe("autoEscalateCheckpointState", () => {
     );
     expect(result.planCheckpoints).toEqual({});
     expect(result.taskCheckpoints["task-1"]?.["ged-verifier"]?.valid).toBe(false);
+  });
+});
+
+describe("protectCheckpointStateTransition", () => {
+  it("rejects active non-trivial to trivial downgrades", () => {
+    const trusted = makeActiveState({
+      classification: "non-trivial",
+      classificationReason: "main task",
+      planCheckpoints: {
+        "ged-planner": stubRecord(),
+      },
+    });
+    const candidate = makeActiveState({
+      classification: "trivial",
+      classificationReason: "subagent reset",
+      planCheckpoints: {},
+      taskCheckpoints: {},
+    });
+
+    const result = protectCheckpointStateTransition(trusted, candidate);
+
+    expect(result.classification).toBe("non-trivial");
+    expect(result.classificationReason).toBe(
+      "Runtime checkpoint guard: rejected downgrade from non-trivial to trivial.",
+    );
+    expect(result.planCheckpoints["ged-planner"]?.valid).toBe(true);
+  });
+
+  it("rejects premature active non-trivial lifecycle closes without verifier evidence", () => {
+    const trusted = makeActiveState({
+      classification: "non-trivial",
+      classificationReason: "main task",
+    });
+    const candidate = makeActiveState({
+      lifecycleStatus: "closed",
+      classification: "non-trivial",
+      classificationReason: "subagent closed",
+    });
+
+    const result = protectCheckpointStateTransition(trusted, candidate);
+
+    expect(result.lifecycleStatus).toBe("active");
+    expect(result.classificationReason).toBe(
+      "Runtime checkpoint guard: rejected premature lifecycle close without verifier checkpoint.",
+    );
+  });
+
+  it("allows verified non-trivial lifecycle closes", () => {
+    const trusted = makeActiveState({
+      classification: "non-trivial",
+      classificationReason: "main task",
+    });
+    const candidate = makeActiveState({
+      lifecycleStatus: "closed",
+      classification: "non-trivial",
+      classificationReason: "complete",
+      taskCheckpoints: makeTaskCheckpoints("task-1"),
+    });
+
+    const result = protectCheckpointStateTransition(trusted, candidate);
+
+    expect(result).toBe(candidate);
   });
 });
 

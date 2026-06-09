@@ -208,6 +208,7 @@ describe("GedWorkflowServiceLive", () => {
           });
           const checkpointsDir = path.join(projectRoot, ".ged", "runtime", "root");
           const checkpointsPath = path.join(checkpointsDir, "checkpoints.json");
+          const trustedCheckpointsPath = path.join(checkpointsDir, "checkpoints.trusted.json");
           yield* fs.makeDirectory(checkpointsDir, { recursive: true });
           yield* fs.writeFileString(
             checkpointsPath,
@@ -247,18 +248,24 @@ describe("GedWorkflowServiceLive", () => {
             ),
           );
 
-          return decodeCheckpointStateJson(yield* fs.readFileString(checkpointsPath));
+          return {
+            checkpoint: decodeCheckpointStateJson(yield* fs.readFileString(checkpointsPath)),
+            trustedCheckpoint: decodeCheckpointStateJson(
+              yield* fs.readFileString(trustedCheckpointsPath),
+            ),
+          };
         }).pipe(Effect.provide(NodeServices.layer)),
       ),
     );
 
-    expect(updated.lifecycleStatus).toBe("active");
-    expect(updated.classification).toBe("non-trivial");
-    expect(updated.classificationReason).toBe(
+    expect(updated.checkpoint.lifecycleStatus).toBe("active");
+    expect(updated.checkpoint.classification).toBe("non-trivial");
+    expect(updated.checkpoint.classificationReason).toBe(
       "Server-side heuristic: turn input matched non-trivial signals.",
     );
-    expect(updated.planCheckpoints).toEqual({});
-    expect(updated.taskCheckpoints).toEqual({});
+    expect(updated.checkpoint.planCheckpoints).toEqual({});
+    expect(updated.checkpoint.taskCheckpoints).toEqual({});
+    expect(updated.trustedCheckpoint).toEqual(updated.checkpoint);
   });
 
   it.each([

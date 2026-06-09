@@ -34,6 +34,7 @@ import {
 import { ServerSettingsService } from "../../serverSettings.ts";
 
 const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
+const TRUSTED_CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.trusted.json";
 
 const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(CheckpointState),
@@ -194,8 +195,10 @@ const make = Effect.gen(function* () {
   const writeCheckpointState = (projectRoot: string, state: CheckpointStateValue) =>
     Effect.gen(function* () {
       const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
+      const trustedCheckpointsPath = path.join(projectRoot, TRUSTED_CHECKPOINTS_RELATIVE_PATH);
       const encoded = yield* encodeCheckpointStateToJson(state);
       yield* fs.writeFileString(checkpointsPath, encoded);
+      yield* fs.writeFileString(trustedCheckpointsPath, encoded);
     });
 
   const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput) =>
@@ -217,7 +220,10 @@ const make = Effect.gen(function* () {
         yield* writeCheckpointState(projectRoot, activeState);
       }
 
-      if (activeState.classification === "non-trivial") return;
+      if (activeState.classification === "non-trivial") {
+        yield* writeCheckpointState(projectRoot, activeState);
+        return;
+      }
       if (!isNonTrivialTurnInput(userInput)) return;
 
       yield* writeCheckpointState(projectRoot, {

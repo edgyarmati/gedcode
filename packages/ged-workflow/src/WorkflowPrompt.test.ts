@@ -49,8 +49,8 @@ describe("WorkflowPrompt", () => {
     expect(prompt).toContain("ged-planner");
     expect(prompt).toContain("ged-verifier");
     expect(prompt).toContain("selected harness/provider");
+    expect(prompt).toContain("subagents may read checkpoint state but must not create");
     expect(prompt).toContain("native subagents were unavailable");
-    expect(prompt).not.toContain("Subagents are read-only");
   });
 
   it("excludes subagents when disabled", () => {

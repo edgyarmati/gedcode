@@ -123,8 +123,30 @@ describe("getRuntimeFileChangeImpact", () => {
     );
 
     expect(impact.shouldInvalidateVerifier).toBe(true);
+    expect(impact.changesCheckpointState).toBe(true);
     expect(impact.sourcePaths).toEqual(["src/app.ts"]);
     expect(impact.ambiguousSourceEditCount).toBe(0);
+  });
+
+  it("detects checkpoint state metadata changes without treating them as source edits", () => {
+    const impact = getRuntimeFileChangeImpact(
+      fileChangeEvent({ detail: ".ged/runtime/root/checkpoints.json" }),
+    );
+
+    expect(impact.shouldInvalidateVerifier).toBe(false);
+    expect(impact.changesCheckpointState).toBe(true);
+    expect(impact.sourcePaths).toEqual([]);
+    expect(impact.ambiguousSourceEditCount).toBe(0);
+  });
+
+  it("detects absolute checkpoint state metadata paths", () => {
+    const impact = getRuntimeFileChangeImpact(
+      fileChangeEvent({ detail: "/tmp/project/.ged/runtime/root/checkpoints.json" }),
+    );
+
+    expect(impact.shouldInvalidateVerifier).toBe(false);
+    expect(impact.changesCheckpointState).toBe(true);
+    expect(impact.sourcePaths).toEqual([]);
   });
 
   it("treats ambiguous path data as one unknown source edit", () => {
@@ -133,6 +155,7 @@ describe("getRuntimeFileChangeImpact", () => {
     );
 
     expect(impact.shouldInvalidateVerifier).toBe(true);
+    expect(impact.changesCheckpointState).toBe(false);
     expect(impact.sourcePaths).toEqual([]);
     expect(impact.ambiguousSourceEditCount).toBe(1);
   });

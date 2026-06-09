@@ -116,6 +116,43 @@ export const autoEscalateCheckpointState = (
   };
 };
 
+const hasValidVerifierCheckpoint = (state: CheckpointState): boolean =>
+  Object.values(state.taskCheckpoints).some((taskCheckpoints) => {
+    const verifier = taskCheckpoints?.["ged-verifier"];
+    return verifier?.valid === true && verifier.blocksCommit !== true;
+  });
+
+export const protectCheckpointStateTransition = (
+  trusted: CheckpointState | undefined,
+  candidate: CheckpointState,
+): CheckpointState => {
+  if (
+    !trusted ||
+    trusted.lifecycleStatus !== "active" ||
+    trusted.classification !== "non-trivial"
+  ) {
+    return candidate;
+  }
+
+  if (candidate.lifecycleStatus === "closed" && !hasValidVerifierCheckpoint(candidate)) {
+    return {
+      ...trusted,
+      classificationReason:
+        "Runtime checkpoint guard: rejected premature lifecycle close without verifier checkpoint.",
+    };
+  }
+
+  if (candidate.lifecycleStatus !== "active" || candidate.classification !== "trivial") {
+    return candidate;
+  }
+
+  return {
+    ...trusted,
+    classificationReason:
+      "Runtime checkpoint guard: rejected downgrade from non-trivial to trivial.",
+  };
+};
+
 export const invalidateVerifierCheckpoints = (state: CheckpointState): CheckpointState => {
   const updatedTaskCheckpoints: Record<string, Record<string, CheckpointRecord>> = {};
   for (const [taskId, cps] of Object.entries(state.taskCheckpoints)) {
