@@ -24,12 +24,15 @@ This document describes the current GedCode release workflow in `.github/workflo
 Versions matching plain `X.Y.Z` are stable releases. Versions with a suffix, for example
 `X.Y.Z-alpha.1`, are GitHub prereleases and are not marked latest on GitHub.
 
+Nightly versions use `X.Y.0-nightly.YYYYMMDD.N`. The nightly base version should be the next minor
+line after the current stable package version. For example, after stable `1.1.0`, nightly builds
+target `1.2.0-nightly.YYYYMMDD.N`.
+
 ## What Is Not Automated Today
 
 The current workflow does not include:
 
 - scheduled nightly releases
-- a separate nightly updater channel
 - Vercel or hosted web app deployment
 
 ## Required Release Setup
@@ -63,7 +66,11 @@ Windows signing is optional. If any required value is missing, Windows artifacts
 
 - Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
 - Provider: GitHub Releases (`provider: github`) configured at build time.
-- The workflow publishes `latest*.yml` updater metadata for stable releases.
+- The workflow publishes `latest*.yml` updater metadata for stable releases and copies those
+  manifests to `nightly*.yml` so nightly subscribers can move onto stable releases.
+- Nightly prereleases publish `nightly*.yml` updater metadata.
+- Stable subscribers only accept stable update candidates. Nightly subscribers accept nightly and
+  stable update candidates.
 - macOS release assets must include both installer DMGs and zip updater payloads.
 - The current release only publishes Apple Silicon (`arm64`) macOS artifacts.
 - The desktop UI does not automatically download or install updates. Users start the download from

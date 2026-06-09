@@ -45,8 +45,8 @@ export const resolveNightlyTargetVersion = (version: string) => {
     throw new Error(`Invalid desktop package version '${version}'.`);
   }
 
-  const [, major, minor, patch] = match;
-  return `${major}.${minor}.${Number(patch) + 1}`;
+  const [, major, minor] = match;
+  return `${major}.${Number(minor) + 1}.0`;
 };
 
 export const resolveNightlyReleaseMetadata = (

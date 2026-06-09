@@ -340,6 +340,10 @@ jobs:
           merge-multiple: true
           path: release-assets
 
+      - name: Publish stable updater manifests to nightly channel
+        if: needs.preflight.outputs.is_prerelease == 'false'
+        run: node scripts/promote-stable-update-manifests.ts --release-assets-dir release-assets
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
