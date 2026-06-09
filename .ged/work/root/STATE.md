@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: verify
-- **Active task**: Packaged dev desktop identity
+- **Active task**: Packaged dev startup fix
 - **Status**: Implementation complete and verification passed.
 - **Blockers**: None.
-- **Next step**: Review diff and commit if desired.
+- **Next step**: Commit regression fix.

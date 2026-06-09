@@ -113,7 +113,7 @@ describe("DesktopEnvironment", () => {
         },
       );
 
-      assert.equal(environment.isDevelopment, true);
+      assert.equal(environment.isDevelopment, false);
       assert.equal(environment.displayName, "GedCode (Dev)");
       assert.equal(environment.stateDir, "/tmp/t3/dev");
       assert.equal(environment.userDataDirName, "gedcode-dev");
@@ -121,6 +121,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
       assert.equal(environment.linuxDesktopEntryName, "gedcode-dev.desktop");
       assert.equal(environment.linuxWmClass, "gedcode-dev");
+      assert.deepEqual(environment.configuredBackendPort, Option.none());
       assert.equal(environment.backendCwd, "/Users/alice");
       assert.equal(environment.appRoot, "/Applications/GedCode.app/Contents/Resources/app.asar");
     }),

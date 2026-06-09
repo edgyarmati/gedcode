@@ -143,7 +143,8 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const config = yield* DesktopConfig.DesktopConfig;
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
-  const isDevelopment = Option.isSome(devServerUrl) || isDevDesktopVersion(input.appVersion);
+  const isDevelopment = Option.isSome(devServerUrl);
+  const usesDevIdentity = isDevelopment || isDevDesktopVersion(input.appVersion);
   const appDataDirectory =
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
@@ -156,13 +157,13 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const branding = resolveDesktopAppBranding({
-    isDevelopment,
+    isDevelopment: usesDevIdentity,
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
-  const stateDir = path.join(baseDir, isDevelopment ? "dev" : "userdata");
-  const userDataDirName = isDevelopment ? "gedcode-dev" : "gedcode";
-  const legacyUserDataDirNames = isDevelopment
+  const stateDir = path.join(baseDir, usesDevIdentity ? "dev" : "userdata");
+  const userDataDirName = usesDevIdentity ? "gedcode-dev" : "gedcode";
+  const legacyUserDataDirNames = usesDevIdentity
     ? ["t3code-dev", "T3 Code (Dev)"]
     : ["t3code", "T3 Code (Alpha)"];
   const legacyUserDataDirName = legacyUserDataDirNames[0] ?? userDataDirName;
@@ -203,9 +204,9 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     otlpExportIntervalMs: config.otlpExportIntervalMs,
     branding,
     displayName,
-    appUserModelId: isDevelopment ? "com.t3tools.gedcode.dev" : "com.t3tools.gedcode",
-    linuxDesktopEntryName: isDevelopment ? "gedcode-dev.desktop" : "gedcode.desktop",
-    linuxWmClass: isDevelopment ? "gedcode-dev" : "gedcode",
+    appUserModelId: usesDevIdentity ? "com.t3tools.gedcode.dev" : "com.t3tools.gedcode",
+    linuxDesktopEntryName: usesDevIdentity ? "gedcode-dev.desktop" : "gedcode.desktop",
+    linuxWmClass: usesDevIdentity ? "gedcode-dev" : "gedcode",
     userDataDirName,
     legacyUserDataDirName,
     legacyUserDataDirNames,

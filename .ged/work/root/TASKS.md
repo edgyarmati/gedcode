@@ -1,7 +1,5 @@
 # Tasks
 
-- [x] Add desktop release-track helpers for stable, nightly, and dev build versions.
-- [x] Apply dev identity in `scripts/build-desktop-artifact.ts` package config.
-- [x] Apply packaged dev identity in `apps/desktop/src/app/DesktopEnvironment.ts`.
-- [x] Add focused tests for build config and runtime identity.
+- [x] Split live dev mode from dev app identity in `DesktopEnvironment`.
+- [x] Update tests to cover packaged dev startup semantics.
 - [x] Run required verification: `bun fmt`, `bun lint`, `bun typecheck`.

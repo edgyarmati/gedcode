@@ -1,27 +1,23 @@
-# Packaged Dev Desktop Identity
+# Packaged Dev Startup Fix
 
 ## Goal
 
-Packaged desktop builds with a dev version suffix must install and run side by side with the stable GedCode app.
+Packaged `GedCode (Dev)` builds must start like packaged apps while keeping separate dev identity and state.
+
+## Problem
+
+The previous packaged dev identity change made `environment.isDevelopment` true for `-dev` versions. Startup code uses that flag for live dev server behavior, including requiring `T3CODE_PORT`, loading the Vite dev server, disabling packaged update behavior, and relaunching through the dev launcher path.
 
 ## Scope
 
-- Detect dev desktop versions such as `0.1.1-dev.1`.
-- Package dev builds as `GedCode (Dev)` with a dev app id.
-- Keep dev packaged runtime state separate from stable state.
-- Prevent dev packaged builds from accidentally using the stable GitHub update feed.
-- Leave nightly behavior unchanged except where shared helpers need to distinguish stable/nightly/dev.
-
-## Non-Goals
-
-- Do not redesign nightly update subscription semantics.
-- Do not remove or change `bun dev:desktop`.
-- Do not add a new GitHub Actions dev release workflow.
+- Keep `isDevelopment` scoped to live dev server mode.
+- Add a separate dev identity flag for `-dev` packaged versions.
+- Use the identity flag for display name, state paths, user data name, app user model id, Linux desktop identity, and dev icon selection.
+- Keep packaged dev backend/window/update behavior packaged.
 
 ## Acceptance Criteria
 
-- `bun run dist:desktop:artifact -- --build-version 0.1.1-dev.1` produces a dev-named app artifact.
-- Dev packaged builds use `com.t3tools.gedcode.dev` and `GedCode (Dev)`.
-- Stable packaged builds still use `com.t3tools.gedcode` and `GedCode`.
-- Nightly packaged builds still use `GedCode (Nightly)` and the nightly updater channel.
-- Dev runtime uses dev user-data/state identifiers so it does not share stable local app state.
+- Packaged `0.1.1-dev.1` does not require `T3CODE_PORT`.
+- Packaged `0.1.1-dev.1` still uses `GedCode (Dev)`, `com.t3tools.gedcode.dev`, and dev user-data/state paths.
+- Live `bun dev:desktop` behavior remains unchanged.
+- Required checks pass.
