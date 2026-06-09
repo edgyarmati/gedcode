@@ -240,6 +240,23 @@ describe("DesktopSettings", () => {
     ),
   );
 
+  it.effect("keeps dev builds on the stable update channel by default", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+        assert.deepEqual(yield* settings.load, {
+          serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+          updateChannel: "latest",
+          updateChannelConfiguredByUser: false,
+        } satisfies DesktopSettingsValue);
+      }),
+      { appVersion: "0.0.18-dev.1" },
+    ),
+  );
+
   it.effect("preserves explicit stable update channel on nightly builds", () =>
     withSettings(
       Effect.gen(function* () {

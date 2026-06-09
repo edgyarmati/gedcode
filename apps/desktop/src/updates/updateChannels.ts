@@ -1,11 +1,8 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
+import { isNightlyDesktopVersion as isNightlyDesktopVersionShared } from "@t3tools/shared/desktopReleaseTrack";
 
-const NIGHTLY_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
-
-export function isNightlyDesktopVersion(version: string): boolean {
-  return NIGHTLY_VERSION_PATTERN.test(version);
-}
+export { isDevDesktopVersion, isNightlyDesktopVersion } from "@t3tools/shared/desktopReleaseTrack";
 
 export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
-  return isNightlyDesktopVersion(appVersion) ? "nightly" : "latest";
+  return isNightlyDesktopVersionShared(appVersion) ? "nightly" : "latest";
 }

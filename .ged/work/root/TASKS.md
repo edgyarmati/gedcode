@@ -1,6 +1,7 @@
 # Tasks
 
-1. [x] Update server workflow-state derivation from checkpoints.
-2. [x] Add focused server tests for trivial, clarify, plan, implement, verify, and done phases.
-3. [x] Improve web badge labels and tooltip copy.
-4. [x] Run required verification and record evidence.
+- [x] Add desktop release-track helpers for stable, nightly, and dev build versions.
+- [x] Apply dev identity in `scripts/build-desktop-artifact.ts` package config.
+- [x] Apply packaged dev identity in `apps/desktop/src/app/DesktopEnvironment.ts`.
+- [x] Add focused tests for build config and runtime identity.
+- [x] Run required verification: `bun fmt`, `bun lint`, `bun typecheck`.

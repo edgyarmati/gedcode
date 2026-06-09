@@ -98,6 +98,10 @@
     "./gedSubagentPreset": {
       "types": "./src/gedSubagentPreset.ts",
       "import": "./src/gedSubagentPreset.ts"
+    },
+    "./desktopReleaseTrack": {
+      "types": "./src/desktopReleaseTrack.ts",
+      "import": "./src/desktopReleaseTrack.ts"
     }
   },
   "scripts": {

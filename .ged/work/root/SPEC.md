@@ -1,35 +1,27 @@
-# Spec
+# Packaged Dev Desktop Identity
 
 ## Goal
 
-Make the top Ged workflow status badge accurately reflect checkpoint progress instead of showing `implementing` for every active workflow.
-
-## Problem
-
-`GedWorkflowServiceLive` maps any active checkpoint lifecycle to `phase: "implement"`. This makes random questions and pre-plan work show an inaccurate `implementing` pill while Ged is running.
+Packaged desktop builds with a dev version suffix must install and run side by side with the stable GedCode app.
 
 ## Scope
 
-- Derive `GedWorkflowState.phase` from checkpoint gates:
-  - closed lifecycle -> `done`
-  - trivial active task -> `classify`
-  - non-trivial with no valid clarification -> `clarify`
-  - non-trivial with clarification but no valid planner checkpoint -> `plan`
-  - non-trivial with valid planner but no valid verifier -> `implement`
-  - verified lifecycle or valid verifier -> `verify`
-- Improve badge copy so it communicates the actual workflow gate, not just a generic verb.
-- Add focused tests for phase derivation.
+- Detect dev desktop versions such as `0.1.1-dev.1`.
+- Package dev builds as `GedCode (Dev)` with a dev app id.
+- Keep dev packaged runtime state separate from stable state.
+- Prevent dev packaged builds from accidentally using the stable GitHub update feed.
+- Leave nightly behavior unchanged except where shared helpers need to distinguish stable/nightly/dev.
 
-## Non-goals
+## Non-Goals
 
-- Do not change the checkpoint schema.
-- Do not add a new WebSocket push channel for Ged workflow state.
-- Do not redesign the full chat header.
+- Do not redesign nightly update subscription semantics.
+- Do not remove or change `bun dev:desktop`.
+- Do not add a new GitHub Actions dev release workflow.
 
 ## Acceptance Criteria
 
-- Random/trivial turns no longer show `implementing`.
-- Non-trivial turns before planning show clarification or planning-oriented copy.
-- Planned-but-unverified work still shows implementation-oriented copy.
-- Verified/closed states are distinguishable.
-- `bun fmt`, `bun lint`, and `bun typecheck` pass.
+- `bun run dist:desktop:artifact -- --build-version 0.1.1-dev.1` produces a dev-named app artifact.
+- Dev packaged builds use `com.t3tools.gedcode.dev` and `GedCode (Dev)`.
+- Stable packaged builds still use `com.t3tools.gedcode` and `GedCode`.
+- Nightly packaged builds still use `GedCode (Nightly)` and the nightly updater channel.
+- Dev runtime uses dev user-data/state identifiers so it does not share stable local app state.

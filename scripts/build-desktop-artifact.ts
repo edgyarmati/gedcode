@@ -4,6 +4,8 @@ import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
+import { resolveDesktopReleaseTrack } from "@t3tools/shared/desktopReleaseTrack";
+
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
@@ -502,7 +504,7 @@ export function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
-function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
+function resolveGitHubPublishConfig(releaseTrack: "stable" | "nightly"):
   | {
       readonly provider: "github";
       readonly owner: string;
@@ -524,21 +526,54 @@ function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
     provider: "github",
     owner,
     repo,
-    releaseType: updateChannel === "nightly" ? "prerelease" : "release",
-    ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
+    releaseType: releaseTrack === "nightly" ? "prerelease" : "release",
+    ...(releaseTrack === "nightly" ? { channel: "nightly" as const } : {}),
   };
 }
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+  return resolveDesktopReleaseTrack(version) === "nightly" ? "nightly" : "latest";
+}
+
+function resolveDesktopAppId(version: string): string {
+  return resolveDesktopReleaseTrack(version) === "dev"
+    ? "com.t3tools.gedcode.dev"
+    : "com.t3tools.gedcode";
+}
+
+function resolveDesktopArtifactName(version: string): string {
+  return resolveDesktopReleaseTrack(version) === "dev"
+    ? "GedCode-Dev-${version}-${arch}.${ext}"
+    : "GedCode-${version}-${arch}.${ext}";
+}
+
+function resolveDesktopPackageName(version: string): string {
+  return resolveDesktopReleaseTrack(version) === "dev" ? "gedcode-dev" : "gedcode";
+}
+
+function resolveLinuxExecutableName(version: string): string {
+  return resolveDesktopReleaseTrack(version) === "dev" ? "gedcode-dev" : "gedcode";
+}
+
+function resolveLinuxDesktopName(version: string): string {
+  return resolveDesktopReleaseTrack(version) === "dev" ? "gedcode-dev" : "gedcode";
 }
 
 export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
-  if (resolveDesktopUpdateChannel(version) === "nightly") {
+  const releaseTrack = resolveDesktopReleaseTrack(version);
+  if (releaseTrack === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
+    };
+  }
+
+  if (releaseTrack === "dev") {
+    return {
+      macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     };
   }
 
@@ -554,9 +589,14 @@ export function resolveMockUpdateServerUrl(mockUpdateServerPort: number | undefi
 }
 
 export function resolveDesktopProductName(version: string): string {
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "GedCode (Nightly)"
-    : (desktopPackageJson.productName ?? "GedCode");
+  const releaseTrack = resolveDesktopReleaseTrack(version);
+  if (releaseTrack === "nightly") {
+    return "GedCode (Nightly)";
+  }
+  if (releaseTrack === "dev") {
+    return "GedCode (Dev)";
+  }
+  return desktopPackageJson.productName ?? "GedCode";
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -568,15 +608,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   mockUpdateServerPort: number | undefined,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: "com.t3tools.gedcode",
+    appId: resolveDesktopAppId(version),
     productName: resolveDesktopProductName(version),
-    artifactName: "GedCode-${version}-${arch}.${ext}",
+    artifactName: resolveDesktopArtifactName(version),
     directories: {
       buildResources: "apps/desktop/resources",
     },
   };
-  const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = resolveGitHubPublishConfig(updateChannel);
+  const releaseTrack = resolveDesktopReleaseTrack(version);
+  const publishConfig =
+    releaseTrack === "dev" ? undefined : resolveGitHubPublishConfig(releaseTrack);
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
   } else if (mockUpdates) {
@@ -597,14 +638,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "linux") {
+    const linuxDesktopName = resolveLinuxDesktopName(version);
     buildConfig.linux = {
       target: [target],
-      executableName: "gedcode",
+      executableName: resolveLinuxExecutableName(version),
       icon: "icon.png",
       category: "Development",
       desktop: {
         entry: {
-          StartupWMClass: "gedcode",
+          StartupWMClass: linuxDesktopName,
         },
       },
     };
@@ -779,7 +821,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
   const stagePackageJson: StagePackageJson = {
-    name: "gedcode",
+    name: resolveDesktopPackageName(appVersion),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

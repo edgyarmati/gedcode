@@ -16,7 +16,7 @@ import {
   resolveDefaultDesktopSettings,
 } from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
-import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
+import { isDevDesktopVersion, isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 
 export interface MakeDesktopEnvironmentInput {
   readonly dirname: string;
@@ -143,7 +143,7 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const config = yield* DesktopConfig.DesktopConfig;
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
-  const isDevelopment = Option.isSome(devServerUrl);
+  const isDevelopment = Option.isSome(devServerUrl) || isDevDesktopVersion(input.appVersion);
   const appDataDirectory =
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>

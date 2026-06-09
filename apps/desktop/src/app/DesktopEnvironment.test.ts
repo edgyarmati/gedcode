@@ -101,6 +101,31 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("derives packaged dev identity from dev version metadata", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {
+          appVersion: "0.0.23-dev.1",
+          isPackaged: true,
+        },
+        {
+          T3CODE_HOME: "/tmp/t3",
+        },
+      );
+
+      assert.equal(environment.isDevelopment, true);
+      assert.equal(environment.displayName, "GedCode (Dev)");
+      assert.equal(environment.stateDir, "/tmp/t3/dev");
+      assert.equal(environment.userDataDirName, "gedcode-dev");
+      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code-dev", "T3 Code (Dev)"]);
+      assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
+      assert.equal(environment.linuxDesktopEntryName, "gedcode-dev.desktop");
+      assert.equal(environment.linuxWmClass, "gedcode-dev");
+      assert.equal(environment.backendCwd, "/Users/alice");
+      assert.equal(environment.appRoot, "/Applications/GedCode.app/Contents/Resources/app.asar");
+    }),
+  );
+
   it.effect("resolves picker defaults without nullish sentinels", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment();

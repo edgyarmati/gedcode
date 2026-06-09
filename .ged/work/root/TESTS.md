@@ -8,8 +8,9 @@
 
 ## Focused
 
-- `bun run test -- src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` from `apps/server` passed: 1 file, 13 tests.
+- `bun run test -- ../scripts/build-desktop-artifact.test.ts` from `scripts` passed: 1 file, 10 tests.
+- `bun run test -- src/app/DesktopEnvironment.test.ts src/settings/DesktopAppSettings.test.ts` from `apps/desktop` passed: 2 files, 15 tests.
 
 ## Evidence
 
-- Initial root-level `bun run test apps/server/src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` failed because Turbo treated the file path as a task name; reran the package test script with `--` from `apps/server`.
+- Initial root-level `bun run test -- scripts/build-desktop-artifact.test.ts` failed because Turbo treated the file path as a task name; reran from the `scripts` package so Vitest received the test file.

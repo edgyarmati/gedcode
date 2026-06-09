@@ -19,19 +19,27 @@ import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
+    assert.equal(resolveDesktopUpdateChannel("0.0.18-dev.1"), "latest");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
   });
 
-  it("switches desktop packaging product names to nightly for nightly builds", () => {
+  it("switches desktop packaging product names for alternate tracks", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "GedCode");
+    assert.equal(resolveDesktopProductName("0.0.18-dev.1"), "GedCode (Dev)");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "GedCode (Nightly)");
   });
 
-  it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
+  it("switches desktop packaging icons for alternate tracks", () => {
     assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17"), {
       macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
       linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
+    });
+
+    assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.18-dev.1"), {
+      macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      linuxIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     });
 
     assert.deepStrictEqual(resolveDesktopBuildIconAssets("0.0.17-nightly.20260413.42"), {
@@ -83,6 +91,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.equal(buildConfig.appId, "com.t3tools.gedcode");
       assert.equal(buildConfig.productName, "GedCode");
+      assert.equal(buildConfig.artifactName, "GedCode-${version}-${arch}.${ext}");
       assert.deepStrictEqual(buildConfig.linux, {
         target: ["AppImage"],
         executableName: "gedcode",
@@ -94,6 +103,45 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           },
         },
       });
+    }),
+  );
+
+  it.effect("uses dev identifiers in desktop build config for dev versions", () =>
+    Effect.gen(function* () {
+      const previousRepository = process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
+      process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY = "edgyarmati/gedcode";
+      try {
+        const buildConfig = yield* createBuildConfig(
+          "linux",
+          "AppImage",
+          "0.0.18-dev.1",
+          false,
+          false,
+          undefined,
+        );
+
+        assert.equal(buildConfig.appId, "com.t3tools.gedcode.dev");
+        assert.equal(buildConfig.productName, "GedCode (Dev)");
+        assert.equal(buildConfig.artifactName, "GedCode-Dev-${version}-${arch}.${ext}");
+        assert.equal(buildConfig.publish, undefined);
+        assert.deepStrictEqual(buildConfig.linux, {
+          target: ["AppImage"],
+          executableName: "gedcode-dev",
+          icon: "icon.png",
+          category: "Development",
+          desktop: {
+            entry: {
+              StartupWMClass: "gedcode-dev",
+            },
+          },
+        });
+      } finally {
+        if (previousRepository === undefined) {
+          delete process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
+        } else {
+          process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY = previousRepository;
+        }
+      }
     }),
   );
 
