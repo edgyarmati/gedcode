@@ -5,12 +5,12 @@
 - `bun fmt` passed.
 - `bun lint` passed with existing warnings only.
 - `bun typecheck` failed in unrelated release-script work:
-  - `scripts/promote-stable-update-manifests.test.ts` imports Node `fs`/`path`.
-  - `scripts/promote-stable-update-manifests.ts` imports Node `fs`/`path` and uses `console.log`.
+  - `scripts/resolve-release-version.ts` constructs `new Date()` where the repo lint/typecheck rule requires Effect `DateTime`.
+  - `scripts/resolve-release-version.ts` passes optional `date`/`runNumber` fields as explicit `undefined`, which violates `exactOptionalPropertyTypes`.
 
 ## Focused
 
-- `bun run test -- src/components/ChatView.logic.test.ts` from `apps/web` passed: 1 file, 30 tests.
+- `bun run test -- src/components/ChatView.logic.test.ts` from `apps/web` passed: 1 file, 31 tests.
 - `bun run typecheck` from `apps/web` passed.
 
 ## Evidence

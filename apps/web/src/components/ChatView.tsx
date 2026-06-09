@@ -1463,6 +1463,7 @@ export default function ChatView(props: ChatViewProps) {
   const visibleWorkflowState = deriveVisibleWorkflowState({
     workflowState,
     phase,
+    latestTurn: activeLatestTurn,
     isSendBusy,
   });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(

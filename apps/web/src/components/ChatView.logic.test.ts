@@ -56,6 +56,7 @@ describe("deriveVisibleWorkflowState", () => {
       deriveVisibleWorkflowState({
         workflowState,
         phase: "ready",
+        latestTurn: null,
         isSendBusy: false,
       }),
     ).toBeNull();
@@ -66,6 +67,7 @@ describe("deriveVisibleWorkflowState", () => {
       deriveVisibleWorkflowState({
         workflowState,
         phase: "ready",
+        latestTurn: null,
         isSendBusy: true,
       }),
     ).toBe(workflowState);
@@ -76,6 +78,18 @@ describe("deriveVisibleWorkflowState", () => {
       deriveVisibleWorkflowState({
         workflowState,
         phase: "running",
+        latestTurn: null,
+        isSendBusy: false,
+      }),
+    ).toBe(workflowState);
+  });
+
+  it("shows workflow state while the latest turn is running before session phase catches up", () => {
+    expect(
+      deriveVisibleWorkflowState({
+        workflowState,
+        phase: "ready",
+        latestTurn: { state: "running" },
         isSendBusy: false,
       }),
     ).toBe(workflowState);

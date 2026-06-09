@@ -28,9 +28,10 @@ export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.
 export function deriveVisibleWorkflowState(input: {
   workflowState: GedWorkflowState | null;
   phase: SessionPhase;
+  latestTurn: Pick<NonNullable<Thread["latestTurn"]>, "state"> | null;
   isSendBusy: boolean;
 }): GedWorkflowState | null {
-  if (input.phase !== "running" && !input.isSendBusy) {
+  if (input.phase !== "running" && input.latestTurn?.state !== "running" && !input.isSendBusy) {
     return null;
   }
   return input.workflowState;
