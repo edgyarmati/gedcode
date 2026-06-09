@@ -5,7 +5,7 @@
  * Subscribes to the `ProviderService.streamEvents` stream, filters for
  * `item.completed` events that indicate file modifications, resolves the
  * session CWD via the provider session directory, then reads and updates
- * the checkpoint state in `.ged/runtime/root/checkpoints.json`.
+ * the checkpoint state in `.ged/runtime/root/threads/<threadId>/checkpoints.json`.
  *
  * Follows the same Layer pattern used by `CheckpointReactor` and
  * `ThreadDeletionReactor`.
@@ -32,8 +32,9 @@ import {
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
 
-const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
-const TRUSTED_CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.trusted.json";
+const THREAD_CHECKPOINTS_RELATIVE_DIR = ".ged/runtime/root/threads";
+const CHECKPOINTS_FILENAME = "checkpoints.json";
+const TRUSTED_CHECKPOINTS_FILENAME = "checkpoints.trusted.json";
 
 const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(CheckpointState),
@@ -149,9 +150,7 @@ const extractFileChangePathCandidates = (event: ProviderRuntimeEvent): PathExtra
 
 const isCheckpointStatePath = (changedPath: string): boolean => {
   const normalized = changedPath.trim().replaceAll("\\", "/").replace(/^\.\//u, "");
-  return (
-    normalized === CHECKPOINTS_RELATIVE_PATH || normalized.endsWith(`/${CHECKPOINTS_RELATIVE_PATH}`)
-  );
+  return normalized.split("/").at(-1) === CHECKPOINTS_FILENAME && normalized.includes("/threads/");
 };
 
 export const getRuntimeFileChangeImpact = (
@@ -233,6 +232,14 @@ const readCheckpointStateIfExists = (fs: FileSystem.FileSystem, checkpointsPath:
     return yield* decodeCheckpointStateFromJson(raw);
   });
 
+const getThreadCheckpointPaths = (path: Path.Path, cwd: string, threadId: ThreadId) => {
+  const threadDir = path.join(cwd, THREAD_CHECKPOINTS_RELATIVE_DIR, encodeURIComponent(threadId));
+  return {
+    checkpointsPath: path.join(threadDir, CHECKPOINTS_FILENAME),
+    trustedCheckpointsPath: path.join(threadDir, TRUSTED_CHECKPOINTS_FILENAME),
+  };
+};
+
 export const GedWorkflowEventReactorLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const providerService = yield* ProviderService;
@@ -250,8 +257,11 @@ export const GedWorkflowEventReactorLive = Layer.effectDiscard(
         const cwd = yield* resolveSessionCwd(event.threadId, providerService.listSessions);
         if (!cwd) return;
 
-        const checkpointsPath = path.join(cwd, CHECKPOINTS_RELATIVE_PATH);
-        const trustedCheckpointsPath = path.join(cwd, TRUSTED_CHECKPOINTS_RELATIVE_PATH);
+        const { checkpointsPath, trustedCheckpointsPath } = getThreadCheckpointPaths(
+          path,
+          cwd,
+          event.threadId,
+        );
         const exists = yield* fs.exists(checkpointsPath);
         if (!exists) return;
 

@@ -62,26 +62,3 @@ export const KNOWN_STANDARDS_FILES: ReadonlyArray<string> = [
 export const DEFAULT_STANDARDS_CONTENT = "# Standards\n\n> Imported repo-wide agent standards.\n";
 
 export const GED_GITIGNORE = "runtime/\n";
-
-export const INITIAL_CHECKPOINT_STATE = {
-  schemaVersion: 3,
-  lifecycleStatus: "active",
-  classification: "trivial",
-  classificationReason: "Awaiting first task classification",
-  planCheckpoints: {},
-  taskCheckpoints: {},
-} as const;
-
-/**
- * Pre-serialized JSON of INITIAL_CHECKPOINT_STATE.
- * Avoids runtime JSON.stringify which triggers the Effect Language Service
- * `preferSchemaOverJson` diagnostic.
- */
-export const INITIAL_CHECKPOINT_STATE_JSON = `{
-  "schemaVersion": 3,
-  "lifecycleStatus": "active",
-  "classification": "trivial",
-  "classificationReason": "Awaiting first task classification",
-  "planCheckpoints": {},
-  "taskCheckpoints": {}
-}`;

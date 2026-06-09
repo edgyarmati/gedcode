@@ -31,10 +31,13 @@ export function deriveVisibleWorkflowState(input: {
   latestTurn: Pick<NonNullable<Thread["latestTurn"]>, "state"> | null;
   isSendBusy: boolean;
 }): GedWorkflowState | null {
-  if (input.phase !== "running" && input.latestTurn?.state !== "running" && !input.isSendBusy) {
-    return null;
+  const isLiveTurn =
+    input.phase === "running" || input.latestTurn?.state === "running" || input.isSendBusy;
+  if (isLiveTurn) {
+    return input.workflowState;
   }
-  return input.workflowState;
+  if (!input.workflowState || input.workflowState.phase === "done") return null;
+  return input.workflowState.classification === "non-trivial" ? input.workflowState : null;
 }
 
 export function buildLocalDraftThread(

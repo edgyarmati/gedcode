@@ -10,7 +10,6 @@ import {
   HammerIcon,
   ListChecksIcon,
   PlayIcon,
-  PlusIcon,
   SettingsIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -184,18 +183,6 @@ export default function ProjectScriptsControl({
     }
   };
 
-  const openAddDialog = () => {
-    setEditingScriptId(null);
-    setName("");
-    setCommand("");
-    setIcon("play");
-    setIconPickerOpen(false);
-    setRunOnWorktreeCreate(false);
-    setKeybinding("");
-    setValidationError(null);
-    setDialogOpen(true);
-  };
-
   const openEditDialog = (script: ProjectScript) => {
     setEditingScriptId(script.id);
     setName(script.name);
@@ -281,21 +268,10 @@ export default function ProjectScriptsControl({
                   </MenuItem>
                 );
               })}
-              <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
-                <PlusIcon className="size-4" />
-                Add action
-              </MenuItem>
             </MenuPopup>
           </Menu>
         </Group>
-      ) : (
-        <Button size="xs" variant="outline" onClick={openAddDialog} title="Add action">
-          <PlusIcon className="size-3.5" />
-          <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
-            Add action
-          </span>
-        </Button>
-      )}
+      ) : null}
 
       <Dialog
         onOpenChange={(open) => {

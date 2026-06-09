@@ -6,7 +6,6 @@ import {
   DEFAULT_STANDARDS_CONTENT,
   GED_DIRECTORY,
   GED_GITIGNORE,
-  INITIAL_CHECKPOINT_STATE_JSON,
   KNOWN_STANDARDS_FILES,
   TIER1_FILES,
   TIER2_FILES,
@@ -127,7 +126,6 @@ export const bootstrapGedDirectory = (
     for (const file of TIER3_FILES) {
       yield* writeIfMissing(path.join(runtimeDir, file.path), file.content);
     }
-    yield* writeIfMissing(path.join(runtimeDir, "checkpoints.json"), INITIAL_CHECKPOINT_STATE_JSON);
     yield* installBundledGrillMeSkill(projectRoot);
 
     const discovered = yield* discoverStandards(projectRoot);

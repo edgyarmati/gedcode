@@ -38,6 +38,23 @@ const runPrompt = (
 const checkpointStateJsonCodec = Schema.fromJsonString(CheckpointState);
 const encodeCheckpointStateJson = Schema.encodeSync(checkpointStateJsonCodec);
 const decodeCheckpointStateJson = Schema.decodeSync(checkpointStateJsonCodec);
+const TEST_THREAD_ID = "thread-test";
+
+const threadCheckpointPaths = (path: Path.Path, projectRoot: string, threadId: string) => {
+  const threadDir = path.join(
+    projectRoot,
+    ".ged",
+    "runtime",
+    "root",
+    "threads",
+    encodeURIComponent(threadId),
+  );
+  return {
+    checkpointsDir: threadDir,
+    checkpointsPath: path.join(threadDir, "checkpoints.json"),
+    trustedCheckpointsPath: path.join(threadDir, "checkpoints.trusted.json"),
+  };
+};
 
 const runGetState = (checkpointState: CheckpointStateValue) =>
   Effect.runPromise(
@@ -48,14 +65,17 @@ const runGetState = (checkpointState: CheckpointStateValue) =>
         const projectRoot = yield* fs.makeTempDirectoryScoped({
           prefix: "ged-workflow-state-",
         });
-        const checkpointsDir = path.join(projectRoot, ".ged", "runtime", "root");
-        const checkpointsPath = path.join(checkpointsDir, "checkpoints.json");
+        const { checkpointsDir, checkpointsPath } = threadCheckpointPaths(
+          path,
+          projectRoot,
+          TEST_THREAD_ID,
+        );
         yield* fs.makeDirectory(checkpointsDir, { recursive: true });
         yield* fs.writeFileString(checkpointsPath, encodeCheckpointStateJson(checkpointState));
 
         return yield* Effect.gen(function* () {
           const service = yield* GedWorkflowService;
-          return yield* service.getState(projectRoot);
+          return yield* service.getState(projectRoot, { threadId: TEST_THREAD_ID });
         }).pipe(
           Effect.provide(
             Layer.provide(
@@ -206,9 +226,11 @@ describe("GedWorkflowServiceLive", () => {
           const projectRoot = yield* fs.makeTempDirectoryScoped({
             prefix: "ged-workflow-classify-",
           });
-          const checkpointsDir = path.join(projectRoot, ".ged", "runtime", "root");
-          const checkpointsPath = path.join(checkpointsDir, "checkpoints.json");
-          const trustedCheckpointsPath = path.join(checkpointsDir, "checkpoints.trusted.json");
+          const { checkpointsDir, checkpointsPath, trustedCheckpointsPath } = threadCheckpointPaths(
+            path,
+            projectRoot,
+            TEST_THREAD_ID,
+          );
           yield* fs.makeDirectory(checkpointsDir, { recursive: true });
           yield* fs.writeFileString(
             checkpointsPath,
@@ -238,7 +260,13 @@ describe("GedWorkflowServiceLive", () => {
 
           yield* Effect.gen(function* () {
             const service = yield* GedWorkflowService;
-            yield* service.classifyTurn(projectRoot, "replace DeepSeek with Gemini 3.1 Flash Lite");
+            yield* service.classifyTurn(
+              projectRoot,
+              "replace DeepSeek with Gemini 3.1 Flash Lite",
+              {
+                threadId: TEST_THREAD_ID,
+              },
+            );
           }).pipe(
             Effect.provide(
               Layer.provide(
@@ -266,6 +294,102 @@ describe("GedWorkflowServiceLive", () => {
     expect(updated.checkpoint.planCheckpoints).toEqual({});
     expect(updated.checkpoint.taskCheckpoints).toEqual({});
     expect(updated.trustedCheckpoint).toEqual(updated.checkpoint);
+  });
+
+  it("keeps thread checkpoint state independent across threads", async () => {
+    const updated = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const projectRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "ged-workflow-new-thread-",
+          });
+
+          yield* Effect.gen(function* () {
+            const service = yield* GedWorkflowService;
+            yield* service.classifyTurn(projectRoot, "continue implementing the feature", {
+              threadId: "thread-old",
+            });
+            yield* service.classifyTurn(projectRoot, "what is 2+2?", { threadId: "thread-new" });
+          }).pipe(
+            Effect.provide(
+              Layer.provide(
+                GedWorkflowServiceLive,
+                Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()),
+              ),
+            ),
+          );
+
+          const oldPaths = threadCheckpointPaths(path, projectRoot, "thread-old");
+          const newPaths = threadCheckpointPaths(path, projectRoot, "thread-new");
+          return {
+            oldCheckpoint: decodeCheckpointStateJson(
+              yield* fs.readFileString(oldPaths.checkpointsPath),
+            ),
+            newCheckpoint: decodeCheckpointStateJson(
+              yield* fs.readFileString(newPaths.checkpointsPath),
+            ),
+            newTrustedCheckpoint: decodeCheckpointStateJson(
+              yield* fs.readFileString(newPaths.trustedCheckpointsPath),
+            ),
+          };
+        }).pipe(Effect.provide(NodeServices.layer)),
+      ),
+    );
+
+    expect(updated.oldCheckpoint.classification).toBe("non-trivial");
+    expect(updated.oldCheckpoint.classificationReason).toBe(
+      "Server-side heuristic: turn input matched non-trivial signals.",
+    );
+    expect(updated.newCheckpoint.lifecycleStatus).toBe("active");
+    expect(updated.newCheckpoint.classification).toBe("trivial");
+    expect(updated.newCheckpoint.classificationReason).toBe("Awaiting first task classification");
+    expect(updated.newCheckpoint.planCheckpoints).toEqual({});
+    expect(updated.newCheckpoint.taskCheckpoints).toEqual({});
+    expect(updated.newTrustedCheckpoint).toEqual(updated.newCheckpoint);
+  });
+
+  it("ignores project-level checkpoint files when reading thread state", async () => {
+    const state = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const projectRoot = yield* fs.makeTempDirectoryScoped({
+            prefix: "ged-workflow-ignore-project-",
+          });
+          const runtimeDir = path.join(projectRoot, ".ged", "runtime", "root");
+          yield* fs.makeDirectory(runtimeDir, { recursive: true });
+          yield* fs.writeFileString(
+            path.join(runtimeDir, "checkpoints.json"),
+            encodeCheckpointStateJson({
+              schemaVersion: 3,
+              lifecycleStatus: "active",
+              classification: "non-trivial",
+              classificationReason: "stale project checkpoint",
+              planCheckpoints: {},
+              taskCheckpoints: {},
+            } satisfies CheckpointStateValue),
+          );
+
+          return yield* Effect.gen(function* () {
+            const service = yield* GedWorkflowService;
+            return yield* service.getState(projectRoot, { threadId: TEST_THREAD_ID });
+          }).pipe(
+            Effect.provide(
+              Layer.provide(
+                GedWorkflowServiceLive,
+                Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()),
+              ),
+            ),
+          );
+        }).pipe(Effect.provide(NodeServices.layer)),
+      ),
+    );
+
+    expect(state.classification).toBe("trivial");
+    expect(state.phase).toBe("classify");
   });
 
   it.each([
@@ -336,7 +460,7 @@ describe("GedWorkflowServiceLive", () => {
       "implement",
     ],
     [
-      "valid verifier as verify",
+      "valid verifier as inferred done",
       {
         schemaVersion: 3,
         lifecycleStatus: "active",
@@ -365,7 +489,7 @@ describe("GedWorkflowServiceLive", () => {
           },
         },
       } satisfies CheckpointStateValue,
-      "verify",
+      "done",
     ],
     [
       "closed lifecycle as done",

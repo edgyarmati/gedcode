@@ -19,13 +19,23 @@ export interface GedWorkflowPromptContext {
 
 export interface GedWorkflowServiceShape {
   readonly bootstrap: (projectRoot: string) => Effect.Effect<void>;
-  readonly classifyTurn: (projectRoot: string, userInput: string) => Effect.Effect<void>;
-  readonly getState: (projectRoot: string) => Effect.Effect<GedWorkflowState>;
+  readonly classifyTurn: (
+    projectRoot: string,
+    userInput: string,
+    context?: { readonly threadId?: string | undefined },
+  ) => Effect.Effect<void>;
+  readonly getState: (
+    projectRoot: string,
+    context?: { readonly threadId?: string | undefined },
+  ) => Effect.Effect<GedWorkflowState>;
   readonly getStateByThreadId: (threadId: string) => Effect.Effect<GedWorkflowState>;
   readonly getWorkflowPromptSuffix: (context?: GedWorkflowPromptContext) => Effect.Effect<string>;
   readonly isEnabled: Effect.Effect<boolean>;
   readonly recordThreadCwd: (threadId: string, cwd: string) => Effect.Effect<void>;
-  readonly validateTurnGuards: (projectRoot: string) => Effect.Effect<ValidationResult>;
+  readonly validateTurnGuards: (
+    projectRoot: string,
+    context?: { readonly threadId?: string | undefined },
+  ) => Effect.Effect<ValidationResult>;
 }
 
 export class GedWorkflowService extends Context.Service<

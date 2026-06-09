@@ -34,10 +34,11 @@ export interface TurnGuardResult {
 
 export const validateTurnGuards = (
   projectRoot: string,
+  threadId?: string,
 ): Effect.Effect<TurnGuardResult, never, GedWorkflowService> =>
   Effect.gen(function* () {
     const workflow = yield* GedWorkflowService;
     if (!(yield* workflow.isEnabled)) return { allowed: true };
-    const result = yield* workflow.validateTurnGuards(projectRoot);
+    const result = yield* workflow.validateTurnGuards(projectRoot, { threadId });
     return { allowed: result.valid, reason: result.reason };
   });

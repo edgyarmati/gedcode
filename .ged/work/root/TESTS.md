@@ -2,18 +2,21 @@
 
 ## Required
 
-- `bun fmt` passed.
-- `bun lint` passed with existing warnings only.
-- `bun typecheck` failed in unrelated release-script work:
-  - `scripts/resolve-release-version.ts` constructs `new Date()` where the repo lint/typecheck rule requires Effect `DateTime`.
-  - `scripts/resolve-release-version.ts` passes optional `date`/`runNumber` fields as explicit `undefined`, which violates `exactOptionalPropertyTypes`.
+- `bun fmt`
+- `bun lint`
+- `bun typecheck`
 
 ## Focused
 
-- `bun run test -- src/components/ChatView.logic.test.ts` from `apps/web` passed: 1 file, 31 tests.
-- `bun run typecheck` from `apps/web` passed.
+- `bun run test -- src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` from `apps/server`
+- `bun run test -- src/gedWorkflow/Layers/GedWorkflowEventReactor.test.ts` from `apps/server`
+- `bun run test -- src/GedBootstrap.test.ts src/WorkflowPrompt.test.ts` from `packages/ged-workflow`
 
 ## Evidence
 
-- Badge fix is verified at focused web scope.
-- Full repository completion is blocked by unrelated script typecheck errors outside this badge patch.
+- PASS: `bun run test -- src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` from `apps/server` (15 tests).
+- PASS: `bun run test -- src/gedWorkflow/Layers/GedWorkflowEventReactor.test.ts` from `apps/server` (13 tests).
+- PASS: `bun run test -- src/GedBootstrap.test.ts src/WorkflowPrompt.test.ts` from `packages/ged-workflow` (21 tests).
+- PASS: `bun fmt`.
+- PASS: `bun lint` with existing warnings only.
+- PASS: `bun typecheck` after rerun; first run hit transient server package resolution for `effect/Layer`, direct `apps/server` typecheck and final root typecheck passed.

@@ -1,6 +1,7 @@
 # Tasks
 
-1. [x] Add a focused display-gating helper for workflow badge state.
-2. [x] Use the helper when passing `workflowState` to `ChatHeader`.
-3. [x] Add tests for idle/send/running badge visibility.
-4. [ ] Run required verification and record evidence.
+1. [x] Add thread checkpoint path helpers and bootstrap.
+2. [x] Update service API and guard to use thread-specific checkpoint state.
+3. [x] Remove project active-thread workaround and legacy fallback reads.
+4. [x] Update tests and prompt text.
+5. [x] Run required verification and record evidence.

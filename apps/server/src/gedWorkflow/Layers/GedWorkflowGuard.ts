@@ -33,7 +33,7 @@ export const GedWorkflowGuardLive = Layer.effect(
           yield* workflow.recordThreadCwd(input.threadId, cwd);
           yield* workflow.bootstrap(cwd);
           if (input.input) {
-            yield* workflow.classifyTurn(cwd, input.input);
+            yield* workflow.classifyTurn(cwd, input.input, { threadId: input.threadId });
           }
         }
 

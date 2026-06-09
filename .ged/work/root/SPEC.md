@@ -2,27 +2,25 @@
 
 ## Goal
 
-Hide the Ged workflow status pill when the current chat is idle.
-
-## Problem
-
-The previous fix made the label more accurate, but the header still renders `workflowState` unconditionally. Since `workflowState` is read from persistent checkpoint files, stale planning/checkpoint state remains visible after an answer has completed.
+Make Ged checkpoint state thread-specific so workflow status cannot leak between chats in the same project.
 
 ## Scope
 
-- Gate the header workflow pill by live work state.
-- Show the pill while a turn is actively dispatching or running.
-- Hide it once the thread is idle, even if checkpoint files still describe a pending workflow phase.
-- Add focused client logic coverage for the display gate.
+- Store checkpoints under `.ged/runtime/root/threads/<threadId>/`.
+- Read, write, classify, and validate workflow state using the thread-specific checkpoint path.
+- Remove the project-level fallback and in-memory active-thread workaround.
+- Keep project-level bootstrap for memory/templates, but bootstrap thread checkpoint files when a thread sends a turn.
+- Update tests and prompt text to describe the new source of truth.
 
 ## Non-goals
 
-- Do not change the checkpoint schema.
-- Do not remove checkpoint polling.
-- Do not redesign the header.
+- No legacy project-level checkpoint fallback.
+- No migration path for existing `.ged/runtime/root/checkpoints.json`.
+- No database persistence of checkpoint state.
 
 ## Acceptance Criteria
 
-- The screenshot state shown by the user would not display `planning gate` while the composer is idle.
-- The pill still appears during local send/dispatch or active provider running state.
+- New threads get independent checkpoint files.
+- A stale checkpoint from another thread cannot affect a new trivial thread.
+- Same-thread non-trivial checkpoints still preserve unfinished workflow state.
 - `bun fmt`, `bun lint`, and `bun typecheck` pass.

@@ -33,14 +33,24 @@ import {
 } from "../Services/GedWorkflowService.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
-const CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.json";
-const TRUSTED_CHECKPOINTS_RELATIVE_PATH = ".ged/runtime/root/checkpoints.trusted.json";
+const THREAD_CHECKPOINTS_RELATIVE_DIR = ".ged/runtime/root/threads";
+const CHECKPOINTS_FILENAME = "checkpoints.json";
+const TRUSTED_CHECKPOINTS_FILENAME = "checkpoints.trusted.json";
 
 const decodeCheckpointStateFromJson = Schema.decodeUnknownEffect(
   Schema.fromJsonString(CheckpointState),
 );
 
 const encodeCheckpointStateToJson = Schema.encodeEffect(Schema.fromJsonString(CheckpointState));
+
+const INITIAL_CHECKPOINT_STATE: CheckpointStateValue = {
+  schemaVersion: 3,
+  lifecycleStatus: "active",
+  classification: "trivial",
+  classificationReason: "Awaiting first task classification",
+  planCheckpoints: {},
+  taskCheckpoints: {},
+};
 
 const DEFAULT_STATE: GedWorkflowState = {
   enabled: true,
@@ -126,17 +136,15 @@ const mapCheckpointStateToWorkflowState = (
   const clarificationValid = validateClarificationGate(cp).valid;
 
   const phase: GedWorkflowState["phase"] =
-    cp.lifecycleStatus === "closed"
+    cp.lifecycleStatus === "closed" || cp.lifecycleStatus === "verified" || verifierCheckpointValid
       ? "done"
-      : cp.lifecycleStatus === "verified" || verifierCheckpointValid
-        ? "verify"
-        : cp.classification === "trivial"
-          ? "classify"
-          : !clarificationValid
-            ? "clarify"
-            : !plannerCheckpointValid
-              ? "plan"
-              : "implement";
+      : cp.classification === "trivial"
+        ? "classify"
+        : !clarificationValid
+          ? "clarify"
+          : !plannerCheckpointValid
+            ? "plan"
+            : "implement";
 
   return {
     enabled,
@@ -172,10 +180,18 @@ const make = Effect.gen(function* () {
       threadCwdMap.set(threadId, cwd);
     });
 
-  const getStateByThreadId: GedWorkflowServiceShape["getStateByThreadId"] = (threadId) =>
-    Effect.sync(() => threadCwdMap.get(threadId)).pipe(
-      Effect.flatMap((cwd) => (cwd ? getState(cwd) : getDefaultState)),
+  const getThreadCheckpointPaths = (projectRoot: string, threadId: string) => {
+    const threadDir = path.join(
+      projectRoot,
+      THREAD_CHECKPOINTS_RELATIVE_DIR,
+      encodeURIComponent(threadId),
     );
+    return {
+      checkpointsDir: threadDir,
+      checkpointsPath: path.join(threadDir, CHECKPOINTS_FILENAME),
+      trustedCheckpointsPath: path.join(threadDir, TRUSTED_CHECKPOINTS_FILENAME),
+    };
+  };
 
   const bootstrap: GedWorkflowServiceShape["bootstrap"] = (projectRoot) =>
     bootstrapGedDirectory(projectRoot).pipe(
@@ -185,62 +201,91 @@ const make = Effect.gen(function* () {
       Effect.catch(() => Effect.void),
     );
 
-  const readCheckpointState = (projectRoot: string) =>
+  const readCheckpointState = (projectRoot: string, threadId: string) =>
     Effect.gen(function* () {
-      const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
+      const { checkpointsPath } = getThreadCheckpointPaths(projectRoot, threadId);
       const raw = yield* fs.readFileString(checkpointsPath);
       return yield* decodeCheckpointStateFromJson(raw);
     });
 
-  const writeCheckpointState = (projectRoot: string, state: CheckpointStateValue) =>
+  const writeCheckpointState = (
+    projectRoot: string,
+    threadId: string,
+    state: CheckpointStateValue,
+  ) =>
     Effect.gen(function* () {
-      const checkpointsPath = path.join(projectRoot, CHECKPOINTS_RELATIVE_PATH);
-      const trustedCheckpointsPath = path.join(projectRoot, TRUSTED_CHECKPOINTS_RELATIVE_PATH);
+      const { checkpointsDir, checkpointsPath, trustedCheckpointsPath } = getThreadCheckpointPaths(
+        projectRoot,
+        threadId,
+      );
       const encoded = yield* encodeCheckpointStateToJson(state);
+      yield* fs.makeDirectory(checkpointsDir, { recursive: true });
       yield* fs.writeFileString(checkpointsPath, encoded);
       yield* fs.writeFileString(trustedCheckpointsPath, encoded);
     });
 
-  const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput) =>
+  const ensureThreadCheckpointState = (projectRoot: string, threadId: string) =>
     Effect.gen(function* () {
-      const cpState = yield* readCheckpointState(projectRoot);
+      const { checkpointsPath } = getThreadCheckpointPaths(projectRoot, threadId);
+      if (yield* fs.exists(checkpointsPath)) {
+        return yield* readCheckpointState(projectRoot, threadId);
+      }
+      yield* writeCheckpointState(projectRoot, threadId, INITIAL_CHECKPOINT_STATE);
+      return INITIAL_CHECKPOINT_STATE;
+    });
+
+  const getStateByThreadId: GedWorkflowServiceShape["getStateByThreadId"] = (threadId) =>
+    Effect.sync(() => threadCwdMap.get(threadId)).pipe(
+      Effect.flatMap((cwd) => (cwd ? getState(cwd, { threadId }) : getDefaultState)),
+    );
+
+  const classifyTurn: GedWorkflowServiceShape["classifyTurn"] = (projectRoot, userInput, context) =>
+    Effect.gen(function* () {
+      const threadId = context?.threadId;
+      if (threadId === undefined) return;
+      const cpState = yield* ensureThreadCheckpointState(projectRoot, threadId);
       const activeState =
         cpState.lifecycleStatus === "closed"
           ? ({
               ...cpState,
               lifecycleStatus: "active",
               classification: "trivial",
-              classificationReason: "New turn on closed lifecycle — reset.",
+              classificationReason: "New turn on closed lifecycle - reset.",
+              clarification: undefined,
               planCheckpoints: {},
               taskCheckpoints: {},
             } satisfies CheckpointStateValue)
           : cpState;
 
       if (cpState.lifecycleStatus === "closed") {
-        yield* writeCheckpointState(projectRoot, activeState);
+        yield* writeCheckpointState(projectRoot, threadId, activeState);
       }
 
       if (activeState.classification === "non-trivial") {
-        yield* writeCheckpointState(projectRoot, activeState);
+        yield* writeCheckpointState(projectRoot, threadId, activeState);
         return;
       }
       if (!isNonTrivialTurnInput(userInput)) return;
 
-      yield* writeCheckpointState(projectRoot, {
+      yield* writeCheckpointState(projectRoot, threadId, {
         ...activeState,
         classification: "non-trivial",
         classificationReason: "Server-side heuristic: turn input matched non-trivial signals.",
       });
     }).pipe(Effect.catch(() => Effect.void));
 
-  const getState: GedWorkflowServiceShape["getState"] = (projectRoot) =>
+  const getState: GedWorkflowServiceShape["getState"] = (projectRoot, context) =>
     isEnabled.pipe(
-      Effect.flatMap((enabled) =>
-        readCheckpointState(projectRoot).pipe(
+      Effect.flatMap((enabled) => {
+        const threadId = context?.threadId;
+        if (threadId === undefined) {
+          return Effect.succeed({ ...DEFAULT_STATE, enabled });
+        }
+        return ensureThreadCheckpointState(projectRoot, threadId).pipe(
           Effect.map((state) => mapCheckpointStateToWorkflowState(state, enabled)),
           Effect.catch(() => Effect.succeed({ ...DEFAULT_STATE, enabled })),
-        ),
-      ),
+        );
+      }),
     );
 
   const getWorkflowPromptSuffix: GedWorkflowServiceShape["getWorkflowPromptSuffix"] = (context) =>
@@ -264,14 +309,20 @@ const make = Effect.gen(function* () {
 
   const VALID_RESULT: ValidationResult = { valid: true };
 
-  const validateTurnGuards: GedWorkflowServiceShape["validateTurnGuards"] = (projectRoot) =>
-    readCheckpointState(projectRoot).pipe(
+  const validateTurnGuards: GedWorkflowServiceShape["validateTurnGuards"] = (
+    projectRoot,
+    context,
+  ) => {
+    const threadId = context?.threadId;
+    if (threadId === undefined) return Effect.succeed(VALID_RESULT);
+    return ensureThreadCheckpointState(projectRoot, threadId).pipe(
       Effect.flatMap((cpState) => {
         if (cpState.lifecycleStatus === "closed") return Effect.succeed(VALID_RESULT);
         return Effect.succeed(validatePlannerCheckpoint(cpState));
       }),
       Effect.catch(() => Effect.succeed(VALID_RESULT)),
     );
+  };
 
   return {
     bootstrap,

@@ -31,7 +31,7 @@ describe("shouldInvalidateVerifierForRuntimeEvent", () => {
   it("skips dot-directory-only file changes", () => {
     expect(
       shouldInvalidateVerifierForRuntimeEvent(
-        fileChangeEvent({ detail: ".ged/runtime/root/checkpoints.json" }),
+        fileChangeEvent({ detail: ".ged/runtime/root/threads/thread-1/checkpoints.json" }),
       ),
     ).toBe(false);
     expect(shouldInvalidateVerifierForRuntimeEvent(fileChangeEvent({ detail: ".git/index" }))).toBe(
@@ -58,7 +58,9 @@ describe("shouldInvalidateVerifierForRuntimeEvent", () => {
   it("extracts nested provider-neutral path keys", () => {
     expect(
       shouldInvalidateVerifierForRuntimeEvent(
-        fileChangeEvent({ data: { item: { path: ".ged/runtime/root/checkpoints.json" } } }),
+        fileChangeEvent({
+          data: { item: { path: ".ged/runtime/root/threads/thread-1/checkpoints.json" } },
+        }),
       ),
     ).toBe(false);
 
@@ -78,14 +80,16 @@ describe("shouldInvalidateVerifierForRuntimeEvent", () => {
   it("invalidates mixed dot-directory and normal source paths", () => {
     expect(
       shouldInvalidateVerifierForRuntimeEvent(
-        fileChangeEvent({ data: { files: [".ged/runtime/root/checkpoints.json", "src/app.ts"] } }),
+        fileChangeEvent({
+          data: { files: [".ged/runtime/root/threads/thread-1/checkpoints.json", "src/app.ts"] },
+        }),
       ),
     ).toBe(true);
 
     expect(
       shouldInvalidateVerifierForRuntimeEvent(
         fileChangeEvent({
-          detail: ".ged/runtime/root/checkpoints.json",
+          detail: ".ged/runtime/root/threads/thread-1/checkpoints.json",
           data: { input: { newPath: "src/app.ts" } },
         }),
       ),
@@ -119,7 +123,9 @@ describe("shouldInvalidateVerifierForRuntimeEvent", () => {
 describe("getRuntimeFileChangeImpact", () => {
   it("counts only source paths for runtime auto-escalation", () => {
     const impact = getRuntimeFileChangeImpact(
-      fileChangeEvent({ data: { files: [".ged/runtime/root/checkpoints.json", "src/app.ts"] } }),
+      fileChangeEvent({
+        data: { files: [".ged/runtime/root/threads/thread-1/checkpoints.json", "src/app.ts"] },
+      }),
     );
 
     expect(impact.shouldInvalidateVerifier).toBe(true);
@@ -130,7 +136,7 @@ describe("getRuntimeFileChangeImpact", () => {
 
   it("detects checkpoint state metadata changes without treating them as source edits", () => {
     const impact = getRuntimeFileChangeImpact(
-      fileChangeEvent({ detail: ".ged/runtime/root/checkpoints.json" }),
+      fileChangeEvent({ detail: ".ged/runtime/root/threads/thread-1/checkpoints.json" }),
     );
 
     expect(impact.shouldInvalidateVerifier).toBe(false);
@@ -141,7 +147,9 @@ describe("getRuntimeFileChangeImpact", () => {
 
   it("detects absolute checkpoint state metadata paths", () => {
     const impact = getRuntimeFileChangeImpact(
-      fileChangeEvent({ detail: "/tmp/project/.ged/runtime/root/checkpoints.json" }),
+      fileChangeEvent({
+        detail: "/tmp/project/.ged/runtime/root/threads/thread-1/checkpoints.json",
+      }),
     );
 
     expect(impact.shouldInvalidateVerifier).toBe(false);

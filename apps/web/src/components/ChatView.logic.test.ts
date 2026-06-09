@@ -51,10 +51,44 @@ const workflowState = {
 } satisfies GedWorkflowState;
 
 describe("deriveVisibleWorkflowState", () => {
-  it("hides persistent workflow state while the thread is idle", () => {
+  it("keeps unfinished non-trivial workflow state visible while the thread is idle", () => {
     expect(
       deriveVisibleWorkflowState({
         workflowState,
+        phase: "ready",
+        latestTurn: null,
+        isSendBusy: false,
+      }),
+    ).toBe(workflowState);
+  });
+
+  it("hides trivial workflow state while the thread is idle", () => {
+    const trivialWorkflowState = {
+      ...workflowState,
+      phase: "classify",
+      classification: "trivial",
+    } satisfies GedWorkflowState;
+
+    expect(
+      deriveVisibleWorkflowState({
+        workflowState: trivialWorkflowState,
+        phase: "ready",
+        latestTurn: null,
+        isSendBusy: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("hides inferred-done workflow state while the thread is idle", () => {
+    const doneWorkflowState = {
+      ...workflowState,
+      phase: "done",
+      verifierCheckpointValid: true,
+    } satisfies GedWorkflowState;
+
+    expect(
+      deriveVisibleWorkflowState({
+        workflowState: doneWorkflowState,
         phase: "ready",
         latestTurn: null,
         isSendBusy: false,

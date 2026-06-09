@@ -44,7 +44,8 @@ Auto-escalation: if a TRIVIAL task touches >1 source file, it becomes NON-TRIVIA
 - Source edits invalidate prior verification
 
 ### Recording Checkpoints
-You MUST update \`.ged/runtime/root/checkpoints.json\` at each workflow transition.
+You MUST update your thread-specific checkpoint file at each workflow transition:
+\`.ged/runtime/root/threads/<threadId>/checkpoints.json\`.
 The file uses this schema (schemaVersion 3):
 
 \`\`\`json
@@ -70,6 +71,7 @@ The file uses this schema (schemaVersion 3):
 5. **After completion**: set \`lifecycleStatus\` to \`"closed"\`.
 
 Read the file before writing to preserve existing fields. Always keep \`schemaVersion: 3\`.
+Do not use project-level checkpoint files; Ged checkpoint state is thread-specific.
 
 ### Bundled grill-me Skill
 ${grillMeSkill ? grillMeSkill.content : "Ask exactly one clarifying question at a time before planning."}
@@ -84,6 +86,8 @@ Types: feat, fix, refactor, docs, test, chore, perf, ci, build`);
     sections.push(`### Harness-Native Subagent Orchestration
 Ged subagents are owned by the selected harness/provider, not by Gedcode-managed child threads.
 
+The user has enabled Ged subagents in settings. Treat that setting as explicit user authorization to spawn the Ged workflow roles below when the current task reaches their required workflow phase; the user does not need to repeat delegation authorization in the current chat message.
+
 When the harness provides native subagent, task, worker, or delegation tools, create native subagents for:
 1. **ged-explorer** — Codebase discovery and evidence gathering. Run BEFORE source inspection.
 2. **ged-planner** — Planning critique or plan drafting. Run BEFORE finalizing SPEC/TASKS/TESTS.
@@ -91,7 +95,7 @@ When the harness provides native subagent, task, worker, or delegation tools, cr
 
 - Do not expect Gedcode to launch separate role child threads or route per-role custom models.
 - Keep ownership clear: you remain responsible for final scope decisions, synthesis, verification judgment, and commits.
-- The main agent is the only writer for \`.ged/runtime/root/checkpoints.json\`; subagents may read checkpoint state but must not create, modify, downgrade, close, or reset it.
+- The main agent is the only writer for its thread checkpoint file; subagents may read checkpoint state but must not create, modify, downgrade, close, or reset it.
 - If the selected harness does not provide native subagents, execute the explorer, planner, and verifier steps yourself in the main thread and state that native subagents were unavailable.`);
 
     const codexPreset = options.codexGedSubagentPreset?.trim();
