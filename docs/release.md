@@ -89,7 +89,8 @@ Temporary private-repo updater auth workaround:
 ## Release Steps
 
 1. Confirm `main` is green in CI.
-2. Run the local repo gates:
+2. Update `CHANGELOG.md` with a section for the release version.
+3. Run the local repo gates:
 
    ```sh
    bun fmt # if formatting changes are needed
@@ -97,10 +98,19 @@ Temporary private-repo updater auth workaround:
    bun lint
    bun typecheck
    bun run test
+   bun run release:smoke
    ```
 
-3. Decide the release version, for example `0.1.0`.
-4. Create and push the tag:
+   Alternatively, use the release wrapper, which checks the clean worktree, changelog section, local
+   gates, and dispatches the GitHub Actions release workflow:
+
+   ```sh
+   ./release.sh stable patch
+   ./release.sh nightly minor
+   ```
+
+4. Decide the release version, for example `0.1.0`.
+5. Create and push the tag:
 
    ```sh
    git tag v0.1.0
@@ -110,13 +120,24 @@ Temporary private-repo updater auth workaround:
    Alternatively, run the GitHub Actions workflow manually and enter `0.1.0` in the `version`
    input.
 
-5. Watch `.github/workflows/release.yml`:
+6. Watch `.github/workflows/release.yml`:
    - preflight passes
    - all desktop matrix builds pass
    - GitHub Release is created with expected assets
-6. Download and smoke test each desktop artifact.
-7. For stable `X.Y.Z` releases, confirm the `Finalize release` job updated version strings on
+7. Download and smoke test each desktop artifact.
+8. For stable `X.Y.Z` releases, confirm the `Finalize release` job updated version strings on
    `main` when needed.
+
+## Local Build Wrapper
+
+Use `./build.sh` for local desktop artifacts. It defaults to a dev patch build:
+
+```sh
+./build.sh
+./build.sh dev patch -- --platform mac --target dmg --arch arm64
+./build.sh nightly minor -- --platform mac --target dmg --arch arm64
+./build.sh stable patch -- --platform mac --target dmg --arch arm64
+```
 
 ## Rehearsal Guidance
 
