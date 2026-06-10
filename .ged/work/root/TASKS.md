@@ -6,4 +6,4 @@
 - [x] Add focused regression coverage
 - [x] Fix prior CI typecheck failure
 - [x] Run required checks
-- [ ] Commit and push fix
+- [x] Commit and push fix

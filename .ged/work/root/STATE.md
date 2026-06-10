@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: commit
+- **Phase**: complete
 - **Active task**: Fix desktop updater install handoff and prior CI typecheck failure.
-- **Status**: Implementation and verification complete; preparing commit.
+- **Status**: Committed and pushed `fix: repair desktop update install`.
 - **Blockers**: None.
-- **Next step**: Commit and push the fix.
+- **Next step**: Monitor pushed CI if needed.
