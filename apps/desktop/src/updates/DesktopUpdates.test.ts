@@ -25,6 +25,7 @@ interface UpdatesHarnessOptions {
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
   >;
   readonly env?: Record<string, string | undefined>;
+  readonly platform?: NodeJS.Platform;
 }
 
 const flushCallbacks = Effect.yieldNow;
@@ -35,6 +36,12 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
+  const quitAndInstallCalls: Array<{
+    readonly isSilent: boolean;
+    readonly isForceRunAfter: boolean;
+  }> = [];
+  let backendStopCount = 0;
+  let destroyAllCount = 0;
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -72,7 +79,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       checkCount += 1;
     }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
     downloadUpdate: Effect.void,
-    quitAndInstall: () => Effect.void,
+    quitAndInstall: (installOptions) =>
+      Effect.sync(() => {
+        quitAndInstallCalls.push(installOptions);
+      }),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -97,13 +107,18 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       Effect.sync(() => {
         sentStates.push(state as DesktopUpdateState);
       }),
-    destroyAll: Effect.void,
+    destroyAll: Effect.sync(() => {
+      destroyAllCount += 1;
+    }),
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindowShape);
 
   const backendLayer = Layer.succeed(DesktopBackendManager.DesktopBackendManager, {
     start: Effect.void,
-    stop: () => Effect.void,
+    stop: () =>
+      Effect.sync(() => {
+        backendStopCount += 1;
+      }),
     currentConfig: Effect.succeed(Option.none()),
     snapshot: Effect.succeed({
       desiredRunning: false,
@@ -117,7 +132,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   const environmentLayer = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
-    platform: "darwin",
+    platform: options.platform ?? "darwin",
     processArch: "x64",
     appVersion: "1.2.3",
     appPath: "/repo",
@@ -160,6 +175,9 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     layer,
     checkCount: () => checkCount,
     feedUrls: () => feedUrls,
+    quitAndInstallCalls: () => quitAndInstallCalls,
+    backendStopCount: () => backendStopCount,
+    destroyAllCount: () => destroyAllCount,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -297,6 +315,57 @@ describe("DesktopUpdates", () => {
         assert.equal(state.channel, "latest");
         assert.equal(persistedSettings.updateChannel, "latest");
         assert.equal(persistedSettings.updateChannelConfiguredByUser, false);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect(
+    "installs downloaded macOS updates without silent mode or pre-destroying windows",
+    () => {
+      const harness = makeHarness({ platform: "darwin" });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const result = yield* updates.install;
+
+          assert.equal(result.accepted, true);
+          assert.equal(result.completed, false);
+          assert.deepEqual(harness.quitAndInstallCalls(), [
+            { isSilent: false, isForceRunAfter: true },
+          ]);
+          assert.equal(harness.backendStopCount(), 1);
+          assert.equal(harness.destroyAllCount(), 0);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
+  it.effect("keeps silent update installs limited to Windows", () => {
+    const harness = makeHarness({ platform: "win32" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+
+        assert.equal(result.accepted, true);
+        assert.equal(result.completed, false);
+        assert.deepEqual(harness.quitAndInstallCalls(), [
+          { isSilent: true, isForceRunAfter: true },
+        ]);
+        assert.equal(harness.backendStopCount(), 1);
+        assert.equal(harness.destroyAllCount(), 0);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

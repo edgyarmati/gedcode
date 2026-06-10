@@ -7,6 +7,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 - Release and packaging
   - Resolve previous release notes tags with the nightly channel for nightly releases.
+- Desktop
+  - Fix in-app desktop update installation by preserving the updater-owned quit flow and using silent installs only on Windows.
+- CI
+  - Fix `tsgo` typechecking after Effect's `Sink` export moved behind the package root.
 
 ## 0.1.1-nightly.20260610.1
 

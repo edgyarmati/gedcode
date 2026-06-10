@@ -1,26 +1,12 @@
 # TESTS
 
-## Planned
-
-- `bun run test --filter=@t3tools/scripts`
-- Focused provider registry test command using `bun run test`
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
-- `bun run test`
-- Release workflow dispatch confirmation
-
 ## Evidence
 
-- Failure evidence: release run `27283195015` failed in `Resolve previous release tag` with `Invalid stable release tag 'v0.1.1-nightly.20260610.1'`.
-- Failure evidence: CI run `27282954747` failed in `src/provider/Layers/ProviderRegistry.test.ts` at the `re-probes when settings change the codex binaryPath` timestamp assertion.
-- PASS: `bun run test --filter=@t3tools/scripts -- resolve-previous-release-tag.test.ts`
-- Initial focused provider-registry command used the wrong Bun workspace filter syntax and failed with `No packages matched the filter`.
-- PASS: `bun run test --filter=gedcode -- src/provider/Layers/ProviderRegistry.test.ts -t "re-probes when settings change the codex binaryPath"`
-- PASS: `bun fmt`
-- PASS: `bun lint` (existing warnings only)
-- PASS: `bun typecheck`
-- PASS: `bun run test`
-- PASS: `bun run release:smoke`
-- PASS: GitHub CI run `27283813766`
-- PASS: GitHub release run `27283814112` for `0.1.1-nightly.20260610.1`
+- Release `v0.1.1-nightly.20260610.1` publishes `nightly-mac.yml`, `nightly.yml`, and `nightly-linux.yml` with version `0.1.1-nightly.20260610.1` and matching artifact paths.
+- Downloaded macOS arm64 artifact `GedCode-0.1.1-nightly.20260610.1-arm64.zip`; `GedCode (Nightly).app/Contents/Info.plist` contains `CFBundleShortVersionString` and `CFBundleVersion` set to `0.1.1-nightly.20260610.1`.
+- Settings version label is built from `import.meta.env.APP_VERSION`, which `apps/web/vite.config.ts` resolves from `apps/web/package.json` or `APP_VERSION` during release builds.
+- `cd apps/desktop && bun run test src/updates/DesktopUpdates.test.ts` passed: 9 tests.
+- `bun fmt` passed.
+- `bun lint` passed with existing warnings.
+- `bun typecheck` passed after replacing `effect/Sink` subpath imports with the package-root `Sink` export.
+- `bun run test` passed: 14 Turbo tasks successful; server package 1068 passed / 4 skipped, all package tasks successful.

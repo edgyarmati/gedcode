@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Fix nightly release workflow and prior CI failure.
-- **Status**: Fix committed and pushed; CI and nightly release rerun passed.
+- **Phase**: commit
+- **Active task**: Fix desktop updater install handoff and prior CI typecheck failure.
+- **Status**: Implementation and verification complete; preparing commit.
 - **Blockers**: None.
-- **Next step**: None.
+- **Next step**: Commit and push the fix.

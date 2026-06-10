@@ -369,9 +369,8 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.gen(function* () {
       yield* backendManager.stop({ timeout: Duration.seconds(5) });
-      yield* electronWindow.destroyAll;
       yield* electronUpdater.quitAndInstall({
-        isSilent: true,
+        isSilent: environment.platform === "win32",
         isForceRunAfter: true,
       });
       return { accepted: true, completed: false };
