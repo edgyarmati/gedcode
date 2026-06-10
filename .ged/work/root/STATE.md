@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Improve Ged multi-agent workflow sequencing and role enablement.
-- **Status**: Changes committed; targeted tests, required checks, and verifier review passed.
+- **Phase**: verify
+- **Active task**: Fix nightly release workflow and prior CI failure.
+- **Status**: Required local checks and release smoke passed; verifier review pending.
 - **Blockers**: None.
-- **Next step**: None.
+- **Next step**: Review diff, commit, push, and dispatch nightly release again.

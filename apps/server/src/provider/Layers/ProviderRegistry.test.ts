@@ -1131,6 +1131,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             const initialCheckedAt = initialCodex?.checkedAt;
             assert.notStrictEqual(initialCheckedAt, undefined);
 
+            // Advance the test clock before the settings change so a
+            // successful re-probe has a distinguishable timestamp even if
+            // it completes before the polling loop advances virtual time.
+            yield* TestClock.adjust("1 second");
+
             // Drive a settings change. The Hydration layer's
             // `SettingsWatcherLive` consumes this via `streamChanges`,
             // calls `reconcile`, which rebuilds the codex instance (the

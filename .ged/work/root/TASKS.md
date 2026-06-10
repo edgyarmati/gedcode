@@ -1,26 +1,25 @@
 # TASKS
 
-## nightly-release-0-1-1-nightly-20260610-1
+## fix-nightly-release-ci
 
-1. Confirm release prerequisites
-   - Verify clean worktree, auth, branch, and resolved nightly version.
-   - Inspect release workflow/docs to confirm nightly semantics.
+1. Diagnose failed runs
+   - Inspect failed release run `27283195015`.
+   - Inspect prior failed CI run `27282954747`.
 
-2. Prepare release notes entry
-   - Add `## 0.1.1-nightly.20260610.1` under `## Unreleased` in `CHANGELOG.md`.
-   - Move the current unreleased bullets under that release section if appropriate.
+2. Patch release channel metadata
+   - Make release preflight derive `stable` versus `nightly` from the resolved version.
+   - Pass the derived channel into `scripts/resolve-previous-release-tag.ts`.
+   - Add tests for stable and nightly previous-tag resolution.
 
-3. Verify release gates
-   - Run `bun fmt`.
-   - Run `bun lint`.
-   - Run `bun typecheck`.
-   - Run `bun run test`.
-   - Run `bun run release:smoke`.
+3. Stabilize provider registry CI test
+   - Inspect the failing timestamp assertion.
+   - Adjust the test or implementation to prove a fresh probe without timestamp flakiness.
 
-4. Dispatch nightly release
-   - Run `./release.sh nightly patch` or equivalent documented workflow dispatch path.
-   - Capture workflow dispatch confirmation.
+4. Update release notes
+   - Document the nightly release workflow fix in `CHANGELOG.md`.
 
-5. Close workflow state
-   - Record verification evidence in `.ged/work/root/TESTS.md`.
-   - Mark Ged checkpoints complete/closed.
+5. Verify and publish fix
+   - Run focused tests.
+   - Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`.
+   - Commit and push the fix.
+   - Dispatch the nightly release again.

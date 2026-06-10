@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Release and packaging
+  - Resolve previous release notes tags with the nightly channel for nightly releases.
+
 ## 0.1.1-nightly.20260610.1
 
 - Ged workflow

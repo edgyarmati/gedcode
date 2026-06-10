@@ -121,7 +121,7 @@ const parseNightlyTag = (tag: string): NightlyVersion | undefined => {
   };
 };
 
-const resolvePreviousReleaseTag = (
+export const resolvePreviousReleaseTag = (
   channel: ReleaseChannel,
   currentTag: string,
   tags: ReadonlyArray<string>,

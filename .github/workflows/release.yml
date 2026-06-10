@@ -25,6 +25,7 @@ jobs:
       release_name: ${{ steps.meta.outputs.release_name }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
       make_latest: ${{ steps.meta.outputs.make_latest }}
+      release_channel: ${{ steps.meta.outputs.release_channel }}
       previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
       ref: ${{ github.sha }}
     steps:
@@ -79,6 +80,12 @@ jobs:
             echo "make_latest=false" >> "$GITHUB_OUTPUT"
           fi
 
+          if [[ "$version" =~ -nightly\.[0-9]{8}\.[0-9]+$ ]]; then
+            echo "release_channel=nightly" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_channel=stable" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Format check
         run: bun run fmt:check
 
@@ -95,7 +102,7 @@ jobs:
         name: Resolve previous release tag
         run: |
           node scripts/resolve-previous-release-tag.ts \
-            --channel stable \
+            --channel "${{ steps.meta.outputs.release_channel }}" \
             --current-tag "${{ steps.meta.outputs.tag }}" \
             --github-output
 
