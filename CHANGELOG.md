@@ -15,5 +15,6 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   - Add release wrapper scripts and packaged-dev desktop identity metadata.
   - Keep packaged dev out of live mode and allow nightly releases after a stable release.
   - Ignore `docs/research` in format and lint checks.
+  - Allow hosted web pairing deployments to use fork-owned router and channel domains.
 - Provider support
   - Expose the Claude Fable model.

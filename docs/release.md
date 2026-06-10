@@ -35,6 +35,15 @@ The current workflow does not include:
 - scheduled nightly releases
 - Vercel or hosted web app deployment
 
+When a hosted web deployment is added, configure the hosted pairing origin explicitly so generated
+pairing links use the GedCode-owned router rather than the upstream T3 Code domain:
+
+- `VITE_HOSTED_APP_URL`, for example `https://app.gedcode.example`
+- `HOSTED_WEB_ROUTER_HOST`, for example `app.gedcode.example`
+- `HOSTED_WEB_LATEST_ORIGIN`, for example `https://latest.gedcode.example`
+- `HOSTED_WEB_NIGHTLY_ORIGIN`, for example `https://nightly.gedcode.example`
+- `HOSTED_WEB_CHANNEL_COOKIE`, optional channel-selection cookie name
+
 ## Required Release Setup
 
 ### macOS Signing And Notarization

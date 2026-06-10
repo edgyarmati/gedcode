@@ -1,9 +1,58 @@
 import { matchers, routes, type Transform, type VercelConfig } from "@vercel/config/v1";
 
-const ROUTER_HOST = "app.t3.codes";
-const HOSTED_WEB_CHANNEL_COOKIE = "t3code_web_channel";
-const LATEST_ORIGIN = "https://latest.app.t3.codes";
-const NIGHTLY_ORIGIN = "https://nightly.app.t3.codes";
+const DEFAULT_HOSTED_APP_URL = "https://app.t3.codes";
+const DEFAULT_LATEST_ORIGIN = "https://latest.app.t3.codes";
+const DEFAULT_NIGHTLY_ORIGIN = "https://nightly.app.t3.codes";
+
+function trimmedEnv(name: string): string {
+  return process.env[name]?.trim() ?? "";
+}
+
+function originHost(value: string): string | null {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+function defaultRouterHost(): string {
+  const host = originHost(DEFAULT_HOSTED_APP_URL);
+  if (host === null) {
+    throw new Error("Default hosted app URL is invalid.");
+  }
+  return host;
+}
+
+function configuredHostedAppUrl(): string {
+  const value = trimmedEnv("VITE_HOSTED_APP_URL");
+  if (!value) {
+    return DEFAULT_HOSTED_APP_URL;
+  }
+  if (originHost(value) === null) {
+    throw new Error("VITE_HOSTED_APP_URL must be an absolute URL.");
+  }
+  return value;
+}
+
+function configuredOrigin(name: string, fallback: string): string {
+  const value = trimmedEnv(name) || fallback;
+  try {
+    return new URL(value).origin;
+  } catch {
+    throw new Error(`${name} must be an absolute URL.`);
+  }
+}
+
+const HOSTED_APP_URL = configuredHostedAppUrl();
+const ROUTER_HOST =
+  trimmedEnv("HOSTED_WEB_ROUTER_HOST") || originHost(HOSTED_APP_URL) || defaultRouterHost();
+const HOSTED_WEB_CHANNEL_COOKIE = trimmedEnv("HOSTED_WEB_CHANNEL_COOKIE") || "t3code_web_channel";
+const LATEST_ORIGIN = configuredOrigin("HOSTED_WEB_LATEST_ORIGIN", DEFAULT_LATEST_ORIGIN);
+const NIGHTLY_ORIGIN = configuredOrigin("HOSTED_WEB_NIGHTLY_ORIGIN", DEFAULT_NIGHTLY_ORIGIN);
+if (originHost(LATEST_ORIGIN) === ROUTER_HOST || originHost(NIGHTLY_ORIGIN) === ROUTER_HOST) {
+  throw new Error("Hosted web channel origins must not point at the router host.");
+}
 const CLEAN_CHANNEL_QUERY_TRANSFORMS = [
   {
     type: "request.query",

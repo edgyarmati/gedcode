@@ -1,28 +1,27 @@
-# Spec: Native Codex Ged subagent access and presets
+# Spec: Fork-owned hosted pairing domain
 
 ## Goal
 
-When Ged subagents are enabled, Codex agents should understand that the setting authorizes native Codex subagent spawning and that each Ged role must use the model and reasoning values configured in the Codex Ged subagent preset.
+GedCode should support the hosted web pairing flow on a fork-owned domain instead of requiring T3 Code's `https://app.t3.codes` router domain.
 
 ## Current Findings
 
-- Codex app-server initialization already opts into `experimentalApi: true`, so native experimental tool exposure is already requested from Codex.
-- The workflow prompt describes harness-native subagents, but its fallback wording can be over-read as acceptable even when native tools exist.
-- The prompt says to use the preset, but does not explicitly bind each role line to native subagent tool arguments such as `model` and `reasoning_effort`.
-- The global settings copy still says “role threads,” which conflicts with the intended harness-native behavior.
+- `REMOTE.md` describes `https://app.t3.codes` as the hosted web app that can consume pairing URLs.
+- Hosted pairing does not proxy backend traffic. The browser saves a remote environment from `/pair?host=...#token=...` and connects directly to the backend URL.
+- `apps/web/src/hostedPairing.ts` already supports `VITE_HOSTED_APP_URL` for generated hosted pairing links and hosted-static detection, but defaults to `https://app.t3.codes`.
+- `apps/web/vercel.ts` hard-codes the router host, channel cookie, and latest/nightly origins to T3 Code domains.
 
 ## Requirements
 
-- Keep Ged subagents harness-native; do not reintroduce Gedcode-managed child role threads.
-- Prompt agents to spawn native subagents whenever native delegation tools are exposed and Ged subagents are enabled.
-- Prompt Codex agents to map each configured role preset to the native subagent call's model and reasoning-effort fields.
-- Preserve per-provider-instance Codex preset resolution.
-- Update user-facing settings copy so it describes native harness subagents, not role threads.
-- Add regression coverage for the exact prompt/settings contract.
-- Document the unreleased change.
+- Preserve existing behavior for deployments that still use the T3 defaults.
+- Allow a fork deployment to configure its hosted router host and latest/nightly origins without source edits.
+- Keep pairing tokens in the URL hash for generated hosted links.
+- Document how the hosted app works and how a GedCode/fork deployment points links at its own hosted web app.
+- Add focused regression coverage for configurable hosted URL behavior.
+- Update `CHANGELOG.md` under `## Unreleased`.
 
 ## Non-Goals
 
-- Do not implement a separate Gedcode child-thread runtime.
-- Do not change Codex app-server generated protocol schemas.
-- Do not make native subagents mandatory when the selected harness genuinely exposes no native subagent/delegation tool.
+- Do not add a backend proxy or tunnel service.
+- Do not make plain HTTP LAN endpoints work from an HTTPS hosted page.
+- Do not redesign remote environment management UI.

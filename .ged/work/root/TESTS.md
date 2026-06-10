@@ -2,22 +2,16 @@
 
 Planned verification:
 
-- `bun run test packages/ged-workflow/src/WorkflowPrompt.test.ts`
-- `bun run test apps/server/src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts`
-- `bun run test apps/web/src/components/settings/ProviderSettingsForm.test.ts`
+- `bun run test -- src/hostedPairing.test.ts src/components/settings/pairingUrls.test.ts` from `apps/web`
+- Any focused Vercel config tests added for configurable router behavior
 - `bun fmt`
 - `bun lint`
 - `bun typecheck`
 
 Evidence:
 
-- NOTE: Root path form failed before Vitest because Turbo parsed the file path as a missing task:
-  - `bun run test packages/ged-workflow/src/WorkflowPrompt.test.ts`
-  - `bun run test apps/server/src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts`
-  - `bun run test apps/web/src/components/settings/ProviderSettingsForm.test.ts`
-- PASS: `bun run test -- src/WorkflowPrompt.test.ts` from `packages/ged-workflow` (11 tests).
-- PASS: `bun run test -- src/gedWorkflow/Layers/GedWorkflowServiceLive.test.ts` from `apps/server` (15 tests).
-- PASS: `bun run test -- src/components/settings/ProviderSettingsForm.test.ts` from `apps/web` (11 tests; existing Node/localStorage warnings only).
+- PASS: `bun run test -- src/hostedPairing.test.ts src/components/settings/pairingUrls.test.ts vercel.test.ts` from `apps/web` (14 tests).
 - PASS: `bun fmt`.
 - PASS: `bun lint` (existing warnings only; exit code 0).
-- PASS: `bun typecheck`.
+- PASS: `bun typecheck` after retry. Initial root run hit a transient `effect-acp` package-resolution failure; `packages/effect-acp` typechecked directly and the second root run passed all 14 packages.
+- PASS: Final rerun after verifier hardening: focused web tests (14), `bun fmt`, `bun lint`, and `bun typecheck`.

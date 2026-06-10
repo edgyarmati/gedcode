@@ -15,6 +15,10 @@ const configuredHostedAppUrl = (() => {
   if (explicitHostedAppUrl) {
     return explicitHostedAppUrl;
   }
+  const hostedWebRouterHost = process.env.HOSTED_WEB_ROUTER_HOST?.trim();
+  if (hostedWebRouterHost) {
+    return `https://${hostedWebRouterHost}`;
+  }
   if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
     return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   }
