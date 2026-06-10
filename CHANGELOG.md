@@ -19,3 +19,5 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   - Allow hosted web pairing deployments to use fork-owned router and channel domains.
 - Provider support
   - Expose the Claude Fable model.
+- UI
+  - Fix light-mode contrast for destructive outline buttons such as connectivity Revoke actions.

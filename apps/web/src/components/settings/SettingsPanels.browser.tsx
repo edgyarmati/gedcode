@@ -876,7 +876,14 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(page.getByRole("button", { name: /^Copy pairing URL for:/ }))
       .toBeInTheDocument();
-    await expect.element(page.getByText("Revoke others")).toBeInTheDocument();
+    const revokeOthersButton = page.getByRole("button", { name: "Revoke others", exact: true });
+    await expect.element(revokeOthersButton).toBeInTheDocument();
+    await vi.waitFor(async () => {
+      const destructiveColor = getComputedStyle(document.documentElement)
+        .getPropertyValue("--destructive")
+        .trim();
+      await expect.element(revokeOthersButton).toHaveStyle({ color: destructiveColor });
+    });
   });
 
   it("revokes all other paired clients from settings", async () => {

@@ -1,8 +1,8 @@
 # Tasks
 
-1. [x] Extend checkpoint source support for main-thread role execution.
-2. [x] Update workflow prompt generation for strict sequential role gates and disabled-role main fallback.
-3. [x] Wire `gedRoleSettings` into server workflow prompt generation.
-4. [x] Add settings UI toggles for explorer/planner/verifier role subagents.
-5. [x] Update regression tests and changelog.
-6. [x] Run targeted tests, then `bun fmt`, `bun lint`, and `bun typecheck`.
+## fix-light-mode-destructive-outline-buttons
+
+1. Change the shared `destructive-outline` button variant to use a readable destructive text color on light surfaces.
+2. Add focused browser regression coverage for the connectivity settings Revoke button in light mode.
+3. Update `CHANGELOG.md` under `## Unreleased`.
+4. Run required verification: `bun fmt`, `bun lint`, `bun typecheck`, and a focused `bun run test` target.
