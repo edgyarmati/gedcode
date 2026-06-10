@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.1.1-nightly.20260610.1
+
 - Ged workflow
   - Scope runtime checkpoints to each thread and guard checkpoint ownership.
   - Enforce auto-escalation and surface more accurate workflow status phases.

@@ -1,29 +1,31 @@
-# Spec: Light-Mode Destructive Outline Button Visibility
+# SPEC: Nightly release 0.1.1-nightly.20260610.1
 
 ## Goal
 
-Fix light-mode visibility for destructive outline buttons, including the Revoke controls in the connectivity settings panel.
+Run the repository's nightly release process for the next resolved nightly version using the documented wrapper/workflow path.
 
 ## User-Visible Behavior
 
-- Destructive outline buttons must show readable destructive-colored labels on light surfaces.
-- Existing filled destructive buttons and dark-mode outline behavior should remain visually consistent.
-- The fix should apply through the shared button variant so other destructive outline actions benefit from the same contrast correction.
+- A GitHub prerelease is dispatched for `0.1.1-nightly.20260610.1`.
+- The release uses the existing desktop artifact matrix and nightly updater manifests.
+- No stable-version finalize job should run because nightly releases are prereleases.
 
 ## Scope
 
-- Update the shared `destructive-outline` button styling in the web UI.
-- Add a focused regression assertion for the connectivity settings Revoke button in light mode.
-- Document the unreleased user-visible fix.
+- Confirm release prerequisites from the current repository state.
+- Ensure `CHANGELOG.md` contains a dedicated section for the resolved nightly version.
+- Run required release verification gates.
+- Dispatch `.github/workflows/release.yml` for the resolved nightly version.
+- Record Ged workflow state and evidence for the release task.
 
 ## Non-Goals
 
-- Redesign settings rows, menus, or connectivity flows.
-- Change revoke behavior or server access APIs.
-- Rework theme token semantics outside the minimum needed for button visibility.
+- Do not change product behavior unless required to satisfy release prerequisites.
+- Do not publish a stable release.
+- Do not alter unrelated release workflow logic.
 
 ## Acceptance Criteria
 
-- In light mode, the Revoke button in connectivity settings is not white-on-white.
-- `bun fmt`, `bun lint`, and `bun typecheck` pass.
-- Relevant test coverage is updated and passes via `bun run test`, not `bun test`.
+- `CHANGELOG.md` contains `## 0.1.1-nightly.20260610.1` before dispatch.
+- `bun fmt`, `bun lint`, `bun typecheck`, `bun run test`, and `bun run release:smoke` pass.
+- `gh workflow run release.yml --ref main -f version=0.1.1-nightly.20260610.1` is dispatched successfully.
