@@ -5,10 +5,27 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
-- Release and packaging
-  - Resolve previous release notes tags with the nightly channel for nightly releases.
+- None.
+
+## 0.1.1
+
 - Desktop
   - Fix in-app desktop update installation by preserving the updater-owned quit flow and using silent installs only on Windows.
+  - Add packaged desktop identity metadata and keep packaged development builds out of live update mode.
+- Release and packaging
+  - Add release wrapper scripts and packaged-dev desktop identity metadata.
+  - Keep packaged dev out of live mode and allow nightly releases after a stable release.
+  - Resolve previous release notes tags with the nightly channel for nightly releases.
+  - Ignore `docs/research` in format/lint checks and allow hosted web pairing deployments to use fork-owned router and channel domains.
+- Ged workflow
+  - Scope runtime checkpoints to each thread and guard checkpoint ownership.
+  - Enforce auto-escalation and surface more accurate workflow status phases.
+  - Clarify runtime escalation, Codex Ged subagent presets, and sequential role gates with main-thread fallback.
+  - Show the workflow badge only while the latest turn is running and hide it while chat is idle.
+- Provider support
+  - Expose the Claude Fable model.
+- UI
+  - Fix light-mode contrast for destructive outline buttons such as connectivity Revoke actions.
 - CI
   - Fix `tsgo` typechecking after Effect's `Sink` export moved behind the package root.
 
@@ -19,7 +36,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   - Enforce auto-escalation and surface more accurate workflow status phases.
   - Clarify in the workflow prompt that the harness/runtime may upgrade initially trivial tasks to non-trivial after observing scope.
   - Require native Codex Ged subagents to use the configured role model and reasoning presets when subagent tools are available.
-  - Make Ged role subagents sequential gates with main-thread fallback and per-role settings toggles.
+  - Clarify runtime escalation, Codex Ged subagent presets, and sequential role gates with main-thread fallback.
   - Show the workflow badge only while the latest turn is running and hide it while chat is idle.
 - Release and packaging
   - Add release wrapper scripts and packaged-dev desktop identity metadata.
