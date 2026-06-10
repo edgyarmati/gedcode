@@ -1,9 +1,9 @@
 # TASKS
 
-- [ ] Wait for CI success
-- [ ] Inspect release command
-- [ ] Draft release notes
-- [ ] Dispatch stable release
-- [ ] Monitor release workflow
-- [ ] Disable previous releases
-- [ ] Record release evidence
+- [x] Wait for CI success
+- [x] Inspect release command
+- [x] Draft release notes
+- [x] Dispatch stable release
+- [x] Monitor release workflow
+- [x] Disable previous releases
+- [x] Record release evidence
