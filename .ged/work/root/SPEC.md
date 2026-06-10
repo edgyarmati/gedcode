@@ -2,21 +2,18 @@
 
 ## Goal
 
-Add a standing repository instruction in `AGENTS.md` requiring user-visible changes to be documented in `CHANGELOG.md` so future work includes changelog maintenance by default.
+Make the generated Ged workflow prompt explicitly tell the model that a task it initially classifies as trivial may later be upgraded to non-trivial by the harness/runtime after edits are observed.
 
-## User-visible behavior
+## Background
 
-- Future agents working in this repo are explicitly told to update `CHANGELOG.md` when they make changes that should be documented for the next release.
-- The requirement is stated in the main repo instructions, not left to per-task reminders.
+`packages/ged-workflow/src/WorkflowPrompt.ts` already documents auto-escalation, and `packages/ged-workflow/src/CheckpointValidation.ts` already enforces trivial-to-non-trivial escalation when a trivial task changes multiple source files. The prompt currently does not emphasize that this may happen after the model's initial classification, which can leave the model confused about why non-trivial gates apply mid-task.
 
-## Non-goals
+Native Ged subagent tools were unavailable in this harness session, so explorer and planner work is recorded by the main agent.
 
-- Expanding the changelog itself beyond the prior update.
-- Changing runtime behavior or source code outside repo instructions and workflow metadata.
-- Defining a full release process beyond the documentation requirement.
+## Acceptance Criteria
 
-## Acceptance criteria
-
-- `AGENTS.md` explicitly requires documenting relevant changes in `CHANGELOG.md`.
-- The requirement makes clear this should happen before task completion, without needing a separate user reminder.
-- Required checks pass.
+- The workflow prompt says an initially trivial classification is provisional once source edits begin.
+- The workflow prompt says the harness/runtime may upgrade a trivial task to non-trivial when edits exceed the trivial boundary.
+- The workflow prompt tells the model to stop and follow non-trivial gates if that upgrade occurs.
+- `WorkflowPrompt.test.ts` covers the new wording.
+- `CHANGELOG.md` documents the unreleased behavior note.

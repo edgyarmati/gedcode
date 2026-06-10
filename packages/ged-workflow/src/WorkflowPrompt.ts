@@ -23,6 +23,7 @@ Every incoming request MUST be classified before work begins:
 - **NON-TRIVIAL**: Features, bug fixes, refactors, multi-file changes — full workflow required.
 
 Auto-escalation: if a TRIVIAL task touches >1 source file, it becomes NON-TRIVIAL.
+An initial TRIVIAL classification is provisional once source edits begin. The harness/runtime may upgrade the task to NON-TRIVIAL after observing changed files or other scope evidence. If that happens, stop treating the task as trivial and immediately follow all NON-TRIVIAL gates from the current phase onward.
 
 ### Workflow Pipeline (NON-TRIVIAL)
 1. classify — Determine trivial vs non-trivial

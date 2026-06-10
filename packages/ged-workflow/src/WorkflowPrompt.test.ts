@@ -42,6 +42,13 @@ describe("WorkflowPrompt", () => {
     expect(prompt).toContain("classify");
   });
 
+  it("explains runtime escalation after an initial trivial classification", () => {
+    const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: false });
+    expect(prompt).toContain("initial TRIVIAL classification is provisional");
+    expect(prompt).toContain("harness/runtime may upgrade the task to NON-TRIVIAL");
+    expect(prompt).toContain("follow all NON-TRIVIAL gates from the current phase onward");
+  });
+
   it("includes harness-native subagent orchestration when enabled", () => {
     const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: true });
     expect(prompt).toContain("### Harness-Native Subagent Orchestration");
