@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
+  type GedSubagentRole,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   type ProviderInstanceConfig,
@@ -68,9 +69,11 @@ import {
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
+  buildGedRoleSettingsPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
 } from "./SettingsPanels.logic";
+import { GED_ROLE_DISPLAY_BY_ROLE } from "../../gedWorkflowRoles";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -86,6 +89,12 @@ const GED_CRITIQUE_MODE_LABELS = {
   "risk-based": "Risk-based",
   always: "Always",
 } as const;
+
+const GED_NATIVE_ROLE_TOGGLES = [
+  "ged-explorer",
+  "ged-planner",
+  "ged-verifier",
+] as const satisfies ReadonlyArray<GedSubagentRole>;
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -402,6 +411,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
+      ...(!Equal.equals(settings.gedRoleSettings, DEFAULT_UNIFIED_SETTINGS.gedRoleSettings)
+        ? ["Ged role subagents"]
+        : []),
       ...(Duration.toMillis(settings.automaticGitFetchInterval) !==
       Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval)
         ? ["Automatic Git fetch interval"]
@@ -431,6 +443,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
+      settings.gedRoleSettings,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       theme,
@@ -455,6 +468,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+      gedRoleSettings: DEFAULT_UNIFIED_SETTINGS.gedRoleSettings,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
@@ -506,6 +520,11 @@ export function GeneralSettingsPanel() {
   const isGitWritingModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
+  );
+  const areGedRoleSettingsDirty = GED_NATIVE_ROLE_TOGGLES.some(
+    (role) =>
+      (settings.gedRoleSettings[role]?.enabled ?? true) !==
+      (DEFAULT_UNIFIED_SETTINGS.gedRoleSettings[role]?.enabled ?? true),
   );
 
   return (
@@ -713,6 +732,57 @@ export function GeneralSettingsPanel() {
                 }
                 aria-label="Enable Ged subagents"
               />
+            }
+          />
+
+          <SettingsRow
+            title="Role subagents"
+            description="Choose which Ged roles use native subagents; disabled roles run on the main agent."
+            resetAction={
+              areGedRoleSettingsDirty ? (
+                <SettingResetButton
+                  label="Ged role subagents"
+                  onClick={() =>
+                    updateSettings({
+                      gedRoleSettings: DEFAULT_UNIFIED_SETTINGS.gedRoleSettings,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <div className="grid w-full gap-2 sm:w-[28rem]">
+                {GED_NATIVE_ROLE_TOGGLES.map((role) => {
+                  const meta = GED_ROLE_DISPLAY_BY_ROLE[role];
+                  const enabled = settings.gedRoleSettings[role]?.enabled ?? true;
+                  return (
+                    <label
+                      className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2"
+                      key={role}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{meta.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {enabled ? "Native subagent" : "Main agent"}
+                        </span>
+                      </span>
+                      <Switch
+                        checked={enabled}
+                        onCheckedChange={(checked) =>
+                          updateSettings(
+                            buildGedRoleSettingsPatch({
+                              settings,
+                              role,
+                              enabled: Boolean(checked),
+                            }),
+                          )
+                        }
+                        aria-label={`Enable ${meta.label} subagent`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
             }
           />
 

@@ -49,6 +49,32 @@ const makeTaskCheckpoints = (
   }) as CheckpointStateValue["taskCheckpoints"];
 
 describe("validatePlannerCheckpoint", () => {
+  it("decodes main-thread checkpoint sources", () => {
+    const state = decodeCheckpointState({
+      schemaVersion: 3,
+      lifecycleStatus: "active",
+      classification: "non-trivial",
+      classificationReason: "main fallback",
+      clarification: {
+        completedAt: "2026-05-17T10:00:00Z",
+        decision: "skipped-sufficient",
+        questionCount: 0,
+        reason: "Request is explicit and tests are known.",
+      },
+      planCheckpoints: {
+        "ged-planner": {
+          recordedAt: "2026-05-17T10:00:00Z",
+          source: "main",
+          valid: true,
+        },
+      },
+      taskCheckpoints: {},
+    });
+
+    expect(state.planCheckpoints["ged-planner"]?.source).toBe("main");
+    expect(validatePlannerCheckpoint(state).valid).toBe(true);
+  });
+
   it("returns invalid when no planner checkpoint exists for non-trivial", () => {
     const result = validatePlannerCheckpoint(makeActiveState());
     expect(result.valid).toBe(false);

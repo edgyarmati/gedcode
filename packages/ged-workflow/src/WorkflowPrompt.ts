@@ -3,7 +3,31 @@ import { getBundledSkill } from "./SkillRegistry.ts";
 export interface WorkflowPromptOptions {
   readonly codexGedSubagentPreset?: string | undefined;
   readonly provider?: string | undefined;
+  readonly roleSettings?: Readonly<Record<string, { readonly enabled?: boolean | undefined }>>;
   readonly subagentsEnabled: boolean;
+}
+
+const GED_WORKFLOW_ROLES = ["ged-explorer", "ged-planner", "ged-verifier"] as const;
+
+type GedWorkflowRole = (typeof GED_WORKFLOW_ROLES)[number];
+
+const ROLE_LABELS = {
+  "ged-explorer": "Explorer",
+  "ged-planner": "Planner",
+  "ged-verifier": "Verifier",
+} as const satisfies Record<GedWorkflowRole, string>;
+
+function isRoleNativeEnabled(options: WorkflowPromptOptions, role: GedWorkflowRole): boolean {
+  return options.subagentsEnabled && options.roleSettings?.[role]?.enabled !== false;
+}
+
+function formatRoleModes(options: WorkflowPromptOptions): string {
+  return GED_WORKFLOW_ROLES.map((role) => {
+    const mode = isRoleNativeEnabled(options, role)
+      ? "native subagent; main agent waits for structured evidence"
+      : 'main-thread fallback; main agent performs this role and records `source: "main"`';
+    return `- **${role}** (${ROLE_LABELS[role]}): ${mode}`;
+  }).join("\n");
 }
 
 export const buildWorkflowPromptSuffix = (options: WorkflowPromptOptions): string => {
@@ -71,6 +95,11 @@ The file uses this schema (schemaVersion 3):
    \`"<taskId>": { "ged-verifier": { "recordedAt": "<ISO-8601>", "source": "auto", "valid": true } }\`
 5. **After completion**: set \`lifecycleStatus\` to \`"closed"\`.
 
+Checkpoint \`source\` values:
+- \`"auto"\`: main-confirmed checkpoint backed by enabled native role evidence.
+- \`"main"\`: the main agent performed the role because that role was disabled or unavailable.
+- \`"manual"\`: explicit human/manual override.
+
 Read the file before writing to preserve existing fields. Always keep \`schemaVersion: 3\`.
 Do not use project-level checkpoint files; Ged checkpoint state is thread-specific.
 
@@ -83,26 +112,32 @@ For non-trivial tasks, do not begin planning until you have recorded either \`ne
 Format: \`<type>: <description>\`
 Types: feat, fix, refactor, docs, test, chore, perf, ci, build`);
 
-  if (options.subagentsEnabled) {
-    sections.push(`### Harness-Native Subagent Orchestration
+  sections.push(`### Ged Role Execution
 Ged subagents are owned by the selected harness/provider, not by Gedcode-managed child threads.
 
-The user has enabled Ged subagents in settings. Treat that setting as explicit user authorization to spawn the Ged workflow roles below when the current task reaches their required workflow phase; the user does not need to repeat delegation authorization in the current chat message.
+Role mode for this turn:
+${formatRoleModes(options)}
 
-When the harness exposes native subagent, task, worker, or delegation tools, you MUST use those native tools to create Ged subagents for:
-1. **ged-explorer** — Codebase discovery and evidence gathering. Run BEFORE source inspection.
-2. **ged-planner** — Planning critique or plan drafting. Run BEFORE finalizing SPEC/TASKS/TESTS.
-3. **ged-verifier** — Clean-context diff and verification review. Run BEFORE committing.
+For enabled native roles, the user has enabled Ged subagents in settings. Treat that setting as explicit user authorization to spawn the role subagent when the current task reaches that required workflow phase; the user does not need to repeat delegation authorization in the current chat message.
+
+For disabled or unavailable roles, execute that role yourself in the main thread and record the same checkpoint gate with \`source: "main"\`.
+
+Strict sequencing:
+1. **ged-explorer** — Codebase discovery and evidence gathering. If native-enabled, spawn it before any local source inspection, wait for completion, then consolidate findings. If disabled or unavailable, do the discovery yourself before planning. Record \`planCheckpoints["ged-explorer"]\` after consolidation.
+2. **ged-planner** — Planning critique or plan drafting. If native-enabled, spawn it after clarification and wait for completion before finalizing \`SPEC.md\`, \`TASKS.md\`, and \`TESTS.md\`. If disabled or unavailable, perform planning critique yourself. Record \`planCheckpoints["ged-planner"]\` after the plan is finalized.
+3. **ged-verifier** — Clean-context diff and verification review. Run required checks first, then if native-enabled spawn verifier and wait for completion before committing. Fix findings, rerun checks, and rerun verifier until there are no blocking findings. If disabled or unavailable, perform the verification review yourself. Record \`taskCheckpoints.<taskId>["ged-verifier"]\` only after verification is clean.
 
 - Do not expect Gedcode to launch separate role child threads or route per-role custom models.
-- Do not perform a Ged role yourself merely because the role is optional to the generic harness. If the native tool exists and the role is relevant to the current phase, spawn the native subagent.
 - Keep ownership clear: you remain responsible for final scope decisions, synthesis, verification judgment, and commits.
-- The main agent is the only writer for its thread checkpoint file; subagents may read checkpoint state but must not create, modify, downgrade, close, or reset it.
-- If the selected harness does not provide native subagents, execute the explorer, planner, and verifier steps yourself in the main thread and state that native subagents were unavailable.`);
+- The main agent is the only writer for its thread checkpoint file. Subagents may read checkpoint state but must not create, modify, downgrade, close, or reset it.
+- Subagents return structured evidence to the main agent; the main agent validates that result and writes checkpoint confirmations.`);
 
-    const codexPreset = options.codexGedSubagentPreset?.trim();
-    if (options.provider === "codex" && codexPreset) {
-      sections.push(`### Codex Ged Subagent Preset
+  const codexPreset = options.codexGedSubagentPreset?.trim();
+  const hasNativeEnabledRole = GED_WORKFLOW_ROLES.some((role) =>
+    isRoleNativeEnabled(options, role),
+  );
+  if (options.provider === "codex" && codexPreset && hasNativeEnabledRole) {
+    sections.push(`### Codex Ged Subagent Preset
 When spawning harness-native Ged subagents in Codex, use this preset unless the user explicitly overrides it in the current request.
 
 \`\`\`text
@@ -110,10 +145,10 @@ ${codexPreset}
 \`\`\`
 
 - Each preset line is authoritative for that Ged role. Pass the listed \`model\` as the Codex native subagent tool's model override, and pass \`reasoning\` as the native tool's reasoning-effort override when that field is supported.
+- Apply preset lines only to roles currently marked native-enabled in the role mode list above.
 - Treat \`reasoning\` or \`thinking\` entries as Codex reasoning-effort hints when the Codex subagent tool supports them.
 - If a listed model or reasoning level is unavailable, choose the closest supported Codex option and say what changed.
 - Do not spawn roles that are disabled or irrelevant for the current task.`);
-    }
   }
 
   return sections.join("\n\n");

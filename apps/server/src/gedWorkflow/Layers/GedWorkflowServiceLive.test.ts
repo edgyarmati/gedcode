@@ -91,15 +91,35 @@ const runGetState = (checkpointState: CheckpointStateValue) =>
 describe("GedWorkflowServiceLive", () => {
   it("builds harness-native subagent prompt suffix from settings", async () => {
     const prompt = await runPrompt();
-    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
+    expect(prompt).toContain("### Ged Role Execution");
     expect(prompt).toContain("ged-explorer");
-    expect(prompt).toContain("native subagents were unavailable");
+    expect(prompt).toContain("native subagent; main agent waits for structured evidence");
+    expect(prompt).toContain("before any local source inspection");
   });
 
-  it("omits subagent instructions when subagents are disabled", async () => {
+  it("falls back to main-thread role execution when subagents are disabled", async () => {
     const prompt = await runPrompt({ gedSubagentsEnabled: false });
-    expect(prompt).not.toContain("### Subagent Orchestration");
-    expect(prompt).not.toContain("### Harness-Native Subagent Orchestration");
+    expect(prompt).toContain("### Ged Role Execution");
+    expect(prompt).toContain("main-thread fallback");
+    expect(prompt).toContain('source: "main"');
+    expect(prompt).not.toContain("### Codex Ged Subagent Preset");
+  });
+
+  it("passes role settings into the prompt suffix", async () => {
+    const prompt = await runPrompt({
+      gedRoleSettings: {
+        "ged-explorer": { enabled: false },
+        "ged-planner": { enabled: true },
+        "ged-verifier": { enabled: true },
+      },
+    });
+
+    expect(prompt).toContain(
+      "**ged-explorer** (Explorer): main-thread fallback; main agent performs this role",
+    );
+    expect(prompt).toContain(
+      "**ged-planner** (Planner): native subagent; main agent waits for structured evidence",
+    );
   });
 
   it("adds Codex Ged subagent preset for Codex prompts", async () => {
@@ -214,9 +234,9 @@ describe("GedWorkflowServiceLive", () => {
       ),
     );
 
-    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
+    expect(prompt).toContain("### Ged Role Execution");
     expect(prompt).toContain("ged-explorer");
-    expect(prompt).toContain("native subagents were unavailable");
+    expect(prompt).toContain("native subagent; main agent waits for structured evidence");
   });
 
   it("runs non-trivial heuristics after resetting a closed lifecycle", async () => {

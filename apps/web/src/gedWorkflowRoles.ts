@@ -10,13 +10,13 @@ export interface GedRoleDisplayMeta {
 const ROLE_META: Record<GedSubagentRole, Omit<GedRoleDisplayMeta, "role">> = {
   "ged-explorer": {
     label: "Explorer",
-    description: "Reconnaissance child thread for codebase discovery and skill-fit checks.",
+    description: "Harness-native codebase discovery before local source inspection.",
     runtimeStatus: "active",
   },
   "ged-planner": {
     label: "Planner",
-    description: "Drafts SPEC/TASKS/TESTS plans for upcoming Ged runtime slices.",
-    runtimeStatus: "configuration-only",
+    description: "Harness-native planning review before SPEC/TASKS/TESTS are finalized.",
+    runtimeStatus: "active",
   },
   "ged-plan-reviewer": {
     label: "Plan reviewer",
@@ -25,8 +25,8 @@ const ROLE_META: Record<GedSubagentRole, Omit<GedRoleDisplayMeta, "role">> = {
   },
   "ged-verifier": {
     label: "Verifier",
-    description: "Clean-context verification before commit.",
-    runtimeStatus: "configuration-only",
+    description: "Harness-native clean-context verification before commit.",
+    runtimeStatus: "active",
   },
   "ged-worker": {
     label: "Worker",

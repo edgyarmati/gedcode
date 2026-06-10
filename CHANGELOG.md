@@ -10,6 +10,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   - Enforce auto-escalation and surface more accurate workflow status phases.
   - Clarify in the workflow prompt that the harness/runtime may upgrade initially trivial tasks to non-trivial after observing scope.
   - Require native Codex Ged subagents to use the configured role model and reasoning presets when subagent tools are available.
+  - Make Ged role subagents sequential gates with main-thread fallback and per-role settings toggles.
   - Show the workflow badge only while the latest turn is running and hide it while chat is idle.
 - Release and packaging
   - Add release wrapper scripts and packaged-dev desktop identity metadata.

@@ -49,25 +49,47 @@ describe("WorkflowPrompt", () => {
     expect(prompt).toContain("follow all NON-TRIVIAL gates from the current phase onward");
   });
 
-  it("includes harness-native subagent orchestration when enabled", () => {
+  it("includes strict Ged role execution when enabled", () => {
     const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: true });
-    expect(prompt).toContain("### Harness-Native Subagent Orchestration");
+    expect(prompt).toContain("### Ged Role Execution");
     expect(prompt).toContain("ged-explorer");
     expect(prompt).toContain("ged-planner");
     expect(prompt).toContain("ged-verifier");
     expect(prompt).toContain("selected harness/provider");
     expect(prompt).toContain("explicit user authorization");
     expect(prompt).toContain("does not need to repeat delegation authorization");
-    expect(prompt).toContain("you MUST use those native tools");
-    expect(prompt).toContain("spawn the native subagent");
-    expect(prompt).toContain("subagents may read checkpoint state but must not create");
-    expect(prompt).toContain("native subagents were unavailable");
+    expect(prompt).toContain("Subagents may read checkpoint state but must not create");
+    expect(prompt).toContain("wait for completion");
+    expect(prompt).toContain("before any local source inspection");
+    expect(prompt).toContain("before finalizing `SPEC.md`, `TASKS.md`, and `TESTS.md`");
+    expect(prompt).toContain("rerun verifier until there are no blocking findings");
   });
 
-  it("excludes subagents when disabled", () => {
+  it("falls back to main-thread role execution when global subagents are disabled", () => {
     const prompt = buildWorkflowPromptSuffix({ subagentsEnabled: false });
-    expect(prompt).not.toContain("ged-explorer");
-    expect(prompt).not.toContain("Harness-Native Subagent Orchestration");
+    expect(prompt).toContain("### Ged Role Execution");
+    expect(prompt).toContain("ged-explorer");
+    expect(prompt).toContain("main-thread fallback");
+    expect(prompt).toContain('source: "main"');
+    expect(prompt).not.toContain("### Codex Ged Subagent Preset");
+  });
+
+  it("uses main fallback for disabled roles while keeping enabled roles native", () => {
+    const prompt = buildWorkflowPromptSuffix({
+      roleSettings: {
+        "ged-explorer": { enabled: false },
+        "ged-planner": { enabled: true },
+        "ged-verifier": { enabled: true },
+      },
+      subagentsEnabled: true,
+    });
+
+    expect(prompt).toContain(
+      "**ged-explorer** (Explorer): main-thread fallback; main agent performs this role",
+    );
+    expect(prompt).toContain(
+      "**ged-planner** (Planner): native subagent; main agent waits for structured evidence",
+    );
   });
 
   it("includes Codex subagent preset for Codex when subagents are enabled", () => {
@@ -81,6 +103,7 @@ describe("WorkflowPrompt", () => {
     expect(prompt).toContain("Pass the listed `model` as the Codex native subagent tool");
     expect(prompt).toContain("reasoning-effort override");
     expect(prompt).toContain("reasoning-effort hints");
+    expect(prompt).toContain("roles currently marked native-enabled");
   });
 
   it("omits Codex subagent preset for non-Codex providers", () => {
@@ -93,7 +116,7 @@ describe("WorkflowPrompt", () => {
     expect(prompt).not.toContain("ged-verifier: model=gpt-5.5, reasoning=xhigh");
   });
 
-  it("omits Codex subagent preset when subagents are disabled", () => {
+  it("omits Codex subagent preset when all roles are main-thread fallback", () => {
     const prompt = buildWorkflowPromptSuffix({
       codexGedSubagentPreset: "ged-planner: model=gpt-5.4, reasoning=high",
       provider: "codex",

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export const CheckpointSource = Schema.Literals(["auto", "manual"]);
+export const CheckpointSource = Schema.Literals(["auto", "main", "manual"]);
 export type CheckpointSource = typeof CheckpointSource.Type;
 
 export const CheckpointRecord = Schema.Struct({

@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  buildGedRoleSettingsPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
 } from "./SettingsPanels.logic";
@@ -100,5 +101,26 @@ describe("buildProviderInstanceUpdatePatch", () => {
 
     expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
     expect(patch.providers).toBeUndefined();
+  });
+});
+
+describe("buildGedRoleSettingsPatch", () => {
+  it("updates one role without dropping other role settings", () => {
+    const patch = buildGedRoleSettingsPatch({
+      settings: {
+        gedRoleSettings: {
+          ...DEFAULT_SERVER_SETTINGS.gedRoleSettings,
+          "ged-worker": { enabled: true },
+        },
+      },
+      role: "ged-explorer",
+      enabled: false,
+    });
+
+    expect(patch.gedRoleSettings["ged-explorer"]).toEqual({ enabled: false });
+    expect(patch.gedRoleSettings["ged-planner"]).toEqual(
+      DEFAULT_SERVER_SETTINGS.gedRoleSettings["ged-planner"],
+    );
+    expect(patch.gedRoleSettings["ged-worker"]).toEqual({ enabled: true });
   });
 });

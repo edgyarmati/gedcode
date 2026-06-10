@@ -294,6 +294,7 @@ const make = Effect.gen(function* () {
         buildWorkflowPromptSuffix({
           codexGedSubagentPreset: resolveCodexGedSubagentPreset(current, context),
           provider: context?.provider,
+          roleSettings: current.gedRoleSettings,
           subagentsEnabled: current.gedSubagentsEnabled,
         }),
       ),
