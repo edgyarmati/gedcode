@@ -1,19 +1,28 @@
-# Spec
+# Spec: Native Codex Ged subagent access and presets
 
 ## Goal
 
-Make the generated Ged workflow prompt explicitly tell the model that a task it initially classifies as trivial may later be upgraded to non-trivial by the harness/runtime after edits are observed.
+When Ged subagents are enabled, Codex agents should understand that the setting authorizes native Codex subagent spawning and that each Ged role must use the model and reasoning values configured in the Codex Ged subagent preset.
 
-## Background
+## Current Findings
 
-`packages/ged-workflow/src/WorkflowPrompt.ts` already documents auto-escalation, and `packages/ged-workflow/src/CheckpointValidation.ts` already enforces trivial-to-non-trivial escalation when a trivial task changes multiple source files. The prompt currently does not emphasize that this may happen after the model's initial classification, which can leave the model confused about why non-trivial gates apply mid-task.
+- Codex app-server initialization already opts into `experimentalApi: true`, so native experimental tool exposure is already requested from Codex.
+- The workflow prompt describes harness-native subagents, but its fallback wording can be over-read as acceptable even when native tools exist.
+- The prompt says to use the preset, but does not explicitly bind each role line to native subagent tool arguments such as `model` and `reasoning_effort`.
+- The global settings copy still says “role threads,” which conflicts with the intended harness-native behavior.
 
-Native Ged subagent tools were unavailable in this harness session, so explorer and planner work is recorded by the main agent.
+## Requirements
 
-## Acceptance Criteria
+- Keep Ged subagents harness-native; do not reintroduce Gedcode-managed child role threads.
+- Prompt agents to spawn native subagents whenever native delegation tools are exposed and Ged subagents are enabled.
+- Prompt Codex agents to map each configured role preset to the native subagent call's model and reasoning-effort fields.
+- Preserve per-provider-instance Codex preset resolution.
+- Update user-facing settings copy so it describes native harness subagents, not role threads.
+- Add regression coverage for the exact prompt/settings contract.
+- Document the unreleased change.
 
-- The workflow prompt says an initially trivial classification is provisional once source edits begin.
-- The workflow prompt says the harness/runtime may upgrade a trivial task to non-trivial when edits exceed the trivial boundary.
-- The workflow prompt tells the model to stop and follow non-trivial gates if that upgrade occurs.
-- `WorkflowPrompt.test.ts` covers the new wording.
-- `CHANGELOG.md` documents the unreleased behavior note.
+## Non-Goals
+
+- Do not implement a separate Gedcode child-thread runtime.
+- Do not change Codex app-server generated protocol schemas.
+- Do not make native subagents mandatory when the selected harness genuinely exposes no native subagent/delegation tool.

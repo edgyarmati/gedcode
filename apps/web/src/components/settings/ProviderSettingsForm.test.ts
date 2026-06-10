@@ -33,6 +33,8 @@ describe("ProviderSettingsForm helpers", () => {
     expect(preset).toMatchObject({
       control: "codexGedSubagentPreset",
       label: "Ged subagent preset",
+      description:
+        "Codex-only preset for harness-native Ged subagents. Choose the model and reasoning level for each role.",
     });
   });
 

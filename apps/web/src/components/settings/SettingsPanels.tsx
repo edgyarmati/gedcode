@@ -692,7 +692,7 @@ export function GeneralSettingsPanel() {
 
           <SettingsRow
             title="Subagents"
-            description="Allow Ged role threads such as explorer to be launched by the workflow harness."
+            description="Allow the selected harness to launch native Ged role subagents such as explorer."
             resetAction={
               settings.gedSubagentsEnabled !== DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled ? (
                 <SettingResetButton

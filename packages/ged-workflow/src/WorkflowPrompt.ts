@@ -89,12 +89,13 @@ Ged subagents are owned by the selected harness/provider, not by Gedcode-managed
 
 The user has enabled Ged subagents in settings. Treat that setting as explicit user authorization to spawn the Ged workflow roles below when the current task reaches their required workflow phase; the user does not need to repeat delegation authorization in the current chat message.
 
-When the harness provides native subagent, task, worker, or delegation tools, create native subagents for:
+When the harness exposes native subagent, task, worker, or delegation tools, you MUST use those native tools to create Ged subagents for:
 1. **ged-explorer** — Codebase discovery and evidence gathering. Run BEFORE source inspection.
 2. **ged-planner** — Planning critique or plan drafting. Run BEFORE finalizing SPEC/TASKS/TESTS.
 3. **ged-verifier** — Clean-context diff and verification review. Run BEFORE committing.
 
 - Do not expect Gedcode to launch separate role child threads or route per-role custom models.
+- Do not perform a Ged role yourself merely because the role is optional to the generic harness. If the native tool exists and the role is relevant to the current phase, spawn the native subagent.
 - Keep ownership clear: you remain responsible for final scope decisions, synthesis, verification judgment, and commits.
 - The main agent is the only writer for its thread checkpoint file; subagents may read checkpoint state but must not create, modify, downgrade, close, or reset it.
 - If the selected harness does not provide native subagents, execute the explorer, planner, and verifier steps yourself in the main thread and state that native subagents were unavailable.`);
@@ -108,6 +109,7 @@ When spawning harness-native Ged subagents in Codex, use this preset unless the 
 ${codexPreset}
 \`\`\`
 
+- Each preset line is authoritative for that Ged role. Pass the listed \`model\` as the Codex native subagent tool's model override, and pass \`reasoning\` as the native tool's reasoning-effort override when that field is supported.
 - Treat \`reasoning\` or \`thinking\` entries as Codex reasoning-effort hints when the Codex subagent tool supports them.
 - If a listed model or reasoning level is unavailable, choose the closest supported Codex option and say what changed.
 - Do not spawn roles that are disabled or irrelevant for the current task.`);

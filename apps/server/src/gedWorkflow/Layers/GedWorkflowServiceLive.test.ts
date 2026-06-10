@@ -123,6 +123,8 @@ describe("GedWorkflowServiceLive", () => {
 
     expect(prompt).toContain("### Codex Ged Subagent Preset");
     expect(prompt).toContain("ged-explorer: model=gpt-5.4-mini, reasoning=medium");
+    expect(prompt).toContain("Pass the listed `model` as the Codex native subagent tool");
+    expect(prompt).toContain("reasoning-effort override");
   });
 
   it("omits Codex Ged subagent preset for non-Codex prompts", async () => {

@@ -58,6 +58,8 @@ describe("WorkflowPrompt", () => {
     expect(prompt).toContain("selected harness/provider");
     expect(prompt).toContain("explicit user authorization");
     expect(prompt).toContain("does not need to repeat delegation authorization");
+    expect(prompt).toContain("you MUST use those native tools");
+    expect(prompt).toContain("spawn the native subagent");
     expect(prompt).toContain("subagents may read checkpoint state but must not create");
     expect(prompt).toContain("native subagents were unavailable");
   });
@@ -76,6 +78,8 @@ describe("WorkflowPrompt", () => {
     });
     expect(prompt).toContain("### Codex Ged Subagent Preset");
     expect(prompt).toContain("ged-explorer: model=gpt-5.4-mini, reasoning=medium");
+    expect(prompt).toContain("Pass the listed `model` as the Codex native subagent tool");
+    expect(prompt).toContain("reasoning-effort override");
     expect(prompt).toContain("reasoning-effort hints");
   });
 
