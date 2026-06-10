@@ -22,3 +22,5 @@
 - PASS: `bun typecheck`
 - PASS: `bun run test`
 - PASS: `bun run release:smoke`
+- PASS: GitHub CI run `27283813766`
+- PASS: GitHub release run `27283814112` for `0.1.1-nightly.20260610.1`

@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: verify
+- **Phase**: complete
 - **Active task**: Fix nightly release workflow and prior CI failure.
-- **Status**: Required local checks and release smoke passed; verifier review pending.
+- **Status**: Fix committed and pushed; CI and nightly release rerun passed.
 - **Blockers**: None.
-- **Next step**: Review diff, commit, push, and dispatch nightly release again.
+- **Next step**: None.
