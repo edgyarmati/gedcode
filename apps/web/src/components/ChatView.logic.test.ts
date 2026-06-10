@@ -1,7 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime";
 import {
   EnvironmentId,
-  type GedWorkflowState,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -17,7 +16,6 @@ import {
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
-  deriveVisibleWorkflowState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
   resolveComposerModeModelFallback,
@@ -40,95 +38,6 @@ const gedMainModelSelection = {
   instanceId: ProviderInstanceId.make("codex_work"),
   model: "ged-main-model",
 };
-
-const workflowState = {
-  enabled: true,
-  initialized: true,
-  phase: "plan",
-  classification: "non-trivial",
-  plannerCheckpointValid: false,
-  verifierCheckpointValid: false,
-} satisfies GedWorkflowState;
-
-describe("deriveVisibleWorkflowState", () => {
-  it("keeps unfinished non-trivial workflow state visible while the thread is idle", () => {
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState,
-        phase: "ready",
-        latestTurn: null,
-        isSendBusy: false,
-      }),
-    ).toBe(workflowState);
-  });
-
-  it("hides trivial workflow state while the thread is idle", () => {
-    const trivialWorkflowState = {
-      ...workflowState,
-      phase: "classify",
-      classification: "trivial",
-    } satisfies GedWorkflowState;
-
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState: trivialWorkflowState,
-        phase: "ready",
-        latestTurn: null,
-        isSendBusy: false,
-      }),
-    ).toBeNull();
-  });
-
-  it("hides inferred-done workflow state while the thread is idle", () => {
-    const doneWorkflowState = {
-      ...workflowState,
-      phase: "done",
-      verifierCheckpointValid: true,
-    } satisfies GedWorkflowState;
-
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState: doneWorkflowState,
-        phase: "ready",
-        latestTurn: null,
-        isSendBusy: false,
-      }),
-    ).toBeNull();
-  });
-
-  it("shows workflow state while local send is pending", () => {
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState,
-        phase: "ready",
-        latestTurn: null,
-        isSendBusy: true,
-      }),
-    ).toBe(workflowState);
-  });
-
-  it("shows workflow state while the provider session is running", () => {
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState,
-        phase: "running",
-        latestTurn: null,
-        isSendBusy: false,
-      }),
-    ).toBe(workflowState);
-  });
-
-  it("shows workflow state while the latest turn is running before session phase catches up", () => {
-    expect(
-      deriveVisibleWorkflowState({
-        workflowState,
-        phase: "ready",
-        latestTurn: { state: "running" },
-        isSendBusy: false,
-      }),
-    ).toBe(workflowState);
-  });
-});
 
 describe("resolveComposerModeModelFallback", () => {
   it("uses the normal project/default fallback and ignores Ged main in normal mode", () => {

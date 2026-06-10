@@ -3,7 +3,6 @@ import {
   DEFAULT_MODEL,
   defaultInstanceIdForDriver,
   type EnvironmentId,
-  type GedWorkflowState,
   type MessageId,
   type ModelSelection,
   type ProjectScript,
@@ -162,7 +161,6 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
-  deriveVisibleWorkflowState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -895,36 +893,6 @@ export default function ChatView(props: ChatViewProps) {
     useMemo(() => createProjectSelectorByRef(activeProjectRef), [activeProjectRef]),
   );
 
-  const [workflowState, setWorkflowState] = useState<GedWorkflowState | null>(null);
-  useEffect(() => {
-    if (!activeThread) {
-      setWorkflowState(null);
-      return;
-    }
-    const api = readEnvironmentApi(activeThread.environmentId);
-    if (!api) {
-      setWorkflowState(null);
-      return;
-    }
-    let cancelled = false;
-    const fetchState = () => {
-      api.gedWorkflow
-        .getState({ threadId: activeThread.id })
-        .then((state) => {
-          if (!cancelled) setWorkflowState(state);
-        })
-        .catch(() => {
-          if (!cancelled) setWorkflowState(null);
-        });
-    };
-    fetchState();
-    const interval = setInterval(fetchState, 3_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [activeThread?.environmentId, activeThread?.id]);
-
   useEffect(() => {
     if (routeKind !== "server") {
       return;
@@ -1460,12 +1428,6 @@ export default function ChatView(props: ChatViewProps) {
     threadError: activeThread?.error,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
-  const visibleWorkflowState = deriveVisibleWorkflowState({
-    workflowState,
-    phase,
-    latestTurn: activeLatestTurn,
-    isSendBusy,
-  });
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -3673,7 +3635,6 @@ export default function ChatView(props: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
-          workflowState={visibleWorkflowState}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}

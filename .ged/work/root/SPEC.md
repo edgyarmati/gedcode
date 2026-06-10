@@ -1,24 +1,22 @@
-# Spec: Expose Claude Fable 5
+# Spec
 
 ## Goal
 
-Expose the existing Claude Code model id `claude-fable-5` in GedCode's model picker so users can select it without adding a custom model manually.
+Add a standing repository instruction in `AGENTS.md` requiring user-visible changes to be documented in `CHANGELOG.md` so future work includes changelog maintenance by default.
 
 ## User-visible behavior
 
-- Claude provider model lists include `claude-fable-5` with display name `Claude Fable 5`.
-- Model normalization accepts convenient Fable aliases and resolves them to `claude-fable-5`.
-- Existing Claude model selection, option descriptor, and custom model behavior remains unchanged.
+- Future agents working in this repo are explicitly told to update `CHANGELOG.md` when they make changes that should be documented for the next release.
+- The requirement is stated in the main repo instructions, not left to per-task reminders.
 
 ## Non-goals
 
-- Do not change the default Claude model.
-- Do not implement or validate Claude-side model support; the user confirmed Claude Code already has it.
-- Do not add new Claude Code version gates unless existing code or SDK behavior requires one.
-- Do not change Codex, Cursor, or OpenCode model behavior.
+- Expanding the changelog itself beyond the prior update.
+- Changing runtime behavior or source code outside repo instructions and workflow metadata.
+- Defining a full release process beyond the documentation requirement.
 
-## Acceptance Criteria
+## Acceptance criteria
 
-- `claude-fable-5` appears in the Claude built-in model list.
-- `normalizeModelSlug("fable", claudeAgent)` returns `claude-fable-5`.
-- Required repo checks pass: `bun fmt`, `bun lint`, `bun typecheck`.
+- `AGENTS.md` explicitly requires documenting relevant changes in `CHANGELOG.md`.
+- The requirement makes clear this should happen before task completion, without needing a separate user reminder.
+- Required checks pass.

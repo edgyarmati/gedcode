@@ -1,6 +1,5 @@
 import {
   type EnvironmentId,
-  type GedWorkflowState,
   isProviderDriverKind,
   ProjectId,
   type ModelSelection,
@@ -24,21 +23,6 @@ export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
-
-export function deriveVisibleWorkflowState(input: {
-  workflowState: GedWorkflowState | null;
-  phase: SessionPhase;
-  latestTurn: Pick<NonNullable<Thread["latestTurn"]>, "state"> | null;
-  isSendBusy: boolean;
-}): GedWorkflowState | null {
-  const isLiveTurn =
-    input.phase === "running" || input.latestTurn?.state === "running" || input.isSendBusy;
-  if (isLiveTurn) {
-    return input.workflowState;
-  }
-  if (!input.workflowState || input.workflowState.phase === "done") return null;
-  return input.workflowState.classification === "non-trivial" ? input.workflowState : null;
-}
 
 export function buildLocalDraftThread(
   threadId: ThreadId,

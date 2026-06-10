@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: commit
-- **Active task**: Expose Claude Fable 5 in model picker
-- **Status**: Implemented, verified, and reviewed.
+- **Phase**: complete
+- **Active task**: Add changelog-update requirement to `AGENTS.md`
+- **Status**: `AGENTS.md` now requires documenting relevant unreleased changes in `CHANGELOG.md`; required verification passed.
 - **Blockers**: None.
-- **Next step**: Commit changes.
+- **Next step**: None.
