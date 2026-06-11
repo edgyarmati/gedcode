@@ -52,3 +52,7 @@ Docs:
 - Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
+
+## Upstream Decision Tracking
+
+Before categorizing, cherry-picking, or reimplementing upstream-only work from `pingdotgg/t3code`, check `docs/upstream-decisions.md`. Keep that document updated when upstream work is accepted, deferred, or ruled out. After completing a task from the document's "Want To Implement" section, remove that completed item from the list in the same change.
