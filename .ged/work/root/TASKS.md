@@ -1,10 +1,8 @@
 # TASKS
 
-- [x] Compare `v0.1.0` and `v0.1.1` artifacts
-- [x] Identify builder version regression
-- [x] Pin electron-builder package
-- [x] Allow unsigned mac release mode
-- [x] Verify mac artifact signature shape
-- [x] Update release docs and changelog
-- [x] Run required checks
-- [x] Amend commit
+- [x] Confirm target release version
+- [x] Update changelog and wrapper
+- [x] Run local release gates
+- [ ] Dispatch v0.1.2 workflow
+- [ ] Monitor release workflow
+- [ ] Supersede v0.1.1 notes

@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Publish stable release after CI and disable previous releases.
-- **Status**: Stable release `v0.1.1` published and verified.
+- **Phase**: verify
+- **Active task**: Publish stable v0.1.2 with fixed macOS artifacts.
+- **Status**: Local release gates passed; preparing commit and workflow dispatch.
 - **Blockers**: None.
-- **Next step**: None.
+- **Next step**: Commit, push, and dispatch release workflow.

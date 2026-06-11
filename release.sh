@@ -73,6 +73,23 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
+origin_url="$(git remote get-url origin)"
+release_repository="$(
+  node -e '
+    const url = process.argv[1];
+    const httpsMatch = /^https:\/\/github\.com\/([^/]+\/[^/.]+)(?:\.git)?$/.exec(url);
+    const sshMatch = /^git@github\.com:([^/]+\/[^/.]+)(?:\.git)?$/.exec(url);
+    const match = httpsMatch ?? sshMatch;
+    if (!match) {
+      process.exit(1);
+    }
+    console.log(match[1]);
+  ' "$origin_url"
+)" || {
+  echo "Could not resolve GitHub repository from origin remote: $origin_url" >&2
+  exit 1
+}
+
 version="$(
   node scripts/resolve-release-version.ts \
     --channel "$channel" \
@@ -93,6 +110,7 @@ echo "Preparing GedCode release"
 echo "  channel: $channel"
 echo "  bump:    $bump"
 echo "  version: $version"
+echo "  repo:    $release_repository"
 
 bun fmt
 bun lint
@@ -105,5 +123,5 @@ if [[ "$dry_run" == true ]]; then
   exit 0
 fi
 
-gh workflow run release.yml --ref main -f version="$version"
+gh workflow run release.yml -R "$release_repository" --ref main -f version="$version"
 echo "Dispatched release workflow for $version."
