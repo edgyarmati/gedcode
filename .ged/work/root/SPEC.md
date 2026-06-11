@@ -2,27 +2,19 @@
 
 ## Goal
 
-Create a durable upstream decision document referenced from `AGENTS.md` so future upstream-only work is categorized consistently and not forgotten.
+Backport the Git status polling churn reduction from upstream commit `0baf1986` without pulling unrelated upstream refactors.
 
 ## Requirements
 
-- Add `docs/upstream-decisions.md`.
-- Include the prior upstream comparison evidence: local `main` is current with `origin/main`, and `main...upstream/main` was `117 83` after fetch.
-- Use decision categories:
-  - Want to implement
-  - Deferred indefinitely
-  - Not doing for now
-  - Needs decision
-- Record the user-decided scope now:
-  - Mobile is not doing for now.
-  - Relay/cloud is not doing for now.
-  - T3 Connect is not doing for now.
-- Keep remaining upstream groups in Needs decision with enough explanation for the user to categorize next.
-- Reference the document from `AGENTS.md`.
-- Update `CHANGELOG.md` under `## Unreleased` because this is maintainer-facing process documentation.
+- Add a remote-only VCS status path that avoids working-tree status and diff reads when only remote ahead/behind information is needed.
+- Update remote status reads to use the remote-only path while preserving branch, upstream, default-branch, ahead/behind, and pull-request lookup behavior.
+- Avoid immediately repolling remote status when a stream subscriber can be served from a cached remote snapshot, including cached `null` snapshots.
+- Add focused tests for the remote-only VCS path and remote status broadcaster behavior.
+- Update `CHANGELOG.md` with a performance/reliability note.
+- Update `docs/upstream-decisions.md` to mark `0baf1986` complete while leaving the broader reliability bucket in `Want To Implement`.
 
 ## Non-Goals
 
-- Do not categorize undecided groups without user instruction.
-- Do not cherry-pick or implement upstream code.
-- Do not run `bun test`; this docs-only change only requires the repo gates.
+- Do not implement other reliability-bucket commits in this slice.
+- Do not change package manager, test runner, or CI tooling.
+- Do not change web-side status UI unless server behavior requires it.

@@ -14,11 +14,19 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - **Not doing for now**: Explicitly out of scope for this fork unless product direction changes.
 - **Needs decision**: Requires user/maintainer decision before implementation work starts.
 
+## Completed Upstream Work
+
+### Git status polling churn
+
+- Upstream commit: `0baf1986` (`[codex] Reduce Git status polling churn (#3037)`)
+- Completed in this fork: 2026-06-11
+- Notes: Remote VCS status now uses a remote-only Git status path, and stream subscribers with cached remote snapshots wait for the configured refresh interval before polling again.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
 
-- Representative commits: `57f6bf7e` (`Fix turn fold proejctions (#3041)`), `0baf1986` (`[codex] Reduce Git status polling churn (#3037)`), `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`), `300f7fd1` (`[codex] Avoid shell for system executables (#2950)`), `6ce6f678` (`[codex] Avoid shell for Windows environment probe (#2951)`), `a74dfd4f` (`[codex] Avoid shell for Node executable spawns (#2952)`), `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
+- Representative commits: `57f6bf7e` (`Fix turn fold proejctions (#3041)`), `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`), `300f7fd1` (`[codex] Avoid shell for system executables (#2950)`), `6ce6f678` (`[codex] Avoid shell for Windows environment probe (#2951)`), `a74dfd4f` (`[codex] Avoid shell for Node executable spawns (#2952)`), `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
 - Decision: Want to implement.
 - What it contains: Runtime projection fixes, reduced background git churn, protocol/schema synchronization with Codex app-server, provider startup behavior, safer process spawning, and provider event normalization.
 - Why it matters: This group aligns directly with the repository priorities of performance, reliability, and predictable behavior under reconnects, restarts, partial streams, and provider edge cases. Several commits address correctness rather than presentation, and they reduce the chance that the app silently displays the wrong turn state, over-polls git status, misinterprets provider events, or spawns system processes in fragile ways.

@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: complete
-- **Active task**: Create upstream decision tracking documentation.
-- **Status**: Documentation edits complete; local verification and verifier review passed.
+- **Active task**: Backport upstream Git status polling churn reduction.
+- **Status**: Implementation committed; local verification and main-thread verifier review passed.
 - **Blockers**: None.
 - **Next step**: None.

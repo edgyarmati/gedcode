@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Performance: Reduce VCS remote status polling churn by using a remote-only Git status path and delaying automatic refreshes when cached remote snapshots are available.
 - Docs: Add upstream decision tracking for pending upstream-only work and record the initial implementation categories.
 
 ## 0.1.2
