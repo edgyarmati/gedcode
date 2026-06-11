@@ -48,7 +48,9 @@ pairing links use the GedCode-owned router rather than the upstream T3 Code doma
 
 ### macOS Signing And Notarization
 
-Signing is optional. If any required value is missing, macOS artifacts are built unsigned.
+Signing and notarization are supported but not required while the project does not have an Apple
+Developer Program membership. If any required value is missing, macOS artifacts are built with a
+validated ad-hoc signature; users must manually allow the app in macOS Gatekeeper.
 
 - `CSC_LINK`
 - `CSC_KEY_PASSWORD`
@@ -162,10 +164,12 @@ There is no true dry-run mode in the current workflow. For a rehearsal, use one 
   - Use `X.Y.Z` or `vX.Y.Z`, optionally with a suffix such as `X.Y.Z-alpha.1`.
 - macOS build unsigned when signing was expected:
   - Check all Apple signing and notarization secrets are populated.
+- macOS says the app is damaged:
+  - Check the release build log for the `Verify macOS artifact signature` step.
 - Windows build unsigned when signing was expected:
   - Check all Azure Trusted Signing secrets are populated.
 - Build fails with signing errors:
-  - Retry with signing secrets removed to confirm the unsigned build path still works.
+  - Re-check that all Apple or Windows signing secrets are populated for release builds.
   - Re-check certificate/profile names and tenant/client credentials.
 - GitHub Release is missing updater files:
   - Inspect the build artifact upload for `*.zip`, `*.yml`, and `*.blockmap` files before the

@@ -3,7 +3,7 @@ import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { Sink } from "effect";
-import * as Stdio from "effect/Stdio";
+import { Stdio } from "effect";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as AcpError from "../errors.ts";

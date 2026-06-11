@@ -12,7 +12,9 @@ import {
   resolveDesktopUpdateChannel,
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
+  resolveMissingMacSigningEnvironment,
   createBuildConfig,
+  ELECTRON_BUILDER_PACKAGE,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 
@@ -144,6 +146,54 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       }
     }),
   );
+
+  it.effect("configures hardened runtime for signed macOS builds", () =>
+    Effect.gen(function* () {
+      const buildConfig = yield* createBuildConfig("mac", "dmg", "0.0.17", true, false, undefined);
+
+      assert.equal(buildConfig.forceCodeSigning, true);
+      assert.deepStrictEqual(buildConfig.mac, {
+        target: ["dmg", "zip"],
+        icon: "icon.icns",
+        category: "public.app-category.developer-tools",
+        hardenedRuntime: true,
+        gatekeeperAssess: false,
+        notarize: true,
+        entitlements: "entitlements.mac.plist",
+        entitlementsInherit: "entitlements.mac.plist",
+      });
+    }),
+  );
+
+  it.effect("keeps unsigned local macOS build config close to the ad-hoc fallback path", () =>
+    Effect.gen(function* () {
+      const buildConfig = yield* createBuildConfig("mac", "dmg", "0.0.17", false, false, undefined);
+
+      assert.equal(buildConfig.forceCodeSigning, false);
+      assert.deepStrictEqual(buildConfig.mac, {
+        target: ["dmg", "zip"],
+        icon: "icon.icns",
+        category: "public.app-category.developer-tools",
+      });
+    }),
+  );
+
+  it("detects missing macOS signing environment values", () => {
+    assert.deepStrictEqual(
+      resolveMissingMacSigningEnvironment({
+        CSC_LINK: "certificate",
+        CSC_KEY_PASSWORD: "",
+        APPLE_API_KEY: "key",
+        APPLE_API_KEY_ID: "key-id",
+        APPLE_API_ISSUER: "issuer",
+      }),
+      ["CSC_KEY_PASSWORD"],
+    );
+  });
+
+  it("pins electron-builder to the ad-hoc signing compatible version", () => {
+    assert.equal(ELECTRON_BUILDER_PACKAGE, "electron-builder@26.8.1");
+  });
 
   it.effect("normalizes mock update server ports from env-style strings", () =>
     Effect.gen(function* () {

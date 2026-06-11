@@ -5,7 +5,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
-import * as Stdio from "effect/Stdio";
+import { Stdio } from "effect";
 import * as Stream from "effect/Stream";
 
 import * as CodexError from "./errors.ts";

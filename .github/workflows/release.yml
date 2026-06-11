@@ -268,9 +268,11 @@ jobs:
               printf '%s' "$APPLE_API_KEY" > "$key_path"
               export APPLE_API_KEY="$key_path"
               echo "macOS signing enabled."
+              echo "T3CODE_MAC_SIGNED=true" >> "$GITHUB_ENV"
               args+=(--signed)
             else
-              echo "macOS signing disabled (missing one or more Apple signing secrets)."
+              echo "macOS signing disabled; building ad-hoc signed artifacts."
+              echo "T3CODE_MAC_SIGNED=false" >> "$GITHUB_ENV"
             fi
           elif [[ "${{ matrix.platform }}" == "win" ]]; then
             if has_all \
@@ -291,6 +293,68 @@ jobs:
           fi
 
           bun run dist:desktop:artifact -- "${args[@]}"
+
+      - name: Verify macOS artifact signature
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          app_zip="$(find release -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          dmg="$(find release -maxdepth 1 -type f -name '*.dmg' | head -n 1)"
+          if [[ -z "$app_zip" || -z "$dmg" ]]; then
+            echo "Missing macOS zip or dmg release artifact." >&2
+            exit 1
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "$tmp_dir"' EXIT
+          ditto -x -k "$app_zip" "$tmp_dir"
+          app_path="$(find "$tmp_dir" -maxdepth 3 -type d -name '*.app' | head -n 1)"
+          if [[ -z "$app_path" ]]; then
+            echo "Could not find .app inside macOS updater zip." >&2
+            exit 1
+          fi
+
+          verify_app_signature() {
+            local path="$1"
+            codesign --verify --deep --strict --verbose=2 "$path"
+            local signature_details
+            signature_details="$(codesign -dv --verbose=4 "$path" 2>&1)"
+            echo "$signature_details"
+            if ! grep -q "Identifier=com.t3tools.gedcode" <<<"$signature_details"; then
+              echo "macOS app bundle identifier is not com.t3tools.gedcode." >&2
+              exit 1
+            fi
+            if ! grep -q "Sealed Resources version=" <<<"$signature_details"; then
+              echo "macOS app is missing sealed resources and will be reported as damaged." >&2
+              exit 1
+            fi
+            if [[ "${T3CODE_MAC_SIGNED:-false}" != "true" ]] && ! grep -q "Signature=adhoc" <<<"$signature_details"; then
+              echo "Unsigned macOS release artifacts must still have a valid ad-hoc signature." >&2
+              exit 1
+            fi
+          }
+
+          verify_app_signature "$app_path"
+
+          mount_dir="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$dmg"
+          trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; rm -rf "$tmp_dir" "$mount_dir"' EXIT
+          dmg_app_path="$(find "$mount_dir" -maxdepth 2 -type d -name '*.app' | head -n 1)"
+          if [[ -z "$dmg_app_path" ]]; then
+            echo "Could not find .app inside macOS DMG." >&2
+            exit 1
+          fi
+          verify_app_signature "$dmg_app_path"
+
+          if [[ "${T3CODE_MAC_SIGNED:-false}" == "true" ]]; then
+            spctl --assess --type execute --verbose=4 "$app_path"
+            spctl --assess --type execute --verbose=4 "$dmg_app_path"
+            xcrun stapler validate "$app_path"
+            xcrun stapler validate "$dmg_app_path"
+            xcrun stapler validate "$dmg"
+          fi
 
       - name: Collect release assets
         shell: bash

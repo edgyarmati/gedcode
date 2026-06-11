@@ -2,7 +2,7 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import { Sink } from "effect";
-import * as Stdio from "effect/Stdio";
+import { Stdio } from "effect";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 

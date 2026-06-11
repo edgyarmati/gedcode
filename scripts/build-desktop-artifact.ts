@@ -258,6 +258,14 @@ const MockUpdateServerPortSchema = Schema.NumberFromString.check(
   Schema.isBetween({ minimum: 1, maximum: 65535 }),
 );
 const decodeMockUpdateServerPort = Schema.decodeUnknownEffect(MockUpdateServerPortSchema);
+const REQUIRED_MAC_SIGNING_ENV = [
+  "CSC_LINK",
+  "CSC_KEY_PASSWORD",
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_ID",
+  "APPLE_API_ISSUER",
+] as const;
+export const ELECTRON_BUILDER_PACKAGE = "electron-builder@26.8.1";
 
 const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
   Option.getOrElse(flag, () => envValue);
@@ -599,6 +607,12 @@ export function resolveDesktopProductName(version: string): string {
   return desktopPackageJson.productName ?? "GedCode";
 }
 
+export function resolveMissingMacSigningEnvironment(
+  env: NodeJS.ProcessEnv,
+): ReadonlyArray<(typeof REQUIRED_MAC_SIGNING_ENV)[number]> {
+  return REQUIRED_MAC_SIGNING_ENV.filter((key) => !env[key]?.trim());
+}
+
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -614,6 +628,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     directories: {
       buildResources: "apps/desktop/resources",
     },
+    forceCodeSigning: signed,
   };
   const releaseTrack = resolveDesktopReleaseTrack(version);
   const publishConfig =
@@ -630,11 +645,19 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "mac") {
-    buildConfig.mac = {
+    const macConfig: Record<string, unknown> = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
     };
+    if (signed) {
+      macConfig.hardenedRuntime = true;
+      macConfig.gatekeeperAssess = false;
+      macConfig.notarize = true;
+      macConfig.entitlements = "entitlements.mac.plist";
+      macConfig.entitlementsInherit = "entitlements.mac.plist";
+    }
+    buildConfig.mac = macConfig;
   }
 
   if (platform === "linux") {
@@ -702,6 +725,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     return yield* new BuildScriptError({
       message: `Unsupported platform '${options.platform}'.`,
     });
+  }
+
+  if (options.platform === "mac" && options.signed) {
+    const missingMacSigningEnv = resolveMissingMacSigningEnvironment(process.env);
+    if (missingMacSigningEnv.length > 0) {
+      return yield* new BuildScriptError({
+        message: `Signed macOS builds require ${missingMacSigningEnv.join(", ")}.`,
+      });
+    }
   }
 
   const electronVersion = desktopPackageJson.dependencies.electron;
@@ -897,7 +929,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ...commandOutputOptions(options.verbose),
       // Windows needs shell mode to resolve .cmd shims.
       shell: process.platform === "win32",
-    })`bun x --install=fallback electron-builder ${platformConfig.cliFlag} --${options.arch} --publish never`,
+    })`bun x --install=fallback ${ELECTRON_BUILDER_PACKAGE} ${platformConfig.cliFlag} --${options.arch} --publish never`,
   );
 
   const stageDistDir = path.join(stageAppDir, "dist");
