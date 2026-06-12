@@ -2,32 +2,27 @@
 
 ## Goal
 
-Backport upstream commits `e1ce9f85` and `75257d64` so Claude SDK system messages are handled as structured runtime events or clearer diagnostics instead of flooding the UI with generic runtime warnings.
+Complete the upstream `de58ec8e` Claude Fable 5 model update in this fork.
 
 ## Requirements
 
-- Add a first-class `tool.denied` provider runtime event to the shared contracts.
-- Handle Claude `system` message subtypes in the Claude adapter:
-  - ignore `thinking_tokens`;
-  - emit `tool.denied` for `permission_denied`;
-  - emit a clear `runtime.error` for `mirror_error`;
-  - use clearer unknown Claude SDK/system message wording with a short scalar preview.
-- Project `tool.denied` events into orchestration activity as an error-tone tool-denied row.
-- Preserve existing auth-warning message guidance while allowing runtime-warning activity summaries to reflect the adapter message.
-- Add focused tests for contract decoding, Claude adapter mapping, and ingestion projection.
+- Gate the built-in `claude-fable-5` model behind Claude Code `2.1.169` or newer.
+- Give Claude Fable 5 the same reasoning and context-window picker capabilities upstream expects.
+- Preserve `xhigh` effort for Claude Fable 5 when invoking Claude, while keeping older model compatibility mappings unchanged.
+- Show an upgrade message for Claude Code versions that are too old for Fable 5.
+- Add focused provider registry and adapter tests.
 - Add an unreleased `CHANGELOG.md` entry.
-- Mark `e1ce9f85` and `75257d64` as completed in `docs/upstream-decisions.md` and remove them from the Want To Implement representative list.
+- Mark `de58ec8e` as completed in `docs/upstream-decisions.md` and remove it from the Want To Implement provider/model representative list.
 
 ## Non-Goals
 
-- Do not backport the broad app-server protocol/provider startup sync from `ae7e88b0`.
-- Do not mix in provider/model catalog, UI polish, release tooling, or package-manager changes.
-- Do not change unrelated Claude SDK message handling beyond this system-message slice.
+- Do not backport Grok provider support or Cursor dynamic model probing in this slice.
+- Do not restructure the Claude effort option constants unless required for the Fable behavior.
+- Do not change package manager, test runner, or broader provider startup behavior.
 
 ## Acceptance Criteria
 
-- Claude `thinking_tokens` produces no runtime warning.
-- Claude `permission_denied` produces `tool.denied` with useful metadata.
-- Claude `mirror_error` produces a clearer runtime error.
-- Unknown Claude system messages use clearer wording and include a useful preview when available.
+- Claude Fable 5 is visible only on supported Claude Code versions.
+- Fable 5 exposes reasoning options including `xhigh`, `max`, `ultracode`, and `ultrathink`, plus 200k/1M context windows.
+- Fable 5 `xhigh` reaches the Claude SDK as `xhigh`.
 - Focused tests and required repository gates pass.

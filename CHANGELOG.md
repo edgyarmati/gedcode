@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Provider support: Gate Claude Fable 5 behind supported Claude Code versions and expose its reasoning/context options.
 - Fix: Handle Claude SDK system messages as structured tool-denied events or clearer diagnostics instead of generic runtime-warning floods.
 - Fix: Spawn the server build's Node subprocess directly instead of routing it through the Windows shell.
 - Fix: Spawn Windows PowerShell environment probes directly instead of routing them through the shell.

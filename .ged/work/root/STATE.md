@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Backport upstream Claude SDK system-message handling fixes `e1ce9f85` and `75257d64`.
-- **Status**: Completed and committed.
+- **Phase**: commit
+- **Active task**: Complete upstream Claude Fable 5 model update `de58ec8e`.
+- **Status**: Implementation, required checks, and main-thread verifier fallback are complete; committing verified changes.
 - **Blockers**: None.
-- **Next step**: Continue with the next upstream item from `docs/upstream-decisions.md`.
+- **Next step**: Commit the verified slice, then continue with the next upstream decision item.
