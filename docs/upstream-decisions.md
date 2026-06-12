@@ -106,11 +106,17 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: The provider model picker now uses a virtualized model list, keeps provider rails visible in locked mode with disabled incompatible providers, blocks incompatible model selections in started threads, and has focused browser-test coverage for locked-mode filtering and disabled model behavior.
 
+### Message metadata and work-log row polish
+
+- Upstream commit: `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`)
+- Completed in this fork: 2026-06-12
+- Notes: Chat timelines now use the upstream metadata and timestamp presentation, tool/work-log rows have clearer success/failure/neutral affordances, review-comment contexts render as structured cards, and focused timeline/session coverage was adapted for this fork's Vitest setup.
+
 ## Want To Implement
 
 ### Web UI, UX, and performance polish
 
-- Representative commits: `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`), `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish: focus ring, send/stop buttons, command menu, context meter, answer panel (#3018)`), `0b40ea62` (`Extract changed files card with compact aligned diff stats (#3023)`), `343061a0` (`Misc chrome polish: header badges, plan sidebar, diff panel, empty state (#3027)`)
+- Representative commits: `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish: focus ring, send/stop buttons, command menu, context meter, answer panel (#3018)`), `0b40ea62` (`Extract changed files card with compact aligned diff stats (#3023)`), `343061a0` (`Misc chrome polish: header badges, plan sidebar, diff panel, empty state (#3027)`)
 - Decision: Want to implement.
 - What it contains: Model picker virtualization, chat timeline metadata, markdown rendering improvements, composer controls, changed-file display, header/sidebar/diff polish, and visual consistency work.
 - Why it matters: These changes improve day-to-day usability and perceived quality. Some, like model picker virtualization, are also performance fixes when provider catalogs grow. Others make long sessions easier to scan by improving timestamps, tool rows, markdown rendering, and changed-file summaries.
