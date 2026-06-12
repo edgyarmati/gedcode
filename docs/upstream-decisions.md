@@ -88,6 +88,12 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Desktop endpoint discovery avoids unnecessary Tailscale status spawns, Tailscale MagicDNS reads can be cached/injected, denied filesystem browse directories return empty listings, and command palette browse prefetch no longer scans highlighted child directories before explicit navigation.
 
+### Source-control provider edge cases
+
+- Upstream commit: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`)
+- Completed in this fork: 2026-06-12
+- Notes: Source-control detection now handles self-hosted GitLab remotes through authenticated `glab` hosts, GitHub CLI JSON auth status with multiple accounts, host:port remote detection, and Azure DevOps pull request web URL fallbacks.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
@@ -97,14 +103,6 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - What it contains: Runtime projection fixes, reduced background git churn, protocol/schema synchronization with Codex app-server, provider startup behavior, safer process spawning, and provider event normalization.
 - Why it matters: This group aligns directly with the repository priorities of performance, reliability, and predictable behavior under reconnects, restarts, partial streams, and provider edge cases. Several commits address correctness rather than presentation, and they reduce the chance that the app silently displays the wrong turn state, over-polls git status, misinterprets provider events, or spawns system processes in fragile ways.
 - Implementation guidance: Do not merge this group wholesale. Treat it as a sequence of small backports with focused tests. Start with the fixes that are easiest to prove locally: projection correctness, git polling churn, provider event handling, and shell-spawn hardening.
-
-### Provider and model additions
-
-- Representative commits: `38ea6d48` (`feat(grok): add Grok CLI provider via ACP (#2809)`)
-- Decision: Want to implement.
-- What it contains: New provider support, dynamic model probing, provider catalog updates, provider-specific ACP extensions, and text-generation integration.
-- Why it matters: Provider/model availability is user-facing. Keeping model catalogs fresh avoids stale choices in the UI, and dynamic probing can reduce hardcoded catalog drift. Broader provider support can also make GedCode useful in more local workflows, provided each provider is integrated with the same reliability expectations as Codex and Claude.
-- Implementation guidance: Split small catalog/model updates from full provider additions. Existing-provider model updates can land as small tasks. New providers, such as Grok ACP, need separate implementation slices covering contracts, server runtime, settings UI, model selection, tests, and failure behavior.
 
 ### Web UI, UX, and performance polish
 
@@ -121,14 +119,6 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - What it contains: Package manager/build-system migration, CI restructuring, release packaging fixes, desktop artifact corrections, dependency closure handling, and workflow scripts.
 - Why it matters: Build and release reliability determine whether fixes actually reach users. Upstream likely fixed real packaging and CI problems here, especially around desktop artifacts and dependency closures. The package-manager/build-system migration is larger than a normal backport, but the release hardening value is high enough to keep this group on the implementation list.
 - Implementation guidance: Do not change package manager or test runner semantics inside unrelated tasks. Handle this as an explicit tooling/release project. Decide within that project whether GedCode follows upstream to pnpm/Vite+ or ports only the release/CI fixes that are compatible with the current Bun workflow. Until that task starts, repo instructions still require `bun fmt`, `bun lint`, and `bun typecheck`.
-
-### Desktop, SSH, and source-control fixes
-
-- Representative commits: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`)
-- Decision: Want to implement.
-- What it contains: Source-control provider edge cases, SSH diagnostics, desktop auth status preservation, macOS permission-loop behavior, and Linux desktop integration fixes.
-- Why it matters: This group is close to a reliability bucket, but it is more specific to local workstation and packaged desktop workflows. The source-control fixes address real-world repository hosting setups: self-hosted GitLab, multi-account GitHub auth, and Azure DevOps URL handling. Those are the kinds of edge cases that make an app feel unreliable when they fail, because the core workflow may be blocked even though the user's repository setup is valid. The SSH fixes improve diagnosis and state preservation, especially when remote or tunneled environments fail. The desktop fixes reduce platform-specific friction, such as repeated macOS permission prompts or missing Linux AppImage icons.
-- Implementation guidance: Backport one fix at a time and verify against the affected provider or platform path. These changes do not require adopting upstream mobile/cloud direction, but they may depend on upstream refactors around source-control services, SSH command handling, or desktop packaging.
 
 ## Deferred Indefinitely
 
@@ -163,6 +153,13 @@ No upstream groups are categorized here yet.
 - Scope: Documentation reshaping, marketing fixes, vendored reference repository syncs, and upstream release bookkeeping.
 - Decision: Not doing for now.
 - Rationale: Most of this is upstream-specific process, historical release metadata, or large vendored reference material. Copying it would add noise without improving GedCode behavior. Individual docs can still be copied later when they directly explain behavior this fork supports, but the group itself should not be tracked as implementation work.
+
+### Grok CLI provider
+
+- Representative commit: `38ea6d48` (`feat(grok): add Grok CLI provider via ACP (#2809)`)
+- Scope: Adds a new Grok CLI provider through ACP, including provider runtime integration, contracts, settings/model selection, text generation, tests, and failure behavior.
+- Decision: Not doing for now.
+- Rationale: The remaining provider/model value after Cursor dynamic probing and Claude Fable support is a full new provider integration, not a catalog freshness fix. It increases provider surface area and long-term maintenance burden, so it should stay out of scope unless Grok becomes an explicit product priority.
 
 ## Needs Decision
 

@@ -2,28 +2,28 @@
 
 ## Goal
 
-Backport the accepted macOS TCC prompt-loop prevention behavior from upstream commit `b76f161d`.
+Move the Grok provider out of the implementation backlog and backport the accepted source-control edge-case fixes from upstream commit `49c1b646`.
 
 ## Scope
 
-- Avoid spawning Tailscale status checks when desktop exposure does not need Tailscale endpoints.
-- Cache Tailscale MagicDNS status reads for a short TTL when endpoints do need it.
-- Allow Tailscale endpoint resolution to use an injected MagicDNS reader.
-- Treat permission-denied filesystem browse directories as empty listings.
-- Stop prefetching highlighted child browse directories from the command palette.
-- Add focused regression tests where local test coverage exists.
+- Categorize Grok provider support as "Not Doing For Now" in `docs/upstream-decisions.md`.
+- Port source-control improvements for:
+  - self-hosted GitLab remote detection and clone URL handling,
+  - GitHub CLI auth status with multiple accounts/hosts,
+  - Azure DevOps repository web URLs,
+  - provider registry/discovery behavior around detected remotes.
+- Add or adapt focused tests from upstream where they map to local code.
 - Update changelog and upstream decision bookkeeping.
 
 ## Non-Goals
 
-- Do not change Tailscale Serve configuration semantics.
-- Do not redesign command palette browse behavior beyond removing eager child prefetch.
-- Do not address source-control or Grok provider backlog items in this slice.
+- Do not add the Grok provider.
+- Do not change UI polish, package-manager, or release migration behavior.
+- Do not rewrite source-control architecture outside the upstream edge-case fixes.
 
 ## Acceptance Criteria
 
-- Desktop endpoint discovery does not invoke Tailscale status when local-only and Tailscale Serve is disabled.
-- Tailscale MagicDNS lookup can be injected and cached by the caller.
-- Denied browse directories return an empty entry list instead of retryable errors.
+- `docs/upstream-decisions.md` no longer lists Grok under "Want To Implement".
+- Source-control providers handle the upstream edge cases covered by focused tests.
+- Completed upstream source-control item is removed from the "Want To Implement" list.
 - Required repository checks pass.
-- Completed upstream item is removed from the desktop/SSH/source-control backlog entry.

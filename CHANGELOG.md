@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Improve source-control provider detection for self-hosted GitLab, multi-account GitHub auth, and Azure DevOps pull request web URLs.
 - Fix: Reduce repeated macOS permission prompts by avoiding eager protected-directory and Tailscale status probes.
 - Fix: Include standard Linux desktop icon sizes in AppImage packaging.
 - Fix: Preserve forwarded SSH HTTP status markers in desktop remote API errors.
