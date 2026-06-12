@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Spawn the server build's Node subprocess directly instead of routing it through the Windows shell.
 - Fix: Spawn Windows PowerShell environment probes directly instead of routing them through the shell.
 - Fix: Spawn trusted system executables directly instead of routing them through the Windows shell.
 - Fix: Keep running turns open until the provider session ends or is superseded, including live store updates, provider steer handling, and completion duration formatting.

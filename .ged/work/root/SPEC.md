@@ -2,23 +2,26 @@
 
 ## Goal
 
-Backport upstream commit `6ce6f678` (`[codex] Avoid shell for Windows environment probe (#2951)`) so desktop Windows PowerShell environment probes spawn directly instead of routing through a shell.
+Backport upstream commit `a74dfd4f` (`[codex] Avoid shell for Node executable spawns (#2952)`) so the server build helper launches the current Node executable directly instead of wrapping it in a platform shell.
 
 ## Requirements
 
-- Remove `shell: true` from the Windows profile environment probe in `apps/desktop/src/shell/DesktopShellEnvironment.ts`.
-- Keep PowerShell command selection, arguments, PATH merge behavior, POSIX shell probing, and launchctl fallback behavior unchanged.
-- Tighten the focused desktop shell test to verify Windows probes no longer request shell execution.
-- Add an unreleased `CHANGELOG.md` entry.
-- Mark `6ce6f678` as completed in `docs/upstream-decisions.md` and remove it from the remaining reliability representative commit list.
+- In `apps/server/scripts/cli.ts`, keep the build spawn based on `process.execPath`.
+- Remove Windows shell mode from that direct executable spawn.
+- Do not change `npm publish` or other named command spawns that may still rely on platform shims.
+- Audit and adjust only the closest local test analogues if they carry the same Node-direct spawn pattern.
+- Add an unreleased `CHANGELOG.md` entry for the operator-facing spawn reliability fix.
+- Mark `a74dfd4f` as completed in `docs/upstream-decisions.md` and remove it from the remaining Want To Implement list.
 
 ## Non-Goals
 
-- Do not backport `a74dfd4f` Node executable spawn hardening in this task.
-- Do not change terminal shell startup, POSIX login shell behavior, launchctl environment hydration, or package manager/test workflow.
-- Do not pull in broader provider/protocol sync from `ae7e88b0`.
+- Do not backport broader app-server protocol/provider startup sync from `ae7e88b0`.
+- Do not generalize this into a sweeping removal of shell usage from provider, package-manager, or release-command spawns.
+- Do not change runtime selection semantics beyond using the current executable directly where the command is already `process.execPath`.
 
 ## Acceptance Criteria
 
-- The Windows environment probe no longer passes `shell: true`.
-- Focused desktop shell tests and required repository gates pass.
+- The server build helper no longer sets `shell` for the `process.execPath` build spawn.
+- Relevant focused tests and build checks pass.
+- `bun fmt`, `bun lint`, and `bun typecheck` pass.
+- Changelog and upstream decision tracking reflect the completed backport.
