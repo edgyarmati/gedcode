@@ -167,6 +167,21 @@ jobs:
             exit $code
           }
 
+      - name: Install ImageMagick
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          if ! command -v magick >/dev/null 2>&1 && ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+          fi
+
+          if command -v magick >/dev/null 2>&1; then
+            magick -version
+          else
+            convert -version
+          fi
+
       - name: Prepare Azure Trusted Signing
         if: matrix.platform == 'win'
         shell: pwsh

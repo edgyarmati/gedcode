@@ -76,6 +76,12 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Desktop SSH remote API errors now preserve forwarded `[ssh_http:<status>]` markers from SSH loopback failures so the web runtime can distinguish auth failures such as 401 responses.
 
+### Linux AppImage icon packaging
+
+- Upstream commit: `f0116e44` (`fix(desktop): Include standard Linux AppImage icons for Niri/Noctalia (#2915)`)
+- Completed in this fork: 2026-06-12
+- Notes: Linux desktop artifact staging now generates standard icon sizes under an `icons` resource directory and release CI installs ImageMagick for Linux builds.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
@@ -112,7 +118,7 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 
 ### Desktop, SSH, and source-control fixes
 
-- Representative commits: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`), `b76f161d` (`fix(desktop): stop looping macOS TCC permission prompts (#2745)`), `f0116e44` (`fix(desktop): Include standard Linux AppImage icons for Niri/Noctalia (#2915)`)
+- Representative commits: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`), `b76f161d` (`fix(desktop): stop looping macOS TCC permission prompts (#2745)`)
 - Decision: Want to implement.
 - What it contains: Source-control provider edge cases, SSH diagnostics, desktop auth status preservation, macOS permission-loop behavior, and Linux desktop integration fixes.
 - Why it matters: This group is close to a reliability bucket, but it is more specific to local workstation and packaged desktop workflows. The source-control fixes address real-world repository hosting setups: self-hosted GitLab, multi-account GitHub auth, and Azure DevOps URL handling. Those are the kinds of edge cases that make an app feel unreliable when they fail, because the core workflow may be blocked even though the user's repository setup is valid. The SSH fixes improve diagnosis and state preservation, especially when remote or tunneled environments fail. The desktop fixes reduce platform-specific friction, such as repeated macOS permission prompts or missing Linux AppImage icons.

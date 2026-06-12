@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Include standard Linux desktop icon sizes in AppImage packaging.
 - Fix: Preserve forwarded SSH HTTP status markers in desktop remote API errors.
 - Fix: Surface redacted stdout diagnostics when SSH commands fail without stderr output.
 - Provider support: Discover Cursor models and per-model options through Cursor's `list_available_models` ACP extension instead of extra per-model probe sessions.
