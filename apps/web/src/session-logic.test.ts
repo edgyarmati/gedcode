@@ -17,12 +17,20 @@ import {
   deriveWorkLogEntries,
   findLatestProposedPlan,
   findSidebarProposedPlan,
+  formatDuration,
   hasActionableProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
 } from "./session-logic";
 
 let nextActivityId = 0;
+
+describe("formatDuration", () => {
+  it("rounds sub-ten-second durations without crossing into 10.0s", () => {
+    expect(formatDuration(9_949)).toBe("9.9s");
+    expect(formatDuration(9_950)).toBe("10s");
+  });
+});
 
 function makeActivity(overrides: {
   id?: string;

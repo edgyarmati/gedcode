@@ -38,6 +38,24 @@ function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error"
   return "completed" as const;
 }
 
+function settledTurnStateForSessionStatus(
+  status: OrchestrationSession["status"],
+): "completed" | "interrupted" | "error" | null {
+  switch (status) {
+    case "idle":
+    case "ready":
+      return "completed";
+    case "error":
+      return "error";
+    case "interrupted":
+    case "stopped":
+      return "interrupted";
+    case "starting":
+    case "running":
+      return null;
+  }
+}
+
 function updateThread(
   threads: ReadonlyArray<OrchestrationThread>,
   threadId: ThreadId,
@@ -445,6 +463,7 @@ export function projectEvent(
           event.type,
           "session",
         );
+        const settledTurnState = settledTurnStateForSessionStatus(session.status);
 
         return {
           ...nextBase,
@@ -469,7 +488,15 @@ export function projectEvent(
                         ? thread.latestTurn.assistantMessageId
                         : null,
                   }
-                : thread.latestTurn,
+                : thread.latestTurn !== null &&
+                    thread.latestTurn.state === "running" &&
+                    settledTurnState !== null
+                  ? {
+                      ...thread.latestTurn,
+                      state: settledTurnState,
+                      completedAt: session.updatedAt,
+                    }
+                  : thread.latestTurn,
             updatedAt: event.occurredAt,
           }),
         };
@@ -551,25 +578,29 @@ export function projectEvent(
         ]
           .toSorted((left, right) => left.checkpointTurnCount - right.checkpointTurnCount)
           .slice(-MAX_THREAD_CHECKPOINTS);
+        const turnStillRunning =
+          thread.session?.status === "running" && thread.session.activeTurnId === payload.turnId;
 
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             checkpoints,
-            latestTurn: {
-              turnId: payload.turnId,
-              state: checkpointStatusToLatestTurnState(payload.status),
-              requestedAt:
-                thread.latestTurn?.turnId === payload.turnId
-                  ? thread.latestTurn.requestedAt
-                  : payload.completedAt,
-              startedAt:
-                thread.latestTurn?.turnId === payload.turnId
-                  ? (thread.latestTurn.startedAt ?? payload.completedAt)
-                  : payload.completedAt,
-              completedAt: payload.completedAt,
-              assistantMessageId: payload.assistantMessageId,
-            },
+            latestTurn: turnStillRunning
+              ? thread.latestTurn
+              : {
+                  turnId: payload.turnId,
+                  state: checkpointStatusToLatestTurnState(payload.status),
+                  requestedAt:
+                    thread.latestTurn?.turnId === payload.turnId
+                      ? thread.latestTurn.requestedAt
+                      : payload.completedAt,
+                  startedAt:
+                    thread.latestTurn?.turnId === payload.turnId
+                      ? (thread.latestTurn.startedAt ?? payload.completedAt)
+                      : payload.completedAt,
+                  completedAt: payload.completedAt,
+                  assistantMessageId: payload.assistantMessageId,
+                },
             updatedAt: event.occurredAt,
           }),
         };

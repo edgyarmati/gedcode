@@ -120,6 +120,7 @@ interface ClaudeResumeState {
 interface ClaudeTurnState {
   readonly turnId: TurnId;
   readonly startedAt: string;
+  readonly synthetic?: boolean;
   readonly items: Array<unknown>;
   readonly assistantTextBlocks: Map<number, AssistantTextBlockState>;
   readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
@@ -1990,6 +1991,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       context.turnState = {
         turnId,
         startedAt,
+        synthetic: true,
         items: [],
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
@@ -3118,9 +3120,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ? input.modelSelection
         : undefined;
 
-    if (context.turnState) {
-      // Auto-close a stale synthetic turn (from background agent responses
-      // between user prompts) to prevent blocking the user's next turn.
+    const steeringTurnState =
+      context.turnState && context.turnState.synthetic !== true ? context.turnState : null;
+    if (context.turnState && steeringTurnState === null) {
       yield* completeTurn(context, "completed");
     }
 
@@ -3155,37 +3157,39 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
-    const turnId = TurnId.make(yield* randomUUIDv4);
-    const turnState: ClaudeTurnState = {
-      turnId,
-      startedAt: yield* nowIso,
-      items: [],
-      assistantTextBlocks: new Map(),
-      assistantTextBlockOrder: [],
-      capturedProposedPlanKeys: new Set(),
-      nextSyntheticAssistantBlockIndex: -1,
-    };
+    const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
+    if (steeringTurnState === null) {
+      const turnState: ClaudeTurnState = {
+        turnId,
+        startedAt: yield* nowIso,
+        items: [],
+        assistantTextBlocks: new Map(),
+        assistantTextBlockOrder: [],
+        capturedProposedPlanKeys: new Set(),
+        nextSyntheticAssistantBlockIndex: -1,
+      };
 
-    const updatedAt = yield* nowIso;
-    context.turnState = turnState;
-    context.session = {
-      ...context.session,
-      status: "running",
-      activeTurnId: turnId,
-      updatedAt,
-    };
+      const updatedAt = yield* nowIso;
+      context.turnState = turnState;
+      context.session = {
+        ...context.session,
+        status: "running",
+        activeTurnId: turnId,
+        updatedAt,
+      };
 
-    const turnStartedStamp = yield* makeEventStamp();
-    yield* offerRuntimeEvent({
-      type: "turn.started",
-      eventId: turnStartedStamp.eventId,
-      provider: PROVIDER,
-      createdAt: turnStartedStamp.createdAt,
-      threadId: context.session.threadId,
-      turnId,
-      payload: modelSelection?.model ? { model: modelSelection.model } : {},
-      providerRefs: {},
-    });
+      const turnStartedStamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "turn.started",
+        eventId: turnStartedStamp.eventId,
+        provider: PROVIDER,
+        createdAt: turnStartedStamp.createdAt,
+        threadId: context.session.threadId,
+        turnId,
+        payload: modelSelection?.model ? { model: modelSelection.model } : {},
+        providerRefs: {},
+      });
+    }
 
     const message = yield* buildUserMessageEffect(input, {
       fileSystem,

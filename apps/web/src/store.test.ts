@@ -777,8 +777,35 @@ describe("incremental orchestration updates", () => {
     );
 
     expect(threadsOf(next)[0]?.session?.status).toBe("running");
-    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("completed");
+    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("running");
+    expect(threadsOf(next)[0]?.latestTurn?.completedAt).toBeNull();
     expect(threadsOf(next)[0]?.messages).toHaveLength(1);
+
+    const settled = applyOrchestrationEvents(
+      next,
+      [
+        makeEvent(
+          "thread.session-set",
+          {
+            threadId: thread.id,
+            session: {
+              threadId: thread.id,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-02-27T00:00:04.000Z",
+            },
+          },
+          { sequence: 4 },
+        ),
+      ],
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(settled)[0]?.latestTurn?.state).toBe("completed");
+    expect(threadsOf(settled)[0]?.latestTurn?.completedAt).toBe("2026-02-27T00:00:04.000Z");
   });
 
   it("does not regress latestTurn when an older turn diff completes late", () => {

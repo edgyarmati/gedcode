@@ -1228,6 +1228,15 @@ const make = Effect.gen(function* () {
       const conflictsWithActiveTurn =
         activeTurnId !== null && eventTurnId !== undefined && !sameId(activeTurnId, eventTurnId);
       const missingTurnForActiveTurn = activeTurnId !== null && eventTurnId === undefined;
+      const conflictingTurnStartIsPendingTurnStart =
+        event.type === "turn.started" && conflictsWithActiveTurn
+          ? sameId(yield* getExpectedProviderTurnIdForThread(thread.id), eventTurnId) &&
+            Option.isSome(
+              yield* projectionTurnRepository.getPendingTurnStartByThreadId({
+                threadId: thread.id,
+              }),
+            )
+          : false;
 
       const shouldApplyThreadLifecycle = (() => {
         if (!STRICT_PROVIDER_LIFECYCLE_GUARD) {
@@ -1240,7 +1249,7 @@ const make = Effect.gen(function* () {
           case "thread.started":
             return true;
           case "turn.started":
-            return !conflictsWithActiveTurn;
+            return !conflictsWithActiveTurn || conflictingTurnStartIsPendingTurnStart;
           case "turn.completed":
             if (conflictsWithActiveTurn || missingTurnForActiveTurn) {
               return false;

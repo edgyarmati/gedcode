@@ -1151,7 +1151,8 @@ export function makeOpenCodeAdapter(
 
     const sendTurn: OpenCodeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
       const context = ensureSessionContext(sessions, input.threadId);
-      const turnId = TurnId.make(`opencode-turn-${yield* randomUUIDv4}`);
+      const steeringTurnId = context.activeTurnId;
+      const turnId = steeringTurnId ?? TurnId.make(`opencode-turn-${yield* randomUUIDv4}`);
       const modelSelection =
         input.modelSelection ??
         (context.session.model
@@ -1206,14 +1207,16 @@ export function makeOpenCodeAdapter(
         { clearLastError: true },
       );
 
-      yield* emit({
-        ...(yield* buildEventBase({ threadId: input.threadId, turnId })),
-        type: "turn.started",
-        payload: {
-          model: modelSelection?.model ?? context.session.model,
-          ...(variant ? { effort: variant } : {}),
-        },
-      });
+      if (steeringTurnId === undefined) {
+        yield* emit({
+          ...(yield* buildEventBase({ threadId: input.threadId, turnId })),
+          type: "turn.started",
+          payload: {
+            model: modelSelection?.model ?? context.session.model,
+            ...(variant ? { effort: variant } : {}),
+          },
+        });
+      }
 
       yield* runOpenCodeSdk("session.promptAsync", () =>
         context.client.session.promptAsync({
@@ -1225,35 +1228,34 @@ export function makeOpenCodeAdapter(
         }),
       ).pipe(
         Effect.mapError(toRequestError),
-        // On failure: clear active-turn state, flip the session back to ready
-        // with lastError set, emit turn.aborted, then let the typed error
-        // propagate. We don't need to rebuild the error here — `toRequestError`
-        // already produced the right shape.
+        // A failed steer leaves the still-running original turn untouched.
         Effect.tapError((requestError) =>
-          Effect.gen(function* () {
-            context.activeTurnId = undefined;
-            context.activeAgent = undefined;
-            context.activeVariant = undefined;
-            yield* updateProviderSession(
-              context,
-              {
-                status: "ready",
-                model: modelSelection?.model ?? context.session.model,
-                lastError: requestError.detail,
-              },
-              { clearActiveTurnId: true },
-            );
-            yield* emit({
-              ...(yield* buildEventBase({
-                threadId: input.threadId,
-                turnId,
-              })),
-              type: "turn.aborted",
-              payload: {
-                reason: requestError.detail,
-              },
-            });
-          }),
+          steeringTurnId !== undefined
+            ? Effect.void
+            : Effect.gen(function* () {
+                context.activeTurnId = undefined;
+                context.activeAgent = undefined;
+                context.activeVariant = undefined;
+                yield* updateProviderSession(
+                  context,
+                  {
+                    status: "ready",
+                    model: modelSelection?.model ?? context.session.model,
+                    lastError: requestError.detail,
+                  },
+                  { clearActiveTurnId: true },
+                );
+                yield* emit({
+                  ...(yield* buildEventBase({
+                    threadId: input.threadId,
+                    turnId,
+                  })),
+                  type: "turn.aborted",
+                  payload: {
+                    reason: requestError.detail,
+                  },
+                });
+              }),
         ),
       );
 

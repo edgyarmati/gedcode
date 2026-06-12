@@ -1260,6 +1260,85 @@ describe("ProviderRuntimeIngestion", () => {
     expect(targetThreadAfterRejectedStart?.session?.activeTurnId).toBe(activeTurnId);
   });
 
+  it("accepts a conflicting turn.started for a pending turn start when the provider expects that turn", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const oldTurnId = asTurnId("turn-steered-over");
+    const newTurnId = asTurnId("turn-from-steer");
+    const createdAt = "2026-01-01T00:00:00.000Z";
+
+    harness.setProviderSession({
+      provider: ProviderDriverKind.make("codex"),
+      status: "running",
+      runtimeMode: "approval-required",
+      threadId,
+      createdAt,
+      updatedAt: createdAt,
+      activeTurnId: oldTurnId,
+    });
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-steered-over"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt,
+      threadId,
+      turnId: oldTurnId,
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === oldTurnId,
+      2_000,
+      threadId,
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-steer"),
+        threadId,
+        message: {
+          messageId: asMessageId("msg-steer"),
+          role: "user",
+          text: "actually, do 15 instead",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      }),
+    );
+
+    harness.setProviderSession({
+      provider: ProviderDriverKind.make("codex"),
+      status: "running",
+      runtimeMode: "approval-required",
+      threadId,
+      createdAt,
+      updatedAt: createdAt,
+      activeTurnId: newTurnId,
+    });
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-from-steer"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt,
+      threadId,
+      turnId: newTurnId,
+    });
+
+    const threadAfterSteer = await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === newTurnId,
+      2_000,
+      threadId,
+    );
+    expect(threadAfterSteer.session?.activeTurnId).toBe(newTurnId);
+    expect(threadAfterSteer.latestTurn?.turnId).toBe(newTurnId);
+    expect(threadAfterSteer.latestTurn?.state).toBe("running");
+  });
+
   it("does not mark the source proposed plan implemented for an unrelated turn.started when no thread active turn is tracked", async () => {
     const harness = await createHarness();
     const sourceThreadId = asThreadId("thread-plan");
