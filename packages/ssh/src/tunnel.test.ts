@@ -12,6 +12,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { SshPasswordPrompt } from "./auth.ts";
+import { SSH_COMMAND } from "./command.ts";
 import {
   buildRemoteLaunchScript,
   buildRemotePairingScript,
@@ -336,13 +337,21 @@ describe("ssh tunnel scripts", () => {
   });
 
   it.effect("closes the tunnel scope and starts fresh after disconnect", () => {
-    const spawnedCommands: Array<ReadonlyArray<string>> = [];
+    const spawnedCommands: Array<{
+      readonly command: string;
+      readonly args: ReadonlyArray<string>;
+      readonly shell: unknown;
+    }> = [];
     let tunnelKillCount = 0;
     let stopCommandCount = 0;
     const spawner = ChildProcessSpawner.make((command) =>
       Effect.sync(() => {
         const args = commandArgs(command);
-        spawnedCommands.push(args);
+        spawnedCommands.push({
+          command: command._tag === "StandardCommand" ? command.command : "",
+          args,
+          shell: command._tag === "StandardCommand" ? command.options.shell : undefined,
+        });
         if (args.includes("-N")) {
           return makeRunningProcess(() => {
             tunnelKillCount += 1;
@@ -385,7 +394,15 @@ describe("ssh tunnel scripts", () => {
 
       yield* manager.ensureEnvironment(target);
 
-      assert.equal(spawnedCommands.filter((args) => args.includes("-N")).length, 2);
+      const tunnelCommands = spawnedCommands.filter((entry) => entry.args.includes("-N"));
+      assert.equal(tunnelCommands.length, 2);
+      assert.deepEqual(
+        tunnelCommands.map((entry) => ({ command: entry.command, shell: entry.shell })),
+        [
+          { command: SSH_COMMAND, shell: undefined },
+          { command: SSH_COMMAND, shell: undefined },
+        ],
+      );
       assert.equal(tunnelKillCount, 1);
     }).pipe(Effect.provide(layer), Effect.scoped);
   });

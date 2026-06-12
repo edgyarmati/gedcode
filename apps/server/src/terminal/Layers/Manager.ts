@@ -380,7 +380,6 @@ function checkWindowsSubprocessActivity(
       timeout: "1500 millis",
       maxOutputBytes: 32_768,
       outputMode: "truncate",
-      shell: process.platform === "win32",
       timeoutBehavior: "timedOutResult",
     });
   }).pipe(

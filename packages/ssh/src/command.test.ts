@@ -7,7 +7,7 @@ import * as Result from "effect/Result";
 import { Layer, Sink } from "effect";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   baseSshArgs,
@@ -15,6 +15,7 @@ import {
   parseSshResolveOutput,
   resolveRemoteT3CliPackageSpec,
   runSshCommand,
+  SSH_COMMAND,
 } from "./command.ts";
 
 const makeNeverFinishingProcess = () => {
@@ -41,6 +42,21 @@ const makeNeverFinishingProcess = () => {
     unref: Effect.succeed(Effect.void),
   });
 };
+
+const makeSuccessfulProcess = (stdout: string) =>
+  ChildProcessSpawner.makeHandle({
+    pid: ChildProcessSpawner.ProcessId(123),
+    stdout: Stream.make(new TextEncoder().encode(stdout)),
+    stderr: Stream.empty,
+    all: Stream.empty,
+    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+    isRunning: Effect.succeed(false),
+    kill: () => Effect.void,
+    stdin: Sink.drain,
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
+    unref: Effect.succeed(Effect.void),
+  });
 
 describe("ssh command", () => {
   it.effect("parses resolved ssh config output into a target", () =>
@@ -122,6 +138,37 @@ describe("ssh command", () => {
       );
     }),
   );
+
+  it.effect("spawns the platform ssh executable directly", () => {
+    let spawnedCommand: ChildProcess.StandardCommand | null = null;
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        if (command._tag !== "StandardCommand") {
+          throw new Error(`Expected StandardCommand, received ${command._tag}.`);
+        }
+        spawnedCommand = command;
+        return makeSuccessfulProcess("ok\n");
+      }),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.merge(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* runSshCommand(
+        {
+          alias: "devbox",
+          hostname: "devbox.example.com",
+          username: "julius",
+          port: 2222,
+        },
+        { remoteCommandArgs: ["echo", "ok"] },
+      );
+
+      assert.equal(result.stdout, "ok\n");
+      assert.equal(spawnedCommand?.command, SSH_COMMAND);
+      assert.equal(spawnedCommand?.options.shell, undefined);
+    }).pipe(Effect.provide(processLayer));
+  });
 
   it.effect("fails commands that never finish", () => {
     const spawner = ChildProcessSpawner.make(() => Effect.succeed(makeNeverFinishingProcess()));
