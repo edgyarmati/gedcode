@@ -58,6 +58,12 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Claude Fable 5 is gated behind Claude Code `2.1.169` or newer, exposes reasoning and 200k/1M context options, and preserves `xhigh` effort for Claude SDK sessions.
 
+### Cursor dynamic model probing
+
+- Upstream commit: `d78e02cd` (`Probe Cursor models via list_available_models (#2428)`)
+- Completed in this fork: 2026-06-12
+- Notes: Cursor model discovery now uses the `cursor/list_available_models` ACP extension, decodes per-model config options into model capabilities, and avoids spawning additional ACP sessions for background per-model capability enrichment.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
@@ -70,7 +76,7 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 
 ### Provider and model additions
 
-- Representative commits: `38ea6d48` (`feat(grok): add Grok CLI provider via ACP (#2809)`), `d78e02cd` (`Probe Cursor models via list_available_models (#2428)`)
+- Representative commits: `38ea6d48` (`feat(grok): add Grok CLI provider via ACP (#2809)`)
 - Decision: Want to implement.
 - What it contains: New provider support, dynamic model probing, provider catalog updates, provider-specific ACP extensions, and text-generation integration.
 - Why it matters: Provider/model availability is user-facing. Keeping model catalogs fresh avoids stale choices in the UI, and dynamic probing can reduce hardcoded catalog drift. Broader provider support can also make GedCode useful in more local workflows, provided each provider is integrated with the same reliability expectations as Codex and Claude.

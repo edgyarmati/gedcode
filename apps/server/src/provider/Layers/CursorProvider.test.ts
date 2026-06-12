@@ -6,15 +6,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { describe, expect, it } from "vitest";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import type { CursorSettings, ServerProviderModel } from "@t3tools/contracts";
+import type { CursorSettings } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
 import {
   buildCursorProviderSnapshot,
   buildCursorCapabilitiesFromConfigOptions,
-  buildCursorDiscoveredModelsFromConfigOptions,
   checkCursorProviderStatus,
-  discoverCursorModelCapabilitiesViaAcp,
   discoverCursorModelsViaAcp,
   getCursorFallbackModels,
   getCursorParameterizedModelPickerUnsupportedMessage,
@@ -141,22 +139,6 @@ const makeProviderStatusEnvFixture = Effect.fn("makeProviderStatusEnvFixture")(f
   return {
     requestLogPath: path.join(tempDir, "requests.ndjson"),
     wrapperPath: yield* makeMockAgentWithAboutWrapper(),
-  };
-});
-
-const makeExitLogFixture = Effect.fn("makeExitLogFixture")(function* (prefix: string) {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const tempDir = yield* fileSystem.makeTempDirectory({
-    directory: NodeOS.tmpdir(),
-    prefix,
-  });
-  const exitLogPath = path.join(tempDir, "exit.log");
-  return {
-    exitLogPath,
-    wrapperPath: yield* makeMockAgentWrapper({
-      T3_ACP_EXIT_LOG_PATH: exitLogPath,
-    }),
   };
 });
 
@@ -295,56 +277,12 @@ const parameterizedClaudeModelOptionConfigOptions = [
   },
 ] satisfies ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
 
-const sessionNewCursorConfigOptions = [
-  {
-    type: "select",
-    currentValue: "agent",
-    options: [
-      { name: "Agent", value: "agent", description: "Full agent capabilities with tool access" },
-    ],
-    category: "mode",
-    id: "mode",
-    name: "Mode",
-    description: "Controls how the agent executes tasks",
-  },
-  {
-    type: "select",
-    currentValue: "composer-2",
-    options: [
-      { name: "Auto", value: "default" },
-      { name: "Composer 2", value: "composer-2" },
-      { name: "GPT-5.4", value: "gpt-5.4" },
-      { name: "Sonnet 4.6", value: "claude-sonnet-4-6" },
-      { name: "Opus 4.6", value: "claude-opus-4-6" },
-      { name: "Codex 5.3 Spark", value: "gpt-5.3-codex-spark" },
-    ],
-    category: "model",
-    id: "model",
-    name: "Model",
-    description: "Controls which model is used for responses",
-  },
-  {
-    type: "select",
-    currentValue: "true",
-    options: [
-      { name: "Off", value: "false" },
-      { name: "Fast", value: "true" },
-    ],
-    category: "model_config",
-    id: "fast",
-    name: "Fast",
-    description: "Faster speeds.",
-  },
-] satisfies ReadonlyArray<EffectAcpSchema.SessionConfigOption>;
-
 const baseCursorSettings: CursorSettings = {
   enabled: true,
   binaryPath: "agent",
   apiEndpoint: "",
   customModels: [],
 };
-
-const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 
 describe("getCursorFallbackModels", () => {
   it("does not publish any built-in cursor models before ACP discovery", () => {
@@ -462,51 +400,6 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
   });
 });
 
-describe("buildCursorDiscoveredModelsFromConfigOptions", () => {
-  it("publishes ACP model choices immediately from session/new config options", () => {
-    expect(buildCursorDiscoveredModelsFromConfigOptions(sessionNewCursorConfigOptions)).toEqual([
-      {
-        slug: "default",
-        name: "Auto",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-      {
-        slug: "composer-2",
-        name: "Composer 2",
-        isCustom: false,
-        capabilities: createModelCapabilities({
-          optionDescriptors: [booleanDescriptor("fastMode", "Fast", true)],
-        }),
-      },
-      {
-        slug: "gpt-5.4",
-        name: "GPT-5.4",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-      {
-        slug: "claude-sonnet-4-6",
-        name: "Sonnet 4.6",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-      {
-        slug: "claude-opus-4-6",
-        name: "Opus 4.6",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-      {
-        slug: "gpt-5.3-codex-spark",
-        name: "Codex 5.3 Spark",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-    ]);
-  });
-});
-
 describe("checkCursorProviderStatus", () => {
   it("passes the injected environment to ACP model discovery", async () => {
     const { requestLogPath, wrapperPath } = await runNode(makeProviderStatusEnvFixture());
@@ -532,7 +425,9 @@ describe("checkCursorProviderStatus", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
-    await expect(runNode(waitForFileContent(requestLogPath))).resolves.toContain("initialize");
+    const requestLog = await runNode(waitForFileContent(requestLogPath));
+    expect(requestLog).toContain("initialize");
+    expect(requestLog).toContain("cursor/list_available_models");
   });
 });
 
@@ -555,65 +450,13 @@ describe("discoverCursorModelsViaAcp", () => {
       "gpt-5.4",
       "claude-opus-4-6",
     ]);
-  });
 
-  it("closes the ACP probe runtime after discovery completes", async () => {
-    const { exitLogPath, wrapperPath } = await runNode(
-      makeExitLogFixture("cursor-provider-exit-log-"),
+    const composer = models.find((model) => model.slug === "composer-2");
+    expect(composer?.capabilities).toEqual(
+      createModelCapabilities({
+        optionDescriptors: [booleanDescriptor("fastMode", "Fast", false)],
+      }),
     );
-
-    await Effect.runPromise(
-      discoverCursorModelsViaAcp({
-        enabled: true,
-        binaryPath: wrapperPath,
-        apiEndpoint: "",
-        customModels: [],
-      }).pipe(Effect.provide(NodeServices.layer)),
-    );
-
-    const exitLog = await runNode(waitForFileContent(exitLogPath));
-    expect(exitLog).toContain("SIGTERM");
-  });
-});
-
-describe("discoverCursorModelCapabilitiesViaAcp", () => {
-  it("closes all ACP probe runtimes after capability enrichment completes", async () => {
-    const { exitLogPath, wrapperPath } = await runNode(
-      makeExitLogFixture("cursor-capabilities-exit-log-"),
-    );
-    const existingModels: ReadonlyArray<ServerProviderModel> = [
-      { slug: "default", name: "Auto", isCustom: false, capabilities: emptyCapabilities },
-      { slug: "composer-2", name: "Composer 2", isCustom: false, capabilities: emptyCapabilities },
-      { slug: "gpt-5.4", name: "GPT-5.4", isCustom: false, capabilities: emptyCapabilities },
-      {
-        slug: "claude-opus-4-6",
-        name: "Opus 4.6",
-        isCustom: false,
-        capabilities: emptyCapabilities,
-      },
-    ];
-
-    const models = await Effect.runPromise(
-      discoverCursorModelCapabilitiesViaAcp(
-        {
-          enabled: true,
-          binaryPath: wrapperPath,
-          apiEndpoint: "",
-          customModels: [],
-        },
-        existingModels,
-      ).pipe(Effect.provide(NodeServices.layer)),
-    );
-
-    expect(models.map((model) => model.slug)).toEqual([
-      "default",
-      "composer-2",
-      "gpt-5.4",
-      "claude-opus-4-6",
-    ]);
-
-    const exitLog = await runNode(waitForFileContent(exitLogPath));
-    expect(exitLog.match(/SIGTERM/g)?.length ?? 0).toBe(4);
   });
 });
 

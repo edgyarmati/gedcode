@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: commit
-- **Active task**: Complete upstream Claude Fable 5 model update `de58ec8e`.
+- **Active task**: Complete upstream Cursor dynamic model probing update `d78e02cd`.
 - **Status**: Implementation, required checks, and main-thread verifier fallback are complete; committing verified changes.
-- **Blockers**: None.
+- **Blockers**: Native Ged subagents are unavailable because the workspace is out of credits, so Ged role evidence is being produced in the main thread.
 - **Next step**: Commit the verified slice, then continue with the next upstream decision item.
