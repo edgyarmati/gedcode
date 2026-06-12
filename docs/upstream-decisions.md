@@ -64,6 +64,12 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Cursor model discovery now uses the `cursor/list_available_models` ACP extension, decodes per-model config options into model capabilities, and avoids spawning additional ACP sessions for background per-model capability enrichment.
 
+### SSH redacted stdout diagnostics
+
+- Upstream commit: `f5849f7d` (`fix(ssh): Surface redacted stdout for failed commands (#2920)`)
+- Completed in this fork: 2026-06-12
+- Notes: Non-zero SSH command failures now include redacted stdout in logs and `SshCommandError` details when stderr is empty, while preserving stderr as the preferred user-facing failure message.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
@@ -100,7 +106,7 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 
 ### Desktop, SSH, and source-control fixes
 
-- Representative commits: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`), `4956415f` (`fix(desktop): Preserve SSH HTTP auth status (#2923)`), `f5849f7d` (`fix(ssh): Surface redacted stdout for failed commands (#2920)`), `b76f161d` (`fix(desktop): stop looping macOS TCC permission prompts (#2745)`), `f0116e44` (`fix(desktop): Include standard Linux AppImage icons for Niri/Noctalia (#2915)`)
+- Representative commits: `49c1b646` (`fix(source-control): handle self-hosted GitLab, multi-account GitHub auth & azure devops web url (#2480)`), `4956415f` (`fix(desktop): Preserve SSH HTTP auth status (#2923)`), `b76f161d` (`fix(desktop): stop looping macOS TCC permission prompts (#2745)`), `f0116e44` (`fix(desktop): Include standard Linux AppImage icons for Niri/Noctalia (#2915)`)
 - Decision: Want to implement.
 - What it contains: Source-control provider edge cases, SSH diagnostics, desktop auth status preservation, macOS permission-loop behavior, and Linux desktop integration fixes.
 - Why it matters: This group is close to a reliability bucket, but it is more specific to local workstation and packaged desktop workflows. The source-control fixes address real-world repository hosting setups: self-hosted GitLab, multi-account GitHub auth, and Azure DevOps URL handling. Those are the kinds of edge cases that make an app feel unreliable when they fail, because the core workflow may be blocked even though the user's repository setup is valid. The SSH fixes improve diagnosis and state preservation, especially when remote or tunneled environments fail. The desktop fixes reduce platform-specific friction, such as repeated macOS permission prompts or missing Linux AppImage icons.

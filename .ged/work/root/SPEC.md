@@ -2,26 +2,26 @@
 
 ## Goal
 
-Backport the accepted Cursor model discovery behavior from upstream commit `d78e02cd`.
+Backport the accepted SSH command diagnostics behavior from upstream commit `f5849f7d`.
 
 ## Scope
 
-- Decode Cursor's `cursor/list_available_models` ACP extension response.
-- Discover Cursor model slugs, labels, and per-model config options from that extension method.
-- Remove the older per-model capability probe loop from provider enrichment.
-- Keep custom Cursor models merged through local settings.
-- Update tests, mock ACP agent behavior, changelog, and upstream decision bookkeeping.
+- Include redacted stdout on `SshCommandError` for non-zero SSH command exits.
+- Prefer stderr for user-facing error messages, but fall back to redacted stdout when stderr is empty.
+- Redact token-like JSON fields in surfaced stdout and cap diagnostic output length.
+- Add focused SSH command tests for stdout fallback and redaction.
+- Update changelog and upstream decision bookkeeping.
 
 ## Non-Goals
 
-- Do not add the Grok provider.
-- Do not change package manager, test runner, or provider UI behavior beyond the model catalog data returned by the server.
-- Do not remove Cursor custom model support.
+- Do not change SSH tunnel JSON parsing or pairing behavior outside shared command error reporting.
+- Do not change auth prompting or SSH command arguments.
+- Do not address unrelated desktop/source-control backlog items in this slice.
 
 ## Acceptance Criteria
 
-- Cursor provider checks use `cursor/list_available_models` for discovered model catalog and capabilities.
-- The managed provider background enrichment no longer spawns additional ACP sessions for model capabilities.
-- Focused Cursor provider and ACP extension tests pass.
+- Failed SSH commands with empty stderr expose useful, redacted stdout diagnostics.
+- Existing timeout, spawn, and success behavior remains unchanged.
+- Focused SSH tests pass.
 - Required repository checks pass.
-- Completed upstream item is removed from `docs/upstream-decisions.md`.
+- Completed upstream item is removed from the desktop/SSH/source-control backlog entry.

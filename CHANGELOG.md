@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Surface redacted stdout diagnostics when SSH commands fail without stderr output.
 - Provider support: Discover Cursor models and per-model options through Cursor's `list_available_models` ACP extension instead of extra per-model probe sessions.
 - Provider support: Gate Claude Fable 5 behind supported Claude Code versions and expose its reasoning/context options.
 - Fix: Handle Claude SDK system messages as structured tool-denied events or clearer diagnostics instead of generic runtime-warning floods.
