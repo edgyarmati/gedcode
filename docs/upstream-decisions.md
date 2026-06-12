@@ -32,13 +32,19 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 
 - Upstream commit: `300f7fd1` (`[codex] Avoid shell for system executables (#2950)`)
 - Completed in this fork: 2026-06-12
-- Notes: System executable probes now spawn directly instead of opting into the Windows shell, and SSH/Tailscale spawns use platform-specific executable names (`ssh.exe`/`tailscale.exe` on Windows). Adjacent Windows environment probe and Node spawn hardening commits remain in the implementation list.
+- Notes: System executable probes now spawn directly instead of opting into the Windows shell, and SSH/Tailscale spawns use platform-specific executable names (`ssh.exe`/`tailscale.exe` on Windows). Adjacent Node spawn hardening remains in the implementation list.
+
+### Avoid shell for Windows environment probe
+
+- Upstream commit: `6ce6f678` (`[codex] Avoid shell for Windows environment probe (#2951)`)
+- Completed in this fork: 2026-06-12
+- Notes: Desktop Windows PowerShell environment probes now spawn directly without `shell: true`, while preserving profile/no-profile PATH hydration behavior.
 
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
 
-- Representative commits: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`), `6ce6f678` (`[codex] Avoid shell for Windows environment probe (#2951)`), `a74dfd4f` (`[codex] Avoid shell for Node executable spawns (#2952)`), `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
+- Representative commits: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`), `a74dfd4f` (`[codex] Avoid shell for Node executable spawns (#2952)`), `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
 - Decision: Want to implement.
 - What it contains: Runtime projection fixes, reduced background git churn, protocol/schema synchronization with Codex app-server, provider startup behavior, safer process spawning, and provider event normalization.
 - Why it matters: This group aligns directly with the repository priorities of performance, reliability, and predictable behavior under reconnects, restarts, partial streams, and provider edge cases. Several commits address correctness rather than presentation, and they reduce the chance that the app silently displays the wrong turn state, over-polls git status, misinterprets provider events, or spawns system processes in fragile ways.

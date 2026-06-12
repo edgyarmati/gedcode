@@ -191,12 +191,14 @@ describe("DesktopShellEnvironment", () => {
         LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
         USERPROFILE: "C:\\Users\\testuser",
       };
+      const commands: ChildProcess.StandardCommand[] = [];
 
       yield* runShellEnvironment({
         env,
         platform: "win32",
         handler: (command) => {
           if (command._tag !== "StandardCommand") return "";
+          commands.push(command);
           const loadProfile = !command.args.includes("-NoProfile");
           return loadProfile
             ? envOutput({
@@ -227,6 +229,10 @@ describe("DesktopShellEnvironment", () => {
         env.FNM_MULTISHELL_PATH,
         "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
       );
+      assert.isTrue(commands.length >= 2);
+      for (const command of commands) {
+        assert.equal(command.options.shell, false);
+      }
     }),
   );
 });
