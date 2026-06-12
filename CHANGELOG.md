@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve: Virtualize and polish the provider model picker for large model catalogs.
 - Fix: Sync Codex app-server protocol handling and provider startup behavior, including service-tier model options.
 - Fix: Improve source-control provider detection for self-hosted GitLab, multi-account GitHub auth, and Azure DevOps pull request web URLs.
 - Fix: Reduce repeated macOS permission prompts by avoiding eager protected-directory and Tailscale status probes.

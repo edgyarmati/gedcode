@@ -100,11 +100,17 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Codex app-server generated schemas and client behavior now include the upstream protocol sync, Codex model options include service tier handling, text generation forwards service tier settings, and provider startup has focused coverage for persisted/non-persisted launch behavior.
 
+### Model picker virtualization and polish
+
+- Upstream commit: `31533466` (`Model picker UI Improvements, Virtualize Model List (#3021)`)
+- Completed in this fork: 2026-06-12
+- Notes: The provider model picker now uses a virtualized model list, keeps provider rails visible in locked mode with disabled incompatible providers, blocks incompatible model selections in started threads, and has focused browser-test coverage for locked-mode filtering and disabled model behavior.
+
 ## Want To Implement
 
 ### Web UI, UX, and performance polish
 
-- Representative commits: `31533466` (`Model picker UI Improvements, Virtualize Model List (#3021)`), `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`), `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish: focus ring, send/stop buttons, command menu, context meter, answer panel (#3018)`), `0b40ea62` (`Extract changed files card with compact aligned diff stats (#3023)`), `343061a0` (`Misc chrome polish: header badges, plan sidebar, diff panel, empty state (#3027)`)
+- Representative commits: `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`), `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish: focus ring, send/stop buttons, command menu, context meter, answer panel (#3018)`), `0b40ea62` (`Extract changed files card with compact aligned diff stats (#3023)`), `343061a0` (`Misc chrome polish: header badges, plan sidebar, diff panel, empty state (#3027)`)
 - Decision: Want to implement.
 - What it contains: Model picker virtualization, chat timeline metadata, markdown rendering improvements, composer controls, changed-file display, header/sidebar/diff polish, and visual consistency work.
 - Why it matters: These changes improve day-to-day usability and perceived quality. Some, like model picker virtualization, are also performance fixes when provider catalogs grow. Others make long sessions easier to scan by improving timestamps, tool rows, markdown rendering, and changed-file summaries.
