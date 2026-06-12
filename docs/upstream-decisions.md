@@ -94,15 +94,13 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: Source-control detection now handles self-hosted GitLab remotes through authenticated `glab` hosts, GitHub CLI JSON auth status with multiple accounts, host:port remote detection, and Azure DevOps pull request web URL fallbacks.
 
+### Codex app-server protocol and provider startup
+
+- Upstream commit: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`)
+- Completed in this fork: 2026-06-12
+- Notes: Codex app-server generated schemas and client behavior now include the upstream protocol sync, Codex model options include service tier handling, text generation forwards service tier settings, and provider startup has focused coverage for persisted/non-persisted launch behavior.
+
 ## Want To Implement
-
-### Reliability, runtime, and provider correctness fixes
-
-- Representative commits: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`)
-- Decision: Want to implement.
-- What it contains: Runtime projection fixes, reduced background git churn, protocol/schema synchronization with Codex app-server, provider startup behavior, safer process spawning, and provider event normalization.
-- Why it matters: This group aligns directly with the repository priorities of performance, reliability, and predictable behavior under reconnects, restarts, partial streams, and provider edge cases. Several commits address correctness rather than presentation, and they reduce the chance that the app silently displays the wrong turn state, over-polls git status, misinterprets provider events, or spawns system processes in fragile ways.
-- Implementation guidance: Do not merge this group wholesale. Treat it as a sequence of small backports with focused tests. Start with the fixes that are easiest to prove locally: projection correctness, git polling churn, provider event handling, and shell-spawn hardening.
 
 ### Web UI, UX, and performance polish
 

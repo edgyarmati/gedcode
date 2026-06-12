@@ -2,28 +2,25 @@
 
 ## Goal
 
-Move the Grok provider out of the implementation backlog and backport the accepted source-control edge-case fixes from upstream commit `49c1b646`.
+Backport the accepted Codex app-server protocol, service-tier, and provider-startup fixes from upstream commit `ae7e88b0`.
 
 ## Scope
 
-- Categorize Grok provider support as "Not Doing For Now" in `docs/upstream-decisions.md`.
-- Port source-control improvements for:
-  - self-hosted GitLab remote detection and clone URL handling,
-  - GitHub CLI auth status with multiple accounts/hosts,
-  - Azure DevOps repository web URLs,
-  - provider registry/discovery behavior around detected remotes.
-- Add or adapt focused tests from upstream where they map to local code.
+- Sync the local `effect-codex-app-server` generated protocol/schema metadata where compatible.
+- Port Codex model option/service-tier handling used by provider and text-generation paths.
+- Port provider startup and managed-server behavior fixes from the upstream slice.
+- Add or adapt focused tests for protocol client behavior, Codex adapter/provider startup, model options, and text generation.
 - Update changelog and upstream decision bookkeeping.
 
 ## Non-Goals
 
-- Do not add the Grok provider.
-- Do not change UI polish, package-manager, or release migration behavior.
-- Do not rewrite source-control architecture outside the upstream edge-case fixes.
+- Do not change non-Codex providers except where shared registry startup behavior requires it.
+- Do not adopt unrelated upstream UI, cloud, mobile, Grok, or package-manager changes.
+- Do not remove current Bun workflow requirements.
 
 ## Acceptance Criteria
 
-- `docs/upstream-decisions.md` no longer lists Grok under "Want To Implement".
-- Source-control providers handle the upstream edge cases covered by focused tests.
-- Completed upstream source-control item is removed from the "Want To Implement" list.
+- Codex app-server contracts match the accepted local subset of upstream `ae7e88b0`.
+- Codex provider startup/service-tier behavior is covered by focused tests.
 - Required repository checks pass.
+- Completed upstream item is removed or narrowed in `docs/upstream-decisions.md`.
