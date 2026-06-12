@@ -379,6 +379,37 @@ it.layer(TestLayer)("WorkspaceEntriesLive", (it) => {
       }),
     );
 
+    it.effect("returns an empty listing when directory access is denied", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-browse-denied-" });
+        const deniedDir = path.join(cwd, "Documents");
+        yield* writeTextFile(cwd, "Documents/project/package.json", "{}");
+
+        const originalReaddir = fsPromises.readdir.bind(fsPromises);
+        vi.spyOn(fsPromises, "readdir").mockImplementation((async (
+          ...args: Parameters<typeof fsPromises.readdir>
+        ) => {
+          if (args[0] === deniedDir) {
+            const error = new Error("permission denied") as NodeJS.ErrnoException;
+            error.code = "EACCES";
+            throw error;
+          }
+          return originalReaddir(...args);
+        }) as typeof fsPromises.readdir);
+
+        const result = yield* workspaceEntries.browse({
+          partialPath: appendSeparator(deniedDir),
+        });
+
+        expect(result).toEqual({
+          parentPath: deniedDir,
+          entries: [],
+        });
+      }),
+    );
+
     it.effect("rejects relative paths without cwd", () =>
       Effect.gen(function* () {
         const workspaceEntries = yield* WorkspaceEntries;

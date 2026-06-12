@@ -456,7 +456,15 @@ export const makeWorkspaceEntries = Effect.gen(function* () {
             detail: `Unable to browse '${parentPath}': ${cause instanceof Error ? cause.message : String(cause)}`,
             cause,
           }),
-      });
+      }).pipe(
+        Effect.catchIf(
+          (error) => {
+            const code = (error.cause as NodeJS.ErrnoException | undefined)?.code;
+            return code === "EACCES" || code === "EPERM";
+          },
+          () => Effect.succeed<Dirent[]>([]),
+        ),
+      );
 
       const showHidden = endsWithSeparator || prefix.startsWith(".");
       const lowerPrefix = prefix.toLowerCase();
