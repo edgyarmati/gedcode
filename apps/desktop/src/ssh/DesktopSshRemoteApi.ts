@@ -28,7 +28,11 @@ export class DesktopSshRemoteApiError extends Data.TaggedError("DesktopSshRemote
   readonly cause: SshHttpBridgeError | Schema.SchemaError;
 }> {
   override get message() {
-    return `SSH remote API request failed during ${this.operation}.`;
+    const statusPrefix =
+      this.cause instanceof SshHttpBridgeError && this.cause.status !== undefined
+        ? `[ssh_http:${this.cause.status}] `
+        : "";
+    return `${statusPrefix}SSH remote API request failed during ${this.operation}.`;
   }
 }
 
