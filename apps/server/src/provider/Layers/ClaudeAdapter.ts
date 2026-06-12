@@ -973,6 +973,50 @@ function sdkNativeMethod(message: SDKMessage): string {
   return `claude/${message.type}`;
 }
 
+const SDK_MESSAGE_NOISE_KEYS = new Set([
+  "type",
+  "subtype",
+  "uuid",
+  "parent_uuid",
+  "session_id",
+  "parent_tool_use_id",
+  "request_id",
+]);
+
+function previewUnknownSdkContent(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(message as Record<string, unknown>)) {
+    if (SDK_MESSAGE_NOISE_KEYS.has(key)) {
+      continue;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        parts.push(`${key}: ${trimmed}`);
+      }
+      continue;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      parts.push(`${key}: ${String(value)}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+  const joined = parts.join(" | ");
+  return joined.length > 280 ? `${joined.slice(0, 279)}...` : joined;
+}
+
+function describeUnknownSdkMessage(kind: string, message: unknown): string {
+  const preview = previewUnknownSdkContent(message);
+  return preview ? `${kind} - ${preview}` : `${kind} (no displayable text content)`;
+}
+
 function sdkNativeItemId(message: SDKMessage): string | undefined {
   if (message.type === "assistant") {
     const maybeId = (message.message as { id?: unknown }).id;
@@ -2269,10 +2313,31 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
+      case "thinking_tokens":
+        return;
+      case "permission_denied":
+        yield* offerRuntimeEvent({
+          ...base,
+          type: "tool.denied",
+          payload: {
+            toolName: message.tool_name,
+            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+            ...(message.decision_reason ? { reason: message.decision_reason } : {}),
+            ...(message.agent_id ? { agentId: message.agent_id } : {}),
+          },
+        });
+        return;
+      case "mirror_error":
+        yield* emitRuntimeError(
+          context,
+          `Claude workspace mirror error: ${message.error}`,
+          message,
+        );
+        return;
       default:
         yield* emitRuntimeWarning(
           context,
-          `Unhandled Claude system message subtype '${message.subtype}'.`,
+          describeUnknownSdkMessage(`Claude system message '${message.subtype}'`, message),
           message,
         );
         return;
@@ -2386,7 +2451,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       default:
         yield* emitRuntimeWarning(
           context,
-          `Unhandled Claude SDK message type '${message.type}'.`,
+          describeUnknownSdkMessage(`Claude SDK message '${message.type}'`, message),
           message,
         );
         return;

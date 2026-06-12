@@ -2501,6 +2501,9 @@ describe("ProviderRuntimeIngestion", () => {
         ? (warning.payload as Record<string, unknown>)
         : undefined;
 
+    expect(warning?.summary).toBe(
+      "Failed to authenticate. API Error: 401 Invalid authentication credentials",
+    );
     expect(warningPayload?.message).toBe(
       [
         "Failed to authenticate. API Error: 401 Invalid authentication credentials",
@@ -2508,6 +2511,49 @@ describe("ProviderRuntimeIngestion", () => {
         "Try reauthenticating in the CLI: run `codex login` for Codex, or `/login` inside Claude Code.",
       ].join("\n"),
     );
+  });
+
+  it("records tool.denied activities from provider runtime events", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "tool.denied",
+      eventId: asEventId("evt-tool-denied"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-tool-denied"),
+      payload: {
+        toolName: "Edit",
+        toolUseId: "toolu-denied-1",
+        reason: "Edits are blocked for this path",
+        agentId: "agent-1",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-tool-denied" && activity.kind === "tool.denied",
+      ),
+    );
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-tool-denied",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(activity?.kind).toBe("tool.denied");
+    expect(activity?.tone).toBe("error");
+    expect(activity?.summary).toBe("Tool denied: Edit");
+    expect(activity?.turnId).toBe("turn-tool-denied");
+    expect(payload?.toolName).toBe("Edit");
+    expect(payload?.toolUseId).toBe("toolu-denied-1");
+    expect(payload?.detail).toBe("Edits are blocked for this path");
+    expect(payload?.agentId).toBe("agent-1");
   });
 
   it("maps session/thread lifecycle and item.started into session/activity projections", async () => {

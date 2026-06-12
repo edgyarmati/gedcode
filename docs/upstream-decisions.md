@@ -46,11 +46,17 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - Completed in this fork: 2026-06-12
 - Notes: The server build helper now launches the current Node executable directly without Windows shell mode. Local ACP and Codex app-server fixture peers still use Bun-specific test runner spawns rather than the upstream direct Node pattern.
 
+### Claude SDK system message handling
+
+- Upstream commits: `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
+- Completed in this fork: 2026-06-12
+- Notes: Claude `thinking_tokens` system messages are ignored, `permission_denied` maps to a structured `tool.denied` runtime event, `mirror_error` maps to a clearer runtime error, and unknown Claude SDK/system messages include clearer row text with scalar previews.
+
 ## Want To Implement
 
 ### Reliability, runtime, and provider correctness fixes
 
-- Representative commits: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`), `e1ce9f85` (`fix: handle Claude Agent SDK 0.3.x system messages to stop runtime-warning flood (#2872)`), `75257d64` (`"claude system message" instead of "runtime warning" when using 4.8 from claude code (#2972)`)
+- Representative commits: `ae7e88b0` (`[codex] Sync app-server protocol, service tiers, and provider startup (#3036)`)
 - Decision: Want to implement.
 - What it contains: Runtime projection fixes, reduced background git churn, protocol/schema synchronization with Codex app-server, provider startup behavior, safer process spawning, and provider event normalization.
 - Why it matters: This group aligns directly with the repository priorities of performance, reliability, and predictable behavior under reconnects, restarts, partial streams, and provider edge cases. Several commits address correctness rather than presentation, and they reduce the chance that the app silently displays the wrong turn state, over-polls git status, misinterprets provider events, or spawns system processes in fragile ways.

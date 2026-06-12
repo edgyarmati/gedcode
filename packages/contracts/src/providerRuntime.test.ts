@@ -181,4 +181,30 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.usage.maxTokens).toBe(200000);
     expect(parsed.payload.usage.usedTokens).toBe(31251);
   });
+
+  it("decodes tool.denied events with optional provider metadata", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "tool.denied",
+      eventId: "event-tool-denied-1",
+      provider: "claudeAgent",
+      createdAt: "2026-02-28T00:00:05.000Z",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      payload: {
+        toolName: "Edit",
+        toolUseId: "toolu_123",
+        reason: "Policy denied this edit",
+        agentId: "agent-1",
+      },
+    });
+
+    expect(parsed.type).toBe("tool.denied");
+    if (parsed.type !== "tool.denied") {
+      throw new Error("expected tool.denied");
+    }
+    expect(parsed.payload.toolName).toBe("Edit");
+    expect(parsed.payload.toolUseId).toBe("toolu_123");
+    expect(parsed.payload.reason).toBe("Policy denied this edit");
+    expect(parsed.payload.agentId).toBe("agent-1");
+  });
 });

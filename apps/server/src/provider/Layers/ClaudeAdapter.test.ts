@@ -1276,6 +1276,96 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("handles Claude SDK system message subtypes without generic warning floods", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "thinking_tokens",
+        session_id: "sdk-session-system",
+        uuid: "system-thinking",
+        tokens: 4096,
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "system",
+        subtype: "permission_denied",
+        session_id: "sdk-session-system",
+        uuid: "system-permission-denied",
+        tool_name: "Edit",
+        tool_use_id: "toolu-denied-1",
+        decision_reason: "Edits are blocked for this path",
+        agent_id: "agent-1",
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "system",
+        subtype: "mirror_error",
+        session_id: "sdk-session-system",
+        uuid: "system-mirror-error",
+        error: "workspace copy failed",
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "system",
+        subtype: "notice",
+        session_id: "sdk-session-system",
+        uuid: "system-notice",
+        message: "Claude Code has updated",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const denied = runtimeEvents.find((event) => event.type === "tool.denied");
+      assert.equal(denied?.type, "tool.denied");
+      if (denied?.type === "tool.denied") {
+        assert.equal(denied.payload.toolName, "Edit");
+        assert.equal(denied.payload.toolUseId, "toolu-denied-1");
+        assert.equal(denied.payload.reason, "Edits are blocked for this path");
+        assert.equal(denied.payload.agentId, "agent-1");
+      }
+
+      const mirrorError = runtimeEvents.find(
+        (event) =>
+          event.type === "runtime.error" &&
+          event.payload.message === "Claude workspace mirror error: workspace copy failed",
+      );
+      assert.equal(mirrorError?.type, "runtime.error");
+
+      const warnings = runtimeEvents.filter((event) => event.type === "runtime.warning");
+      assert.equal(warnings.length, 1);
+      const warning = warnings[0];
+      assert.equal(warning?.type, "runtime.warning");
+      if (warning?.type === "runtime.warning") {
+        assert.equal(
+          warning.payload.message,
+          "Claude system message 'notice' - message: Claude Code has updated",
+        );
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("treats user-aborted Claude results as interrupted without a runtime error", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
