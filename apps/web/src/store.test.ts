@@ -1184,3 +1184,172 @@ describe("incremental orchestration updates", () => {
     expect(threadsOf(next)[0]?.latestTurn?.sourceProposedPlan).toBeUndefined();
   });
 });
+
+describe("incremental slice characterization (plan 012 contract)", () => {
+  it("produces correct messages, activities, and derived slices after a mixed event sequence", () => {
+    const thread = makeThread();
+    const state = makeState(thread);
+    const threadId = thread.id;
+
+    // Apply a mixed sequence:
+    // 1. New user message
+    // 2. New streaming assistant message (message-2)
+    // 3. Streaming delta appended to same message-2
+    // 4. activity-appended (activity-a)
+    // 5. activity-appended (activity-b, older createdAt — out-of-order)
+    // 6. activity-appended (activity-a again — replace/re-send)
+    // 7. Final non-streaming update to message-2
+    const events: OrchestrationEvent[] = [
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-1"),
+          role: "user",
+          text: "hello",
+          turnId: TurnId.make("turn-1"),
+          streaming: false,
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+        { sequence: 1 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: "hello",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:01.000Z",
+        },
+        { sequence: 2 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: " world",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:02.000Z",
+        },
+        { sequence: 3 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-a"),
+            tone: "info",
+            kind: "step",
+            summary: "step A v1",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.500Z",
+          },
+        },
+        { sequence: 4 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-b"),
+            tone: "info",
+            kind: "step",
+            summary: "step B (earlier)",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.000Z",
+          },
+        },
+        { sequence: 5 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-a"),
+            tone: "info",
+            kind: "step",
+            summary: "step A v2 (resent)",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.500Z",
+          },
+        },
+        { sequence: 6 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: "hello world done",
+          turnId: TurnId.make("turn-1"),
+          streaming: false,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:03.000Z",
+        },
+        { sequence: 7 },
+      ),
+    ];
+
+    const finalState = applyOrchestrationEvents(state, events, localEnvironmentId);
+    const envState = localEnvironmentStateOf(finalState);
+    const thread1 = threadsOf(finalState)[0]!;
+
+    // --- messages ---
+    // message-1: user "hello" (non-streaming, kept as-is)
+    // message-2: assistant, final non-streaming text "hello world done" (replaces streaming)
+    expect(thread1.messages).toHaveLength(2);
+    expect(thread1.messages[0]?.id).toBe(MessageId.make("message-1"));
+    expect(thread1.messages[0]?.text).toBe("hello");
+    expect(thread1.messages[0]?.streaming).toBe(false);
+    expect(thread1.messages[1]?.id).toBe(MessageId.make("message-2"));
+    expect(thread1.messages[1]?.text).toBe("hello world done");
+    expect(thread1.messages[1]?.streaming).toBe(false);
+
+    // --- activities ---
+    // sorted by createdAt asc: activity-b (00:00:01.000Z) < activity-a (00:00:01.500Z)
+    expect(thread1.activities).toHaveLength(2);
+    expect(thread1.activities[0]?.id).toBe(EventId.make("activity-b"));
+    expect(thread1.activities[1]?.id).toBe(EventId.make("activity-a"));
+    expect(thread1.activities[1]?.summary).toBe("step A v2 (resent)");
+
+    // --- derived message slice ---
+    expect(envState.messageIdsByThreadId[threadId]).toEqual([
+      MessageId.make("message-1"),
+      MessageId.make("message-2"),
+    ]);
+    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-1")]?.text).toBe(
+      "hello",
+    );
+    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-2")]?.text).toBe(
+      "hello world done",
+    );
+
+    // --- derived activity slice ---
+    expect(envState.activityIdsByThreadId[threadId]).toEqual([
+      EventId.make("activity-b"),
+      EventId.make("activity-a"),
+    ]);
+    expect(
+      envState.activityByThreadId[threadId]?.[EventId.make("activity-a")]?.summary,
+    ).toBe("step A v2 (resent)");
+    expect(
+      envState.activityByThreadId[threadId]?.[EventId.make("activity-b")]?.summary,
+    ).toBe("step B (earlier)");
+  });
+});
