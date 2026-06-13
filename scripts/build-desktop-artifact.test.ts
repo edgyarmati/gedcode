@@ -97,7 +97,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(buildConfig.linux, {
         target: ["AppImage"],
         executableName: "gedcode",
-        icon: "icon.png",
+        icon: "icons",
         category: "Development",
         desktop: {
           entry: {
@@ -129,7 +129,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.deepStrictEqual(buildConfig.linux, {
           target: ["AppImage"],
           executableName: "gedcode-dev",
-          icon: "icon.png",
+          icon: "icons",
           category: "Development",
           desktop: {
             entry: {
