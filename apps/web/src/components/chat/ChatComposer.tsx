@@ -2,7 +2,6 @@ import type {
   ApprovalRequestId,
   EnvironmentId,
   ModelSelection,
-  ProjectEntry,
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
@@ -29,9 +28,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useDebouncedValue } from "@tanstack/react-pacer";
-import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -39,6 +35,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   replaceTextRange,
+  serializeComposerFileLink,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import {
@@ -55,6 +52,7 @@ import {
   insertInlineTerminalContextPlaceholder,
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
+import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -149,9 +147,6 @@ const workflowModeConfig = {
   },
 } as const;
 type WorkflowMode = keyof typeof workflowModeConfig;
-
-const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
-const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -206,6 +201,9 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   const RuntimeModeIcon = runtimeModeOption.icon;
   const workflowMode: WorkflowMode = props.workflowEnabled ? "ged" : "normal";
   const workflowModeOption = workflowModeConfig[workflowMode];
+  const planSidebarTooltip = props.planSidebarOpen
+    ? `Hide ${props.planSidebarLabel.toLowerCase()} sidebar`
+    : `Show ${props.planSidebarLabel.toLowerCase()} sidebar`;
 
   return (
     <>
@@ -250,64 +248,73 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
-      <Select
-        value={props.runtimeMode}
-        onValueChange={(value) => props.onRuntimeModeChange(value!)}
-      >
-        <SelectTrigger
-          variant="ghost"
-          size="sm"
-          className="font-medium"
-          aria-label="Runtime mode"
-          title={runtimeModeOption.description}
+      <Tooltip>
+        <Select
+          value={props.runtimeMode}
+          onValueChange={(value) => props.onRuntimeModeChange(value!)}
         >
-          <RuntimeModeIcon className="size-4" />
-          <SelectValue>{runtimeModeOption.label}</SelectValue>
-        </SelectTrigger>
-        <SelectPopup alignItemWithTrigger={false}>
-          {runtimeModeOptions.map((mode) => {
-            const option = runtimeModeConfig[mode];
-            const OptionIcon = option.icon;
-            return (
-              <SelectItem key={mode} value={mode} className="min-w-64 py-2">
-                <div className="grid min-w-0 gap-0.5">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                    <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                    {option.label}
-                  </span>
-                  <span className="text-muted-foreground text-xs leading-4">
-                    {option.description}
-                  </span>
-                </div>
-              </SelectItem>
-            );
-          })}
-        </SelectPopup>
-      </Select>
+          <TooltipTrigger
+            render={
+              <SelectTrigger
+                variant="ghost"
+                size="sm"
+                className="font-medium"
+                aria-label="Runtime mode"
+              />
+            }
+          >
+            <RuntimeModeIcon className="size-4" />
+            <SelectValue>{runtimeModeOption.label}</SelectValue>
+          </TooltipTrigger>
+          <SelectPopup alignItemWithTrigger={false}>
+            {runtimeModeOptions.map((mode) => {
+              const option = runtimeModeConfig[mode];
+              const OptionIcon = option.icon;
+              return (
+                <SelectItem key={mode} value={mode} className="min-w-64 py-2">
+                  <div className="grid min-w-0 gap-0.5">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                      <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      {option.label}
+                    </span>
+                    <span className="text-muted-foreground text-xs leading-4">
+                      {option.description}
+                    </span>
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectPopup>
+        </Select>
+        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+      </Tooltip>
 
       {props.showPlanToggle ? (
         <>
           <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-          <Button
-            variant="ghost"
-            className={cn(
-              "shrink-0 whitespace-nowrap px-2 sm:px-3",
-              props.planSidebarOpen
-                ? "text-blue-400 hover:text-blue-300"
-                : "text-muted-foreground/70 hover:text-foreground/80",
-            )}
-            size="sm"
-            type="button"
-            onClick={props.onTogglePlanSidebar}
-            title={
-              props.planSidebarOpen
-                ? `Hide ${props.planSidebarLabel.toLowerCase()} sidebar`
-                : `Show ${props.planSidebarLabel.toLowerCase()} sidebar`
-            }
-          >
-            <ListTodoIcon />
-            <span className="sr-only sm:not-sr-only">{props.planSidebarLabel}</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "shrink-0 whitespace-nowrap px-2 sm:px-3",
+                    props.planSidebarOpen
+                      ? "text-blue-400 hover:text-blue-300"
+                      : "text-muted-foreground/70 hover:text-foreground/80",
+                  )}
+                  size="sm"
+                  type="button"
+                  onClick={props.onTogglePlanSidebar}
+                  aria-label={planSidebarTooltip}
+                />
+              }
+            >
+              <ListTodoIcon />
+              <span className="sr-only sm:not-sr-only">{props.planSidebarLabel}</span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">{planSidebarTooltip}</TooltipPopup>
+          </Tooltip>
         </>
       ) : null}
     </>
@@ -457,6 +464,7 @@ export interface ChatComposerProps {
   // Mode
   runtimeMode: RuntimeMode;
   workflowEnabled: boolean;
+  onToggleWorkflow: (enabled: boolean) => void;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -509,7 +517,6 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   togglePlanSidebar: () => void;
-  onToggleWorkflow: (enabled: boolean) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -555,6 +562,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planSidebarOpen,
     runtimeMode,
     workflowEnabled,
+    onToggleWorkflow,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -585,7 +593,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleRuntimeModeChange,
     handleInteractionModeChange,
     togglePlanSidebar,
-    onToggleWorkflow,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -865,27 +872,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const isPathTrigger = composerTriggerKind === "path";
-  const [debouncedPathQuery, composerPathQueryDebouncer] = useDebouncedValue(
-    pathTriggerQuery,
-    { wait: COMPOSER_PATH_QUERY_DEBOUNCE_MS },
-    (debouncerState) => ({ isPending: debouncerState.isPending }),
-  );
-  const effectivePathQuery = pathTriggerQuery.length > 0 ? debouncedPathQuery : "";
-  const workspaceEntriesQuery = useQuery(
-    projectSearchEntriesQueryOptions({
-      environmentId,
-      cwd: gitCwd,
-      query: effectivePathQuery,
-      enabled: isPathTrigger,
-      limit: 80,
-    }),
-  );
-  const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const workspaceEntries = useComposerPathSearch({
+    environmentId,
+    cwd: isPathTrigger ? gitCwd : null,
+    query: isPathTrigger ? pathTriggerQuery : null,
+  });
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
-      return workspaceEntries.map((entry) => ({
+      return workspaceEntries.entries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path",
         path: entry.path,
@@ -951,7 +947,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
     }
     return [];
-  }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries]);
+  }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries.entries]);
 
   const composerMenuOpen = Boolean(composerTrigger);
   const composerMenuSearchKey = composerTrigger
@@ -1016,10 +1012,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const isComposerMenuLoading =
-    composerTriggerKind === "path" &&
-    ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-      workspaceEntriesQuery.isLoading ||
-      workspaceEntriesQuery.isFetching);
+    composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending;
   const composerMenuEmptyState = useMemo(() => {
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
@@ -1515,7 +1508,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
       if (item.type === "path") {
-        const replacement = `@${item.path} `;
+        const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -2371,8 +2364,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onOpenChange={(open) => {
                     setIsComposerModelPickerOpen(open);
                   }}
-                  getModelDisabledReason={getModelDisabledReason}
                   onInstanceModelChange={onProviderModelSelect}
+                  getModelDisabledReason={getModelDisabledReason}
                 />
 
                 {isComposerFooterCompact ? (
@@ -2381,10 +2374,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
-                    traitsMenuContent={providerTraitsMenuContent}
                     workflowEnabled={workflowEnabled}
-                    onTogglePlanSidebar={togglePlanSidebar}
+                    traitsMenuContent={providerTraitsMenuContent}
                     onToggleWorkflow={onToggleWorkflow}
+                    onTogglePlanSidebar={togglePlanSidebar}
                     onRuntimeModeChange={handleRuntimeModeChange}
                   />
                 ) : (

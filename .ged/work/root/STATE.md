@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: complete
-- **Active task**: Backport upstream message metadata and work-log row update `1916ac6d`.
-- **Status**: Implementation, verification, and commit complete.
+- **Phase**: implement
+- **Active task**: Backport compatible upstream markdown polish update `7f741a56`.
+- **Status**: Main-thread explorer/planner fallback complete; implementation starting.
 - **Blockers**: Native Ged subagents are unavailable because the workspace is out of credits, so Ged role evidence is being produced in the main thread.
-- **Next step**: Continue with the next upstream decision item.
+- **Next step**: Apply upstream changes selectively and drop mobile/package-manager artifacts.

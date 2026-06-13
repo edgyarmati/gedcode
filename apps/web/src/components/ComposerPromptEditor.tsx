@@ -53,6 +53,7 @@ import {
   collapseExpandedComposerCursor,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
+  serializeComposerFileLink,
 } from "~/composer-logic";
 import {
   selectionTouchesMentionBoundary,
@@ -63,14 +64,14 @@ import {
   type TerminalContextDraft,
 } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
-import { basenameOfPath, getVscodeIconUrlForEntry, inferEntryKindFromPath } from "~/vscode-icons";
+import { basenameOfPath } from "~/vscode-icons";
 import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
   COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
+import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -131,19 +132,12 @@ function ComposerMentionDecorator(props: { path: string }) {
   const theme = resolvedThemeFromDocument();
   const chip = (
     <span
-      className={COMPOSER_INLINE_CHIP_CLASS_NAME}
+      className={FILE_TAG_CHIP_CLASS_NAME}
       contentEditable={false}
       spellCheck={false}
       data-composer-mention-chip="true"
     >
-      <img
-        alt=""
-        aria-hidden="true"
-        className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
-        loading="lazy"
-        src={getVscodeIconUrlForEntry(props.path, inferEntryKindFromPath(props.path), theme)}
-      />
-      <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{basenameOfPath(props.path)}</span>
+      <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
     </span>
   );
 
@@ -174,8 +168,7 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
 
   constructor(path: string, key?: NodeKey) {
     super(key);
-    const normalizedPath = path.startsWith("@") ? path.slice(1) : path;
-    this.__path = normalizedPath;
+    this.__path = path;
   }
 
   override exportJSON(): SerializedComposerMentionNode {
@@ -198,7 +191,7 @@ class ComposerMentionNode extends DecoratorNode<React.ReactElement> {
   }
 
   override getTextContent(): string {
-    return `@${this.__path}`;
+    return serializeComposerFileLink(this.__path);
   }
 
   override isInline(): true {

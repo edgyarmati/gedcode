@@ -2,24 +2,22 @@
 
 ## Goal
 
-Backport or adapt upstream `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`) from `pingdotgg/t3code`.
+Backport compatible web markdown and visual polish from upstream `7f741a56` (`Misc markdown styling improvements (#3017)`).
 
 ## Scope
 
-- Update chat timeline message metadata and timestamp rendering.
-- Improve tool/work-log row presentation where compatible with this fork's current orchestration event model.
-- Add or adapt focused timeline/session tests for the new formatting behavior.
-- Update `CHANGELOG.md` and remove the completed upstream commit from `docs/upstream-decisions.md`.
+- Improve `ChatMarkdown` rendering, clipboard handling, markdown file tags, and related browser coverage.
+- Port compatible web visual polish in timeline/composer/sidebar/status surfaces when it is part of the markdown usability slice.
+- Update changelog and upstream decision bookkeeping.
 
 ## Non-Goals
 
-- Do not port unrelated UI polish commits from the same decision group in this slice.
-- Do not change provider protocol/runtime semantics unless the timeline rendering requires a local type adaptation.
-- Do not adopt upstream-only product surfaces that do not exist in this fork.
+- Do not port upstream mobile changes.
+- Do not port `pnpm-lock.yaml` or package-manager/test-runner migration artifacts in this UI task.
+- Do not broaden into the remaining composer/chrome/changed-files commits unless directly required by markdown compatibility.
 
 ## Acceptance Criteria
 
-- The chat timeline renders message metadata/timestamps consistently for user, assistant, and work-log rows.
-- Existing behavior for pending approvals, user input rows, and tool activity remains covered.
-- The upstream decision document records this commit as completed and removes it from the remaining Want To Implement list.
-- Required checks pass: `bun fmt`, `bun lint`, and serialized full typecheck. Targeted tests for modified timeline/session logic pass.
+- Markdown-heavy chat content, file links, code blocks, and copied markdown behavior have focused coverage.
+- Web package typecheck and required repo checks pass.
+- `docs/upstream-decisions.md` records `7f741a56` as completed and removes it from Want To Implement.
