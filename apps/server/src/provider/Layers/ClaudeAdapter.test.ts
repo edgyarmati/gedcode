@@ -3733,7 +3733,10 @@ describe("ClaudeAdapterLive", () => {
         // Wait for the user-input.requested event so the entry is in the map.
         const requestedEvent = yield* Stream.runHead(adapter.streamEvents);
         assert.equal(requestedEvent._tag, "Some");
-        if (requestedEvent._tag !== "Some" || requestedEvent.value.type !== "user-input.requested") {
+        if (
+          requestedEvent._tag !== "Some" ||
+          requestedEvent.value.type !== "user-input.requested"
+        ) {
           assert.fail("Expected user-input.requested event");
           return;
         }
