@@ -9,15 +9,12 @@ import { VcsProcessSpawnError } from "@t3tools/contracts";
 import { ServerConfig } from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
-import * as BitbucketApi from "./BitbucketApi.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as SourceControlDiscovery from "./SourceControlDiscovery.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
 const sourceControlProviderRegistryTestLayer = (input: {
-  readonly bitbucket: Partial<BitbucketApi.BitbucketApiShape>;
   readonly process: Partial<VcsProcess.VcsProcessShape>;
 }) =>
   SourceControlProviderRegistry.layer.pipe(
@@ -26,8 +23,6 @@ const sourceControlProviderRegistryTestLayer = (input: {
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-registry-test-" }).pipe(
           Layer.provide(NodeServices.layer),
         ),
-        Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
-        Layer.mock(BitbucketApi.BitbucketApi)(input.bitbucket),
         Layer.mock(GitHubCli.GitHubCli)({}),
         Layer.mock(GitLabCli.GitLabCli)({}),
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
@@ -97,16 +92,6 @@ it.effect("reports implemented tools separately from locally available executabl
     Layer.provide(
       sourceControlProviderRegistryTestLayer({
         process: processMock,
-        bitbucket: {
-          probeAuth: Effect.succeed({
-            status: "unauthenticated",
-            account: Option.none(),
-            host: Option.some("bitbucket.org"),
-            detail: Option.some(
-              "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
-            ),
-          }),
-        },
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -147,23 +132,8 @@ it.effect("reports implemented tools separately from locally available executabl
           auth: "unknown",
           account: Option.none(),
         },
-        {
-          kind: "azure-devops",
-          status: "missing",
-          auth: "unknown",
-          account: Option.none(),
-        },
-        {
-          kind: "bitbucket",
-          status: "available",
-          auth: "unauthenticated",
-          account: Option.none(),
-        },
       ],
     );
-    const bitbucket = result.sourceControlProviders.find((item) => item.kind === "bitbucket");
-    assert.ok(bitbucket);
-    assert.strictEqual(bitbucket.executable, undefined);
   }).pipe(Effect.provide(testLayer));
 });
 
@@ -200,12 +170,6 @@ Logged in to gitlab.com as gitlab-user
 `),
         );
       }
-      if (
-        input.command === "az" &&
-        input.args.join(" ") === "account show --query user.name -o tsv"
-      ) {
-        return Effect.succeed(processOutput("azure-user@example.com\n"));
-      }
       return Effect.fail(
         new VcsProcessSpawnError({
           operation: input.operation,
@@ -224,14 +188,6 @@ Logged in to gitlab.com as gitlab-user
     Layer.provide(
       sourceControlProviderRegistryTestLayer({
         process: processMock,
-        bitbucket: {
-          probeAuth: Effect.succeed({
-            status: "authenticated",
-            account: Option.some("bitbucket-user"),
-            host: Option.some("bitbucket.org"),
-            detail: Option.none(),
-          }),
-        },
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -259,18 +215,6 @@ Logged in to gitlab.com as gitlab-user
           kind: "gitlab",
           auth: "authenticated",
           account: Option.some("gitlab-user"),
-          detail: Option.none(),
-        },
-        {
-          kind: "azure-devops",
-          auth: "authenticated",
-          account: Option.some("azure-user@example.com"),
-          detail: Option.none(),
-        },
-        {
-          kind: "bitbucket",
-          auth: "authenticated",
-          account: Option.some("bitbucket-user"),
           detail: Option.none(),
         },
       ],

@@ -39,15 +39,7 @@ import {
 } from "../ui/number-field";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  AzureDevOpsIcon,
-  BitbucketIcon,
-  GitHubIcon,
-  GitIcon,
-  GitLabIcon,
-  JujutsuIcon,
-  type Icon,
-} from "../Icons";
+import { GitHubIcon, GitIcon, GitLabIcon, JujutsuIcon, type Icon } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
@@ -59,8 +51,6 @@ const EMPTY_DISCOVERY_RESULT: SourceControlDiscoveryResult = {
 const SOURCE_CONTROL_PROVIDER_ICONS: Partial<Record<SourceControlProviderKind, Icon>> = {
   github: GitHubIcon,
   gitlab: GitLabIcon,
-  "azure-devops": AzureDevOpsIcon,
-  bitbucket: BitbucketIcon,
 };
 
 const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {

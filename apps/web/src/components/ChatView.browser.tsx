@@ -1005,36 +1005,6 @@ function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
             detail: Option.none(),
           },
         },
-        {
-          kind: "bitbucket",
-          label: "Bitbucket",
-          executable: "Bitbucket REST API",
-          status: "available",
-          version: Option.none(),
-          installHint: "Set Bitbucket API token environment variables.",
-          detail: Option.none(),
-          auth: {
-            status: "authenticated",
-            account: Option.some("t3-oss"),
-            host: Option.some("bitbucket.org"),
-            detail: Option.none(),
-          },
-        },
-        {
-          kind: "azure-devops",
-          label: "Azure DevOps",
-          executable: "az",
-          status: "available",
-          version: Option.some("azure-cli 2.0.0"),
-          installHint: "Install Azure CLI.",
-          detail: Option.none(),
-          auth: {
-            status: "authenticated",
-            account: Option.some("t3-oss"),
-            host: Option.some("dev.azure.com"),
-            detail: Option.none(),
-          },
-        },
       ],
     };
   }

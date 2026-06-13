@@ -71,8 +71,6 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as SourceControlDiscoveryLayer from "./sourceControl/SourceControlDiscovery.ts";
 import { SourceControlRepositoryService } from "./sourceControl/SourceControlRepositoryService.ts";
-import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
-import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -1288,14 +1286,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
                 SourceControlDiscoveryLayer.layer.pipe(
                   Layer.provide(
                     SourceControlProviderRegistry.layer.pipe(
-                      Layer.provide(
-                        Layer.mergeAll(
-                          AzureDevOpsCli.layer,
-                          BitbucketApi.layer,
-                          GitHubCli.layer,
-                          GitLabCli.layer,
-                        ),
-                      ),
+                      Layer.provide(Layer.mergeAll(GitHubCli.layer, GitLabCli.layer)),
                       Layer.provideMerge(GitVcsDriver.layer),
                       Layer.provide(
                         VcsDriverRegistry.layer.pipe(Layer.provide(VcsProjectConfig.layer)),

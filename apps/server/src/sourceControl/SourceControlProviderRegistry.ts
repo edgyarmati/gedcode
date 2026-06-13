@@ -11,8 +11,6 @@ import {
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
-import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
-import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
@@ -231,9 +229,6 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () {
   const github = yield* GitHubSourceControlProvider.make();
   const gitlab = yield* GitLabSourceControlProvider.make();
-  const bitbucket = yield* BitbucketSourceControlProvider.make();
-  const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery();
-  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make();
   return yield* makeWithProviders([
     {
       kind: "github",
@@ -244,16 +239,6 @@ export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () 
       kind: "gitlab",
       provider: gitlab,
       discovery: GitLabSourceControlProvider.discovery,
-    },
-    {
-      kind: "azure-devops",
-      provider: azureDevOps,
-      discovery: AzureDevOpsSourceControlProvider.discovery,
-    },
-    {
-      kind: "bitbucket",
-      provider: bitbucket,
-      discovery: bitbucketDiscovery,
     },
   ]);
 });
