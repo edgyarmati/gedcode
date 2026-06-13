@@ -1005,6 +1005,113 @@ describe("incremental orchestration updates", () => {
     ]);
   });
 
+  it("settles a running turn when turn-interrupt-requested arrives without a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:01.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("interrupted");
+    expect(threadsOf(next)[0]?.latestTurn?.turnId).toBe(TurnId.make("turn-1"));
+    expect(threadsOf(next)[0]?.latestTurn?.completedAt).toBe("2026-02-27T00:00:01.000Z");
+  });
+
+  it("leaves thread unchanged when turn-interrupt-requested without turnId arrives with no latestTurn", () => {
+    const thread = makeThread({ latestTurn: null });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:01.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(next).toBe(state);
+  });
+
+  it("does not regress an already-settled turn when turn-interrupt-requested arrives without a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "completed",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: "2026-02-27T00:00:01.000Z",
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:02.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(next).toBe(state);
+  });
+
+  it("settles only the matching turn when turn-interrupt-requested arrives with a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-2"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:02.000Z",
+        startedAt: "2026-02-27T00:00:02.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    // interrupt for a different turnId — should not change latestTurn
+    const nextMismatch = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        turnId: TurnId.make("turn-1"),
+        createdAt: "2026-02-27T00:00:03.000Z",
+      }),
+      localEnvironmentId,
+    );
+    expect(nextMismatch).toBe(state);
+
+    // interrupt for the matching turnId — should settle
+    const nextMatch = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        turnId: TurnId.make("turn-2"),
+        createdAt: "2026-02-27T00:00:03.000Z",
+      }),
+      localEnvironmentId,
+    );
+    expect(threadsOf(nextMatch)[0]?.latestTurn?.state).toBe("interrupted");
+    expect(threadsOf(nextMatch)[0]?.latestTurn?.turnId).toBe(TurnId.make("turn-2"));
+  });
+
   it("clears pending source proposed plans after revert before a new session-set event", () => {
     const thread = makeThread({
       latestTurn: {

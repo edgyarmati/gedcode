@@ -1387,7 +1387,28 @@ function applyEnvironmentOrchestrationEvent(
 
     case "thread.turn-interrupt-requested": {
       if (event.payload.turnId === undefined) {
-        return state;
+        return updateThreadState(state, event.payload.threadId, (thread) => {
+          const latestTurn = thread.latestTurn;
+          if (latestTurn === null) {
+            return thread;
+          }
+          if (latestTurn.state !== "running") {
+            return thread;
+          }
+          return {
+            ...thread,
+            latestTurn: buildLatestTurn({
+              previous: latestTurn,
+              turnId: latestTurn.turnId,
+              state: "interrupted",
+              requestedAt: latestTurn.requestedAt,
+              startedAt: latestTurn.startedAt ?? event.payload.createdAt,
+              completedAt: latestTurn.completedAt ?? event.payload.createdAt,
+              assistantMessageId: latestTurn.assistantMessageId,
+            }),
+            updatedAt: event.occurredAt,
+          };
+        });
       }
       return updateThreadState(state, event.payload.threadId, (thread) => {
         const latestTurn = thread.latestTurn;
