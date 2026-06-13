@@ -33,3 +33,4 @@ dist-electron/
 .codex/
 .gedoc/
 .gedcode/
+coverage/

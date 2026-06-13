@@ -24,7 +24,8 @@
       "@typescript/native-preview": "7.0.0-dev.20260527.2",
       "tsdown": "^0.20.3",
       "typescript": "~6.0.3",
-      "vitest": "^4.0.0"
+      "vitest": "^4.0.0",
+      "@vitest/coverage-v8": "^4.0.0"
     }
   },
   "type": "module",
@@ -42,6 +43,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "oxlint --report-unused-disable-directives",
     "test": "turbo run test",
+    "test:coverage": "turbo run test -- --coverage",
     "test:desktop-smoke": "turbo run smoke-test --filter=@t3tools/desktop",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
@@ -63,6 +65,7 @@
     "@oxlint/plugins": "^1.63.0",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "oxfmt": "^0.40.0",
     "oxlint": "^1.63.0",
     "turbo": "^2.3.3",
