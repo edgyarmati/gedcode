@@ -1350,4 +1350,61 @@ describe("incremental slice characterization (plan 012 contract)", () => {
       "step B (earlier)",
     );
   });
+
+  it("keeps the derived activity slice capped when appending past MAX_THREAD_ACTIVITIES", () => {
+    const thread = makeThread();
+    const state = makeState(thread);
+    const threadId = thread.id;
+
+    // MAX_THREAD_ACTIVITIES (500) is not exported; append one past it so the
+    // canonical thread.activities is front-truncated. The incremental
+    // tail-append fast path must fall back to a full rebuild instead of
+    // appending unbounded ids and leaving a stale byId entry.
+    const cap = 500;
+    const total = cap + 1;
+    const events: OrchestrationEvent[] = Array.from({ length: total }, (_, i) =>
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make(`activity-${String(i).padStart(4, "0")}`),
+            tone: "info",
+            kind: "step",
+            summary: `step ${i}`,
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            // Strictly increasing createdAt → every event is a tail-append,
+            // which is exactly the incremental hint path under test.
+            createdAt: new Date(Date.UTC(2026, 2, 1) + i * 1000).toISOString(),
+          },
+        },
+        { sequence: i + 1 },
+      ),
+    );
+
+    const finalState = applyOrchestrationEvents(state, events, localEnvironmentId);
+    const envState = localEnvironmentStateOf(finalState);
+    const thread1 = threadsOf(finalState)[0]!;
+
+    // Canonical activities are capped to the most recent `cap` entries.
+    expect(thread1.activities).toHaveLength(cap);
+
+    // The derived slice must match the canonical activities exactly — no extra
+    // (uncapped) ids and no stale byId entry for the dropped-oldest activity.
+    const derivedIds = envState.activityIdsByThreadId[threadId];
+    expect(derivedIds).toHaveLength(cap);
+    expect(derivedIds).toEqual(thread1.activities.map((activity) => activity.id));
+    expect(Object.keys(envState.activityByThreadId[threadId] ?? {})).toHaveLength(cap);
+
+    // The oldest activity (index 0) was front-truncated and must not linger.
+    const droppedId = EventId.make("activity-0000");
+    expect(derivedIds).not.toContain(droppedId);
+    expect(envState.activityByThreadId[threadId]?.[droppedId]).toBeUndefined();
+
+    // The newest activity is retained at the tail of both views.
+    const newestId = EventId.make(`activity-${String(total - 1).padStart(4, "0")}`);
+    expect(thread1.activities[thread1.activities.length - 1]?.id).toBe(newestId);
+    expect(derivedIds).toContain(newestId);
+  });
 });

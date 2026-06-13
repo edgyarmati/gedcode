@@ -687,19 +687,25 @@ function writeThreadState(
     const changedActivity = hints?.changedActivity;
     const prevActivityById = state.activityByThreadId[nextThread.id];
     const prevActivityIds = state.activityIdsByThreadId[nextThread.id];
+    const isExistingActivity =
+      changedActivity !== undefined && prevActivityById?.[changedActivity.id] !== undefined;
     if (
       changedActivity !== undefined &&
       prevActivityById !== undefined &&
-      prevActivityIds !== undefined
+      prevActivityIds !== undefined &&
+      // Safe to update incrementally only when updating an existing activity
+      // OR when the previous count was below the cap (no front-truncation can occur).
+      // At the cap a tail-append would diverge from the canonical (already-capped)
+      // thread.activities, leaving a stale byId entry — fall back to a full rebuild.
+      (isExistingActivity || prevActivityIds.length < MAX_THREAD_ACTIVITIES)
     ) {
       const nextActivityById: Record<string, OrchestrationThreadActivity> = {
         ...prevActivityById,
         [changedActivity.id]: changedActivity,
       };
-      const nextActivityIds =
-        changedActivity.id in prevActivityById
-          ? prevActivityIds.map((id) => (id === changedActivity.id ? changedActivity.id : id))
-          : ([...prevActivityIds, changedActivity.id] as string[]);
+      const nextActivityIds = isExistingActivity
+        ? prevActivityIds
+        : ([...prevActivityIds, changedActivity.id] as string[]);
       nextState = {
         ...nextState,
         activityIdsByThreadId: {
