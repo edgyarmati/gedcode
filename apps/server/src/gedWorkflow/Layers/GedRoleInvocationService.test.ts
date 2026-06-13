@@ -26,6 +26,7 @@ const runWith = async (
   const engine: OrchestrationEngineShape = {
     readEvents: () => Stream.empty,
     streamDomainEvents: Stream.empty,
+    streamShellEvents: Stream.empty,
     dispatch: (command) =>
       Effect.sync(() => {
         commands.push(command);

@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve: Derive orchestration shell-stream events once per domain event in the engine and fan the mapped result out to all shell subscribers, removing the prior per-event per-subscriber projection re-query.
 - Remove: Drop the bundled marketing site (`apps/marketing`).
 - Remove: Drop PostHog usage telemetry from the server.
 - Remove: Drop the Cursor agent provider; Codex, Claude, and OpenCode remain.

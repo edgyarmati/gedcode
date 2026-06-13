@@ -20,7 +20,6 @@ import {
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
-  type OrchestrationShellStreamEvent,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
@@ -307,69 +306,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
       const enrichOrchestrationEvents = (events: ReadonlyArray<OrchestrationEvent>) =>
         Effect.forEach(events, enrichProjectEvent, { concurrency: 4 });
-
-      const toShellStreamEvent = (
-        event: OrchestrationEvent,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
-        switch (event.type) {
-          case "project.created":
-          case "project.meta-updated":
-            return projectionSnapshotQuery.getProjectShellById(event.payload.projectId).pipe(
-              Effect.map((project) =>
-                Option.map(project, (nextProject) => ({
-                  kind: "project-upserted" as const,
-                  sequence: event.sequence,
-                  project: nextProject,
-                })),
-              ),
-              Effect.catch(() => Effect.succeed(Option.none())),
-            );
-          case "project.deleted":
-            return Effect.succeed(
-              Option.some({
-                kind: "project-removed" as const,
-                sequence: event.sequence,
-                projectId: event.payload.projectId,
-              }),
-            );
-          case "thread.deleted":
-          case "thread.archived":
-            return Effect.succeed(
-              Option.some({
-                kind: "thread-removed" as const,
-                sequence: event.sequence,
-                threadId: event.payload.threadId,
-              }),
-            );
-          case "thread.unarchived":
-            return projectionSnapshotQuery.getThreadShellById(event.payload.threadId).pipe(
-              Effect.map((thread) =>
-                Option.map(thread, (nextThread) => ({
-                  kind: "thread-upserted" as const,
-                  sequence: event.sequence,
-                  thread: nextThread,
-                })),
-              ),
-              Effect.catch(() => Effect.succeed(Option.none())),
-            );
-          default:
-            if (event.aggregateKind !== "thread") {
-              return Effect.succeed(Option.none());
-            }
-            return projectionSnapshotQuery
-              .getThreadShellById(ThreadId.make(event.aggregateId))
-              .pipe(
-                Effect.map((thread) =>
-                  Option.map(thread, (nextThread) => ({
-                    kind: "thread-upserted" as const,
-                    sequence: event.sequence,
-                    thread: nextThread,
-                  })),
-                ),
-                Effect.catch(() => Effect.succeed(Option.none())),
-              );
-        }
-      };
 
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
@@ -760,12 +696,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ),
               );
 
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.mapEffect(toShellStreamEvent),
-                Stream.flatMap((event) =>
-                  Option.isSome(event) ? Stream.succeed(event.value) : Stream.empty,
-                ),
-              );
+              // The domain-event -> shell mapping is computed once in the
+              // engine and fanned out to all subscribers, so this stream is
+              // already mapped and requires no per-subscriber re-query.
+              const liveStream = orchestrationEngine.streamShellEvents;
 
               return Stream.concat(
                 Stream.make({

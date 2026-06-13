@@ -10,7 +10,11 @@
  *
  * @module OrchestrationEngineService
  */
-import type { OrchestrationCommand, OrchestrationEvent } from "@t3tools/contracts";
+import type {
+  OrchestrationCommand,
+  OrchestrationEvent,
+  OrchestrationShellStreamEvent,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -51,6 +55,16 @@ export interface OrchestrationEngineShape {
    * This is a hot runtime stream (new events only), not a historical replay.
    */
   readonly streamDomainEvents: Stream.Stream<OrchestrationEvent>;
+
+  /**
+   * Stream shell-projection events derived from domain events.
+   *
+   * The domain-event -> shell mapping (which issues projection queries) is
+   * computed exactly once per event by the engine and fanned out to every
+   * subscriber here. This is a hot runtime stream (new events only); callers
+   * load an initial snapshot separately.
+   */
+  readonly streamShellEvents: Stream.Stream<OrchestrationShellStreamEvent>;
 }
 
 /**
