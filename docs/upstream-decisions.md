@@ -14,6 +14,32 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - **Not doing for now**: Explicitly out of scope for this fork unless product direction changes.
 - **Needs decision**: Requires user/maintainer decision before implementation work starts.
 
+## Removed Forked-In Features
+
+Subsystems inherited from upstream that this fork has deliberately deleted to
+lower maintenance/verification surface. Do not re-port these from
+`pingdotgg/t3code` unless product direction changes. Removed 2026-06-13.
+
+- **Marketing site** (`apps/marketing`): the public Astro landing page. The fork
+  is a local/desktop coding-agent GUI, not a marketed product.
+- **PostHog telemetry** (`apps/server/src/telemetry`): upstream's anonymous usage
+  analytics, hardcoded to ping.gg's PostHog project. No value to this fork.
+- **Cursor agent provider**: the Cursor ACP provider, adapter, text generation,
+  and model probing. Codex, Claude, and OpenCode remain. This supersedes the
+  completed "Cursor dynamic model probing" item below — do not re-port Cursor
+  provider work. (The Cursor _IDE editor_ "open in" target is unrelated and is
+  kept.)
+- **Bitbucket and Azure DevOps source control**: their API/CLI clients,
+  providers, detection, and UI. GitHub and GitLab remain. This supersedes the
+  Bitbucket/Azure DevOps portions of the completed "Source-control provider edge
+  cases" item below.
+
+Considered but **kept**: remote access (pairing/SSH/Tailscale), the desktop
+auto-update system, the OpenCode provider, and local diagnostics
+(process/resource monitoring + OTLP/observability plumbing). The OTLP _export_
+removal was scoped out for now because its metrics/tracing instrumentation is
+woven into core provider/orchestration logic.
+
 ## Completed Upstream Work
 
 ### Git status polling churn

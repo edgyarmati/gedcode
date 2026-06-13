@@ -5,15 +5,18 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Remove: Drop the bundled marketing site (`apps/marketing`).
+- Remove: Drop PostHog usage telemetry from the server.
+- Remove: Drop the Cursor agent provider; Codex, Claude, and OpenCode remain.
+- Remove: Drop Bitbucket and Azure DevOps source-control integrations; GitHub and GitLab remain.
 - Improve: Rework chat message metadata, timestamps, and tool work-log rows for denser timelines.
 - Improve: Virtualize and polish the provider model picker for large model catalogs.
 - Fix: Sync Codex app-server protocol handling and provider startup behavior, including service-tier model options.
-- Fix: Improve source-control provider detection for self-hosted GitLab, multi-account GitHub auth, and Azure DevOps pull request web URLs.
+- Fix: Improve source-control provider detection for self-hosted GitLab and multi-account GitHub auth.
 - Fix: Reduce repeated macOS permission prompts by avoiding eager protected-directory and Tailscale status probes.
 - Fix: Include standard Linux desktop icon sizes in AppImage packaging.
 - Fix: Preserve forwarded SSH HTTP status markers in desktop remote API errors.
 - Fix: Surface redacted stdout diagnostics when SSH commands fail without stderr output.
-- Provider support: Discover Cursor models and per-model options through Cursor's `list_available_models` ACP extension instead of extra per-model probe sessions.
 - Provider support: Gate Claude Fable 5 behind supported Claude Code versions and expose its reasoning/context options.
 - Fix: Handle Claude SDK system messages as structured tool-denied events or clearer diagnostics instead of generic runtime-warning floods.
 - Fix: Spawn the server build's Node subprocess directly instead of routing it through the Windows shell.

@@ -1,7 +1,12 @@
 # Upstream Feature Cleanup — Design
 
 Date: 2026-06-13
-Status: Approved (design), pending implementation plan
+Status: Implemented on branch `cleanup/drop-upstream-features`. Removals 1–4
+(marketing, telemetry, Cursor, Bitbucket+Azure) landed. Removal 5 (OTLP trace
+export) was **skipped**: reading the code showed the metrics/tracing
+instrumentation is woven into core provider/orchestration logic and the local
+file tracer is local diagnostics, so a full rip-out was high-risk/low-value. The
+`@t3tools/scripts` typecheck "bonus fix" was unneeded — it already passed.
 
 ## Goal
 
