@@ -132,9 +132,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
           AND status = 'pending'
       `.pipe(
         Effect.mapError(
-          toPersistenceSqlError(
-            "ProjectionPendingApprovalRepository.countPendingByThreadId:query",
-          ),
+          toPersistenceSqlError("ProjectionPendingApprovalRepository.countPendingByThreadId:query"),
         ),
         Effect.map((rows) => rows[0]?.count ?? 0),
       );

@@ -184,9 +184,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         AND role = 'user'
     `.pipe(
       Effect.mapError(
-        toPersistenceSqlError(
-          "ProjectionThreadMessageRepository.latestUserMessageAt:query",
-        ),
+        toPersistenceSqlError("ProjectionThreadMessageRepository.latestUserMessageAt:query"),
       ),
       Effect.map((rows) => rows[0]?.ts ?? null),
     );
