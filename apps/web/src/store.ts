@@ -638,8 +638,7 @@ function writeThreadState(
     const prevById = state.messageByThreadId[nextThread.id];
     const prevIds = state.messageIdsByThreadId[nextThread.id];
     const isExistingMessage =
-      hints?.changedMessage !== undefined &&
-      prevById?.[hints.changedMessage.id] !== undefined;
+      hints?.changedMessage !== undefined && prevById?.[hints.changedMessage.id] !== undefined;
     if (
       hints?.changedMessage !== undefined &&
       prevById !== undefined &&
@@ -654,10 +653,9 @@ function writeThreadState(
         ...prevById,
         [changedMessage.id]: changedMessage,
       };
-      const nextIds =
-        isExistingMessage
-          ? prevIds
-          : ([...prevIds, changedMessage.id] as MessageId[]);
+      const nextIds = isExistingMessage
+        ? prevIds
+        : ([...prevIds, changedMessage.id] as MessageId[]);
       nextState = {
         ...nextState,
         messageIdsByThreadId: {
@@ -1536,36 +1534,37 @@ function applyEnvironmentOrchestrationEvent(
         const existingMessage =
           state.messageByThreadId[event.payload.threadId]?.[event.payload.messageId];
         let changedMessage: ChatMessage;
-        const messages = existingMessage !== undefined
-          ? thread.messages.map((entry) => {
-              if (entry.id !== message.id) return entry;
-              const merged: ChatMessage = {
-                ...entry,
-                text: message.streaming
-                  ? `${entry.text}${message.text}`
-                  : message.text.length > 0
-                    ? message.text
-                    : entry.text,
-                streaming: message.streaming,
-                ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
-                ...(message.streaming
-                  ? entry.completedAt !== undefined
-                    ? { completedAt: entry.completedAt }
-                    : {}
-                  : message.completedAt !== undefined
-                    ? { completedAt: message.completedAt }
+        const messages =
+          existingMessage !== undefined
+            ? thread.messages.map((entry) => {
+                if (entry.id !== message.id) return entry;
+                const merged: ChatMessage = {
+                  ...entry,
+                  text: message.streaming
+                    ? `${entry.text}${message.text}`
+                    : message.text.length > 0
+                      ? message.text
+                      : entry.text,
+                  streaming: message.streaming,
+                  ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                  ...(message.streaming
+                    ? entry.completedAt !== undefined
+                      ? { completedAt: entry.completedAt }
+                      : {}
+                    : message.completedAt !== undefined
+                      ? { completedAt: message.completedAt }
+                      : {}),
+                  ...(message.attachments !== undefined
+                    ? { attachments: message.attachments }
                     : {}),
-                ...(message.attachments !== undefined
-                  ? { attachments: message.attachments }
-                  : {}),
-              };
-              changedMessage = merged;
-              return merged;
-            })
-          : (() => {
-              changedMessage = message;
-              return [...thread.messages, message];
-            })();
+                };
+                changedMessage = merged;
+                return merged;
+              })
+            : (() => {
+                changedMessage = message;
+                return [...thread.messages, message];
+              })();
         const cappedMessages = messages.slice(-MAX_THREAD_MESSAGES);
         const turnDiffSummaries =
           event.payload.role === "assistant" && event.payload.turnId !== null
@@ -1812,8 +1811,7 @@ function applyEnvironmentOrchestrationEvent(
     case "thread.activity-appended":
       return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const newActivity = { ...event.payload.activity };
-        const existingActivity =
-          state.activityByThreadId[event.payload.threadId]?.[newActivity.id];
+        const existingActivity = state.activityByThreadId[event.payload.threadId]?.[newActivity.id];
         let activities: OrchestrationThreadActivity[];
         let changedActivity: OrchestrationThreadActivity | undefined;
         if (existingActivity !== undefined) {

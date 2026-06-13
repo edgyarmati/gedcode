@@ -1333,9 +1333,7 @@ describe("incremental slice characterization (plan 012 contract)", () => {
       MessageId.make("message-1"),
       MessageId.make("message-2"),
     ]);
-    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-1")]?.text).toBe(
-      "hello",
-    );
+    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-1")]?.text).toBe("hello");
     expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-2")]?.text).toBe(
       "hello world done",
     );
@@ -1345,11 +1343,11 @@ describe("incremental slice characterization (plan 012 contract)", () => {
       EventId.make("activity-b"),
       EventId.make("activity-a"),
     ]);
-    expect(
-      envState.activityByThreadId[threadId]?.[EventId.make("activity-a")]?.summary,
-    ).toBe("step A v2 (resent)");
-    expect(
-      envState.activityByThreadId[threadId]?.[EventId.make("activity-b")]?.summary,
-    ).toBe("step B (earlier)");
+    expect(envState.activityByThreadId[threadId]?.[EventId.make("activity-a")]?.summary).toBe(
+      "step A v2 (resent)",
+    );
+    expect(envState.activityByThreadId[threadId]?.[EventId.make("activity-b")]?.summary).toBe(
+      "step B (earlier)",
+    );
   });
 });
