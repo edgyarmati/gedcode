@@ -52,11 +52,6 @@
       "dependsOn": [],
       "cache": false,
       "outputs": []
-    },
-    "test:coverage": {
-      "dependsOn": [],
-      "cache": false,
-      "outputs": ["coverage/**"]
     }
   }
 }
