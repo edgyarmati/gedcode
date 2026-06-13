@@ -174,11 +174,29 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       ),
     );
 
+  const latestUserMessageAt: ProjectionThreadMessageRepositoryShape["latestUserMessageAt"] = ({
+    threadId,
+  }) =>
+    sql<{ readonly ts: string | null }>`
+      SELECT MAX(created_at) AS "ts"
+      FROM projection_thread_messages
+      WHERE thread_id = ${threadId}
+        AND role = 'user'
+    `.pipe(
+      Effect.mapError(
+        toPersistenceSqlError(
+          "ProjectionThreadMessageRepository.latestUserMessageAt:query",
+        ),
+      ),
+      Effect.map((rows) => rows[0]?.ts ?? null),
+    );
+
   return {
     upsert,
     getByMessageId,
     listByThreadId,
     deleteByThreadId,
+    latestUserMessageAt,
   } satisfies ProjectionThreadMessageRepositoryShape;
 });
 

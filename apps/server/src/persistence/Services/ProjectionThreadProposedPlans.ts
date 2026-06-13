@@ -35,6 +35,11 @@ export const DeleteProjectionThreadProposedPlansInput = Schema.Struct({
 export type DeleteProjectionThreadProposedPlansInput =
   typeof DeleteProjectionThreadProposedPlansInput.Type;
 
+export interface HasActionableProposedPlanInput {
+  readonly threadId: ThreadId;
+  readonly latestTurnId: string | null;
+}
+
 export interface ProjectionThreadProposedPlanRepositoryShape {
   readonly upsert: (
     proposedPlan: ProjectionThreadProposedPlan,
@@ -45,6 +50,14 @@ export interface ProjectionThreadProposedPlanRepositoryShape {
   readonly deleteByThreadId: (
     input: DeleteProjectionThreadProposedPlansInput,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
+  /**
+   * Determine whether the thread has an actionable (unimplemented) proposed
+   * plan. Prefers the latest plan scoped to `latestTurnId` when provided;
+   * falls back to the overall latest plan.
+   */
+  readonly hasActionableProposedPlan: (
+    input: HasActionableProposedPlanInput,
+  ) => Effect.Effect<boolean, ProjectionRepositoryError>;
 }
 
 export class ProjectionThreadProposedPlanRepository extends Context.Service<

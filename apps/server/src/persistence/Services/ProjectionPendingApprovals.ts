@@ -82,6 +82,13 @@ export interface ProjectionPendingApprovalRepositoryShape {
   readonly deleteByRequestId: (
     input: DeleteProjectionPendingApprovalInput,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Count pending approval rows for a thread (status = 'pending').
+   */
+  readonly countPendingByThreadId: (
+    input: ListProjectionPendingApprovalsInput,
+  ) => Effect.Effect<number, ProjectionRepositoryError>;
 }
 
 /**

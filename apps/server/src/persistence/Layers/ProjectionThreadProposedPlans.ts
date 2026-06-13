@@ -10,6 +10,7 @@ import {
   ProjectionThreadProposedPlan,
   ProjectionThreadProposedPlanRepository,
   type ProjectionThreadProposedPlanRepositoryShape,
+  type HasActionableProposedPlanInput,
 } from "../Services/ProjectionThreadProposedPlans.ts";
 
 const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
@@ -98,10 +99,37 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       ),
     );
 
+  const hasActionableProposedPlan: ProjectionThreadProposedPlanRepositoryShape["hasActionableProposedPlan"] =
+    ({ threadId, latestTurnId }: HasActionableProposedPlanInput) =>
+      sql<{ readonly implementedAt: string | null }>`
+        SELECT implemented_at AS "implementedAt"
+        FROM projection_thread_proposed_plans
+        WHERE thread_id = ${threadId}
+        ORDER BY
+          CASE WHEN ${latestTurnId} IS NOT NULL AND turn_id = ${latestTurnId} THEN 0 ELSE 1 END ASC,
+          updated_at DESC,
+          plan_id DESC
+        LIMIT 1
+      `.pipe(
+        Effect.mapError(
+          toPersistenceSqlError(
+            "ProjectionThreadProposedPlanRepository.hasActionableProposedPlan:query",
+          ),
+        ),
+        Effect.map((rows) => {
+          const row = rows[0];
+          if (row === undefined) {
+            return false;
+          }
+          return row.implementedAt === null;
+        }),
+      );
+
   return {
     upsert,
     listByThreadId,
     deleteByThreadId,
+    hasActionableProposedPlan,
   } satisfies ProjectionThreadProposedPlanRepositoryShape;
 });
 
