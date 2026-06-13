@@ -169,10 +169,10 @@ export class WsTransport {
 
           const formattedError = formatErrorMessage(error);
           if (!isTransportConnectionErrorMessage(formattedError)) {
-            console.error(
-              "WebSocket RPC subscription failed permanently — dropping subscription",
-              { error: formattedError, ...(options?.tag !== undefined ? { tag: options.tag } : {}) },
-            );
+            console.error("WebSocket RPC subscription failed permanently — dropping subscription", {
+              error: formattedError,
+              ...(options?.tag !== undefined ? { tag: options.tag } : {}),
+            });
             return;
           }
 
