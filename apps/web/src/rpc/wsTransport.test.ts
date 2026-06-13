@@ -711,6 +711,85 @@ describe("WsTransport", () => {
     await transport.dispose();
   });
 
+  it("reports a throwing listener via console.error but keeps the stream alive", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let callCount = 0;
+    const listener = vi.fn(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        throw new Error("listener boom");
+      }
+    });
+
+    const unsubscribe = transport.subscribe(
+      (client) => client[WS_METHODS.subscribeServerLifecycle]({}),
+      listener,
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+
+    const socket = getSocket();
+    socket.open();
+
+    await waitFor(() => {
+      expect(socket.sent).toHaveLength(1);
+    });
+
+    const requestMessage = JSON.parse(socket.sent[0] ?? "{}") as { id: string };
+
+    const makeEvent = (seq: number) => ({
+      version: 1,
+      sequence: seq,
+      type: "welcome",
+      payload: {
+        environment: {
+          environmentId: "environment-local",
+          label: "Local environment",
+          platform: { os: "darwin", arch: "arm64" },
+          serverVersion: "0.0.0-test",
+          capabilities: { repositoryIdentity: true },
+        },
+        cwd: "/tmp/workspace",
+        projectName: "workspace",
+      },
+    });
+
+    // First chunk — listener throws
+    socket.serverMessage(
+      JSON.stringify({
+        _tag: "Chunk",
+        requestId: requestMessage.id,
+        values: [makeEvent(1)],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(errorSpy).toHaveBeenCalledWith(
+        "WebSocket listener threw while applying a pushed value",
+        expect.any(Error),
+      );
+    });
+
+    // Second chunk — listener succeeds, proving the stream is still alive
+    socket.serverMessage(
+      JSON.stringify({
+        _tag: "Chunk",
+        requestId: requestMessage.id,
+        values: [makeEvent(2)],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(listener).toHaveBeenCalledTimes(2);
+    });
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
   it("re-subscribes stream listeners after the stream exits", async () => {
     const transport = createTransport("ws://localhost:3020");
     const listener = vi.fn();
@@ -977,6 +1056,7 @@ describe("WsTransport", () => {
 
   it("does not retry stream subscriptions after application-level failures", async () => {
     const transport = createTransport("ws://localhost:3020");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     let attempts = 0;
 
@@ -987,7 +1067,7 @@ describe("WsTransport", () => {
           return Stream.fail(new Error("Git command failed in GitCore.statusDetails"));
         }),
       vi.fn(),
-      { retryDelay: 10 },
+      { retryDelay: 10, tag: "gitStatus" },
     );
 
     await waitFor(() => {
@@ -1002,9 +1082,10 @@ describe("WsTransport", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(attempts).toBe(1);
-    expect(warnSpy).toHaveBeenCalledWith("WebSocket RPC subscription failed", {
-      error: "Git command failed in GitCore.statusDetails",
-    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      "WebSocket RPC subscription failed permanently — dropping subscription",
+      { error: "Git command failed in GitCore.statusDetails", tag: "gitStatus" },
+    );
     expect(warnSpy).not.toHaveBeenCalledWith(
       "WebSocket RPC subscription disconnected",
       expect.anything(),
