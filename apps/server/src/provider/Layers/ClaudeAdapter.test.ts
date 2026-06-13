@@ -3689,6 +3689,86 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "resolves pending user-input deferrals and clears the map when a session is stopped",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "approval-required",
+        });
+
+        yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+        const createInput = harness.getLastCreateQueryInput();
+        const canUseTool = createInput?.options.canUseTool;
+        assert.equal(typeof canUseTool, "function");
+        if (!canUseTool) {
+          return;
+        }
+
+        // Start a canUseTool fiber that will block awaiting user input.
+        const permissionPromise = canUseTool(
+          "AskUserQuestion",
+          {
+            questions: [
+              {
+                question: "Should we proceed?",
+                header: "Confirmation",
+                options: [{ label: "Yes", description: "Proceed" }],
+                multiSelect: false,
+              },
+            ],
+          },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-ask-stop",
+          },
+        );
+
+        // Wait for the user-input.requested event so the entry is in the map.
+        const requestedEvent = yield* Stream.runHead(adapter.streamEvents);
+        assert.equal(requestedEvent._tag, "Some");
+        if (requestedEvent._tag !== "Some" || requestedEvent.value.type !== "user-input.requested") {
+          assert.fail("Expected user-input.requested event");
+          return;
+        }
+        assert.equal(requestedEvent.value.threadId, session.threadId);
+
+        // Stop the session — stopSessionInternal must resolve the deferred.
+        yield* adapter.stopSession(session.threadId);
+
+        // The user-input.resolved event must be emitted as part of stop.
+        const resolvedEvent = yield* Stream.runHead(adapter.streamEvents);
+        assert.equal(resolvedEvent._tag, "Some");
+        if (resolvedEvent._tag !== "Some" || resolvedEvent.value.type !== "user-input.resolved") {
+          assert.fail("Expected user-input.resolved event on stop");
+          return;
+        }
+        assert.deepEqual(resolvedEvent.value.payload.answers, {});
+
+        // The awaiting fiber must complete (not hang).
+        const permissionResult = yield* Effect.promise(() => permissionPromise);
+        // The deferred resolved with {} which is treated as aborted=false at
+        // the handleAskUserQuestion level (the abort listener never fired),
+        // so behavior is "allow" with the empty answers forwarded. What matters
+        // for the regression is that the promise settled at all.
+        assert.ok(
+          (permissionResult as { behavior: string }).behavior === "allow" ||
+            (permissionResult as { behavior: string }).behavior === "deny",
+          `permissionResult.behavior must be set; got ${String((permissionResult as { behavior?: string }).behavior)}`,
+        );
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("writes provider-native observability records when enabled", () => {
     const nativeEvents: Array<{
       event?: {

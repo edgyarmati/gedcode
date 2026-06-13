@@ -2537,6 +2537,23 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     context.pendingApprovals.clear();
 
+    for (const [requestId, pending] of context.pendingUserInputs) {
+      yield* Deferred.succeed(pending.answers, {} as ProviderUserInputAnswers);
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "user-input.resolved",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+        requestId: asRuntimeRequestId(requestId),
+        payload: { answers: {} },
+        providerRefs: nativeProviderRefs(context),
+      });
+    }
+    context.pendingUserInputs.clear();
+
     if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Session stopped.");
     }
