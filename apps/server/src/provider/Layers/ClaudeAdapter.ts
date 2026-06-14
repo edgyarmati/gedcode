@@ -147,6 +147,10 @@ interface PendingApproval {
 interface PendingUserInput {
   readonly questions: ReadonlyArray<UserInputQuestion>;
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+  // Cancel the pending request (turn aborted or session stopped). Drives the
+  // waiting fiber through the same denial path as an abort: it resolves to a
+  // single "deny" result and emits exactly one user-input.resolved event.
+  readonly cancel: () => void;
 }
 
 interface ToolInFlight {
@@ -2537,6 +2541,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
     context.pendingApprovals.clear();
 
+    // Cancel any pending user-input requests through the same path as an aborted
+    // turn. Each waiting fiber settles to a single "deny" and emits exactly one
+    // user-input.resolved event itself — resolving + emitting here as well would
+    // duplicate that event and leave the waiter returning "allow" with empty
+    // answers (accidentally approving the SDK tool call on a stopped session).
+    for (const [, pending] of context.pendingUserInputs) {
+      pending.cancel();
+    }
+    context.pendingUserInputs.clear();
+
     if (context.turnState) {
       yield* completeTurn(context, "interrupted", "Session stopped.");
     }
@@ -2709,9 +2723,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
         const answersDeferred = yield* Deferred.make<ProviderUserInputAnswers>();
         let aborted = false;
+        // Shared cancellation for both the abort signal and session stop: mark
+        // the waiter aborted, drop the entry, and resolve the deferred. The
+        // waiter (below) then emits the single user-input.resolved event and
+        // returns a "deny" result. Guarded on map membership so it runs once.
+        const cancel = (): void => {
+          if (!pendingUserInputs.has(requestId)) {
+            return;
+          }
+          aborted = true;
+          pendingUserInputs.delete(requestId);
+          runFork(Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers));
+        };
         const pendingInput: PendingUserInput = {
           questions,
           answers: answersDeferred,
+          cancel,
         };
 
         // Emit user-input.requested so the UI can present the questions.
@@ -2745,15 +2772,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         pendingUserInputs.set(requestId, pendingInput);
 
         // Handle abort (e.g. turn interrupted while waiting for user input).
-        const onAbort = () => {
-          if (!pendingUserInputs.has(requestId)) {
-            return;
-          }
-          aborted = true;
-          pendingUserInputs.delete(requestId);
-          runFork(Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers));
-        };
-        callbackOptions.signal.addEventListener("abort", onAbort, {
+        callbackOptions.signal.addEventListener("abort", cancel, {
           once: true,
         });
 

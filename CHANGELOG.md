@@ -19,6 +19,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Fix: Surface redacted stdout diagnostics when SSH commands fail without stderr output.
 - Provider support: Gate Claude Fable 5 behind supported Claude Code versions and expose its reasoning/context options.
 - Fix: Handle Claude SDK system messages as structured tool-denied events or clearer diagnostics instead of generic runtime-warning floods.
+- Fix: Deny pending Claude AskUserQuestion requests when a session stops instead of auto-approving them with empty answers, and emit a single resolved event.
 - Fix: Spawn the server build's Node subprocess directly instead of routing it through the Windows shell.
 - Fix: Spawn Windows PowerShell environment probes directly instead of routing them through the shell.
 - Fix: Spawn trusted system executables directly instead of routing them through the Windows shell.

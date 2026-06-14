@@ -3689,6 +3689,90 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "denies pending user-input with a single resolved event when a session is stopped",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "approval-required",
+        });
+
+        yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+        const createInput = harness.getLastCreateQueryInput();
+        const canUseTool = createInput?.options.canUseTool;
+        assert.equal(typeof canUseTool, "function");
+        if (!canUseTool) {
+          return;
+        }
+
+        // Start a canUseTool fiber that will block awaiting user input.
+        const permissionPromise = canUseTool(
+          "AskUserQuestion",
+          {
+            questions: [
+              {
+                question: "Should we proceed?",
+                header: "Confirmation",
+                options: [{ label: "Yes", description: "Proceed" }],
+                multiSelect: false,
+              },
+            ],
+          },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-ask-stop",
+          },
+        );
+
+        // Wait for the user-input.requested event so the entry is in the map.
+        const requestedEvent = yield* Stream.runHead(adapter.streamEvents);
+        assert.equal(requestedEvent._tag, "Some");
+        if (
+          requestedEvent._tag !== "Some" ||
+          requestedEvent.value.type !== "user-input.requested"
+        ) {
+          assert.fail("Expected user-input.requested event");
+          return;
+        }
+        assert.equal(requestedEvent.value.threadId, session.threadId);
+
+        // Stop the session. Stopping must drive the pending request through the
+        // same cancellation path as an aborted turn.
+        yield* adapter.stopSession(session.threadId);
+
+        // The waiting fiber must settle as a denial — a stopped session must
+        // never approve the pending tool call with empty answers.
+        const permissionResult = yield* Effect.promise(() => permissionPromise);
+        assert.deepEqual(permissionResult, {
+          behavior: "deny",
+          message: "User cancelled tool execution.",
+        } satisfies PermissionResult);
+
+        // Stop emits exactly two events here: the session exit and the single
+        // user-input.resolved from the waiting fiber. Assert exactly one
+        // resolved event (no duplicate) carrying empty answers.
+        const stopEvents = yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect);
+        const resolvedEvents = stopEvents.filter((event) => event.type === "user-input.resolved");
+        assert.equal(resolvedEvents.length, 1);
+        const resolved = resolvedEvents[0];
+        if (resolved?.type !== "user-input.resolved") {
+          assert.fail("Expected a single user-input.resolved event on stop");
+          return;
+        }
+        assert.deepEqual(resolved.payload.answers, {});
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
   it.effect("writes provider-native observability records when enabled", () => {
     const nativeEvents: Array<{
       event?: {
