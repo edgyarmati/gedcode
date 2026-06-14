@@ -6,6 +6,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 ## Unreleased
 
 - Internal: Pin `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` (both `0.79.3`, exact) in the server and add a decision spike (`docs/decisions/2026-06-pi-agent-core-api.md`) verifying the PM-runtime API ahead of Orchestrator mode. No user-facing or runtime behavior change.
+- Internal: Add server persistence migrations 033–037 for Orchestrator mode — task projection (`projection_tasks`), PM re-entry reconciliation sources (`projection_awaited_stages`, `projection_pending_gates`), the pi PM-brain session store (`pm_sessions`, `pm_session_entries`), exactly-once PM re-entry bookkeeping (`pm_runtime_cursor`, `pm_consumed_settlements`), and an `orchestrator_config_json` column on the project projection. Additive DDL only; no backfill, no event-log mutation, and no user-facing behavior until the feature is wired up.
 
 ## 0.1.3-nightly.20260614.1
 
