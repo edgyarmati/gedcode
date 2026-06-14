@@ -6,6 +6,7 @@ import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { GED_SUBAGENT_ROLES } from "./gedWorkflow.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
+import { OrchestratorGlobalDefaults } from "./orchestrator/config.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -523,6 +524,14 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Global orchestrator defaults — the resolution-order floor (design §7,
+  // Plan 018 WP-B). Defaulted so legacy `ServerSettings` without this key
+  // decode unchanged and round-trip without the orchestrator block. Like the
+  // per-project config, this rides only the human/client write path; no PM
+  // tool maps to `ServerSettings`, so the LLM cannot lower its own floor.
+  orchestratorDefaults: OrchestratorGlobalDefaults.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -619,6 +628,9 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Whole-object replacement for the global orchestrator defaults. The block is
+  // small and human/client-only; the UI sends a fully-formed object when edited.
+  orchestratorDefaults: Schema.optionalKey(OrchestratorGlobalDefaults),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

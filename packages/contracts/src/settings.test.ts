@@ -118,6 +118,41 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   });
 });
 
+describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
+  it("defaults the nested orchestrator block with a safe-by-default floor", () => {
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
+  });
+
+  it("decodes a legacy config (no orchestrator key) without complaint", () => {
+    // STOP-condition anchor: nesting the new optional defaults block must not
+    // break existing settings that predate the key.
+    const decoded = decodeServerSettings({});
+    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+  });
+
+  it("round-trips a fully empty config without dropping the orchestrator block", () => {
+    const decoded = decodeServerSettings({});
+    const reDecoded = decodeServerSettings(encodeServerSettings(decoded));
+    expect(reDecoded.orchestratorDefaults).toEqual(decoded.orchestratorDefaults);
+  });
+
+  it("honors an explicit human-set allowFullAccessWorkers floor", () => {
+    const decoded = decodeServerSettings({
+      orchestratorDefaults: { allowFullAccessWorkers: true, maxStageHandoffs: 20 },
+    });
+    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
+    expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
+  });
+
+  it("accepts orchestratorDefaults via the settings patch", () => {
+    const patch = decodeServerSettingsPatch({
+      orchestratorDefaults: { maxParallelWorkers: 4 },
+    });
+    expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
+  });
+});
+
 describe("ServerSettingsPatch.providerInstances", () => {
   it("accepts Ged workflow toggles", () => {
     const patch = decodeServerSettingsPatch({
