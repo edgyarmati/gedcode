@@ -1,10 +1,10 @@
 import type {
   OrchestrationEvent,
   OrchestrationReadModel,
+  OrchestrationShellStreamEvent,
   ProjectId,
-  ThreadId,
 } from "@t3tools/contracts";
-import { OrchestrationCommand } from "@t3tools/contracts";
+import { OrchestrationCommand, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -40,7 +40,10 @@ import {
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
-import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionSnapshotQueryShape,
+} from "../Services/ProjectionSnapshotQuery.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -76,6 +79,78 @@ function commandToAggregateRef(command: OrchestrationCommand): {
   }
 }
 
+/**
+ * Map a single orchestration domain event to its shell-stream projection.
+ *
+ * Exported so the mapping is computed once per event (inside the engine's
+ * shared shell hub) and can be reused by tests. Non-thread/non-project events
+ * and events whose aggregate row is missing degrade gracefully to `None`.
+ */
+export const toShellStreamEvent = (
+  projectionSnapshotQuery: Pick<
+    ProjectionSnapshotQueryShape,
+    "getProjectShellById" | "getThreadShellById"
+  >,
+  event: OrchestrationEvent,
+): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
+  switch (event.type) {
+    case "project.created":
+    case "project.meta-updated":
+      return projectionSnapshotQuery.getProjectShellById(event.payload.projectId).pipe(
+        Effect.map((project) =>
+          Option.map(project, (nextProject) => ({
+            kind: "project-upserted" as const,
+            sequence: event.sequence,
+            project: nextProject,
+          })),
+        ),
+        Effect.catch(() => Effect.succeed(Option.none())),
+      );
+    case "project.deleted":
+      return Effect.succeed(
+        Option.some({
+          kind: "project-removed" as const,
+          sequence: event.sequence,
+          projectId: event.payload.projectId,
+        }),
+      );
+    case "thread.deleted":
+    case "thread.archived":
+      return Effect.succeed(
+        Option.some({
+          kind: "thread-removed" as const,
+          sequence: event.sequence,
+          threadId: event.payload.threadId,
+        }),
+      );
+    case "thread.unarchived":
+      return projectionSnapshotQuery.getThreadShellById(event.payload.threadId).pipe(
+        Effect.map((thread) =>
+          Option.map(thread, (nextThread) => ({
+            kind: "thread-upserted" as const,
+            sequence: event.sequence,
+            thread: nextThread,
+          })),
+        ),
+        Effect.catch(() => Effect.succeed(Option.none())),
+      );
+    default:
+      if (event.aggregateKind !== "thread") {
+        return Effect.succeed(Option.none());
+      }
+      return projectionSnapshotQuery.getThreadShellById(ThreadId.make(event.aggregateId)).pipe(
+        Effect.map((thread) =>
+          Option.map(thread, (nextThread) => ({
+            kind: "thread-upserted" as const,
+            sequence: event.sequence,
+            thread: nextThread,
+          })),
+        ),
+        Effect.catch(() => Effect.succeed(Option.none())),
+      );
+  }
+};
+
 const makeOrchestrationEngine = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const eventStore = yield* OrchestrationEventStore;
@@ -89,6 +164,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+  // Shell-stream events are derived from domain events exactly once here and
+  // fanned out to every shell subscriber via this hub, so the per-event shell
+  // mapping (which issues projection queries) does not run per subscriber.
+  const shellPubSub = yield* PubSub.unbounded<OrchestrationShellStreamEvent>();
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -302,6 +381,18 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const worker = Effect.forever(Queue.take(commandQueue).pipe(Effect.flatMap(processEnvelope)));
   yield* Effect.forkScoped(worker);
+
+  // A single consumer maps each domain event to its shell projection once and
+  // publishes the result for all shell subscribers, removing the prior
+  // per-event per-subscriber re-query multiplier.
+  yield* Stream.fromPubSub(eventPubSub).pipe(
+    Stream.mapEffect((event) => toShellStreamEvent(projectionSnapshotQuery, event)),
+    Stream.flatMap((shellEvent) =>
+      Option.isSome(shellEvent) ? Stream.succeed(shellEvent.value) : Stream.empty,
+    ),
+    Stream.runForEach((shellEvent) => PubSub.publish(shellPubSub, shellEvent)),
+    Effect.forkScoped,
+  );
   yield* Effect.logDebug("orchestration engine started").pipe(
     Effect.annotateLogs({ sequence: commandReadModel.snapshotSequence }),
   );
@@ -328,6 +419,12 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     // each independently receive all domain events.
     get streamDomainEvents(): OrchestrationEngineShape["streamDomainEvents"] {
       return Stream.fromPubSub(eventPubSub);
+    },
+    // Shell-stream events are mapped once (above) and fanned out here. Each
+    // access creates a fresh subscription to the shared, already-mapped hub, so
+    // no projection re-query runs per subscriber.
+    get streamShellEvents(): OrchestrationEngineShape["streamShellEvents"] {
+      return Stream.fromPubSub(shellPubSub);
     },
   } satisfies OrchestrationEngineShape;
 });

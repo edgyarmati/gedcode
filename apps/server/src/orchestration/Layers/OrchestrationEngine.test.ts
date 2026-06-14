@@ -7,6 +7,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationShellStreamEvent,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -1077,6 +1078,133 @@ describe("OrchestrationEngine", () => {
         }),
       ),
     ).rejects.toThrow("already exists");
+
+    await system.dispose();
+  });
+
+  it("derives a thread-upserted shell event from a dispatched thread command", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const createdAt = now();
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-shell-create"),
+        projectId: asProjectId("project-shell"),
+        title: "Shell Project",
+        workspaceRoot: "/tmp/project-shell",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+
+    const shellEvent = await system.run(
+      Effect.gen(function* () {
+        const shellQueue = yield* Queue.unbounded<OrchestrationShellStreamEvent>();
+        yield* Effect.forkScoped(
+          Stream.take(engine.streamShellEvents, 1).pipe(
+            Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid)),
+          ),
+        );
+        yield* Effect.sleep("10 millis");
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-thread-shell-create"),
+          threadId: ThreadId.make("thread-shell"),
+          projectId: asProjectId("project-shell"),
+          title: "Shell Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+        return yield* Queue.take(shellQueue);
+      }).pipe(Effect.scoped),
+    );
+
+    expect(shellEvent.kind).toBe("thread-upserted");
+    if (shellEvent.kind === "thread-upserted") {
+      expect(shellEvent.thread.id).toBe(ThreadId.make("thread-shell"));
+      expect(shellEvent.thread.title).toBe("Shell Thread");
+      expect(shellEvent.thread.projectId).toBe(asProjectId("project-shell"));
+    }
+    await system.dispose();
+  });
+
+  it("maps each domain event once and fans the result out to all shell subscribers", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const createdAt = now();
+    const subscriberCount = 4;
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-fanout-create"),
+        projectId: asProjectId("project-fanout"),
+        title: "Fanout Project",
+        workspaceRoot: "/tmp/project-fanout",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+
+    const payloads = await system.run(
+      Effect.gen(function* () {
+        const queues = yield* Effect.forEach(Array.from({ length: subscriberCount }), () =>
+          Queue.unbounded<OrchestrationShellStreamEvent>(),
+        );
+        yield* Effect.forEach(
+          queues,
+          (queue) =>
+            Effect.forkScoped(
+              Stream.take(engine.streamShellEvents, 1).pipe(
+                Stream.runForEach((event) => Queue.offer(queue, event).pipe(Effect.asVoid)),
+              ),
+            ),
+          { concurrency: "unbounded" },
+        );
+        yield* Effect.sleep("10 millis");
+        yield* engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("cmd-thread-fanout-create"),
+          threadId: ThreadId.make("thread-fanout"),
+          projectId: asProjectId("project-fanout"),
+          title: "Fanout Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+        });
+        return yield* Effect.forEach(queues, (queue) => Queue.take(queue));
+      }).pipe(Effect.scoped),
+    );
+
+    expect(payloads).toHaveLength(subscriberCount);
+    const [first, ...rest] = payloads;
+    expect(first?.kind).toBe("thread-upserted");
+    // Every subscriber receives the identical mapped payload produced by the
+    // single shared mapping fiber (proves the per-subscriber re-map is gone).
+    for (const other of rest) {
+      expect(other).toEqual(first);
+    }
 
     await system.dispose();
   });

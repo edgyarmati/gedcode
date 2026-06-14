@@ -57,6 +57,7 @@ const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 import type { ServerConfigShape } from "./config.ts";
 import { deriveServerPaths, ServerConfig } from "./config.ts";
 import { makeRoutesLayer } from "./server.ts";
+import { toShellStreamEvent } from "./orchestration/Layers/OrchestrationEngine.ts";
 import { resolveAttachmentRelativePath } from "./attachmentPaths.ts";
 import {
   CheckpointDiffQuery,
@@ -376,6 +377,32 @@ const buildAppUnderTest = (options?: {
       ...options?.config,
     };
     const layerConfig = Layer.succeed(ServerConfig, config);
+    // The real engine derives shell-stream events from domain events once and
+    // fans them out. The mock mirrors that derivation from the (possibly
+    // overridden) domain stream + projection shell getters so the shell stream
+    // stays consistent with `streamDomainEvents` unless explicitly overridden.
+    const resolvedGetProjectShellById =
+      options?.layers?.projectionSnapshotQuery?.getProjectShellById ??
+      (() => Effect.succeed(Option.none()));
+    const resolvedGetThreadShellById =
+      options?.layers?.projectionSnapshotQuery?.getThreadShellById ??
+      (() => Effect.succeed(Option.none()));
+    const resolvedStreamDomainEvents =
+      options?.layers?.orchestrationEngine?.streamDomainEvents ?? Stream.empty;
+    const defaultStreamShellEvents = resolvedStreamDomainEvents.pipe(
+      Stream.mapEffect((event) =>
+        toShellStreamEvent(
+          {
+            getProjectShellById: resolvedGetProjectShellById,
+            getThreadShellById: resolvedGetThreadShellById,
+          },
+          event,
+        ),
+      ),
+      Stream.flatMap((shellEvent) =>
+        Option.isSome(shellEvent) ? Stream.succeed(shellEvent.value) : Stream.empty,
+      ),
+    );
     const defaultVcsDriver: VcsDriver.VcsDriverShape = {
       capabilities: {
         kind: "git",
@@ -635,6 +662,7 @@ const buildAppUnderTest = (options?: {
           readEvents: () => Stream.empty,
           dispatch: () => Effect.succeed({ sequence: 0 }),
           streamDomainEvents: Stream.empty,
+          streamShellEvents: defaultStreamShellEvents,
           ...options?.layers?.orchestrationEngine,
         }),
       ),
@@ -3274,6 +3302,73 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
       assertTrue(result.failure.cause instanceof Error);
       assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeShell maps a thread aggregate event to a thread-upserted payload", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-shell-stream");
+      const updatedAt = "2026-05-01T00:00:00.000Z";
+      const threadShell = makeDefaultOrchestrationThreadShell({
+        id: threadId,
+        title: "Streamed Thread",
+        updatedAt,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "claudeAgent",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt,
+        },
+      });
+      const threadEvent = {
+        sequence: 7,
+        eventId: EventId.make("event-shell-1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: updatedAt,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.meta-updated",
+        payload: {
+          threadId,
+          title: "Streamed Thread",
+          updatedAt,
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.meta-updated" }>;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            streamDomainEvents: Stream.make(threadEvent),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () => Effect.succeed(Option.some(threadShell)),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const events = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+            Stream.take(2),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      const [first, second] = Array.from(events);
+      assert.equal(first?.kind, "snapshot");
+      assert.deepEqual(second, {
+        kind: "thread-upserted",
+        sequence: 7,
+        thread: threadShell,
+      });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
