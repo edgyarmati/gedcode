@@ -11,11 +11,13 @@ import {
   CheckpointRef,
   CommandId,
   EventId,
+  GateId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
   ProjectId,
   ProviderItemId,
+  TaskId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
@@ -363,6 +365,92 @@ export const OrchestrationThread = Schema.Struct({
 });
 export type OrchestrationThread = typeof OrchestrationThread.Type;
 
+/**
+ * Identifier for a configurable task type (taxonomy entry, e.g. `feature`).
+ *
+ * Brands the task-type slug so it cannot be confused with other entity ids.
+ */
+export const TaskTypeId = TrimmedNonEmptyString.pipe(Schema.brand("TaskTypeId"));
+export type TaskTypeId = typeof TaskTypeId.Type;
+
+/**
+ * Closed lifecycle status for a task aggregate.
+ *
+ * Status is **derived purely from the event log** by the projector — there is
+ * intentionally no `task.status.set` command. The literal is closed so every
+ * projection/consumer is exhaustiveness-checked by the compiler.
+ */
+export const OrchestrationTaskStatus = Schema.Literals([
+  "draft",
+  "classified",
+  "planning",
+  "plan-review",
+  "working",
+  "review",
+  "verifying",
+  "landed",
+  "abandoned",
+  "blocked",
+]);
+export type OrchestrationTaskStatus = typeof OrchestrationTaskStatus.Type;
+
+/**
+ * The task aggregate: one worktree + branch, grouping per-stage worker threads.
+ *
+ * Schema-only — the projector (WP-D) derives `status` deterministically from the
+ * `task.*` event log; nothing here computes it.
+ */
+export const OrchestrationTask = Schema.Struct({
+  id: TaskId,
+  projectId: ProjectId,
+  type: TaskTypeId,
+  title: TrimmedNonEmptyString,
+  status: OrchestrationTaskStatus,
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  pmMessageId: Schema.NullOr(MessageId),
+  stageThreadIds: Schema.Array(ThreadId),
+  currentStageThreadId: Schema.NullOr(ThreadId),
+  playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationTask = typeof OrchestrationTask.Type;
+
+/**
+ * Stage role within a task pipeline. Closed for the slice (`feature` →
+ * `[classify, plan, work]`); later phases extend it (review/verify).
+ */
+export const OrchestrationStageRole = Schema.Literals(["classify", "plan", "work"]);
+export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
+
+/**
+ * The gates that can guard a task. `plan` and `land` are the slice's gates;
+ * `land` is hard-pinned to require approval. Closed so config + the decider's
+ * `requireGateSatisfied` invariant are exhaustiveness-checked together.
+ */
+export const OrchestrationGateKind = Schema.Literals([
+  "classify",
+  "plan",
+  "work",
+  "review",
+  "land",
+]);
+export type OrchestrationGateKind = typeof OrchestrationGateKind.Type;
+
+/**
+ * Origin actor for a gate resolution. The decider (WP-E) accepts only
+ * `human`/`client` origins and **rejects `pm-runtime`** so the LLM-driven PM
+ * cannot self-approve its own gates.
+ */
+export const OrchestrationGateResolutionOrigin = Schema.Literals([
+  "human",
+  "client",
+  "pm-runtime",
+  "system",
+]);
+export type OrchestrationGateResolutionOrigin = typeof OrchestrationGateResolutionOrigin.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -661,6 +749,71 @@ const ThreadSessionStopCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+/**
+ * Decision recorded when a task gate is resolved. Closed literal so the decider
+ * and projections agree on the resolution outcome.
+ */
+export const OrchestrationGateDecision = Schema.Literals(["approved", "rejected"]);
+export type OrchestrationGateDecision = typeof OrchestrationGateDecision.Type;
+
+const TaskCreateCommand = Schema.Struct({
+  type: Schema.Literal("task.create"),
+  commandId: CommandId,
+  taskId: TaskId,
+  projectId: ProjectId,
+  taskType: TaskTypeId,
+  title: TrimmedNonEmptyString,
+  pmMessageId: Schema.NullOr(MessageId),
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+});
+
+const TaskClassifyCommand = Schema.Struct({
+  type: Schema.Literal("task.classify"),
+  commandId: CommandId,
+  taskId: TaskId,
+  taskType: TaskTypeId,
+  playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+});
+
+/**
+ * The handoff command. Internal/PM-dispatchable. The decider (WP-E) pins
+ * `runtimeMode` and the role's model from config — they are intentionally **not**
+ * accepted as command params so a hallucinated PM cannot escalate the worker.
+ */
+const TaskStageStartCommand = Schema.Struct({
+  type: Schema.Literal("task.stage.start"),
+  commandId: CommandId,
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  instructions: Schema.String,
+  createdAt: IsoDateTime,
+});
+
+const TaskGateRequestCommand = Schema.Struct({
+  type: Schema.Literal("task.gate.request"),
+  commandId: CommandId,
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  contentHash: TrimmedNonEmptyString,
+  stageThreadId: Schema.NullOr(ThreadId),
+  createdAt: IsoDateTime,
+});
+
+const TaskGateResolveCommand = Schema.Struct({
+  type: Schema.Literal("task.gate.resolve"),
+  commandId: CommandId,
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  approvedHash: TrimmedNonEmptyString,
+  decision: OrchestrationGateDecision,
+  origin: OrchestrationGateResolutionOrigin,
+  createdAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -678,6 +831,11 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  TaskCreateCommand,
+  TaskClassifyCommand,
+  TaskStageStartCommand,
+  TaskGateRequestCommand,
+  TaskGateResolveCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -807,10 +965,18 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "task.created",
+  "task.classified",
+  "task.stage-started",
+  "task.stage-completed",
+  "task.gate-requested",
+  "task.gate-resolved",
+  "task.landed",
+  "task.abandoned",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals(["project", "thread", "task"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -986,6 +1152,72 @@ export const ThreadActivityAppendedPayload = Schema.Struct({
   activity: OrchestrationThreadActivity,
 });
 
+export const TaskCreatedPayload = Schema.Struct({
+  taskId: TaskId,
+  projectId: ProjectId,
+  taskType: TaskTypeId,
+  title: TrimmedNonEmptyString,
+  status: OrchestrationTaskStatus,
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  pmMessageId: Schema.NullOr(MessageId),
+  playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskClassifiedPayload = Schema.Struct({
+  taskId: TaskId,
+  taskType: TaskTypeId,
+  playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskStageStartedPayload = Schema.Struct({
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  awaitedTurnId: Schema.NullOr(TurnId),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskStageCompletedPayload = Schema.Struct({
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  awaitedTurnId: Schema.NullOr(TurnId),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskGateRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  contentHash: TrimmedNonEmptyString,
+  stageThreadId: Schema.NullOr(ThreadId),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskGateResolvedPayload = Schema.Struct({
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  approvedHash: TrimmedNonEmptyString,
+  decision: OrchestrationGateDecision,
+  origin: OrchestrationGateResolutionOrigin,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskLandedPayload = Schema.Struct({
+  taskId: TaskId,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskAbandonedPayload = Schema.Struct({
+  taskId: TaskId,
+  updatedAt: IsoDateTime,
+});
+
 export const OrchestrationEventMetadata = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerItemId: Schema.optional(ProviderItemId),
@@ -999,7 +1231,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1117,6 +1349,46 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.created"),
+    payload: TaskCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.classified"),
+    payload: TaskClassifiedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.stage-started"),
+    payload: TaskStageStartedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.stage-completed"),
+    payload: TaskStageCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.gate-requested"),
+    payload: TaskGateRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.gate-resolved"),
+    payload: TaskGateResolvedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.landed"),
+    payload: TaskLandedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.abandoned"),
+    payload: TaskAbandonedPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
