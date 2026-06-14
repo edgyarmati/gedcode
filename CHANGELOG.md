@@ -3,6 +3,10 @@
 Release notes are grouped by released version. Add a `## X.Y.Z` section before running
 `./release.sh stable ...` or `./release.sh nightly ...`.
 
+## Unreleased
+
+- Internal: Pin `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` (both `0.79.3`, exact) in the server and add a decision spike (`docs/decisions/2026-06-pi-agent-core-api.md`) verifying the PM-runtime API ahead of Orchestrator mode. No user-facing or runtime behavior change.
+
 ## 0.1.3-nightly.20260614.1
 
 - Improve: Derive orchestration shell-stream events once per domain event in the engine and fan the mapped result out to all shell subscribers, removing the prior per-event per-subscriber projection re-query.
