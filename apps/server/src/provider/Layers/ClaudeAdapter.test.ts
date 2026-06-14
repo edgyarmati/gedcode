@@ -3690,7 +3690,7 @@ describe("ClaudeAdapterLive", () => {
   });
 
   it.effect(
-    "resolves pending user-input deferrals and clears the map when a session is stopped",
+    "denies pending user-input with a single resolved event when a session is stopped",
     () => {
       const harness = makeHarness();
       return Effect.gen(function* () {
@@ -3742,29 +3742,30 @@ describe("ClaudeAdapterLive", () => {
         }
         assert.equal(requestedEvent.value.threadId, session.threadId);
 
-        // Stop the session — stopSessionInternal must resolve the deferred.
+        // Stop the session. Stopping must drive the pending request through the
+        // same cancellation path as an aborted turn.
         yield* adapter.stopSession(session.threadId);
 
-        // The user-input.resolved event must be emitted as part of stop.
-        const resolvedEvent = yield* Stream.runHead(adapter.streamEvents);
-        assert.equal(resolvedEvent._tag, "Some");
-        if (resolvedEvent._tag !== "Some" || resolvedEvent.value.type !== "user-input.resolved") {
-          assert.fail("Expected user-input.resolved event on stop");
+        // The waiting fiber must settle as a denial — a stopped session must
+        // never approve the pending tool call with empty answers.
+        const permissionResult = yield* Effect.promise(() => permissionPromise);
+        assert.deepEqual(permissionResult, {
+          behavior: "deny",
+          message: "User cancelled tool execution.",
+        } satisfies PermissionResult);
+
+        // Stop emits exactly two events here: the session exit and the single
+        // user-input.resolved from the waiting fiber. Assert exactly one
+        // resolved event (no duplicate) carrying empty answers.
+        const stopEvents = yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect);
+        const resolvedEvents = stopEvents.filter((event) => event.type === "user-input.resolved");
+        assert.equal(resolvedEvents.length, 1);
+        const resolved = resolvedEvents[0];
+        if (resolved?.type !== "user-input.resolved") {
+          assert.fail("Expected a single user-input.resolved event on stop");
           return;
         }
-        assert.deepEqual(resolvedEvent.value.payload.answers, {});
-
-        // The awaiting fiber must complete (not hang).
-        const permissionResult = yield* Effect.promise(() => permissionPromise);
-        // The deferred resolved with {} which is treated as aborted=false at
-        // the handleAskUserQuestion level (the abort listener never fired),
-        // so behavior is "allow" with the empty answers forwarded. What matters
-        // for the regression is that the promise settled at all.
-        assert.ok(
-          (permissionResult as { behavior: string }).behavior === "allow" ||
-            (permissionResult as { behavior: string }).behavior === "deny",
-          `permissionResult.behavior must be set; got ${String((permissionResult as { behavior?: string }).behavior)}`,
-        );
+        assert.deepEqual(resolved.payload.answers, {});
       }).pipe(
         Effect.provideService(Random.Random, makeDeterministicRandomService()),
         Effect.provide(harness.layer),
