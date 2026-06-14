@@ -100,11 +100,7 @@ export class WsTransport {
     await session.runtime.runPromise(
       Stream.runForEach(connect(client), (value) =>
         Effect.sync(() => {
-          try {
-            listener(value);
-          } catch {
-            // Swallow listener errors so the stream can finish cleanly.
-          }
+          invokeListener(listener, value);
         }),
       ),
     );
@@ -145,8 +141,8 @@ export class WsTransport {
                     onStarted: () => {
                       try {
                         options?.onResubscribe?.();
-                      } catch {
-                        // Swallow reconnect hook errors so the stream can recover.
+                      } catch (hookError) {
+                        console.error("WebSocket onResubscribe hook threw", hookError);
                       }
                     },
                   }
@@ -173,8 +169,9 @@ export class WsTransport {
 
           const formattedError = formatErrorMessage(error);
           if (!isTransportConnectionErrorMessage(formattedError)) {
-            console.warn("WebSocket RPC subscription failed", {
+            console.error("WebSocket RPC subscription failed permanently — dropping subscription", {
               error: formattedError,
+              ...(options?.tag !== undefined ? { tag: options.tag } : {}),
             });
             return;
           }
@@ -322,11 +319,7 @@ export class WsTransport {
               }
 
               markValueReceived();
-              try {
-                listener(value);
-              } catch {
-                // Swallow listener errors so the stream stays live.
-              }
+              invokeListener(listener, value);
             }),
           ),
         ),
@@ -351,6 +344,14 @@ export class WsTransport {
       cancel,
       completed,
     };
+  }
+}
+
+function invokeListener<TValue>(listener: (value: TValue) => void, value: TValue): void {
+  try {
+    listener(value);
+  } catch (listenerError) {
+    console.error("WebSocket listener threw while applying a pushed value", listenerError);
   }
 }
 
