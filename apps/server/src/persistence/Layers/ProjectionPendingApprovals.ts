@@ -123,11 +123,26 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
       ),
     );
 
+  const countPendingByThreadId: ProjectionPendingApprovalRepositoryShape["countPendingByThreadId"] =
+    ({ threadId }) =>
+      sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS "count"
+        FROM projection_pending_approvals
+        WHERE thread_id = ${threadId}
+          AND status = 'pending'
+      `.pipe(
+        Effect.mapError(
+          toPersistenceSqlError("ProjectionPendingApprovalRepository.countPendingByThreadId:query"),
+        ),
+        Effect.map((rows) => rows[0]?.count ?? 0),
+      );
+
   return {
     upsert,
     listByThreadId,
     getByRequestId,
     deleteByRequestId,
+    countPendingByThreadId,
   } satisfies ProjectionPendingApprovalRepositoryShape;
 });
 

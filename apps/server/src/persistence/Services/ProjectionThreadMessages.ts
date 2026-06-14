@@ -84,6 +84,14 @@ export interface ProjectionThreadMessageRepositoryShape {
   readonly deleteByThreadId: (
     input: DeleteProjectionThreadMessagesInput,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /**
+   * Return the ISO timestamp of the most recent user message for a thread,
+   * or null if no user message exists.
+   */
+  readonly latestUserMessageAt: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<string | null, ProjectionRepositoryError>;
 }
 
 /**

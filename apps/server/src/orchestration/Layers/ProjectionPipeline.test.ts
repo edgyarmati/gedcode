@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   CheckpointRef,
   CommandId,
   CorrelationId,
@@ -2502,3 +2503,534 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 });
+
+// ---------------------------------------------------------------------------
+// Characterization test for thread-shell summary counters (plan 011)
+// Drives a thread through a representative event sequence and asserts the
+// exact values of all four refreshThreadShellSummary counters:
+//   latestUserMessageAt, pendingApprovalCount, pendingUserInputCount,
+//   hasActionableProposedPlan
+// This MUST pass against the current code before the optimisation lands.
+// ---------------------------------------------------------------------------
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-shell-summary-counters-")))(
+  "OrchestrationProjectionPipeline",
+  (it) => {
+    it.effect(
+      "refreshThreadShellSummary: computes all four counters correctly after a representative event sequence",
+      () =>
+        Effect.gen(function* () {
+          const projectionPipeline = yield* OrchestrationProjectionPipeline;
+          const eventStore = yield* OrchestrationEventStore;
+          const sql = yield* SqlClient.SqlClient;
+
+          const t0 = "2026-01-01T00:00:00.000Z";
+          const t1 = "2026-01-01T00:00:01.000Z";
+          const t2 = "2026-01-01T00:00:02.000Z";
+          const t3 = "2026-01-01T00:00:03.000Z";
+          const t4 = "2026-01-01T00:00:04.000Z";
+          const t5 = "2026-01-01T00:00:05.000Z";
+          const t6 = "2026-01-01T00:00:06.000Z";
+          const t7 = "2026-01-01T00:00:07.000Z";
+          const t8 = "2026-01-01T00:00:08.000Z";
+
+          const projectId = ProjectId.make("project-shell-summary");
+          const threadId = ThreadId.make("thread-shell-summary");
+          const turnId = TurnId.make("turn-shell-summary-1");
+
+          const reqIdUserInput1 = ApprovalRequestId.make("req-user-input-1");
+          const reqIdUserInput2 = ApprovalRequestId.make("req-user-input-2");
+          const reqIdApproval1 = ApprovalRequestId.make("req-approval-1");
+          const reqIdApproval2 = ApprovalRequestId.make("req-approval-2");
+
+          const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+            eventStore
+              .append(event)
+              .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+          const readShellSummary = sql<{
+            readonly latestUserMessageAt: string | null;
+            readonly pendingApprovalCount: number;
+            readonly pendingUserInputCount: number;
+            readonly hasActionableProposedPlan: number;
+          }>`
+          SELECT
+            latest_user_message_at AS "latestUserMessageAt",
+            pending_approval_count AS "pendingApprovalCount",
+            pending_user_input_count AS "pendingUserInputCount",
+            has_actionable_proposed_plan AS "hasActionableProposedPlan"
+          FROM projection_threads
+          WHERE thread_id = ${threadId}
+        `;
+
+          // --- Setup: project + thread ---
+          yield* appendAndProject({
+            type: "project.created",
+            eventId: EventId.make("evt-ss-project"),
+            aggregateKind: "project",
+            aggregateId: projectId,
+            occurredAt: t0,
+            commandId: CommandId.make("cmd-ss-project"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-project"),
+            metadata: {},
+            payload: {
+              projectId,
+              title: "Shell Summary Project",
+              workspaceRoot: "/tmp/shell-summary",
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: t0,
+              updatedAt: t0,
+            },
+          });
+
+          yield* appendAndProject({
+            type: "thread.created",
+            eventId: EventId.make("evt-ss-thread"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t0,
+            commandId: CommandId.make("cmd-ss-thread"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-thread"),
+            metadata: {},
+            payload: {
+              threadId,
+              projectId,
+              title: "Shell Summary Thread",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5-codex",
+              },
+              runtimeMode: "full-access",
+              branch: null,
+              worktreePath: null,
+              createdAt: t0,
+              updatedAt: t0,
+            },
+          });
+
+          // --- User message 1 (earlier) ---
+          yield* appendAndProject({
+            type: "thread.message-sent",
+            eventId: EventId.make("evt-ss-user-msg-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t1,
+            commandId: CommandId.make("cmd-ss-user-msg-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-user-msg-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: MessageId.make("msg-ss-user-1"),
+              role: "user",
+              text: "First user message",
+              turnId,
+              streaming: false,
+              createdAt: t1,
+              updatedAt: t1,
+            },
+          });
+
+          // --- Assistant message (does not affect latestUserMessageAt) ---
+          yield* appendAndProject({
+            type: "thread.message-sent",
+            eventId: EventId.make("evt-ss-asst-msg-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t2,
+            commandId: CommandId.make("cmd-ss-asst-msg-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-asst-msg-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: MessageId.make("msg-ss-asst-1"),
+              role: "assistant",
+              text: "First assistant reply",
+              turnId,
+              streaming: false,
+              createdAt: t2,
+              updatedAt: t2,
+            },
+          });
+
+          // --- User message 2 (later — this should become latestUserMessageAt) ---
+          yield* appendAndProject({
+            type: "thread.message-sent",
+            eventId: EventId.make("evt-ss-user-msg-2"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t3,
+            commandId: CommandId.make("cmd-ss-user-msg-2"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-user-msg-2"),
+            metadata: {},
+            payload: {
+              threadId,
+              messageId: MessageId.make("msg-ss-user-2"),
+              role: "user",
+              text: "Second user message",
+              turnId,
+              streaming: false,
+              createdAt: t3,
+              updatedAt: t3,
+            },
+          });
+
+          // After 2 user messages: latestUserMessageAt=t3, all counters still 0
+          const afterUserMsgs = yield* readShellSummary;
+          assert.equal(afterUserMsgs[0]?.latestUserMessageAt, t3);
+          assert.equal(afterUserMsgs[0]?.pendingApprovalCount, 0);
+          assert.equal(afterUserMsgs[0]?.pendingUserInputCount, 0);
+          assert.equal(afterUserMsgs[0]?.hasActionableProposedPlan, 0);
+
+          // --- Activity: user-input.requested (opens a pending user-input) ---
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-ss-ui-req-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t4,
+            commandId: CommandId.make("cmd-ss-ui-req-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-ui-req-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-ss-ui-req-1"),
+                tone: "info",
+                kind: "user-input.requested",
+                summary: "Input needed",
+                payload: { requestId: reqIdUserInput1 },
+                turnId,
+                createdAt: t4,
+              },
+            },
+          });
+
+          // pendingUserInputCount should now be 1
+          const afterUiReq1 = yield* readShellSummary;
+          assert.equal(afterUiReq1[0]?.pendingUserInputCount, 1);
+          assert.equal(afterUiReq1[0]?.pendingApprovalCount, 0);
+
+          // --- Activity: user-input.resolved (closes that pending user-input) ---
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-ss-ui-res-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t4,
+            commandId: CommandId.make("cmd-ss-ui-res-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-ui-res-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-ss-ui-res-1"),
+                tone: "info",
+                kind: "user-input.resolved",
+                summary: "Input provided",
+                payload: { requestId: reqIdUserInput1 },
+                turnId,
+                createdAt: t4,
+              },
+            },
+          });
+
+          // pendingUserInputCount back to 0
+          const afterUiRes1 = yield* readShellSummary;
+          assert.equal(afterUiRes1[0]?.pendingUserInputCount, 0);
+
+          // --- Activity: user-input.requested again (stays open) ---
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-ss-ui-req-2"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t5,
+            commandId: CommandId.make("cmd-ss-ui-req-2"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-ui-req-2"),
+            metadata: {},
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-ss-ui-req-2"),
+                tone: "info",
+                kind: "user-input.requested",
+                summary: "More input needed",
+                payload: { requestId: reqIdUserInput2 },
+                turnId,
+                createdAt: t5,
+              },
+            },
+          });
+
+          // pendingUserInputCount = 1 (stays open)
+          const afterUiReq2 = yield* readShellSummary;
+          assert.equal(afterUiReq2[0]?.pendingUserInputCount, 1);
+
+          // --- Activity: approval.requested (creates pending approval #1) ---
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-ss-apr-req-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t5,
+            commandId: CommandId.make("cmd-ss-apr-req-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-apr-req-1"),
+            metadata: { requestId: reqIdApproval1 },
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-ss-apr-req-1"),
+                tone: "approval",
+                kind: "approval.requested",
+                summary: "Approval needed 1",
+                payload: { requestId: reqIdApproval1 },
+                turnId,
+                createdAt: t5,
+              },
+            },
+          });
+
+          // pendingApprovalCount = 1
+          const afterAprReq1 = yield* readShellSummary;
+          assert.equal(afterAprReq1[0]?.pendingApprovalCount, 1);
+
+          // --- Activity: approval.requested (creates pending approval #2) ---
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-ss-apr-req-2"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t6,
+            commandId: CommandId.make("cmd-ss-apr-req-2"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-apr-req-2"),
+            metadata: { requestId: reqIdApproval2 },
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-ss-apr-req-2"),
+                tone: "approval",
+                kind: "approval.requested",
+                summary: "Approval needed 2",
+                payload: { requestId: reqIdApproval2 },
+                turnId,
+                createdAt: t6,
+              },
+            },
+          });
+
+          // pendingApprovalCount = 2
+          const afterAprReq2 = yield* readShellSummary;
+          assert.equal(afterAprReq2[0]?.pendingApprovalCount, 2);
+
+          // --- Resolve approval #1 via thread.approval-response-requested ---
+          yield* appendAndProject({
+            type: "thread.approval-response-requested",
+            eventId: EventId.make("evt-ss-apr-res-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t7,
+            commandId: CommandId.make("cmd-ss-apr-res-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-apr-res-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              requestId: reqIdApproval1,
+              decision: "accept",
+              createdAt: t7,
+            },
+          });
+
+          // pendingApprovalCount = 1 (approval #2 still pending)
+          const afterAprRes1 = yield* readShellSummary;
+          assert.equal(afterAprRes1[0]?.pendingApprovalCount, 1);
+          assert.equal(afterAprRes1[0]?.pendingUserInputCount, 1);
+
+          // --- Proposed plan upserted (implementedAt=null → actionable) ---
+          yield* appendAndProject({
+            type: "thread.proposed-plan-upserted",
+            eventId: EventId.make("evt-ss-plan-1"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t8,
+            commandId: CommandId.make("cmd-ss-plan-1"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-ss-plan-1"),
+            metadata: {},
+            payload: {
+              threadId,
+              proposedPlan: {
+                id: "plan-shell-summary-1",
+                turnId,
+                planMarkdown: "## Plan\n\nDo things",
+                implementedAt: null,
+                implementationThreadId: null,
+                createdAt: t8,
+                updatedAt: t8,
+              },
+            },
+          });
+
+          // hasActionableProposedPlan = 1 (unimplemented plan)
+          const afterPlan = yield* readShellSummary;
+          assert.equal(afterPlan[0]?.hasActionableProposedPlan, 1);
+
+          // --- Final state: assert all four counters together ---
+          const final = yield* readShellSummary;
+          assert.equal(final[0]?.latestUserMessageAt, t3, "latestUserMessageAt");
+          assert.equal(final[0]?.pendingApprovalCount, 1, "pendingApprovalCount");
+          assert.equal(final[0]?.pendingUserInputCount, 1, "pendingUserInputCount");
+          assert.equal(final[0]?.hasActionableProposedPlan, 1, "hasActionableProposedPlan");
+        }),
+    );
+
+    it.effect(
+      "refreshThreadShellSummary: user-input-response-requested event still produces correct pendingUserInputCount",
+      () =>
+        Effect.gen(function* () {
+          const projectionPipeline = yield* OrchestrationProjectionPipeline;
+          const eventStore = yield* OrchestrationEventStore;
+          const sql = yield* SqlClient.SqlClient;
+
+          const t0 = "2026-01-01T00:00:00.000Z";
+          const t1 = "2026-01-01T00:00:01.000Z";
+          const t2 = "2026-01-01T00:00:02.000Z";
+
+          const projectId = ProjectId.make("project-uiresponse");
+          const threadId = ThreadId.make("thread-uiresponse");
+          const reqId = ApprovalRequestId.make("req-uiresponse-1");
+
+          const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+            eventStore
+              .append(event)
+              .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+          const readCounters = sql<{
+            readonly pendingUserInputCount: number;
+            readonly pendingApprovalCount: number;
+          }>`
+          SELECT
+            pending_user_input_count AS "pendingUserInputCount",
+            pending_approval_count AS "pendingApprovalCount"
+          FROM projection_threads
+          WHERE thread_id = ${threadId}
+        `;
+
+          yield* appendAndProject({
+            type: "project.created",
+            eventId: EventId.make("evt-uir-project"),
+            aggregateKind: "project",
+            aggregateId: projectId,
+            occurredAt: t0,
+            commandId: CommandId.make("cmd-uir-project"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-uir-project"),
+            metadata: {},
+            payload: {
+              projectId,
+              title: "UIResponse Project",
+              workspaceRoot: "/tmp/uiresponse",
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: t0,
+              updatedAt: t0,
+            },
+          });
+
+          yield* appendAndProject({
+            type: "thread.created",
+            eventId: EventId.make("evt-uir-thread"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t0,
+            commandId: CommandId.make("cmd-uir-thread"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-uir-thread"),
+            metadata: {},
+            payload: {
+              threadId,
+              projectId,
+              title: "UIResponse Thread",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5-codex",
+              },
+              runtimeMode: "full-access",
+              branch: null,
+              worktreePath: null,
+              createdAt: t0,
+              updatedAt: t0,
+            },
+          });
+
+          // Request user input
+          yield* appendAndProject({
+            type: "thread.activity-appended",
+            eventId: EventId.make("evt-uir-req"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t1,
+            commandId: CommandId.make("cmd-uir-req"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-uir-req"),
+            metadata: {},
+            payload: {
+              threadId,
+              activity: {
+                id: EventId.make("evt-uir-req"),
+                tone: "info",
+                kind: "user-input.requested",
+                summary: "Input needed",
+                payload: { requestId: reqId },
+                turnId: null,
+                createdAt: t1,
+              },
+            },
+          });
+
+          const afterReq = yield* readCounters;
+          assert.equal(afterReq[0]?.pendingUserInputCount, 1);
+
+          // Respond via thread.user-input-response-requested event (trigger path)
+          yield* appendAndProject({
+            type: "thread.user-input-response-requested",
+            eventId: EventId.make("evt-uir-response"),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt: t2,
+            commandId: CommandId.make("cmd-uir-response"),
+            causationEventId: null,
+            correlationId: CorrelationId.make("cmd-uir-response"),
+            metadata: {},
+            payload: {
+              threadId,
+              requestId: reqId,
+              answers: {},
+              createdAt: t2,
+            },
+          });
+
+          // thread.user-input-response-requested triggers refreshThreadShellSummary
+          // but does NOT itself add a user-input.resolved activity — the provider
+          // does that later. So pendingUserInputCount remains 1 until the activity arrives.
+          const afterResponse = yield* readCounters;
+          assert.equal(
+            afterResponse[0]?.pendingUserInputCount,
+            1,
+            "pending user-input count stays 1 until user-input.resolved activity arrives",
+          );
+          assert.equal(afterResponse[0]?.pendingApprovalCount, 0);
+        }),
+    );
+  },
+);
