@@ -3,7 +3,7 @@
 Release notes are grouped by released version. Add a `## X.Y.Z` section before running
 `./release.sh stable ...` or `./release.sh nightly ...`.
 
-## Unreleased
+## 0.1.3-nightly.20260614.1
 
 - Improve: Derive orchestration shell-stream events once per domain event in the engine and fan the mapped result out to all shell subscribers, removing the prior per-event per-subscriber projection re-query.
 - Remove: Drop the bundled marketing site (`apps/marketing`).
