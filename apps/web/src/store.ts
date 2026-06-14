@@ -590,6 +590,7 @@ function writeThreadState(
   state: EnvironmentState,
   nextThread: Thread,
   previousThread?: Thread,
+  hints?: SliceHints,
 ): EnvironmentState {
   const nextShell = toThreadShell(nextThread);
   const nextTurnState = toThreadTurnState(nextThread);
@@ -634,33 +635,102 @@ function writeThreadState(
   }
 
   if (previousThread?.messages !== nextThread.messages) {
-    const nextMessageSlice = buildMessageSlice(nextThread);
-    nextState = {
-      ...nextState,
-      messageIdsByThreadId: {
-        ...nextState.messageIdsByThreadId,
-        [nextThread.id]: nextMessageSlice.ids,
-      },
-      messageByThreadId: {
-        ...nextState.messageByThreadId,
-        [nextThread.id]: nextMessageSlice.byId,
-      },
-    };
+    const prevById = state.messageByThreadId[nextThread.id];
+    const prevIds = state.messageIdsByThreadId[nextThread.id];
+    const isExistingMessage =
+      hints?.changedMessage !== undefined && prevById?.[hints.changedMessage.id] !== undefined;
+    if (
+      hints?.changedMessage !== undefined &&
+      prevById !== undefined &&
+      prevIds !== undefined &&
+      // Safe to update incrementally only when updating an existing message
+      // OR when the previous count was below the cap (no front-truncation can occur)
+      (isExistingMessage || prevIds.length < MAX_THREAD_MESSAGES)
+    ) {
+      const changedMessage = hints.changedMessage;
+      // Incremental update: O(1) byId update; ids only grows by 1 or stays same length
+      const nextById: Record<MessageId, ChatMessage> = {
+        ...prevById,
+        [changedMessage.id]: changedMessage,
+      };
+      const nextIds = isExistingMessage
+        ? prevIds
+        : ([...prevIds, changedMessage.id] as MessageId[]);
+      nextState = {
+        ...nextState,
+        messageIdsByThreadId: {
+          ...nextState.messageIdsByThreadId,
+          [nextThread.id]: nextIds,
+        },
+        messageByThreadId: {
+          ...nextState.messageByThreadId,
+          [nextThread.id]: nextById,
+        },
+      };
+    } else {
+      const nextMessageSlice = buildMessageSlice(nextThread);
+      nextState = {
+        ...nextState,
+        messageIdsByThreadId: {
+          ...nextState.messageIdsByThreadId,
+          [nextThread.id]: nextMessageSlice.ids,
+        },
+        messageByThreadId: {
+          ...nextState.messageByThreadId,
+          [nextThread.id]: nextMessageSlice.byId,
+        },
+      };
+    }
   }
 
   if (previousThread?.activities !== nextThread.activities) {
-    const nextActivitySlice = buildActivitySlice(nextThread);
-    nextState = {
-      ...nextState,
-      activityIdsByThreadId: {
-        ...nextState.activityIdsByThreadId,
-        [nextThread.id]: nextActivitySlice.ids,
-      },
-      activityByThreadId: {
-        ...nextState.activityByThreadId,
-        [nextThread.id]: nextActivitySlice.byId,
-      },
-    };
+    const changedActivity = hints?.changedActivity;
+    const prevActivityById = state.activityByThreadId[nextThread.id];
+    const prevActivityIds = state.activityIdsByThreadId[nextThread.id];
+    const isExistingActivity =
+      changedActivity !== undefined && prevActivityById?.[changedActivity.id] !== undefined;
+    if (
+      changedActivity !== undefined &&
+      prevActivityById !== undefined &&
+      prevActivityIds !== undefined &&
+      // Safe to update incrementally only when updating an existing activity
+      // OR when the previous count was below the cap (no front-truncation can occur).
+      // At the cap a tail-append would diverge from the canonical (already-capped)
+      // thread.activities, leaving a stale byId entry — fall back to a full rebuild.
+      (isExistingActivity || prevActivityIds.length < MAX_THREAD_ACTIVITIES)
+    ) {
+      const nextActivityById: Record<string, OrchestrationThreadActivity> = {
+        ...prevActivityById,
+        [changedActivity.id]: changedActivity,
+      };
+      const nextActivityIds = isExistingActivity
+        ? prevActivityIds
+        : ([...prevActivityIds, changedActivity.id] as string[]);
+      nextState = {
+        ...nextState,
+        activityIdsByThreadId: {
+          ...nextState.activityIdsByThreadId,
+          [nextThread.id]: nextActivityIds,
+        },
+        activityByThreadId: {
+          ...nextState.activityByThreadId,
+          [nextThread.id]: nextActivityById,
+        },
+      };
+    } else {
+      const nextActivitySlice = buildActivitySlice(nextThread);
+      nextState = {
+        ...nextState,
+        activityIdsByThreadId: {
+          ...nextState.activityIdsByThreadId,
+          [nextThread.id]: nextActivitySlice.ids,
+        },
+        activityByThreadId: {
+          ...nextState.activityByThreadId,
+          [nextThread.id]: nextActivitySlice.byId,
+        },
+      };
+    }
   }
 
   if (previousThread?.proposedPlans !== nextThread.proposedPlans) {
@@ -1051,6 +1121,11 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
   return `/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
+type SliceHints = {
+  readonly changedMessage?: ChatMessage | undefined;
+  readonly changedActivity?: OrchestrationThreadActivity | undefined;
+};
+
 function updateThreadState(
   state: EnvironmentState,
   threadId: ThreadId,
@@ -1065,6 +1140,22 @@ function updateThreadState(
     return state;
   }
   return writeThreadState(state, nextThread, currentThread);
+}
+
+function updateThreadStateWithHints(
+  state: EnvironmentState,
+  threadId: ThreadId,
+  updater: (thread: Thread) => { thread: Thread; hints: SliceHints },
+): EnvironmentState {
+  const currentThread = getThreadFromEnvironmentState(state, threadId);
+  if (!currentThread) {
+    return state;
+  }
+  const { thread: nextThread, hints } = updater(currentThread);
+  if (nextThread === currentThread) {
+    return state;
+  }
+  return writeThreadState(state, nextThread, currentThread, hints);
 }
 
 function buildProjectState(
@@ -1387,7 +1478,28 @@ function applyEnvironmentOrchestrationEvent(
 
     case "thread.turn-interrupt-requested": {
       if (event.payload.turnId === undefined) {
-        return state;
+        return updateThreadState(state, event.payload.threadId, (thread) => {
+          const latestTurn = thread.latestTurn;
+          if (latestTurn === null) {
+            return thread;
+          }
+          if (latestTurn.state !== "running") {
+            return thread;
+          }
+          return {
+            ...thread,
+            latestTurn: buildLatestTurn({
+              previous: latestTurn,
+              turnId: latestTurn.turnId,
+              state: "interrupted",
+              requestedAt: latestTurn.requestedAt,
+              startedAt: latestTurn.startedAt ?? event.payload.createdAt,
+              completedAt: latestTurn.completedAt ?? event.payload.createdAt,
+              assistantMessageId: latestTurn.assistantMessageId,
+            }),
+            updatedAt: event.occurredAt,
+          };
+        });
       }
       return updateThreadState(state, event.payload.threadId, (thread) => {
         const latestTurn = thread.latestTurn;
@@ -1411,7 +1523,7 @@ function applyEnvironmentOrchestrationEvent(
     }
 
     case "thread.message-sent":
-      return updateThreadState(state, event.payload.threadId, (thread) => {
+      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const message = mapMessage(thread.environmentId, {
           id: event.payload.messageId,
           role: event.payload.role,
@@ -1424,33 +1536,41 @@ function applyEnvironmentOrchestrationEvent(
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
         });
-        const existingMessage = thread.messages.find((entry) => entry.id === message.id);
-        const messages = existingMessage
-          ? thread.messages.map((entry) =>
-              entry.id !== message.id
-                ? entry
-                : {
-                    ...entry,
-                    text: message.streaming
-                      ? `${entry.text}${message.text}`
-                      : message.text.length > 0
-                        ? message.text
-                        : entry.text,
-                    streaming: message.streaming,
-                    ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
-                    ...(message.streaming
-                      ? entry.completedAt !== undefined
-                        ? { completedAt: entry.completedAt }
-                        : {}
-                      : message.completedAt !== undefined
-                        ? { completedAt: message.completedAt }
-                        : {}),
-                    ...(message.attachments !== undefined
-                      ? { attachments: message.attachments }
+        // O(1) lookup via byId index instead of O(n) find
+        const existingMessage =
+          state.messageByThreadId[event.payload.threadId]?.[event.payload.messageId];
+        let changedMessage: ChatMessage;
+        const messages =
+          existingMessage !== undefined
+            ? thread.messages.map((entry) => {
+                if (entry.id !== message.id) return entry;
+                const merged: ChatMessage = {
+                  ...entry,
+                  text: message.streaming
+                    ? `${entry.text}${message.text}`
+                    : message.text.length > 0
+                      ? message.text
+                      : entry.text,
+                  streaming: message.streaming,
+                  ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                  ...(message.streaming
+                    ? entry.completedAt !== undefined
+                      ? { completedAt: entry.completedAt }
+                      : {}
+                    : message.completedAt !== undefined
+                      ? { completedAt: message.completedAt }
                       : {}),
-                  },
-            )
-          : [...thread.messages, message];
+                  ...(message.attachments !== undefined
+                    ? { attachments: message.attachments }
+                    : {}),
+                };
+                changedMessage = merged;
+                return merged;
+              })
+            : (() => {
+                changedMessage = message;
+                return [...thread.messages, message];
+              })();
         const cappedMessages = messages.slice(-MAX_THREAD_MESSAGES);
         const turnDiffSummaries =
           event.payload.role === "assistant" && event.payload.turnId !== null
@@ -1497,11 +1617,14 @@ function applyEnvironmentOrchestrationEvent(
               })
             : thread.latestTurn;
         return {
-          ...thread,
-          messages: cappedMessages,
-          turnDiffSummaries,
-          latestTurn,
-          updatedAt: event.occurredAt,
+          thread: {
+            ...thread,
+            messages: cappedMessages,
+            turnDiffSummaries,
+            latestTurn,
+            updatedAt: event.occurredAt,
+          },
+          hints: { changedMessage: changedMessage! },
         };
       });
 
@@ -1692,17 +1815,41 @@ function applyEnvironmentOrchestrationEvent(
       });
 
     case "thread.activity-appended":
-      return updateThreadState(state, event.payload.threadId, (thread) => {
-        const activities = [
-          ...thread.activities.filter((activity) => activity.id !== event.payload.activity.id),
-          { ...event.payload.activity },
-        ]
-          .toSorted(compareActivities)
-          .slice(-MAX_THREAD_ACTIVITIES);
+      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
+        const newActivity = { ...event.payload.activity };
+        const existingActivity = state.activityByThreadId[event.payload.threadId]?.[newActivity.id];
+        let activities: OrchestrationThreadActivity[];
+        let changedActivity: OrchestrationThreadActivity | undefined;
+        if (existingActivity !== undefined) {
+          // Replace existing entry — must re-sort since updated content may change order
+          activities = thread.activities
+            .map((a) => (a.id === newActivity.id ? newActivity : a))
+            .toSorted(compareActivities)
+            .slice(-MAX_THREAD_ACTIVITIES);
+          // No incremental hint for replace — ids order may change
+        } else {
+          // New entry: check if it sorts to the tail (common streaming case)
+          const last = thread.activities[thread.activities.length - 1];
+          if (last === undefined || compareActivities(newActivity, last) >= 0) {
+            // Appends to the end — no re-sort needed, just trim; ids stay in order
+            const appended = [...thread.activities, newActivity];
+            activities = appended.slice(-MAX_THREAD_ACTIVITIES);
+            // Only set hint for tail-append: ids can be updated incrementally
+            changedActivity = newActivity;
+          } else {
+            // Out-of-order — fall back to full sort; no incremental hint
+            activities = [...thread.activities, newActivity]
+              .toSorted(compareActivities)
+              .slice(-MAX_THREAD_ACTIVITIES);
+          }
+        }
         return {
-          ...thread,
-          activities,
-          updatedAt: event.occurredAt,
+          thread: {
+            ...thread,
+            activities,
+            updatedAt: event.occurredAt,
+          },
+          hints: changedActivity !== undefined ? { changedActivity } : {},
         };
       });
 

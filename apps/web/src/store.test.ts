@@ -1005,6 +1005,113 @@ describe("incremental orchestration updates", () => {
     ]);
   });
 
+  it("settles a running turn when turn-interrupt-requested arrives without a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:01.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("interrupted");
+    expect(threadsOf(next)[0]?.latestTurn?.turnId).toBe(TurnId.make("turn-1"));
+    expect(threadsOf(next)[0]?.latestTurn?.completedAt).toBe("2026-02-27T00:00:01.000Z");
+  });
+
+  it("leaves thread unchanged when turn-interrupt-requested without turnId arrives with no latestTurn", () => {
+    const thread = makeThread({ latestTurn: null });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:01.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(next).toBe(state);
+  });
+
+  it("does not regress an already-settled turn when turn-interrupt-requested arrives without a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "completed",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: "2026-02-27T00:00:01.000Z",
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        createdAt: "2026-02-27T00:00:02.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(next).toBe(state);
+  });
+
+  it("settles only the matching turn when turn-interrupt-requested arrives with a turnId", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-2"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:02.000Z",
+        startedAt: "2026-02-27T00:00:02.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    // interrupt for a different turnId — should not change latestTurn
+    const nextMismatch = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        turnId: TurnId.make("turn-1"),
+        createdAt: "2026-02-27T00:00:03.000Z",
+      }),
+      localEnvironmentId,
+    );
+    expect(nextMismatch).toBe(state);
+
+    // interrupt for the matching turnId — should settle
+    const nextMatch = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.turn-interrupt-requested", {
+        threadId: thread.id,
+        turnId: TurnId.make("turn-2"),
+        createdAt: "2026-02-27T00:00:03.000Z",
+      }),
+      localEnvironmentId,
+    );
+    expect(threadsOf(nextMatch)[0]?.latestTurn?.state).toBe("interrupted");
+    expect(threadsOf(nextMatch)[0]?.latestTurn?.turnId).toBe(TurnId.make("turn-2"));
+  });
+
   it("clears pending source proposed plans after revert before a new session-set event", () => {
     const thread = makeThread({
       latestTurn: {
@@ -1075,5 +1182,229 @@ describe("incremental orchestration updates", () => {
       state: "running",
     });
     expect(threadsOf(next)[0]?.latestTurn?.sourceProposedPlan).toBeUndefined();
+  });
+});
+
+describe("incremental slice characterization (plan 012 contract)", () => {
+  it("produces correct messages, activities, and derived slices after a mixed event sequence", () => {
+    const thread = makeThread();
+    const state = makeState(thread);
+    const threadId = thread.id;
+
+    // Apply a mixed sequence:
+    // 1. New user message
+    // 2. New streaming assistant message (message-2)
+    // 3. Streaming delta appended to same message-2
+    // 4. activity-appended (activity-a)
+    // 5. activity-appended (activity-b, older createdAt — out-of-order)
+    // 6. activity-appended (activity-a again — replace/re-send)
+    // 7. Final non-streaming update to message-2
+    const events: OrchestrationEvent[] = [
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-1"),
+          role: "user",
+          text: "hello",
+          turnId: TurnId.make("turn-1"),
+          streaming: false,
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+        { sequence: 1 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: "hello",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:01.000Z",
+        },
+        { sequence: 2 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: " world",
+          turnId: TurnId.make("turn-1"),
+          streaming: true,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:02.000Z",
+        },
+        { sequence: 3 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-a"),
+            tone: "info",
+            kind: "step",
+            summary: "step A v1",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.500Z",
+          },
+        },
+        { sequence: 4 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-b"),
+            tone: "info",
+            kind: "step",
+            summary: "step B (earlier)",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.000Z",
+          },
+        },
+        { sequence: 5 },
+      ),
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make("activity-a"),
+            tone: "info",
+            kind: "step",
+            summary: "step A v2 (resent)",
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            createdAt: "2026-03-01T00:00:01.500Z",
+          },
+        },
+        { sequence: 6 },
+      ),
+      makeEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("message-2"),
+          role: "assistant",
+          text: "hello world done",
+          turnId: TurnId.make("turn-1"),
+          streaming: false,
+          createdAt: "2026-03-01T00:00:01.000Z",
+          updatedAt: "2026-03-01T00:00:03.000Z",
+        },
+        { sequence: 7 },
+      ),
+    ];
+
+    const finalState = applyOrchestrationEvents(state, events, localEnvironmentId);
+    const envState = localEnvironmentStateOf(finalState);
+    const thread1 = threadsOf(finalState)[0]!;
+
+    // --- messages ---
+    // message-1: user "hello" (non-streaming, kept as-is)
+    // message-2: assistant, final non-streaming text "hello world done" (replaces streaming)
+    expect(thread1.messages).toHaveLength(2);
+    expect(thread1.messages[0]?.id).toBe(MessageId.make("message-1"));
+    expect(thread1.messages[0]?.text).toBe("hello");
+    expect(thread1.messages[0]?.streaming).toBe(false);
+    expect(thread1.messages[1]?.id).toBe(MessageId.make("message-2"));
+    expect(thread1.messages[1]?.text).toBe("hello world done");
+    expect(thread1.messages[1]?.streaming).toBe(false);
+
+    // --- activities ---
+    // sorted by createdAt asc: activity-b (00:00:01.000Z) < activity-a (00:00:01.500Z)
+    expect(thread1.activities).toHaveLength(2);
+    expect(thread1.activities[0]?.id).toBe(EventId.make("activity-b"));
+    expect(thread1.activities[1]?.id).toBe(EventId.make("activity-a"));
+    expect(thread1.activities[1]?.summary).toBe("step A v2 (resent)");
+
+    // --- derived message slice ---
+    expect(envState.messageIdsByThreadId[threadId]).toEqual([
+      MessageId.make("message-1"),
+      MessageId.make("message-2"),
+    ]);
+    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-1")]?.text).toBe("hello");
+    expect(envState.messageByThreadId[threadId]?.[MessageId.make("message-2")]?.text).toBe(
+      "hello world done",
+    );
+
+    // --- derived activity slice ---
+    expect(envState.activityIdsByThreadId[threadId]).toEqual([
+      EventId.make("activity-b"),
+      EventId.make("activity-a"),
+    ]);
+    expect(envState.activityByThreadId[threadId]?.[EventId.make("activity-a")]?.summary).toBe(
+      "step A v2 (resent)",
+    );
+    expect(envState.activityByThreadId[threadId]?.[EventId.make("activity-b")]?.summary).toBe(
+      "step B (earlier)",
+    );
+  });
+
+  it("keeps the derived activity slice capped when appending past MAX_THREAD_ACTIVITIES", () => {
+    const thread = makeThread();
+    const state = makeState(thread);
+    const threadId = thread.id;
+
+    // MAX_THREAD_ACTIVITIES (500) is not exported; append one past it so the
+    // canonical thread.activities is front-truncated. The incremental
+    // tail-append fast path must fall back to a full rebuild instead of
+    // appending unbounded ids and leaving a stale byId entry.
+    const cap = 500;
+    const total = cap + 1;
+    const events: OrchestrationEvent[] = Array.from({ length: total }, (_, i) =>
+      makeEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: {
+            id: EventId.make(`activity-${String(i).padStart(4, "0")}`),
+            tone: "info",
+            kind: "step",
+            summary: `step ${i}`,
+            payload: {},
+            turnId: TurnId.make("turn-1"),
+            // Strictly increasing createdAt → every event is a tail-append,
+            // which is exactly the incremental hint path under test.
+            createdAt: new Date(Date.UTC(2026, 2, 1) + i * 1000).toISOString(),
+          },
+        },
+        { sequence: i + 1 },
+      ),
+    );
+
+    const finalState = applyOrchestrationEvents(state, events, localEnvironmentId);
+    const envState = localEnvironmentStateOf(finalState);
+    const thread1 = threadsOf(finalState)[0]!;
+
+    // Canonical activities are capped to the most recent `cap` entries.
+    expect(thread1.activities).toHaveLength(cap);
+
+    // The derived slice must match the canonical activities exactly — no extra
+    // (uncapped) ids and no stale byId entry for the dropped-oldest activity.
+    const derivedIds = envState.activityIdsByThreadId[threadId];
+    expect(derivedIds).toHaveLength(cap);
+    expect(derivedIds).toEqual(thread1.activities.map((activity) => activity.id));
+    expect(Object.keys(envState.activityByThreadId[threadId] ?? {})).toHaveLength(cap);
+
+    // The oldest activity (index 0) was front-truncated and must not linger.
+    const droppedId = EventId.make("activity-0000");
+    expect(derivedIds).not.toContain(droppedId);
+    expect(envState.activityByThreadId[threadId]?.[droppedId]).toBeUndefined();
+
+    // The newest activity is retained at the tail of both views.
+    const newestId = EventId.make(`activity-${String(total - 1).padStart(4, "0")}`);
+    expect(thread1.activities[thread1.activities.length - 1]?.id).toBe(newestId);
+    expect(derivedIds).toContain(newestId);
   });
 });
