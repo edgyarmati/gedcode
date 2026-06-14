@@ -27,6 +27,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Fix: Keep running turns open until the provider session ends or is superseded, including live store updates, provider steer handling, and completion duration formatting.
 - Performance: Reduce VCS remote status polling churn by using a remote-only Git status path and delaying automatic refreshes when cached remote snapshots are available.
 - Docs: Add upstream decision tracking for pending upstream-only work and record the initial implementation categories.
+- Fix: Repair the desktop `dev`, `start`, and `smoke-test` turbo tasks, which still depended on the pre-rebrand `t3#build` package and failed to resolve; they now depend on `gedcode#build` so the desktop app builds and launches locally.
 
 ## 0.1.2
 
