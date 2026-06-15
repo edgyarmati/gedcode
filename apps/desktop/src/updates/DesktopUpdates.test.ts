@@ -6,6 +6,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
@@ -27,6 +28,7 @@ interface UpdatesHarnessOptions {
   readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
   readonly env?: Record<string, string | undefined>;
   readonly platform?: NodeJS.Platform;
+  readonly resourcesPath?: string;
 }
 
 const flushCallbacks = Effect.yieldNow;
@@ -34,6 +36,7 @@ const flushCallbacks = Effect.yieldNow;
 function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let allowDowngrade = false;
+  let lastChannel: string | undefined;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -69,7 +72,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       }),
     setAutoDownload: () => Effect.void,
     setAutoInstallOnAppQuit: () => Effect.void,
-    setChannel: () => Effect.void,
+    setChannel: (channel) =>
+      Effect.sync(() => {
+        lastChannel = channel;
+      }),
     setAllowPrerelease: () => Effect.void,
     allowDowngrade: Effect.sync(() => allowDowngrade),
     setAllowDowngrade: (value) =>
@@ -141,7 +147,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     appVersion: "1.2.3",
     appPath: "/repo",
     isPackaged: true,
-    resourcesPath: "/missing/resources",
+    resourcesPath: options.resourcesPath ?? "/missing/resources",
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
@@ -183,6 +189,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     backendStopCount: () => backendStopCount,
     backendStartCount: () => backendStartCount,
     destroyAllCount: () => destroyAllCount,
+    lastChannel: () => lastChannel,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -196,6 +203,45 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     },
   };
 }
+
+describe("resolveMockUpdateMode", () => {
+  it("treats a generic loopback feed as mock mode", () => {
+    for (const url of ["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"]) {
+      assert.equal(DesktopUpdates.resolveMockUpdateMode({ provider: "generic", url }), true, url);
+    }
+  });
+
+  it("ignores generic feeds that are not loopback", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({
+        provider: "generic",
+        url: "https://updates.example.com",
+      }),
+      false,
+    );
+  });
+
+  it("ignores non-generic providers even on loopback", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({
+        provider: "github",
+        url: "http://localhost:3000",
+      }),
+      false,
+    );
+  });
+
+  it("ignores missing provider or url", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({ provider: undefined, url: undefined }),
+      false,
+    );
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({ provider: "generic", url: undefined }),
+      false,
+    );
+  });
+});
 
 describe("DesktopUpdates", () => {
   it.effect("configures the updater and runs startup checks on the test clock", () => {
@@ -282,6 +328,38 @@ describe("DesktopUpdates", () => {
         assert.equal(state.status, "available");
         assert.equal(state.availableVersion, "1.2.4");
         assert.equal(harness.sentStates.at(-1)?.status, "available");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("uses the dev channel and accepts dev candidates when the feed is a local mock", () => {
+    const resourcesPath = `/tmp/t3-desktop-mock-feed-${process.pid}`;
+    const harness = makeHarness({ platform: "darwin", resourcesPath });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.makeDirectory(resourcesPath, { recursive: true });
+        yield* fileSystem.writeFileString(
+          `${resourcesPath}/app-update.yml`,
+          "provider: generic\nurl: http://localhost:3000\nchannel: dev\n",
+        );
+
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        // The packaged dev manifest is dev-mac.yml, so the updater must request
+        // the "dev" channel rather than the contract default ("latest").
+        assert.equal(harness.lastChannel(), "dev");
+
+        // A -dev candidate would be rejected on the latest channel; mock mode
+        // must accept it so the local update flow completes.
+        harness.emit("update-available", { version: "0.0.2-dev" });
+        yield* flushCallbacks;
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "available");
+        assert.equal(state.availableVersion, "0.0.2-dev");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

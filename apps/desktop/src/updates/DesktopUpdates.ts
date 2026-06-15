@@ -44,6 +44,43 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
 
+// electron-builder derives a `dev` channel (dev-mac.yml/dev.yml) from `-dev`
+// versions, so a local mock build's manifest lives on this channel.
+const MOCK_UPDATE_CHANNEL = "dev";
+
+const LOOPBACK_UPDATE_FEED_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+function parseUpdateFeedUrl(url: string): URL | undefined {
+  try {
+    return new URL(url);
+  } catch {
+    return undefined;
+  }
+}
+
+export function isLoopbackUpdateFeedUrl(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+  const parsed = parseUpdateFeedUrl(url);
+  return parsed !== undefined && LOOPBACK_UPDATE_FEED_HOSTS.has(parsed.hostname);
+}
+
+/**
+ * A local mock update feed is a `generic` provider pointed at a loopback host —
+ * exactly what `build-desktop-artifact --mock-updates` bakes into a packaged dev
+ * build's `app-update.yml`. In this mode the updater follows the `dev` channel
+ * and accepts dev-track candidates instead of applying the stable/nightly
+ * channel acceptance rules (see updateChannels), so local update testing works
+ * without publishing to GitHub.
+ */
+export function resolveMockUpdateMode(feed: {
+  readonly provider: string | undefined;
+  readonly url: string | undefined;
+}): boolean {
+  return feed.provider === "generic" && isLoopbackUpdateFeedUrl(feed.url);
+}
+
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
 type AppUpdateYmlConfig = typeof AppUpdateYmlConfig.Type;
 
@@ -200,6 +237,7 @@ const make = Effect.gen(function* () {
   const updateDownloadInFlightRef = yield* Ref.make(false);
   const updateInstallInFlightRef = yield* Ref.make(false);
   const updaterConfiguredRef = yield* Ref.make(false);
+  const mockUpdateModeRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const updateStateRef = yield* Ref.make<DesktopUpdateState>(
     createInitialDesktopUpdateState(
@@ -271,6 +309,21 @@ const make = Effect.gen(function* () {
   const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
     channel: DesktopUpdateChannel,
   ) {
+    if (yield* Ref.get(mockUpdateModeRef)) {
+      // Follow the local mock build's `dev` manifest and allow prerelease/downgrade
+      // so any locally-served dev version is treated as an upgrade candidate.
+      yield* Effect.annotateCurrentSpan({ channel: MOCK_UPDATE_CHANNEL, mockUpdates: true });
+      yield* electronUpdater.setChannel(MOCK_UPDATE_CHANNEL);
+      yield* electronUpdater.setAllowPrerelease(true);
+      yield* electronUpdater.setAllowDowngrade(true);
+      yield* logUpdaterInfo("using mock update channel", {
+        channel: MOCK_UPDATE_CHANNEL,
+        allowPrerelease: true,
+        allowDowngrade: true,
+      });
+      return;
+    }
+
     yield* Effect.annotateCurrentSpan({ channel });
     const allowsPrerelease = channel === "nightly";
     yield* electronUpdater.setChannel(channel);
@@ -417,7 +470,11 @@ const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
-          if (!isDesktopUpdateVersionAcceptedForChannel(info.version, state.channel)) {
+          const mockUpdateMode = yield* Ref.get(mockUpdateModeRef);
+          if (
+            !mockUpdateMode &&
+            !isDesktopUpdateVersionAcceptedForChannel(info.version, state.channel)
+          ) {
             yield* logUpdaterInfo("ignoring update that does not match selected channel", {
               version: info.version,
               channel: state.channel,
@@ -542,6 +599,18 @@ const make = Effect.gen(function* () {
 
       const appUpdateYmlConfig = yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
+
+      const feed = Option.getOrUndefined(appUpdateYmlConfig);
+      const mockUpdateMode = resolveMockUpdateMode({
+        provider: feed?.provider,
+        url: feed?.url,
+      });
+      yield* Ref.set(mockUpdateModeRef, mockUpdateMode);
+      if (mockUpdateMode) {
+        yield* logUpdaterInfo("local mock update feed detected; relaxing channel acceptance", {
+          url: feed?.url,
+        });
+      }
 
       if (config.mockUpdates) {
         yield* electronUpdater.setFeedURL({
