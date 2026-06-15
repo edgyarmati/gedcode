@@ -100,13 +100,37 @@ const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdo
   },
 );
 
+/**
+ * Decide whether a `before-quit` event should be deferred so the backend can be
+ * shut down gracefully before the app terminates.
+ *
+ * We defer (and run graceful shutdown) only for user-initiated quits. A
+ * programmatic quit already owns its own shutdown sequence and must be allowed
+ * to proceed untouched — most importantly `autoUpdater.quitAndInstall()`, which
+ * relies on the app actually quitting to swap in the new binary. Calling
+ * `event.preventDefault()` on that quit cancels the update install and strands
+ * the (already-stopped) backend.
+ */
+export function shouldDeferQuitForGracefulShutdown(args: {
+  readonly quitAlreadyAllowed: boolean;
+  readonly programmaticQuitInProgress: boolean;
+}): boolean {
+  return !args.quitAlreadyAllowed && !args.programmaticQuitInProgress;
+}
+
 function handleBeforeQuit(
   event: Electron.Event,
   runEffect: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => Promise<A>,
   allowQuit: () => boolean,
   markQuitAllowed: () => void,
+  programmaticQuitInProgress: () => boolean,
 ): void {
-  if (allowQuit()) {
+  if (
+    !shouldDeferQuitForGracefulShutdown({
+      quitAlreadyAllowed: allowQuit(),
+      programmaticQuitInProgress: programmaticQuitInProgress(),
+    })
+  ) {
     void runEffect(
       Effect.gen(function* () {
         const state = yield* DesktopState.DesktopState;
@@ -190,8 +214,10 @@ export const layer = Layer.succeed(
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronTheme = yield* ElectronTheme.ElectronTheme;
       const environment = yield* DesktopEnvironment.DesktopEnvironment;
+      const state = yield* DesktopState.DesktopState;
       const context = yield* Effect.context<DesktopLifecycleRuntimeServices>();
       const runEffect = Effect.runPromiseWith(context);
+      const runSyncWithServices = Effect.runSyncWith(context);
       let quitAllowed = false;
       yield* electronTheme.onUpdated(() => {
         void runEffect(
@@ -206,6 +232,11 @@ export const layer = Layer.succeed(
           () => {
             quitAllowed = true;
           },
+          // A programmatic quit (quitAndInstall, signal handler, fatal startup)
+          // sets `quitting` before invoking app.quit and owns its own shutdown;
+          // reading the Ref is synchronous, which Electron requires for the
+          // preventDefault decision.
+          () => runSyncWithServices(Ref.get(state.quitting)),
         );
       });
       yield* electronApp.on("activate", () => {

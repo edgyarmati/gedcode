@@ -3,6 +3,11 @@
 Release notes are grouped by released version. Add a `## X.Y.Z` section before running
 `./release.sh stable ...` or `./release.sh nightly ...`.
 
+## Unreleased
+
+- Fix: Stop the desktop `before-quit` handler from cancelling the updater-owned quit. Installing a downloaded update stops the backend and then calls `autoUpdater.quitAndInstall()`, which relies on the app actually quitting; the lifecycle handler was calling `event.preventDefault()` on that quit, so the update never installed and the (already-stopped) backend was left dead — surfacing in the UI as a permanent "disconnected, retrying…" with no install. The handler now defers only user-initiated quits and lets programmatic quits (quitAndInstall, signal shutdown, fatal startup) proceed.
+- Fix: Restart the desktop backend when an update install fails (either a thrown `quitAndInstall` or an asynchronous updater `error` event) instead of leaving the app stranded with a stopped backend after it was halted in preparation for the install.
+
 ## 0.1.3-nightly.20260614.1
 
 - Improve: Derive orchestration shell-stream events once per domain event in the engine and fan the mapped result out to all shell subscribers, removing the prior per-event per-subscriber projection re-query.

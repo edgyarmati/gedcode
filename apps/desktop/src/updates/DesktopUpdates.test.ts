@@ -24,6 +24,7 @@ interface UpdatesHarnessOptions {
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
   >;
+  readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
   readonly env?: Record<string, string | undefined>;
   readonly platform?: NodeJS.Platform;
 }
@@ -41,6 +42,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     readonly isForceRunAfter: boolean;
   }> = [];
   let backendStopCount = 0;
+  let backendStartCount = 0;
   let destroyAllCount = 0;
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
@@ -82,7 +84,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     quitAndInstall: (installOptions) =>
       Effect.sync(() => {
         quitAndInstallCalls.push(installOptions);
-      }),
+      }).pipe(Effect.andThen(options.quitAndInstall ?? Effect.void)),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -114,7 +116,9 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   } satisfies ElectronWindow.ElectronWindowShape);
 
   const backendLayer = Layer.succeed(DesktopBackendManager.DesktopBackendManager, {
-    start: Effect.void,
+    start: Effect.sync(() => {
+      backendStartCount += 1;
+    }),
     stop: () =>
       Effect.sync(() => {
         backendStopCount += 1;
@@ -177,6 +181,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     feedUrls: () => feedUrls,
     quitAndInstallCalls: () => quitAndInstallCalls,
     backendStopCount: () => backendStopCount,
+    backendStartCount: () => backendStartCount,
     destroyAllCount: () => destroyAllCount,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
@@ -366,6 +371,69 @@ describe("DesktopUpdates", () => {
         ]);
         assert.equal(harness.backendStopCount(), 1);
         assert.equal(harness.destroyAllCount(), 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("restarts the backend when quitAndInstall fails so it is not left dead", () => {
+    const harness = makeHarness({
+      platform: "darwin",
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({ cause: "boom" }),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        const backendStartsAfterConfigure = harness.backendStartCount();
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+
+        // The install was attempted (backend stopped, quitAndInstall called) but
+        // failed; the backend must be restarted instead of left dead.
+        assert.equal(result.accepted, true);
+        assert.equal(result.completed, false);
+        assert.equal(harness.backendStopCount(), 1);
+        assert.equal(harness.backendStartCount() - backendStartsAfterConfigure, 1);
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "downloaded");
+        assert.equal(state.errorContext, "install");
+        assert.equal(state.canRetry, true);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("restarts the backend when the install fails via an async updater error", () => {
+    const harness = makeHarness({ platform: "darwin" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        const backendStartsAfterConfigure = harness.backendStartCount();
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        // quitAndInstall returns, but the install then fails asynchronously via
+        // the updater "error" event while the install is still in flight.
+        const result = yield* updates.install;
+        assert.equal(result.accepted, true);
+        harness.emit("error", new Error("install relaunch failed"));
+        yield* flushCallbacks;
+
+        assert.equal(harness.backendStopCount(), 1);
+        assert.equal(harness.backendStartCount() - backendStartsAfterConfigure, 1);
+
+        const state = yield* updates.getState;
+        assert.equal(state.errorContext, "install");
+        assert.equal(state.canRetry, true);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

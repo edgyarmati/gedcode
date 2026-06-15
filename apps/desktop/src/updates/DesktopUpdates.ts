@@ -382,6 +382,9 @@ const make = Effect.gen(function* () {
             reduceDesktopUpdateStateOnInstallFailure(current, error.message),
           );
           yield* Ref.set(desktopState.quitting, false);
+          // The backend was stopped before quitAndInstall; the install did not
+          // happen, so bring it back instead of leaving the app dead.
+          yield* backendManager.start;
           yield* logUpdaterError("failed to install update", { message: error.message });
           return { accepted: true, completed: false };
         }),
@@ -457,6 +460,9 @@ const make = Effect.gen(function* () {
       yield* Ref.set(updateInstallInFlightRef, false);
       yield* Ref.set(desktopState.quitting, false);
       yield* updateState((current) => reduceDesktopUpdateStateOnInstallFailure(current, message));
+      // The backend was stopped before quitAndInstall; the install failed
+      // asynchronously, so bring it back instead of leaving the app dead.
+      yield* backendManager.start;
       yield* logUpdaterError("updater error", { message });
       return;
     }
