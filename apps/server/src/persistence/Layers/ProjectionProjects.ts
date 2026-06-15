@@ -5,7 +5,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
-import { GedRoleModelSelections, ModelSelection, ProjectScript } from "@t3tools/contracts";
+import {
+  GedRoleModelSelections,
+  ModelSelection,
+  OrchestratorConfigJson,
+  ProjectScript,
+} from "@t3tools/contracts";
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
   DeleteProjectionProjectInput,
@@ -19,6 +24,7 @@ const ProjectionProjectDbRow = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
+    orchestratorConfig: Schema.fromJsonString(OrchestratorConfigJson),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -37,6 +43,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           workspace_root,
           default_model_selection_json,
           role_model_selections_json,
+          orchestrator_config_json,
           scripts_json,
           created_at,
           updated_at,
@@ -48,6 +55,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           ${row.workspaceRoot},
           ${row.defaultModelSelection !== null ? JSON.stringify(row.defaultModelSelection) : null},
           ${JSON.stringify(row.roleModelSelections)},
+          ${JSON.stringify(row.orchestratorConfig ?? {})},
           ${JSON.stringify(row.scripts)},
           ${row.createdAt},
           ${row.updatedAt},
@@ -59,6 +67,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           workspace_root = excluded.workspace_root,
           default_model_selection_json = excluded.default_model_selection_json,
           role_model_selections_json = excluded.role_model_selections_json,
+          orchestrator_config_json = excluded.orchestrator_config_json,
           scripts_json = excluded.scripts_json,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -77,6 +86,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           role_model_selections_json AS "roleModelSelections",
+          orchestrator_config_json AS "orchestratorConfig",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -97,6 +107,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           role_model_selections_json AS "roleModelSelections",
+          orchestrator_config_json AS "orchestratorConfig",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",

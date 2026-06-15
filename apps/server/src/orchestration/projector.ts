@@ -1,9 +1,24 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
+import type {
+  OrchestrationEvent,
+  OrchestrationPendingGate,
+  OrchestrationReadModel,
+  OrchestrationTask,
+  TaskId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
+  TaskAbandonedPayload,
+  TaskClassifiedPayload,
+  TaskCreatedPayload,
+  TaskGateRequestedPayload,
+  TaskGateResolvedPayload,
+  TaskLandedPayload,
+  TaskStageCompletedPayload,
+  TaskStageStartedPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -29,6 +44,8 @@ import {
 } from "./Schemas.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
+type TaskPatch = Partial<Omit<OrchestrationTask, "id" | "projectId">>;
+type PendingGatePatch = Partial<Omit<OrchestrationPendingGate, "gateId" | "taskId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
 
@@ -62,6 +79,22 @@ function updateThread(
   patch: ThreadPatch,
 ): OrchestrationThread[] {
   return threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread));
+}
+
+function updateTask(
+  tasks: ReadonlyArray<OrchestrationTask>,
+  taskId: TaskId,
+  patch: TaskPatch,
+): OrchestrationTask[] {
+  return tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
+}
+
+function updatePendingGate(
+  pendingGates: ReadonlyArray<OrchestrationPendingGate>,
+  gateId: OrchestrationPendingGate["gateId"],
+  patch: PendingGatePatch,
+): OrchestrationPendingGate[] {
+  return pendingGates.map((gate) => (gate.gateId === gateId ? { ...gate, ...patch } : gate));
 }
 
 function decodeForEvent<A>(
@@ -178,6 +211,8 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     snapshotSequence: 0,
     projects: [],
     threads: [],
+    tasks: [],
+    pendingGates: [],
     updatedAt: nowIso,
   };
 }
@@ -203,6 +238,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             roleModelSelections: payload.roleModelSelections ?? {},
+            orchestratorConfig: payload.orchestratorConfig ?? {},
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -237,6 +273,9 @@ export function projectEvent(
                     : {}),
                   ...(payload.roleModelSelections !== undefined
                     ? { roleModelSelections: payload.roleModelSelections }
+                    : {}),
+                  ...(payload.orchestratorConfig !== undefined
+                    ? { orchestratorConfig: payload.orchestratorConfig }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,
@@ -685,6 +724,212 @@ export function projectEvent(
             }),
           };
         }),
+      );
+
+    // --- Task aggregate (Plan 018 WP-D) -----------------------------------
+    //
+    // Status is a deterministic left-fold over the `task.*` log: each event maps
+    // to exactly one `OrchestrationTaskStatus` by its type + role/gate/decision
+    // discriminant. There is intentionally NO `task.status.set` command and no
+    // payload status field is ever trusted — the projector is the sole authority
+    // on status. The derivation matches design §5.
+
+    case "task.created":
+      // `task.created → draft`. Seeds the aggregate row from the create payload.
+      return decodeForEvent(TaskCreatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const existing = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          const task: OrchestrationTask = {
+            id: payload.taskId,
+            projectId: payload.projectId,
+            type: payload.taskType,
+            title: payload.title,
+            status: "draft",
+            branch: payload.branch,
+            worktreePath: payload.worktreePath,
+            pmMessageId: payload.pmMessageId,
+            stageThreadIds: [],
+            currentStageThreadId: null,
+            playbookVersion: payload.playbookVersion,
+            createdAt: payload.createdAt,
+            updatedAt: payload.updatedAt,
+          };
+          return {
+            ...nextBase,
+            tasks: existing
+              ? nextBase.tasks.map((entry) => (entry.id === payload.taskId ? task : entry))
+              : [...nextBase.tasks, task],
+          };
+        }),
+      );
+
+    case "task.classified":
+      // `task.classified → classified`. Snapshots the resolved task type +
+      // playbook version onto the aggregate for determinism.
+      return decodeForEvent(TaskClassifiedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "classified",
+            type: payload.taskType,
+            playbookVersion: payload.playbookVersion,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.stage-started":
+      // Status by role:
+      //   classify → classified (classify runs while the task is `classified`;
+      //              no distinct status)
+      //   plan     → planning
+      //   work     → working
+      // Always records the stage thread and points `currentStageThreadId` at it.
+      return decodeForEvent(TaskStageStartedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          if (!task) {
+            return nextBase;
+          }
+          const status =
+            payload.role === "plan"
+              ? ("planning" as const)
+              : payload.role === "work"
+                ? ("working" as const)
+                : ("classified" as const);
+          const stageThreadIds = task.stageThreadIds.includes(payload.stageThreadId)
+            ? task.stageThreadIds
+            : [...task.stageThreadIds, payload.stageThreadId];
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              status,
+              stageThreadIds,
+              currentStageThreadId: payload.stageThreadId,
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "task.stage-completed":
+      // Only the `work` stage completing advances status (`work → review`).
+      // Other roles' completion is recorded (updatedAt) but their forward
+      // transition is driven by the next stage starting or a gate event, so a
+      // completed classify/plan stage does not regress the derived status.
+      return decodeForEvent(TaskStageCompletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            ...(payload.role === "work" ? { status: "review" as const } : {}),
+            currentStageThreadId: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.gate-requested":
+      // Requesting a gate parks the task on the gate:
+      //   plan → plan-review
+      //   land → review
+      // Other gate kinds are reconciliation-only and leave status unchanged.
+      return decodeForEvent(TaskGateRequestedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const existingGate = nextBase.pendingGates?.find(
+            (gate) => gate.gateId === payload.gateId,
+          );
+          const pendingGate: OrchestrationPendingGate = {
+            gateId: payload.gateId,
+            taskId: payload.taskId,
+            gate: payload.gate,
+            contentHash: payload.contentHash,
+            stageThreadId: payload.stageThreadId,
+            status: "pending",
+            approvedHash: existingGate?.approvedHash ?? null,
+            decision: existingGate?.decision ?? null,
+            origin: existingGate?.origin ?? null,
+            requestedAt: existingGate?.requestedAt ?? payload.updatedAt,
+            resolvedAt: existingGate?.resolvedAt ?? null,
+          };
+          const pendingGates =
+            existingGate === undefined
+              ? [...(nextBase.pendingGates ?? []), pendingGate]
+              : (nextBase.pendingGates ?? []).map((gate) =>
+                  gate.gateId === payload.gateId ? pendingGate : gate,
+                );
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              ...(payload.gate === "plan"
+                ? { status: "plan-review" as const }
+                : payload.gate === "land"
+                  ? { status: "review" as const }
+                  : {}),
+              updatedAt: payload.updatedAt,
+            }),
+            pendingGates,
+          };
+        }),
+      );
+
+    case "task.gate-resolved":
+      // Resolving a gate by (gate, decision):
+      //   plan + approved → planning (a subsequent work stage-start moves it to
+      //                     working)
+      //   plan + rejected → blocked
+      //   land + rejected → blocked
+      //   land + approved → leave status (the `task.land` path drives `landed`)
+      // The decider rejects PM-runtime origin (WP-E); the projector trusts the
+      // already-validated event.
+      return decodeForEvent(TaskGateResolvedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const nextStatus =
+            payload.gate === "plan"
+              ? payload.decision === "approved"
+                ? ("planning" as const)
+                : ("blocked" as const)
+              : payload.gate === "land" && payload.decision === "rejected"
+                ? ("blocked" as const)
+                : null;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              ...(nextStatus !== null ? { status: nextStatus } : {}),
+              updatedAt: payload.updatedAt,
+            }),
+            pendingGates: updatePendingGate(nextBase.pendingGates ?? [], payload.gateId, {
+              status: "resolved",
+              approvedHash: payload.approvedHash,
+              decision: payload.decision,
+              origin: payload.origin,
+              resolvedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "task.landed":
+      // `task.landed → landed` (terminal success).
+      return decodeForEvent(TaskLandedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "landed",
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.abandoned":
+      // `task.abandoned → abandoned` (terminal).
+      return decodeForEvent(TaskAbandonedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "abandoned",
+            updatedAt: payload.updatedAt,
+          }),
+        })),
       );
 
     default:

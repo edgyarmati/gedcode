@@ -68,6 +68,7 @@ export const OrchestratorTaskType = Schema.Struct({
 export type OrchestratorTaskType = typeof OrchestratorTaskType.Type;
 
 export const DEFAULT_MAX_PARALLEL_WORKERS = 1;
+export const DEFAULT_MAX_PARALLEL_TASKS = 1;
 export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
 
 /**
@@ -82,6 +83,9 @@ export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
  * flag; the contracts invariant test pins the `false` default.
  */
 export const OrchestratorResourceLimits = Schema.Struct({
+  maxParallelTasks: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_TASKS)),
+  ),
   maxParallelWorkers: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_WORKERS)),
   ),
@@ -138,6 +142,9 @@ export type OrchestratorProjectConfig = typeof OrchestratorProjectConfig.Type;
  * block — `ServerSettings` nests it with `withDecodingDefault(...{})`.
  */
 export const OrchestratorGlobalDefaults = Schema.Struct({
+  maxParallelTasks: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_TASKS)),
+  ),
   // Host-wide ceiling for concurrent worker stages, independent of any single
   // project's `maxParallelWorkers`. The global `startSession` semaphore (WP-F)
   // is sized from this — the one capacity backstop the LLM cannot exceed.

@@ -13,6 +13,8 @@ import {
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationProposedPlan,
+  type OrchestrationStageRole,
+  type OrchestrationTask,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
@@ -84,6 +86,21 @@ function sameId(left: string | null | undefined, right: string | null | undefine
     return false;
   }
   return left === right;
+}
+
+function activeStageRoleForTaskStatus(
+  status: OrchestrationTask["status"],
+): OrchestrationStageRole | null {
+  switch (status) {
+    case "classified":
+      return "classify";
+    case "planning":
+      return "plan";
+    case "working":
+      return "work";
+    default:
+      return null;
+  }
 }
 
 function hasAssistantMessageForTurn(
@@ -699,6 +716,15 @@ const make = Effect.gen(function* () {
     return yield* projectionSnapshotQuery
       .getThreadShellById(threadId)
       .pipe(Effect.map(Option.getOrUndefined));
+  });
+
+  const resolveTaskForStageThread = Effect.fn("resolveTaskForStageThread")(function* (
+    threadId: ThreadId,
+  ) {
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    return readModel.tasks.find((task) =>
+      task.stageThreadIds.some((stageThreadId) => sameId(stageThreadId, threadId)),
+    );
   });
 
   const rememberAssistantMessageId = (threadId: ThreadId, turnId: TurnId, messageId: MessageId) =>
@@ -1587,6 +1613,27 @@ const make = Effect.gen(function* () {
             planId: proposedPlanIdForTurn(thread.id, turnId),
             turnId,
             updatedAt: now,
+          });
+        }
+
+        const taskForStageThread = yield* resolveTaskForStageThread(thread.id);
+        const activeStageRole =
+          taskForStageThread === undefined
+            ? null
+            : activeStageRoleForTaskStatus(taskForStageThread.status);
+        if (
+          taskForStageThread !== undefined &&
+          activeStageRole !== null &&
+          sameId(taskForStageThread.currentStageThreadId, thread.id)
+        ) {
+          yield* orchestrationEngine.dispatch({
+            type: "task.stage.complete",
+            commandId: yield* providerCommandId(event, "task-stage-complete"),
+            taskId: taskForStageThread.id,
+            role: activeStageRole,
+            stageThreadId: thread.id,
+            awaitedTurnId: turnId ?? null,
+            createdAt: now,
           });
         }
       }

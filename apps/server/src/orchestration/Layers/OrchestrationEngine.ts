@@ -75,8 +75,11 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.create":
     case "task.classify":
     case "task.stage.start":
+    case "task.stage.complete":
     case "task.gate.request":
     case "task.gate.resolve":
+    case "task.land":
+    case "task.abandon":
       return {
         aggregateKind: "task",
         aggregateId: command.taskId,

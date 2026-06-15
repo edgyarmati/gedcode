@@ -204,6 +204,9 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
+export const OrchestratorConfigJson = Schema.Record(Schema.String, Schema.Unknown);
+export type OrchestratorConfigJson = typeof OrchestratorConfigJson.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -211,6 +214,7 @@ export const OrchestrationProject = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -451,10 +455,43 @@ export const OrchestrationGateResolutionOrigin = Schema.Literals([
 ]);
 export type OrchestrationGateResolutionOrigin = typeof OrchestrationGateResolutionOrigin.Type;
 
+/**
+ * Decision recorded when a task gate is resolved. Closed literal so the decider
+ * and projections agree on the resolution outcome.
+ */
+export const OrchestrationGateDecision = Schema.Literals(["approved", "rejected"]);
+export type OrchestrationGateDecision = typeof OrchestrationGateDecision.Type;
+
+export const OrchestrationPendingGateStatus = Schema.Literals(["pending", "resolved"]);
+export type OrchestrationPendingGateStatus = typeof OrchestrationPendingGateStatus.Type;
+
+export const OrchestrationPendingGate = Schema.Struct({
+  gateId: GateId,
+  taskId: TaskId,
+  gate: OrchestrationGateKind,
+  contentHash: TrimmedNonEmptyString,
+  stageThreadId: Schema.NullOr(ThreadId),
+  status: OrchestrationPendingGateStatus,
+  approvedHash: Schema.NullOr(TrimmedNonEmptyString),
+  decision: Schema.NullOr(OrchestrationGateDecision),
+  origin: Schema.NullOr(OrchestrationGateResolutionOrigin),
+  requestedAt: IsoDateTime,
+  resolvedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationPendingGate = typeof OrchestrationPendingGate.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
   threads: Schema.Array(OrchestrationThread),
+  // Task aggregates (Plan 018 WP-D). `status` is derived purely from the
+  // `task.*` event log by the projector — no `task.status.set` command exists.
+  // The read model is reconstructed by `ProjectionSnapshotQuery` from the SQL
+  // projection tables and then `Schema.decode`d, never persisted as a JSON
+  // blob; a decoding default of `[]` mirrors the `proposedPlans` field above so
+  // any snapshot produced before this field existed still decodes cleanly.
+  tasks: Schema.Array(OrchestrationTask).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  pendingGates: Schema.optionalKey(Schema.Array(OrchestrationPendingGate)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -466,6 +503,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -557,6 +595,7 @@ export const ProjectCreateCommand = Schema.Struct({
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   createdAt: IsoDateTime,
 });
 
@@ -568,6 +607,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
 });
 
@@ -749,13 +789,6 @@ const ThreadSessionStopCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-/**
- * Decision recorded when a task gate is resolved. Closed literal so the decider
- * and projections agree on the resolution outcome.
- */
-export const OrchestrationGateDecision = Schema.Literals(["approved", "rejected"]);
-export type OrchestrationGateDecision = typeof OrchestrationGateDecision.Type;
-
 const TaskCreateCommand = Schema.Struct({
   type: Schema.Literal("task.create"),
   commandId: CommandId,
@@ -791,6 +824,16 @@ const TaskStageStartCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskStageCompleteCommand = Schema.Struct({
+  type: Schema.Literal("task.stage.complete"),
+  commandId: CommandId,
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  awaitedTurnId: Schema.NullOr(TurnId),
+  createdAt: IsoDateTime,
+});
+
 const TaskGateRequestCommand = Schema.Struct({
   type: Schema.Literal("task.gate.request"),
   commandId: CommandId,
@@ -811,6 +854,20 @@ const TaskGateResolveCommand = Schema.Struct({
   approvedHash: TrimmedNonEmptyString,
   decision: OrchestrationGateDecision,
   origin: OrchestrationGateResolutionOrigin,
+  createdAt: IsoDateTime,
+});
+
+const TaskLandCommand = Schema.Struct({
+  type: Schema.Literal("task.land"),
+  commandId: CommandId,
+  taskId: TaskId,
+  createdAt: IsoDateTime,
+});
+
+const TaskAbandonCommand = Schema.Struct({
+  type: Schema.Literal("task.abandon"),
+  commandId: CommandId,
+  taskId: TaskId,
   createdAt: IsoDateTime,
 });
 
@@ -836,6 +893,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskStageStartCommand,
   TaskGateRequestCommand,
   TaskGateResolveCommand,
+  TaskLandCommand,
+  TaskAbandonCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -933,6 +992,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  TaskStageCompleteCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -987,6 +1047,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -999,6 +1060,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
 });
@@ -1157,7 +1219,6 @@ export const TaskCreatedPayload = Schema.Struct({
   projectId: ProjectId,
   taskType: TaskTypeId,
   title: TrimmedNonEmptyString,
-  status: OrchestrationTaskStatus,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   pmMessageId: Schema.NullOr(MessageId),

@@ -58,7 +58,11 @@ import {
   type OrchestrationEngineShape,
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
+import { TaskWorktreeReactor } from "../src/orchestration/Services/TaskWorktreeReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
+import { OrphanTurnReconciler } from "../src/orchestration/Services/OrphanTurnReconciler.ts";
+import { PmRuntime } from "../src/orchestration/Services/PmRuntime.ts";
+import { WorkerStartAdmissionLive } from "../src/orchestration/Layers/WorkerStartAdmission.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   RuntimeReceiptBus,
@@ -302,6 +306,9 @@ export const makeOrchestrationIntegrationHarness = (
       RuntimeReceiptBusTest,
     );
     const serverSettingsLayer = ServerSettingsService.layerTest();
+    const workerStartAdmissionLayer = WorkerStartAdmissionLive.pipe(
+      Layer.provide(serverSettingsLayer),
+    );
     const runtimeIngestionLayer = ProviderRuntimeIngestionLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(serverSettingsLayer),
@@ -322,6 +329,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(gitWorkflowLayer),
       Layer.provideMerge(textGenerationLayer),
       Layer.provideMerge(serverSettingsLayer),
+      Layer.provideMerge(workerStartAdmissionLayer),
     );
     const checkpointReactorLayer = CheckpointReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
@@ -356,7 +364,24 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),
       Layer.provideMerge(
+        Layer.succeed(OrphanTurnReconciler, {
+          reconcile: () => Effect.succeed(0),
+        }),
+      ),
+      Layer.provideMerge(
         Layer.succeed(ThreadDeletionReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(PmRuntime, {
+          start: () => Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(TaskWorktreeReactor, {
           start: () => Effect.void,
           drain: Effect.void,
         }),

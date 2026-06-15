@@ -15,9 +15,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { toPersistenceSqlError, type ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
+import { ProjectionPendingGateRepository } from "../../persistence/Services/ProjectionPendingGates.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
+import { ProjectionTaskRepository } from "../../persistence/Services/ProjectionTasks.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { type ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import {
@@ -34,9 +37,12 @@ import {
   ProjectionTurnRepository,
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { ProjectionAwaitedStageRepositoryLive } from "../../persistence/Layers/ProjectionAwaitedStages.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
+import { ProjectionPendingGateRepositoryLive } from "../../persistence/Layers/ProjectionPendingGates.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
+import { ProjectionTaskRepositoryLive } from "../../persistence/Layers/ProjectionTasks.ts";
 import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/Layers/ProjectionThreadProposedPlans.ts";
@@ -65,6 +71,9 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  tasks: "projection.tasks",
+  awaitedStages: "projection.awaited-stages",
+  pendingGates: "projection.pending-gates",
 } as const;
 
 type ProjectorName =
@@ -475,6 +484,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const projectionTaskRepository = yield* ProjectionTaskRepository;
+    const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
+    const projectionPendingGateRepository = yield* ProjectionPendingGateRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -491,6 +503,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             workspaceRoot: event.payload.workspaceRoot,
             defaultModelSelection: event.payload.defaultModelSelection,
             roleModelSelections: event.payload.roleModelSelections ?? {},
+            orchestratorConfig: event.payload.orchestratorConfig ?? {},
             scripts: event.payload.scripts,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -516,6 +529,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.roleModelSelections !== undefined
               ? { roleModelSelections: event.payload.roleModelSelections }
+              : {}),
+            ...(event.payload.orchestratorConfig !== undefined
+              ? { orchestratorConfig: event.payload.orchestratorConfig }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
             updatedAt: event.payload.updatedAt,
@@ -1433,6 +1449,276 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    // Task aggregate projector (Plan 018 WP-D). `status` is computed here from
+    // the event being applied + the current row — never taken from a command or
+    // payload status field. The derivation is the same deterministic left-fold
+    // implemented in the in-memory `projector.ts` (design §5):
+    //   created → draft; classified → classified;
+    //   stage-started(classify) → classified; stage-started(plan) → planning;
+    //   stage-started(work) → working; stage-completed(work) → review;
+    //   gate-requested(plan) → plan-review; gate-requested(land) → review;
+    //   gate-resolved(plan, approved) → planning;
+    //   gate-resolved(plan, rejected) → blocked;
+    //   gate-resolved(land, rejected) → blocked;
+    //   landed → landed; abandoned → abandoned.
+    const applyTasksProjection: ProjectorDefinition["apply"] = Effect.fn("applyTasksProjection")(
+      function* (event, _attachmentSideEffects) {
+        switch (event.type) {
+          case "task.created":
+            yield* projectionTaskRepository.upsert({
+              taskId: event.payload.taskId,
+              projectId: event.payload.projectId,
+              type: event.payload.taskType,
+              title: event.payload.title,
+              status: "draft",
+              branch: event.payload.branch,
+              worktreePath: event.payload.worktreePath,
+              pmMessageId: event.payload.pmMessageId,
+              stageThreadIds: [],
+              currentStageThreadId: null,
+              playbookVersion: event.payload.playbookVersion,
+              createdAt: event.payload.createdAt,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+
+          case "task.classified": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "classified",
+              type: event.payload.taskType,
+              playbookVersion: event.payload.playbookVersion,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.stage-started": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            const status =
+              event.payload.role === "plan"
+                ? "planning"
+                : event.payload.role === "work"
+                  ? "working"
+                  : "classified";
+            const stageThreadIds = existingRow.value.stageThreadIds.includes(
+              event.payload.stageThreadId,
+            )
+              ? existingRow.value.stageThreadIds
+              : [...existingRow.value.stageThreadIds, event.payload.stageThreadId];
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status,
+              stageThreadIds,
+              currentStageThreadId: event.payload.stageThreadId,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.stage-completed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              ...(event.payload.role === "work" ? { status: "review" as const } : {}),
+              currentStageThreadId: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.gate-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              ...(event.payload.gate === "plan"
+                ? { status: "plan-review" as const }
+                : event.payload.gate === "land"
+                  ? { status: "review" as const }
+                  : {}),
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.gate-resolved": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            const nextStatus =
+              event.payload.gate === "plan"
+                ? event.payload.decision === "approved"
+                  ? ("planning" as const)
+                  : ("blocked" as const)
+                : event.payload.gate === "land" && event.payload.decision === "rejected"
+                  ? ("blocked" as const)
+                  : null;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              ...(nextStatus !== null ? { status: nextStatus } : {}),
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.landed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "landed",
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.abandoned": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "abandoned",
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          default:
+            return;
+        }
+      },
+    );
+
+    // Awaited-stages reconciliation source (migration 034). A stage-started
+    // with a non-null `awaitedTurnId` opens an `awaited` row; the matching
+    // stage-completed marks it `completed`. Stages started without an awaited
+    // turn (nothing to block on) are not recorded.
+    const applyAwaitedStagesProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyAwaitedStagesProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "task.stage-started": {
+          if (event.payload.awaitedTurnId === null) {
+            return;
+          }
+          yield* projectionAwaitedStageRepository.upsert({
+            taskId: event.payload.taskId,
+            stageThreadId: event.payload.stageThreadId,
+            role: event.payload.role,
+            awaitedTurnId: event.payload.awaitedTurnId,
+            status: "awaited",
+            startedAt: event.payload.updatedAt,
+            completedAt: null,
+          });
+          return;
+        }
+
+        case "task.stage-completed": {
+          const rows = yield* projectionAwaitedStageRepository.listByTaskId({
+            taskId: event.payload.taskId,
+          });
+          const existing = rows.find((row) => row.stageThreadId === event.payload.stageThreadId);
+          if (!existing) {
+            return;
+          }
+          yield* projectionAwaitedStageRepository.upsert({
+            ...existing,
+            status: "completed",
+            completedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
+    // Pending-gates reconciliation source (migration 034). A gate-requested
+    // opens a `pending` row; a gate-resolved settles it to `resolved`,
+    // recording the decision/origin/approvedHash. The decider rejects
+    // PM-runtime origin (WP-E); the projector trusts the validated event.
+    const applyPendingGatesProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyPendingGatesProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "task.gate-requested": {
+          const existingRow = yield* projectionPendingGateRepository.getByGateId({
+            gateId: event.payload.gateId,
+          });
+          yield* projectionPendingGateRepository.upsert({
+            gateId: event.payload.gateId,
+            taskId: event.payload.taskId,
+            gate: event.payload.gate,
+            contentHash: event.payload.contentHash,
+            stageThreadId: event.payload.stageThreadId,
+            status: "pending",
+            approvedHash: Option.isSome(existingRow) ? existingRow.value.approvedHash : null,
+            decision: Option.isSome(existingRow) ? existingRow.value.decision : null,
+            origin: Option.isSome(existingRow) ? existingRow.value.origin : null,
+            requestedAt: Option.isSome(existingRow)
+              ? existingRow.value.requestedAt
+              : event.payload.updatedAt,
+            resolvedAt: Option.isSome(existingRow) ? existingRow.value.resolvedAt : null,
+          });
+          return;
+        }
+
+        case "task.gate-resolved": {
+          const existingRow = yield* projectionPendingGateRepository.getByGateId({
+            gateId: event.payload.gateId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionPendingGateRepository.upsert({
+            ...existingRow.value,
+            status: "resolved",
+            approvedHash: event.payload.approvedHash,
+            decision: event.payload.decision,
+            origin: event.payload.origin,
+            resolvedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
     const projectors: ReadonlyArray<ProjectorDefinition> = [
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.projects,
@@ -1465,6 +1751,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.pendingApprovals,
         apply: applyPendingApprovalsProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.tasks,
+        apply: applyTasksProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.awaitedStages,
+        apply: applyAwaitedStagesProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.pendingGates,
+        apply: applyPendingGatesProjection,
       },
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
@@ -1572,5 +1870,8 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
+  Layer.provideMerge(ProjectionTaskRepositoryLive),
+  Layer.provideMerge(ProjectionAwaitedStageRepositoryLive),
+  Layer.provideMerge(ProjectionPendingGateRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

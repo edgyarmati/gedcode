@@ -155,6 +155,7 @@ describe("OrchestrationEngine", () => {
           session: null,
         },
       ],
+      tasks: [],
     };
     const commandReadModel = {
       ...projectionSnapshot,

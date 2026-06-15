@@ -1387,7 +1387,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          ...(options?.environment ? { environment: options.environment } : {}),
+          ...(input.environment !== undefined
+            ? { environment: input.environment }
+            : options?.environment
+              ? { environment: options.environment }
+              : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
 
 import {
+  DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_STAGE_HANDOFFS,
   OrchestratorGlobalDefaults,
@@ -23,8 +24,9 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
 
   it("keeps the false default even when other resourceLimits fields are set", () => {
     const decoded = decodeProjectConfig({
-      resourceLimits: { maxParallelWorkers: 3, maxStageHandoffs: 5 },
+      resourceLimits: { maxParallelTasks: 2, maxParallelWorkers: 3, maxStageHandoffs: 5 },
     });
+    expect(decoded.resourceLimits.maxParallelTasks).toBe(2);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(3);
     expect(decoded.resourceLimits.maxStageHandoffs).toBe(5);
     expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(false);
@@ -56,6 +58,7 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
 
   it("defaults the resource limits to the safe constants", () => {
     const decoded = decodeProjectConfig({});
+    expect(decoded.resourceLimits.maxParallelTasks).toBe(DEFAULT_MAX_PARALLEL_TASKS);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(DEFAULT_MAX_PARALLEL_WORKERS);
     expect(decoded.resourceLimits.maxStageHandoffs).toBe(DEFAULT_MAX_STAGE_HANDOFFS);
   });
@@ -80,6 +83,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
         },
       ],
       resourceLimits: {
+        maxParallelTasks: 2,
         maxParallelWorkers: 2,
         maxStageHandoffs: 12,
         allowFullAccessWorkers: true,

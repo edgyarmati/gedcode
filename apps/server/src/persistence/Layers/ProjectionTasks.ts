@@ -1,0 +1,186 @@
+import { ThreadId } from "@t3tools/contracts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
+
+import { toPersistenceSqlError } from "../Errors.ts";
+import {
+  GetProjectionTaskInput,
+  ListProjectionTasksByProjectInput,
+  ProjectionTask,
+  ProjectionTaskRepository,
+  type ProjectionTaskRepositoryShape,
+} from "../Services/ProjectionTasks.ts";
+
+// `stage_thread_ids_json` is a JSON text column (SQLite has no array type); the
+// DB row schema parses it into the `stageThreadIds` array on read and the
+// upsert serializes it on write.
+const ProjectionTaskDbRow = ProjectionTask.mapFields(
+  Struct.assign({
+    stageThreadIds: Schema.fromJsonString(Schema.Array(ThreadId)),
+  }),
+);
+type ProjectionTaskDbRow = typeof ProjectionTaskDbRow.Type;
+
+const makeProjectionTaskRepository = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+
+  const upsertProjectionTaskRow = SqlSchema.void({
+    Request: ProjectionTask,
+    execute: (row) =>
+      sql`
+        INSERT INTO projection_tasks (
+          task_id,
+          project_id,
+          type,
+          title,
+          status,
+          branch,
+          worktree_path,
+          pm_message_id,
+          stage_thread_ids_json,
+          current_stage_thread_id,
+          playbook_version,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${row.taskId},
+          ${row.projectId},
+          ${row.type},
+          ${row.title},
+          ${row.status},
+          ${row.branch},
+          ${row.worktreePath},
+          ${row.pmMessageId},
+          ${JSON.stringify(row.stageThreadIds)},
+          ${row.currentStageThreadId},
+          ${row.playbookVersion},
+          ${row.createdAt},
+          ${row.updatedAt}
+        )
+        ON CONFLICT (task_id)
+        DO UPDATE SET
+          project_id = excluded.project_id,
+          type = excluded.type,
+          title = excluded.title,
+          status = excluded.status,
+          branch = excluded.branch,
+          worktree_path = excluded.worktree_path,
+          pm_message_id = excluded.pm_message_id,
+          stage_thread_ids_json = excluded.stage_thread_ids_json,
+          current_stage_thread_id = excluded.current_stage_thread_id,
+          playbook_version = excluded.playbook_version,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at
+      `,
+  });
+
+  const getProjectionTaskRow = SqlSchema.findOneOption({
+    Request: GetProjectionTaskInput,
+    Result: ProjectionTaskDbRow,
+    execute: ({ taskId }) =>
+      sql`
+        SELECT
+          task_id AS "taskId",
+          project_id AS "projectId",
+          type,
+          title,
+          status,
+          branch,
+          worktree_path AS "worktreePath",
+          pm_message_id AS "pmMessageId",
+          stage_thread_ids_json AS "stageThreadIds",
+          current_stage_thread_id AS "currentStageThreadId",
+          playbook_version AS "playbookVersion",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM projection_tasks
+        WHERE task_id = ${taskId}
+      `,
+  });
+
+  const listProjectionTaskRowsByProject = SqlSchema.findAll({
+    Request: ListProjectionTasksByProjectInput,
+    Result: ProjectionTaskDbRow,
+    execute: ({ projectId }) =>
+      sql`
+        SELECT
+          task_id AS "taskId",
+          project_id AS "projectId",
+          type,
+          title,
+          status,
+          branch,
+          worktree_path AS "worktreePath",
+          pm_message_id AS "pmMessageId",
+          stage_thread_ids_json AS "stageThreadIds",
+          current_stage_thread_id AS "currentStageThreadId",
+          playbook_version AS "playbookVersion",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM projection_tasks
+        WHERE project_id = ${projectId}
+        ORDER BY created_at ASC, task_id ASC
+      `,
+  });
+
+  const listAllProjectionTaskRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionTaskDbRow,
+    execute: () =>
+      sql`
+        SELECT
+          task_id AS "taskId",
+          project_id AS "projectId",
+          type,
+          title,
+          status,
+          branch,
+          worktree_path AS "worktreePath",
+          pm_message_id AS "pmMessageId",
+          stage_thread_ids_json AS "stageThreadIds",
+          current_stage_thread_id AS "currentStageThreadId",
+          playbook_version AS "playbookVersion",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM projection_tasks
+        ORDER BY created_at ASC, task_id ASC
+      `,
+  });
+
+  const upsert: ProjectionTaskRepositoryShape["upsert"] = (row) =>
+    upsertProjectionTaskRow(row).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.upsert:query")),
+    );
+
+  const getById: ProjectionTaskRepositoryShape["getById"] = (input) =>
+    getProjectionTaskRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.getById:query")),
+    );
+
+  const listByProjectId: ProjectionTaskRepositoryShape["listByProjectId"] = (input) =>
+    listProjectionTaskRowsByProject(input).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.listByProjectId:query")),
+    );
+
+  const listAll: ProjectionTaskRepositoryShape["listAll"] = () =>
+    listAllProjectionTaskRows(undefined).pipe(
+      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.listAll:query")),
+    );
+
+  return {
+    upsert,
+    getById,
+    listByProjectId,
+    listAll,
+  } satisfies ProjectionTaskRepositoryShape;
+});
+
+export const ProjectionTaskRepositoryLive = Layer.effect(
+  ProjectionTaskRepository,
+  makeProjectionTaskRepository,
+);

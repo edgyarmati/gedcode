@@ -19,6 +19,7 @@ import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -37,9 +38,14 @@ import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
 } from "../Services/ProviderCommandReactor.ts";
+import { WorkerStartAdmission } from "../Services/WorkerStartAdmission.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import {
+  installTaskWorktreePushBlockHook,
+  makeWorkerProviderEnvironment,
+} from "../workerSafety.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -184,6 +190,8 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const workerStartAdmission = yield* WorkerStartAdmission;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -305,6 +313,13 @@ const make = Effect.gen(function* () {
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
+  const resolveTaskForStageThread = Effect.fnUntraced(function* (threadId: ThreadId) {
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    return readModel.tasks.find((task) =>
+      task.stageThreadIds.some((stageThreadId) => String(stageThreadId) === String(threadId)),
+    );
+  });
+
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -317,7 +332,17 @@ const make = Effect.gen(function* () {
       return yield* Effect.die(new Error(`Thread '${threadId}' was not found in read model.`));
     }
 
-    const desiredRuntimeMode = thread.runtimeMode;
+    const taskForStageThread = yield* resolveTaskForStageThread(threadId);
+    const isOrchestratorWorker =
+      taskForStageThread !== undefined ||
+      (thread.branch !== null && thread.branch.startsWith("orchestrator/"));
+    const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
+    const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
+    const desiredRuntimeMode =
+      isOrchestratorWorker && thread.runtimeMode === "full-access"
+        ? ("auto-accept-edits" as const)
+        : thread.runtimeMode;
+    const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -408,24 +433,58 @@ const make = Effect.gen(function* () {
       }
     }
     const project = yield* resolveProject(thread.projectId);
+    const workspaceThread =
+      workerWorktreePath !== null
+        ? {
+            ...thread,
+            branch: workerBranch,
+            worktreePath: workerWorktreePath,
+          }
+        : thread;
     const effectiveCwd = resolveThreadWorkspaceCwd({
-      thread,
+      thread: workspaceThread,
       projects: project ? [project] : [],
+    });
+    const ensureWorkerWorktree = Effect.fn("ensureWorkerWorktree")(function* () {
+      if (
+        !isOrchestratorWorker ||
+        workerBranch === null ||
+        workerWorktreePath === null ||
+        project === undefined
+      ) {
+        return;
+      }
+      const exists = yield* fileSystem.exists(workerWorktreePath);
+      if (!exists) {
+        yield* gitWorkflow.createWorktree({
+          cwd: project.workspaceRoot,
+          refName: "HEAD",
+          newRefName: workerBranch,
+          path: workerWorktreePath,
+        });
+      }
+      yield* installTaskWorktreePushBlockHook(workerWorktreePath);
     });
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
     }) =>
-      providerService.startSession(threadId, {
-        threadId,
-        ...(preferredProvider ? { provider: preferredProvider } : {}),
-        providerInstanceId: desiredInstanceId,
-        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        modelSelection: desiredModelSelection,
-        ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
-        runtimeMode: desiredRuntimeMode,
-      });
+      ensureWorkerWorktree().pipe(
+        Effect.andThen(() => {
+          const start = providerService.startSession(threadId, {
+            threadId,
+            ...(preferredProvider ? { provider: preferredProvider } : {}),
+            providerInstanceId: desiredInstanceId,
+            ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+            modelSelection: desiredModelSelection,
+            ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+            runtimeMode: desiredRuntimeMode,
+            ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
+          });
+          return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;
+        }),
+      );
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {
@@ -456,7 +515,7 @@ const make = Effect.gen(function* () {
     const existingSessionThreadId =
       thread.session && thread.session.status !== "stopped" && activeSession ? thread.id : null;
     if (existingSessionThreadId) {
-      const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
+      const runtimeModeChanged = desiredRuntimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
       const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
         .sessionModelSwitch;

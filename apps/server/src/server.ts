@@ -39,6 +39,10 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import { OrphanTurnReconcilerLive } from "./orchestration/Layers/OrphanTurnReconciler.ts";
+import { PiProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Layers/PmRuntime.ts";
+import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
+import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
 import { GedWorkflowServiceLive } from "./gedWorkflow/Layers/GedWorkflowServiceLive.ts";
 import { GedWorkflowEventReactorLive } from "./gedWorkflow/Layers/GedWorkflowEventReactor.ts";
 import { GedWorkflowGuardLive } from "./gedWorkflow/Layers/GedWorkflowGuard.ts";
@@ -145,6 +149,11 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
+  Layer.provideMerge(TaskWorktreeReactorLive),
+  Layer.provideMerge(PmRuntimeLive),
+  Layer.provideMerge(PiProjectRuntimeFactoryLive),
+  Layer.provideMerge(OrphanTurnReconcilerLive),
+  Layer.provideMerge(WorkerStartAdmissionLive),
   Layer.provideMerge(GedWorkflowEventReactorLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );

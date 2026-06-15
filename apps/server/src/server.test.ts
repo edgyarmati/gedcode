@@ -180,6 +180,7 @@ const makeDefaultOrchestrationReadModel = () => {
         deletedAt: null,
       },
     ],
+    tasks: [],
   };
 };
 
@@ -1775,6 +1776,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             ],
           },
         ],
+        tasks: [],
       };
 
       const collector = yield* Effect.acquireRelease(
@@ -3202,6 +3204,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             deletedAt: null,
           },
         ],
+        tasks: [],
       };
 
       yield* buildAppUnderTest({

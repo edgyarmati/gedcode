@@ -3,6 +3,7 @@ import {
   EventId,
   ProjectId,
   ProviderDriverKind,
+  TaskId,
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
@@ -28,7 +29,9 @@ function makeEvent(input: {
     aggregateId:
       input.aggregateKind === "project"
         ? ProjectId.make(input.aggregateId)
-        : ThreadId.make(input.aggregateId),
+        : input.aggregateKind === "task"
+          ? TaskId.make(input.aggregateId)
+          : ThreadId.make(input.aggregateId),
     occurredAt: input.occurredAt,
     commandId: input.commandId === null ? null : CommandId.make(input.commandId),
     causationEventId: null,
@@ -233,6 +236,158 @@ describe("orchestration projector", () => {
     expect(next.snapshotSequence).toBe(7);
     expect(next.updatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(next.threads).toEqual([]);
+  });
+
+  it("derives task status purely from task events", async () => {
+    const createdAt = "2026-06-14T10:00:00.000Z";
+    const classifiedAt = "2026-06-14T10:01:00.000Z";
+    const planStartedAt = "2026-06-14T10:02:00.000Z";
+    const gateRequestedAt = "2026-06-14T10:03:00.000Z";
+    const gateResolvedAt = "2026-06-14T10:04:00.000Z";
+    const workStartedAt = "2026-06-14T10:05:00.000Z";
+    const workCompletedAt = "2026-06-14T10:06:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-1",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Add orchestrator task projection",
+          branch: "orchestrator/task-1",
+          worktreePath: "/tmp/task-1",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.classified",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: classifiedAt,
+        commandId: "cmd-task-classify",
+        payload: {
+          taskId: "task-1",
+          taskType: "feature",
+          playbookVersion: "feature@v1",
+          updatedAt: classifiedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: planStartedAt,
+        commandId: "cmd-plan-start",
+        payload: {
+          taskId: "task-1",
+          role: "plan",
+          stageThreadId: "thread-plan",
+          awaitedTurnId: "turn-plan",
+          updatedAt: planStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: gateRequestedAt,
+        commandId: "cmd-plan-gate",
+        payload: {
+          taskId: "task-1",
+          gateId: "gate-plan",
+          gate: "plan",
+          contentHash: "sha256:plan",
+          stageThreadId: "thread-plan",
+          updatedAt: gateRequestedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 5,
+        type: "task.gate-resolved",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: gateResolvedAt,
+        commandId: "cmd-plan-approve",
+        payload: {
+          taskId: "task-1",
+          gateId: "gate-plan",
+          gate: "plan",
+          approvedHash: "sha256:plan",
+          decision: "approved",
+          origin: "human",
+          updatedAt: gateResolvedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 6,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-1",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 7,
+        type: "task.stage-completed",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: workCompletedAt,
+        commandId: "cmd-work-complete",
+        payload: {
+          taskId: "task-1",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workCompletedAt,
+        },
+      }),
+    ];
+
+    const statuses: string[] = [];
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+      statuses.push(state.tasks[0]?.status ?? "missing");
+    }
+
+    expect(statuses).toEqual([
+      "draft",
+      "classified",
+      "planning",
+      "plan-review",
+      "planning",
+      "working",
+      "review",
+    ]);
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-1",
+      projectId: "project-1",
+      type: "feature",
+      status: "review",
+      stageThreadIds: ["thread-plan", "thread-work"],
+      currentStageThreadId: null,
+      playbookVersion: "feature@v1",
+    });
   });
 
   it("tracks latest turn id from session lifecycle events", async () => {

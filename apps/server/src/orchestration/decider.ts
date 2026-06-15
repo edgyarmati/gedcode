@@ -1,19 +1,31 @@
 import {
+  DEFAULT_MAX_PARALLEL_TASKS,
+  DEFAULT_MAX_STAGE_HANDOFFS,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
+  MessageId,
+  OrchestratorProjectConfig,
+  ThreadId,
   type OrchestrationCommand,
   type OrchestrationEvent,
+  type OrchestrationProject,
   type OrchestrationReadModel,
+  type OrchestrationStageRole,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
   listThreadsByProjectId,
   requireProject,
   requireProjectAbsent,
+  requireTask,
+  requireTaskAbsent,
   requireThread,
   requireThreadArchived,
   requireThreadAbsent,
@@ -22,6 +34,65 @@ import {
 import { projectEvent } from "./projector.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+
+function taskWorktreePath(input: { readonly workspaceRoot: string; readonly taskId: string }) {
+  return `${input.workspaceRoot.replace(/[\\/]+$/, "")}/.gedcode/orchestrator/tasks/${input.taskId}`;
+}
+
+function invariantError(commandType: string, detail: string): OrchestrationCommandInvariantError {
+  return new OrchestrationCommandInvariantError({
+    commandType,
+    detail,
+  });
+}
+
+function requireOrchestratorEnabled(input: {
+  readonly command: OrchestrationCommand;
+  readonly project: OrchestrationProject;
+}): Effect.Effect<OrchestratorProjectConfig, OrchestrationCommandInvariantError> {
+  const config = decodeOrchestratorConfig(input.project.orchestratorConfig ?? {});
+  if (Option.isSome(config) && config.value.enabled === true) {
+    return Effect.succeed(config.value);
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Orchestrator mode is not enabled for project '${input.project.id}'.`,
+    ),
+  );
+}
+
+function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
+  return status === "landed" || status === "abandoned";
+}
+
+function countActiveTaskWorktrees(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly projectId: OrchestrationProject["id"];
+}): number {
+  return input.readModel.tasks.filter(
+    (task) =>
+      task.projectId === input.projectId &&
+      task.worktreePath !== null &&
+      !isTerminalTaskStatus(task.status),
+  ).length;
+}
+
+function activeStageRoleForTaskStatus(
+  status: OrchestrationReadModel["tasks"][number]["status"],
+): OrchestrationStageRole | null {
+  switch (status) {
+    case "classified":
+      return "classify";
+    case "planning":
+      return "plan";
+    case "working":
+      return "work";
+    default:
+      return null;
+  }
+}
 
 function withEventBase(
   input: Pick<OrchestrationCommand, "commandId"> & {
@@ -126,6 +197,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           workspaceRoot: command.workspaceRoot,
           defaultModelSelection: command.defaultModelSelection ?? null,
           roleModelSelections: command.roleModelSelections ?? {},
+          orchestratorConfig: command.orchestratorConfig ?? {},
           scripts: [],
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
@@ -157,6 +229,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.roleModelSelections !== undefined
             ? { roleModelSelections: command.roleModelSelections }
+            : {}),
+          ...(command.orchestratorConfig !== undefined
+            ? { orchestratorConfig: command.orchestratorConfig }
             : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           updatedAt: occurredAt,
@@ -760,6 +835,450 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           activity: command.activity,
+        },
+      };
+    }
+
+    case "task.create": {
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      const config = yield* requireOrchestratorEnabled({ command, project });
+      yield* requireTaskAbsent({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const maxParallelTasks = config.resourceLimits.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+      const activeTaskWorktrees = countActiveTaskWorktrees({
+        readModel,
+        projectId: command.projectId,
+      });
+      if (activeTaskWorktrees >= maxParallelTasks) {
+        return yield* invariantError(
+          command.type,
+          `Project '${command.projectId}' already has ${activeTaskWorktrees} active task worktree(s), which meets the maxParallelTasks limit (${maxParallelTasks}).`,
+        );
+      }
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.created",
+        payload: {
+          taskId: command.taskId,
+          projectId: command.projectId,
+          taskType: command.taskType,
+          title: command.title,
+          branch: command.branch ?? `orchestrator/${String(command.taskId)}`,
+          worktreePath: taskWorktreePath({
+            workspaceRoot: project.workspaceRoot,
+            taskId: String(command.taskId),
+          }),
+          pmMessageId: command.pmMessageId,
+          playbookVersion: null,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.classify": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.classified",
+        payload: {
+          taskId: command.taskId,
+          taskType: command.taskType,
+          playbookVersion: command.playbookVersion,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.stage.start": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      const config = yield* requireOrchestratorEnabled({ command, project });
+
+      if (task.status === "planning" || task.status === "working") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' already has an active ${task.status} stage '${task.currentStageThreadId ?? "unknown"}'.`,
+        );
+      }
+      const maxStageHandoffs = config.resourceLimits.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS;
+      if (task.stageThreadIds.length >= maxStageHandoffs) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' exceeded the stage handoff limit (${maxStageHandoffs}).`,
+        );
+      }
+
+      const modelSelection =
+        project.roleModelSelections?.[command.role] ?? project.defaultModelSelection;
+      if (modelSelection === null || modelSelection === undefined) {
+        return yield* invariantError(
+          command.type,
+          `Project '${task.projectId}' has no model selection for task stage role '${command.role}'.`,
+        );
+      }
+
+      const crypto = yield* Crypto.Crypto;
+      const stageThreadId = ThreadId.make(yield* crypto.randomUUIDv4);
+      const messageId = MessageId.make(yield* crypto.randomUUIDv4);
+
+      const stageStartedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.stage-started",
+        payload: {
+          taskId: command.taskId,
+          role: command.role,
+          stageThreadId,
+          awaitedTurnId: null,
+          updatedAt: command.createdAt,
+        },
+      };
+      const threadCreatedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: stageThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: stageStartedEvent.eventId,
+        type: "thread.created",
+        payload: {
+          threadId: stageThreadId,
+          projectId: task.projectId,
+          title: `${task.title} (${command.role})`,
+          modelSelection,
+          gedWorkflowEnabled: false,
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          branch: task.branch,
+          worktreePath: task.worktreePath,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const userMessageEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: stageThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: threadCreatedEvent.eventId,
+        type: "thread.message-sent",
+        payload: {
+          threadId: stageThreadId,
+          messageId,
+          role: "user",
+          text: command.instructions,
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const turnStartRequestedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: stageThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: userMessageEvent.eventId,
+        type: "thread.turn-start-requested",
+        payload: {
+          threadId: stageThreadId,
+          messageId,
+          modelSelection,
+          gedWorkflowEnabled: false,
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          createdAt: command.createdAt,
+        },
+      };
+
+      return [stageStartedEvent, threadCreatedEvent, userMessageEvent, turnStartRequestedEvent];
+    }
+
+    case "task.stage.complete": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+
+      if (!task.stageThreadIds.includes(command.stageThreadId)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not contain stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      if (task.currentStageThreadId !== command.stageThreadId) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not have active stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      const activeRole = activeStageRoleForTaskStatus(task.status);
+      if (activeRole === null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no active stage to complete.`,
+        );
+      }
+      if (activeRole !== command.role) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' active stage role '${activeRole}' cannot be completed as '${command.role}'.`,
+        );
+      }
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.stage-completed",
+        payload: {
+          taskId: command.taskId,
+          role: command.role,
+          stageThreadId: command.stageThreadId,
+          awaitedTurnId: command.awaitedTurnId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.gate.request": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.gate-requested",
+        payload: {
+          taskId: command.taskId,
+          gateId: command.gateId,
+          gate: command.gate,
+          contentHash: command.contentHash,
+          stageThreadId: command.stageThreadId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.gate.resolve": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      if (command.origin !== "human" && command.origin !== "client") {
+        return yield* invariantError(
+          command.type,
+          `Gate '${command.gateId}' cannot be resolved by origin '${command.origin}'.`,
+        );
+      }
+      const pendingGate = (readModel.pendingGates ?? []).find(
+        (gate) => gate.gateId === command.gateId,
+      );
+      if (
+        !pendingGate ||
+        pendingGate.taskId !== command.taskId ||
+        pendingGate.gate !== command.gate
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
+        );
+      }
+      if (pendingGate.status !== "pending") {
+        return yield* invariantError(
+          command.type,
+          `Gate '${command.gateId}' has already been resolved.`,
+        );
+      }
+      if (pendingGate.contentHash !== command.approvedHash) {
+        return yield* invariantError(
+          command.type,
+          `Gate '${command.gateId}' approved hash does not match the pending content hash.`,
+        );
+      }
+      if (command.gate === "plan" && task.status !== "plan-review") {
+        return yield* invariantError(
+          command.type,
+          `Plan gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
+        );
+      }
+      if (command.gate === "land" && task.status !== "review") {
+        return yield* invariantError(
+          command.type,
+          `Land gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.gate-resolved",
+        payload: {
+          taskId: command.taskId,
+          gateId: command.gateId,
+          gate: command.gate,
+          approvedHash: command.approvedHash,
+          decision: command.decision,
+          origin: command.origin,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.land": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      if (task.status !== "review") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be in review before it can land.`,
+        );
+      }
+      const approvedLandGate = (readModel.pendingGates ?? []).find(
+        (gate) =>
+          gate.taskId === command.taskId &&
+          gate.gate === "land" &&
+          gate.status === "resolved" &&
+          gate.decision === "approved",
+      );
+      if (!approvedLandGate) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot land without an approved land gate.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.landed",
+        payload: {
+          taskId: command.taskId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.abandon": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      if (isTerminalTaskStatus(task.status)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is already terminal with status '${task.status}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.abandoned",
+        payload: {
+          taskId: command.taskId,
+          updatedAt: command.createdAt,
         },
       };
     }

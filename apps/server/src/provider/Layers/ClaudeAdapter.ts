@@ -2669,6 +2669,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const runtimeContext = yield* Effect.context<never>();
       const runFork = Effect.runForkWith(runtimeContext);
       const runPromise = Effect.runPromiseWith(runtimeContext);
+      const queryEnvironment =
+        input.environment !== undefined
+          ? yield* makeClaudeEnvironment(claudeSettings, input.environment).pipe(
+              Effect.provideService(Path.Path, path),
+            )
+          : claudeEnvironment;
 
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
       const prompt = Stream.fromQueue(promptQueue).pipe(
@@ -3036,7 +3042,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: queryEnvironment,
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
       };

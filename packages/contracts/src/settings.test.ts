@@ -121,6 +121,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("defaults the nested orchestrator block with a safe-by-default floor", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
   });
 
@@ -147,8 +148,9 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
 
   it("accepts orchestratorDefaults via the settings patch", () => {
     const patch = decodeServerSettingsPatch({
-      orchestratorDefaults: { maxParallelWorkers: 4 },
+      orchestratorDefaults: { maxParallelTasks: 3, maxParallelWorkers: 4 },
     });
+    expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
     expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
   });
 });

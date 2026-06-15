@@ -18,6 +18,8 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -28,6 +30,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
@@ -58,8 +61,12 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
+import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
+import { WorkerStartAdmissionLive } from "./WorkerStartAdmission.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
+const asTaskId = (value: string): TaskId => TaskId.make(value);
+const asTaskTypeId = (value: string): TaskTypeId => TaskTypeId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
@@ -146,6 +153,8 @@ describe("ProviderCommandReactor", () => {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir = input?.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
     createdBaseDirs.add(baseDir);
+    const projectRoot = path.join(baseDir, "project");
+    fs.mkdirSync(projectRoot, { recursive: true });
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
@@ -191,7 +200,9 @@ describe("ProviderCommandReactor", () => {
           typeof input === "object" &&
           input !== null &&
           "runtimeMode" in input &&
-          (input.runtimeMode === "approval-required" || input.runtimeMode === "full-access")
+          (input.runtimeMode === "approval-required" ||
+            input.runtimeMode === "auto-accept-edits" ||
+            input.runtimeMode === "full-access")
             ? input.runtimeMode
             : "full-access",
         ...(typeof input === "object" &&
@@ -233,6 +244,18 @@ describe("ProviderCommandReactor", () => {
         if (index >= 0) {
           runtimeSessions.splice(index, 1);
         }
+      }),
+    );
+    const createWorktree = vi.fn<GitWorkflowServiceShape["createWorktree"]>((input) =>
+      Effect.sync(() => {
+        const worktreePath = input.path ?? path.join(baseDir, "worktree");
+        fs.mkdirSync(worktreePath, { recursive: true });
+        return {
+          worktree: {
+            path: worktreePath,
+            refName: input.newRefName ?? input.refName,
+          },
+        };
       }),
     );
     const renameBranch = vi.fn((input: unknown) =>
@@ -279,6 +302,15 @@ describe("ProviderCommandReactor", () => {
           detail: "disabled in test harness",
         }),
       ),
+    );
+    const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() =>
+      Effect.succeed({
+        exitCode: ChildProcessSpawner.ExitCode(0),
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      }),
     );
 
     const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
@@ -327,6 +359,10 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const serverSettingsLayer = ServerSettingsService.layerTest();
+    const workerStartAdmissionLayer = WorkerStartAdmissionLive.pipe(
+      Layer.provide(serverSettingsLayer),
+    );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
@@ -337,8 +373,14 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService)({
+          createWorktree,
           renameBranch,
         } satisfies Partial<GitWorkflowServiceShape>),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(VcsProcess, {
+          run: vcsProcessRun,
+        }),
       ),
       Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
@@ -355,7 +397,8 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(serverSettingsLayer),
+      Layer.provideMerge(workerStartAdmissionLayer),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -374,8 +417,9 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot: projectRoot,
         defaultModelSelection: modelSelection,
+        orchestratorConfig: { enabled: true },
         createdAt: now,
       }),
     );
@@ -404,12 +448,15 @@ describe("ProviderCommandReactor", () => {
       respondToRequest,
       respondToUserInput,
       stopSession,
+      createWorktree,
       renameBranch,
+      vcsProcessRun,
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
       stateDir,
+      projectRoot,
       drain,
     };
   }
@@ -439,7 +486,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.projectRoot,
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5-codex",
@@ -451,6 +498,183 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("clamps task worker runtime mode before provider start or restart", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create"),
+        taskId: asTaskId("task-1"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task",
+        pmMessageId: null,
+        branch: "orchestrator/task-1",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start"),
+        taskId: asTaskId("task-1"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModelAfterStageStart = await harness.readModel();
+    const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
+    expect(stageThreadId).toBeDefined();
+    if (!stageThreadId) {
+      return;
+    }
+
+    harness.startSession.mockClear();
+    harness.sendTurn.mockClear();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("cmd-worker-full-access"),
+        threadId: stageThreadId,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-worker-follow-up"),
+        threadId: stageThreadId,
+        message: {
+          messageId: asMessageId("user-message-worker-follow-up"),
+          role: "user",
+          text: "Continue.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(
+      harness.startSession.mock.calls.every((call) => {
+        const input = call[1] as { readonly runtimeMode?: string } | undefined;
+        return input?.runtimeMode !== "full-access";
+      }),
+    ).toBe(true);
+
+    const readModel = await harness.readModel();
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("starts task workers with a secret-stripped environment override", async () => {
+    const previousEnv = {
+      PATH: process.env.PATH,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      CUSTOM_SECRET: process.env.CUSTOM_SECRET,
+      ORCHESTRATOR_PUBLIC_FLAG: process.env.ORCHESTRATOR_PUBLIC_FLAG,
+    };
+    process.env.PATH = "/usr/bin";
+    process.env.OPENAI_API_KEY = "do-not-forward";
+    process.env.GITHUB_TOKEN = "do-not-forward";
+    process.env.CUSTOM_SECRET = "do-not-forward";
+    process.env.ORCHESTRATOR_PUBLIC_FLAG = "do-not-forward-either";
+
+    try {
+      const harness = await createHarness();
+      const now = "2026-01-01T00:00:00.000Z";
+
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-create-env"),
+          taskId: asTaskId("task-env"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Task Env",
+          pmMessageId: null,
+          branch: "orchestrator/task-env",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-task-stage-start-env"),
+          taskId: asTaskId("task-env"),
+          role: "work",
+          instructions: "Implement with a stripped env.",
+          createdAt: now,
+        }),
+      );
+
+      await waitFor(() => harness.startSession.mock.calls.length === 1);
+      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+      const input = harness.startSession.mock.calls[0]?.[1] as
+        | { readonly environment?: Record<string, string> }
+        | undefined;
+      expect(input?.environment).toMatchObject({ PATH: "/usr/bin" });
+      expect(input?.environment).not.toHaveProperty("OPENAI_API_KEY");
+      expect(input?.environment).not.toHaveProperty("GITHUB_TOKEN");
+      expect(input?.environment).not.toHaveProperty("CUSTOM_SECRET");
+      expect(input?.environment).not.toHaveProperty("ORCHESTRATOR_PUBLIC_FLAG");
+      const expectedWorktreePath = path.join(
+        harness.projectRoot,
+        ".gedcode/orchestrator/tasks/task-env",
+      );
+      expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+        cwd: expectedWorktreePath,
+      });
+      expect(harness.createWorktree).toHaveBeenCalledWith({
+        cwd: harness.projectRoot,
+        refName: "HEAD",
+        newRefName: "orchestrator/task-env",
+        path: expectedWorktreePath,
+      });
+      expect(
+        fs.readFileSync(path.join(expectedWorktreePath, ".gedcode-hooks/pre-push"), "utf8"),
+      ).toContain("cannot push protected ref");
+      expect(harness.vcsProcessRun.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          args: ["config", "extensions.worktreeConfig", "true"],
+          cwd: expectedWorktreePath,
+        }),
+        expect.objectContaining({
+          args: [
+            "config",
+            "--worktree",
+            "core.hooksPath",
+            path.join(expectedWorktreePath, ".gedcode-hooks"),
+          ],
+          cwd: expectedWorktreePath,
+        }),
+      ]);
+    } finally {
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
   });
 
   it("generates a thread title on the first turn", async () => {
@@ -1064,7 +1288,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.projectRoot,
     });
 
     await Effect.runPromise(
