@@ -148,9 +148,16 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   maxParallelTasks: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_TASKS)),
   ),
-  // Host-wide ceiling for concurrent worker stages, independent of any single
-  // project's `maxParallelWorkers`. The global `startSession` semaphore (WP-F)
-  // is sized from this — the one capacity backstop the LLM cannot exceed.
+  // Sizes the host-wide worker **start-admission** semaphore (WP-F,
+  // `orchestration/Layers/WorkerStartAdmission`). That permit is held only for
+  // the duration of `providerService.startSession`, so this bounds how many
+  // worker stages may be *starting* concurrently — it smooths the startup/replay
+  // thundering herd — and is NOT a cap on workers *running* concurrently (the
+  // permit is released the moment a session has started, while the worker keeps
+  // executing its turn). The running-worker ceiling is the pure decider, which a
+  // prompt-injected PM cannot exceed: `maxParallelTasks` (active task worktrees)
+  // plus the single-active-stage-per-task invariant, both enforced on every
+  // command in `apps/server/src/orchestration/decider.ts`.
   maxParallelWorkers: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_WORKERS)),
   ),
