@@ -34,3 +34,5 @@ dist-electron/
 .gedoc/
 .gedcode/
 coverage/
+# Local-only planning/design scratch — never committed (see AGENTS.md/CLAUDE.md).
+plans/
