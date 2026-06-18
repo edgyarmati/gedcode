@@ -516,7 +516,11 @@ const make = Effect.gen(function* () {
     yield* Ref.set(updateCheckInFlightRef, true);
     const checkedAt = yield* currentIsoTimestamp;
     yield* setState(reduceDesktopUpdateStateOnCheckStart(state, checkedAt));
-    yield* logUpdaterInfo("checking GitHub releases for updates", { reason });
+    yield* logUpdaterInfo("checking GitHub releases for updates", {
+      channel: state.channel,
+      currentVersion: state.currentVersion,
+      reason,
+    });
 
     const fetchReleases = Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
@@ -547,7 +551,10 @@ const make = Effect.gen(function* () {
           const finishedAt = yield* currentIsoTimestamp;
           if (!candidate) {
             yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, finishedAt));
-            yield* logUpdaterInfo("no GitHub release update available", { channel: state.channel });
+            yield* logUpdaterInfo("no GitHub release update available", {
+              channel: state.channel,
+              currentVersion: current,
+            });
             return true;
           }
           const version = versionFromReleaseTag(candidate.tag_name);
