@@ -3,6 +3,20 @@
 Release notes are grouped by released version. Add a `## X.Y.Z` section before running
 `./release.sh stable ...` or `./release.sh nightly ...`.
 
+## Unreleased
+
+- Improve: Add a dev-only `T3CODE_DESKTOP_APP_VERSION_OVERRIDE` for testing manual desktop update checks against existing GitHub releases without editing package metadata or publishing a release.
+- Fix: Send GitHub REST API headers from the desktop manual update checker so dev/unpackaged builds do not fail release checks with GitHub 403 responses.
+- Fix: Let dev/unpackaged desktop builds use the manual GitHub release check path instead of disabling the update button just because native auto-update is unavailable.
+- Fix: Allow desktop update checks to run when the app has stale native-updater `downloaded` state, so the new manual release-page update flow remains testable after a previously staged update.
+- Change: Desktop update actions are now manual: when the selected channel reports an available update, the UI opens the GitHub release/download page instead of downloading, staging, or installing the update inside the app.
+- Fix: Install local mock macOS desktop updates with a dev-only replacement helper instead of Squirrel.Mac. Unsigned/ad-hoc mock artifacts can download successfully but Squirrel refuses the final install handoff, so loopback `--mock-updates` feeds now replace the current `.app` bundle after quit and reopen it; signed production/nightly updates still use `autoUpdater.quitAndInstall()`.
+- Fix: Route desktop update install confirmations through the existing Electron dialog bridge instead of raw renderer `window.confirm()`, so packaged mock-update builds can actually reach the `installUpdate` IPC path when the "Restart to Update" button is clicked.
+- Fix: Let the desktop updater retry installation whenever a downloaded payload is staged, even if the current update state is `error`; the UI already presents this as an install action, but the main process previously rejected it unless the status was exactly `downloaded`, making the button appear to do nothing after some updater errors.
+- Fix: Stop the desktop `before-quit` handler from cancelling the updater-owned quit. Installing a downloaded update stops the backend and then calls `autoUpdater.quitAndInstall()`, which relies on the app actually quitting; the lifecycle handler was calling `event.preventDefault()` on that quit, so the update never installed and the (already-stopped) backend was left dead — surfacing in the UI as a permanent "disconnected, retrying…" with no install. The handler now defers only user-initiated quits and lets programmatic quits (quitAndInstall, signal shutdown, fatal startup) proceed.
+- Fix: Restart the desktop backend when an update install fails (either a thrown `quitAndInstall` or an asynchronous updater `error` event) instead of leaving the app stranded with a stopped backend after it was halted in preparation for the install.
+- Improve: Make the desktop updater testable locally. When the resolved update feed is a local mock (a `generic` provider on a loopback host, as baked by `build-desktop-artifact --mock-updates`), the app now follows the build's `dev` channel and accepts dev-track candidates instead of applying the stable/nightly channel rules that previously rejected them. Adds `docs/desktop-updater-local-testing.md` documenting the end-to-end local update flow.
+
 ## 0.1.3-nightly.20260614.1
 
 - Improve: Derive orchestration shell-stream events once per domain event in the engine and fan the mapped result out to all shell subscribers, removing the prior per-event per-subscriber projection re-query.
