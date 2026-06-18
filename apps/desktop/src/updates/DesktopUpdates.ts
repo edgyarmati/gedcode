@@ -1,3 +1,4 @@
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import type {
   DesktopRuntimeInfo,
   DesktopUpdateActionResult,
@@ -5,6 +6,7 @@ import type {
   DesktopUpdateCheckResult,
   DesktopUpdateState,
 } from "@t3tools/contracts";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -17,6 +19,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcess } from "effect/unstable/process";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
@@ -46,6 +49,7 @@ import {
 
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
+const GITHUB_RELEASES_API_URL = "https://api.github.com/repos/edgyarmati/gedcode/releases";
 
 // electron-builder derives a `dev` channel (dev-mac.yml/dev.yml) from `-dev`
 // versions, so a local mock build's manifest lives on this channel.
@@ -91,6 +95,13 @@ const UpdateInfo = Schema.Struct({
   version: Schema.String,
 });
 
+const GitHubReleaseInfo = Schema.Struct({
+  tag_name: Schema.String,
+  prerelease: Schema.Boolean,
+});
+type GitHubReleaseInfo = typeof GitHubReleaseInfo.Type;
+const GitHubReleaseList = Schema.Array(GitHubReleaseInfo);
+
 const PendingUpdateInfo = Schema.Struct({
   fileName: Schema.String,
 });
@@ -100,6 +111,7 @@ const DownloadProgressInfo = Schema.Struct({
 });
 const decodeAppUpdateYmlConfig = Schema.decodeUnknownEffect(AppUpdateYmlConfig);
 const decodeUpdateInfo = Schema.decodeUnknownEffect(UpdateInfo);
+const decodeGitHubReleaseList = Schema.decodeUnknownEffect(GitHubReleaseList);
 const decodePendingUpdateInfo = Schema.decodeEffect(Schema.fromJsonString(PendingUpdateInfo));
 const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressInfo);
 
@@ -132,6 +144,18 @@ export class DesktopMockUpdateInstallError extends Data.TaggedError(
 }> {
   override get message() {
     return `Failed to start mock desktop update installer: ${this.cause}`;
+  }
+}
+
+export class DesktopManualUpdateCheckError extends Data.TaggedError(
+  "DesktopManualUpdateCheckError",
+)<{
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return this.cause instanceof Error
+      ? this.cause.message
+      : "Failed to check GitHub releases for updates.";
   }
 }
 
@@ -309,6 +333,21 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
 }
 
+function versionFromReleaseTag(tagName: string): string {
+  return tagName.replace(/^v/, "");
+}
+
+function isManualReleaseAcceptedForChannel(
+  release: GitHubReleaseInfo,
+  channel: DesktopUpdateChannel,
+): boolean {
+  const version = versionFromReleaseTag(release.tag_name);
+  if (channel === "nightly") {
+    return release.prerelease && version.includes("-nightly.");
+  }
+  return !release.prerelease && isDesktopUpdateVersionAcceptedForChannel(version, "latest");
+}
+
 const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
   const backendManager = yield* DesktopBackendManager.DesktopBackendManager;
@@ -456,6 +495,73 @@ const make = Effect.gen(function* () {
             reduceDesktopUpdateStateOnCheckFailure(current, error.message, failedAt),
           );
           yield* logUpdaterError("failed to check for updates", { message: error.message });
+          return true;
+        }),
+      ),
+      Effect.ensuring(Ref.set(updateCheckInFlightRef, false)),
+    );
+  });
+
+  const checkGitHubReleasesForManualUpdate = Effect.fn(
+    "desktop.updates.checkGitHubReleasesForManualUpdate",
+  )(function* (reason: string) {
+    yield* Effect.annotateCurrentSpan({ reason, source: "github-releases" });
+    if (yield* Ref.get(desktopState.quitting)) return false;
+    if (yield* Ref.get(updateCheckInFlightRef)) return false;
+
+    const state = yield* Ref.get(updateStateRef);
+    if (state.status === "downloading") return false;
+
+    yield* Ref.set(updateCheckInFlightRef, true);
+    const checkedAt = yield* currentIsoTimestamp;
+    yield* setState(reduceDesktopUpdateStateOnCheckStart(state, checkedAt));
+    yield* logUpdaterInfo("checking GitHub releases for updates", { reason });
+
+    const fetchReleases = Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      return yield* HttpClientRequest.get(GITHUB_RELEASES_API_URL).pipe(
+        HttpClientRequest.acceptJson,
+        httpClient.execute,
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap((response) => response.json),
+      );
+    }).pipe(
+      Effect.mapError((cause) => new DesktopManualUpdateCheckError({ cause })),
+      Effect.provide(NodeHttpClient.layerUndici),
+    );
+
+    return yield* fetchReleases.pipe(
+      Effect.flatMap(decodeGitHubReleaseList),
+      Effect.flatMap((releases) => {
+        const current = state.currentVersion;
+        const candidate = releases.find(
+          (release) =>
+            isManualReleaseAcceptedForChannel(release, state.channel) &&
+            compareSemverVersions(versionFromReleaseTag(release.tag_name), current) > 0,
+        );
+        return Effect.gen(function* () {
+          const finishedAt = yield* currentIsoTimestamp;
+          if (!candidate) {
+            yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, finishedAt));
+            yield* logUpdaterInfo("no GitHub release update available", { channel: state.channel });
+            return true;
+          }
+          const version = versionFromReleaseTag(candidate.tag_name);
+          yield* setState(reduceDesktopUpdateStateOnUpdateAvailable(state, version, finishedAt));
+          yield* logUpdaterInfo("GitHub release update available", {
+            channel: state.channel,
+            version,
+          });
+          return true;
+        });
+      }),
+      Effect.catch(
+        Effect.fn("desktop.updates.handleGitHubReleaseCheckFailure")(function* (error) {
+          const failedAt = yield* currentIsoTimestamp;
+          yield* updateState((current) =>
+            reduceDesktopUpdateStateOnCheckFailure(current, error.message, failedAt),
+          );
+          yield* logUpdaterError("failed to check GitHub releases", { message: error.message });
           return true;
         }),
       ),
@@ -744,9 +850,9 @@ const make = Effect.gen(function* () {
       }
 
       const settings = yield* desktopSettings.get;
-      const enabled = yield* shouldEnableAutoUpdates;
+      const enabled = !config.disableAutoUpdate;
       yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
-      if (!enabled) {
+      if (!(yield* shouldEnableAutoUpdates)) {
         return;
       }
       yield* Ref.set(updaterConfiguredRef, true);
@@ -807,10 +913,10 @@ const make = Effect.gen(function* () {
         .setUpdateChannel(nextChannel)
         .pipe(Effect.mapError((cause) => new DesktopUpdatePersistenceError({ cause })));
 
-      const enabled = yield* shouldEnableAutoUpdates;
+      const enabled = !config.disableAutoUpdate;
       yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
 
-      if (!enabled || !(yield* Ref.get(updaterConfiguredRef))) {
+      if (!(yield* shouldEnableAutoUpdates) || !(yield* Ref.get(updaterConfiguredRef))) {
         return yield* Ref.get(updateStateRef);
       }
 
@@ -825,8 +931,9 @@ const make = Effect.gen(function* () {
     check: Effect.fn("desktop.updates.check")(function* (reason: string) {
       yield* Effect.annotateCurrentSpan({ reason });
       if (!(yield* Ref.get(updaterConfiguredRef))) {
+        const checked = yield* checkGitHubReleasesForManualUpdate(reason);
         return {
-          checked: false,
+          checked,
           state: yield* Ref.get(updateStateRef),
         };
       }
