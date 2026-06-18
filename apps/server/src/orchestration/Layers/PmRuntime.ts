@@ -1,4 +1,3 @@
-import { getEnvApiKey, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
 import {
   OrchestratorProjectConfig,
   type OrchestrationEvent,
@@ -35,6 +34,7 @@ import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import { makePiAgentAdapter } from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime } from "../pi/PmEventProjection.ts";
+import { resolvePiApiKey, resolvePiModel, resolvePiProvider } from "../pi/PmModelResolver.ts";
 import { makePmReEntryQueue } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
 import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
@@ -56,12 +56,6 @@ type SettlementEnvelope = {
 
 const MAX_PM_REENTRY_CONTENT_CHARS = 12_000;
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
-const PI_PROVIDER_ALIASES = new Map<string, string>([
-  ["codex", "openai-codex"],
-  ["claude", "anthropic"],
-  ["claudeAgent", "anthropic"],
-  ["openCode", "opencode"],
-]);
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" || event.type === "task.gate-resolved";
@@ -78,14 +72,6 @@ const boundUntrustedContent = (text: string): string => {
     return scrubbed;
   }
   return `${scrubbed.slice(0, MAX_PM_REENTRY_CONTENT_CHARS)}\n[truncated]`;
-};
-
-const resolvePiProvider = (instanceId: string): string => {
-  const providers = new Set(getProviders() as ReadonlyArray<string>);
-  if (providers.has(instanceId)) {
-    return instanceId;
-  }
-  return PI_PROVIDER_ALIASES.get(instanceId) ?? instanceId;
 };
 
 const resolveProjectConfig = (project: OrchestrationProject) =>
@@ -359,15 +345,13 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
       }
 
       const provider = resolvePiProvider(String(pmModelSelection.instanceId));
-      const model = getModel(provider as never, pmModelSelection.model as never) as
-        | Model<any>
-        | undefined;
+      const model = resolvePiModel(provider, pmModelSelection.model);
       if (model === undefined) {
         return yield* makeNoPmRuntimeError(
           `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
         );
       }
-      const apiKey = getEnvApiKey(provider);
+      const apiKey = resolvePiApiKey(provider);
       if (apiKey === undefined) {
         return yield* makeNoPmRuntimeError(
           `No PM API key is configured for provider '${provider}'.`,
