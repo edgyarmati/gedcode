@@ -213,6 +213,26 @@ export const makePmRuntime = Effect.gen(function* () {
     }
 
     const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
+
+    // Durability ordering — DELIBERATE at-most-once (design §; review M3).
+    //
+    // We commit the settlement marker + cursor (durable) BEFORE prompting the
+    // PM. Prompting is side-effecting: the PM turn dispatches orchestrator
+    // commands through its tools. Consuming first guarantees a crash can never
+    // replay the same settlement into a second PM turn, so it can never
+    // double-dispatch (e.g. start a stage twice, resolve a gate twice).
+    //
+    // The accepted cost is a liveness gap, NOT a safety gap: if the process
+    // dies in the window after this transaction commits but before the PM has
+    // acted on `envelope.message`, the settlement is recorded as consumed and
+    // the cursor has advanced, so replay (which resumes from the cursor and
+    // re-checks the marker) SKIPS it. The owning task can then stall awaiting a
+    // PM turn that never runs. Recovery today is operator-driven — re-issue the
+    // settlement's human action (e.g. re-resolve the gate) or otherwise nudge
+    // the task. Automatic reconciliation of "consumed-but-PM-never-acted"
+    // settlements is deferred: it needs a durable two-phase record
+    // (pending → acted) so a crash mid-prompt is distinguishable from a
+    // completed one, which this single-marker schema cannot express.
     const firstConsumption = yield* pmRuntimeStateRepository.consumeSettlementAndAdvanceCursor({
       projectId: envelope.project.id,
       kind: envelope.kind,
