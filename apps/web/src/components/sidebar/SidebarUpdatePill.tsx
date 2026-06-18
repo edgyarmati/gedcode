@@ -1,29 +1,22 @@
-import { DownloadIcon, RotateCwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { ExternalLinkIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { isElectron } from "../../env";
 import { ensureLocalApi } from "../../localApi";
-import {
-  setDesktopUpdateStateQueryData,
-  useDesktopUpdateState,
-} from "../../lib/desktopUpdateReactQuery";
+import { useDesktopUpdateState } from "../../lib/desktopUpdateReactQuery";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
-  getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateDownloadPageUrl,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
-  shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function SidebarUpdatePill() {
-  const queryClient = useQueryClient();
   const state = useDesktopUpdateState().data ?? null;
   const [dismissed, setDismissed] = useState(false);
 
@@ -37,75 +30,22 @@ export function SidebarUpdatePill() {
     state && showArm64Warning ? getArm64IntelBuildWarningDescription(state) : null;
 
   const handleAction = useCallback(() => {
-    const bridge = window.desktopBridge;
-    if (!bridge || !state) return;
+    if (!state) return;
     if (disabled || action === "none") return;
 
-    if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
-          if (result.completed) {
-            toastManager.add({
-              type: "success",
-              title: "Update downloaded",
-              description: "Restart the app from the update button to install it.",
-            });
-          }
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not download update",
-              description: actionError,
-            }),
-          );
-        })
-        .catch((error) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not start update download",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        });
-      return;
-    }
-
-    if (action === "install") {
-      void ensureLocalApi()
-        .dialogs.confirm(getDesktopUpdateInstallConfirmationMessage(state))
-        .then((confirmed) => {
-          if (!confirmed) return;
-          return bridge.installUpdate().then((result) => {
-            setDesktopUpdateStateQueryData(queryClient, result.state);
-            if (!shouldToastDesktopUpdateActionResult(result)) return;
-            const actionError = getDesktopUpdateActionError(result);
-            if (!actionError) return;
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Could not install update",
-                description: actionError,
-              }),
-            );
-          });
-        })
-        .catch((error) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        });
-    }
-  }, [action, disabled, queryClient, state]);
+    const downloadPageUrl = getDesktopUpdateDownloadPageUrl(state);
+    void ensureLocalApi()
+      .shell.openExternal(downloadPageUrl)
+      .catch((error) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not open update page",
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          }),
+        );
+      });
+  }, [action, disabled, state]);
 
   if (!visible && !showArm64Warning) return null;
 
@@ -136,33 +76,16 @@ export function SidebarUpdatePill() {
                   className="update-main relative flex h-full flex-1 items-center gap-2 px-2 enabled:cursor-pointer"
                   onClick={handleAction}
                 >
-                  {action === "install" ? (
-                    <>
-                      <RotateCwIcon className="size-3.5" />
-                      <span>Restart to update</span>
-                    </>
-                  ) : state?.status === "downloading" ? (
-                    <>
-                      <DownloadIcon className="size-3.5" />
-                      <span>
-                        Downloading
-                        {typeof state.downloadPercent === "number"
-                          ? ` (${Math.floor(state.downloadPercent)}%)`
-                          : "…"}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <DownloadIcon className="size-3.5" />
-                      <span>Update available</span>
-                    </>
-                  )}
+                  <>
+                    <ExternalLinkIcon className="size-3.5" />
+                    <span>Update available</span>
+                  </>
                 </button>
               }
             />
             <TooltipPopup side="top">{tooltip}</TooltipPopup>
           </Tooltip>
-          {action === "download" && (
+          {action === "open" && (
             <Tooltip>
               <TooltipTrigger
                 render={
