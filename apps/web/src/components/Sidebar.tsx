@@ -86,7 +86,7 @@ import {
 import { useModelPickerOpen } from "../modelPickerOpenState";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { useGitStatus } from "../lib/gitStatusState";
-import { readLocalApi } from "../localApi";
+import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
@@ -3408,23 +3408,22 @@ export default function Sidebar() {
     }
 
     if (desktopUpdateButtonAction === "install") {
-      const confirmed = window.confirm(
-        getDesktopUpdateInstallConfirmationMessage(desktopUpdateState),
-      );
-      if (!confirmed) return;
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: actionError,
-            }),
-          );
+      void ensureLocalApi()
+        .dialogs.confirm(getDesktopUpdateInstallConfirmationMessage(desktopUpdateState))
+        .then((confirmed) => {
+          if (!confirmed) return;
+          return bridge.installUpdate().then((result) => {
+            if (!shouldToastDesktopUpdateActionResult(result)) return;
+            const actionError = getDesktopUpdateActionError(result);
+            if (!actionError) return;
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not install update",
+                description: actionError,
+              }),
+            );
+          });
         })
         .catch((error) => {
           toastManager.add(

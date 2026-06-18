@@ -14,6 +14,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -47,6 +48,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   let backendStopCount = 0;
   let backendStartCount = 0;
   let destroyAllCount = 0;
+  let appQuitCount = 0;
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -121,6 +123,25 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindowShape);
 
+  const appLayer = Layer.succeed(ElectronApp.ElectronApp, {
+    metadata: Effect.die("unexpected app metadata read"),
+    name: Effect.succeed("GedCode (Dev)"),
+    whenReady: Effect.void,
+    quit: Effect.sync(() => {
+      appQuitCount += 1;
+    }),
+    exit: () => Effect.die("unexpected app exit"),
+    relaunch: () => Effect.die("unexpected app relaunch"),
+    setPath: () => Effect.void,
+    setName: () => Effect.void,
+    setAboutPanelOptions: () => Effect.void,
+    setAppUserModelId: () => Effect.void,
+    setDesktopName: () => Effect.void,
+    setDockIcon: () => Effect.void,
+    appendCommandLineSwitch: () => Effect.void,
+    on: () => Effect.void,
+  } satisfies ElectronApp.ElectronAppShape);
+
   const backendLayer = Layer.succeed(DesktopBackendManager.DesktopBackendManager, {
     start: Effect.sync(() => {
       backendStartCount += 1;
@@ -166,6 +187,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(updaterLayer),
     Layer.provideMerge(windowLayer),
+    Layer.provideMerge(appLayer),
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(DesktopState.layer),
     Layer.provideMerge(DesktopAppSettings.layer),
@@ -188,6 +210,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     quitAndInstallCalls: () => quitAndInstallCalls,
     backendStopCount: () => backendStopCount,
     backendStartCount: () => backendStartCount,
+    appQuitCount: () => appQuitCount,
     destroyAllCount: () => destroyAllCount,
     lastChannel: () => lastChannel,
     listenerCount: () =>
@@ -428,6 +451,35 @@ describe("DesktopUpdates", () => {
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     },
   );
+
+  it.effect("installs a staged update after a retryable updater error", () => {
+    const harness = makeHarness({ platform: "darwin" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        harness.emit("error", new Error("previous install handoff failed"));
+        yield* flushCallbacks;
+
+        const erroredState = yield* updates.getState;
+        assert.equal(erroredState.status, "error");
+        assert.equal(erroredState.downloadedVersion, "1.2.4");
+
+        const result = yield* updates.install;
+
+        assert.equal(result.accepted, true);
+        assert.equal(result.completed, false);
+        assert.deepEqual(harness.quitAndInstallCalls(), [
+          { isSilent: false, isForceRunAfter: true },
+        ]);
+        assert.equal(harness.backendStopCount(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 
   it.effect("keeps silent update installs limited to Windows", () => {
     const harness = makeHarness({ platform: "win32" });

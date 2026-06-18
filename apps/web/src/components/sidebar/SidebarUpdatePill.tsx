@@ -2,6 +2,7 @@ import { DownloadIcon, RotateCwIcon, TriangleAlertIcon, XIcon } from "lucide-rea
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { isElectron } from "../../env";
+import { ensureLocalApi } from "../../localApi";
 import {
   setDesktopUpdateStateQueryData,
   useDesktopUpdateState,
@@ -76,22 +77,23 @@ export function SidebarUpdatePill() {
     }
 
     if (action === "install") {
-      const confirmed = window.confirm(getDesktopUpdateInstallConfirmationMessage(state));
-      if (!confirmed) return;
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: actionError,
-            }),
-          );
+      void ensureLocalApi()
+        .dialogs.confirm(getDesktopUpdateInstallConfirmationMessage(state))
+        .then((confirmed) => {
+          if (!confirmed) return;
+          return bridge.installUpdate().then((result) => {
+            setDesktopUpdateStateQueryData(queryClient, result.state);
+            if (!shouldToastDesktopUpdateActionResult(result)) return;
+            const actionError = getDesktopUpdateActionError(result);
+            if (!actionError) return;
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not install update",
+                description: actionError,
+              }),
+            );
+          });
         })
         .catch((error) => {
           toastManager.add(

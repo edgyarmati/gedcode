@@ -17,12 +17,15 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import { ChildProcess } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -88,11 +91,16 @@ const UpdateInfo = Schema.Struct({
   version: Schema.String,
 });
 
+const PendingUpdateInfo = Schema.Struct({
+  fileName: Schema.String,
+});
+
 const DownloadProgressInfo = Schema.Struct({
   percent: Schema.Number,
 });
 const decodeAppUpdateYmlConfig = Schema.decodeUnknownEffect(AppUpdateYmlConfig);
 const decodeUpdateInfo = Schema.decodeUnknownEffect(UpdateInfo);
+const decodePendingUpdateInfo = Schema.decodeEffect(Schema.fromJsonString(PendingUpdateInfo));
 const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressInfo);
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -114,6 +122,16 @@ export class DesktopUpdatePersistenceError extends Data.TaggedError(
 }> {
   override get message() {
     return "Failed to persist desktop update settings.";
+  }
+}
+
+export class DesktopMockUpdateInstallError extends Data.TaggedError(
+  "DesktopMockUpdateInstallError",
+)<{
+  readonly cause: string;
+}> {
+  override get message() {
+    return `Failed to start mock desktop update installer: ${this.cause}`;
   }
 }
 
@@ -145,6 +163,75 @@ const {
   logWarning: logUpdaterWarning,
   logError: logUpdaterError,
 } = DesktopObservability.makeComponentLogger("desktop-updater");
+
+function resolveMacAppBundlePath(
+  execPath: string,
+  path: DesktopEnvironment.DesktopEnvironmentShape["path"],
+): string {
+  return path.dirname(path.dirname(path.dirname(execPath)));
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function launchMockMacInstaller(args: {
+  readonly appName: string;
+  readonly appPath: string;
+  readonly pid: number;
+  readonly zipPath: string;
+}): Effect.Effect<void, DesktopMockUpdateInstallError, ChildProcessSpawner.ChildProcessSpawner> {
+  const script = [
+    "set -eu",
+    `app_pid=${shellSingleQuote(String(args.pid))}`,
+    `zip_path=${shellSingleQuote(args.zipPath)}`,
+    `app_path=${shellSingleQuote(args.appPath)}`,
+    `app_name=${shellSingleQuote(args.appName)}`,
+    'work_dir="${TMPDIR:-/tmp}/gedcode-mock-update-$$"',
+    'while kill -0 "$app_pid" 2>/dev/null; do sleep 0.2; done',
+    'rm -rf "$work_dir"',
+    'mkdir -p "$work_dir"',
+    'ditto -x -k --rsrc --sequesterRsrc "$zip_path" "$work_dir"',
+    'test -d "$work_dir/$app_name"',
+    'rm -rf "$app_path"',
+    'ditto "$work_dir/$app_name" "$app_path"',
+    'rm -rf "$work_dir"',
+    'open "$app_path"',
+  ].join("\n");
+
+  const launcher = ChildProcess.make("/bin/sh", ["-c", `(${script}) >/dev/null 2>&1 &`], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const child = yield* spawner.spawn(launcher).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopMockUpdateInstallError({
+              cause: cause.message,
+            }),
+        ),
+      );
+      const exitCode = yield* child.exitCode.pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopMockUpdateInstallError({
+              cause: cause.message,
+            }),
+        ),
+      );
+      if (exitCode !== 0) {
+        return yield* new DesktopMockUpdateInstallError({
+          cause: `installer launcher exited with code ${exitCode}`,
+        });
+      }
+    }),
+  );
+}
 
 function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYmlConfig>> {
   const entries: Record<string, string> = {};
@@ -226,11 +313,13 @@ const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
   const backendManager = yield* DesktopBackendManager.DesktopBackendManager;
   const desktopState = yield* DesktopState.DesktopState;
+  const electronApp = yield* ElectronApp.ElectronApp;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const updateCheckInFlightRef = yield* Ref.make(false);
@@ -407,12 +496,43 @@ const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("desktop.updates.downloadAvailableUpdate"));
 
+  const resolveMockMacPendingZipPath = Effect.gen(function* () {
+    const appUpdateYmlConfig = yield* Ref.get(appUpdateYmlConfigRef);
+    const feed = Option.getOrUndefined(appUpdateYmlConfig);
+    const updaterCacheDirName =
+      feed?.updaterCacheDirName ?? `${environment.userDataDirName}-updater`;
+    const pendingDir = environment.path.join(
+      environment.homeDirectory,
+      "Library",
+      "Caches",
+      updaterCacheDirName,
+      "pending",
+    );
+    const pendingInfoPath = environment.path.join(pendingDir, "update-info.json");
+    const rawPendingInfo = yield* fileSystem.readFileString(pendingInfoPath, "utf-8");
+    const pendingInfo = yield* decodePendingUpdateInfo(rawPendingInfo);
+    return environment.path.join(pendingDir, pendingInfo.fileName);
+  });
+
+  const installMockMacDownloadedUpdate = Effect.gen(function* () {
+    const zipPath = yield* resolveMockMacPendingZipPath;
+    const appPath = resolveMacAppBundlePath(process.execPath, environment.path);
+    yield* launchMockMacInstaller({
+      appName: environment.path.basename(appPath),
+      appPath,
+      pid: process.pid,
+      zipPath,
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner));
+    yield* logUpdaterInfo("mock mac update installer launched", { appPath, zipPath });
+    yield* electronApp.quit;
+  });
+
   const installDownloadedUpdate = Effect.gen(function* () {
     const state = yield* Ref.get(updateStateRef);
     if (
       (yield* Ref.get(desktopState.quitting)) ||
       !(yield* Ref.get(updaterConfiguredRef)) ||
-      state.status !== "downloaded"
+      state.downloadedVersion === null
     ) {
       return { accepted: false, completed: false };
     }
@@ -422,10 +542,14 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.gen(function* () {
       yield* backendManager.stop({ timeout: Duration.seconds(5) });
-      yield* electronUpdater.quitAndInstall({
-        isSilent: environment.platform === "win32",
-        isForceRunAfter: true,
-      });
+      if ((yield* Ref.get(mockUpdateModeRef)) && environment.platform === "darwin") {
+        yield* installMockMacDownloadedUpdate;
+      } else {
+        yield* electronUpdater.quitAndInstall({
+          isSilent: environment.platform === "win32",
+          isForceRunAfter: true,
+        });
+      }
       return { accepted: true, completed: false };
     }).pipe(
       Effect.catch(

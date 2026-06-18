@@ -223,16 +223,17 @@ function AboutVersionSection() {
     }
 
     if (action === "install") {
-      const confirmed = window.confirm(
-        getDesktopUpdateInstallConfirmationMessage(
-          updateState ?? { availableVersion: null, downloadedVersion: null },
-        ),
-      );
-      if (!confirmed) return;
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
+      void ensureLocalApi()
+        .dialogs.confirm(
+          getDesktopUpdateInstallConfirmationMessage(
+            updateState ?? { availableVersion: null, downloadedVersion: null },
+          ),
+        )
+        .then((confirmed) => {
+          if (!confirmed) return;
+          return bridge.installUpdate().then((result) => {
+            setDesktopUpdateStateQueryData(queryClient, result.state);
+          });
         })
         .catch((error: unknown) => {
           toastManager.add(

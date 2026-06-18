@@ -71,8 +71,9 @@ directory, so they will not collide with an installed production/nightly GedCode
 - **Custom port/root.** Set the same port at build (`--mock-update-server-port N`) and serve
   (`T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT=N`). Point the server at any directory with
   `T3CODE_DESKTOP_MOCK_UPDATE_SERVER_ROOT`.
-- **Code signing (unverified).** These builds are unsigned by default. macOS Squirrel may refuse
-  to install an unsigned/improperly-signed update and surface an updater error. If the download
-  succeeds but the install/relaunch does not, rebuild with `--signed` (requires signing
-  credentials; see [release.md](./release.md)) or use an ad-hoc signing setup. This caveat has not
-  been verified end-to-end and is the one step that cannot be exercised headlessly.
+- **Unsigned local artifacts.** Mock macOS builds are ad-hoc signed by default, and Squirrel.Mac
+  refuses the final install handoff for these local artifacts even though the download succeeds.
+  When the app detects the loopback mock feed, it uses a dev-only replacement helper for the
+  install step: after you confirm install, GedCode quits, replaces the current `.app` bundle with
+  the downloaded zip contents, and reopens the app. Signed production/nightly builds still use the
+  normal `autoUpdater.quitAndInstall()` path.
