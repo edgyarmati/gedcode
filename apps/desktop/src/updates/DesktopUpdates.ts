@@ -50,6 +50,7 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
 const GITHUB_RELEASES_API_URL = "https://api.github.com/repos/edgyarmati/gedcode/releases";
+const GITHUB_RELEASES_USER_AGENT = "GedCode Desktop Update Checker";
 
 // electron-builder derives a `dev` channel (dev-mac.yml/dev.yml) from `-dev`
 // versions, so a local mock build's manifest lives on this channel.
@@ -521,6 +522,9 @@ const make = Effect.gen(function* () {
       const httpClient = yield* HttpClient.HttpClient;
       return yield* HttpClientRequest.get(GITHUB_RELEASES_API_URL).pipe(
         HttpClientRequest.acceptJson,
+        HttpClientRequest.setHeader("accept", "application/vnd.github+json"),
+        HttpClientRequest.setHeader("user-agent", GITHUB_RELEASES_USER_AGENT),
+        HttpClientRequest.setHeader("x-github-api-version", "2022-11-28"),
         httpClient.execute,
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap((response) => response.json),

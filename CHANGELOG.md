@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Send GitHub REST API headers from the desktop manual update checker so dev/unpackaged builds do not fail release checks with GitHub 403 responses.
 - Fix: Let dev/unpackaged desktop builds use the manual GitHub release check path instead of disabling the update button just because native auto-update is unavailable.
 - Fix: Allow desktop update checks to run when the app has stale native-updater `downloaded` state, so the new manual release-page update flow remains testable after a previously staged update.
 - Change: Desktop update actions are now manual: when the selected channel reports an available update, the UI opens the GitHub release/download page instead of downloading, staging, or installing the update inside the app.
