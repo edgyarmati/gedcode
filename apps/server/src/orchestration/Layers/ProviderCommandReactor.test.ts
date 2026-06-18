@@ -149,6 +149,7 @@ describe("ProviderCommandReactor", () => {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
+    readonly orchestratorConfig?: Record<string, unknown>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir = input?.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
@@ -419,7 +420,7 @@ describe("ProviderCommandReactor", () => {
         title: "Provider Project",
         workspaceRoot: projectRoot,
         defaultModelSelection: modelSelection,
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: input?.orchestratorConfig ?? { enabled: true },
         createdAt: now,
       }),
     );
@@ -581,6 +582,85 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("keeps a full-access worker when the project opts in via allowFullAccessWorkers", async () => {
+    const harness = await createHarness({
+      orchestratorConfig: {
+        enabled: true,
+        resourceLimits: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-optin"),
+        taskId: asTaskId("task-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Opt-in",
+        pmMessageId: null,
+        branch: "orchestrator/task-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-optin"),
+        taskId: asTaskId("task-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+
+    const readModelAfterStageStart = await harness.readModel();
+    const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
+    expect(stageThreadId).toBeDefined();
+    if (!stageThreadId) {
+      return;
+    }
+
+    harness.startSession.mockClear();
+    harness.sendTurn.mockClear();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("cmd-worker-full-access-optin"),
+        threadId: stageThreadId,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-worker-follow-up-optin"),
+        threadId: stageThreadId,
+        message: {
+          messageId: asMessageId("user-message-worker-follow-up-optin"),
+          role: "user",
+          text: "Continue.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    const readModel = await harness.readModel();
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
   it("starts task workers with a secret-stripped environment override", async () => {

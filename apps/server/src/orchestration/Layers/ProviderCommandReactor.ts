@@ -4,6 +4,8 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
+  type OrchestrationProjectShell,
+  OrchestratorProjectConfig,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -43,11 +45,13 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import {
+  clampWorkerRuntimeMode,
   installTaskWorktreePushBlockHook,
   makeWorkerProviderEnvironment,
 } from "../workerSafety.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -320,6 +324,25 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // Human-only opt-in for `full-access` workers (Plan 018 WP-E). A worker is
+  // allowed to keep `full-access` only when a human enabled it on the project's
+  // orchestrator config OR the global default — both default to `false`, and
+  // neither is reachable by any PM tool. Otherwise the clamp lowers the worker
+  // to the safe ceiling.
+  const resolveAllowFullAccessWorkers = Effect.fnUntraced(function* (
+    project: OrchestrationProjectShell | undefined,
+  ) {
+    const settings = yield* serverSettingsService.getSettings;
+    const globalAllow = settings.orchestratorDefaults.allowFullAccessWorkers;
+    const projectConfig = project
+      ? decodeOrchestratorConfig(project.orchestratorConfig ?? {})
+      : Option.none<OrchestratorProjectConfig>();
+    const projectAllow = Option.isSome(projectConfig)
+      ? projectConfig.value.resourceLimits.allowFullAccessWorkers
+      : false;
+    return projectAllow || globalAllow;
+  });
+
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -338,10 +361,13 @@ const make = Effect.gen(function* () {
       (thread.branch !== null && thread.branch.startsWith("orchestrator/"));
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
-    const desiredRuntimeMode =
-      isOrchestratorWorker && thread.runtimeMode === "full-access"
-        ? ("auto-accept-edits" as const)
-        : thread.runtimeMode;
+    const project = yield* resolveProject(thread.projectId);
+    const allowFullAccessWorkers = isOrchestratorWorker
+      ? yield* resolveAllowFullAccessWorkers(project)
+      : false;
+    const desiredRuntimeMode = isOrchestratorWorker
+      ? clampWorkerRuntimeMode({ requested: thread.runtimeMode, allowFullAccessWorkers })
+      : thread.runtimeMode;
     const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
@@ -432,7 +458,6 @@ const make = Effect.gen(function* () {
         });
       }
     }
-    const project = yield* resolveProject(thread.projectId);
     const workspaceThread =
       workerWorktreePath !== null
         ? {

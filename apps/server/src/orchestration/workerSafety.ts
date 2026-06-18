@@ -1,3 +1,4 @@
+import type { RuntimeMode } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -5,6 +6,35 @@ import * as Path from "effect/Path";
 import { VcsProcess } from "../vcs/VcsProcess.ts";
 
 export const TASK_WORKTREE_HOOKS_DIR = ".gedcode-hooks";
+
+/**
+ * The ceiling an orchestrator worker stage is clamped to when `full-access` is
+ * not permitted. `auto-accept-edits` lets the worker make file edits without
+ * per-action approval but withholds the unrestricted command surface of
+ * `full-access`.
+ */
+export const WORKER_RUNTIME_MODE_CEILING: RuntimeMode = "auto-accept-edits";
+
+/**
+ * Runtime-mode clamp for orchestrator worker stages (design §7, §13 risk row 4).
+ *
+ * A worker must never silently inherit `full-access`: when the requested mode is
+ * `full-access` it is clamped down to {@link WORKER_RUNTIME_MODE_CEILING} unless a
+ * human has explicitly opted in via `allowFullAccessWorkers` (resolved per
+ * project, falling back to the global default — both default to `false`). Every
+ * other mode is already at or below the worker ceiling and passes through
+ * unchanged. The opt-in flag only rides the human/client write path, so a
+ * prompt-injected PM cannot raise its own workers to `full-access`.
+ */
+export function clampWorkerRuntimeMode(input: {
+  readonly requested: RuntimeMode;
+  readonly allowFullAccessWorkers: boolean;
+}): RuntimeMode {
+  if (input.requested === "full-access" && !input.allowFullAccessWorkers) {
+    return WORKER_RUNTIME_MODE_CEILING;
+  }
+  return input.requested;
+}
 
 export const TASK_WORKTREE_PRE_PUSH_HOOK = `#!/bin/sh
 while read local_ref local_sha remote_ref remote_sha
