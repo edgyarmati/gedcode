@@ -163,7 +163,7 @@ describe("canCheckForUpdate", () => {
     );
   });
 
-  it("returns false once an update has been downloaded", () => {
+  it("returns true once an update has been downloaded so stale native updater state does not block manual checks", () => {
     expect(
       canCheckForUpdate({
         ...baseState,
@@ -171,7 +171,7 @@ describe("canCheckForUpdate", () => {
         availableVersion: "1.1.0",
         downloadedVersion: "1.1.0",
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("returns true when idle", () => {

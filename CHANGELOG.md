@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Allow desktop update checks to run when the app has stale native-updater `downloaded` state, so the new manual release-page update flow remains testable after a previously staged update.
 - Change: Desktop update actions are now manual: when the selected channel reports an available update, the UI opens the GitHub release/download page instead of downloading, staging, or installing the update inside the app.
 - Fix: Install local mock macOS desktop updates with a dev-only replacement helper instead of Squirrel.Mac. Unsigned/ad-hoc mock artifacts can download successfully but Squirrel refuses the final install handoff, so loopback `--mock-updates` feeds now replace the current `.app` bundle after quit and reopen it; signed production/nightly updates still use `autoUpdater.quitAndInstall()`.
 - Fix: Route desktop update install confirmations through the existing Electron dialog bridge instead of raw renderer `window.confirm()`, so packaged mock-update builds can actually reach the `installUpdate` IPC path when the "Restart to Update" button is clicked.

@@ -434,7 +434,7 @@ const make = Effect.gen(function* () {
     if (yield* Ref.get(updateCheckInFlightRef)) return false;
 
     const state = yield* Ref.get(updateStateRef);
-    if (state.status === "downloading" || state.status === "downloaded") {
+    if (state.status === "downloading") {
       yield* logUpdaterInfo("skipping update check while update is active", {
         reason,
         status: state.status,
