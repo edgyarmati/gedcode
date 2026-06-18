@@ -3,6 +3,7 @@ import type {
   VcsStatusRemoteResult,
   VcsStatusStreamEvent,
 } from "@t3tools/contracts";
+import { GateId, ORCHESTRATOR_WS_METHODS, ProjectId, TaskId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./wsTransport", () => ({
@@ -101,5 +102,83 @@ describe("wsRpcClient", () => {
         },
       ],
     ]);
+  });
+
+  it("routes orchestrator methods through the transport with stable tags", async () => {
+    const projectId = ProjectId.make("project-1");
+    const taskId = TaskId.make("task-1");
+    const gateId = GateId.make("gate-1");
+    const protocolClient = {
+      [ORCHESTRATOR_WS_METHODS.sendMessage]: vi.fn(() => ({ accepted: true })),
+      [ORCHESTRATOR_WS_METHODS.subscribeProject]: vi.fn(() => "project-stream"),
+      [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
+      [ORCHESTRATOR_WS_METHODS.resolveGate]: vi.fn(() => ({ sequence: 7 })),
+    };
+    const request = vi.fn((execute: (client: typeof protocolClient) => unknown) =>
+      Promise.resolve(execute(protocolClient)),
+    );
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn(
+      (
+        connect: (client: typeof protocolClient) => unknown,
+        _listener: unknown,
+        _options?: unknown,
+      ) => {
+        connect(protocolClient);
+        return unsubscribe;
+      },
+    );
+    const transport = {
+      dispose: vi.fn(async () => undefined),
+      reconnect: vi.fn(async () => undefined),
+      request,
+      requestStream: vi.fn(),
+      subscribe,
+      isHeartbeatFresh: vi.fn(() => true),
+    };
+    const client = createWsRpcClient(transport as unknown as WsTransport);
+    const projectListener = vi.fn();
+    const taskListener = vi.fn();
+    const onResubscribe = vi.fn();
+
+    await expect(
+      client.orchestrator.sendMessage({ projectId, message: "Build it" }),
+    ).resolves.toEqual({ accepted: true });
+    expect(
+      client.orchestrator.subscribeProject({ projectId }, projectListener, { onResubscribe }),
+    ).toBe(unsubscribe);
+    expect(client.orchestrator.subscribeTask({ taskId }, taskListener)).toBe(unsubscribe);
+    await expect(
+      client.orchestrator.resolveGate({
+        taskId,
+        gateId,
+        gate: "plan",
+        approvedHash: "hash-1",
+        decision: "approved",
+      }),
+    ).resolves.toEqual({ sequence: 7 });
+
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
+      projectId,
+      message: "Build it",
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.subscribeProject]).toHaveBeenCalledWith({
+      projectId,
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.subscribeTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.resolveGate]).toHaveBeenCalledWith({
+      taskId,
+      gateId,
+      gate: "plan",
+      approvedHash: "hash-1",
+      decision: "approved",
+    });
+    expect(subscribe.mock.calls[0]?.[2]).toEqual({
+      onResubscribe,
+      tag: ORCHESTRATOR_WS_METHODS.subscribeProject,
+    });
+    expect(subscribe.mock.calls[1]?.[2]).toEqual({
+      tag: ORCHESTRATOR_WS_METHODS.subscribeTask,
+    });
   });
 });

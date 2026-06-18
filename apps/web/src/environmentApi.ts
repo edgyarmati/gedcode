@@ -53,6 +53,14 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeThread: (input, callback, options) =>
         rpcClient.orchestration.subscribeThread(input, callback, options),
     },
+    orchestrator: {
+      sendMessage: rpcClient.orchestrator.sendMessage,
+      subscribeProject: (input, callback, options) =>
+        rpcClient.orchestrator.subscribeProject(input, callback, options),
+      subscribeTask: (input, callback, options) =>
+        rpcClient.orchestrator.subscribeTask(input, callback, options),
+      resolveGate: rpcClient.orchestrator.resolveGate,
+    },
     gedWorkflow: {
       getState: rpcClient.gedWorkflow.getState,
     },

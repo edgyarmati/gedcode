@@ -153,34 +153,49 @@ const makeLayer = (input: {
   readonly consumed: Set<string>;
   readonly messages: string[];
   readonly consumeCalls: ConsumePmSettlementInput[];
+  readonly cursorByProject?: Map<string, number>;
+  readonly readEventCursors?: number[];
 }) => {
+  const cursorByProject = input.cursorByProject ?? new Map<string, number>();
+  const readEventCursors = input.readEventCursors ?? [];
   const projectRuntime: PmProjectRuntime = {
     enqueue: (message) =>
       Effect.sync(() => {
         input.messages.push(message);
-      }) as never,
-    drain: Effect.void as never,
+      }),
+    drain: Effect.void,
   };
 
   return PmRuntimeLive.pipe(
     Layer.provide(
       Layer.succeed(OrchestrationEngineService, {
-        readEvents: () => Stream.fromIterable(input.historicalEvents),
+        readEvents: (fromSequenceExclusive: number) => {
+          readEventCursors.push(fromSequenceExclusive);
+          return Stream.fromIterable(
+            input.historicalEvents.filter((event) => event.sequence > fromSequenceExclusive),
+          );
+        },
         dispatch: () => Effect.die("dispatch should not be called by PmRuntime"),
         streamDomainEvents: Stream.fromIterable(input.liveEvents),
         streamShellEvents: Stream.empty,
       }),
     ),
     Layer.provide(
-      Layer.succeed(ProjectionSnapshotQuery, {
+      Layer.mock(ProjectionSnapshotQuery)({
         getCommandReadModel: () => Effect.succeed(readModel),
         getThreadDetailById: (threadId: ThreadId) =>
           Effect.succeed(threadId === stageThreadId ? Option.some(stageThread) : Option.none()),
-      } as never),
+      }),
     ),
     Layer.provide(
       Layer.succeed(PmRuntimeStateRepository, {
-        getCursor: () => Effect.succeed(Option.none()),
+        getCursor: ({ projectId }) =>
+          Effect.sync(() => {
+            const lastConsumedSequence = cursorByProject.get(String(projectId));
+            return lastConsumedSequence === undefined
+              ? Option.none()
+              : Option.some({ projectId, lastConsumedSequence, updatedAt: now });
+          }),
         listConsumedSettlements: () => Effect.succeed([]),
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
@@ -190,6 +205,13 @@ const makeLayer = (input: {
               return false;
             }
             input.consumed.add(key);
+            cursorByProject.set(
+              String(consumeInput.projectId),
+              Math.max(
+                cursorByProject.get(String(consumeInput.projectId)) ?? 0,
+                consumeInput.sequence,
+              ),
+            );
             return true;
           }),
       }),
@@ -226,7 +248,65 @@ describe("PmRuntime", () => {
       assert.match(messages[0] ?? "", /A detached worker stage completed/);
       assert.notMatch(messages[0] ?? "", /sk-live-secret/);
       assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
-      assert.strictEqual(consumeCalls.length, 2);
+      assert.strictEqual(consumeCalls.length, 1);
+    }),
+  );
+
+  it.effect("buffers live restart-window duplicates until after historical replay", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const readEventCursors: number[] = [];
+      const layer = makeLayer({
+        liveEvents: [stageCompletedEvent],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        readEventCursors,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(readEventCursors, [0]);
+      assert.strictEqual(messages.length, 1);
+      assert.strictEqual(consumeCalls.length, 1);
+    }),
+  );
+
+  it.effect("starts historical replay from the durable project cursor", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const readEventCursors: number[] = [];
+      const cursorByProject = new Map<string, number>([
+        [String(projectId), stageCompletedEvent.sequence],
+      ]);
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        cursorByProject,
+        readEventCursors,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(readEventCursors, [stageCompletedEvent.sequence]);
+      assert.deepStrictEqual(messages, []);
+      assert.deepStrictEqual(consumeCalls, []);
     }),
   );
 });

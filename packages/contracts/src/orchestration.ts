@@ -34,6 +34,13 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeThread: "orchestration.subscribeThread",
 } as const;
 
+export const ORCHESTRATOR_WS_METHODS = {
+  sendMessage: "orchestrator.sendMessage",
+  subscribeProject: "orchestrator.subscribeProject",
+  subscribeTask: "orchestrator.subscribeTask",
+  resolveGate: "orchestrator.resolveGate",
+} as const;
+
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
   "on-failure",
@@ -946,6 +953,15 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadMessageUserAppendCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.user.append"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: Schema.String,
+  createdAt: IsoDateTime,
+});
+
 const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
@@ -986,6 +1002,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 
 const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
+  ThreadMessageUserAppendCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadProposedPlanUpsertCommand,
@@ -1466,6 +1483,77 @@ export const OrchestrationThreadStreamItem = Schema.Union([
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;
 
+export const OrchestratorSendMessageInput = Schema.Struct({
+  projectId: ProjectId,
+  message: TrimmedNonEmptyString,
+});
+export type OrchestratorSendMessageInput = typeof OrchestratorSendMessageInput.Type;
+
+export const OrchestratorSendMessageResult = Schema.Struct({
+  accepted: Schema.Literal(true),
+});
+export type OrchestratorSendMessageResult = typeof OrchestratorSendMessageResult.Type;
+
+export const OrchestratorSubscribeProjectInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorSubscribeProjectInput = typeof OrchestratorSubscribeProjectInput.Type;
+
+export const OrchestratorProjectDetailSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  project: OrchestrationProject,
+  pmThreadId: ThreadId,
+  pmThread: Schema.NullOr(OrchestrationThread),
+  tasks: Schema.Array(OrchestrationTask),
+  pendingGates: Schema.Array(OrchestrationPendingGate),
+});
+export type OrchestratorProjectDetailSnapshot = typeof OrchestratorProjectDetailSnapshot.Type;
+
+export const OrchestratorProjectStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestratorProjectDetailSnapshot,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    event: OrchestrationEvent,
+  }),
+]);
+export type OrchestratorProjectStreamItem = typeof OrchestratorProjectStreamItem.Type;
+
+export const OrchestratorSubscribeTaskInput = Schema.Struct({
+  taskId: TaskId,
+});
+export type OrchestratorSubscribeTaskInput = typeof OrchestratorSubscribeTaskInput.Type;
+
+export const OrchestratorTaskDetailSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  task: OrchestrationTask,
+  pendingGates: Schema.Array(OrchestrationPendingGate),
+});
+export type OrchestratorTaskDetailSnapshot = typeof OrchestratorTaskDetailSnapshot.Type;
+
+export const OrchestratorTaskStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestratorTaskDetailSnapshot,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    event: OrchestrationEvent,
+  }),
+]);
+export type OrchestratorTaskStreamItem = typeof OrchestratorTaskStreamItem.Type;
+
+export const OrchestratorResolveGateInput = Schema.Struct({
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  approvedHash: TrimmedNonEmptyString,
+  decision: OrchestrationGateDecision,
+});
+export type OrchestratorResolveGateInput = typeof OrchestratorResolveGateInput.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1588,6 +1676,25 @@ export const OrchestrationRpcSchemas = {
   subscribeShell: {
     input: Schema.Struct({}),
     output: OrchestrationShellStreamItem,
+  },
+} as const;
+
+export const OrchestratorRpcSchemas = {
+  sendMessage: {
+    input: OrchestratorSendMessageInput,
+    output: OrchestratorSendMessageResult,
+  },
+  subscribeProject: {
+    input: OrchestratorSubscribeProjectInput,
+    output: OrchestratorProjectStreamItem,
+  },
+  subscribeTask: {
+    input: OrchestratorSubscribeTaskInput,
+    output: OrchestratorTaskStreamItem,
+  },
+  resolveGate: {
+    input: OrchestratorResolveGateInput,
+    output: DispatchResult,
   },
 } as const;
 

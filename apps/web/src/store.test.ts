@@ -1,12 +1,15 @@
-import { scopeThreadRef } from "@t3tools/client-runtime";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
 import {
   CheckpointRef,
   DEFAULT_MODEL,
   EnvironmentId,
   EventId,
+  GateId,
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
   type OrchestrationEvent,
@@ -18,11 +21,17 @@ import {
   applyOrchestrationEvents,
   removeEnvironmentState,
   selectEnvironmentState,
+  selectPendingGateById,
+  selectPendingGatesForTaskRef,
   selectProjectsAcrossEnvironments,
+  selectTaskByRef,
+  selectTasksForProjectRef,
   selectThreadByRef,
   selectThreadExistsByRef,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
+  syncOrchestratorProjectSnapshot,
+  syncOrchestratorTaskSnapshot,
   type AppState,
   type EnvironmentState,
 } from "./store";
@@ -110,6 +119,11 @@ function makeState(thread: Thread): AppState {
     projectById: {
       [projectId]: project,
     },
+    taskIds: [],
+    taskIdsByProjectId: {},
+    taskById: {},
+    pendingGateIdsByTaskId: {},
+    pendingGateById: {},
     threadIds: [thread.id],
     threadIdsByProjectId,
     threadShellById: {
@@ -185,6 +199,11 @@ function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): A
   const environmentState: EnvironmentState = {
     projectIds: [],
     projectById: {},
+    taskIds: [],
+    taskIdsByProjectId: {},
+    taskById: {},
+    pendingGateIdsByTaskId: {},
+    pendingGateById: {},
     threadIds: [],
     threadIdsByProjectId: {},
     threadShellById: {},
@@ -602,6 +621,257 @@ describe("incremental orchestration updates", () => {
     expect(localEnvironmentStateOf(next).threadIdsByProjectId[recreatedProjectId]).toEqual([
       threadId,
     ]);
+  });
+
+  it("reduces task events into project task and pending-gate selectors", () => {
+    const projectId = ProjectId.make("project-1");
+    const taskId = TaskId.make("task-1");
+    const gateId = GateId.make("gate-plan");
+    const stageThreadId = ThreadId.make("thread-plan");
+    const state = makeEmptyState({
+      projectIds: [projectId],
+      projectById: {
+        [projectId]: {
+          id: projectId,
+          environmentId: localEnvironmentId,
+          name: "Project",
+          cwd: "/tmp/project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          scripts: [],
+        },
+      },
+    });
+
+    const next = applyOrchestrationEvents(
+      state,
+      [
+        makeEvent(
+          "task.created",
+          {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Implement orchestrator route",
+            branch: "orchestrator/task-1",
+            worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-1",
+            pmMessageId: MessageId.make("pm-message-1"),
+            playbookVersion: "feature@v1",
+            createdAt: "2026-02-27T00:00:01.000Z",
+            updatedAt: "2026-02-27T00:00:01.000Z",
+          },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.stage-started",
+          {
+            taskId,
+            role: "plan",
+            stageThreadId,
+            awaitedTurnId: TurnId.make("turn-plan"),
+            updatedAt: "2026-02-27T00:00:02.000Z",
+          },
+          { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.gate-requested",
+          {
+            taskId,
+            gateId,
+            gate: "plan",
+            contentHash: "sha256:plan",
+            stageThreadId,
+            updatedAt: "2026-02-27T00:00:03.000Z",
+          },
+          { sequence: 4, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.gate-resolved",
+          {
+            taskId,
+            gateId,
+            gate: "plan",
+            approvedHash: "sha256:plan",
+            decision: "approved",
+            origin: "human",
+            updatedAt: "2026-02-27T00:00:04.000Z",
+          },
+          { sequence: 5, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.gate-requested",
+          {
+            taskId,
+            gateId,
+            gate: "plan",
+            contentHash: "sha256:plan",
+            stageThreadId,
+            updatedAt: "2026-02-27T00:00:05.000Z",
+          },
+          { sequence: 6, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+
+    const taskRef = { environmentId: localEnvironmentId, taskId };
+    const projectTasks = selectTasksForProjectRef(
+      next,
+      scopeProjectRef(localEnvironmentId, projectId),
+    );
+    const task = selectTaskByRef(next, taskRef);
+    const gates = selectPendingGatesForTaskRef(next, taskRef);
+
+    expect(projectTasks.map((entry) => entry.id)).toEqual([taskId]);
+    expect(task?.status).toBe("planning");
+    expect(task?.stageThreadIds).toEqual([stageThreadId]);
+    expect(task?.currentStageThreadId).toBe(stageThreadId);
+    expect(gates).toHaveLength(1);
+    expect(gates[0]?.status).toBe("resolved");
+    expect(gates[0]?.decision).toBe("approved");
+    expect(gates[0]?.origin).toBe("human");
+    expect(gates[0]?.resolvedAt).toBe("2026-02-27T00:00:04.000Z");
+  });
+
+  it("prunes stale orchestrator task and gate state from snapshots", () => {
+    const projectId = ProjectId.make("project-1");
+    const retainedTaskId = TaskId.make("task-retained");
+    const removedTaskId = TaskId.make("task-removed");
+    const retainedGateId = GateId.make("gate-retained");
+    const removedGateId = GateId.make("gate-removed");
+    const state = makeEmptyState();
+    const seeded = applyOrchestrationEvents(
+      state,
+      [
+        makeEvent(
+          "task.created",
+          {
+            taskId: retainedTaskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Retained task",
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: "2026-02-27T00:00:01.000Z",
+            updatedAt: "2026-02-27T00:00:01.000Z",
+          },
+          { sequence: 1, aggregateKind: "task", aggregateId: retainedTaskId },
+        ),
+        makeEvent(
+          "task.gate-requested",
+          {
+            taskId: retainedTaskId,
+            gateId: retainedGateId,
+            gate: "plan",
+            contentHash: "sha256:retained",
+            stageThreadId: null,
+            updatedAt: "2026-02-27T00:00:02.000Z",
+          },
+          { sequence: 2, aggregateKind: "task", aggregateId: retainedTaskId },
+        ),
+        makeEvent(
+          "task.gate-requested",
+          {
+            taskId: retainedTaskId,
+            gateId: removedGateId,
+            gate: "land",
+            contentHash: "sha256:removed-gate",
+            stageThreadId: null,
+            updatedAt: "2026-02-27T00:00:03.000Z",
+          },
+          { sequence: 3, aggregateKind: "task", aggregateId: retainedTaskId },
+        ),
+        makeEvent(
+          "task.created",
+          {
+            taskId: removedTaskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Removed task",
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: "2026-02-27T00:00:04.000Z",
+            updatedAt: "2026-02-27T00:00:04.000Z",
+          },
+          { sequence: 4, aggregateKind: "task", aggregateId: removedTaskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+    const retainedTask = selectTaskByRef(seeded, {
+      environmentId: localEnvironmentId,
+      taskId: retainedTaskId,
+    });
+    const retainedGate = selectPendingGateById(seeded, localEnvironmentId, retainedGateId);
+    if (!retainedTask || !retainedGate) {
+      throw new Error("Expected seeded task and gate to exist.");
+    }
+
+    const taskSnapshotState = syncOrchestratorTaskSnapshot(
+      seeded,
+      {
+        snapshotSequence: 10,
+        task: retainedTask,
+        pendingGates: [retainedGate],
+      },
+      localEnvironmentId,
+    );
+
+    expect(
+      selectPendingGateById(taskSnapshotState, localEnvironmentId, removedGateId),
+    ).toBeUndefined();
+
+    const projectSnapshotState = syncOrchestratorProjectSnapshot(
+      taskSnapshotState,
+      {
+        snapshotSequence: 11,
+        project: {
+          id: projectId,
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          scripts: [],
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          deletedAt: null,
+        },
+        pmThreadId: ThreadId.make("pm-project-1"),
+        pmThread: null,
+        tasks: [retainedTask],
+        pendingGates: [retainedGate],
+      },
+      localEnvironmentId,
+    );
+
+    expect(
+      selectTasksForProjectRef(
+        projectSnapshotState,
+        scopeProjectRef(localEnvironmentId, projectId),
+      ).map((task) => task.id),
+    ).toEqual([retainedTaskId]);
+    expect(
+      selectTaskByRef(projectSnapshotState, {
+        environmentId: localEnvironmentId,
+        taskId: removedTaskId,
+      }),
+    ).toBeUndefined();
+    expect(
+      selectPendingGatesForTaskRef(projectSnapshotState, {
+        environmentId: localEnvironmentId,
+        taskId: retainedTaskId,
+      }).map((gate) => gate.gateId),
+    ).toEqual([retainedGateId]);
   });
 
   it("updates only the affected thread for message events", () => {

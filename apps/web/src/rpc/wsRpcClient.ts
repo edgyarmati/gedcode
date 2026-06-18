@@ -5,6 +5,7 @@ import {
   type VcsStatusResult,
   type VcsStatusStreamEvent,
   type LocalApi,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
   WS_METHODS,
@@ -152,6 +153,14 @@ export interface WsRpcClient {
     >;
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
+  };
+  readonly orchestrator: {
+    readonly sendMessage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.sendMessage>;
+    readonly subscribeProject: RpcInputStreamMethod<
+      typeof ORCHESTRATOR_WS_METHODS.subscribeProject
+    >;
+    readonly subscribeTask: RpcInputStreamMethod<typeof ORCHESTRATOR_WS_METHODS.subscribeTask>;
+    readonly resolveGate: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.resolveGate>;
   };
   readonly gedWorkflow: {
     readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
@@ -321,6 +330,24 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           listener,
           { ...options, tag: ORCHESTRATION_WS_METHODS.subscribeThread },
         ),
+    },
+    orchestrator: {
+      sendMessage: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.sendMessage](input)),
+      subscribeProject: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[ORCHESTRATOR_WS_METHODS.subscribeProject](input),
+          listener,
+          { ...options, tag: ORCHESTRATOR_WS_METHODS.subscribeProject },
+        ),
+      subscribeTask: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[ORCHESTRATOR_WS_METHODS.subscribeTask](input),
+          listener,
+          { ...options, tag: ORCHESTRATOR_WS_METHODS.subscribeTask },
+        ),
+      resolveGate: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.resolveGate](input)),
     },
     gedWorkflow: {
       getState: (input) =>

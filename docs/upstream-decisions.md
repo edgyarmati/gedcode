@@ -14,6 +14,17 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - **Not doing for now**: Explicitly out of scope for this fork unless product direction changes.
 - **Needs decision**: Requires user/maintainer decision before implementation work starts.
 
+## Fork-Original Work
+
+### Orchestrator mode Phase 1
+
+- Tracking issue: [#32](https://github.com/edgyarmati/gedcode/issues/32)
+- Completed in this fork: 2026-06-18
+- Notes: This is fork-original product direction, not a cherry-pick from
+  `pingdotgg/t3code`. Phase 1 adds the pi-backed PM runtime, task aggregate,
+  detached worker handoff, human gates, restart-window PM re-entry proof, and
+  the initial `/orch` web surfaces.
+
 ## Removed Forked-In Features
 
 Subsystems inherited from upstream that this fork has deliberately deleted to

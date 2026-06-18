@@ -61,6 +61,13 @@ import type {
   OrchestrationShellStreamItem,
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
+  OrchestratorProjectStreamItem,
+  OrchestratorResolveGateInput,
+  OrchestratorSendMessageInput,
+  OrchestratorSendMessageResult,
+  OrchestratorSubscribeProjectInput,
+  OrchestratorSubscribeTaskInput,
+  OrchestratorTaskStreamItem,
 } from "./orchestration.ts";
 import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
 import type { GedWorkflowState } from "./gedWorkflow.ts";
@@ -565,6 +572,24 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+  };
+  orchestrator: {
+    sendMessage: (input: OrchestratorSendMessageInput) => Promise<OrchestratorSendMessageResult>;
+    subscribeProject: (
+      input: OrchestratorSubscribeProjectInput,
+      callback: (event: OrchestratorProjectStreamItem) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    subscribeTask: (
+      input: OrchestratorSubscribeTaskInput,
+      callback: (event: OrchestratorTaskStreamItem) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    resolveGate: (input: OrchestratorResolveGateInput) => Promise<{ sequence: number }>;
   };
   gedWorkflow: {
     getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;

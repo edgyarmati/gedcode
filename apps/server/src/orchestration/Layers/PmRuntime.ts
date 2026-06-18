@@ -8,9 +8,12 @@ import {
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -31,8 +34,10 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import { makePiAgentAdapter } from "../pi/PiAgentAdapter.ts";
+import { makePmEventProjectionRuntime } from "../pi/PmEventProjection.ts";
 import { makePmReEntryQueue } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
+import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
 import { makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
 
 type SettlementEvent = Extract<
@@ -208,6 +213,13 @@ export const makePmRuntime = Effect.gen(function* () {
       return;
     }
 
+    const cursor = yield* pmRuntimeStateRepository.getCursor({
+      projectId: envelope.project.id,
+    });
+    if (Option.isSome(cursor) && event.sequence <= cursor.value.lastConsumedSequence) {
+      return;
+    }
+
     const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
     const firstConsumption = yield* pmRuntimeStateRepository.consumeSettlementAndAdvanceCursor({
       projectId: envelope.project.id,
@@ -241,10 +253,29 @@ export const makePmRuntime = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processSettlementEventSafely);
 
-  const replayHistoricalSettlements = Stream.runForEach(
-    orchestrationEngine.readEvents(0),
-    (event) => (isSettlementEvent(event) ? processSettlementEventSafely(event) : Effect.void),
-  ).pipe(
+  const getReplayStartSequence = Effect.fn("PmRuntime.getReplayStartSequence")(function* () {
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    if (readModel.projects.length === 0) {
+      return 0;
+    }
+
+    const cursors = yield* Effect.forEach(
+      readModel.projects,
+      (project) => pmRuntimeStateRepository.getCursor({ projectId: project.id }),
+      { concurrency: 1 },
+    );
+    const startSequences = cursors.map((cursor) =>
+      Option.isSome(cursor) ? cursor.value.lastConsumedSequence : 0,
+    );
+    return Math.min(...startSequences);
+  });
+
+  const replayHistoricalSettlements = Effect.gen(function* () {
+    const fromSequenceExclusive = yield* getReplayStartSequence();
+    yield* Stream.runForEach(orchestrationEngine.readEvents(fromSequenceExclusive), (event) =>
+      isSettlementEvent(event) ? processSettlementEventSafely(event) : Effect.void,
+    );
+  }).pipe(
     Effect.catchCause((cause) => {
       if (Cause.hasInterruptsOnly(cause)) {
         return Effect.void;
@@ -256,12 +287,37 @@ export const makePmRuntime = Effect.gen(function* () {
   );
 
   const start: PmRuntimeShape["start"] = Effect.fn("start")(function* () {
-    yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
-        isSettlementEvent(event) ? worker.enqueue(event) : Effect.void,
-      ),
+    const liveSettlementQueue = yield* Queue.unbounded<SettlementEvent>();
+    yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
+      isSettlementEvent(event)
+        ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
+        : Effect.void,
+    ).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.void;
+        }
+        return Effect.logWarning("PM runtime live subscription failed", {
+          cause: Cause.pretty(cause),
+        });
+      }),
+      Effect.forkScoped,
     );
+
     yield* replayHistoricalSettlements;
+    const bufferedLiveSettlements: SettlementEvent[] = [];
+    let nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
+    while (Option.isSome(nextBufferedSettlement)) {
+      bufferedLiveSettlements.push(nextBufferedSettlement.value);
+      nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
+    }
+    yield* Effect.forEach(bufferedLiveSettlements, worker.enqueue, { concurrency: 1 });
+    yield* worker.drain;
+    yield* Queue.take(liveSettlementQueue).pipe(
+      Effect.flatMap(worker.enqueue),
+      Effect.forever,
+      Effect.forkScoped,
+    );
   });
 
   return {
@@ -275,6 +331,10 @@ export const PmRuntimeLive = Layer.effect(PmRuntime, makePmRuntime);
 export const makePiProjectRuntimeFactory = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tools = yield* makePmTools;
+  const orchestrationEngine = yield* OrchestrationEngineService;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const runtimeScope = yield* Scope.make("sequential");
+  yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
   const runtimes = new Map<string, PmProjectRuntime>();
 
   const getOrCreate: PmProjectRuntimeFactoryShape["getOrCreate"] = (project) =>
@@ -322,6 +382,16 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
         },
         createdAt: project.createdAt,
       }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+      const repairedToolCallCount = yield* repairDanglingToolCalls({
+        storage: sessionStorage,
+        reason: "pm-runtime-startup",
+      });
+      if (repairedToolCallCount > 0) {
+        yield* Effect.logInfo("PM session dangling tool calls repaired", {
+          projectId: String(project.id),
+          repairedToolCallCount,
+        });
+      }
       const adapter = yield* makePiAgentAdapter({
         env: makeDenyingExecutionEnv(project.workspaceRoot),
         sessionStorage,
@@ -329,10 +399,19 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
         tools,
         getApiKeyAndHeaders: async () => ({ apiKey }),
       });
+      const eventProjection = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: adapter.events,
+      }).pipe(
+        Effect.provideService(OrchestrationEngineService, orchestrationEngine),
+        Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
+        Scope.provide(runtimeScope),
+      );
       const queue = yield* makePmReEntryQueue(adapter);
       const runtime: PmProjectRuntime = {
         enqueue: queue.enqueue,
-        drain: queue.drain,
+        drain: queue.drain.pipe(Effect.andThen(eventProjection.drain)),
       };
       runtimes.set(key, runtime);
       return runtime;

@@ -87,10 +87,10 @@ Codex/Claude/OpenCode workers). Design doc: `orchestrator-mode-design.md`.
 Tracking epic: [#32](https://github.com/edgyarmati/gedcode/issues/32). Built on
 branch `feat/orchestrator-mode`.
 
-| Plan | Title                                                                                          | Priority | Effort | Depends on      | Issue                                                  | Status                                                                    |
-| ---- | ---------------------------------------------------------------------------------------------- | -------- | ------ | --------------- | ------------------------------------------------------ | ------------------------------------------------------------------------- |
-| 017  | [SPIKE] Verify `pi-agent-core`/`pi-ai` API + pin dependency                                    | P1       | M      | —               | [#32](https://github.com/edgyarmati/gedcode/issues/32) | DONE — verdict **GO (with changes)**                                      |
-| 018  | Orchestrator mode — thin vertical slice (PM on pi, detached Codex handoff, plan gate, durable) | P1       | XL     | 017 (hard gate) | [#32](https://github.com/edgyarmati/gedcode/issues/32) | TODO — gate satisfied (017 GO); 3 deltas to fold into WP-B/WP-E/WP-F/WP-G |
+| Plan | Title                                                                                          | Priority | Effort | Depends on      | Issue                                                  | Status                                           |
+| ---- | ---------------------------------------------------------------------------------------------- | -------- | ------ | --------------- | ------------------------------------------------------ | ------------------------------------------------ |
+| 017  | [SPIKE] Verify `pi-agent-core`/`pi-ai` API + pin dependency                                    | P1       | M      | —               | [#32](https://github.com/edgyarmati/gedcode/issues/32) | DONE — verdict **GO (with changes)**             |
+| 018  | Orchestrator mode — thin vertical slice (PM on pi, detached Codex handoff, plan gate, durable) | P1       | XL     | 017 (hard gate) | [#32](https://github.com/edgyarmati/gedcode/issues/32) | DONE — WP-A–N complete; full gates green locally |
 
 018 decomposes into dependency-ordered work packages WP-A…WP-N; see the plan
 file. It must not start until 017's decision doc

@@ -18,6 +18,8 @@ import {
   MessageId,
   ProjectId,
   ProviderItemId,
+  TaskId,
+  TaskTypeId,
   type ServerSettings,
   ThreadId,
   TurnId,
@@ -59,6 +61,8 @@ const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
+const asTaskId = (value: string): TaskId => TaskId.make(value);
+const asTaskTypeId = (value: string): TaskTypeId => TaskTypeId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 
@@ -162,6 +166,7 @@ function createProviderServiceHarness() {
 
 type ProviderRuntimeTestReadModel = OrchestrationReadModel;
 type ProviderRuntimeTestThread = ProviderRuntimeTestReadModel["threads"][number];
+type ProviderRuntimeTestTask = ProviderRuntimeTestReadModel["tasks"][number];
 type ProviderRuntimeTestMessage = ProviderRuntimeTestThread["messages"][number];
 type ProviderRuntimeTestProposedPlan = ProviderRuntimeTestThread["proposedPlans"][number];
 type ProviderRuntimeTestActivity = ProviderRuntimeTestThread["activities"][number];
@@ -182,6 +187,28 @@ async function waitForThread(
     }
     if ((await Effect.runPromise(Clock.currentTimeMillis)) >= deadline) {
       throw new Error("Timed out waiting for thread state");
+    }
+    await Effect.runPromise(Effect.yieldNow);
+    return poll();
+  };
+  return poll();
+}
+
+async function waitForTask(
+  readModel: () => Promise<ProviderRuntimeTestReadModel>,
+  predicate: (task: ProviderRuntimeTestTask) => boolean,
+  timeoutMs = 2000,
+  taskId: TaskId = asTaskId("task-1"),
+) {
+  const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
+  const poll = async (): Promise<ProviderRuntimeTestTask> => {
+    const snapshot = await readModel();
+    const task = snapshot.tasks.find((entry) => entry.id === taskId);
+    if (task && predicate(task)) {
+      return task;
+    }
+    if ((await Effect.runPromise(Clock.currentTimeMillis)) >= deadline) {
+      throw new Error("Timed out waiting for task state");
     }
     await Effect.runPromise(Effect.yieldNow);
     return poll();
@@ -358,6 +385,88 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("turn failed");
+  });
+
+  it("emits durable task stage completion when an active stage turn completes", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-provider-project-enable-orchestrator"),
+        projectId: asProjectId("project-1"),
+        orchestratorConfig: { enabled: true },
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-provider-task-create"),
+        taskId: asTaskId("task-1"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Provider task",
+        pmMessageId: null,
+        branch: "orchestrator/task-1",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-provider-task-stage-start"),
+        taskId: asTaskId("task-1"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    const runningTask = await waitForTask(
+      harness.readModel,
+      (task) => task.status === "working" && task.currentStageThreadId !== null,
+    );
+    const stageThreadId = runningTask.currentStageThreadId;
+    expect(stageThreadId).not.toBeNull();
+    if (stageThreadId === null) {
+      return;
+    }
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-task-stage-turn-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: stageThreadId,
+      createdAt: now,
+      turnId: asTurnId("turn-task-stage-1"),
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.session?.status === "running" &&
+        thread.session?.activeTurnId === "turn-task-stage-1",
+      2000,
+      stageThreadId,
+    );
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-task-stage-turn-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: stageThreadId,
+      createdAt: now,
+      turnId: asTurnId("turn-task-stage-1"),
+      payload: {
+        state: "completed",
+      },
+    });
+
+    const completedTask = await waitForTask(
+      harness.readModel,
+      (task) => task.status === "review" && task.currentStageThreadId === null,
+    );
+    expect(completedTask.stageThreadIds).toContain(stageThreadId);
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

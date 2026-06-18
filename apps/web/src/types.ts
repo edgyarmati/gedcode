@@ -6,6 +6,8 @@ import type {
   RepositoryIdentity,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
+  OrchestrationPendingGate,
+  OrchestrationTask,
   ProjectScript as ContractProjectScript,
   ThreadId,
   ProjectId,
@@ -92,6 +94,14 @@ export interface Project {
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];
+}
+
+export interface OrchestratorTask extends OrchestrationTask {
+  environmentId: EnvironmentId;
+}
+
+export interface OrchestratorPendingGate extends OrchestrationPendingGate {
+  environmentId: EnvironmentId;
 }
 
 export interface Thread {

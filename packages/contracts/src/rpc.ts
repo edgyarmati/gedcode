@@ -39,6 +39,7 @@ import {
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
   OrchestrationGetFullThreadDiffError,
@@ -49,6 +50,7 @@ import {
   OrchestrationReplayEventsError,
   OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
+  OrchestratorRpcSchemas,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -457,6 +459,35 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorSendMessageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.sendMessage, {
+  payload: OrchestratorRpcSchemas.sendMessage.input,
+  success: OrchestratorRpcSchemas.sendMessage.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorSubscribeProjectRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.subscribeProject,
+  {
+    payload: OrchestratorRpcSchemas.subscribeProject.input,
+    success: OrchestratorRpcSchemas.subscribeProject.output,
+    error: OrchestrationGetSnapshotError,
+    stream: true,
+  },
+);
+
+export const WsOrchestratorSubscribeTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.subscribeTask, {
+  payload: OrchestratorRpcSchemas.subscribeTask.input,
+  success: OrchestratorRpcSchemas.subscribeTask.output,
+  error: OrchestrationGetSnapshotError,
+  stream: true,
+});
+
+export const WsOrchestratorResolveGateRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.resolveGate, {
+  payload: OrchestratorRpcSchemas.resolveGate.input,
+  success: OrchestratorRpcSchemas.resolveGate.output,
+  error: OrchestrationDispatchCommandError,
+});
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -532,4 +563,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestratorSendMessageRpc,
+  WsOrchestratorSubscribeProjectRpc,
+  WsOrchestratorSubscribeTaskRpc,
+  WsOrchestratorResolveGateRpc,
 );

@@ -686,6 +686,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.message.user.append": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: "user",
+          text: command.text,
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.message.assistant.delta": {
       yield* requireThread({
         readModel,
@@ -931,10 +959,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       const config = yield* requireOrchestratorEnabled({ command, project });
 
-      if (task.status === "planning" || task.status === "working") {
+      if (task.currentStageThreadId !== null) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' already has an active ${task.status} stage '${task.currentStageThreadId ?? "unknown"}'.`,
+          `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
         );
       }
       const maxStageHandoffs = config.resourceLimits.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS;
@@ -1067,13 +1095,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       const activeRole = activeStageRoleForTaskStatus(task.status);
+      const hasApprovedPlanGateForStage = (readModel.pendingGates ?? []).some(
+        (gate) =>
+          gate.taskId === command.taskId &&
+          gate.stageThreadId === command.stageThreadId &&
+          gate.gate === "plan" &&
+          gate.status === "resolved" &&
+          gate.decision === "approved",
+      );
       if (activeRole === null) {
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' has no active stage to complete.`,
         );
       }
-      if (activeRole !== command.role) {
+      if (
+        activeRole !== command.role &&
+        !(command.role === "work" && hasApprovedPlanGateForStage)
+      ) {
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' active stage role '${activeRole}' cannot be completed as '${command.role}'.`,

@@ -9,6 +9,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import {
   ChangeRequestStatusIcon,
@@ -2505,7 +2506,20 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
+  const orchestratorMode = useUiStateStore((state) => state.orchestratorMode);
+  const setOrchestratorMode = useUiStateStore((state) => state.setOrchestratorMode);
+  const isOrchestratorRoute = pathname.startsWith("/orch");
+  const showOrchestratorMode = orchestratorMode || isOrchestratorRoute;
+  const handleModeClick = useCallback(() => {
+    const nextMode = !showOrchestratorMode;
+    setOrchestratorMode(nextMode);
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: nextMode ? "/orch" : "/" });
+  }, [isMobile, navigate, setOpenMobile, setOrchestratorMode, showOrchestratorMode]);
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2518,6 +2532,20 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            size="sm"
+            className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+            onClick={handleModeClick}
+          >
+            {showOrchestratorMode ? (
+              <SquarePenIcon className="size-3.5" />
+            ) : (
+              <WorkflowIcon className="size-3.5" />
+            )}
+            <span className="text-xs">{showOrchestratorMode ? "Chat" : "Orchestrator"}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"

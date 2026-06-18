@@ -25,6 +25,7 @@ import {
   MessageSquareIcon,
   SettingsIcon,
   SquarePenIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -79,6 +80,7 @@ import {
   selectSidebarThreadsAcrossEnvironments,
   useStore,
 } from "../store";
+import { useUiStateStore } from "../uiStateStore";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import {
@@ -940,6 +942,8 @@ function OpenCommandPaletteDialog() {
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const orchestratorMode = useUiStateStore((state) => state.orchestratorMode);
+  const setOrchestratorMode = useUiStateStore((state) => state.setOrchestratorMode);
 
   if (projects.length > 0) {
     const activeProjectTitle = currentProjectId
@@ -980,6 +984,23 @@ function OpenCommandPaletteDialog() {
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: orchestratorMode ? "action:switch-to-chat" : "action:switch-to-orchestrator",
+    searchTerms: ["orchestrator", "mode", "chat", "pm", "tasks"],
+    title: orchestratorMode ? "Switch to chat" : "Switch to orchestrator",
+    icon: orchestratorMode ? (
+      <MessageSquareIcon className={ITEM_ICON_CLASS} />
+    ) : (
+      <WorkflowIcon className={ITEM_ICON_CLASS} />
+    ),
+    run: async () => {
+      const nextMode = !orchestratorMode;
+      setOrchestratorMode(nextMode);
+      await navigate({ to: nextMode ? "/orch" : "/" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

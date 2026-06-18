@@ -228,6 +228,17 @@ function createMockEnvironmentApi(input: {
       subscribeThread: (() => () =>
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
+    orchestrator: {
+      sendMessage: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["sendMessage"],
+      subscribeProject: (() => () =>
+        undefined) as EnvironmentApi["orchestrator"]["subscribeProject"],
+      subscribeTask: (() => () => undefined) as EnvironmentApi["orchestrator"]["subscribeTask"],
+      resolveGate: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["resolveGate"],
+    },
     gedWorkflow: {
       getState: (() =>
         Promise.resolve({

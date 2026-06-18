@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
+  TaskId,
   ThreadId,
   TurnId,
   type OrchestrationShellSnapshot,
@@ -10,7 +11,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSubscribeThread = vi.fn();
+const mockSubscribeProject = vi.fn();
+const mockSubscribeTask = vi.fn();
 const mockThreadUnsubscribe = vi.fn();
+const mockProjectUnsubscribe = vi.fn();
+const mockTaskUnsubscribe = vi.fn();
 const mockCreateEnvironmentConnection = vi.fn();
 const mockCreateWsRpcClient = vi.fn();
 const mockWaitForSavedEnvironmentRegistryHydration = vi.fn();
@@ -163,7 +168,11 @@ describe("retainThreadDetailSubscription", () => {
     });
 
     mockThreadUnsubscribe.mockImplementation(() => undefined);
+    mockProjectUnsubscribe.mockImplementation(() => undefined);
+    mockTaskUnsubscribe.mockImplementation(() => undefined);
     mockSubscribeThread.mockImplementation(() => mockThreadUnsubscribe);
+    mockSubscribeProject.mockImplementation(() => mockProjectUnsubscribe);
+    mockSubscribeTask.mockImplementation(() => mockTaskUnsubscribe);
     mockCreateWsRpcClient.mockReturnValue({
       server: {
         getConfig: vi.fn(async () => ({
@@ -179,6 +188,10 @@ describe("retainThreadDetailSubscription", () => {
       isHeartbeatFresh: vi.fn(() => true),
       orchestration: {
         subscribeThread: mockSubscribeThread,
+      },
+      orchestrator: {
+        subscribeProject: mockSubscribeProject,
+        subscribeTask: mockSubscribeTask,
       },
     });
     mockCreateEnvironmentConnection.mockImplementation((input) => {
@@ -247,6 +260,41 @@ describe("retainThreadDetailSubscription", () => {
 
     await vi.advanceTimersByTimeAsync(28 * 60 * 1000);
     expect(mockThreadUnsubscribe).toHaveBeenCalledTimes(1);
+
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("retains orchestrator project and task subscriptions while referenced", async () => {
+    const {
+      retainOrchestratorProjectSubscription,
+      retainOrchestratorTaskSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const projectId = ProjectId.make("project-1");
+    const taskId = TaskId.make("task-1");
+
+    const releaseProjectFirst = retainOrchestratorProjectSubscription(environmentId, projectId);
+    const releaseProjectSecond = retainOrchestratorProjectSubscription(environmentId, projectId);
+    const releaseTask = retainOrchestratorTaskSubscription(environmentId, taskId);
+
+    expect(mockSubscribeProject).toHaveBeenCalledTimes(1);
+    expect(mockSubscribeProject).toHaveBeenCalledWith({ projectId }, expect.any(Function));
+    expect(mockSubscribeTask).toHaveBeenCalledTimes(1);
+    expect(mockSubscribeTask).toHaveBeenCalledWith({ taskId }, expect.any(Function));
+
+    releaseProjectFirst();
+    expect(mockProjectUnsubscribe).not.toHaveBeenCalled();
+
+    releaseProjectSecond();
+    expect(mockProjectUnsubscribe).toHaveBeenCalledTimes(1);
+
+    releaseTask();
+    expect(mockTaskUnsubscribe).toHaveBeenCalledTimes(1);
 
     stop();
     await resetEnvironmentServiceForTests();

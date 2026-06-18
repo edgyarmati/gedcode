@@ -5,27 +5,35 @@ import type {
   OrchestrationEvent,
   OrchestrationLatestTurn,
   OrchestrationMessage,
+  OrchestrationPendingGate,
   OrchestrationProposedPlan,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamEvent,
   OrchestrationSession,
   OrchestrationSessionStatus,
+  OrchestrationTask,
   OrchestrationThread,
   OrchestrationThreadShell,
   OrchestrationThreadActivity,
+  OrchestratorProjectDetailSnapshot,
+  OrchestratorProjectStreamItem,
+  OrchestratorTaskDetailSnapshot,
+  OrchestratorTaskStreamItem,
   ProjectId,
   ScopedProjectRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { isProviderDriverKind, ProviderDriverKind } from "@t3tools/contracts";
-import type { ThreadId, TurnId } from "@t3tools/contracts";
+import type { GateId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { resolveModelSlugForProvider } from "@t3tools/shared/model";
 import { create } from "zustand";
 import {
   type ChatMessage,
   type Project,
+  type OrchestratorPendingGate,
+  type OrchestratorTask,
   type ProposedPlan,
   type SidebarThreadSummary,
   type Thread,
@@ -42,6 +50,11 @@ const isProviderDriverKindValue = Schema.is(ProviderDriverKind);
 export interface EnvironmentState {
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
+  taskIds: string[];
+  taskIdsByProjectId: Record<ProjectId, string[]>;
+  taskById: Record<string, OrchestratorTask>;
+  pendingGateIdsByTaskId: Record<string, string[]>;
+  pendingGateById: Record<string, OrchestratorPendingGate>;
 
   // ---------------------------------------------------------------------------
   // Thread bookkeeping — written by BOTH shell stream and detail stream.
@@ -95,9 +108,19 @@ export interface AppState {
   environmentStateById: Record<string, EnvironmentState>;
 }
 
+export interface ScopedTaskRef {
+  readonly environmentId: EnvironmentId;
+  readonly taskId: TaskId;
+}
+
 const initialEnvironmentState: EnvironmentState = {
   projectIds: [],
   projectById: {},
+  taskIds: [],
+  taskIdsByProjectId: {},
+  taskById: {},
+  pendingGateIdsByTaskId: {},
+  pendingGateById: {},
   threadIds: [],
   threadIdsByProjectId: {},
   threadShellById: {},
@@ -125,6 +148,8 @@ const MAX_THREAD_CHECKPOINTS = 500;
 const MAX_THREAD_PROPOSED_PLANS = 200;
 const MAX_THREAD_ACTIVITIES = 500;
 const EMPTY_THREAD_IDS: ThreadId[] = [];
+const EMPTY_TASK_IDS: string[] = [];
+const EMPTY_GATE_IDS: string[] = [];
 
 function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
@@ -233,6 +258,27 @@ function mapProject(
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     scripts: mapProjectScripts(project.scripts),
+  };
+}
+
+function mapOrchestratorTask(
+  task: OrchestrationTask,
+  environmentId: EnvironmentId,
+): OrchestratorTask {
+  return {
+    ...task,
+    stageThreadIds: [...task.stageThreadIds],
+    environmentId,
+  };
+}
+
+function mapOrchestratorPendingGate(
+  pendingGate: OrchestrationPendingGate,
+  environmentId: EnvironmentId,
+): OrchestratorPendingGate {
+  return {
+    ...pendingGate,
+    environmentId,
   };
 }
 
@@ -519,6 +565,211 @@ function getThreads(state: EnvironmentState): Thread[] {
     const thread = getThreadFromEnvironmentState(state, threadId);
     return thread ? [thread] : [];
   });
+}
+
+function getTasks(state: EnvironmentState): OrchestratorTask[] {
+  return state.taskIds.flatMap((taskId) => {
+    const task = state.taskById[taskId];
+    return task ? [task] : [];
+  });
+}
+
+function pendingGatesForTask(state: EnvironmentState, taskId: string): OrchestratorPendingGate[] {
+  return (state.pendingGateIdsByTaskId[taskId] ?? EMPTY_GATE_IDS).flatMap((gateId) => {
+    const gate = state.pendingGateById[gateId];
+    return gate ? [gate] : [];
+  });
+}
+
+function writeTaskState(state: EnvironmentState, task: OrchestratorTask): EnvironmentState {
+  const taskKey = String(task.id);
+  const previousTask = state.taskById[taskKey];
+  const previousProjectId = previousTask?.projectId;
+  let nextState = state;
+
+  if (!state.taskIds.includes(taskKey)) {
+    nextState = {
+      ...nextState,
+      taskIds: [...nextState.taskIds, taskKey],
+    };
+  }
+
+  if (previousProjectId !== task.projectId) {
+    let taskIdsByProjectId = nextState.taskIdsByProjectId;
+    if (previousProjectId) {
+      const previousIds = taskIdsByProjectId[previousProjectId] ?? EMPTY_TASK_IDS;
+      const nextIds = removeId(previousIds, taskKey);
+      if (nextIds.length === 0) {
+        const { [previousProjectId]: _removed, ...rest } = taskIdsByProjectId;
+        taskIdsByProjectId = rest as Record<ProjectId, string[]>;
+      } else if (!arraysEqual(previousIds, nextIds)) {
+        taskIdsByProjectId = {
+          ...taskIdsByProjectId,
+          [previousProjectId]: nextIds,
+        };
+      }
+    }
+    const projectTaskIds = taskIdsByProjectId[task.projectId] ?? EMPTY_TASK_IDS;
+    const nextProjectTaskIds = appendId(projectTaskIds, taskKey);
+    if (!arraysEqual(projectTaskIds, nextProjectTaskIds)) {
+      taskIdsByProjectId = {
+        ...taskIdsByProjectId,
+        [task.projectId]: nextProjectTaskIds,
+      };
+    }
+    if (taskIdsByProjectId !== nextState.taskIdsByProjectId) {
+      nextState = {
+        ...nextState,
+        taskIdsByProjectId,
+      };
+    }
+  }
+
+  return {
+    ...nextState,
+    taskById: {
+      ...nextState.taskById,
+      [taskKey]: task,
+    },
+  };
+}
+
+function updateTaskState(
+  state: EnvironmentState,
+  taskId: string,
+  update: (task: OrchestratorTask) => OrchestratorTask,
+): EnvironmentState {
+  const task = state.taskById[taskId];
+  if (!task) {
+    return state;
+  }
+  const nextTask = update(task);
+  return nextTask === task ? state : writeTaskState(state, nextTask);
+}
+
+function writePendingGateState(
+  state: EnvironmentState,
+  pendingGate: OrchestratorPendingGate,
+): EnvironmentState {
+  const gateKey = String(pendingGate.gateId);
+  const taskKey = String(pendingGate.taskId);
+  const taskGateIds = state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS;
+  const nextTaskGateIds = appendId(taskGateIds, gateKey);
+  return {
+    ...state,
+    pendingGateById: {
+      ...state.pendingGateById,
+      [gateKey]: pendingGate,
+    },
+    pendingGateIdsByTaskId: arraysEqual(taskGateIds, nextTaskGateIds)
+      ? state.pendingGateIdsByTaskId
+      : {
+          ...state.pendingGateIdsByTaskId,
+          [taskKey]: nextTaskGateIds,
+        },
+  };
+}
+
+function removePendingGateState(state: EnvironmentState, gateKey: string): EnvironmentState {
+  const gate = state.pendingGateById[gateKey];
+  if (gate === undefined) {
+    return state;
+  }
+
+  const taskKey = String(gate.taskId);
+  const taskGateIds = state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS;
+  const nextTaskGateIds = removeId(taskGateIds, gateKey);
+  const { [gateKey]: _removedGate, ...pendingGateById } = state.pendingGateById;
+  const pendingGateIdsByTaskId =
+    nextTaskGateIds.length === 0
+      ? (() => {
+          const { [taskKey]: _removedTaskGates, ...rest } = state.pendingGateIdsByTaskId;
+          return rest;
+        })()
+      : {
+          ...state.pendingGateIdsByTaskId,
+          [taskKey]: nextTaskGateIds,
+        };
+
+  return {
+    ...state,
+    pendingGateById,
+    pendingGateIdsByTaskId,
+  };
+}
+
+function removeTaskState(state: EnvironmentState, taskKey: string): EnvironmentState {
+  const task = state.taskById[taskKey];
+  if (task === undefined) {
+    return state;
+  }
+
+  const nextTaskIds = removeId(state.taskIds, taskKey);
+  const projectTaskIds = state.taskIdsByProjectId[task.projectId] ?? EMPTY_TASK_IDS;
+  const nextProjectTaskIds = removeId(projectTaskIds, taskKey);
+  const taskIdsByProjectId =
+    nextProjectTaskIds.length === 0
+      ? (() => {
+          const { [task.projectId]: _removedProjectTasks, ...rest } = state.taskIdsByProjectId;
+          return rest as Record<ProjectId, string[]>;
+        })()
+      : {
+          ...state.taskIdsByProjectId,
+          [task.projectId]: nextProjectTaskIds,
+        };
+  const { [taskKey]: _removedTask, ...taskById } = state.taskById;
+  const { [taskKey]: _removedTaskGateIds, ...pendingGateIdsByTaskId } =
+    state.pendingGateIdsByTaskId;
+
+  let pendingGateById = state.pendingGateById;
+  for (const gateKey of state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS) {
+    const { [gateKey]: _removedGate, ...rest } = pendingGateById;
+    pendingGateById = rest;
+  }
+
+  return {
+    ...state,
+    taskIds: nextTaskIds,
+    taskIdsByProjectId,
+    taskById,
+    pendingGateIdsByTaskId,
+    pendingGateById,
+  };
+}
+
+function retainTaskSnapshotGateState(
+  state: EnvironmentState,
+  taskKey: string,
+  snapshotGateIds: ReadonlySet<string>,
+): EnvironmentState {
+  let nextState = state;
+  for (const gateKey of state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS) {
+    if (!snapshotGateIds.has(gateKey)) {
+      nextState = removePendingGateState(nextState, gateKey);
+    }
+  }
+  return nextState;
+}
+
+function retainProjectSnapshotTaskState(params: {
+  readonly state: EnvironmentState;
+  readonly projectId: ProjectId;
+  readonly snapshotTaskIds: ReadonlySet<string>;
+  readonly snapshotGateIds: ReadonlySet<string>;
+}): EnvironmentState {
+  let nextState = params.state;
+
+  for (const taskKey of params.state.taskIdsByProjectId[params.projectId] ?? EMPTY_TASK_IDS) {
+    if (!params.snapshotTaskIds.has(taskKey)) {
+      nextState = removeTaskState(nextState, taskKey);
+    }
+  }
+
+  for (const taskKey of params.snapshotTaskIds) {
+    nextState = retainTaskSnapshotGateState(nextState, taskKey, params.snapshotGateIds);
+  }
+
+  return nextState;
 }
 
 /**
@@ -1169,6 +1420,19 @@ function buildProjectState(
   };
 }
 
+function writeProjectState(state: EnvironmentState, project: Project): EnvironmentState {
+  return {
+    ...state,
+    projectIds: state.projectIds.includes(project.id)
+      ? state.projectIds
+      : [...state.projectIds, project.id],
+    projectById: {
+      ...state.projectById,
+      [project.id]: project,
+    },
+  };
+}
+
 function getStoredEnvironmentState(
   state: AppState,
   environmentId: EnvironmentId,
@@ -1268,6 +1532,85 @@ export function syncServerThreadDetail(
     environmentId,
     writeThreadState(environmentState, mapThread(thread, environmentId), previousThread),
   );
+}
+
+export function syncOrchestratorProjectSnapshot(
+  state: AppState,
+  snapshot: OrchestratorProjectDetailSnapshot,
+  environmentId: EnvironmentId,
+): AppState {
+  const snapshotTaskIds = new Set(snapshot.tasks.map((task) => String(task.id)));
+  const snapshotGateIds = new Set(
+    snapshot.pendingGates.map((pendingGate) => String(pendingGate.gateId)),
+  );
+  let nextEnvironmentState = writeProjectState(
+    getStoredEnvironmentState(state, environmentId),
+    mapProject(snapshot.project, environmentId),
+  );
+
+  if (snapshot.pmThread !== null) {
+    const previousThread = getThreadFromEnvironmentState(
+      nextEnvironmentState,
+      snapshot.pmThread.id,
+    );
+    nextEnvironmentState = writeThreadState(
+      nextEnvironmentState,
+      mapThread(snapshot.pmThread, environmentId),
+      previousThread,
+    );
+  }
+
+  for (const task of snapshot.tasks) {
+    nextEnvironmentState = writeTaskState(
+      nextEnvironmentState,
+      mapOrchestratorTask(task, environmentId),
+    );
+  }
+
+  for (const pendingGate of snapshot.pendingGates) {
+    nextEnvironmentState = writePendingGateState(
+      nextEnvironmentState,
+      mapOrchestratorPendingGate(pendingGate, environmentId),
+    );
+  }
+
+  nextEnvironmentState = retainProjectSnapshotTaskState({
+    state: nextEnvironmentState,
+    projectId: snapshot.project.id,
+    snapshotTaskIds,
+    snapshotGateIds,
+  });
+
+  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
+}
+
+export function syncOrchestratorTaskSnapshot(
+  state: AppState,
+  snapshot: OrchestratorTaskDetailSnapshot,
+  environmentId: EnvironmentId,
+): AppState {
+  const snapshotGateIds = new Set(
+    snapshot.pendingGates.map((pendingGate) => String(pendingGate.gateId)),
+  );
+  let nextEnvironmentState = writeTaskState(
+    getStoredEnvironmentState(state, environmentId),
+    mapOrchestratorTask(snapshot.task, environmentId),
+  );
+
+  for (const pendingGate of snapshot.pendingGates) {
+    nextEnvironmentState = writePendingGateState(
+      nextEnvironmentState,
+      mapOrchestratorPendingGate(pendingGate, environmentId),
+    );
+  }
+
+  nextEnvironmentState = retainTaskSnapshotGateState(
+    nextEnvironmentState,
+    String(snapshot.task.id),
+    snapshotGateIds,
+  );
+
+  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
 }
 
 function applyEnvironmentOrchestrationEvent(
@@ -1374,13 +1717,151 @@ function applyEnvironmentOrchestrationEvent(
       if (!state.projectById[event.payload.projectId]) {
         return state;
       }
+      let nextState = state;
+      for (const taskKey of state.taskIdsByProjectId[event.payload.projectId] ?? EMPTY_TASK_IDS) {
+        nextState = removeTaskState(nextState, taskKey);
+      }
       const { [event.payload.projectId]: _removedProject, ...projectById } = state.projectById;
       return {
-        ...state,
+        ...nextState,
         projectById,
-        projectIds: removeId(state.projectIds, event.payload.projectId),
+        projectIds: removeId(nextState.projectIds, event.payload.projectId),
       };
     }
+
+    case "task.created":
+      return writeTaskState(
+        state,
+        mapOrchestratorTask(
+          {
+            id: event.payload.taskId,
+            projectId: event.payload.projectId,
+            type: event.payload.taskType,
+            title: event.payload.title,
+            status: "draft",
+            branch: event.payload.branch,
+            worktreePath: event.payload.worktreePath,
+            pmMessageId: event.payload.pmMessageId,
+            stageThreadIds: [],
+            currentStageThreadId: null,
+            playbookVersion: event.payload.playbookVersion,
+            createdAt: event.payload.createdAt,
+            updatedAt: event.payload.updatedAt,
+          },
+          environmentId,
+        ),
+      );
+
+    case "task.classified":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        type: event.payload.taskType,
+        status: "classified",
+        playbookVersion: event.payload.playbookVersion,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.stage-started":
+      return updateTaskState(state, String(event.payload.taskId), (task) => {
+        const status =
+          event.payload.role === "plan"
+            ? ("planning" as const)
+            : event.payload.role === "work"
+              ? ("working" as const)
+              : ("classified" as const);
+        return {
+          ...task,
+          status,
+          stageThreadIds: task.stageThreadIds.includes(event.payload.stageThreadId)
+            ? task.stageThreadIds
+            : [...task.stageThreadIds, event.payload.stageThreadId],
+          currentStageThreadId: event.payload.stageThreadId,
+          updatedAt: event.payload.updatedAt,
+        };
+      });
+
+    case "task.stage-completed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        ...(event.payload.role === "work" ? { status: "review" as const } : {}),
+        currentStageThreadId: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.gate-requested": {
+      const existingGate = state.pendingGateById[String(event.payload.gateId)];
+      const pendingGate = mapOrchestratorPendingGate(
+        {
+          gateId: event.payload.gateId,
+          taskId: event.payload.taskId,
+          gate: event.payload.gate,
+          contentHash: event.payload.contentHash,
+          stageThreadId: event.payload.stageThreadId,
+          status: existingGate?.status ?? "pending",
+          approvedHash: existingGate?.approvedHash ?? null,
+          decision: existingGate?.decision ?? null,
+          origin: existingGate?.origin ?? null,
+          requestedAt: existingGate?.requestedAt ?? event.payload.updatedAt,
+          resolvedAt: existingGate?.resolvedAt ?? null,
+        },
+        environmentId,
+      );
+      const withGate = writePendingGateState(state, pendingGate);
+      return updateTaskState(withGate, String(event.payload.taskId), (task) => ({
+        ...task,
+        ...(existingGate?.status === "resolved"
+          ? {}
+          : event.payload.gate === "plan"
+            ? { status: "plan-review" as const }
+            : event.payload.gate === "land"
+              ? { status: "review" as const }
+              : {}),
+        updatedAt: event.payload.updatedAt,
+      }));
+    }
+
+    case "task.gate-resolved": {
+      const nextStatus =
+        event.payload.gate === "plan"
+          ? event.payload.decision === "approved"
+            ? ("planning" as const)
+            : ("blocked" as const)
+          : event.payload.gate === "land" && event.payload.decision === "rejected"
+            ? ("blocked" as const)
+            : null;
+      let nextState = updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        ...(nextStatus !== null ? { status: nextStatus } : {}),
+        updatedAt: event.payload.updatedAt,
+      }));
+      const gateKey = String(event.payload.gateId);
+      const existingGate = nextState.pendingGateById[gateKey];
+      if (existingGate !== undefined) {
+        nextState = writePendingGateState(nextState, {
+          ...existingGate,
+          status: "resolved",
+          approvedHash: event.payload.approvedHash,
+          decision: event.payload.decision,
+          origin: event.payload.origin,
+          resolvedAt: event.payload.updatedAt,
+        });
+      }
+      return nextState;
+    }
+
+    case "task.landed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "landed",
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.abandoned":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "abandoned",
+        updatedAt: event.payload.updatedAt,
+      }));
 
     case "thread.created": {
       const previousThread = getThreadFromEnvironmentState(state, event.payload.threadId);
@@ -1967,6 +2448,57 @@ export function selectThreadsForEnvironment(
   return getThreads(selectEnvironmentState(state, environmentId));
 }
 
+export function selectTasksForEnvironment(
+  state: AppState,
+  environmentId: EnvironmentId | null | undefined,
+): OrchestratorTask[] {
+  return getTasks(selectEnvironmentState(state, environmentId));
+}
+
+export function selectTasksForProjectRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): OrchestratorTask[] {
+  if (!ref) {
+    return [];
+  }
+  const environmentState = selectEnvironmentState(state, ref.environmentId);
+  return (environmentState.taskIdsByProjectId[ref.projectId] ?? EMPTY_TASK_IDS).flatMap(
+    (taskId) => {
+      const task = environmentState.taskById[taskId];
+      return task ? [task] : [];
+    },
+  );
+}
+
+export function selectTaskByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestratorTask | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).taskById[String(ref.taskId)]
+    : undefined;
+}
+
+export function selectPendingGatesForTaskRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestratorPendingGate[] {
+  return ref
+    ? pendingGatesForTask(selectEnvironmentState(state, ref.environmentId), String(ref.taskId))
+    : [];
+}
+
+export function selectPendingGateById(
+  state: AppState,
+  environmentId: EnvironmentId | null | undefined,
+  gateId: GateId | null | undefined,
+): OrchestratorPendingGate | undefined {
+  return environmentId && gateId
+    ? selectEnvironmentState(state, environmentId).pendingGateById[String(gateId)]
+    : undefined;
+}
+
 export function selectProjectsAcrossEnvironments(state: AppState): Project[] {
   return getEnvironmentEntries(state).flatMap(([, environmentState]) =>
     getProjects(environmentState),
@@ -2177,6 +2709,22 @@ interface AppStore extends AppState {
     environmentId: EnvironmentId,
   ) => void;
   syncServerThreadDetail: (thread: OrchestrationThread, environmentId: EnvironmentId) => void;
+  syncOrchestratorProjectSnapshot: (
+    snapshot: OrchestratorProjectDetailSnapshot,
+    environmentId: EnvironmentId,
+  ) => void;
+  syncOrchestratorTaskSnapshot: (
+    snapshot: OrchestratorTaskDetailSnapshot,
+    environmentId: EnvironmentId,
+  ) => void;
+  applyOrchestratorProjectStreamItem: (
+    item: OrchestratorProjectStreamItem,
+    environmentId: EnvironmentId,
+  ) => void;
+  applyOrchestratorTaskStreamItem: (
+    item: OrchestratorTaskStreamItem,
+    environmentId: EnvironmentId,
+  ) => void;
   applyOrchestrationEvent: (event: OrchestrationEvent, environmentId: EnvironmentId) => void;
   applyOrchestrationEvents: (
     events: ReadonlyArray<OrchestrationEvent>,
@@ -2201,6 +2749,22 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => syncServerShellSnapshot(state, snapshot, environmentId)),
   syncServerThreadDetail: (thread, environmentId) =>
     set((state) => syncServerThreadDetail(state, thread, environmentId)),
+  syncOrchestratorProjectSnapshot: (snapshot, environmentId) =>
+    set((state) => syncOrchestratorProjectSnapshot(state, snapshot, environmentId)),
+  syncOrchestratorTaskSnapshot: (snapshot, environmentId) =>
+    set((state) => syncOrchestratorTaskSnapshot(state, snapshot, environmentId)),
+  applyOrchestratorProjectStreamItem: (item, environmentId) =>
+    set((state) =>
+      item.kind === "snapshot"
+        ? syncOrchestratorProjectSnapshot(state, item.snapshot, environmentId)
+        : applyOrchestrationEvent(state, item.event, environmentId),
+    ),
+  applyOrchestratorTaskStreamItem: (item, environmentId) =>
+    set((state) =>
+      item.kind === "snapshot"
+        ? syncOrchestratorTaskSnapshot(state, item.snapshot, environmentId)
+        : applyOrchestrationEvent(state, item.event, environmentId),
+    ),
   applyOrchestrationEvent: (event, environmentId) =>
     set((state) => applyOrchestrationEvent(state, event, environmentId)),
   applyOrchestrationEvents: (events, environmentId) =>

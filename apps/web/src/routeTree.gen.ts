@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
+import { Route as OrchRouteImport } from './routes/_orch'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
@@ -20,8 +21,11 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
+import { Route as OrchOrchIndexRouteImport } from './routes/_orch.orch.index'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as OrchOrchEnvironmentIdProjectIdRouteImport } from './routes/_orch.orch.$environmentId.$projectId'
+import { Route as OrchOrchEnvironmentIdProjectIdTasksTaskIdRouteImport } from './routes/_orch.orch.$environmentId.$projectId.tasks.$taskId'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -31,6 +35,10 @@ const SettingsRoute = SettingsRouteImport.update({
 const PairRoute = PairRouteImport.update({
   id: '/pair',
   path: '/pair',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrchRoute = OrchRouteImport.update({
+  id: '/_orch',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -77,6 +85,11 @@ const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   path: '/archived',
   getParentRoute: () => SettingsRoute,
 } as any)
+const OrchOrchIndexRoute = OrchOrchIndexRouteImport.update({
+  id: '/orch/',
+  path: '/orch/',
+  getParentRoute: () => OrchRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -87,6 +100,18 @@ const ChatEnvironmentIdThreadIdRoute =
     id: '/$environmentId/$threadId',
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
+  } as any)
+const OrchOrchEnvironmentIdProjectIdRoute =
+  OrchOrchEnvironmentIdProjectIdRouteImport.update({
+    id: '/orch/$environmentId/$projectId',
+    path: '/orch/$environmentId/$projectId',
+    getParentRoute: () => OrchRoute,
+  } as any)
+const OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute =
+  OrchOrchEnvironmentIdProjectIdTasksTaskIdRouteImport.update({
+    id: '/tasks/$taskId',
+    path: '/tasks/$taskId',
+    getParentRoute: () => OrchOrchEnvironmentIdProjectIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -102,8 +127,12 @@ export interface FileRoutesByFullPath {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/orch/': typeof OrchOrchIndexRoute
+  '/orch/$environmentId/$projectId': typeof OrchOrchEnvironmentIdProjectIdRouteWithChildren
+  '/orch/$environmentId/$projectId/tasks/$taskId': typeof OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof ChatIndexRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
@@ -113,13 +142,16 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
-  '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/orch': typeof OrchOrchIndexRoute
+  '/orch/$environmentId/$projectId': typeof OrchOrchEnvironmentIdProjectIdRouteWithChildren
+  '/orch/$environmentId/$projectId/tasks/$taskId': typeof OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
+  '/_orch': typeof OrchRouteWithChildren
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
@@ -132,6 +164,9 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/_orch/orch/': typeof OrchOrchIndexRoute
+  '/_orch/orch/$environmentId/$projectId': typeof OrchOrchEnvironmentIdProjectIdRouteWithChildren
+  '/_orch/orch/$environmentId/$projectId/tasks/$taskId': typeof OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -148,8 +183,12 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/orch/'
+    | '/orch/$environmentId/$projectId'
+    | '/orch/$environmentId/$projectId/tasks/$taskId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/pair'
     | '/settings'
     | '/settings/archived'
@@ -159,12 +198,15 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/providers'
     | '/settings/source-control'
-    | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/orch'
+    | '/orch/$environmentId/$projectId'
+    | '/orch/$environmentId/$projectId/tasks/$taskId'
   id:
     | '__root__'
     | '/_chat'
+    | '/_orch'
     | '/pair'
     | '/settings'
     | '/settings/archived'
@@ -177,10 +219,14 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/_orch/orch/'
+    | '/_orch/orch/$environmentId/$projectId'
+    | '/_orch/orch/$environmentId/$projectId/tasks/$taskId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  OrchRoute: typeof OrchRouteWithChildren
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
 }
@@ -199,6 +245,13 @@ declare module '@tanstack/react-router' {
       path: '/pair'
       fullPath: '/pair'
       preLoaderRoute: typeof PairRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_orch': {
+      id: '/_orch'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof OrchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_chat': {
@@ -264,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsArchivedRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/_orch/orch/': {
+      id: '/_orch/orch/'
+      path: '/orch'
+      fullPath: '/orch/'
+      preLoaderRoute: typeof OrchOrchIndexRouteImport
+      parentRoute: typeof OrchRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -277,6 +337,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/$environmentId/$threadId'
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/_orch/orch/$environmentId/$projectId': {
+      id: '/_orch/orch/$environmentId/$projectId'
+      path: '/orch/$environmentId/$projectId'
+      fullPath: '/orch/$environmentId/$projectId'
+      preLoaderRoute: typeof OrchOrchEnvironmentIdProjectIdRouteImport
+      parentRoute: typeof OrchRoute
+    }
+    '/_orch/orch/$environmentId/$projectId/tasks/$taskId': {
+      id: '/_orch/orch/$environmentId/$projectId/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/orch/$environmentId/$projectId/tasks/$taskId'
+      preLoaderRoute: typeof OrchOrchEnvironmentIdProjectIdTasksTaskIdRouteImport
+      parentRoute: typeof OrchOrchEnvironmentIdProjectIdRoute
     }
   }
 }
@@ -294,6 +368,34 @@ const ChatRouteChildren: ChatRouteChildren = {
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
+interface OrchOrchEnvironmentIdProjectIdRouteChildren {
+  OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute: typeof OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute
+}
+
+const OrchOrchEnvironmentIdProjectIdRouteChildren: OrchOrchEnvironmentIdProjectIdRouteChildren =
+  {
+    OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute:
+      OrchOrchEnvironmentIdProjectIdTasksTaskIdRoute,
+  }
+
+const OrchOrchEnvironmentIdProjectIdRouteWithChildren =
+  OrchOrchEnvironmentIdProjectIdRoute._addFileChildren(
+    OrchOrchEnvironmentIdProjectIdRouteChildren,
+  )
+
+interface OrchRouteChildren {
+  OrchOrchIndexRoute: typeof OrchOrchIndexRoute
+  OrchOrchEnvironmentIdProjectIdRoute: typeof OrchOrchEnvironmentIdProjectIdRouteWithChildren
+}
+
+const OrchRouteChildren: OrchRouteChildren = {
+  OrchOrchIndexRoute: OrchOrchIndexRoute,
+  OrchOrchEnvironmentIdProjectIdRoute:
+    OrchOrchEnvironmentIdProjectIdRouteWithChildren,
+}
+
+const OrchRouteWithChildren = OrchRoute._addFileChildren(OrchRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
@@ -321,6 +423,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  OrchRoute: OrchRouteWithChildren,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
 }

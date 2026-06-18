@@ -331,6 +331,11 @@ function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) 
         scripts: [],
       },
     },
+    taskIds: [],
+    taskIdsByProjectId: {},
+    taskById: {},
+    pendingGateIdsByTaskId: {},
+    pendingGateById: {},
     threadIds: threads.map((thread) => thread.id),
     threadIdsByProjectId: {
       [projectId]: threads.map((thread) => thread.id),

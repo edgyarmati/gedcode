@@ -6,7 +6,9 @@ import {
   type OrchestrationEvent,
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
+  ProjectId,
   type ServerConfig,
+  TaskId,
   type TerminalEvent,
   ThreadId,
 } from "@t3tools/contracts";
@@ -15,6 +17,7 @@ import { Throttler } from "@tanstack/react-pacer";
 import {
   createKnownEnvironment,
   getKnownEnvironmentWsBaseUrl,
+  scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
@@ -91,6 +94,22 @@ type ThreadDetailSubscriptionEntry = {
   evictionTimeoutId: ReturnType<typeof setTimeout> | null;
 };
 
+type OrchestratorProjectSubscriptionEntry = {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  unsubscribe: () => void;
+  unsubscribeConnectionListener: (() => void) | null;
+  refCount: number;
+};
+
+type OrchestratorTaskSubscriptionEntry = {
+  readonly environmentId: EnvironmentId;
+  readonly taskId: TaskId;
+  unsubscribe: () => void;
+  unsubscribeConnectionListener: (() => void) | null;
+  refCount: number;
+};
+
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
 class SavedEnvironmentConnectionCancelledError extends Error {
   constructor(environmentId: EnvironmentId) {
@@ -116,6 +135,8 @@ const pendingSavedEnvironmentConnections = new Map<
 >();
 const environmentConnectionListeners = new Set<() => void>();
 const threadDetailSubscriptions = new Map<string, ThreadDetailSubscriptionEntry>();
+const orchestratorProjectSubscriptions = new Map<string, OrchestratorProjectSubscriptionEntry>();
+const orchestratorTaskSubscriptions = new Map<string, OrchestratorTaskSubscriptionEntry>();
 const lastAppliedProjectionVersionByEnvironment = new Map<
   EnvironmentId,
   {
@@ -296,6 +317,173 @@ function markAppliedProjectionEvent(environmentId: EnvironmentId, sequence: numb
 }
 function getThreadDetailSubscriptionKey(environmentId: EnvironmentId, threadId: ThreadId): string {
   return scopedThreadKey(scopeThreadRef(environmentId, threadId));
+}
+
+function getOrchestratorProjectSubscriptionKey(
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+): string {
+  return scopedProjectKey(scopeProjectRef(environmentId, projectId));
+}
+
+function getOrchestratorTaskSubscriptionKey(environmentId: EnvironmentId, taskId: TaskId): string {
+  return `${environmentId}:${taskId}`;
+}
+
+function attachOrchestratorProjectSubscription(
+  entry: OrchestratorProjectSubscriptionEntry,
+): boolean {
+  if (entry.unsubscribeConnectionListener !== null) {
+    entry.unsubscribeConnectionListener();
+    entry.unsubscribeConnectionListener = null;
+  }
+  if (entry.unsubscribe !== NOOP) {
+    return true;
+  }
+
+  const connection = readEnvironmentConnection(entry.environmentId);
+  if (!connection) {
+    return false;
+  }
+
+  entry.unsubscribe = connection.client.orchestrator.subscribeProject(
+    { projectId: entry.projectId },
+    (item) => {
+      if (item.kind === "snapshot") {
+        useStore.getState().syncOrchestratorProjectSnapshot(item.snapshot, entry.environmentId);
+        syncProjectUiFromStore();
+        return;
+      }
+      applyRecoveredEventBatch([item.event], entry.environmentId);
+    },
+  );
+  return true;
+}
+
+function attachOrchestratorTaskSubscription(entry: OrchestratorTaskSubscriptionEntry): boolean {
+  if (entry.unsubscribeConnectionListener !== null) {
+    entry.unsubscribeConnectionListener();
+    entry.unsubscribeConnectionListener = null;
+  }
+  if (entry.unsubscribe !== NOOP) {
+    return true;
+  }
+
+  const connection = readEnvironmentConnection(entry.environmentId);
+  if (!connection) {
+    return false;
+  }
+
+  entry.unsubscribe = connection.client.orchestrator.subscribeTask(
+    { taskId: entry.taskId },
+    (item) => {
+      if (item.kind === "snapshot") {
+        useStore.getState().syncOrchestratorTaskSnapshot(item.snapshot, entry.environmentId);
+        return;
+      }
+      applyRecoveredEventBatch([item.event], entry.environmentId);
+    },
+  );
+  return true;
+}
+
+function watchOrchestratorProjectSubscriptionConnection(
+  entry: OrchestratorProjectSubscriptionEntry,
+): void {
+  if (entry.unsubscribeConnectionListener !== null) {
+    return;
+  }
+
+  entry.unsubscribeConnectionListener = subscribeEnvironmentConnections(() => {
+    attachOrchestratorProjectSubscription(entry);
+  });
+  attachOrchestratorProjectSubscription(entry);
+}
+
+function watchOrchestratorTaskSubscriptionConnection(
+  entry: OrchestratorTaskSubscriptionEntry,
+): void {
+  if (entry.unsubscribeConnectionListener !== null) {
+    return;
+  }
+
+  entry.unsubscribeConnectionListener = subscribeEnvironmentConnections(() => {
+    attachOrchestratorTaskSubscription(entry);
+  });
+  attachOrchestratorTaskSubscription(entry);
+}
+
+function disposeOrchestratorProjectSubscriptionByKey(key: string): boolean {
+  const entry = orchestratorProjectSubscriptions.get(key);
+  if (!entry) {
+    return false;
+  }
+
+  entry.unsubscribeConnectionListener?.();
+  entry.unsubscribeConnectionListener = null;
+  orchestratorProjectSubscriptions.delete(key);
+  entry.unsubscribe();
+  entry.unsubscribe = NOOP;
+  return true;
+}
+
+function disposeOrchestratorTaskSubscriptionByKey(key: string): boolean {
+  const entry = orchestratorTaskSubscriptions.get(key);
+  if (!entry) {
+    return false;
+  }
+
+  entry.unsubscribeConnectionListener?.();
+  entry.unsubscribeConnectionListener = null;
+  orchestratorTaskSubscriptions.delete(key);
+  entry.unsubscribe();
+  entry.unsubscribe = NOOP;
+  return true;
+}
+
+function disposeOrchestratorSubscriptionsForEnvironment(environmentId: EnvironmentId): void {
+  for (const [key, entry] of orchestratorProjectSubscriptions) {
+    if (entry.environmentId === environmentId) {
+      disposeOrchestratorProjectSubscriptionByKey(key);
+    }
+  }
+  for (const [key, entry] of orchestratorTaskSubscriptions) {
+    if (entry.environmentId === environmentId) {
+      disposeOrchestratorTaskSubscriptionByKey(key);
+    }
+  }
+}
+
+function detachOrchestratorSubscriptionsForEnvironment(environmentId: EnvironmentId): void {
+  for (const entry of orchestratorProjectSubscriptions.values()) {
+    if (entry.environmentId !== environmentId) {
+      continue;
+    }
+    entry.unsubscribe();
+    entry.unsubscribe = NOOP;
+    watchOrchestratorProjectSubscriptionConnection(entry);
+  }
+  for (const entry of orchestratorTaskSubscriptions.values()) {
+    if (entry.environmentId !== environmentId) {
+      continue;
+    }
+    entry.unsubscribe();
+    entry.unsubscribe = NOOP;
+    watchOrchestratorTaskSubscriptionConnection(entry);
+  }
+}
+
+function attachOrchestratorSubscriptionsForEnvironment(environmentId: EnvironmentId): void {
+  for (const entry of orchestratorProjectSubscriptions.values()) {
+    if (entry.environmentId === environmentId) {
+      attachOrchestratorProjectSubscription(entry);
+    }
+  }
+  for (const entry of orchestratorTaskSubscriptions.values()) {
+    if (entry.environmentId === environmentId) {
+      attachOrchestratorTaskSubscription(entry);
+    }
+  }
 }
 
 function clearThreadDetailSubscriptionEviction(
@@ -582,6 +770,104 @@ export function retainThreadDetailSubscription(
     if (entry.refCount === 0) {
       reconcileThreadDetailSubscriptionEvictionState(entry);
       evictIdleThreadDetailSubscriptionsToCapacity();
+    }
+  };
+}
+
+export function retainOrchestratorProjectSubscription(
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+): () => void {
+  const key = getOrchestratorProjectSubscriptionKey(environmentId, projectId);
+  const existing = orchestratorProjectSubscriptions.get(key);
+  if (existing) {
+    existing.refCount += 1;
+    if (!attachOrchestratorProjectSubscription(existing)) {
+      watchOrchestratorProjectSubscriptionConnection(existing);
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      existing.refCount = Math.max(0, existing.refCount - 1);
+      if (existing.refCount === 0) {
+        disposeOrchestratorProjectSubscriptionByKey(key);
+      }
+    };
+  }
+
+  const entry: OrchestratorProjectSubscriptionEntry = {
+    environmentId,
+    projectId,
+    unsubscribe: NOOP,
+    unsubscribeConnectionListener: null,
+    refCount: 1,
+  };
+  orchestratorProjectSubscriptions.set(key, entry);
+  if (!attachOrchestratorProjectSubscription(entry)) {
+    watchOrchestratorProjectSubscriptionConnection(entry);
+  }
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    entry.refCount = Math.max(0, entry.refCount - 1);
+    if (entry.refCount === 0) {
+      disposeOrchestratorProjectSubscriptionByKey(key);
+    }
+  };
+}
+
+export function retainOrchestratorTaskSubscription(
+  environmentId: EnvironmentId,
+  taskId: TaskId,
+): () => void {
+  const key = getOrchestratorTaskSubscriptionKey(environmentId, taskId);
+  const existing = orchestratorTaskSubscriptions.get(key);
+  if (existing) {
+    existing.refCount += 1;
+    if (!attachOrchestratorTaskSubscription(existing)) {
+      watchOrchestratorTaskSubscriptionConnection(existing);
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      existing.refCount = Math.max(0, existing.refCount - 1);
+      if (existing.refCount === 0) {
+        disposeOrchestratorTaskSubscriptionByKey(key);
+      }
+    };
+  }
+
+  const entry: OrchestratorTaskSubscriptionEntry = {
+    environmentId,
+    taskId,
+    unsubscribe: NOOP,
+    unsubscribeConnectionListener: null,
+    refCount: 1,
+  };
+  orchestratorTaskSubscriptions.set(key, entry);
+  if (!attachOrchestratorTaskSubscription(entry)) {
+    watchOrchestratorTaskSubscriptionConnection(entry);
+  }
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    entry.refCount = Math.max(0, entry.refCount - 1);
+    if (entry.refCount === 0) {
+      disposeOrchestratorTaskSubscriptionByKey(key);
     }
   };
 }
@@ -1250,6 +1536,7 @@ function registerConnection(connection: EnvironmentConnection): EnvironmentConne
   }
   environmentConnections.set(connection.environmentId, connection);
   attachThreadDetailSubscriptionsForEnvironment(connection.environmentId);
+  attachOrchestratorSubscriptionsForEnvironment(connection.environmentId);
   emitEnvironmentConnectionRegistryChange();
   return connection;
 }
@@ -1264,6 +1551,7 @@ async function removeConnection(environmentId: EnvironmentId): Promise<boolean> 
   environmentConnections.delete(environmentId);
   emitEnvironmentConnectionRegistryChange();
   detachThreadDetailSubscriptionsForEnvironment(environmentId);
+  detachOrchestratorSubscriptionsForEnvironment(environmentId);
   await connection.dispose();
   return true;
 }
@@ -1635,6 +1923,7 @@ export async function reconnectSavedEnvironment(environmentId: EnvironmentId): P
 export async function removeSavedEnvironment(environmentId: EnvironmentId): Promise<void> {
   await disconnectSavedEnvironment(environmentId);
   disposeThreadDetailSubscriptionsForEnvironment(environmentId);
+  disposeOrchestratorSubscriptionsForEnvironment(environmentId);
   useSavedEnvironmentRegistryStore.getState().remove(environmentId);
   useSavedEnvironmentRuntimeStore.getState().clear(environmentId);
   useStore.getState().removeEnvironmentState(environmentId);
@@ -1819,6 +2108,12 @@ export async function resetEnvironmentServiceForTests(): Promise<void> {
   pendingSavedEnvironmentConnections.clear();
   for (const key of Array.from(threadDetailSubscriptions.keys())) {
     disposeThreadDetailSubscriptionByKey(key);
+  }
+  for (const key of Array.from(orchestratorProjectSubscriptions.keys())) {
+    disposeOrchestratorProjectSubscriptionByKey(key);
+  }
+  for (const key of Array.from(orchestratorTaskSubscriptions.keys())) {
+    disposeOrchestratorTaskSubscriptionByKey(key);
   }
   await Promise.all(
     [...environmentConnections.keys()].map((environmentId) => removeConnection(environmentId)),

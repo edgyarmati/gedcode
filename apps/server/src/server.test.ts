@@ -7,6 +7,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   EventId,
+  GateId,
   GitCommandError,
   KeybindingRule,
   MessageId,
@@ -15,11 +16,15 @@ import {
   TerminalNotRunningError,
   type OrchestrationCommand,
   type OrchestrationEvent,
+  type OrchestrationReadModel,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ResolvedKeybindingRule,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
@@ -70,6 +75,10 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "./orchestration/Services/OrchestrationEngine.ts";
+import {
+  PmProjectRuntimeFactory,
+  type PmProjectRuntimeFactoryShape,
+} from "./orchestration/Services/PmRuntime.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import {
   ProjectionSnapshotQuery,
@@ -334,6 +343,7 @@ const buildAppUnderTest = (options?: {
     projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
+    pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
     checkpointDiffQuery?: Partial<CheckpointDiffQueryShape>;
     browserTraceCollector?: Partial<BrowserTraceCollectorShape>;
@@ -665,6 +675,16 @@ const buildAppUnderTest = (options?: {
           streamDomainEvents: Stream.empty,
           streamShellEvents: defaultStreamShellEvents,
           ...options?.layers?.orchestrationEngine,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PmProjectRuntimeFactory)({
+          getOrCreate: () =>
+            Effect.succeed({
+              enqueue: () => Effect.void,
+              drain: Effect.void,
+            }),
+          ...options?.layers?.pmProjectRuntimeFactory,
         }),
       ),
       Layer.provide(
@@ -3277,6 +3297,250 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.deepEqual(replayResult, []);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc orchestrator methods", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-orchestrator");
+      const taskId = TaskId.make("task-orchestrator");
+      const gateId = GateId.make("gate-plan");
+      const pmThreadId = ThreadId.make("pm:project-orchestrator");
+      const project = {
+        id: projectId,
+        title: "Orchestrator Project",
+        workspaceRoot: "/tmp/orchestrator-project",
+        repositoryIdentity: null,
+        defaultModelSelection,
+        roleModelSelections: {},
+        orchestratorConfig: { enabled: true },
+        scripts: [],
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      const task = {
+        id: taskId,
+        projectId,
+        type: TaskTypeId.make("feature"),
+        title: "Ship orchestrator UI",
+        status: "plan-review" as const,
+        branch: "orchestrator/task-orchestrator",
+        worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        pmMessageId: MessageId.make("pm-message-1"),
+        stageThreadIds: [ThreadId.make("thread-plan")],
+        currentStageThreadId: ThreadId.make("thread-plan"),
+        playbookVersion: "feature@v1",
+        createdAt: now,
+        updatedAt: now,
+      };
+      const pendingGate = {
+        gateId,
+        taskId,
+        gate: "plan" as const,
+        contentHash: "sha256:plan",
+        stageThreadId: ThreadId.make("thread-plan"),
+        status: "pending" as const,
+        approvedHash: null,
+        decision: null,
+        origin: null,
+        requestedAt: now,
+        resolvedAt: null,
+      };
+      const pmThread = {
+        id: pmThreadId,
+        projectId,
+        title: "Orchestrator Project PM",
+        modelSelection: defaultModelSelection,
+        gedWorkflowEnabled: false,
+        interactionMode: "default" as const,
+        runtimeMode: "approval-required" as const,
+        branch: null,
+        worktreePath: "/tmp/orchestrator-project",
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        latestTurn: null,
+        messages: [],
+        session: null,
+        activities: [],
+        proposedPlans: [],
+        checkpoints: [],
+        deletedAt: null,
+      };
+      const snapshot: OrchestrationReadModel = {
+        snapshotSequence: 12,
+        updatedAt: now,
+        projects: [project],
+        threads: [pmThread],
+        tasks: [task],
+        pendingGates: [pendingGate],
+      };
+      const taskCreatedEvent: OrchestrationEvent = {
+        sequence: 13,
+        eventId: EventId.make("event-task-created"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-task-created"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-task-created"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Ship orchestrator UI",
+          branch: "orchestrator/task-orchestrator",
+          worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+          pmMessageId: MessageId.make("pm-message-1"),
+          playbookVersion: "feature@v1",
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const gateRequestedEvent: OrchestrationEvent = {
+        sequence: 14,
+        eventId: EventId.make("event-gate-requested"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.gate-requested",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-gate-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-gate-requested"),
+        metadata: {},
+        payload: {
+          taskId,
+          gateId,
+          gate: "plan",
+          contentHash: "sha256:plan",
+          stageThreadId: ThreadId.make("thread-plan"),
+          updatedAt: now,
+        },
+      };
+      const dispatched: OrchestrationCommand[] = [];
+      const enqueuedMessages: string[] = [];
+      const runtimeProjects: ProjectId[] = [];
+      const drainStarted = yield* Deferred.make<void>();
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getSnapshot: () => Effect.succeed(snapshot),
+            getCommandReadModel: () => Effect.succeed(snapshot),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: 41 };
+              }),
+            streamDomainEvents: Stream.make(taskCreatedEvent, gateRequestedEvent),
+          },
+          pmProjectRuntimeFactory: {
+            getOrCreate: (loadedProject) =>
+              Effect.sync(() => {
+                runtimeProjects.push(loadedProject.id);
+                return {
+                  enqueue: (message) =>
+                    Effect.sync(() => {
+                      enqueuedMessages.push(message);
+                    }),
+                  drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
+                };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const sendResult = yield* client[ORCHESTRATOR_WS_METHODS.sendMessage]({
+              projectId,
+              message: "What is next?",
+            });
+            assert.deepEqual(sendResult, { accepted: true });
+            yield* Deferred.await(drainStarted).pipe(Effect.timeout("1 second"));
+            assert.deepEqual(runtimeProjects, [projectId]);
+            assert.deepEqual(enqueuedMessages, ["What is next?"]);
+
+            const projectItems = Array.from(
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
+                Stream.take(2),
+                Stream.runCollect,
+              ),
+            );
+            assert.equal(projectItems.length, 2);
+            const projectSnapshotItem = projectItems[0];
+            assert.equal(projectSnapshotItem?.kind, "snapshot");
+            if (projectSnapshotItem?.kind === "snapshot") {
+              assert.equal(projectSnapshotItem.snapshot.project.id, projectId);
+              assert.equal(projectSnapshotItem.snapshot.pmThreadId, pmThreadId);
+              assert.equal(projectSnapshotItem.snapshot.pmThread?.id, pmThreadId);
+              assert.deepEqual(
+                projectSnapshotItem.snapshot.tasks.map((entry) => entry.id),
+                [taskId],
+              );
+              assert.deepEqual(
+                projectSnapshotItem.snapshot.pendingGates.map((entry) => entry.gateId),
+                [gateId],
+              );
+            }
+            const projectEventItem = projectItems[1];
+            assert.equal(projectEventItem?.kind, "event");
+            if (projectEventItem?.kind === "event") {
+              assert.equal(projectEventItem.event.type, "task.created");
+            }
+
+            const taskItems = Array.from(
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({ taskId }).pipe(
+                Stream.take(2),
+                Stream.runCollect,
+              ),
+            );
+            assert.equal(taskItems.length, 2);
+            const taskSnapshotItem = taskItems[0];
+            assert.equal(taskSnapshotItem?.kind, "snapshot");
+            if (taskSnapshotItem?.kind === "snapshot") {
+              assert.equal(taskSnapshotItem.snapshot.task.id, taskId);
+              assert.deepEqual(
+                taskSnapshotItem.snapshot.pendingGates.map((entry) => entry.gateId),
+                [gateId],
+              );
+            }
+            const taskEventItem = taskItems[1];
+            assert.equal(taskEventItem?.kind, "event");
+            if (taskEventItem?.kind === "event") {
+              assert.equal(taskEventItem.event.type, "task.created");
+              assert.equal(taskEventItem.event.aggregateId, taskId);
+            }
+
+            const resolveResult = yield* client[ORCHESTRATOR_WS_METHODS.resolveGate]({
+              taskId,
+              gateId,
+              gate: "plan",
+              approvedHash: "sha256:plan",
+              decision: "approved",
+            });
+            assert.equal(resolveResult.sequence, 41);
+          }),
+        ),
+      );
+
+      const resolveCommand = dispatched.find((command) => command.type === "task.gate.resolve");
+      assert.isDefined(resolveCommand);
+      if (resolveCommand?.type === "task.gate.resolve") {
+        assert.equal(resolveCommand.taskId, taskId);
+        assert.equal(resolveCommand.gateId, gateId);
+        assert.equal(resolveCommand.origin, "human");
+        assert.equal(resolveCommand.approvedHash, "sha256:plan");
+        assert.equal(resolveCommand.decision, "approved");
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
