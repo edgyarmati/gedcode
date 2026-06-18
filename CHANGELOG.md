@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.1.3
+
 - Improve: Add a dev-only `T3CODE_DESKTOP_APP_VERSION_OVERRIDE` for testing manual desktop update checks against existing GitHub releases without editing package metadata or publishing a release.
 - Fix: Send GitHub REST API headers from the desktop manual update checker so dev/unpackaged builds do not fail release checks with GitHub 403 responses.
 - Fix: Let dev/unpackaged desktop builds use the manual GitHub release check path instead of disabling the update button just because native auto-update is unavailable.
