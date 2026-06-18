@@ -106,7 +106,13 @@ const gateResultMessage = (input: {
   readonly task: OrchestrationTask;
 }): string => {
   const payload = input.event.payload;
-  return `A human gate was resolved.
+  // Bound and scrub like `stageResultMessage`. Every interpolated field is
+  // human/client origin (never PM-injectable), but several are unbounded
+  // free-form strings — `task.title`, `approvedHash`, and `gateId` (only
+  // `gate`/`decision`/`origin` are closed literals) — so the whole envelope
+  // rides the same `boundUntrustedContent` path (secret scrub + length cap) as
+  // the worker stage message rather than reaching the PM prompt raw.
+  return boundUntrustedContent(`A human gate was resolved.
 
 Task: ${input.task.title}
 Task ID: ${input.task.id}
@@ -114,7 +120,7 @@ Gate: ${payload.gate}
 Decision: ${payload.decision}
 Origin: ${payload.origin}
 Approved hash: ${payload.approvedHash}
-Gate ID: ${payload.gateId}`;
+Gate ID: ${payload.gateId}`);
 };
 
 const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =>
