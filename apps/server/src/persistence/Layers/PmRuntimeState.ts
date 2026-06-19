@@ -4,6 +4,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import { toPersistenceSqlError } from "../Errors.ts";
+import { withBusyRetry } from "../retryPolicy.ts";
 import {
   GetPmRuntimeCursorInput,
   ListPmConsumedSettlementsInput,
@@ -63,8 +64,8 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
 
   const consumeSettlementAndAdvanceCursor: PmRuntimeStateRepositoryShape["consumeSettlementAndAdvanceCursor"] =
     (input) =>
-      sql
-        .withTransaction(
+      withBusyRetry(
+        sql.withTransaction(
           Effect.gen(function* () {
             yield* sql`
             INSERT OR IGNORE INTO pm_consumed_settlements (
@@ -105,14 +106,12 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
           `;
             return (changes[0]?.changes ?? 0) > 0;
           }),
-        )
-        .pipe(
-          Effect.mapError(
-            toPersistenceSqlError(
-              "PmRuntimeStateRepository.consumeSettlementAndAdvanceCursor:query",
-            ),
-          ),
-        );
+        ),
+      ).pipe(
+        Effect.mapError(
+          toPersistenceSqlError("PmRuntimeStateRepository.consumeSettlementAndAdvanceCursor:query"),
+        ),
+      );
 
   return {
     getCursor,

@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
+import { withBusyRetry } from "../retryPolicy.ts";
 import {
   DeleteByThreadIdInput,
   GetByThreadAndTurnCountInput,
@@ -149,11 +150,13 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
   });
 
   const upsertCheckpointRow = (row: Schema.Schema.Type<typeof ProjectionCheckpointDbRowSchema>) =>
-    sql.withTransaction(
-      clearCheckpointConflict({
-        threadId: row.threadId,
-        checkpointTurnCount: row.checkpointTurnCount,
-      }).pipe(Effect.flatMap(() => upsertProjectionCheckpointRow(row))),
+    withBusyRetry(
+      sql.withTransaction(
+        clearCheckpointConflict({
+          threadId: row.threadId,
+          checkpointTurnCount: row.checkpointTurnCount,
+        }).pipe(Effect.flatMap(() => upsertProjectionCheckpointRow(row))),
+      ),
     );
 
   const upsert: ProjectionCheckpointRepositoryShape["upsert"] = (row) =>

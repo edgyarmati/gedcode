@@ -9,6 +9,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { withBusyRetry } from "../../persistence/retryPolicy.ts";
+
 type PmSessionEntryRow = {
   readonly entryId: string;
   readonly parentId: string | null;
@@ -145,10 +147,11 @@ export const makeSqliteSessionStorage = <TMetadata extends SessionMetadata = Ses
     const appendEntry = async (entry: SessionTreeEntry): Promise<void> => {
       const row = splitEntry(entry);
       await runPromise(
-        sql.withTransaction(
-          Effect.gen(function* () {
-            yield* ensureSession;
-            yield* sql`
+        withBusyRetry(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* ensureSession;
+              yield* sql`
               INSERT INTO pm_session_entries (
                 entry_id,
                 session_id,
@@ -166,12 +169,13 @@ export const makeSqliteSessionStorage = <TMetadata extends SessionMetadata = Ses
                 ${row.payloadJson}
               )
             `;
-            yield* sql`
+              yield* sql`
               UPDATE pm_sessions
               SET leaf_id = ${leafIdAfterEntry(entry)}
               WHERE session_id = ${sessionId}
             `;
-          }),
+            }),
+          ),
         ),
       );
     };

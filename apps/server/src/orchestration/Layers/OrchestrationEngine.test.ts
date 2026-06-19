@@ -1106,10 +1106,19 @@ describe("OrchestrationEngine", () => {
     const shellEvent = await system.run(
       Effect.gen(function* () {
         const shellQueue = yield* Queue.unbounded<OrchestrationShellStreamEvent>();
+        // Filter to the thread event: the `project.create` above publishes a
+        // `project-upserted` shell event asynchronously (domain event → shell
+        // mapper fiber → shellPubSub), and that publish can land after this
+        // subscriber attaches, racing ahead of the thread event we assert on.
+        // Shell events are published in sequence order, so selecting the first
+        // `thread-upserted` is deterministic regardless of that timing.
         yield* Effect.forkScoped(
-          Stream.take(engine.streamShellEvents, 1).pipe(
-            Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid)),
-          ),
+          Stream.take(
+            engine.streamShellEvents.pipe(
+              Stream.filter((event) => event.kind === "thread-upserted"),
+            ),
+            1,
+          ).pipe(Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid))),
         );
         yield* Effect.sleep("10 millis");
         yield* engine.dispatch({
@@ -1167,13 +1176,21 @@ describe("OrchestrationEngine", () => {
         const queues = yield* Effect.forEach(Array.from({ length: subscriberCount }), () =>
           Queue.unbounded<OrchestrationShellStreamEvent>(),
         );
+        // Filter to the thread event for the same reason as the single-subscriber
+        // case: the prior `project.create` publishes a `project-upserted` shell
+        // event asynchronously, which can race ahead of this subscription. Every
+        // subscriber applies the identical filter, so the fan-out equality below
+        // still proves the event is mapped once and shared.
         yield* Effect.forEach(
           queues,
           (queue) =>
             Effect.forkScoped(
-              Stream.take(engine.streamShellEvents, 1).pipe(
-                Stream.runForEach((event) => Queue.offer(queue, event).pipe(Effect.asVoid)),
-              ),
+              Stream.take(
+                engine.streamShellEvents.pipe(
+                  Stream.filter((event) => event.kind === "thread-upserted"),
+                ),
+                1,
+              ).pipe(Stream.runForEach((event) => Queue.offer(queue, event).pipe(Effect.asVoid))),
             ),
           { concurrency: "unbounded" },
         );

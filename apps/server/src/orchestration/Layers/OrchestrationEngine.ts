@@ -30,6 +30,7 @@ import {
   orchestrationCommandDuration,
 } from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
+import { withBusyRetry } from "../../persistence/retryPolicy.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
@@ -258,8 +259,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           ),
         );
         const eventBases = Array.isArray(eventBase) ? eventBase : [eventBase];
-        const committedCommand = yield* sql
-          .withTransaction(
+        const committedCommand = yield* withBusyRetry(
+          sql.withTransaction(
             Effect.gen(function* () {
               const committedEvents: OrchestrationEvent[] = [];
               let nextCommandReadModel = commandReadModel;
@@ -295,14 +296,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 nextCommandReadModel,
               } as const;
             }),
-          )
-          .pipe(
-            Effect.catchTag("SqlError", (sqlError) =>
-              Effect.fail(
-                toPersistenceSqlError("OrchestrationEngine.processEnvelope:transaction")(sqlError),
-              ),
+          ),
+        ).pipe(
+          Effect.catchTag("SqlError", (sqlError) =>
+            Effect.fail(
+              toPersistenceSqlError("OrchestrationEngine.processEnvelope:transaction")(sqlError),
             ),
-          );
+          ),
+        );
 
         commandReadModel = committedCommand.nextCommandReadModel;
         for (const [index, event] of committedCommand.committedEvents.entries()) {
