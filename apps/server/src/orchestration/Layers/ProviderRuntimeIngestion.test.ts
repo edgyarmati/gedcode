@@ -25,6 +25,7 @@ import {
   TurnId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -32,7 +33,13 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { afterEach, describe, expect, it } from "vitest";
+
+// Mirrors the hard-coded fail-loud diff-wait timeout in ProviderRuntimeIngestion
+// (STAGE_COMPLETION_DIFF_TIMEOUT). The stage-completion timeout test advances a
+// TestClock past this to fire the forked backstop without a real 30s wall wait.
+const STAGE_COMPLETION_DIFF_TIMEOUT_MS = 30_000;
 
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -51,6 +58,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { stageCompleteCommandId } from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
@@ -244,7 +252,10 @@ describe("ProviderRuntimeIngestion", () => {
     }
   });
 
-  async function createHarness(options?: { serverSettings?: Partial<ServerSettings> }) {
+  async function createHarness(options?: {
+    serverSettings?: Partial<ServerSettings>;
+    useTestClock?: boolean;
+  }) {
     const workspaceRoot = makeTempDir("t3-provider-project-");
     fs.mkdirSync(path.join(workspaceRoot, ".git"));
     const provider = createProviderServiceHarness();
@@ -260,22 +271,46 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
     );
-    const layer = ProviderRuntimeIngestionLive.pipe(
+    // When `useTestClock` is set, provide a SINGLE TestClock instance both
+    // inside the layer graph (so the forked diff-wait timeout daemon sleeps on
+    // virtual time) and as the runtime's clock the test advances. Reusing one
+    // layer value is essential: two distinct TestClock.layer() instances would
+    // create two clocks, and TestClock.adjust on one would never wake fibers
+    // sleeping on the other.
+    const testClockLayer = options?.useTestClock ? TestClock.layer() : undefined;
+    const platformLayer = testClockLayer
+      ? Layer.mergeAll(NodeServices.layer, testClockLayer)
+      : NodeServices.layer;
+    const ingestionLayer = ProviderRuntimeIngestionLive.pipe(
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(platformLayer),
     );
+    const layer = testClockLayer ? Layer.merge(ingestionLayer, testClockLayer) : ingestionLayer;
     runtime = ManagedRuntime.make(layer);
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const ingestion = await runtime.runPromise(Effect.service(ProviderRuntimeIngestionService));
     scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(ingestion.start().pipe(Scope.provide(scope)));
-    const drain = () => Effect.runPromise(ingestion.drain);
+    // When the harness drives a TestClock, the ingestion worker (and the
+    // diff-wait timeout daemon it forks) MUST run on the harness runtime so the
+    // forked Effect.sleep observes the same TestClock that the test advances.
+    // Running start() on the default runtime would leave the daemon sleeping on
+    // the live clock, immune to TestClock.adjust.
+    if (options?.useTestClock) {
+      await runtime.runPromise(ingestion.start().pipe(Scope.provide(scope)));
+    } else {
+      await Effect.runPromise(ingestion.start().pipe(Scope.provide(scope)));
+    }
+    const drain = () =>
+      options?.useTestClock
+        ? (runtime?.runPromise(ingestion.drain) ??
+          Promise.reject(new Error("runtime not initialized")))
+        : Effect.runPromise(ingestion.drain);
 
     const createdAt = "2026-01-01T00:00:00.000Z";
     await Effect.runPromise(
@@ -342,6 +377,16 @@ describe("ProviderRuntimeIngestion", () => {
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
+      advanceClock: async (durationMs: number) => {
+        if (!runtime) {
+          throw new Error("runtime not initialized");
+        }
+        await runtime.runPromise(TestClock.adjust(Duration.millis(durationMs)));
+        // Pump the harness runtime so the woken diff-wait daemon's dispatch and
+        // the engine's queue processor settle before the test reads the model.
+        await runtime.runPromise(Effect.yieldNow);
+        await runtime.runPromise(Effect.yieldNow);
+      },
     };
   }
 
@@ -387,8 +432,13 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
-  it("emits durable task stage completion when an active stage turn completes", async () => {
-    const harness = await createHarness();
+  it("completes an active stage via the fail-loud diff-wait timeout when no diff is captured", async () => {
+    // The immediate task.stage.complete dispatch on turn.completed was replaced
+    // (WP-2) by a CheckpointReactor diff-gate plus this fail-loud timeout
+    // backstop. This harness has no CheckpointReactor, so the only completion
+    // path is the forked 30s timeout — advancing the TestClock past it must
+    // settle the stage with diffComplete: false.
+    const harness = await createHarness({ useTestClock: true });
     const now = "2026-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
@@ -462,11 +512,65 @@ describe("ProviderRuntimeIngestion", () => {
       },
     });
 
+    // Drain the ingestion worker so the turn.completed handler has forked the
+    // diff-wait timeout daemon, then confirm the stage has NOT completed yet:
+    // it must wait for either a captured diff or the timeout.
+    await harness.drain();
+    const beforeTimeout = (await harness.readModel()).tasks.find(
+      (task) => task.id === asTaskId("task-1"),
+    );
+    expect(beforeTimeout?.status).toBe("working");
+    expect(beforeTimeout?.currentStageThreadId).toBe(stageThreadId);
+
+    // Advance virtual time past the fail-loud timeout to fire the backstop.
+    await harness.advanceClock(STAGE_COMPLETION_DIFF_TIMEOUT_MS);
+
     const completedTask = await waitForTask(
       harness.readModel,
       (task) => task.status === "review" && task.currentStageThreadId === null,
     );
     expect(completedTask.stageThreadIds).toContain(stageThreadId);
+
+    // The timeout path records diffComplete: false on the stage-completed event.
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const stageCompletedEvents = events.filter((event) => event.type === "task.stage-completed");
+    expect(stageCompletedEvents).toHaveLength(1);
+    const stageCompleted = stageCompletedEvents[0];
+    expect(stageCompleted?.type).toBe("task.stage-completed");
+    if (stageCompleted?.type === "task.stage-completed") {
+      expect(stageCompleted.payload.diffComplete).toBe(false);
+      expect(stageCompleted.payload.stageThreadId).toBe(stageThreadId);
+      expect(stageCompleted.commandId).toBe(
+        stageCompleteCommandId(stageThreadId, asTurnId("turn-task-stage-1")),
+      );
+    }
+
+    // A LATE real diff (the CheckpointReactor path) shares the SAME deterministic
+    // commandId, so dispatching it after the timeout already settled the stage
+    // must dedup against the persisted receipt and emit NO second event.
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.complete",
+        commandId: stageCompleteCommandId(stageThreadId, asTurnId("turn-task-stage-1")),
+        taskId: asTaskId("task-1"),
+        role: "work",
+        stageThreadId,
+        awaitedTurnId: asTurnId("turn-task-stage-1"),
+        createdAt: now,
+      }),
+    );
+    const eventsAfterLateDiff = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    expect(
+      eventsAfterLateDiff.filter((event) => event.type === "task.stage-completed"),
+    ).toHaveLength(1);
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

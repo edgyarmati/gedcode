@@ -6,6 +6,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationMessage,
   type OrchestrationProposedPlanId,
+  type OrchestrationStageRole,
   CheckpointRef,
   isToolLifecycleItemType,
   ThreadId,
@@ -38,7 +39,11 @@ import {
   type ProviderRuntimeIngestionShape,
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { activeStageRoleForTaskStatus, findTaskForStageThread } from "../stageResolution.ts";
+import {
+  activeStageRoleForTaskStatus,
+  findTaskForStageThread,
+  stageCompleteCommandId,
+} from "../stageResolution.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 
@@ -56,6 +61,13 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_CACHE_CAPACITY = 10_000;
 const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
+
+// Hard-coded fail-loud backstop: how long to wait for CheckpointReactor to
+// confirm a real captured diff before completing the stage anyway with
+// `diffComplete: false`. Stages must never stall waiting for a diff that never
+// arrives (e.g. a non-git workspace). Configurability via ServerSettings is a
+// deliberate follow-up; that file is owned by other WPs.
+const STAGE_COMPLETION_DIFF_TIMEOUT = Duration.seconds(30);
 
 type TurnStartRequestedDomainEvent = Extract<
   OrchestrationEvent,
@@ -1608,15 +1620,57 @@ const make = Effect.gen(function* () {
           activeStageRole !== null &&
           sameId(taskForStageThread.currentStageThreadId, thread.id)
         ) {
-          yield* orchestrationEngine.dispatch({
-            type: "task.stage.complete",
-            commandId: yield* providerCommandId(event, "task-stage-complete"),
-            taskId: taskForStageThread.id,
-            role: activeStageRole,
-            stageThreadId: thread.id,
-            awaitedTurnId: turnId ?? null,
-            createdAt: now,
-          });
+          const taskId = taskForStageThread.id;
+          const role: OrchestrationStageRole = activeStageRole;
+          const stageThreadId = thread.id;
+          if (turnId === undefined) {
+            // Degenerate completion: no turn id means there is no diff to await,
+            // so the CheckpointReactor diff-gate cannot fire. Complete the stage
+            // immediately. A fresh command id is fine — there is no competing
+            // deterministic dispatch to dedup against.
+            yield* orchestrationEngine.dispatch({
+              type: "task.stage.complete",
+              commandId: yield* providerCommandId(event, "task-stage-complete"),
+              taskId,
+              role,
+              stageThreadId,
+              awaitedTurnId: null,
+              createdAt: now,
+            });
+          } else {
+            // Normal completion: defer to CheckpointReactor, which completes the
+            // stage once a REAL diff is captured. Fork a fail-loud timeout
+            // backstop so the stage never stalls if no diff ever arrives (e.g. a
+            // non-git workspace). The timeout uses the SAME deterministic command
+            // id as the diff path (stageCompleteCommandId), so whichever commits
+            // first wins and the other dedups against the persisted command
+            // receipt — exactly-once PM re-entry, no in-memory latch.
+            const awaitedTurnId = turnId;
+            const settleCreatedAt = now;
+            yield* Effect.forkDetach(
+              orchestrationEngine
+                .dispatch({
+                  type: "task.stage.complete",
+                  commandId: stageCompleteCommandId(stageThreadId, awaitedTurnId),
+                  taskId,
+                  role,
+                  stageThreadId,
+                  awaitedTurnId,
+                  diffComplete: false,
+                  createdAt: settleCreatedAt,
+                })
+                .pipe(
+                  Effect.delay(STAGE_COMPLETION_DIFF_TIMEOUT),
+                  Effect.catch((error) =>
+                    Effect.logWarning("stage-completion diff-wait timeout dispatch failed", {
+                      threadId: stageThreadId,
+                      turnId: awaitedTurnId,
+                      detail: error instanceof Error ? error.message : String(error),
+                    }),
+                  ),
+                ),
+            );
+          }
         }
       }
 

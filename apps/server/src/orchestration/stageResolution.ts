@@ -1,6 +1,24 @@
-import type { OrchestrationReadModel, OrchestrationStageRole, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type OrchestrationReadModel,
+  type OrchestrationStageRole,
+  type ThreadId,
+  type TurnId,
+} from "@t3tools/contracts";
 
 type OrchestrationTaskView = OrchestrationReadModel["tasks"][number];
+
+/**
+ * Deterministic command id for completing the stage of `stageThreadId` after
+ * the worker turn `turnId`. Both the diff-confirmed completion path
+ * (CheckpointReactor) and the fail-loud timeout backstop
+ * (ProviderRuntimeIngestion) derive the exact same id for a given
+ * `(stageThreadId, turnId)` pair, so whichever dispatch commits first wins and
+ * the other dedups against the persisted command receipt — guaranteeing
+ * exactly-once PM re-entry without any in-memory latch and surviving restarts.
+ */
+export const stageCompleteCommandId = (stageThreadId: ThreadId, turnId: TurnId): CommandId =>
+  CommandId.make(`server:task-stage-complete:${stageThreadId}:${turnId}`);
 
 /**
  * The stage role a task is actively running, derived purely from its status.
