@@ -13,8 +13,6 @@ import {
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationProposedPlan,
-  type OrchestrationStageRole,
-  type OrchestrationTask,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
@@ -40,6 +38,7 @@ import {
   type ProviderRuntimeIngestionShape,
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { activeStageRoleForTaskStatus, findTaskForStageThread } from "../stageResolution.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 
@@ -86,21 +85,6 @@ function sameId(left: string | null | undefined, right: string | null | undefine
     return false;
   }
   return left === right;
-}
-
-function activeStageRoleForTaskStatus(
-  status: OrchestrationTask["status"],
-): OrchestrationStageRole | null {
-  switch (status) {
-    case "classified":
-      return "classify";
-    case "planning":
-      return "plan";
-    case "working":
-      return "work";
-    default:
-      return null;
-  }
 }
 
 function hasAssistantMessageForTurn(
@@ -722,9 +706,7 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
   ) {
     const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-    return readModel.tasks.find((task) =>
-      task.stageThreadIds.some((stageThreadId) => sameId(stageThreadId, threadId)),
-    );
+    return findTaskForStageThread(readModel.tasks, threadId);
   });
 
   const rememberAssistantMessageId = (threadId: ThreadId, turnId: TurnId, messageId: MessageId) =>

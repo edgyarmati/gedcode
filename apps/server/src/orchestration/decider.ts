@@ -10,7 +10,6 @@ import {
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
-  type OrchestrationStageRole,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -32,6 +31,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import { activeStageRoleForTaskStatus } from "./stageResolution.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
@@ -77,21 +77,6 @@ function countActiveTaskWorktrees(input: {
       task.worktreePath !== null &&
       !isTerminalTaskStatus(task.status),
   ).length;
-}
-
-function activeStageRoleForTaskStatus(
-  status: OrchestrationReadModel["tasks"][number]["status"],
-): OrchestrationStageRole | null {
-  switch (status) {
-    case "classified":
-      return "classify";
-    case "planning":
-      return "plan";
-    case "working":
-      return "work";
-    default:
-      return null;
-  }
 }
 
 function withEventBase(
