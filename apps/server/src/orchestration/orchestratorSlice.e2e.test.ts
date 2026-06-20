@@ -23,6 +23,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { CheckpointDiffQuery } from "../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   PmRuntimeStateRepository,
@@ -215,6 +216,15 @@ function makePmRuntimeLayer(input: {
           const thread = input.readModel.threads.find((entry) => entry.id === threadId);
           return Effect.succeed(thread ? Option.some(thread) : Option.none());
         },
+        // No captured checkpoint in this slice → diff-unavailable; the stage
+        // result envelope is built without a diff section.
+        getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(CheckpointDiffQuery)({
+        getFullThreadDiff: () =>
+          Effect.die("getFullThreadDiff should not be called (no diff context)"),
       }),
     ),
     Layer.provide(

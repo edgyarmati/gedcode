@@ -9,6 +9,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationGetFullThreadDiffResult,
   type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
@@ -21,6 +22,8 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
+import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   PmRuntimeStateRepository,
@@ -162,9 +165,16 @@ const makeLayer = (input: {
   readonly pendingSettlements?: PmConsumedSettlement[];
   readonly cursorByProject?: Map<string, number>;
   readonly readEventCursors?: number[];
+  // WP-4 diff-capture knobs. By default the stage thread has no captured
+  // checkpoint (latestCheckpointTurnCount = 0 → diff-unavailable), preserving
+  // the pre-WP-4 behavior of the existing suite (no diff section).
+  readonly latestCheckpointTurnCount?: number;
+  readonly fullThreadDiff?: OrchestrationGetFullThreadDiffResult;
+  readonly fullThreadDiffFails?: boolean;
 }) => {
   const cursorByProject = input.cursorByProject ?? new Map<string, number>();
   const readEventCursors = input.readEventCursors ?? [];
+  const latestCheckpointTurnCount = input.latestCheckpointTurnCount ?? 0;
   const projectRuntime: PmProjectRuntime = {
     enqueue: (message) =>
       Effect.sync(() => {
@@ -192,6 +202,38 @@ const makeLayer = (input: {
         getCommandReadModel: () => Effect.succeed(readModel),
         getThreadDetailById: (threadId: ThreadId) =>
           Effect.succeed(threadId === stageThreadId ? Option.some(stageThread) : Option.none()),
+        getFullThreadDiffContext: (threadId: ThreadId) =>
+          Effect.succeed(
+            threadId === stageThreadId && latestCheckpointTurnCount > 0
+              ? Option.some({
+                  threadId,
+                  projectId,
+                  workspaceRoot: "/tmp/project",
+                  worktreePath: null,
+                  latestCheckpointTurnCount,
+                  toCheckpointRef: null,
+                })
+              : Option.none(),
+          ),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(CheckpointDiffQuery)({
+        getFullThreadDiff: () =>
+          input.fullThreadDiffFails === true
+            ? new CheckpointUnavailableError({
+                threadId: String(stageThreadId),
+                turnCount: latestCheckpointTurnCount,
+                detail: "checkpoint read failed (test)",
+              })
+            : Effect.succeed(
+                input.fullThreadDiff ?? {
+                  threadId: stageThreadId,
+                  fromTurnCount: 0,
+                  toTurnCount: latestCheckpointTurnCount,
+                  diff: "",
+                },
+              ),
       }),
     ),
     Layer.provide(
@@ -438,5 +480,114 @@ describe("PmRuntime", () => {
         );
         assert.deepStrictEqual(pendingSettlements, []);
       }),
+  );
+
+  it.effect("captures the worker diff (scrubbed + bounded) in the stage settlement message", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        latestCheckpointTurnCount: 2,
+        fullThreadDiff: {
+          threadId: stageThreadId,
+          fromTurnCount: 0,
+          toTurnCount: 2,
+          diff: `diff --git a/src/a.ts b/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-const a = 1;
++const a = 2;
+diff --git a/.env b/.env
++++ b/.env
+@@ -0,0 +1 @@
++OPENAI_API_KEY=sk-live-secret
+`,
+        },
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      const message = messages[0] ?? "";
+      assert.match(message, /A detached worker stage completed/);
+      // Structured diff fields are present.
+      assert.match(message, /Diff summary: 2 files changed/);
+      assert.match(message, /----- BEGIN WORKER DIFF \(untrusted\) -----/);
+      assert.match(message, /----- END WORKER DIFF -----/);
+      // Secrets in the diff are scrubbed (never leaked into PM context).
+      assert.notMatch(message, /sk-live-secret/);
+      assert.match(message, /OPENAI_API_KEY=\[REDACTED\]/);
+      // The serialized envelope stays within the documented bound.
+      assert.ok(message.length <= 12_000 + "\n[truncated]".length);
+    }),
+  );
+
+  it.effect("produces a stage envelope without a diff section when no diff context exists", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        // Default latestCheckpointTurnCount = 0 → getFullThreadDiffContext None.
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      const message = messages[0] ?? "";
+      assert.match(message, /A detached worker stage completed/);
+      assert.match(message, /Diff summary: \(no diff was captured for this stage\)/);
+      assert.notMatch(message, /BEGIN WORKER DIFF/);
+    }),
+  );
+
+  it.effect("degrades to no diff section when the checkpoint diff read fails", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        latestCheckpointTurnCount: 1,
+        fullThreadDiffFails: true,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      const message = messages[0] ?? "";
+      // A valid settlement message is still produced (settlement never fails).
+      assert.match(message, /A detached worker stage completed/);
+      assert.match(message, /Diff summary: \(no diff was captured for this stage\)/);
+      assert.notMatch(message, /BEGIN WORKER DIFF/);
+      assert.strictEqual(consumeCalls.length, 1);
+    }),
   );
 });
