@@ -207,7 +207,21 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       const stageThreadId = event.payload.stageThreadId;
       const context = yield* projectionSnapshotQuery
         .getFullThreadDiffContext(stageThreadId, 0)
-        .pipe(Effect.map(Option.getOrNull));
+        .pipe(
+          Effect.map(Option.getOrNull),
+          // A projection read error must degrade to diff-unavailable, never fail
+          // the settlement (same contract as the getFullThreadDiff catch below).
+          Effect.catch((cause) =>
+            Effect.logWarning(
+              "PM runtime could not resolve worker diff context for stage settlement",
+              {
+                stageThreadId: String(stageThreadId),
+                taskId: String(event.payload.taskId),
+                cause: cause.message,
+              },
+            ).pipe(Effect.as(null)),
+          ),
+        );
       if (context === null || context.latestCheckpointTurnCount <= 0) {
         return undefined;
       }
