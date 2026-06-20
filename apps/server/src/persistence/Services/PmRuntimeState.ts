@@ -27,6 +27,10 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const PmConsumedSettlementKind = Schema.Literals(["stage", "gate"]);
 export type PmConsumedSettlementKind = typeof PmConsumedSettlementKind.Type;
 
+export const PmConsumedSettlementConsumptionStatus = Schema.Literals(["pending", "acted"]);
+export type PmConsumedSettlementConsumptionStatus =
+  typeof PmConsumedSettlementConsumptionStatus.Type;
+
 export const PmRuntimeCursor = Schema.Struct({
   projectId: ProjectId,
   lastConsumedSequence: NonNegativeInt,
@@ -39,6 +43,7 @@ export const PmConsumedSettlement = Schema.Struct({
   kind: PmConsumedSettlementKind,
   settlementKey: TrimmedNonEmptyString,
   consumedAt: IsoDateTime,
+  status: PmConsumedSettlementConsumptionStatus,
 });
 export type PmConsumedSettlement = typeof PmConsumedSettlement.Type;
 
@@ -62,6 +67,19 @@ export const ConsumePmSettlementInput = Schema.Struct({
 });
 export type ConsumePmSettlementInput = typeof ConsumePmSettlementInput.Type;
 
+export const MarkPmSettlementActedInput = Schema.Struct({
+  projectId: ProjectId,
+  kind: PmConsumedSettlementKind,
+  settlementKey: TrimmedNonEmptyString,
+  actedAt: IsoDateTime,
+});
+export type MarkPmSettlementActedInput = typeof MarkPmSettlementActedInput.Type;
+
+export const ListPendingPmSettlementsInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ListPendingPmSettlementsInput = typeof ListPendingPmSettlementsInput.Type;
+
 export const makeStageSettlementKey = (input: {
   readonly stageThreadId: ThreadId;
   readonly awaitedTurnId: TurnId | null;
@@ -81,6 +99,14 @@ export interface PmRuntimeStateRepositoryShape {
   readonly consumeSettlementAndAdvanceCursor: (
     input: ConsumePmSettlementInput,
   ) => Effect.Effect<boolean, ProjectionRepositoryError>;
+
+  readonly markActed: (
+    input: MarkPmSettlementActedInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  readonly listPending: (
+    input: ListPendingPmSettlementsInput,
+  ) => Effect.Effect<ReadonlyArray<PmConsumedSettlement>, ProjectionRepositoryError>;
 }
 
 export class PmRuntimeStateRepository extends Context.Service<

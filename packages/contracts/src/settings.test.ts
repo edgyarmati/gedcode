@@ -123,6 +123,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(
+      5 * 60 * 1000,
+    );
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
   });
 
   it("decodes a legacy config (no orchestrator key) without complaint", () => {
@@ -130,6 +134,8 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     // break existing settings that predate the key.
     const decoded = decodeServerSettings({});
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
+    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
   });
 
   it("round-trips a fully empty config without dropping the orchestrator block", () => {
@@ -140,18 +146,32 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
 
   it("honors an explicit human-set allowFullAccessWorkers floor", () => {
     const decoded = decodeServerSettings({
-      orchestratorDefaults: { allowFullAccessWorkers: true, maxStageHandoffs: 20 },
+      orchestratorDefaults: {
+        allowFullAccessWorkers: true,
+        maxStageHandoffs: 20,
+        pmReconciliationIntervalMs: 60_000,
+        worktreeReaperIntervalMinutes: 2,
+      },
     });
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
     expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
+    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
+    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);
   });
 
   it("accepts orchestratorDefaults via the settings patch", () => {
     const patch = decodeServerSettingsPatch({
-      orchestratorDefaults: { maxParallelTasks: 3, maxParallelWorkers: 4 },
+      orchestratorDefaults: {
+        maxParallelTasks: 3,
+        maxParallelWorkers: 4,
+        pmReconciliationIntervalMs: 120_000,
+        worktreeReaperIntervalMinutes: 10,
+      },
     });
     expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
     expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
+    expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
+    expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);
   });
 });
 

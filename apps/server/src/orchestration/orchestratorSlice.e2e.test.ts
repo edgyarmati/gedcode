@@ -23,10 +23,12 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { ProjectionAwaitedStageRepository } from "../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   PmRuntimeStateRepository,
   type ConsumePmSettlementInput,
 } from "../persistence/Services/PmRuntimeState.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { PmProjectRuntimeFactory, PmRuntime, type PmProjectRuntime } from "./Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
@@ -219,6 +221,7 @@ function makePmRuntimeLayer(input: {
       Layer.succeed(PmRuntimeStateRepository, {
         getCursor: () => Effect.succeed(Option.none()),
         listConsumedSettlements: () => Effect.succeed([]),
+        listPending: () => Effect.succeed([]),
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
             input.consumeCalls.push(consumeInput);
@@ -229,6 +232,13 @@ function makePmRuntimeLayer(input: {
             consumed.add(key);
             return true;
           }),
+        markActed: () => Effect.void,
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionAwaitedStageRepository, {
+        upsert: () => Effect.void,
+        listByTaskId: () => Effect.succeed([]),
       }),
     ),
     Layer.provide(
@@ -236,6 +246,7 @@ function makePmRuntimeLayer(input: {
         getOrCreate: () => Effect.succeed(projectRuntime),
       }),
     ),
+    Layer.provide(ServerSettingsService.layerTest()),
   );
 }
 

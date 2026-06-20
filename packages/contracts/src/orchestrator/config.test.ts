@@ -5,6 +5,8 @@ import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_STAGE_HANDOFFS,
+  DEFAULT_PM_RECONCILIATION_INTERVAL_MS,
+  DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES,
   OrchestratorGlobalDefaults,
   OrchestratorProjectConfig,
 } from "./config.ts";
@@ -40,6 +42,12 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
   it("global defaults also floor allowFullAccessWorkers to false", () => {
     const decoded = decodeGlobalDefaults({});
     expect(decoded.allowFullAccessWorkers).toBe(false);
+  });
+
+  it("global defaults include durability and cleanup intervals", () => {
+    const decoded = decodeGlobalDefaults({});
+    expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
+    expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
   });
 });
 

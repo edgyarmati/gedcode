@@ -2,25 +2,33 @@ import {
   OrchestratorProjectConfig,
   type OrchestrationEvent,
   type OrchestrationProject,
+  type OrchestrationReadModel,
   type OrchestrationTask,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   makeGateSettlementKey,
   makeStageSettlementKey,
   PmRuntimeStateRepository,
+  type PmConsumedSettlement,
+  type PmConsumedSettlementKind,
 } from "../../persistence/Services/PmRuntimeState.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -54,11 +62,36 @@ type SettlementEnvelope = {
   readonly message: string;
 };
 
+export interface PmRuntimeLiveOptions {
+  readonly reconciliationIntervalMsOverride?: number;
+}
+
 const MAX_PM_REENTRY_CONTENT_CHARS = 12_000;
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" || event.type === "task.gate-resolved";
+
+const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
+  event.type === "task.stage-completed" ? "stage" : "gate";
+
+const settlementEventKey = (event: SettlementEvent): string =>
+  event.type === "task.stage-completed"
+    ? makeStageSettlementKey({
+        stageThreadId: event.payload.stageThreadId,
+        awaitedTurnId: event.payload.awaitedTurnId,
+      })
+    : makeGateSettlementKey(event.payload.gateId);
+
+const findSettlementEvent = (
+  events: ReadonlyArray<SettlementEvent>,
+  input: { readonly kind: PmConsumedSettlementKind; readonly settlementKey: string },
+): SettlementEvent | undefined =>
+  events.find(
+    (event) =>
+      settlementEventKind(event) === input.kind &&
+      settlementEventKey(event) === input.settlementKey,
+  );
 
 const scrubSecrets = (text: string): string =>
   text.replace(
@@ -130,215 +163,470 @@ const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =
     ...(cause !== undefined ? { cause } : {}),
   });
 
-export const makePmRuntime = Effect.gen(function* () {
-  const orchestrationEngine = yield* OrchestrationEngineService;
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-  const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
-  const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
+export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
+  Effect.gen(function* () {
+    const orchestrationEngine = yield* OrchestrationEngineService;
+    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+    const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
+    const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
+    const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
+    const serverSettings = yield* ServerSettingsService;
+    const settings = yield* serverSettings.getSettings;
+    const reconciliationIntervalMs = Math.max(
+      1,
+      options?.reconciliationIntervalMsOverride ??
+        settings.orchestratorDefaults.pmReconciliationIntervalMs,
+    );
+    const reconciliationSemaphore = yield* Semaphore.make(1);
 
-  const resolveTaskProject = Effect.fn("PmRuntime.resolveTaskProject")(function* (
-    taskId: OrchestrationTask["id"],
-  ) {
-    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-    const task = readModel.tasks.find((entry) => entry.id === taskId);
-    if (!task) {
-      return null;
-    }
-    const project = readModel.projects.find((entry) => entry.id === task.projectId);
-    if (!project) {
-      return null;
-    }
-    return { task, project };
-  });
+    const resolveTaskProject = Effect.fn("PmRuntime.resolveTaskProject")(function* (
+      taskId: OrchestrationTask["id"],
+    ) {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      const task = readModel.tasks.find((entry) => entry.id === taskId);
+      if (!task) {
+        return null;
+      }
+      const project = readModel.projects.find((entry) => entry.id === task.projectId);
+      if (!project) {
+        return null;
+      }
+      return { task, project };
+    });
 
-  const latestAssistantTextForStage = Effect.fn("PmRuntime.latestAssistantTextForStage")(function* (
-    event: Extract<SettlementEvent, { type: "task.stage-completed" }>,
-  ) {
-    const thread = yield* projectionSnapshotQuery
-      .getThreadDetailById(event.payload.stageThreadId)
-      .pipe(Effect.map(Option.getOrNull));
-    const assistantMessages =
-      thread?.messages.filter(
-        (message) =>
-          message.role === "assistant" &&
-          (event.payload.awaitedTurnId === null || message.turnId === event.payload.awaitedTurnId),
-      ) ?? [];
-    return assistantMessages.at(-1)?.text ?? null;
-  });
+    const latestAssistantTextForStage = Effect.fn("PmRuntime.latestAssistantTextForStage")(
+      function* (event: Extract<SettlementEvent, { type: "task.stage-completed" }>) {
+        const thread = yield* projectionSnapshotQuery
+          .getThreadDetailById(event.payload.stageThreadId)
+          .pipe(Effect.map(Option.getOrNull));
+        const assistantMessages =
+          thread?.messages.filter(
+            (message) =>
+              message.role === "assistant" &&
+              (event.payload.awaitedTurnId === null ||
+                message.turnId === event.payload.awaitedTurnId),
+          ) ?? [];
+        return assistantMessages.at(-1)?.text ?? null;
+      },
+    );
 
-  const makeSettlementEnvelope = Effect.fn("PmRuntime.makeSettlementEnvelope")(function* (
-    event: SettlementEvent,
-  ) {
-    const resolved = yield* resolveTaskProject(event.payload.taskId);
-    if (resolved === null) {
-      return null;
-    }
+    const makeSettlementEnvelope = Effect.fn("PmRuntime.makeSettlementEnvelope")(function* (
+      event: SettlementEvent,
+    ) {
+      const resolved = yield* resolveTaskProject(event.payload.taskId);
+      if (resolved === null) {
+        return null;
+      }
 
-    if (event.type === "task.stage-completed") {
-      const assistantText = yield* latestAssistantTextForStage(event);
+      if (event.type === "task.stage-completed") {
+        const assistantText = yield* latestAssistantTextForStage(event);
+        return {
+          event,
+          ...resolved,
+          kind: "stage" as const,
+          settlementKey: makeStageSettlementKey({
+            stageThreadId: event.payload.stageThreadId,
+            awaitedTurnId: event.payload.awaitedTurnId,
+          }),
+          message: stageResultMessage({ event, task: resolved.task, assistantText }),
+        } satisfies SettlementEnvelope;
+      }
+
       return {
         event,
         ...resolved,
-        kind: "stage" as const,
-        settlementKey: makeStageSettlementKey({
-          stageThreadId: event.payload.stageThreadId,
-          awaitedTurnId: event.payload.awaitedTurnId,
-        }),
-        message: stageResultMessage({ event, task: resolved.task, assistantText }),
+        kind: "gate" as const,
+        settlementKey: makeGateSettlementKey(event.payload.gateId),
+        message: gateResultMessage({ event, task: resolved.task }),
       } satisfies SettlementEnvelope;
-    }
+    });
+
+    const readSettlementEvents = Effect.fn("PmRuntime.readSettlementEvents")(function* () {
+      const events: SettlementEvent[] = [];
+      yield* Stream.runForEach(orchestrationEngine.readEvents(0), (event) =>
+        Effect.sync(() => {
+          if (isSettlementEvent(event)) {
+            events.push(event);
+          }
+        }),
+      );
+      return events;
+    });
+
+    const redriveSettlementBypassingCursor = Effect.fn(
+      "PmRuntime.redriveSettlementBypassingCursor",
+    )(function* (input: {
+      readonly marker: PmConsumedSettlement;
+      readonly event: SettlementEvent;
+    }) {
+      const envelope = yield* makeSettlementEnvelope(input.event);
+      if (envelope === null) {
+        yield* Effect.logWarning(
+          "PM runtime reconciliation skipped settlement without task/project",
+          {
+            projectId: String(input.marker.projectId),
+            kind: input.marker.kind,
+            settlementKey: input.marker.settlementKey,
+          },
+        );
+        return false;
+      }
+
+      const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
+      yield* projectRuntime.enqueue(envelope.message);
+      yield* projectRuntime.drain;
+      yield* pmRuntimeStateRepository.markActed({
+        projectId: input.marker.projectId,
+        kind: input.marker.kind,
+        settlementKey: input.marker.settlementKey,
+        actedAt: input.event.occurredAt,
+      });
+      return true;
+    });
+
+    const processSettlementEvent = Effect.fn("PmRuntime.processSettlementEvent")(function* (
+      event: SettlementEvent,
+    ) {
+      const envelope = yield* makeSettlementEnvelope(event);
+      if (envelope === null) {
+        return;
+      }
+
+      const cursor = yield* pmRuntimeStateRepository.getCursor({
+        projectId: envelope.project.id,
+      });
+      if (Option.isSome(cursor) && event.sequence <= cursor.value.lastConsumedSequence) {
+        return;
+      }
+
+      const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
+
+      // Durability ordering with two-phase settlement consumption (review M3).
+      //
+      // We commit the settlement marker + cursor (durable, status='pending')
+      // BEFORE prompting the PM. Prompting is side-effecting: the PM turn
+      // dispatches orchestrator commands through its tools. Consuming first
+      // guarantees replay cannot double-dispatch a settlement after restart.
+      // After the single-writer PmReEntryQueue drains successfully, `markActed`
+      // flips the marker to status='acted'. A crash in the consume→prompt window
+      // leaves a durable pending row; the reconciliation sweep below re-reads the
+      // real SettlementEvent from the append-only log and re-drives it through
+      // the same projectRuntime.enqueue/drain path, bypassing only the cursor
+      // check that caused the original liveness gap.
+      const firstConsumption = yield* pmRuntimeStateRepository.consumeSettlementAndAdvanceCursor({
+        projectId: envelope.project.id,
+        kind: envelope.kind,
+        settlementKey: envelope.settlementKey,
+        sequence: event.sequence,
+        consumedAt: event.occurredAt,
+      });
+      if (!firstConsumption) {
+        return;
+      }
+
+      yield* projectRuntime.enqueue(envelope.message);
+      yield* projectRuntime.drain;
+      yield* pmRuntimeStateRepository.markActed({
+        projectId: envelope.project.id,
+        kind: envelope.kind,
+        settlementKey: envelope.settlementKey,
+        actedAt: event.occurredAt,
+      });
+    });
+
+    const processSettlementEventSafely = (event: SettlementEvent) =>
+      processSettlementEvent(event).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.void;
+          }
+          return Effect.logWarning("PM runtime failed to process settlement event", {
+            eventType: event.type,
+            taskId: String(event.payload.taskId),
+            sequence: event.sequence,
+            cause: Cause.pretty(cause),
+          });
+        }),
+      );
+
+    const worker = yield* makeDrainableWorker(processSettlementEventSafely);
+
+    const collectUnsettledSettlementKeys = Effect.fn("PmRuntime.collectUnsettledSettlementKeys")(
+      function* (input: {
+        readonly readModel: OrchestrationReadModel;
+        readonly project: OrchestrationProject;
+      }) {
+        const tasks = input.readModel.tasks.filter((task) => task.projectId === input.project.id);
+        const taskIds = new Set(tasks.map((task) => String(task.id)));
+        const stageRows = yield* Effect.forEach(
+          tasks,
+          (task) => projectionAwaitedStageRepository.listByTaskId({ taskId: task.id }),
+          { concurrency: 1 },
+        );
+        const stageKeys = stageRows
+          .flat()
+          .filter((stage) => stage.status === "awaited")
+          .map((stage) =>
+            makeStageSettlementKey({
+              stageThreadId: stage.stageThreadId,
+              awaitedTurnId: stage.awaitedTurnId,
+            }),
+          );
+        const gateKeys = (input.readModel.pendingGates ?? [])
+          .filter((gate) => gate.status === "pending" && taskIds.has(String(gate.taskId)))
+          .map((gate) => makeGateSettlementKey(gate.gateId));
+
+        return {
+          stageKeys,
+          gateKeys,
+        };
+      },
+    );
+
+    const reconcileNeverConsumedSettlements = Effect.fn(
+      "PmRuntime.reconcileNeverConsumedSettlements",
+    )(function* (input: {
+      readonly readModel: OrchestrationReadModel;
+      readonly project: OrchestrationProject;
+      readonly events: ReadonlyArray<SettlementEvent>;
+    }) {
+      const keys = yield* collectUnsettledSettlementKeys({
+        readModel: input.readModel,
+        project: input.project,
+      });
+      const [consumedStages, consumedGates] = yield* Effect.all(
+        [
+          pmRuntimeStateRepository.listConsumedSettlements({
+            projectId: input.project.id,
+            kind: "stage",
+          }),
+          pmRuntimeStateRepository.listConsumedSettlements({
+            projectId: input.project.id,
+            kind: "gate",
+          }),
+        ],
+        { concurrency: 1 },
+      );
+      const consumedStageKeys = new Set(
+        consumedStages.map((settlement) => settlement.settlementKey),
+      );
+      const consumedGateKeys = new Set(consumedGates.map((settlement) => settlement.settlementKey));
+      let reprocessedCount = 0;
+
+      const processKey = (
+        kind: PmConsumedSettlementKind,
+        consumedKeys: ReadonlySet<string>,
+        settlementKey: string,
+      ) => {
+        if (consumedKeys.has(settlementKey)) {
+          return Effect.void;
+        }
+        const event = findSettlementEvent(input.events, { kind, settlementKey });
+        if (event === undefined) {
+          return Effect.logWarning("PM runtime reconciliation missing backing settlement event", {
+            projectId: String(input.project.id),
+            kind,
+            settlementKey,
+            path: "never-consumed",
+          });
+        }
+        reprocessedCount += 1;
+        return processSettlementEventSafely(event);
+      };
+
+      yield* Effect.forEach(keys.stageKeys, (key) => processKey("stage", consumedStageKeys, key), {
+        concurrency: 1,
+        discard: true,
+      });
+      yield* Effect.forEach(keys.gateKeys, (key) => processKey("gate", consumedGateKeys, key), {
+        concurrency: 1,
+        discard: true,
+      });
+
+      return reprocessedCount;
+    });
+
+    const reconcilePendingSettlements = Effect.fn("PmRuntime.reconcilePendingSettlements")(
+      function* (input: {
+        readonly project: OrchestrationProject;
+        readonly events: ReadonlyArray<SettlementEvent>;
+      }) {
+        const pending = yield* pmRuntimeStateRepository.listPending({
+          projectId: input.project.id,
+        });
+        let actedCount = 0;
+        yield* Effect.forEach(
+          pending,
+          (marker) => {
+            const event = findSettlementEvent(input.events, {
+              kind: marker.kind,
+              settlementKey: marker.settlementKey,
+            });
+            if (event === undefined) {
+              return Effect.logWarning(
+                "PM runtime reconciliation missing backing settlement event",
+                {
+                  projectId: String(input.project.id),
+                  kind: marker.kind,
+                  settlementKey: marker.settlementKey,
+                  path: "pending",
+                },
+              );
+            }
+            return redriveSettlementBypassingCursor({ marker, event }).pipe(
+              Effect.tap((redriven) =>
+                Effect.sync(() => {
+                  if (redriven) {
+                    actedCount += 1;
+                  }
+                }),
+              ),
+              Effect.catchCause((cause) => {
+                if (Cause.hasInterruptsOnly(cause)) {
+                  return Effect.failCause(cause);
+                }
+                return Effect.logWarning("PM runtime pending settlement recovery failed", {
+                  projectId: String(input.project.id),
+                  kind: marker.kind,
+                  settlementKey: marker.settlementKey,
+                  cause: Cause.pretty(cause),
+                });
+              }),
+            );
+          },
+          { concurrency: 1, discard: true },
+        );
+        return actedCount;
+      },
+    );
+
+    const runReconciliationSweep = reconciliationSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const events = yield* readSettlementEvents();
+        let neverConsumedCount = 0;
+        let pendingActedCount = 0;
+
+        yield* Effect.forEach(
+          readModel.projects,
+          (project) =>
+            Effect.gen(function* () {
+              neverConsumedCount += yield* reconcileNeverConsumedSettlements({
+                readModel,
+                project,
+                events,
+              });
+              pendingActedCount += yield* reconcilePendingSettlements({
+                project,
+                events,
+              });
+            }),
+          { concurrency: 1, discard: true },
+        );
+
+        if (neverConsumedCount > 0 || pendingActedCount > 0) {
+          yield* Effect.logInfo("PM runtime reconciliation sweep completed", {
+            neverConsumedCount,
+            pendingActedCount,
+            projectCount: readModel.projects.length,
+          });
+        }
+      }),
+    );
+
+    const getReplayStartSequence = Effect.fn("PmRuntime.getReplayStartSequence")(function* () {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      if (readModel.projects.length === 0) {
+        return 0;
+      }
+
+      const cursors = yield* Effect.forEach(
+        readModel.projects,
+        (project) => pmRuntimeStateRepository.getCursor({ projectId: project.id }),
+        { concurrency: 1 },
+      );
+      const startSequences = cursors.map((cursor) =>
+        Option.isSome(cursor) ? cursor.value.lastConsumedSequence : 0,
+      );
+      return Math.min(...startSequences);
+    });
+
+    const replayHistoricalSettlements = Effect.gen(function* () {
+      const fromSequenceExclusive = yield* getReplayStartSequence();
+      yield* Stream.runForEach(orchestrationEngine.readEvents(fromSequenceExclusive), (event) =>
+        isSettlementEvent(event) ? processSettlementEventSafely(event) : Effect.void,
+      );
+    }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.void;
+        }
+        return Effect.logWarning("PM runtime historical replay failed", {
+          cause: Cause.pretty(cause),
+        });
+      }),
+    );
+
+    const start: PmRuntimeShape["start"] = Effect.fn("start")(function* () {
+      const liveSettlementQueue = yield* Queue.unbounded<SettlementEvent>();
+      yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
+        isSettlementEvent(event)
+          ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
+          : Effect.void,
+      ).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.void;
+          }
+          return Effect.logWarning("PM runtime live subscription failed", {
+            cause: Cause.pretty(cause),
+          });
+        }),
+        Effect.forkScoped,
+      );
+
+      yield* replayHistoricalSettlements;
+      const bufferedLiveSettlements: SettlementEvent[] = [];
+      let nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
+      while (Option.isSome(nextBufferedSettlement)) {
+        bufferedLiveSettlements.push(nextBufferedSettlement.value);
+        nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
+      }
+      yield* Effect.forEach(bufferedLiveSettlements, worker.enqueue, { concurrency: 1 });
+      yield* worker.drain;
+      yield* Effect.forkScoped(
+        runReconciliationSweep.pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.void;
+            }
+            return Effect.logWarning("PM runtime reconciliation sweep failed", {
+              cause: Cause.pretty(cause),
+            });
+          }),
+          Effect.catchDefect((defect) =>
+            Effect.logWarning("PM runtime reconciliation sweep defect", { defect }),
+          ),
+          Effect.repeat(Schedule.spaced(Duration.millis(reconciliationIntervalMs))),
+        ),
+      );
+      yield* Queue.take(liveSettlementQueue).pipe(
+        Effect.flatMap(worker.enqueue),
+        Effect.forever,
+        Effect.forkScoped,
+      );
+    });
 
     return {
-      event,
-      ...resolved,
-      kind: "gate" as const,
-      settlementKey: makeGateSettlementKey(event.payload.gateId),
-      message: gateResultMessage({ event, task: resolved.task }),
-    } satisfies SettlementEnvelope;
+      start,
+      drain: worker.drain,
+    } satisfies PmRuntimeShape;
   });
 
-  const processSettlementEvent = Effect.fn("PmRuntime.processSettlementEvent")(function* (
-    event: SettlementEvent,
-  ) {
-    const envelope = yield* makeSettlementEnvelope(event);
-    if (envelope === null) {
-      return;
-    }
+export const makePmRuntimeLive = (options?: PmRuntimeLiveOptions) =>
+  Layer.effect(PmRuntime, makePmRuntime(options));
 
-    const cursor = yield* pmRuntimeStateRepository.getCursor({
-      projectId: envelope.project.id,
-    });
-    if (Option.isSome(cursor) && event.sequence <= cursor.value.lastConsumedSequence) {
-      return;
-    }
-
-    const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
-
-    // Durability ordering — DELIBERATE at-most-once (design §; review M3).
-    //
-    // We commit the settlement marker + cursor (durable) BEFORE prompting the
-    // PM. Prompting is side-effecting: the PM turn dispatches orchestrator
-    // commands through its tools. Consuming first guarantees a crash can never
-    // replay the same settlement into a second PM turn, so it can never
-    // double-dispatch (e.g. start a stage twice, resolve a gate twice).
-    //
-    // The accepted cost is a liveness gap, NOT a safety gap: if the process
-    // dies in the window after this transaction commits but before the PM has
-    // acted on `envelope.message`, the settlement is recorded as consumed and
-    // the cursor has advanced, so replay (which resumes from the cursor and
-    // re-checks the marker) SKIPS it. The owning task can then stall awaiting a
-    // PM turn that never runs. Recovery today is operator-driven — re-issue the
-    // settlement's human action (e.g. re-resolve the gate) or otherwise nudge
-    // the task. Automatic reconciliation of "consumed-but-PM-never-acted"
-    // settlements is deferred: it needs a durable two-phase record
-    // (pending → acted) so a crash mid-prompt is distinguishable from a
-    // completed one, which this single-marker schema cannot express.
-    const firstConsumption = yield* pmRuntimeStateRepository.consumeSettlementAndAdvanceCursor({
-      projectId: envelope.project.id,
-      kind: envelope.kind,
-      settlementKey: envelope.settlementKey,
-      sequence: event.sequence,
-      consumedAt: event.occurredAt,
-    });
-    if (!firstConsumption) {
-      return;
-    }
-
-    yield* projectRuntime.enqueue(envelope.message);
-    yield* projectRuntime.drain;
-  });
-
-  const processSettlementEventSafely = (event: SettlementEvent) =>
-    processSettlementEvent(event).pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.void;
-        }
-        return Effect.logWarning("PM runtime failed to process settlement event", {
-          eventType: event.type,
-          taskId: String(event.payload.taskId),
-          sequence: event.sequence,
-          cause: Cause.pretty(cause),
-        });
-      }),
-    );
-
-  const worker = yield* makeDrainableWorker(processSettlementEventSafely);
-
-  const getReplayStartSequence = Effect.fn("PmRuntime.getReplayStartSequence")(function* () {
-    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-    if (readModel.projects.length === 0) {
-      return 0;
-    }
-
-    const cursors = yield* Effect.forEach(
-      readModel.projects,
-      (project) => pmRuntimeStateRepository.getCursor({ projectId: project.id }),
-      { concurrency: 1 },
-    );
-    const startSequences = cursors.map((cursor) =>
-      Option.isSome(cursor) ? cursor.value.lastConsumedSequence : 0,
-    );
-    return Math.min(...startSequences);
-  });
-
-  const replayHistoricalSettlements = Effect.gen(function* () {
-    const fromSequenceExclusive = yield* getReplayStartSequence();
-    yield* Stream.runForEach(orchestrationEngine.readEvents(fromSequenceExclusive), (event) =>
-      isSettlementEvent(event) ? processSettlementEventSafely(event) : Effect.void,
-    );
-  }).pipe(
-    Effect.catchCause((cause) => {
-      if (Cause.hasInterruptsOnly(cause)) {
-        return Effect.void;
-      }
-      return Effect.logWarning("PM runtime historical replay failed", {
-        cause: Cause.pretty(cause),
-      });
-    }),
-  );
-
-  const start: PmRuntimeShape["start"] = Effect.fn("start")(function* () {
-    const liveSettlementQueue = yield* Queue.unbounded<SettlementEvent>();
-    yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
-      isSettlementEvent(event)
-        ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
-        : Effect.void,
-    ).pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.void;
-        }
-        return Effect.logWarning("PM runtime live subscription failed", {
-          cause: Cause.pretty(cause),
-        });
-      }),
-      Effect.forkScoped,
-    );
-
-    yield* replayHistoricalSettlements;
-    const bufferedLiveSettlements: SettlementEvent[] = [];
-    let nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
-    while (Option.isSome(nextBufferedSettlement)) {
-      bufferedLiveSettlements.push(nextBufferedSettlement.value);
-      nextBufferedSettlement = yield* Queue.poll(liveSettlementQueue);
-    }
-    yield* Effect.forEach(bufferedLiveSettlements, worker.enqueue, { concurrency: 1 });
-    yield* worker.drain;
-    yield* Queue.take(liveSettlementQueue).pipe(
-      Effect.flatMap(worker.enqueue),
-      Effect.forever,
-      Effect.forkScoped,
-    );
-  });
-
-  return {
-    start,
-    drain: worker.drain,
-  } satisfies PmRuntimeShape;
-});
-
-export const PmRuntimeLive = Layer.effect(PmRuntime, makePmRuntime);
+export const PmRuntimeLive = makePmRuntimeLive();
 
 export const makePiProjectRuntimeFactory = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

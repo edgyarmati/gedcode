@@ -50,6 +50,7 @@ import Migration0034 from "./Migrations/034_ProjectionAwaitedStagesAndPendingGat
 import Migration0035 from "./Migrations/035_PmSessionEntries.ts";
 import Migration0036 from "./Migrations/036_PmRuntimeCursorAndConsumedSettlements.ts";
 import Migration0037 from "./Migrations/037_ProjectionProjectOrchestratorConfig.ts";
+import Migration0038 from "./Migrations/038_PmConsumedSettlementsStatus.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -99,6 +100,7 @@ export const migrationEntries = [
   [35, "PmSessionEntries", Migration0035],
   [36, "PmRuntimeCursorAndConsumedSettlements", Migration0036],
   [37, "ProjectionProjectOrchestratorConfig", Migration0037],
+  [38, "PmConsumedSettlementsStatus", Migration0038],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

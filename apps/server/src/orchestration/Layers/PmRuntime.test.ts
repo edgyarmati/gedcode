@@ -20,10 +20,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   PmRuntimeStateRepository,
   type ConsumePmSettlementInput,
+  type MarkPmSettlementActedInput,
+  type PmConsumedSettlement,
 } from "../../persistence/Services/PmRuntimeState.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -31,7 +35,7 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
-import { PmRuntimeLive } from "./PmRuntime.ts";
+import { makePmRuntimeLive } from "./PmRuntime.ts";
 
 const now = "2026-06-14T10:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -153,6 +157,8 @@ const makeLayer = (input: {
   readonly consumed: Set<string>;
   readonly messages: string[];
   readonly consumeCalls: ConsumePmSettlementInput[];
+  readonly markActedCalls?: MarkPmSettlementActedInput[];
+  readonly pendingSettlements?: PmConsumedSettlement[];
   readonly cursorByProject?: Map<string, number>;
   readonly readEventCursors?: number[];
 }) => {
@@ -166,7 +172,7 @@ const makeLayer = (input: {
     drain: Effect.void,
   };
 
-  return PmRuntimeLive.pipe(
+  return makePmRuntimeLive({ reconciliationIntervalMsOverride: 60_000 }).pipe(
     Layer.provide(
       Layer.succeed(OrchestrationEngineService, {
         readEvents: (fromSequenceExclusive: number) => {
@@ -197,6 +203,7 @@ const makeLayer = (input: {
               : Option.some({ projectId, lastConsumedSequence, updatedAt: now });
           }),
         listConsumedSettlements: () => Effect.succeed([]),
+        listPending: () => Effect.succeed(input.pendingSettlements ?? []),
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
             input.consumeCalls.push(consumeInput);
@@ -214,6 +221,27 @@ const makeLayer = (input: {
             );
             return true;
           }),
+        markActed: (actedInput: MarkPmSettlementActedInput) =>
+          Effect.sync(() => {
+            input.markActedCalls?.push(actedInput);
+            if (input.pendingSettlements) {
+              const index = input.pendingSettlements.findIndex(
+                (settlement) =>
+                  settlement.projectId === actedInput.projectId &&
+                  settlement.kind === actedInput.kind &&
+                  settlement.settlementKey === actedInput.settlementKey,
+              );
+              if (index >= 0) {
+                input.pendingSettlements.splice(index, 1);
+              }
+            }
+          }),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionAwaitedStageRepository, {
+        upsert: () => Effect.void,
+        listByTaskId: () => Effect.succeed([]),
       }),
     ),
     Layer.provide(
@@ -221,6 +249,7 @@ const makeLayer = (input: {
         getOrCreate: () => Effect.succeed(projectRuntime),
       }),
     ),
+    Layer.provide(ServerSettingsService.layerTest()),
   );
 };
 
@@ -273,7 +302,7 @@ describe("PmRuntime", () => {
         yield* runtime.drain;
       }).pipe(Effect.scoped, Effect.provide(layer));
 
-      assert.deepStrictEqual(readEventCursors, [0]);
+      assert.strictEqual(readEventCursors[0], 0);
       assert.strictEqual(messages.length, 1);
       assert.strictEqual(consumeCalls.length, 1);
     }),
@@ -304,9 +333,63 @@ describe("PmRuntime", () => {
         yield* runtime.drain;
       }).pipe(Effect.scoped, Effect.provide(layer));
 
-      assert.deepStrictEqual(readEventCursors, [stageCompletedEvent.sequence]);
+      assert.strictEqual(readEventCursors[0], stageCompletedEvent.sequence);
       assert.deepStrictEqual(messages, []);
       assert.deepStrictEqual(consumeCalls, []);
     }),
+  );
+
+  it.effect(
+    "redrives pending settlements through the project runtime even when the cursor would skip them",
+    () =>
+      Effect.gen(function* () {
+        const consumed = new Set<string>();
+        const messages: string[] = [];
+        const consumeCalls: ConsumePmSettlementInput[] = [];
+        const markActedCalls: MarkPmSettlementActedInput[] = [];
+        const pendingSettlements: PmConsumedSettlement[] = [
+          {
+            projectId,
+            kind: "stage",
+            settlementKey: "thread-stage-1::turn-1",
+            consumedAt: now,
+            status: "pending",
+          },
+        ];
+        const cursorByProject = new Map<string, number>([
+          [String(projectId), stageCompletedEvent.sequence],
+        ]);
+        const layer = makeLayer({
+          liveEvents: [],
+          historicalEvents: [stageCompletedEvent],
+          consumed,
+          messages,
+          consumeCalls,
+          markActedCalls,
+          pendingSettlements,
+          cursorByProject,
+        });
+
+        yield* Effect.gen(function* () {
+          const runtime = yield* PmRuntime;
+          yield* runtime.start();
+          yield* Effect.yieldNow;
+          yield* Effect.yieldNow;
+          yield* runtime.drain;
+        }).pipe(Effect.scoped, Effect.provide(layer));
+
+        assert.strictEqual(messages.length, 1);
+        assert.match(messages[0] ?? "", /A detached worker stage completed/);
+        assert.deepStrictEqual(consumeCalls, []);
+        assert.deepStrictEqual(
+          markActedCalls.map((call) => ({
+            projectId: call.projectId,
+            kind: call.kind,
+            settlementKey: call.settlementKey,
+          })),
+          [{ projectId, kind: "stage", settlementKey: "thread-stage-1::turn-1" }],
+        );
+        assert.deepStrictEqual(pendingSettlements, []);
+      }),
   );
 });

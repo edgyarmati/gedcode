@@ -23,15 +23,20 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
+import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
-import { isDeterministicTaskWorktreePath, TaskWorktreeReactorLive } from "./TaskWorktreeReactor.ts";
+import {
+  isDeterministicTaskWorktreePath,
+  makeTaskWorktreeReactorLive,
+} from "./TaskWorktreeReactor.ts";
 
 const now = "2026-06-15T09:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -148,38 +153,52 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
   }
 }
 
+function taskWorktreePath(workspaceRoot: string, id: string) {
+  return path.join(workspaceRoot, ".gedcode", "orchestrator", "tasks", id);
+}
+
 async function createHarness(input: {
   readonly readModel: OrchestrationReadModel;
   readonly eventPubSub?: PubSub.PubSub<OrchestrationEvent>;
+  readonly reaperIntervalMsOverride?: number;
+  readonly useTestClock?: boolean;
 }) {
   const readModelRef = { current: input.readModel };
   const eventPubSub = input.eventPubSub ?? Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
   const removeWorktree = vi.fn<GitWorkflowServiceShape["removeWorktree"]>(() => Effect.void);
   const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() => Effect.succeed(processOutput()));
-  const runtime = ManagedRuntime.make(
-    TaskWorktreeReactorLive.pipe(
-      Layer.provide(makeProjectionSnapshotQueryLayer(readModelRef)),
-      Layer.provide(
-        Layer.succeed(OrchestrationEngineService, {
-          readEvents: () => Stream.empty,
-          dispatch: () => unsupportedGitWorkflowCall(),
-          streamDomainEvents: Stream.fromPubSub(eventPubSub),
-          streamShellEvents: Stream.empty,
-        }),
-      ),
-      Layer.provide(
-        Layer.mock(GitWorkflowService)({
-          removeWorktree,
-        } satisfies Partial<GitWorkflowServiceShape>),
-      ),
-      Layer.provide(
-        Layer.succeed(VcsProcess, {
-          run: vcsProcessRun,
-        }),
-      ),
-      Layer.provide(NodeServices.layer),
+  const platformLayer = input.useTestClock
+    ? Layer.mergeAll(NodeServices.layer, TestClock.layer())
+    : NodeServices.layer;
+  const reactorLayer = makeTaskWorktreeReactorLive({
+    reaperIntervalMsOverride: input.reaperIntervalMsOverride ?? 60_000,
+  }).pipe(
+    Layer.provide(makeProjectionSnapshotQueryLayer(readModelRef)),
+    Layer.provide(
+      Layer.succeed(OrchestrationEngineService, {
+        readEvents: () => Stream.empty,
+        dispatch: () => unsupportedGitWorkflowCall(),
+        streamDomainEvents: Stream.fromPubSub(eventPubSub),
+        streamShellEvents: Stream.empty,
+      }),
     ),
+    Layer.provide(
+      Layer.mock(GitWorkflowService)({
+        removeWorktree,
+      } satisfies Partial<GitWorkflowServiceShape>),
+    ),
+    Layer.provide(
+      Layer.succeed(VcsProcess, {
+        run: vcsProcessRun,
+      }),
+    ),
+    Layer.provide(ServerSettingsService.layerTest()),
+    Layer.provide(platformLayer),
   );
+  const runtimeLayer = input.useTestClock
+    ? Layer.merge(reactorLayer, TestClock.layer())
+    : reactorLayer;
+  const runtime = ManagedRuntime.make(runtimeLayer);
   const reactor = await runtime.runPromise(Effect.service(TaskWorktreeReactor));
   const scope = await Effect.runPromise(Scope.make("sequential"));
   return { runtime, reactor, scope, readModelRef, eventPubSub, removeWorktree, vcsProcessRun };
@@ -198,15 +217,15 @@ describe("TaskWorktreeReactor", () => {
   function makeWorkspace() {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gedcode-task-wt-"));
     createdDirs.add(workspaceRoot);
-    const worktreePath = path.join(
-      workspaceRoot,
-      ".gedcode",
-      "orchestrator",
-      "tasks",
-      String(taskId),
-    );
+    const worktreePath = taskWorktreePath(workspaceRoot, String(taskId));
     fs.mkdirSync(worktreePath, { recursive: true });
     return { workspaceRoot, worktreePath };
+  }
+
+  function makeEmptyWorkspace() {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gedcode-task-wt-"));
+    createdDirs.add(workspaceRoot);
+    return workspaceRoot;
   }
 
   it("recognizes only deterministic task worktree paths", () => {
@@ -297,6 +316,102 @@ describe("TaskWorktreeReactor", () => {
 
     expect(harness.removeWorktree).not.toHaveBeenCalled();
     expect(harness.vcsProcessRun).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("reaps an unowned deterministic task worktree from the filesystem scan", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const orphanTaskId = "orphan-task";
+    const orphanPath = taskWorktreePath(workspaceRoot, orphanTaskId);
+    fs.mkdirSync(orphanPath, { recursive: true });
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+
+    expect(harness.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: orphanPath,
+      force: true,
+    });
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("does not reap a deterministic worktree owned by a live task", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("treats a missing task worktree directory as an empty scan", async () => {
+    const workspaceRoot = makeEmptyWorkspace();
+    const worktreePath = taskWorktreePath(workspaceRoot, String(taskId));
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+    expect(harness.vcsProcessRun).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("does not remove a terminal worktree twice when startup cleanup and reaper both see it", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "abandoned" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("runs the periodic orphan reaper on the configured interval", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      reaperIntervalMsOverride: 10,
+      useTestClock: true,
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+
+    const orphanPath = taskWorktreePath(workspaceRoot, "late-orphan");
+    fs.mkdirSync(orphanPath, { recursive: true });
+    await harness.runtime.runPromise(TestClock.adjust(Duration.millis(10)));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+
+    expect(harness.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: orphanPath,
+      force: true,
+    });
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

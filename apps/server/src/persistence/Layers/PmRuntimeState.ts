@@ -7,6 +7,7 @@ import { toPersistenceSqlError } from "../Errors.ts";
 import { withBusyRetry } from "../retryPolicy.ts";
 import {
   GetPmRuntimeCursorInput,
+  ListPendingPmSettlementsInput,
   ListPmConsumedSettlementsInput,
   PmConsumedSettlement,
   PmRuntimeCursor,
@@ -40,10 +41,29 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
           project_id AS "projectId",
           kind,
           settlement_key AS "settlementKey",
-          consumed_at AS "consumedAt"
+          consumed_at AS "consumedAt",
+          status
         FROM pm_consumed_settlements
         WHERE project_id = ${projectId}
           AND kind = ${kind}
+        ORDER BY consumed_at ASC, settlement_key ASC
+      `,
+  });
+
+  const listPendingSettlementRows = SqlSchema.findAll({
+    Request: ListPendingPmSettlementsInput,
+    Result: PmConsumedSettlement,
+    execute: ({ projectId }) =>
+      sql`
+        SELECT
+          project_id AS "projectId",
+          kind,
+          settlement_key AS "settlementKey",
+          consumed_at AS "consumedAt",
+          status
+        FROM pm_consumed_settlements
+        WHERE project_id = ${projectId}
+          AND status = 'pending'
         ORDER BY consumed_at ASC, settlement_key ASC
       `,
   });
@@ -62,6 +82,11 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
       ),
     );
 
+  const listPending: PmRuntimeStateRepositoryShape["listPending"] = (input) =>
+    listPendingSettlementRows(input).pipe(
+      Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.listPending:query")),
+    );
+
   const consumeSettlementAndAdvanceCursor: PmRuntimeStateRepositoryShape["consumeSettlementAndAdvanceCursor"] =
     (input) =>
       withBusyRetry(
@@ -72,13 +97,15 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
               project_id,
               kind,
               settlement_key,
-              consumed_at
+              consumed_at,
+              status
             )
             VALUES (
               ${input.projectId},
               ${input.kind},
               ${input.settlementKey},
-              ${input.consumedAt}
+              ${input.consumedAt},
+              'pending'
             )
           `;
             const changes = yield* sql<{ readonly changes: number }>`
@@ -113,10 +140,29 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
         ),
       );
 
+  const markActed: PmRuntimeStateRepositoryShape["markActed"] = (input) =>
+    withBusyRetry(
+      sql.withTransaction(
+        sql`
+          UPDATE pm_consumed_settlements
+          SET status = 'acted'
+          WHERE project_id = ${input.projectId}
+            AND kind = ${input.kind}
+            AND settlement_key = ${input.settlementKey}
+            AND status = 'pending'
+        `,
+      ),
+    ).pipe(
+      Effect.asVoid,
+      Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.markActed:query")),
+    );
+
   return {
     getCursor,
     listConsumedSettlements,
     consumeSettlementAndAdvanceCursor,
+    markActed,
+    listPending,
   } satisfies PmRuntimeStateRepositoryShape;
 });
 

@@ -70,6 +70,8 @@ export type OrchestratorTaskType = typeof OrchestratorTaskType.Type;
 export const DEFAULT_MAX_PARALLEL_WORKERS = 1;
 export const DEFAULT_MAX_PARALLEL_TASKS = 1;
 export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
+export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
+export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 5;
 
 /**
  * Hard resource limits the decider enforces as invariants (design §7). These
@@ -163,6 +165,12 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   ),
   maxStageHandoffs: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_STAGE_HANDOFFS)),
+  ),
+  pmReconciliationIntervalMs: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PM_RECONCILIATION_INTERVAL_MS)),
+  ),
+  worktreeReaperIntervalMinutes: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES)),
   ),
   // Floor for the runtime-mode clamp. Defaults to `false` so the safe default
   // holds even before a project sets its own `resourceLimits`.
