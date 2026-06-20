@@ -25,6 +25,20 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
   detached worker handoff, human gates, restart-window PM re-entry proof, and
   the initial `/orch` web surfaces.
 
+### Orchestrator mode Phase 2
+
+- Tracking issue: [#35](https://github.com/edgyarmati/gedcode/issues/35)
+- Completed in this fork: 2026-06-20
+- Notes: Fork-original durability and safety hardening of Phase 1, not a
+  cherry-pick from `pingdotgg/t3code`. Phase 2 adds SQLite concurrent-writer
+  hardening (`PRAGMA busy_timeout` + a jittered retry gated strictly on
+  `SQLITE_BUSY`/`SQLITE_LOCKED`), real-captured-diff completeness gating on
+  stage completion, durable two-phase `pending -> acted` settlement recovery
+  with a reconciliation sweep (closing the at-most-once PM re-entry liveness
+  gap), a bounded secret-scrubbed `StageResultBuilder` worker-diff envelope, a
+  periodic leaked-worktree reaper, durability-path Effect Metrics, and
+  measure-only command-queue contention instrumentation.
+
 ## Removed Forked-In Features
 
 Subsystems inherited from upstream that this fork has deliberately deleted to
