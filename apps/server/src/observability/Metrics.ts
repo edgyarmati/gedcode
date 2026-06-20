@@ -130,6 +130,39 @@ export const orchestrationWorktreeReaperOrphansRemovedTotal = Metric.counter(
   },
 );
 
+// Command-queue contention (WP-7)
+//
+// MEASUREMENT ONLY. These histograms observe the existing single-queue,
+// serialized command dispatch in OrchestrationEngine — they do not change
+// dispatch ordering or serialization. They exist to inform a FUTURE
+// lane-split decision: if a single command class (e.g. high-frequency
+// streaming writes) dominates queue depth / wait time, that data justifies
+// splitting it onto its own lane. The `commandClass` attribute is attached
+// via Metric.withAttributes at the dispatch site (see Attributes label rules).
+//
+// Boundaries are chosen for the two distributions we expect to be small in
+// the common case but heavy-tailed under contention: queue depth (counts of
+// in-flight envelopes) and queue wait (milliseconds an envelope sat enqueued
+// before the serialized worker began processing it).
+
+export const orchestrationCommandQueueDepth = Metric.histogram(
+  "t3_orchestration_command_queue_depth",
+  {
+    description:
+      "Command-queue depth (number of envelopes enqueued, including the one being dispatched) sampled when an envelope is offered to the serialized dispatch queue.",
+    boundaries: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256],
+  },
+);
+
+export const orchestrationCommandQueueWaitDuration = Metric.histogram(
+  "t3_orchestration_command_queue_wait_duration",
+  {
+    description:
+      "Command-queue wait time in milliseconds: from when an envelope was enqueued to when the serialized worker began processing it.",
+    boundaries: [0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+  },
+);
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));
