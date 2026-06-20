@@ -390,6 +390,78 @@ describe("orchestration projector", () => {
     });
   });
 
+  it("tolerates the optional diffComplete marker on stage completion without changing status derivation", async () => {
+    const createdAt = "2026-06-19T10:00:00.000Z";
+    const workStartedAt = "2026-06-19T10:05:00.000Z";
+    const workCompletedAt = "2026-06-19T10:06:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-diff",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Stage completion with diff marker",
+          branch: "orchestrator/task-diff",
+          worktreePath: "/tmp/task-diff",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-diff",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-completed",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: workCompletedAt,
+        commandId: "cmd-work-complete",
+        payload: {
+          taskId: "task-diff",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          diffComplete: false,
+          updatedAt: workCompletedAt,
+        },
+      }),
+    ];
+
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+    }
+
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-diff",
+      status: "review",
+      currentStageThreadId: null,
+    });
+  });
+
   it("tracks latest turn id from session lifecycle events", async () => {
     const createdAt = "2026-02-23T08:00:00.000Z";
     const startedAt = "2026-02-23T08:00:05.000Z";

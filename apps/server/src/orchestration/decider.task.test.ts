@@ -319,6 +319,61 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("carries the diffComplete marker through to the stage-completed event", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+      });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.complete",
+          commandId: asCommandId("cmd-stage-complete-timeout"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId: asThreadId("thread-stage-work"),
+          awaitedTurnId: asTurnId("turn-work"),
+          diffComplete: false,
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.stage-completed");
+      expect(singleEvent?.payload).toMatchObject({ diffComplete: false });
+    }),
+  );
+
+  it.effect("omits diffComplete on the event when the command does not set it", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+      });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.complete",
+          commandId: asCommandId("cmd-stage-complete-normal"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId: asThreadId("thread-stage-work"),
+          awaitedTurnId: asTurnId("turn-work"),
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.stage-completed");
+      expect(singleEvent?.payload).not.toHaveProperty("diffComplete");
+    }),
+  );
+
   it.effect("rejects stage completion for an inactive stage thread", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({

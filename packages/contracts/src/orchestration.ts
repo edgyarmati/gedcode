@@ -838,6 +838,11 @@ const TaskStageCompleteCommand = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
+  // Whether the stage turn's diff was confirmed captured before completion.
+  // Absent = normal completion (a real diff was present when the stage settled).
+  // `false` = fail-loud completion via the diff-wait timeout (no confirmed diff).
+  // Set by the orchestration runtime (apps/server); contracts stays schema-only.
+  diffComplete: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
 });
 
@@ -1264,6 +1269,10 @@ export const TaskStageCompletedPayload = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
+  // Mirrors `TaskStageCompleteCommand.diffComplete`: absent = a real diff was
+  // present at completion; `false` = completed via the fail-loud diff-wait
+  // timeout. Optional so existing consumers and on-disk events are unaffected.
+  diffComplete: Schema.optional(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 

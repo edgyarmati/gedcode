@@ -1132,6 +1132,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           role: command.role,
           stageThreadId: command.stageThreadId,
           awaitedTurnId: command.awaitedTurnId,
+          // Pass the diff-completeness marker through unchanged; absent stays
+          // absent (normal completion), `false` records a fail-loud timeout.
+          ...(command.diffComplete !== undefined ? { diffComplete: command.diffComplete } : {}),
           updatedAt: command.createdAt,
         },
       };
