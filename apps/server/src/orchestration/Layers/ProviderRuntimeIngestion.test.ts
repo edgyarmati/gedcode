@@ -36,10 +36,10 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { afterEach, describe, expect, it } from "vitest";
 
-// Mirrors the hard-coded fail-loud diff-wait timeout in ProviderRuntimeIngestion
-// (STAGE_COMPLETION_DIFF_TIMEOUT). The stage-completion timeout test advances a
+// Derived from the source fail-loud diff-wait timeout so the test and the
+// runtime constant can never drift. The stage-completion timeout test advances a
 // TestClock past this to fire the forked backstop without a real 30s wall wait.
-const STAGE_COMPLETION_DIFF_TIMEOUT_MS = 30_000;
+const STAGE_COMPLETION_DIFF_TIMEOUT_MS = Duration.toMillis(STAGE_COMPLETION_DIFF_TIMEOUT);
 
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -52,7 +52,10 @@ import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryI
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
-import { ProviderRuntimeIngestionLive } from "./ProviderRuntimeIngestion.ts";
+import {
+  ProviderRuntimeIngestionLive,
+  STAGE_COMPLETION_DIFF_TIMEOUT,
+} from "./ProviderRuntimeIngestion.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";

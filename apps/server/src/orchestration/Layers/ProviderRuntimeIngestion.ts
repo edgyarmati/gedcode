@@ -67,7 +67,7 @@ const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFEC
 // `diffComplete: false`. Stages must never stall waiting for a diff that never
 // arrives (e.g. a non-git workspace). Configurability via ServerSettings is a
 // deliberate follow-up; that file is owned by other WPs.
-const STAGE_COMPLETION_DIFF_TIMEOUT = Duration.seconds(30);
+export const STAGE_COMPLETION_DIFF_TIMEOUT = Duration.seconds(30);
 
 type TurnStartRequestedDomainEvent = Extract<
   OrchestrationEvent,
