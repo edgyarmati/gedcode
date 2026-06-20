@@ -13,6 +13,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import {
+  increment,
+  orchestrationWorktreeReaperOrphansRemovedTotal,
+} from "../../observability/Metrics.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -129,6 +133,9 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
           force: true,
         });
         cleanedWorktreePaths.add(normalizedWorktreePath);
+        yield* increment(orchestrationWorktreeReaperOrphansRemovedTotal, {
+          reason: candidate.reason,
+        });
         yield* Effect.logInfo("task worktree cleanup removed worktree", {
           taskId,
           workspaceRoot: candidate.workspaceRoot,

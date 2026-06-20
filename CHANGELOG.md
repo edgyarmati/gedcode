@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Add Effect Metrics observability to the Orchestrator mode durability paths (instrumentation only, no control-flow or semantics change): the PM reconciliation sweep (run count, duration, and settlements re-driven), PM re-entry turn latency, the SQLite busy/locked write retry (attempts and budget exhaustions), and the worktree reaper (worktrees removed, labeled by `terminal`/`orphaned` cleanup reason). New `t3_orchestration_*` metrics are defined alongside the existing orchestration metrics in `observability/Metrics.ts`.
 - Fix: Close the Orchestrator mode PM re-entry liveness gap by adding a two-phase `pending` -> `acted` settlement marker, migration 038, and a configurable PM reconciliation sweep that re-drives stalled settlements through the existing single-writer PM re-entry queue.
 - Fix: Add a configurable Orchestrator mode task-worktree reaper (`worktreeReaperIntervalMinutes`) that periodically scans deterministic task worktree directories and removes leaked worktrees with no live task owner.
 - Internal: Pin `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` (both `0.79.3`, exact) in the server and add a decision spike (`docs/decisions/2026-06-pi-agent-core-api.md`) verifying the PM-runtime API ahead of Orchestrator mode. No user-facing or runtime behavior change.

@@ -40,6 +40,7 @@
  *
  * @module persistence/retryPolicy
  */
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -47,6 +48,12 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import { isSqlError } from "effect/unstable/sql/SqlError";
+
+import {
+  increment,
+  orchestrationBusyRetryAttemptsTotal,
+  orchestrationBusyRetryExhaustionsTotal,
+} from "../observability/Metrics.ts";
 
 /**
  * Tunables for SQLite write resilience. `busyTimeoutMs` is the in-SQLite block
@@ -107,6 +114,13 @@ export const isRetryableSqlError = (error: unknown): boolean =>
   (error.reason._tag === "LockTimeoutError" || isNodeSqliteBusyOrLocked(error.reason.cause));
 
 /**
+ * `true` when `cause` carries a busy/locked {@link isRetryableSqlError} failure.
+ * Used only by the metric taps below — never to gate retry control flow.
+ */
+const causeIsRetryableBusy = (cause: Cause.Cause<unknown>): boolean =>
+  Option.exists(Cause.findErrorOption(cause), isRetryableSqlError);
+
+/**
  * Wrap a write transaction with a jittered, bounded retry that fires *only* on
  * `SQLITE_BUSY` / `SQLITE_LOCKED`. The backoff grows exponentially from
  * `initialBackoffMs`, is capped at `maxBackoffMs` (via `either`, which takes the
@@ -127,11 +141,29 @@ export const retryOnBusy = (policy: PersistenceRetryPolicy) => {
     // Bound to `maxAttempts` total executions (one initial + `maxAttempts - 1` retries).
     Schedule.both(Schedule.recurs(Math.max(0, policy.maxAttempts - 1))),
   );
-  return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.retry(effect, {
+  return <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+    // Instrumentation-only taps (WP-6). These observe failures without altering
+    // the retry decision: the `while` predicate below is the sole control-flow
+    // gate. Each busy/locked failure of the body counts as an attempt; a final
+    // cause that is still busy/locked counts as one exhaustion.
+    const instrumented = effect.pipe(
+      Effect.tapCause((cause) =>
+        causeIsRetryableBusy(cause)
+          ? increment(orchestrationBusyRetryAttemptsTotal, {})
+          : Effect.void,
+      ),
+    );
+    return Effect.retry(instrumented, {
       schedule,
       while: isRetryableSqlError,
-    });
+    }).pipe(
+      Effect.tapCause((cause) =>
+        causeIsRetryableBusy(cause)
+          ? increment(orchestrationBusyRetryExhaustionsTotal, {})
+          : Effect.void,
+      ),
+    );
+  };
 };
 
 /**

@@ -23,6 +23,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
+import * as Metric from "effect/Metric";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -167,9 +168,13 @@ async function createHarness(input: {
   const eventPubSub = input.eventPubSub ?? Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
   const removeWorktree = vi.fn<GitWorkflowServiceShape["removeWorktree"]>(() => Effect.void);
   const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() => Effect.succeed(processOutput()));
+  // Fresh per-harness metric registry isolates WP-6 counters from the
+  // process-global default registry that other tests also write to.
+  const metricRegistry = new Map();
   const platformLayer = input.useTestClock
     ? Layer.mergeAll(NodeServices.layer, TestClock.layer())
     : NodeServices.layer;
+  const metricRegistryLayer = Layer.succeed(Metric.MetricRegistry, metricRegistry);
   const reactorLayer = makeTaskWorktreeReactorLive({
     reaperIntervalMsOverride: input.reaperIntervalMsOverride ?? 60_000,
   }).pipe(
@@ -196,12 +201,21 @@ async function createHarness(input: {
     Layer.provide(platformLayer),
   );
   const runtimeLayer = input.useTestClock
-    ? Layer.merge(reactorLayer, TestClock.layer())
-    : reactorLayer;
+    ? Layer.mergeAll(reactorLayer, metricRegistryLayer, TestClock.layer())
+    : Layer.merge(reactorLayer, metricRegistryLayer);
   const runtime = ManagedRuntime.make(runtimeLayer);
   const reactor = await runtime.runPromise(Effect.service(TaskWorktreeReactor));
   const scope = await Effect.runPromise(Scope.make("sequential"));
-  return { runtime, reactor, scope, readModelRef, eventPubSub, removeWorktree, vcsProcessRun };
+  return {
+    runtime,
+    reactor,
+    scope,
+    readModelRef,
+    eventPubSub,
+    removeWorktree,
+    vcsProcessRun,
+    metricRegistry,
+  };
 }
 
 describe("TaskWorktreeReactor", () => {
@@ -385,6 +399,31 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.runPromise(Effect.yieldNow);
 
     expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("records the orphans-removed durability metric for a reaped worktree", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const orphanTaskId = "orphan-task";
+    const orphanPath = taskWorktreePath(workspaceRoot, orphanTaskId);
+    fs.mkdirSync(orphanPath, { recursive: true });
+    const harness = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+
+    const snapshots = await harness.runtime.runPromise(Metric.snapshot);
+    const removed = snapshots.find(
+      (entry): entry is Extract<Metric.Metric.Snapshot, { readonly type: "Counter" }> =>
+        entry.type === "Counter" &&
+        entry.id === "t3_orchestration_worktree_reaper_orphans_removed_total" &&
+        entry.attributes?.reason === "orphaned",
+    );
+    expect(Number(removed?.state.count ?? 0)).toBe(1);
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

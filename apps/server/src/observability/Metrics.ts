@@ -74,6 +74,62 @@ export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total"
   description: "Total terminal restart requests handled.",
 });
 
+// Orchestrator durability (WP-6)
+//
+// Observability for the durability paths that keep the orchestrator correct
+// under crashes and contention: the PM reconciliation sweep, the PM re-entry
+// turn latency, the SQLite busy/locked retry, and the periodic worktree reaper.
+// These are instrumentation-only taps — they never change control flow.
+
+export const orchestrationReconciliationSweepsTotal = Metric.counter(
+  "t3_orchestration_reconciliation_sweeps_total",
+  {
+    description: "Total PM runtime reconciliation sweep runs.",
+  },
+);
+
+export const orchestrationReconciliationSweepDuration = Metric.timer(
+  "t3_orchestration_reconciliation_sweep_duration",
+  {
+    description: "PM runtime reconciliation sweep duration.",
+  },
+);
+
+export const orchestrationReconciliationSettlementsRedrivenTotal = Metric.counter(
+  "t3_orchestration_reconciliation_settlements_redriven_total",
+  {
+    description:
+      "Total settlements re-driven by the PM runtime reconciliation sweep (never-consumed plus pending).",
+  },
+);
+
+export const orchestrationPmReEntryDuration = Metric.timer("t3_orchestration_pm_reentry_duration", {
+  description:
+    "PM re-entry latency: time to enqueue a settlement and drain the PM project runtime turn.",
+});
+
+export const orchestrationBusyRetryAttemptsTotal = Metric.counter(
+  "t3_orchestration_busy_retry_attempts_total",
+  {
+    description: "Total SQLite busy/locked write retries attempted by the persistence layer.",
+  },
+);
+
+export const orchestrationBusyRetryExhaustionsTotal = Metric.counter(
+  "t3_orchestration_busy_retry_exhaustions_total",
+  {
+    description:
+      "Total SQLite busy/locked retries that exhausted their attempt budget while still busy.",
+  },
+);
+
+export const orchestrationWorktreeReaperOrphansRemovedTotal = Metric.counter(
+  "t3_orchestration_worktree_reaper_orphans_removed_total",
+  {
+    description: "Total task worktrees removed by the reaper, labeled by cleanup reason.",
+  },
+);
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));

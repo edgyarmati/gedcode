@@ -17,6 +17,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
@@ -253,7 +254,53 @@ const makeLayer = (input: {
   );
 };
 
+const counterCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: string): number => {
+  const snapshot = snapshots.find(
+    (entry): entry is Extract<Metric.Metric.Snapshot, { readonly type: "Counter" }> =>
+      entry.type === "Counter" && entry.id === id,
+  );
+  return Number(snapshot?.state.count ?? 0);
+};
+
+const histogramCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: string): number => {
+  const snapshot = snapshots.find(
+    (entry): entry is Extract<Metric.Metric.Snapshot, { readonly type: "Histogram" }> =>
+      entry.type === "Histogram" && entry.id === id,
+  );
+  return snapshot?.state.count ?? 0;
+};
+
 describe("PmRuntime", () => {
+  it.effect("records reconciliation sweep and PM re-entry durability metrics", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        // Let the forked reconciliation sweep run at least once.
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      const snapshots = yield* Metric.snapshot;
+      // One PM re-entry turn for the single replayed settlement.
+      assert.strictEqual(histogramCount(snapshots, "t3_orchestration_pm_reentry_duration"), 1);
+      // The reconciliation sweep ran at least once after startup.
+      assert.ok(counterCount(snapshots, "t3_orchestration_reconciliation_sweeps_total") >= 1);
+    }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())),
+  );
+
   it.effect("replays duplicate settled worker stages exactly once", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();

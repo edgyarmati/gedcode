@@ -20,6 +20,14 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import {
+  increment,
+  orchestrationPmReEntryDuration,
+  orchestrationReconciliationSettlementsRedrivenTotal,
+  orchestrationReconciliationSweepDuration,
+  orchestrationReconciliationSweepsTotal,
+  withMetrics,
+} from "../../observability/Metrics.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import {
   makeGateSettlementKey,
@@ -273,8 +281,13 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       }
 
       const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
-      yield* projectRuntime.enqueue(envelope.message);
-      yield* projectRuntime.drain;
+      yield* projectRuntime.enqueue(envelope.message).pipe(
+        Effect.andThen(projectRuntime.drain),
+        withMetrics({
+          timer: orchestrationPmReEntryDuration,
+          attributes: { kind: input.marker.kind, path: "pending" },
+        }),
+      );
       yield* pmRuntimeStateRepository.markActed({
         projectId: input.marker.projectId,
         kind: input.marker.kind,
@@ -324,8 +337,13 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return;
       }
 
-      yield* projectRuntime.enqueue(envelope.message);
-      yield* projectRuntime.drain;
+      yield* projectRuntime.enqueue(envelope.message).pipe(
+        Effect.andThen(projectRuntime.drain),
+        withMetrics({
+          timer: orchestrationPmReEntryDuration,
+          attributes: { kind: envelope.kind, path: "live" },
+        }),
+      );
       yield* pmRuntimeStateRepository.markActed({
         projectId: envelope.project.id,
         kind: envelope.kind,
@@ -524,14 +542,21 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           { concurrency: 1, discard: true },
         );
 
-        if (neverConsumedCount > 0 || pendingActedCount > 0) {
+        const redrivenCount = neverConsumedCount + pendingActedCount;
+        if (redrivenCount > 0) {
+          yield* increment(orchestrationReconciliationSettlementsRedrivenTotal, {}, redrivenCount);
           yield* Effect.logInfo("PM runtime reconciliation sweep completed", {
             neverConsumedCount,
             pendingActedCount,
             projectCount: readModel.projects.length,
           });
         }
-      }),
+      }).pipe(
+        withMetrics({
+          counter: orchestrationReconciliationSweepsTotal,
+          timer: orchestrationReconciliationSweepDuration,
+        }),
+      ),
     );
 
     const getReplayStartSequence = Effect.fn("PmRuntime.getReplayStartSequence")(function* () {

@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Metric from "effect/Metric";
 import * as Ref from "effect/Ref";
 import {
   LockTimeoutError,
@@ -184,5 +185,65 @@ it.live("withBusyRetry never retries a non-busy failure regardless of policy", (
     );
     assert.ok(Exit.isFailure(exit));
     assert.strictEqual(yield* Ref.get(attempts), 1);
+  }),
+);
+
+// WP-6 durability metrics. The busy-retry taps fire inside `Effect.tapCause`
+// callbacks, which resolve `MetricRegistry` from the process-global default
+// registry rather than a locally-provided override — so isolation is done by
+// asserting the *delta* across the run instead of an absolute count.
+const counterCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: string): number => {
+  const snapshot = snapshots.find(
+    (entry): entry is Extract<Metric.Metric.Snapshot, { readonly type: "Counter" }> =>
+      entry.type === "Counter" && entry.id === id,
+  );
+  return Number(snapshot?.state.count ?? 0);
+};
+
+const ATTEMPTS_ID = "t3_orchestration_busy_retry_attempts_total";
+const EXHAUSTIONS_ID = "t3_orchestration_busy_retry_exhaustions_total";
+
+const busyRetryDeltas = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const before = yield* Metric.snapshot;
+    yield* Effect.exit(effect);
+    const after = yield* Metric.snapshot;
+    return {
+      attempts: counterCount(after, ATTEMPTS_ID) - counterCount(before, ATTEMPTS_ID),
+      exhaustions: counterCount(after, EXHAUSTIONS_ID) - counterCount(before, EXHAUSTIONS_ID),
+    };
+  });
+
+it.live("retryOnBusy records one attempt per busy failure and no exhaustion when it succeeds", () =>
+  Effect.gen(function* () {
+    const attempts = yield* Ref.make(0);
+    const effect = Effect.gen(function* () {
+      const n = yield* Ref.updateAndGet(attempts, (c) => c + 1);
+      if (n < 3) {
+        return yield* busyError();
+      }
+      return "ok" as const;
+    });
+
+    const deltas = yield* busyRetryDeltas(retryOnBusy(FAST_POLICY)(effect));
+    // Attempts 1 and 2 fail busy (2 retries fired); attempt 3 succeeds.
+    assert.strictEqual(deltas.attempts, 2);
+    assert.strictEqual(deltas.exhaustions, 0);
+  }),
+);
+
+it.live("retryOnBusy records an exhaustion when the attempt budget is spent while still busy", () =>
+  Effect.gen(function* () {
+    const deltas = yield* busyRetryDeltas(retryOnBusy(FAST_POLICY)(Effect.fail(busyError())));
+    assert.strictEqual(deltas.attempts, FAST_POLICY.maxAttempts);
+    assert.strictEqual(deltas.exhaustions, 1);
+  }),
+);
+
+it.effect("retryOnBusy records no busy-retry metrics for a non-busy failure", () =>
+  Effect.gen(function* () {
+    const deltas = yield* busyRetryDeltas(retryOnBusy(FAST_POLICY)(Effect.fail(uniqueError())));
+    assert.strictEqual(deltas.attempts, 0);
+    assert.strictEqual(deltas.exhaustions, 0);
   }),
 );
