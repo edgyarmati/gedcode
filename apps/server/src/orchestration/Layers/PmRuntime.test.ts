@@ -25,6 +25,8 @@ import * as Stream from "effect/Stream";
 import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
 import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
+import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import {
   PmRuntimeStateRepository,
   type ConsumePmSettlementInput,
@@ -39,6 +41,7 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import { makePmRuntimeLive } from "./PmRuntime.ts";
 
 const now = "2026-06-14T10:00:00.000Z";
@@ -89,6 +92,7 @@ const readModel: OrchestrationReadModel = {
   threads: [],
   tasks: [task],
   pendingGates: [],
+  quotaBlockedStages: [],
   updatedAt: now,
 };
 
@@ -118,6 +122,16 @@ const stageThread: OrchestrationThread = {
   archivedAt: null,
   deletedAt: null,
   messages: [
+    {
+      id: MessageId.make("user-1"),
+      role: "user",
+      text: "Implement feature",
+      attachments: [],
+      turnId: null,
+      streaming: false,
+      createdAt: now,
+      updatedAt: now,
+    },
     {
       id: MessageId.make("assistant-1"),
       role: "assistant",
@@ -165,6 +179,10 @@ const makeLayer = (input: {
   readonly pendingSettlements?: PmConsumedSettlement[];
   readonly cursorByProject?: Map<string, number>;
   readonly readEventCursors?: number[];
+  readonly commandReadModel?: OrchestrationReadModel;
+  readonly quotaBlockedStages?: OrchestrationReadModel["quotaBlockedStages"];
+  readonly providerQuotaStatuses?: Map<string, "ok" | "blocked-until" | "blocked-unknown">;
+  readonly dispatchCalls?: unknown[];
   // WP-4 diff-capture knobs. By default the stage thread has no captured
   // checkpoint (latestCheckpointTurnCount = 0 → diff-unavailable), preserving
   // the pre-WP-4 behavior of the existing suite (no diff section).
@@ -192,14 +210,20 @@ const makeLayer = (input: {
             input.historicalEvents.filter((event) => event.sequence > fromSequenceExclusive),
           );
         },
-        dispatch: () => Effect.die("dispatch should not be called by PmRuntime"),
+        dispatch: (command) =>
+          input.dispatchCalls
+            ? Effect.sync(() => {
+                input.dispatchCalls?.push(command);
+                return { sequence: 100 };
+              })
+            : Effect.die("dispatch should not be called by PmRuntime"),
         streamDomainEvents: Stream.fromIterable(input.liveEvents),
         streamShellEvents: Stream.empty,
       }),
     ),
     Layer.provide(
       Layer.mock(ProjectionSnapshotQuery)({
-        getCommandReadModel: () => Effect.succeed(readModel),
+        getCommandReadModel: () => Effect.succeed(input.commandReadModel ?? readModel),
         getThreadDetailById: (threadId: ThreadId) =>
           Effect.succeed(threadId === stageThreadId ? Option.some(stageThread) : Option.none()),
         getFullThreadDiffContext: (threadId: ThreadId) =>
@@ -285,6 +309,53 @@ const makeLayer = (input: {
       Layer.succeed(ProjectionAwaitedStageRepository, {
         upsert: () => Effect.void,
         listByTaskId: () => Effect.succeed([]),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionQuotaBlockedStageRepository, {
+        upsert: () => Effect.void,
+        listByTaskId: () => Effect.succeed([]),
+        listBlockedByProviderInstanceId: ({ providerInstanceId }) =>
+          Effect.succeed(
+            (input.quotaBlockedStages ?? []).filter(
+              (stage) =>
+                stage.providerInstanceId === providerInstanceId && stage.status === "blocked",
+            ),
+          ),
+        listBlocked: () =>
+          Effect.succeed(
+            (input.quotaBlockedStages ?? []).filter((stage) => stage.status === "blocked"),
+          ),
+        listAll: () => Effect.succeed(input.quotaBlockedStages ?? []),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProviderQuotaStatusRepository, {
+        upsert: () =>
+          Effect.die("ProviderQuotaStatusRepository.upsert should not be called by PmRuntime"),
+        markBlocked: () =>
+          Effect.die("ProviderQuotaStatusRepository.markBlocked should not be called by PmRuntime"),
+        observeRuntimeStatus: () =>
+          Effect.die(
+            "ProviderQuotaStatusRepository.observeRuntimeStatus should not be called by PmRuntime",
+          ),
+        getByProviderInstanceId: ({ providerInstanceId }) =>
+          Effect.sync(() => {
+            const status = input.providerQuotaStatuses?.get(String(providerInstanceId));
+            return status === undefined
+              ? Option.none()
+              : Option.some({
+                  providerInstanceId,
+                  status,
+                  resetAt: null,
+                  updatedAt: now,
+                });
+          }),
+        isInstanceQuotaBlocked: () =>
+          Effect.die(
+            "ProviderQuotaStatusRepository.isInstanceQuotaBlocked should not be called by PmRuntime",
+          ),
+        listBlocked: () => Effect.succeed([]),
       }),
     ),
     Layer.provide(
@@ -480,6 +551,64 @@ describe("PmRuntime", () => {
         );
         assert.deepStrictEqual(pendingSettlements, []);
       }),
+  );
+
+  it.effect("resumes quota-blocked stages during reconciliation when the provider is ok", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const dispatchCalls: unknown[] = [];
+      const quotaBlockedStage: OrchestrationReadModel["quotaBlockedStages"][number] = {
+        taskId,
+        stageThreadId,
+        role: "work",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: null,
+        status: "blocked",
+        retryCount: 1,
+        blockedAt: now,
+        resumedAt: null,
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel: {
+          ...readModel,
+          tasks: [
+            {
+              ...task,
+              status: "blocked-on-quota",
+              currentStageThreadId: null,
+            },
+          ],
+          quotaBlockedStages: [quotaBlockedStage],
+        },
+        quotaBlockedStages: [quotaBlockedStage],
+        providerQuotaStatuses: new Map([[String(ProviderInstanceId.make("codex")), "ok"]]),
+        dispatchCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        for (let index = 0; index < 20 && dispatchCalls.length === 0; index += 1) {
+          yield* Effect.yieldNow;
+        }
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(dispatchCalls.length, 1);
+      const command = dispatchCalls[0] as Record<string, unknown>;
+      assert.strictEqual(command.type, "task.stage.start");
+      assert.strictEqual(command.commandId, quotaStageResumeCommandId(stageThreadId, 1));
+      assert.strictEqual(command.taskId, taskId);
+      assert.strictEqual(command.role, "work");
+      assert.strictEqual(command.instructions, "Implement feature");
+      assert.strictEqual(typeof command.createdAt, "string");
+    }),
   );
 
   it.effect("captures the worker diff (scrubbed + bounded) in the stage settlement message", () =>

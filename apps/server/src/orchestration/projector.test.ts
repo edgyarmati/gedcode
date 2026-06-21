@@ -462,6 +462,126 @@ describe("orchestration projector", () => {
     });
   });
 
+  it("tracks quota-blocked stages and marks them resumed on the next stage start", async () => {
+    const createdAt = "2026-06-20T10:00:00.000Z";
+    const workStartedAt = "2026-06-20T10:01:00.000Z";
+    const blockedAt = "2026-06-20T10:02:00.000Z";
+    const resumedAt = "2026-06-20T10:03:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-quota",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Quota task",
+          branch: "orchestrator/task-quota",
+          worktreePath: "/tmp/task-quota",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-quota",
+          role: "work",
+          stageThreadId: "thread-work-blocked",
+          awaitedTurnId: null,
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-blocked",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: blockedAt,
+        commandId: "cmd-work-block",
+        payload: {
+          taskId: "task-quota",
+          role: "work",
+          stageThreadId: "thread-work-blocked",
+          reason: "quota",
+          providerInstanceId: "codex",
+          resetAt: "2026-06-20T10:15:00.000Z",
+          updatedAt: blockedAt,
+        },
+      }),
+    ];
+
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+    }
+
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-quota",
+      status: "blocked-on-quota",
+      currentStageThreadId: null,
+      stageThreadIds: ["thread-work-blocked"],
+    });
+    expect(state.quotaBlockedStages).toEqual([
+      {
+        taskId: "task-quota",
+        stageThreadId: "thread-work-blocked",
+        role: "work",
+        providerInstanceId: "codex",
+        resetAt: "2026-06-20T10:15:00.000Z",
+        status: "blocked",
+        retryCount: 1,
+        blockedAt,
+        resumedAt: null,
+      },
+    ]);
+
+    state = await Effect.runPromise(
+      projectEvent(
+        state,
+        makeEvent({
+          sequence: 4,
+          type: "task.stage-started",
+          aggregateKind: "task",
+          aggregateId: "task-quota",
+          occurredAt: resumedAt,
+          commandId: "cmd-work-resume",
+          payload: {
+            taskId: "task-quota",
+            role: "work",
+            stageThreadId: "thread-work-resumed",
+            awaitedTurnId: null,
+            updatedAt: resumedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(state.tasks[0]).toMatchObject({
+      status: "working",
+      currentStageThreadId: "thread-work-resumed",
+      stageThreadIds: ["thread-work-blocked", "thread-work-resumed"],
+    });
+    expect(state.quotaBlockedStages[0]).toMatchObject({
+      stageThreadId: "thread-work-blocked",
+      status: "resumed",
+      resumedAt,
+    });
+  });
+
   it("tracks latest turn id from session lifecycle events", async () => {
     const createdAt = "2026-02-23T08:00:00.000Z";
     const startedAt = "2026-02-23T08:00:05.000Z";

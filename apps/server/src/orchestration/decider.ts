@@ -1,5 +1,6 @@
 import {
   DEFAULT_MAX_PARALLEL_TASKS,
+  DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
@@ -957,6 +958,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' exceeded the stage handoff limit (${maxStageHandoffs}).`,
         );
       }
+      if (task.status === "blocked-on-quota") {
+        const blockedStage = (readModel.quotaBlockedStages ?? [])
+          .filter(
+            (stage) =>
+              stage.taskId === command.taskId &&
+              stage.role === command.role &&
+              stage.status === "blocked",
+          )
+          .toSorted(
+            (left, right) =>
+              right.blockedAt.localeCompare(left.blockedAt) ||
+              right.stageThreadId.localeCompare(left.stageThreadId),
+          )[0];
+        if (blockedStage === undefined) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.taskId}' is blocked on quota but has no resumable blocked stage for role '${command.role}'.`,
+          );
+        }
+        const maxRetriesPerStage =
+          config.resourceLimits.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE;
+        if (blockedStage.retryCount > maxRetriesPerStage) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.taskId}' exceeded the quota retry limit for role '${command.role}' (${maxRetriesPerStage}).`,
+          );
+        }
+      }
 
       const modelSelection =
         project.roleModelSelections?.[command.role] ?? project.defaultModelSelection;
@@ -1120,6 +1149,65 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           // Pass the diff-completeness marker through unchanged; absent stays
           // absent (normal completion), `false` records a fail-loud timeout.
           ...(command.diffComplete !== undefined ? { diffComplete: command.diffComplete } : {}),
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.stage.block": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+
+      if (!task.stageThreadIds.includes(command.stageThreadId)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not contain stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      if (task.currentStageThreadId !== command.stageThreadId) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not have active stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      const activeRole = activeStageRoleForTaskStatus(task.status);
+      if (activeRole === null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no active stage to block.`,
+        );
+      }
+      if (activeRole !== command.role) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' active stage role '${activeRole}' cannot be blocked as '${command.role}'.`,
+        );
+      }
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.stage-blocked",
+        payload: {
+          taskId: command.taskId,
+          role: command.role,
+          stageThreadId: command.stageThreadId,
+          reason: command.reason,
+          providerInstanceId: command.providerInstanceId,
+          ...(command.resetAt !== undefined ? { resetAt: command.resetAt } : {}),
           updatedAt: command.createdAt,
         },
       };

@@ -20,9 +20,11 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 
 /**
  * Lifecycle of an awaited stage row. `awaited` while the PM is blocked on the
- * worker turn; `completed` once the matching `task.stage-completed` lands.
+ * worker turn; `completed` once the matching `task.stage-completed` lands;
+ * `blocked` when the stage is paused by quota and should no longer be treated
+ * as a missing completion settlement.
  */
-export const ProjectionAwaitedStageStatus = Schema.Literals(["awaited", "completed"]);
+export const ProjectionAwaitedStageStatus = Schema.Literals(["awaited", "completed", "blocked"]);
 export type ProjectionAwaitedStageStatus = typeof ProjectionAwaitedStageStatus.Type;
 
 export const ProjectionAwaitedStage = Schema.Struct({

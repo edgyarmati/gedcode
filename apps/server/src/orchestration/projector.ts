@@ -17,6 +17,7 @@ import {
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
+  TaskStageBlockedPayload,
   TaskStageCompletedPayload,
   TaskStageStartedPayload,
 } from "@t3tools/contracts";
@@ -213,6 +214,7 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     threads: [],
     tasks: [],
     pendingGates: [],
+    quotaBlockedStages: [],
     updatedAt: nowIso,
   };
 }
@@ -800,6 +802,18 @@ export function projectEvent(
           const stageThreadIds = task.stageThreadIds.includes(payload.stageThreadId)
             ? task.stageThreadIds
             : [...task.stageThreadIds, payload.stageThreadId];
+          const blockedStageToResume = nextBase.quotaBlockedStages
+            .filter(
+              (stage) =>
+                stage.taskId === payload.taskId &&
+                stage.role === payload.role &&
+                stage.status === "blocked",
+            )
+            .toSorted(
+              (left, right) =>
+                right.blockedAt.localeCompare(left.blockedAt) ||
+                right.stageThreadId.localeCompare(left.stageThreadId),
+            )[0];
           return {
             ...nextBase,
             tasks: updateTask(nextBase.tasks, payload.taskId, {
@@ -808,6 +822,14 @@ export function projectEvent(
               currentStageThreadId: payload.stageThreadId,
               updatedAt: payload.updatedAt,
             }),
+            quotaBlockedStages:
+              blockedStageToResume === undefined
+                ? nextBase.quotaBlockedStages
+                : nextBase.quotaBlockedStages.map((stage) =>
+                    stage.stageThreadId === blockedStageToResume.stageThreadId
+                      ? { ...stage, status: "resumed" as const, resumedAt: payload.updatedAt }
+                      : stage,
+                  ),
           };
         }),
       );
@@ -826,6 +848,38 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
           }),
         })),
+      );
+
+    case "task.stage-blocked":
+      return decodeForEvent(TaskStageBlockedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const retryCount =
+            nextBase.quotaBlockedStages.filter(
+              (stage) => stage.taskId === payload.taskId && stage.role === payload.role,
+            ).length + 1;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              status: "blocked-on-quota",
+              currentStageThreadId: null,
+              updatedAt: payload.updatedAt,
+            }),
+            quotaBlockedStages: [
+              ...nextBase.quotaBlockedStages,
+              {
+                taskId: payload.taskId,
+                stageThreadId: payload.stageThreadId,
+                role: payload.role,
+                providerInstanceId: payload.providerInstanceId,
+                resetAt: payload.resetAt ?? null,
+                status: "blocked" as const,
+                retryCount,
+                blockedAt: payload.updatedAt,
+                resumedAt: null,
+              },
+            ],
+          };
+        }),
       );
 
     case "task.gate-requested":

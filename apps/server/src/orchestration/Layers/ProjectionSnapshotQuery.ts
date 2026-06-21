@@ -7,6 +7,7 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationPendingGate,
+  OrchestrationQuotaBlockedStage,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationTask,
@@ -667,6 +668,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const listQuotaBlockedStageRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: OrchestrationQuotaBlockedStage,
+    execute: () =>
+      sql`
+        SELECT
+          task_id AS "taskId",
+          stage_thread_id AS "stageThreadId",
+          role,
+          provider_instance_id AS "providerInstanceId",
+          reset_at AS "resetAt",
+          status,
+          retry_count AS "retryCount",
+          blocked_at AS "blockedAt",
+          resumed_at AS "resumedAt"
+        FROM projection_quota_blocked_stages
+        ORDER BY blocked_at ASC, stage_thread_id ASC
+      `,
+  });
+
   const listActiveLatestTurnRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionLatestTurnDbRowSchema,
@@ -1105,6 +1126,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listQuotaBlockedStageRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listQuotaBlockedStages:query",
+                "ProjectionSnapshotQuery.getSnapshot:listQuotaBlockedStages:decodeRows",
+              ),
+            ),
+          ),
           listProjectionStateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1128,6 +1157,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             latestTurnRows,
             taskRows,
             pendingGateRows,
+            quotaBlockedStageRows,
             stateRows,
           ]) =>
             Effect.gen(function* () {
@@ -1154,6 +1184,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               }
               for (const row of pendingGateRows) {
                 updatedAt = maxIso(updatedAt, row.resolvedAt ?? row.requestedAt);
+              }
+              for (const row of quotaBlockedStageRows) {
+                updatedAt = maxIso(updatedAt, row.resumedAt ?? row.blockedAt);
               }
 
               for (const row of messageRows) {
@@ -1313,6 +1346,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
 
               const tasks: ReadonlyArray<OrchestrationTask> = taskRows.map(mapTaskRow);
               const pendingGates: ReadonlyArray<OrchestrationPendingGate> = pendingGateRows;
+              const quotaBlockedStages: ReadonlyArray<OrchestrationQuotaBlockedStage> =
+                quotaBlockedStageRows;
 
               const snapshot = {
                 snapshotSequence: computeSnapshotSequence(stateRows),
@@ -1320,6 +1355,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 threads,
                 tasks,
                 pendingGates,
+                quotaBlockedStages,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -1398,6 +1434,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listQuotaBlockedStageRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listQuotaBlockedStages:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listQuotaBlockedStages:decodeRows",
+              ),
+            ),
+          ),
           listProjectionStateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1418,6 +1462,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             latestTurnRows,
             taskRows,
             pendingGateRows,
+            quotaBlockedStageRows,
             stateRows,
           ]) =>
             Effect.sync(() => {
@@ -1502,6 +1547,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 }
                 updatedAt = maxIso(updatedAt, row.resolvedAt ?? row.requestedAt);
               }
+              for (let index = 0; index < quotaBlockedStageRows.length; index += 1) {
+                const row = quotaBlockedStageRows[index];
+                if (!row) {
+                  continue;
+                }
+                updatedAt = maxIso(updatedAt, row.resumedAt ?? row.blockedAt);
+              }
 
               const latestTurnByThread = new Map<string, OrchestrationLatestTurn>();
               for (let index = 0; index < latestTurnRows.length; index += 1) {
@@ -1566,6 +1618,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 threads,
                 tasks,
                 pendingGates,
+                quotaBlockedStages: Array.from(quotaBlockedStageRows),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationReadModel;
             }),

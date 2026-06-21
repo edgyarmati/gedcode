@@ -53,9 +53,11 @@ import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { stageBlockCommandId } from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -70,13 +72,14 @@ const asTaskTypeId = (value: string): TaskTypeId => TaskTypeId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+const ORCHESTRATION_WAIT_TIMEOUT_MS = 15_000;
 
 const deriveServerPathsSync = (baseDir: string, devUrl: URL | undefined) =>
   Effect.runSync(deriveServerPaths(baseDir, devUrl).pipe(Effect.provide(NodeServices.layer)));
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000,
+  timeoutMs = ORCHESTRATION_WAIT_TIMEOUT_MS,
 ): Promise<void> {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
   const poll = async (): Promise<void> => {
@@ -95,7 +98,10 @@ async function waitFor(
 
 describe("ProviderCommandReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderCommandReactor | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderCommandReactor
+    | ProjectionSnapshotQuery
+    | ProviderQuotaStatusRepository,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -401,12 +407,16 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(serverSettingsLayer),
       Layer.provideMerge(workerStartAdmissionLayer),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+      Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
 
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+    const quotaStatusRepository = await runtime.runPromise(
+      Effect.service(ProviderQuotaStatusRepository),
+    );
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
@@ -443,6 +453,7 @@ describe("ProviderCommandReactor", () => {
     return {
       engine,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      quotaStatusRepository,
       startSession,
       sendTurn,
       interruptTurn,
@@ -582,6 +593,85 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("blocks an active worker stage instead of starting a quota-blocked provider instance", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.quotaStatusRepository.markBlocked({
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: "2026-01-01T00:10:00.000Z",
+        updatedAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-quota"),
+        taskId: asTaskId("task-quota"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Quota",
+        pmMessageId: null,
+        branch: "orchestrator/task-quota",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-quota"),
+        taskId: asTaskId("task-quota"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return readModel.tasks.some(
+        (task) =>
+          task.id === asTaskId("task-quota") &&
+          task.status === "blocked-on-quota" &&
+          task.currentStageThreadId === null,
+      );
+    });
+
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+
+    const readModel = await harness.readModel();
+    const task = readModel.tasks.find((entry) => entry.id === asTaskId("task-quota"));
+    const blockedStage = readModel.quotaBlockedStages.find(
+      (stage) => stage.taskId === asTaskId("task-quota"),
+    );
+    expect(blockedStage).toMatchObject({
+      taskId: asTaskId("task-quota"),
+      role: "work",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      resetAt: "2026-01-01T00:10:00.000Z",
+      status: "blocked",
+      retryCount: 1,
+    });
+    expect(blockedStage?.stageThreadId).toBe(task?.stageThreadIds[0]);
+
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const stageBlocked = events.find((event) => event.type === "task.stage-blocked");
+    expect(stageBlocked?.commandId).toBe(
+      stageBlockCommandId(
+        task?.stageThreadIds[0] ?? ThreadId.make("missing"),
+        ProviderInstanceId.make("codex"),
+        "admission",
+      ),
+    );
   });
 
   it("keeps a full-access worker when the project opts in via allowFullAccessWorkers", async () => {

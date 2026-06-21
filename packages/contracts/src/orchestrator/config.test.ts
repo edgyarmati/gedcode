@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
+  DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
   DEFAULT_PM_RECONCILIATION_INTERVAL_MS,
   DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES,
@@ -26,11 +27,17 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
 
   it("keeps the false default even when other resourceLimits fields are set", () => {
     const decoded = decodeProjectConfig({
-      resourceLimits: { maxParallelTasks: 2, maxParallelWorkers: 3, maxStageHandoffs: 5 },
+      resourceLimits: {
+        maxParallelTasks: 2,
+        maxParallelWorkers: 3,
+        maxStageHandoffs: 5,
+        maxRetriesPerStage: 4,
+      },
     });
     expect(decoded.resourceLimits.maxParallelTasks).toBe(2);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(3);
     expect(decoded.resourceLimits.maxStageHandoffs).toBe(5);
+    expect(decoded.resourceLimits.maxRetriesPerStage).toBe(4);
     expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(false);
   });
 
@@ -46,6 +53,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
 
   it("global defaults include durability and cleanup intervals", () => {
     const decoded = decodeGlobalDefaults({});
+    expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
     expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
   });
@@ -69,6 +77,7 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(decoded.resourceLimits.maxParallelTasks).toBe(DEFAULT_MAX_PARALLEL_TASKS);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(DEFAULT_MAX_PARALLEL_WORKERS);
     expect(decoded.resourceLimits.maxStageHandoffs).toBe(DEFAULT_MAX_STAGE_HANDOFFS);
+    expect(decoded.resourceLimits.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
   });
 });
 
@@ -94,6 +103,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
         maxParallelTasks: 2,
         maxParallelWorkers: 2,
         maxStageHandoffs: 12,
+        maxRetriesPerStage: 3,
         allowFullAccessWorkers: true,
       },
     });
@@ -106,6 +116,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.pmModelSelection?.instanceId).toBe("codex");
     expect(reDecoded.pmModelSelection?.model).toBe("gpt-5.5");
     expect(reDecoded.taskTypes[0]?.gatePolicy.plan).toBe("auto");
+    expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
     expect(reDecoded.resourceLimits.allowFullAccessWorkers).toBe(true);
   });
 });

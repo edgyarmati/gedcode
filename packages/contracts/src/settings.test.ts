@@ -134,6 +134,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     // break existing settings that predate the key.
     const decoded = decodeServerSettings({});
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
   });
@@ -149,12 +150,14 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       orchestratorDefaults: {
         allowFullAccessWorkers: true,
         maxStageHandoffs: 20,
+        maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
         worktreeReaperIntervalMinutes: 2,
       },
     });
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
     expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
+    expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);
   });
@@ -164,12 +167,14 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       orchestratorDefaults: {
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
+        maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
       },
     });
     expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
     expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
+    expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);
     expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
     expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);
   });

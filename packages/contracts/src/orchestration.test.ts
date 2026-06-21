@@ -619,6 +619,61 @@ it.effect("decodes orchestration session runtime mode defaults", () =>
   }),
 );
 
+it.effect("decodes task.stage.block commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.stage.block",
+      commandId: "cmd-stage-block",
+      taskId: "task-1",
+      stageThreadId: "thread-stage-1",
+      role: "work",
+      reason: "quota",
+      providerInstanceId: "codex",
+      resetAt: "2026-01-01T00:10:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.type, "task.stage.block");
+    if (parsed.type === "task.stage.block") {
+      assert.strictEqual(parsed.providerInstanceId, "codex");
+      assert.strictEqual(parsed.reason, "quota");
+      assert.strictEqual(parsed.resetAt, "2026-01-01T00:10:00.000Z");
+    }
+  }),
+);
+
+it.effect("decodes task.stage-blocked events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-stage-blocked",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.stage-blocked",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-stage-block",
+      causationEventId: null,
+      correlationId: "cmd-stage-block",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        role: "work",
+        stageThreadId: "thread-stage-1",
+        reason: "quota",
+        providerInstanceId: "codex",
+        resetAt: "2026-01-01T00:10:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    assert.strictEqual(parsed.type, "task.stage-blocked");
+    if (parsed.type === "task.stage-blocked") {
+      assert.strictEqual(parsed.payload.providerInstanceId, "codex");
+      assert.strictEqual(parsed.payload.reason, "quota");
+    }
+  }),
+);
+
 it.effect("defaults proposed plan implementation metadata for historical rows", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationProposedPlan({

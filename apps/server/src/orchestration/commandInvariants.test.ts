@@ -101,6 +101,8 @@ const readModel: OrchestrationReadModel = {
     },
   ],
   tasks: [],
+  pendingGates: [],
+  quotaBlockedStages: [],
 };
 
 const messageSendCommand: OrchestrationCommand = {

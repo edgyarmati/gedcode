@@ -400,6 +400,7 @@ function createSnapshotForTargetUser(options: {
       },
     ],
     tasks: [],
+    quotaBlockedStages: [],
     updatedAt: NOW_ISO,
   };
 }

@@ -93,6 +93,7 @@ function makeReadModel(input: {
       },
     ],
     pendingGates: [],
+    quotaBlockedStages: [],
     updatedAt: now,
   };
 }

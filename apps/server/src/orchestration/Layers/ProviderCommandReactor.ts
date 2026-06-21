@@ -34,6 +34,8 @@ import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -49,6 +51,7 @@ import {
   installTaskWorktreePushBlockHook,
   makeWorkerProviderEnvironment,
 } from "../workerSafety.ts";
+import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
@@ -190,6 +193,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
   const gitWorkflow = yield* GitWorkflowService;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
@@ -435,6 +439,42 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
+    if (isOrchestratorWorker) {
+      const quotaState = yield* providerQuotaStatusRepository.isInstanceQuotaBlocked({
+        providerInstanceId: desiredInstanceId,
+      });
+      if (quotaState.blocked) {
+        const activeStageRole =
+          taskForStageThread === undefined
+            ? null
+            : activeStageRoleForTaskStatus(taskForStageThread.status);
+        if (
+          taskForStageThread !== undefined &&
+          activeStageRole !== null &&
+          taskForStageThread.currentStageThreadId === threadId
+        ) {
+          yield* orchestrationEngine.dispatch({
+            type: "task.stage.block",
+            commandId: stageBlockCommandId(threadId, desiredInstanceId, "admission"),
+            taskId: taskForStageThread.id,
+            stageThreadId: threadId,
+            role: activeStageRole,
+            reason: "quota",
+            providerInstanceId: desiredInstanceId,
+            ...(quotaState.resetAt !== null ? { resetAt: quotaState.resetAt } : {}),
+            createdAt,
+          });
+        }
+        return yield* new ProviderAdapterRequestError({
+          provider: preferredProvider,
+          method: "thread.turn.start",
+          detail:
+            quotaState.status === "blocked-until" && quotaState.resetAt !== null
+              ? `Provider instance '${desiredInstanceId}' is quota-blocked until ${quotaState.resetAt}.`
+              : `Provider instance '${desiredInstanceId}' is quota-blocked with an unknown reset time.`,
+        });
+      }
+    }
     if (
       thread.session !== null &&
       requestedModelSelection !== undefined &&
@@ -1120,4 +1160,6 @@ const make = Effect.gen(function* () {
   } satisfies ProviderCommandReactorShape;
 });
 
-export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make);
+export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make).pipe(
+  Layer.provideMerge(ProviderQuotaStatusRepositoryLive),
+);

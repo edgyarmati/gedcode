@@ -402,6 +402,7 @@ export const OrchestrationTaskStatus = Schema.Literals([
   "landed",
   "abandoned",
   "blocked",
+  "blocked-on-quota",
 ]);
 export type OrchestrationTaskStatus = typeof OrchestrationTaskStatus.Type;
 
@@ -487,6 +488,22 @@ export const OrchestrationPendingGate = Schema.Struct({
 });
 export type OrchestrationPendingGate = typeof OrchestrationPendingGate.Type;
 
+export const OrchestrationQuotaBlockedStageStatus = Schema.Literals(["blocked", "resumed"]);
+export type OrchestrationQuotaBlockedStageStatus = typeof OrchestrationQuotaBlockedStageStatus.Type;
+
+export const OrchestrationQuotaBlockedStage = Schema.Struct({
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  role: OrchestrationStageRole,
+  providerInstanceId: ProviderInstanceId,
+  resetAt: Schema.NullOr(IsoDateTime),
+  status: OrchestrationQuotaBlockedStageStatus,
+  retryCount: NonNegativeInt,
+  blockedAt: IsoDateTime,
+  resumedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationQuotaBlockedStage = typeof OrchestrationQuotaBlockedStage.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -499,6 +516,9 @@ export const OrchestrationReadModel = Schema.Struct({
   // any snapshot produced before this field existed still decodes cleanly.
   tasks: Schema.Array(OrchestrationTask).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   pendingGates: Schema.optionalKey(Schema.Array(OrchestrationPendingGate)),
+  quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -846,6 +866,18 @@ const TaskStageCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskStageBlockCommand = Schema.Struct({
+  type: Schema.Literal("task.stage.block"),
+  commandId: CommandId,
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  role: OrchestrationStageRole,
+  reason: Schema.Literal("quota"),
+  providerInstanceId: ProviderInstanceId,
+  resetAt: Schema.optional(IsoDateTime),
+  createdAt: IsoDateTime,
+});
+
 const TaskGateRequestCommand = Schema.Struct({
   type: Schema.Literal("task.gate.request"),
   commandId: CommandId,
@@ -1015,6 +1047,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   TaskStageCompleteCommand,
+  TaskStageBlockCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1051,6 +1084,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.classified",
   "task.stage-started",
   "task.stage-completed",
+  "task.stage-blocked",
   "task.gate-requested",
   "task.gate-resolved",
   "task.landed",
@@ -1276,6 +1310,16 @@ export const TaskStageCompletedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskStageBlockedPayload = Schema.Struct({
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  reason: Schema.Literal("quota"),
+  providerInstanceId: ProviderInstanceId,
+  resetAt: Schema.optional(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+
 export const TaskGateRequestedPayload = Schema.Struct({
   taskId: TaskId,
   gateId: GateId,
@@ -1456,6 +1500,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.stage-completed"),
     payload: TaskStageCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.stage-blocked"),
+    payload: TaskStageBlockedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

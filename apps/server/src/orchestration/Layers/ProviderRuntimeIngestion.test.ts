@@ -40,10 +40,12 @@ import { afterEach, describe, expect, it } from "vitest";
 // runtime constant can never drift. The stage-completion timeout test advances a
 // TestClock past this to fire the forked backstop without a real 30s wall wait.
 const STAGE_COMPLETION_DIFF_TIMEOUT_MS = Duration.toMillis(STAGE_COMPLETION_DIFF_TIMEOUT);
+const ORCHESTRATION_WAIT_TIMEOUT_MS = 15_000;
 
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import {
   ProviderService,
   type ProviderServiceShape,
@@ -61,7 +63,11 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { stageCompleteCommandId } from "../stageResolution.ts";
+import {
+  quotaStageResumeCommandId,
+  stageBlockCommandId,
+  stageCompleteCommandId,
+} from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
@@ -186,7 +192,7 @@ type ProviderRuntimeTestCheckpoint = ProviderRuntimeTestThread["checkpoints"][nu
 async function waitForThread(
   readModel: () => Promise<ProviderRuntimeTestReadModel>,
   predicate: (thread: ProviderRuntimeTestThread) => boolean,
-  timeoutMs = 2000,
+  timeoutMs = ORCHESTRATION_WAIT_TIMEOUT_MS,
   threadId: ThreadId = asThreadId("thread-1"),
 ) {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
@@ -208,7 +214,7 @@ async function waitForThread(
 async function waitForTask(
   readModel: () => Promise<ProviderRuntimeTestReadModel>,
   predicate: (task: ProviderRuntimeTestTask) => boolean,
-  timeoutMs = 2000,
+  timeoutMs = ORCHESTRATION_WAIT_TIMEOUT_MS,
   taskId: TaskId = asTaskId("task-1"),
 ) {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
@@ -229,7 +235,10 @@ async function waitForTask(
 
 describe("ProviderRuntimeIngestion", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderRuntimeIngestionService | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderRuntimeIngestionService
+    | ProjectionSnapshotQuery
+    | ProviderQuotaStatusRepository,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -298,6 +307,9 @@ describe("ProviderRuntimeIngestion", () => {
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const ingestion = await runtime.runPromise(Effect.service(ProviderRuntimeIngestionService));
+    const quotaStatusRepository = await runtime.runPromise(
+      Effect.service(ProviderQuotaStatusRepository),
+    );
     scope = await Effect.runPromise(Scope.make("sequential"));
     // When the harness drives a TestClock, the ingestion worker (and the
     // diff-wait timeout daemon it forks) MUST run on the harness runtime so the
@@ -377,6 +389,8 @@ describe("ProviderRuntimeIngestion", () => {
     return {
       engine,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      quotaState: (providerInstanceId: ProviderInstanceId) =>
+        Effect.runPromise(quotaStatusRepository.isInstanceQuotaBlocked({ providerInstanceId })),
       emit: provider.emit,
       setProviderSession: provider.setSession,
       drain,
@@ -499,7 +513,7 @@ describe("ProviderRuntimeIngestion", () => {
       (thread) =>
         thread.session?.status === "running" &&
         thread.session?.activeTurnId === "turn-task-stage-1",
-      2000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       stageThreadId,
     );
 
@@ -1245,7 +1259,7 @@ describe("ProviderRuntimeIngestion", () => {
             proposedPlan.id === "plan:thread-plan:turn:turn-plan-source" &&
             proposedPlan.implementedAt === null,
         ),
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       sourceThreadId,
     );
     const sourcePlan = sourceThreadWithPlan.proposedPlans.find(
@@ -1285,7 +1299,7 @@ describe("ProviderRuntimeIngestion", () => {
           (proposedPlan: ProviderRuntimeTestProposedPlan) =>
             proposedPlan.id === sourcePlan.id && proposedPlan.implementedAt === null,
         ),
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       sourceThreadId,
     );
     expect(
@@ -1313,7 +1327,7 @@ describe("ProviderRuntimeIngestion", () => {
             proposedPlan.implementedAt !== null &&
             proposedPlan.implementationThreadId === targetThreadId,
         ),
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       sourceThreadId,
     );
     expect(
@@ -1390,7 +1404,7 @@ describe("ProviderRuntimeIngestion", () => {
       harness.readModel,
       (thread) =>
         thread.session?.status === "running" && thread.session?.activeTurnId === activeTurnId,
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       targetThreadId,
     );
 
@@ -1414,7 +1428,7 @@ describe("ProviderRuntimeIngestion", () => {
             proposedPlan.id === "plan:thread-plan:turn:turn-plan-source" &&
             proposedPlan.implementedAt === null,
         ),
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       sourceThreadId,
     );
     const sourcePlan = sourceThreadWithPlan.proposedPlans.find(
@@ -1504,7 +1518,7 @@ describe("ProviderRuntimeIngestion", () => {
       harness.readModel,
       (thread) =>
         thread.session?.status === "running" && thread.session?.activeTurnId === oldTurnId,
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       threadId,
     );
 
@@ -1547,7 +1561,7 @@ describe("ProviderRuntimeIngestion", () => {
       harness.readModel,
       (thread) =>
         thread.session?.status === "running" && thread.session?.activeTurnId === newTurnId,
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       threadId,
     );
     expect(threadAfterSteer.session?.activeTurnId).toBe(newTurnId);
@@ -1655,7 +1669,7 @@ describe("ProviderRuntimeIngestion", () => {
             proposedPlan.id === "plan:thread-plan:turn:turn-plan-source" &&
             proposedPlan.implementedAt === null,
         ),
-      2_000,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
       sourceThreadId,
     );
     const sourcePlan = sourceThreadWithPlan.proposedPlans.find(
@@ -2642,6 +2656,255 @@ describe("ProviderRuntimeIngestion", () => {
 
     expect(activity?.kind).toBe("runtime.error");
     expect(activityPayload?.message).toBe("runtime activity exploded");
+  });
+
+  it("projects account rate-limit telemetry into provider instance quota state", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const providerInstanceId = ProviderInstanceId.make("codex");
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-rate-limits-warning"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      payload: {
+        status: "warning",
+        resetAtEpochMs: 1767225600000,
+      },
+    });
+    await harness.drain();
+
+    const blocked = await harness.quotaState(providerInstanceId);
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.status).toBe("blocked-until");
+    expect(blocked.resetAt).toBe("2026-01-01T00:00:00.000Z");
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-rate-limits-ok"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:01:00.000Z",
+      threadId: asThreadId("thread-1"),
+      payload: {
+        status: "ok",
+      },
+    });
+    await harness.drain();
+
+    const cleared = await harness.quotaState(providerInstanceId);
+    expect(cleared.blocked).toBe(false);
+    expect(cleared.status).toBe("ok");
+    expect(cleared.resetAt).toBe(null);
+  });
+
+  it("projects classified rate-limit runtime errors into blocked-unknown quota state", async () => {
+    const harness = await createHarness();
+    const providerInstanceId = ProviderInstanceId.make("codex");
+
+    harness.emit({
+      type: "runtime.error",
+      eventId: asEventId("evt-runtime-rate-limit"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-runtime-rate-limit"),
+      payload: {
+        message: "usage limit reached",
+        class: "rate_limit",
+      },
+    });
+    await harness.drain();
+
+    const blocked = await harness.quotaState(providerInstanceId);
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.status).toBe("blocked-unknown");
+    expect(blocked.resetAt).toBe(null);
+  });
+
+  it("blocks an active stage on a rate-limit runtime error and resumes it when quota clears", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const providerInstanceId = ProviderInstanceId.make("codex");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-provider-project-enable-quota"),
+        projectId: asProjectId("project-1"),
+        orchestratorConfig: { enabled: true },
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-provider-task-create-quota"),
+        taskId: asTaskId("task-quota"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Provider quota task",
+        pmMessageId: null,
+        branch: "orchestrator/task-quota",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-provider-task-stage-start-quota"),
+        taskId: asTaskId("task-quota"),
+        role: "work",
+        instructions: "Implement the quota-sensitive task.",
+        createdAt: now,
+      }),
+    );
+
+    const runningTask = await waitForTask(
+      harness.readModel,
+      (task) =>
+        task.id === asTaskId("task-quota") &&
+        task.status === "working" &&
+        task.currentStageThreadId !== null,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-quota"),
+    );
+    const blockedStageThreadId = runningTask.currentStageThreadId;
+    expect(blockedStageThreadId).not.toBeNull();
+    if (blockedStageThreadId === null) {
+      return;
+    }
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-quota-stage-turn-started"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: now,
+      threadId: blockedStageThreadId,
+      turnId: asTurnId("turn-quota-stage"),
+      payload: {},
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === "turn-quota-stage",
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      blockedStageThreadId,
+    );
+
+    harness.emit({
+      type: "runtime.error",
+      eventId: asEventId("evt-runtime-stage-rate-limit"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:01.000Z",
+      threadId: blockedStageThreadId,
+      turnId: asTurnId("turn-quota-stage"),
+      payload: {
+        message: "rate limit exceeded",
+        class: "rate_limit",
+      },
+    });
+
+    const blockedTask = await waitForTask(
+      harness.readModel,
+      (task) =>
+        task.id === asTaskId("task-quota") &&
+        task.status === "blocked-on-quota" &&
+        task.currentStageThreadId === null,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-quota"),
+    );
+    expect(blockedTask.stageThreadIds).toContain(blockedStageThreadId);
+
+    let readModel = await harness.readModel();
+    const blockedRow = readModel.quotaBlockedStages.find(
+      (stage) => stage.stageThreadId === blockedStageThreadId,
+    );
+    expect(blockedRow).toMatchObject({
+      taskId: asTaskId("task-quota"),
+      role: "work",
+      providerInstanceId,
+      status: "blocked",
+      retryCount: 1,
+      blockedAt: "2026-01-01T00:00:01.000Z",
+      resumedAt: null,
+    });
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-rate-limits-ok-resume"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:02.000Z",
+      threadId: blockedStageThreadId,
+      payload: {
+        status: "ok",
+      },
+    });
+
+    const resumedTask = await waitForTask(
+      harness.readModel,
+      (task) =>
+        task.id === asTaskId("task-quota") &&
+        task.status === "working" &&
+        task.currentStageThreadId !== null &&
+        task.currentStageThreadId !== blockedStageThreadId,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-quota"),
+    );
+    expect(resumedTask.stageThreadIds).toHaveLength(2);
+
+    readModel = await harness.readModel();
+    const resumedRow = readModel.quotaBlockedStages.find(
+      (stage) => stage.stageThreadId === blockedStageThreadId,
+    );
+    expect(resumedRow).toMatchObject({
+      status: "resumed",
+      resumedAt: "2026-01-01T00:00:02.000Z",
+    });
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-rate-limits-ok-resume-duplicate"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:03.000Z",
+      threadId: blockedStageThreadId,
+      payload: {
+        status: "ok",
+      },
+    });
+    await harness.drain();
+
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "task.stage-blocked" &&
+          event.commandId ===
+            stageBlockCommandId(
+              blockedStageThreadId,
+              providerInstanceId,
+              "evt-runtime-stage-rate-limit",
+            ),
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "task.stage-started" &&
+          event.commandId === quotaStageResumeCommandId(blockedStageThreadId, 1),
+      ),
+    ).toHaveLength(1);
   });
 
   it("keeps the session running when a runtime.warning arrives during an active turn", async () => {

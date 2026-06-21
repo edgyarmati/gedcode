@@ -154,6 +154,7 @@ function createMinimalSnapshot(): OrchestrationReadModel {
       },
     ],
     tasks: [],
+    quotaBlockedStages: [],
     threads: [
       {
         id: THREAD_ID,

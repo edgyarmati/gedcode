@@ -190,6 +190,7 @@ const makeDefaultOrchestrationReadModel = () => {
       },
     ],
     tasks: [],
+    quotaBlockedStages: [],
   };
 };
 
@@ -1797,6 +1798,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
         ],
         tasks: [],
+        quotaBlockedStages: [],
       };
 
       const collector = yield* Effect.acquireRelease(
@@ -3225,6 +3227,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
         ],
         tasks: [],
+        quotaBlockedStages: [],
       };
 
       yield* buildAppUnderTest({
@@ -3376,6 +3379,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         threads: [pmThread],
         tasks: [task],
         pendingGates: [pendingGate],
+        quotaBlockedStages: [],
       };
       const taskCreatedEvent: OrchestrationEvent = {
         sequence: 13,

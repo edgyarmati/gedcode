@@ -1,7 +1,9 @@
 import {
   CommandId,
+  type OrchestrationThread,
   type OrchestrationReadModel,
   type OrchestrationStageRole,
+  type ProviderInstanceId,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
@@ -19,6 +21,22 @@ type OrchestrationTaskView = OrchestrationReadModel["tasks"][number];
  */
 export const stageCompleteCommandId = (stageThreadId: ThreadId, turnId: TurnId): CommandId =>
   CommandId.make(`server:task-stage-complete:${stageThreadId}:${turnId}`);
+
+export const stageBlockCommandId = (
+  stageThreadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  sourceKey: string,
+): CommandId =>
+  CommandId.make(`server:task-stage-block:${stageThreadId}:${providerInstanceId}:${sourceKey}`);
+
+export const quotaStageResumeCommandId = (stageThreadId: ThreadId, retryCount: number): CommandId =>
+  CommandId.make(`server:quota-stage-resume:${stageThreadId}:retry-${retryCount}`);
+
+export function originalStageInstructions(thread: OrchestrationThread): string | null {
+  const userMessage = thread.messages.find((message) => message.role === "user");
+  const trimmed = userMessage?.text.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
 
 /**
  * The stage role a task is actively running, derived purely from its status.

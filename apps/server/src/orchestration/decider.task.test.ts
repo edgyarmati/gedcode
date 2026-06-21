@@ -259,6 +259,143 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("blocks the active task stage through an internal quota command", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+      });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.block",
+          commandId: asCommandId("cmd-stage-block"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId: asThreadId("thread-stage-work"),
+          reason: "quota",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          resetAt: "2026-06-14T10:30:00.000Z",
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.stage-blocked");
+      expect(singleEvent?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        role: "work",
+        stageThreadId: asThreadId("thread-stage-work"),
+        reason: "quota",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: "2026-06-14T10:30:00.000Z",
+      });
+    }),
+  );
+
+  it.effect("rejects quota blocking for an inactive stage thread", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-active"),
+        stageThreadIds: [asThreadId("thread-stage-active"), asThreadId("thread-stage-old")],
+      });
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.block",
+            commandId: asCommandId("cmd-stage-block-old"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            stageThreadId: asThreadId("thread-stage-old"),
+            reason: "quota",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("allows quota resumption until maxRetriesPerStage is exceeded", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...(yield* taskReadModel({
+          status: "blocked-on-quota",
+          currentStageThreadId: null,
+          stageThreadIds: [asThreadId("thread-stage-block-1"), asThreadId("thread-stage-block-2")],
+        })),
+        quotaBlockedStages: [
+          {
+            taskId: asTaskId("task-1"),
+            stageThreadId: asThreadId("thread-stage-block-1"),
+            role: "work" as const,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            resetAt: null,
+            status: "resumed" as const,
+            retryCount: 1,
+            blockedAt: "2026-06-14T10:00:00.000Z",
+            resumedAt: "2026-06-14T10:05:00.000Z",
+          },
+          {
+            taskId: asTaskId("task-1"),
+            stageThreadId: asThreadId("thread-stage-block-2"),
+            role: "work" as const,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            resetAt: null,
+            status: "blocked" as const,
+            retryCount: 2,
+            blockedAt: "2026-06-14T10:10:00.000Z",
+            resumedAt: null,
+          },
+        ],
+      };
+
+      const accepted = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-resume-accepted"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Retry the worker.",
+          createdAt: now,
+        },
+      });
+      expect(Array.isArray(accepted)).toBe(true);
+
+      const rejected = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: {
+            ...readModel,
+            quotaBlockedStages: [
+              ...readModel.quotaBlockedStages.slice(0, 1),
+              {
+                ...readModel.quotaBlockedStages[1]!,
+                retryCount: 3,
+              },
+            ],
+          },
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-resume-rejected"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            instructions: "Retry the worker again.",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(rejected._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("rejects stage handoffs beyond the fail-closed cap", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({

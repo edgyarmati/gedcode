@@ -19,6 +19,7 @@ import { OrchestrationEventStore } from "../../persistence/Services/Orchestratio
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import { ProjectionPendingGateRepository } from "../../persistence/Services/ProjectionPendingGates.ts";
+import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionTaskRepository } from "../../persistence/Services/ProjectionTasks.ts";
@@ -41,6 +42,7 @@ import { ProjectionThreadRepository } from "../../persistence/Services/Projectio
 import { ProjectionAwaitedStageRepositoryLive } from "../../persistence/Layers/ProjectionAwaitedStages.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionPendingGateRepositoryLive } from "../../persistence/Layers/ProjectionPendingGates.ts";
+import { ProjectionQuotaBlockedStageRepositoryLive } from "../../persistence/Layers/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionTaskRepositoryLive } from "../../persistence/Layers/ProjectionTasks.ts";
@@ -75,6 +77,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   tasks: "projection.tasks",
   awaitedStages: "projection.awaited-stages",
   pendingGates: "projection.pending-gates",
+  quotaBlockedStages: "projection.quota-blocked-stages",
 } as const;
 
 type ProjectorName =
@@ -488,6 +491,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionTaskRepository = yield* ProjectionTaskRepository;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
     const projectionPendingGateRepository = yield* ProjectionPendingGateRepository;
+    const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1544,6 +1548,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.stage-blocked": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "blocked-on-quota",
+              currentStageThreadId: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.gate-requested": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,
@@ -1662,6 +1682,72 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "task.stage-blocked": {
+          const rows = yield* projectionAwaitedStageRepository.listByTaskId({
+            taskId: event.payload.taskId,
+          });
+          const existing = rows.find((row) => row.stageThreadId === event.payload.stageThreadId);
+          if (!existing) {
+            return;
+          }
+          yield* projectionAwaitedStageRepository.upsert({
+            ...existing,
+            status: "blocked",
+            completedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
+
+    const applyQuotaBlockedStagesProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyQuotaBlockedStagesProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "task.stage-blocked": {
+          const rows = yield* projectionQuotaBlockedStageRepository.listByTaskId({
+            taskId: event.payload.taskId,
+          });
+          const retryCount = rows.filter((row) => row.role === event.payload.role).length + 1;
+          yield* projectionQuotaBlockedStageRepository.upsert({
+            taskId: event.payload.taskId,
+            stageThreadId: event.payload.stageThreadId,
+            role: event.payload.role,
+            providerInstanceId: event.payload.providerInstanceId,
+            resetAt: event.payload.resetAt ?? null,
+            status: "blocked",
+            retryCount,
+            blockedAt: event.payload.updatedAt,
+            resumedAt: null,
+          });
+          return;
+        }
+
+        case "task.stage-started": {
+          const rows = yield* projectionQuotaBlockedStageRepository.listByTaskId({
+            taskId: event.payload.taskId,
+          });
+          const blocked = rows
+            .filter((row) => row.role === event.payload.role && row.status === "blocked")
+            .toSorted(
+              (left, right) =>
+                right.blockedAt.localeCompare(left.blockedAt) ||
+                right.stageThreadId.localeCompare(left.stageThreadId),
+            )[0];
+          if (!blocked) {
+            return;
+          }
+          yield* projectionQuotaBlockedStageRepository.upsert({
+            ...blocked,
+            status: "resumed",
+            resumedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
         default:
           return;
       }
@@ -1760,6 +1846,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.awaitedStages,
         apply: applyAwaitedStagesProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.quotaBlockedStages,
+        apply: applyQuotaBlockedStagesProjection,
       },
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.pendingGates,
@@ -1875,6 +1965,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionTaskRepositoryLive),
   Layer.provideMerge(ProjectionAwaitedStageRepositoryLive),
+  Layer.provideMerge(ProjectionQuotaBlockedStageRepositoryLive),
   Layer.provideMerge(ProjectionPendingGateRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

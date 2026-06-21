@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -30,6 +31,8 @@ import {
   withMetrics,
 } from "../../observability/Metrics.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
+import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import {
   makeGateSettlementKey,
   makeStageSettlementKey,
@@ -56,6 +59,7 @@ import { makePmReEntryQueue } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
 import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
 import { makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
+import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
   buildStageResult,
   serializeStageResultToMessage,
@@ -145,6 +149,8 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const checkpointDiffQuery = yield* CheckpointDiffQuery;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
+    const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
+    const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
     const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
     const serverSettings = yield* ServerSettingsService;
@@ -552,12 +558,48 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       },
     );
 
+    const reconcileQuotaBlockedStages = Effect.fn("PmRuntime.reconcileQuotaBlockedStages")(
+      function* () {
+        const blockedStages = yield* projectionQuotaBlockedStageRepository.listBlocked();
+        if (blockedStages.length === 0) {
+          return 0;
+        }
+
+        const resumedAt = DateTime.formatIso(yield* DateTime.now);
+        let resumedCount = 0;
+        yield* Effect.forEach(
+          blockedStages,
+          (stage) =>
+            Effect.gen(function* () {
+              const quotaRow = yield* providerQuotaStatusRepository.getByProviderInstanceId({
+                providerInstanceId: stage.providerInstanceId,
+              });
+              if (Option.isNone(quotaRow) || quotaRow.value.status !== "ok") {
+                return;
+              }
+              const resumed = yield* resumeQuotaBlockedStageWithServices({
+                stage,
+                createdAt: resumedAt,
+                orchestrationEngine,
+                projectionSnapshotQuery,
+              });
+              if (resumed) {
+                resumedCount += 1;
+              }
+            }),
+          { concurrency: 1, discard: true },
+        );
+        return resumedCount;
+      },
+    );
+
     const runReconciliationSweep = reconciliationSemaphore.withPermits(1)(
       Effect.gen(function* () {
         const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
         const events = yield* readSettlementEvents();
         let neverConsumedCount = 0;
         let pendingActedCount = 0;
+        let quotaResumedCount = 0;
 
         yield* Effect.forEach(
           readModel.projects,
@@ -576,12 +618,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           { concurrency: 1, discard: true },
         );
 
-        const redrivenCount = neverConsumedCount + pendingActedCount;
+        quotaResumedCount = yield* reconcileQuotaBlockedStages();
+
+        const redrivenCount = neverConsumedCount + pendingActedCount + quotaResumedCount;
         if (redrivenCount > 0) {
           yield* increment(orchestrationReconciliationSettlementsRedrivenTotal, {}, redrivenCount);
           yield* Effect.logInfo("PM runtime reconciliation sweep completed", {
             neverConsumedCount,
             pendingActedCount,
+            quotaResumedCount,
             projectCount: readModel.projects.length,
           });
         }

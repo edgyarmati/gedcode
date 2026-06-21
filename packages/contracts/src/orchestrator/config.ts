@@ -70,6 +70,7 @@ export type OrchestratorTaskType = typeof OrchestratorTaskType.Type;
 export const DEFAULT_MAX_PARALLEL_WORKERS = 1;
 export const DEFAULT_MAX_PARALLEL_TASKS = 1;
 export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
+export const DEFAULT_MAX_RETRIES_PER_STAGE = 2;
 export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
 export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 5;
 
@@ -96,6 +97,9 @@ export const OrchestratorResourceLimits = Schema.Struct({
   ),
   maxStageHandoffs: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_STAGE_HANDOFFS)),
+  ),
+  maxRetriesPerStage: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),
   ),
   // Human-only opt-in. Defaults to `false` so the runtime-mode clamp (WP-E)
   // forbids `full-access` workers unless a human deliberately flips this.
@@ -165,6 +169,9 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   ),
   maxStageHandoffs: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_STAGE_HANDOFFS)),
+  ),
+  maxRetriesPerStage: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),
   ),
   pmReconciliationIntervalMs: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PM_RECONCILIATION_INTERVAL_MS)),

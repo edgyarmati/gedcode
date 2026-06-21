@@ -107,6 +107,7 @@ export function classifyOrchestrationCommand(
     case "task.classify":
     case "task.stage.start":
     case "task.stage.complete":
+    case "task.stage.block":
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land":
@@ -161,6 +162,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.classify":
     case "task.stage.start":
     case "task.stage.complete":
+    case "task.stage.block":
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land":

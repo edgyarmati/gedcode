@@ -85,6 +85,7 @@ const LazyDiffPanel = lazy(() => import("../DiffPanel"));
 const TASK_STATUS_LABELS: Record<OrchestratorTask["status"], string> = {
   abandoned: "Abandoned",
   blocked: "Blocked",
+  "blocked-on-quota": "Blocked on quota",
   classified: "Classified",
   draft: "Draft",
   landed: "Landed",
@@ -103,6 +104,7 @@ const BOARD_STATUSES: ReadonlyArray<OrchestratorTask["status"]> = [
   "working",
   "review",
   "blocked",
+  "blocked-on-quota",
   "landed",
 ];
 

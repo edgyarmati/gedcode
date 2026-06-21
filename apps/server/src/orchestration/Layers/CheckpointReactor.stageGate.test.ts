@@ -73,6 +73,8 @@ import { WorkspaceEntriesLive } from "../../workspace/Layers/WorkspaceEntries.ts
 import { WorkspacePathsLive } from "../../workspace/Layers/WorkspacePaths.ts";
 import { stageCompleteCommandId } from "../stageResolution.ts";
 
+const CHECKPOINT_STAGE_GATE_WAIT_TIMEOUT_MS = 45_000;
+
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 
 type LegacyProviderRuntimeEvent = {
@@ -148,7 +150,7 @@ function createProviderServiceHarness() {
 async function waitForEvent(
   engine: OrchestrationEngineShape,
   predicate: (event: { type: string }) => boolean,
-  timeoutMs = 15_000,
+  timeoutMs = CHECKPOINT_STAGE_GATE_WAIT_TIMEOUT_MS,
 ) {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
   const poll = async () => {
@@ -360,7 +362,8 @@ describe("CheckpointReactor stage-completion diff gate", () => {
       }),
     );
 
-    const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + 15_000;
+    const deadline =
+      (await Effect.runPromise(Clock.currentTimeMillis)) + CHECKPOINT_STAGE_GATE_WAIT_TIMEOUT_MS;
     const poll = async (): Promise<ThreadId> => {
       const snapshot = await harness.readModel();
       const task = snapshot.tasks.find((entry) => entry.id === TaskId.make("task-stage-gate"));

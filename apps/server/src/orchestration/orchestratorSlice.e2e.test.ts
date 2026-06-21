@@ -25,6 +25,8 @@ import * as Stream from "effect/Stream";
 
 import { CheckpointDiffQuery } from "../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../persistence/Services/ProjectionAwaitedStages.ts";
+import { ProjectionQuotaBlockedStageRepository } from "../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProviderQuotaStatusRepository } from "../persistence/Services/ProviderQuotaStatus.ts";
 import {
   PmRuntimeStateRepository,
   type ConsumePmSettlementInput,
@@ -249,6 +251,33 @@ function makePmRuntimeLayer(input: {
       Layer.succeed(ProjectionAwaitedStageRepository, {
         upsert: () => Effect.void,
         listByTaskId: () => Effect.succeed([]),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionQuotaBlockedStageRepository, {
+        upsert: () => Effect.void,
+        listByTaskId: () => Effect.succeed([]),
+        listBlockedByProviderInstanceId: () => Effect.succeed([]),
+        listBlocked: () => Effect.succeed([]),
+        listAll: () => Effect.succeed([]),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProviderQuotaStatusRepository, {
+        upsert: () =>
+          Effect.die("ProviderQuotaStatusRepository.upsert should not be called by e2e"),
+        markBlocked: () =>
+          Effect.die("ProviderQuotaStatusRepository.markBlocked should not be called by e2e"),
+        observeRuntimeStatus: () =>
+          Effect.die(
+            "ProviderQuotaStatusRepository.observeRuntimeStatus should not be called by e2e",
+          ),
+        getByProviderInstanceId: () => Effect.succeed(Option.none()),
+        isInstanceQuotaBlocked: () =>
+          Effect.die(
+            "ProviderQuotaStatusRepository.isInstanceQuotaBlocked should not be called by e2e",
+          ),
+        listBlocked: () => Effect.succeed([]),
       }),
     ),
     Layer.provide(

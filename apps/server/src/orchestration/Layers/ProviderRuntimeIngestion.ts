@@ -21,6 +21,7 @@ import {
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,6 +30,10 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
+import { ProjectionQuotaBlockedStageRepositoryLive } from "../../persistence/Layers/ProjectionQuotaBlockedStages.ts";
+import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { isGitRepository } from "../../git/Utils.ts";
@@ -42,8 +47,10 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   activeStageRoleForTaskStatus,
   findTaskForStageThread,
+  stageBlockCommandId,
   stageCompleteCommandId,
 } from "../stageResolution.ts";
+import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 
@@ -181,6 +188,13 @@ function truncateDetail(value: string, limit = 180): string {
 
 const AUTHENTICATION_REAUTHENTICATION_TIP =
   "Try reauthenticating in the CLI: run `codex login` for Codex, or `/login` inside Claude Code.";
+
+function isoFromEpochMs(value: number | undefined): string | null {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return DateTime.formatIso(DateTime.makeUnsafe(value));
+}
 
 function shouldShowReauthenticationTip(message: string): boolean {
   const normalized = message.toLowerCase();
@@ -668,6 +682,8 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
+  const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
@@ -719,6 +735,40 @@ const make = Effect.gen(function* () {
   ) {
     const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
     return findTaskForStageThread(readModel.tasks, threadId);
+  });
+
+  const blockActiveStageOnQuota = Effect.fn("blockActiveStageOnQuota")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly providerInstanceId: NonNullable<ProviderRuntimeEvent["providerInstanceId"]>;
+    readonly resetAt: string | null;
+    readonly sourceKey: string;
+    readonly createdAt: string;
+  }) {
+    const taskForStageThread = yield* resolveTaskForStageThread(input.threadId);
+    const activeStageRole =
+      taskForStageThread === undefined
+        ? null
+        : activeStageRoleForTaskStatus(taskForStageThread.status);
+    if (
+      taskForStageThread === undefined ||
+      activeStageRole === null ||
+      !sameId(taskForStageThread.currentStageThreadId, input.threadId)
+    ) {
+      return false;
+    }
+
+    yield* orchestrationEngine.dispatch({
+      type: "task.stage.block",
+      commandId: stageBlockCommandId(input.threadId, input.providerInstanceId, input.sourceKey),
+      taskId: taskForStageThread.id,
+      stageThreadId: input.threadId,
+      role: activeStageRole,
+      reason: "quota",
+      providerInstanceId: input.providerInstanceId,
+      ...(input.resetAt !== null ? { resetAt: input.resetAt } : {}),
+      createdAt: input.createdAt,
+    });
+    return true;
   });
 
   const rememberAssistantMessageId = (threadId: ThreadId, turnId: TurnId, messageId: MessageId) =>
@@ -1265,6 +1315,41 @@ const make = Effect.gen(function* () {
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
 
+      if (event.type === "account.rate-limits.updated" && event.providerInstanceId !== undefined) {
+        const change = yield* providerQuotaStatusRepository.observeRuntimeStatus({
+          providerInstanceId: event.providerInstanceId,
+          runtimeStatus: event.payload.status,
+          resetAt: isoFromEpochMs(event.payload.resetAtEpochMs),
+          updatedAt: now,
+        });
+        if (
+          Option.isSome(change) &&
+          change.value.nextStatus === "ok" &&
+          change.value.previousStatus !== null &&
+          change.value.previousStatus !== "ok"
+        ) {
+          yield* resumeQuotaBlockedStagesForProviderWithServices({
+            providerInstanceId: event.providerInstanceId,
+            createdAt: now,
+            orchestrationEngine,
+            projectionSnapshotQuery,
+            projectionQuotaBlockedStageRepository,
+          });
+        }
+      }
+
+      if (
+        event.type === "runtime.error" &&
+        event.payload.class === "rate_limit" &&
+        event.providerInstanceId !== undefined
+      ) {
+        yield* providerQuotaStatusRepository.markBlocked({
+          providerInstanceId: event.providerInstanceId,
+          resetAt: null,
+          updatedAt: now,
+        });
+      }
+
       const conflictsWithActiveTurn =
         activeTurnId !== null && eventTurnId !== undefined && !sameId(activeTurnId, eventTurnId);
       const missingTurnForActiveTurn = activeTurnId !== null && eventTurnId === undefined;
@@ -1686,6 +1771,16 @@ const make = Effect.gen(function* () {
           : activeTurnId === null || eventTurnId === undefined || sameId(activeTurnId, eventTurnId);
 
         if (shouldApplyRuntimeError) {
+          if (event.payload.class === "rate_limit" && event.providerInstanceId !== undefined) {
+            yield* blockActiveStageOnQuota({
+              threadId: thread.id,
+              providerInstanceId: event.providerInstanceId,
+              resetAt: null,
+              sourceKey: String(event.eventId),
+              createdAt: now,
+            });
+          }
+
           yield* orchestrationEngine.dispatch({
             type: "thread.session.set",
             commandId: yield* providerCommandId(event, "runtime-error-session-set"),
@@ -1817,4 +1912,8 @@ const make = Effect.gen(function* () {
 export const ProviderRuntimeIngestionLive = Layer.effect(
   ProviderRuntimeIngestionService,
   make,
-).pipe(Layer.provide(ProjectionTurnRepositoryLive));
+).pipe(
+  Layer.provideMerge(ProjectionTurnRepositoryLive),
+  Layer.provideMerge(ProviderQuotaStatusRepositoryLive),
+  Layer.provideMerge(ProjectionQuotaBlockedStageRepositoryLive),
+);

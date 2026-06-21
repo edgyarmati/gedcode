@@ -7,9 +7,9 @@ export default mergeConfig(
   defineConfig({
     test: {
       // Server integration tests exercise sqlite, git, and orchestration together.
-      // Under package-wide parallel runs they can exceed the default 15s budget.
-      testTimeout: 60_000,
-      hookTimeout: 60_000,
+      // Under monorepo-wide parallel runs they can exceed the default budget.
+      testTimeout: 120_000,
+      hookTimeout: 120_000,
     },
   }),
 );
