@@ -10,12 +10,22 @@ export type PmReEntryQueueShape = {
   readonly drain: Effect.Effect<void, PmRuntimeError>;
 };
 
+export type PmReEntryQueueOptions = {
+  // Observe a failed PM turn before its error propagates out of `drain`. Lets the
+  // PM runtime detect provider-instance quota exhaustion (a rate-limit turn
+  // failure) and mark the instance blocked so subsequent re-entry is held rather
+  // than hammered. Runs as a `tapError`, so it never swallows the original error.
+  readonly onTurnError?: (error: PmRuntimeError) => Effect.Effect<void>;
+};
+
 export const makePmReEntryQueue = (
   adapter: Pick<PiAgentAdapterShape, "isIdle" | "prompt" | "followUp">,
+  options?: PmReEntryQueueOptions,
 ): Effect.Effect<PmReEntryQueueShape> =>
   Effect.gen(function* () {
     const queue = yield* Queue.unbounded<string>();
     const semaphore = yield* Semaphore.make(1);
+    const onTurnError = options?.onTurnError;
 
     // `drain` is serialized by this 1-permit semaphore, and `PiAgentAdapter.prompt`
     // is blocking — it holds the permit for the *entire* PM turn and only resolves
@@ -34,11 +44,8 @@ export const makePmReEntryQueue = (
 
         const payload = messages.join("\n\n");
         const idle = yield* adapter.isIdle;
-        if (idle) {
-          yield* adapter.prompt(payload);
-        } else {
-          yield* adapter.followUp(payload);
-        }
+        const turn = idle ? adapter.prompt(payload) : adapter.followUp(payload);
+        yield* onTurnError === undefined ? turn : turn.pipe(Effect.tapError(onTurnError));
       }),
     );
 

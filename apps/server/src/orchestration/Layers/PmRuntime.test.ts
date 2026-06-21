@@ -351,10 +351,16 @@ const makeLayer = (input: {
                   updatedAt: now,
                 });
           }),
-        isInstanceQuotaBlocked: () =>
-          Effect.die(
-            "ProviderQuotaStatusRepository.isInstanceQuotaBlocked should not be called by PmRuntime",
-          ),
+        isInstanceQuotaBlocked: ({ providerInstanceId }) =>
+          Effect.sync(() => {
+            const status = input.providerQuotaStatuses?.get(String(providerInstanceId)) ?? "ok";
+            return {
+              providerInstanceId,
+              status,
+              blocked: status !== "ok",
+              resetAt: null,
+            };
+          }),
         listBlocked: () => Effect.succeed([]),
       }),
     ),
@@ -438,6 +444,38 @@ describe("PmRuntime", () => {
       assert.notMatch(messages[0] ?? "", /sk-live-secret/);
       assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
       assert.strictEqual(consumeCalls.length, 1);
+    }),
+  );
+
+  // WP-Q5: when the PM's own provider instance is quota-blocked, re-entry is held
+  // BEFORE the settlement is consumed — nothing is delivered to the PM and nothing
+  // is consumed, so the reconciliation sweep re-drives it once quota recovers
+  // (preserving exactly-once). The PM runs on the `codex` instance per the test
+  // project config.
+  it.effect("holds PM re-entry while the PM provider instance is quota-blocked", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        providerQuotaStatuses: new Map([
+          [String(ProviderInstanceId.make("codex")), "blocked-until"],
+        ]),
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 0);
+      assert.strictEqual(consumeCalls.length, 0);
     }),
   );
 

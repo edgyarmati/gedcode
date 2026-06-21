@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 
+import { PmRuntimeError } from "./Errors.ts";
 import { makePmReEntryQueue } from "./PmReEntryQueue.ts";
 
 describe("PmReEntryQueue", () => {
@@ -102,5 +104,68 @@ describe("PmReEntryQueue", () => {
         assert.deepStrictEqual(followUps, []);
       }),
     ),
+  );
+
+  // WP-Q5: a failed PM turn is observed by `onTurnError` (so the runtime can
+  // detect provider-instance quota exhaustion and mark it blocked) while the
+  // original error still propagates out of `drain` unchanged.
+  it.effect("reports a failed turn to onTurnError and re-propagates the error", () =>
+    Effect.gen(function* () {
+      const observed: PmRuntimeError[] = [];
+      const failure = new PmRuntimeError({
+        operation: "PiAgentAdapter.prompt",
+        detail: "PM prompt failed.",
+        cause: new Error("Rate limit exceeded"),
+      });
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: () => Effect.fail(failure) as never,
+          followUp: () => Effect.void as never,
+        },
+        {
+          onTurnError: (error) =>
+            Effect.sync(() => {
+              observed.push(error);
+            }),
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      const exit = yield* queue.drain.pipe(Effect.exit);
+
+      assert.isTrue(Exit.isFailure(exit));
+      assert.strictEqual(observed.length, 1);
+      assert.strictEqual(observed[0], failure);
+    }),
+  );
+
+  it.effect("leaves a successful turn untouched when onTurnError is supplied", () =>
+    Effect.gen(function* () {
+      const observed: PmRuntimeError[] = [];
+      const prompts: string[] = [];
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: (message) =>
+            Effect.sync(() => {
+              prompts.push(message);
+            }) as never,
+          followUp: () => Effect.void as never,
+        },
+        {
+          onTurnError: (error) =>
+            Effect.sync(() => {
+              observed.push(error);
+            }),
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      yield* queue.drain;
+
+      assert.deepStrictEqual(prompts, ["stage result"]);
+      assert.strictEqual(observed.length, 0);
+    }),
   );
 });

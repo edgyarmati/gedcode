@@ -32,7 +32,10 @@ import {
 } from "../../observability/Metrics.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
-import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
+import {
+  defaultOkQuotaState,
+  ProviderQuotaStatusRepository,
+} from "../../persistence/Services/ProviderQuotaStatus.ts";
 import {
   makeGateSettlementKey,
   makeStageSettlementKey,
@@ -52,6 +55,7 @@ import {
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
+import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePiAgentAdapter } from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime } from "../pi/PmEventProjection.ts";
 import { resolvePiApiKey, resolvePiModel, resolvePiProvider } from "../pi/PmModelResolver.ts";
@@ -301,6 +305,30 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       return events;
     });
 
+    // Stop hammering a quota-blocked PM. When the project's PM provider instance
+    // is quota-blocked we hold re-entry rather than prompting a dry PM: the
+    // settlement is left un-consumed (live) or un-acted (redrive), so the
+    // reconciliation sweep re-drives it through this same gate once the instance
+    // recovers. A projection read error fails open (treat the PM as available) so
+    // a transient DB hiccup can never wedge the project.
+    const pmInstanceQuotaBlocked = Effect.fn("PmRuntime.pmInstanceQuotaBlocked")(function* (
+      project: OrchestrationProject,
+    ) {
+      const config = resolveProjectConfig(project);
+      if (
+        Option.isNone(config) ||
+        config.value.enabled !== true ||
+        config.value.pmModelSelection === null
+      ) {
+        return false;
+      }
+      const providerInstanceId = config.value.pmModelSelection.instanceId;
+      const state = yield* providerQuotaStatusRepository
+        .isInstanceQuotaBlocked({ providerInstanceId })
+        .pipe(Effect.catch(() => Effect.succeed(defaultOkQuotaState(providerInstanceId))));
+      return state.blocked;
+    });
+
     const redriveSettlementBypassingCursor = Effect.fn(
       "PmRuntime.redriveSettlementBypassingCursor",
     )(function* (input: {
@@ -317,6 +345,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             settlementKey: input.marker.settlementKey,
           },
         );
+        return false;
+      }
+
+      if (yield* pmInstanceQuotaBlocked(envelope.project)) {
+        yield* Effect.logInfo("PM re-entry redrive held: provider instance quota-blocked", {
+          projectId: String(input.marker.projectId),
+          kind: input.marker.kind,
+          settlementKey: input.marker.settlementKey,
+        });
         return false;
       }
 
@@ -349,6 +386,19 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         projectId: envelope.project.id,
       });
       if (Option.isSome(cursor) && event.sequence <= cursor.value.lastConsumedSequence) {
+        return;
+      }
+
+      // Hold re-entry while the PM provider instance is quota-blocked. Returning
+      // before consuming leaves the settlement un-consumed, so the reconciliation
+      // sweep (reconcileNeverConsumedSettlements) re-drives it once quota recovers
+      // — exactly-once is preserved because nothing was consumed or acted here.
+      if (yield* pmInstanceQuotaBlocked(envelope.project)) {
+        yield* Effect.logInfo("PM re-entry held: provider instance quota-blocked", {
+          projectId: String(envelope.project.id),
+          kind: envelope.kind,
+          settlementKey: envelope.settlementKey,
+        });
         return;
       }
 
@@ -737,6 +787,7 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
   const tools = yield* makePmTools;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
   const runtimeScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
   const runtimes = new Map<string, PmProjectRuntime>();
@@ -810,7 +861,41 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
         Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
         Scope.provide(runtimeScope),
       );
-      const queue = yield* makePmReEntryQueue(adapter);
+      const pmProviderInstanceId = pmModelSelection.instanceId;
+      const queue = yield* makePmReEntryQueue(adapter, {
+        // Detect PM-instance quota exhaustion from the PM's own failed turn. The
+        // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
+        // provider event), so it bypasses the ingestion-path detection that marks
+        // worker instances blocked — we classify it here and mark the PM instance
+        // blocked so the re-entry gate holds subsequent turns rather than hammering
+        // a dry PM.
+        onTurnError: (error) =>
+          Effect.gen(function* () {
+            const causeText =
+              error.cause instanceof Error
+                ? error.cause.message
+                : typeof error.cause === "string"
+                  ? error.cause
+                  : "";
+            const message = `${error.detail} ${causeText}`.trim();
+            if (
+              classifyRuntimeErrorClass({ message, fallback: "provider_error" }) !== "rate_limit"
+            ) {
+              return;
+            }
+            const updatedAt = DateTime.formatIso(yield* DateTime.now);
+            yield* providerQuotaStatusRepository
+              .markBlocked({ providerInstanceId: pmProviderInstanceId, resetAt: null, updatedAt })
+              .pipe(Effect.ignore);
+            yield* Effect.logWarning(
+              "PM provider instance marked quota-blocked after failed turn",
+              {
+                projectId: String(project.id),
+                providerInstanceId: String(pmProviderInstanceId),
+              },
+            );
+          }),
+      });
       const runtime: PmProjectRuntime = {
         enqueue: queue.enqueue,
         drain: queue.drain.pipe(Effect.andThen(eventProjection.drain)),
