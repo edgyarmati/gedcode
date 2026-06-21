@@ -51,6 +51,7 @@ import {
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { classifyRuntimeErrorClass, mapCodexRateLimits } from "../rateLimits.ts";
 import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
@@ -496,7 +497,7 @@ function mapToRuntimeEvents(
         type: "runtime.error",
         payload: {
           message: event.message,
-          class: "provider_error",
+          class: classifyRuntimeErrorClass({ message: event.message, fallback: "provider_error" }),
           ...(event.payload !== undefined ? { detail: event.payload } : {}),
         },
       },
@@ -1113,16 +1114,18 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "account/rateLimits/updated") {
-    if (!readPayload(EffectCodexSchema.V2AccountRateLimitsUpdatedNotification, event.payload)) {
+    const payload = readPayload(
+      EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
       return [];
     }
     return [
       {
         type: "account.rate-limits.updated",
         ...runtimeEventBase(event, canonicalThreadId),
-        payload: {
-          rateLimits: event.payload ?? {},
-        },
+        payload: mapCodexRateLimits(payload.rateLimits, event.payload),
       },
     ];
   }
@@ -1245,7 +1248,9 @@ function mapToRuntimeEvents(
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
           message,
-          ...(!willRetry ? { class: "provider_error" as const } : {}),
+          ...(!willRetry
+            ? { class: classifyRuntimeErrorClass({ message, fallback: "provider_error" }) }
+            : {}),
           ...(event.payload !== undefined ? { detail: event.payload } : {}),
         },
       },
@@ -1262,7 +1267,7 @@ function mapToRuntimeEvents(
             ...runtimeEventBase(event, canonicalThreadId),
             payload: {
               message,
-              class: "provider_error" as const,
+              class: classifyRuntimeErrorClass({ message, fallback: "provider_error" }),
               ...(event.payload !== undefined ? { detail: event.payload } : {}),
             },
           }
