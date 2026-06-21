@@ -1564,6 +1564,13 @@ export const OrchestratorProjectDetailSnapshot = Schema.Struct({
   pmThread: Schema.NullOr(OrchestrationThread),
   tasks: Schema.Array(OrchestrationTask),
   pendingGates: Schema.Array(OrchestrationPendingGate),
+  // Active quota-blocked stages for this project's tasks, so the web can surface
+  // a "resets ~HH:MM" badge on a blocked-on-quota task at subscribe time (it is
+  // then kept live by the streamed `task.stage-blocked` / `task.stage.start`
+  // events). Decoding default keeps older snapshots without the field valid.
+  quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type OrchestratorProjectDetailSnapshot = typeof OrchestratorProjectDetailSnapshot.Type;
 

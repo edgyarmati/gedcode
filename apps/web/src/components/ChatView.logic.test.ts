@@ -336,6 +336,7 @@ function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) 
     taskById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
+    quotaBlockedStageByTaskId: {},
     threadIds: threads.map((thread) => thread.id),
     threadIdsByProjectId: {
       [projectId]: threads.map((thread) => thread.id),

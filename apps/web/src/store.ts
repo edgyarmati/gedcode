@@ -25,7 +25,7 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { isProviderDriverKind, ProviderDriverKind } from "@t3tools/contracts";
-import type { GateId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
+import type { GateId, ProviderInstanceId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { resolveModelSlugForProvider } from "@t3tools/shared/model";
 import { create } from "zustand";
@@ -47,6 +47,15 @@ import { sanitizeThreadErrorMessage } from "./rpc/transportError";
 import { getThreadFromEnvironmentState } from "./threadDerivation";
 const isProviderDriverKindValue = Schema.is(ProviderDriverKind);
 
+// Minimal per-task quota-block surface for the task-board badge. Sourced from
+// the project snapshot's `quotaBlockedStages` and the streamed `task.stage-blocked`
+// event; intentionally not the full contract row (no branded retry bookkeeping).
+export interface TaskQuotaBlock {
+  readonly resetAt: string | null;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly stageThreadId: ThreadId;
+}
+
 export interface EnvironmentState {
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
@@ -55,6 +64,11 @@ export interface EnvironmentState {
   taskById: Record<string, OrchestratorTask>;
   pendingGateIdsByTaskId: Record<string, string[]>;
   pendingGateById: Record<string, OrchestratorPendingGate>;
+  // Active quota-blocked stage per task (at most one stage is active at a time).
+  // Seeded from the project snapshot and kept live by `task.stage-blocked`
+  // (set) / `task.stage-started` (clear) events. Drives the "resets ~HH:MM"
+  // task-board badge; the badge itself is gated on `task.status`.
+  quotaBlockedStageByTaskId: Record<string, TaskQuotaBlock>;
 
   // ---------------------------------------------------------------------------
   // Thread bookkeeping — written by BOTH shell stream and detail stream.
@@ -121,6 +135,7 @@ const initialEnvironmentState: EnvironmentState = {
   taskById: {},
   pendingGateIdsByTaskId: {},
   pendingGateById: {},
+  quotaBlockedStageByTaskId: {},
   threadIds: [],
   threadIdsByProjectId: {},
   threadShellById: {},
@@ -645,6 +660,29 @@ function updateTaskState(
   }
   const nextTask = update(task);
   return nextTask === task ? state : writeTaskState(state, nextTask);
+}
+
+function setTaskQuotaBlock(
+  state: EnvironmentState,
+  taskId: string,
+  block: TaskQuotaBlock,
+): EnvironmentState {
+  return {
+    ...state,
+    quotaBlockedStageByTaskId: {
+      ...state.quotaBlockedStageByTaskId,
+      [taskId]: block,
+    },
+  };
+}
+
+function clearTaskQuotaBlock(state: EnvironmentState, taskId: string): EnvironmentState {
+  if (state.quotaBlockedStageByTaskId[taskId] === undefined) {
+    return state;
+  }
+  const nextQuota = { ...state.quotaBlockedStageByTaskId };
+  delete nextQuota[taskId];
+  return { ...state, quotaBlockedStageByTaskId: nextQuota };
 }
 
 function writePendingGateState(
@@ -1574,6 +1612,22 @@ export function syncOrchestratorProjectSnapshot(
     );
   }
 
+  // Reset this project's quota-block index to match the snapshot (authoritative
+  // at subscribe time), then re-seed the actively blocked stages.
+  for (const taskId of snapshotTaskIds) {
+    nextEnvironmentState = clearTaskQuotaBlock(nextEnvironmentState, taskId);
+  }
+  for (const stage of snapshot.quotaBlockedStages) {
+    if (stage.status !== "blocked") {
+      continue;
+    }
+    nextEnvironmentState = setTaskQuotaBlock(nextEnvironmentState, String(stage.taskId), {
+      resetAt: stage.resetAt,
+      providerInstanceId: stage.providerInstanceId,
+      stageThreadId: stage.stageThreadId,
+    });
+  }
+
   nextEnvironmentState = retainProjectSnapshotTaskState({
     state: nextEnvironmentState,
     projectId: snapshot.project.id,
@@ -1761,8 +1815,9 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
-    case "task.stage-started":
-      return updateTaskState(state, String(event.payload.taskId), (task) => {
+    case "task.stage-started": {
+      const taskId = String(event.payload.taskId);
+      const nextState = updateTaskState(state, taskId, (task) => {
         const status =
           event.payload.role === "plan"
             ? ("planning" as const)
@@ -1779,6 +1834,9 @@ function applyEnvironmentOrchestrationEvent(
           updatedAt: event.payload.updatedAt,
         };
       });
+      // A (re)started stage means the task is no longer parked on quota.
+      return clearTaskQuotaBlock(nextState, taskId);
+    }
 
     case "task.stage-completed":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
@@ -1787,6 +1845,21 @@ function applyEnvironmentOrchestrationEvent(
         currentStageThreadId: null,
         updatedAt: event.payload.updatedAt,
       }));
+
+    case "task.stage-blocked": {
+      const taskId = String(event.payload.taskId);
+      const withTask = updateTaskState(state, taskId, (task) => ({
+        ...task,
+        status: "blocked-on-quota" as const,
+        currentStageThreadId: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+      return setTaskQuotaBlock(withTask, taskId, {
+        resetAt: event.payload.resetAt ?? null,
+        providerInstanceId: event.payload.providerInstanceId,
+        stageThreadId: event.payload.stageThreadId,
+      });
+    }
 
     case "task.gate-requested": {
       const existingGate = state.pendingGateById[String(event.payload.gateId)];
@@ -2477,6 +2550,15 @@ export function selectTaskByRef(
 ): OrchestratorTask | undefined {
   return ref
     ? selectEnvironmentState(state, ref.environmentId).taskById[String(ref.taskId)]
+    : undefined;
+}
+
+export function selectTaskQuotaBlockByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): TaskQuotaBlock | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).quotaBlockedStageByTaskId[String(ref.taskId)]
     : undefined;
 }
 

@@ -62,6 +62,7 @@ import {
   selectProjectByRef,
   selectProjectsAcrossEnvironments,
   selectTaskByRef,
+  selectTaskQuotaBlockByRef,
   selectTasksForProjectRef,
   selectThreadByRef,
   useStore,
@@ -624,6 +625,42 @@ function TaskBoard({
   );
 }
 
+function formatQuotaResetLabel(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) {
+    return null;
+  }
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// Calm "paused on subscription quota" badge. Rendered only for blocked-on-quota
+// tasks; shows the reset time when one is known (WP-Q6 auto-resume target).
+function TaskQuotaBadge({
+  environmentId,
+  taskId,
+  status,
+}: {
+  environmentId: EnvironmentId;
+  taskId: TaskId;
+  status: OrchestratorTask["status"];
+}) {
+  const quotaRef = useMemo<ScopedTaskRef>(
+    () => ({ environmentId, taskId }),
+    [environmentId, taskId],
+  );
+  const quotaBlock = useStore((state) => selectTaskQuotaBlockByRef(state, quotaRef));
+  if (status !== "blocked-on-quota") {
+    return null;
+  }
+  const resetLabel = quotaBlock?.resetAt ? formatQuotaResetLabel(quotaBlock.resetAt) : null;
+  return (
+    <Badge size="sm" variant="warning">
+      <ClockIcon className="size-3" />
+      {resetLabel ? `Quota · resets ${resetLabel}` : "Quota-blocked"}
+    </Badge>
+  );
+}
+
 function TaskBoardCard({
   environmentId,
   projectId,
@@ -653,6 +690,7 @@ function TaskBoardCard({
             Running
           </Badge>
         ) : null}
+        <TaskQuotaBadge environmentId={environmentId} taskId={task.id} status={task.status} />
       </div>
     </Link>
   );
@@ -760,6 +798,7 @@ function TaskHeader({ task }: { task: OrchestratorTask }) {
             {task.branch}
           </Badge>
         ) : null}
+        <TaskQuotaBadge environmentId={task.environmentId} taskId={task.id} status={task.status} />
       </div>
       {task.worktreePath ? (
         <p className="mt-3 truncate text-xs text-muted-foreground">{task.worktreePath}</p>

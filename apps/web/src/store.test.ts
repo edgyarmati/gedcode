@@ -124,6 +124,7 @@ function makeState(thread: Thread): AppState {
     taskById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
+    quotaBlockedStageByTaskId: {},
     threadIds: [thread.id],
     threadIdsByProjectId,
     threadShellById: {
@@ -204,6 +205,7 @@ function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): A
     taskById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
+    quotaBlockedStageByTaskId: {},
     threadIds: [],
     threadIdsByProjectId: {},
     threadShellById: {},
@@ -850,6 +852,7 @@ describe("incremental orchestration updates", () => {
         pmThread: null,
         tasks: [retainedTask],
         pendingGates: [retainedGate],
+        quotaBlockedStages: [],
       },
       localEnvironmentId,
     );

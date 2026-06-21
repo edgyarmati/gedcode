@@ -604,6 +604,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             const pendingGates = (snapshot.pendingGates ?? []).filter((gate) =>
               taskIds.has(String(gate.taskId)),
             );
+            const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
+              taskIds.has(String(stage.taskId)),
+            );
             const pmThreadId = pmThreadIdForProject(project);
             const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
             return Effect.succeed({
@@ -613,6 +616,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               pmThread,
               tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
               pendingGates,
+              quotaBlockedStages,
             });
           }),
           Effect.mapError((cause) =>
