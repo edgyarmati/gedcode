@@ -25,9 +25,15 @@ import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiff
 import {
   increment,
   orchestrationPmReEntryDuration,
+  orchestrationQuotaBlockedDuration,
+  orchestrationQuotaBlockedInstances,
+  orchestrationQuotaBlockedStages,
+  orchestrationQuotaStageResumedTotal,
   orchestrationReconciliationSettlementsRedrivenTotal,
   orchestrationReconciliationSweepDuration,
   orchestrationReconciliationSweepsTotal,
+  recordDuration,
+  setGauge,
   withMetrics,
 } from "../../observability/Metrics.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
@@ -611,6 +617,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const reconcileQuotaBlockedStages = Effect.fn("PmRuntime.reconcileQuotaBlockedStages")(
       function* () {
         const blockedStages = yield* projectionQuotaBlockedStageRepository.listBlocked();
+        // Sample the "currently parked" gauge every sweep (including 0) so it
+        // tracks recovery back to zero, not just the blocked peaks.
+        yield* setGauge(orchestrationQuotaBlockedStages, blockedStages.length);
         if (blockedStages.length === 0) {
           return 0;
         }
@@ -635,6 +644,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
               });
               if (resumed) {
                 resumedCount += 1;
+                const blockedMs = Date.parse(resumedAt) - Date.parse(stage.blockedAt);
+                if (Number.isFinite(blockedMs) && blockedMs >= 0) {
+                  // A metric tap must never break the resume/sweep; swallow any
+                  // recording error.
+                  yield* recordDuration(
+                    orchestrationQuotaBlockedDuration,
+                    Duration.millis(blockedMs),
+                  ).pipe(Effect.ignore);
+                }
               }
             }),
           { concurrency: 1, discard: true },
@@ -669,6 +687,14 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         );
 
         quotaResumedCount = yield* reconcileQuotaBlockedStages();
+
+        // Sample the per-instance quota gauge every sweep and roll the resumed
+        // stages into the WP-Q7 counter.
+        const blockedInstances = yield* providerQuotaStatusRepository.listBlocked();
+        yield* setGauge(orchestrationQuotaBlockedInstances, blockedInstances.length);
+        if (quotaResumedCount > 0) {
+          yield* increment(orchestrationQuotaStageResumedTotal, {}, quotaResumedCount);
+        }
 
         const redrivenCount = neverConsumedCount + pendingActedCount + quotaResumedCount;
         if (redrivenCount > 0) {

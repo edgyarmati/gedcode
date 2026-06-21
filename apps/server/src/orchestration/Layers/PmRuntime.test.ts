@@ -649,6 +649,68 @@ describe("PmRuntime", () => {
     }),
   );
 
+  // WP-Q7: the sweep's quota metric taps (gauge sampling, resumed counter,
+  // blocked-duration timer) must never break the resume path or the sweep — a
+  // throwing tap would silently fail reconciliation. This pins that the sweep
+  // still resumes the blocked stage and completes with the taps in place.
+  it.effect("quota metric taps do not break the resume reconciliation sweep", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const dispatchCalls: unknown[] = [];
+      const quotaBlockedStage: OrchestrationReadModel["quotaBlockedStages"][number] = {
+        taskId,
+        stageThreadId,
+        role: "work",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: null,
+        status: "blocked",
+        retryCount: 1,
+        blockedAt: "2026-01-01T00:00:00.000Z",
+        resumedAt: null,
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel: {
+          ...readModel,
+          tasks: [{ ...task, status: "blocked-on-quota", currentStageThreadId: null }],
+          quotaBlockedStages: [quotaBlockedStage],
+        },
+        quotaBlockedStages: [quotaBlockedStage],
+        providerQuotaStatuses: new Map([[String(ProviderInstanceId.make("codex")), "ok"]]),
+        dispatchCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        // Wait for the forked sweep to resume the blocked stage (proven by the
+        // dispatch), then let its tail (the resumed counter + gauges) settle.
+        for (let index = 0; index < 50 && dispatchCalls.length === 0; index += 1) {
+          yield* Effect.yieldNow;
+        }
+        yield* runtime.drain;
+        for (let index = 0; index < 10; index += 1) {
+          yield* Effect.yieldNow;
+        }
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      const snapshots = yield* Metric.snapshot;
+      // The blocked stage was resumed (its instance recovered)...
+      assert.strictEqual(dispatchCalls.length, 1, "resume should have dispatched");
+      // ...and the sweep ran to completion with the quota metric taps in place.
+      assert.ok(
+        counterCount(snapshots, "t3_orchestration_reconciliation_sweeps_total") >= 1,
+        "sweep completed",
+      );
+    }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())),
+  );
+
   it.effect("captures the worker diff (scrubbed + bounded) in the stage settlement message", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();

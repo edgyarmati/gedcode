@@ -163,9 +163,62 @@ export const orchestrationCommandQueueWaitDuration = Metric.histogram(
   },
 );
 
+// Subscription-quota handling (WP-Q7)
+//
+// Observability for the quota-exhaustion handling (WP-Q1..Q5): how many provider
+// instances and worker stages are currently parked on subscription quota, how
+// many blocked stages the reconciliation sweep has re-driven once their instance
+// recovered, and how long stages sat blocked. The gauges are sampled once per
+// reconciliation sweep (instantaneous "how much is parked right now"); the
+// counter and timer are emitted as the sweep resumes blocked stages.
+
+export const orchestrationQuotaBlockedInstances = Metric.gauge(
+  "t3_orchestration_quota_blocked_instances",
+  {
+    description:
+      "Provider instances currently marked quota-blocked, sampled once per PM reconciliation sweep.",
+  },
+);
+
+export const orchestrationQuotaBlockedStages = Metric.gauge(
+  "t3_orchestration_quota_blocked_stages",
+  {
+    description:
+      "Worker stages currently parked on subscription quota, sampled once per PM reconciliation sweep.",
+  },
+);
+
+export const orchestrationQuotaStageResumedTotal = Metric.counter(
+  "t3_orchestration_quota_stage_resumed_total",
+  {
+    description:
+      "Total quota-blocked worker stages re-driven by the reconciliation sweep after their provider instance recovered.",
+  },
+);
+
+export const orchestrationQuotaBlockedDuration = Metric.timer(
+  "t3_orchestration_quota_blocked_duration",
+  {
+    description:
+      "Time a worker stage spent parked on subscription quota, from blockedAt to resume.",
+  },
+);
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));
+
+export const setGauge = (
+  metric: Metric.Metric<number, unknown>,
+  value: number,
+  attributes: Readonly<Record<string, unknown>> = {},
+) => Metric.update(Metric.withAttributes(metric, metricAttributes(attributes)), value);
+
+export const recordDuration = (
+  metric: Metric.Metric<Duration.Duration, unknown>,
+  duration: Duration.Duration,
+  attributes: Readonly<Record<string, unknown>> = {},
+) => Metric.update(Metric.withAttributes(metric, metricAttributes(attributes)), duration);
 
 export const increment = (
   metric: Metric.Metric<number, unknown>,
