@@ -28,6 +28,7 @@ import {
   orchestrationQuotaBlockedDuration,
   orchestrationQuotaBlockedInstances,
   orchestrationQuotaBlockedStages,
+  orchestrationQuotaResetClearedTotal,
   orchestrationQuotaStageResumedTotal,
   orchestrationReconciliationSettlementsRedrivenTotal,
   orchestrationReconciliationSweepDuration,
@@ -619,6 +620,48 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       },
     );
 
+    // WP-Q6 (auto-resume-at-reset): optimistically clear a `blocked-until`
+    // instance once its parsed reset time has elapsed, so the existing resume +
+    // worker-start admission paths re-drive its blocked stages instead of waiting
+    // for fresh telemetry or an operator. Only `blocked-until` (a trustworthy
+    // reset time) qualifies — `blocked-unknown` (e.g. a PM self-detected block
+    // with no reset) is left for telemetry/operator. Optimistic and
+    // self-correcting: if the quota is not actually replenished, the next turn
+    // re-marks the instance blocked, bounded by `maxRetriesPerStage`.
+    const reconcileResetElapsedInstances = Effect.fn("PmRuntime.reconcileResetElapsedInstances")(
+      function* () {
+        const nowIso = DateTime.formatIso(yield* DateTime.now);
+        const nowMs = Date.parse(nowIso);
+        const blocked = yield* providerQuotaStatusRepository.listBlocked();
+        const elapsed = blocked.filter(
+          (row) =>
+            row.status === "blocked-until" &&
+            row.resetAt !== null &&
+            Date.parse(row.resetAt) <= nowMs,
+        );
+        if (elapsed.length === 0) {
+          return 0;
+        }
+        yield* Effect.forEach(
+          elapsed,
+          (row) =>
+            providerQuotaStatusRepository.upsert({
+              providerInstanceId: row.providerInstanceId,
+              status: "ok",
+              resetAt: null,
+              updatedAt: nowIso,
+            }),
+          { concurrency: 1, discard: true },
+        );
+        yield* increment(orchestrationQuotaResetClearedTotal, {}, elapsed.length);
+        yield* Effect.logInfo("quota reset elapsed; instances optimistically cleared to ok", {
+          count: elapsed.length,
+          providerInstanceIds: elapsed.map((row) => String(row.providerInstanceId)),
+        });
+        return elapsed.length;
+      },
+    );
+
     const reconcileQuotaBlockedStages = Effect.fn("PmRuntime.reconcileQuotaBlockedStages")(
       function* () {
         const blockedStages = yield* projectionQuotaBlockedStageRepository.listBlocked();
@@ -673,6 +716,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         let neverConsumedCount = 0;
         let pendingActedCount = 0;
         let quotaResumedCount = 0;
+        let resetClearedCount = 0;
 
         yield* Effect.forEach(
           readModel.projects,
@@ -691,6 +735,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           { concurrency: 1, discard: true },
         );
 
+        // Clear instances whose reset elapsed first, so their stages resume in
+        // this same sweep.
+        resetClearedCount = yield* reconcileResetElapsedInstances();
         quotaResumedCount = yield* reconcileQuotaBlockedStages();
 
         // Sample the per-instance quota gauge every sweep and roll the resumed
@@ -702,12 +749,19 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         }
 
         const redrivenCount = neverConsumedCount + pendingActedCount + quotaResumedCount;
-        if (redrivenCount > 0) {
-          yield* increment(orchestrationReconciliationSettlementsRedrivenTotal, {}, redrivenCount);
+        if (redrivenCount > 0 || resetClearedCount > 0) {
+          if (redrivenCount > 0) {
+            yield* increment(
+              orchestrationReconciliationSettlementsRedrivenTotal,
+              {},
+              redrivenCount,
+            );
+          }
           yield* Effect.logInfo("PM runtime reconciliation sweep completed", {
             neverConsumedCount,
             pendingActedCount,
             quotaResumedCount,
+            resetClearedCount,
             projectCount: readModel.projects.length,
           });
         }

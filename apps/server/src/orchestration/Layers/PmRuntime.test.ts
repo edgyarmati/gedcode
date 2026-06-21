@@ -26,7 +26,11 @@ import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
 import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
-import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
+import {
+  ProviderQuotaStatusRepository,
+  type ProviderQuotaStatusRow,
+  type UpsertProviderQuotaStatusInput,
+} from "../../persistence/Services/ProviderQuotaStatus.ts";
 import {
   PmRuntimeStateRepository,
   type ConsumePmSettlementInput,
@@ -182,6 +186,11 @@ const makeLayer = (input: {
   readonly commandReadModel?: OrchestrationReadModel;
   readonly quotaBlockedStages?: OrchestrationReadModel["quotaBlockedStages"];
   readonly providerQuotaStatuses?: Map<string, "ok" | "blocked-until" | "blocked-unknown">;
+  // WP-Q6: rows returned by ProviderQuotaStatusRepository.listBlocked (the
+  // currently quota-blocked instances the sweep scans for elapsed resets), plus
+  // a capture of the upserts the sweep issues when it clears an elapsed reset.
+  readonly providerQuotaBlockedRows?: ProviderQuotaStatusRow[];
+  readonly quotaUpsertCalls?: UpsertProviderQuotaStatusInput[];
   readonly dispatchCalls?: unknown[];
   // WP-4 diff-capture knobs. By default the stage thread has no captured
   // checkpoint (latestCheckpointTurnCount = 0 → diff-unavailable), preserving
@@ -331,8 +340,16 @@ const makeLayer = (input: {
     ),
     Layer.provide(
       Layer.succeed(ProviderQuotaStatusRepository, {
-        upsert: () =>
-          Effect.die("ProviderQuotaStatusRepository.upsert should not be called by PmRuntime"),
+        upsert: (row) =>
+          Effect.sync(() => {
+            input.quotaUpsertCalls?.push(row);
+            return {
+              providerInstanceId: row.providerInstanceId,
+              previousStatus: null,
+              nextStatus: row.status,
+              resetAt: row.resetAt,
+            };
+          }),
         markBlocked: () =>
           Effect.die("ProviderQuotaStatusRepository.markBlocked should not be called by PmRuntime"),
         observeRuntimeStatus: () =>
@@ -361,7 +378,7 @@ const makeLayer = (input: {
               resetAt: null,
             };
           }),
-        listBlocked: () => Effect.succeed([]),
+        listBlocked: () => Effect.succeed(input.providerQuotaBlockedRows ?? []),
       }),
     ),
     Layer.provide(
@@ -709,6 +726,66 @@ describe("PmRuntime", () => {
         "sweep completed",
       );
     }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())),
+  );
+
+  // WP-Q6 (auto-resume-at-reset): the sweep optimistically clears a
+  // `blocked-until` instance to `ok` once its reset has elapsed, but leaves a
+  // future reset and a `blocked-unknown` instance (no trustworthy reset) alone.
+  it.effect("clears only blocked-until instances whose reset has elapsed", () =>
+    Effect.gen(function* () {
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const quotaUpsertCalls: UpsertProviderQuotaStatusInput[] = [];
+      const consumed = new Set<string>();
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed,
+        messages,
+        consumeCalls,
+        providerQuotaBlockedRows: [
+          {
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            status: "blocked-until",
+            // The sweep runs under @effect/vitest's TestClock (epoch 0), so this
+            // reset is already due.
+            resetAt: "1970-01-01T00:00:00.000Z",
+            updatedAt: now,
+          },
+          {
+            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            status: "blocked-until",
+            resetAt: "2099-01-01T00:00:00.000Z",
+            updatedAt: now,
+          },
+          {
+            providerInstanceId: ProviderInstanceId.make("opencode"),
+            status: "blocked-unknown",
+            resetAt: null,
+            updatedAt: now,
+          },
+        ],
+        quotaUpsertCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        for (let index = 0; index < 50 && quotaUpsertCalls.length === 0; index += 1) {
+          yield* Effect.yieldNow;
+        }
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      // Only the elapsed `codex` instance is cleared — back to ok with no reset.
+      assert.strictEqual(quotaUpsertCalls.length, 1);
+      assert.strictEqual(
+        String(quotaUpsertCalls[0]?.providerInstanceId),
+        String(ProviderInstanceId.make("codex")),
+      );
+      assert.strictEqual(quotaUpsertCalls[0]?.status, "ok");
+      assert.strictEqual(quotaUpsertCalls[0]?.resetAt, null);
+    }),
   );
 
   it.effect("captures the worker diff (scrubbed + bounded) in the stage settlement message", () =>

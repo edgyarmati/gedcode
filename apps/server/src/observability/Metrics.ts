@@ -196,6 +196,14 @@ export const orchestrationQuotaStageResumedTotal = Metric.counter(
   },
 );
 
+export const orchestrationQuotaResetClearedTotal = Metric.counter(
+  "t3_orchestration_quota_reset_cleared_total",
+  {
+    description:
+      "Total provider instances optimistically cleared to ok by the reconciliation sweep once their parsed quota reset time elapsed (WP-Q6 auto-resume-at-reset).",
+  },
+);
+
 export const orchestrationQuotaBlockedDuration = Metric.timer(
   "t3_orchestration_quota_blocked_duration",
   {
