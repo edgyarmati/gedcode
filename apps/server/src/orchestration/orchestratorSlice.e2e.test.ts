@@ -273,10 +273,10 @@ function makePmRuntimeLayer(input: {
             "ProviderQuotaStatusRepository.observeRuntimeStatus should not be called by e2e",
           ),
         getByProviderInstanceId: () => Effect.succeed(Option.none()),
-        isInstanceQuotaBlocked: () =>
-          Effect.die(
-            "ProviderQuotaStatusRepository.isInstanceQuotaBlocked should not be called by e2e",
-          ),
+        // The PM re-entry quota gate (WP-Q5) reads this on every settlement; the
+        // e2e PM instance has headroom, so report not-blocked.
+        isInstanceQuotaBlocked: ({ providerInstanceId }) =>
+          Effect.succeed({ providerInstanceId, status: "ok", blocked: false, resetAt: null }),
         listBlocked: () => Effect.succeed([]),
       }),
     ),

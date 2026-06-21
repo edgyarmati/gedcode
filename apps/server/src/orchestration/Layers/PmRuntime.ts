@@ -329,9 +329,14 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return false;
       }
       const providerInstanceId = config.value.pmModelSelection.instanceId;
+      // Fail open on BOTH a typed read error and an unexpected defect: a quota
+      // read must never wedge PM re-entry. Interrupts still propagate.
       const state = yield* providerQuotaStatusRepository
         .isInstanceQuotaBlocked({ providerInstanceId })
-        .pipe(Effect.catch(() => Effect.succeed(defaultOkQuotaState(providerInstanceId))));
+        .pipe(
+          Effect.catch(() => Effect.succeed(defaultOkQuotaState(providerInstanceId))),
+          Effect.catchDefect(() => Effect.succeed(defaultOkQuotaState(providerInstanceId))),
+        );
       return state.blocked;
     });
 
