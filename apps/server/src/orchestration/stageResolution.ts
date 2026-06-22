@@ -57,6 +57,22 @@ export const stageQuotaPausedActivityId = (
 ): EventId =>
   EventId.make(`server:quota-paused:${stageThreadId}:${providerInstanceId}:${sourceKey}`);
 
+/**
+ * Deterministic ids for the calm "PM paused on quota" activity appended to the
+ * PM conversation thread when the PM's own turn fails on quota (WP-Q7 / option A).
+ * Keyed by the PM thread + the block timestamp: one marker per block episode
+ * (the gate then holds re-entry, so no second failure fires until recovery), and
+ * a same-timestamp retry dedups via the engine command receipt + projector
+ * activity id.
+ */
+export const pmQuotaPausedActivityCommandId = (
+  pmThreadId: ThreadId,
+  occurredAt: string,
+): CommandId => CommandId.make(`server:pm-quota-paused:${pmThreadId}:${occurredAt}`);
+
+export const pmQuotaPausedActivityId = (pmThreadId: ThreadId, occurredAt: string): EventId =>
+  EventId.make(`server:pm-quota-paused:${pmThreadId}:${occurredAt}`);
+
 export function originalStageInstructions(thread: OrchestrationThread): string | null {
   const userMessage = thread.messages.find((message) => message.role === "user");
   const trimmed = userMessage?.text.trim();

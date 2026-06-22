@@ -64,7 +64,8 @@ import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePiAgentAdapter } from "../pi/PiAgentAdapter.ts";
-import { makePmEventProjectionRuntime } from "../pi/PmEventProjection.ts";
+import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { resolvePiApiKey, resolvePiModel, resolvePiProvider } from "../pi/PmModelResolver.ts";
 import { makePmReEntryQueue } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
@@ -947,6 +948,7 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
         Scope.provide(runtimeScope),
       );
       const pmProviderInstanceId = pmModelSelection.instanceId;
+      const pmThreadId = pmThreadIdForProject(project);
       const queue = yield* makePmReEntryQueue(adapter, {
         // Detect PM-instance quota exhaustion from the PM's own failed turn. The
         // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
@@ -972,6 +974,34 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
             yield* providerQuotaStatusRepository
               .markBlocked({ providerInstanceId: pmProviderInstanceId, resetAt: null, updatedAt })
               .pipe(Effect.ignore);
+            // Surface the pause in the PM conversation timeline (WP-Q7 option A):
+            // PmConversation renders thread activities, so this calm info-tone
+            // marker shows live as "Paused — <backend> usage limit reached".
+            // Best-effort — a failed marker must never mask the original turn error.
+            yield* orchestrationEngine
+              .dispatch({
+                type: "thread.activity.append",
+                commandId: pmQuotaPausedActivityCommandId(pmThreadId, updatedAt),
+                threadId: pmThreadId,
+                activity: {
+                  id: pmQuotaPausedActivityId(pmThreadId, updatedAt),
+                  tone: "info",
+                  kind: "quota.paused",
+                  summary: `Paused — ${pmProviderInstanceId} usage limit reached`,
+                  payload: { providerInstanceId: pmProviderInstanceId, resetAt: null },
+                  turnId: null,
+                  createdAt: updatedAt,
+                },
+                createdAt: updatedAt,
+              })
+              .pipe(
+                Effect.catch((activityError) =>
+                  Effect.logWarning("failed to append PM quota-paused activity", {
+                    projectId: String(project.id),
+                    error: activityError,
+                  }),
+                ),
+              );
             yield* Effect.logWarning(
               "PM provider instance marked quota-blocked after failed turn",
               {
