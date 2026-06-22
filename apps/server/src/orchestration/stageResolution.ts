@@ -1,5 +1,6 @@
 import {
   CommandId,
+  EventId,
   type OrchestrationThread,
   type OrchestrationReadModel,
   type OrchestrationStageRole,
@@ -31,6 +32,30 @@ export const stageBlockCommandId = (
 
 export const quotaStageResumeCommandId = (stageThreadId: ThreadId, retryCount: number): CommandId =>
   CommandId.make(`server:quota-stage-resume:${stageThreadId}:retry-${retryCount}`);
+
+/**
+ * Deterministic ids for the calm "paused on quota" stage-thread activity emitted
+ * alongside a quota block. Derived from the same `(stageThreadId,
+ * providerInstanceId, sourceKey)` tuple as {@link stageBlockCommandId}, so a
+ * retried block re-derives the identical command + activity ids and the engine's
+ * command-receipt dedup (command id) and the projector's activity dedup
+ * (activity id) keep the timeline entry exactly-once.
+ */
+export const stageQuotaPausedActivityCommandId = (
+  stageThreadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  sourceKey: string,
+): CommandId =>
+  CommandId.make(
+    `server:task-stage-quota-paused:${stageThreadId}:${providerInstanceId}:${sourceKey}`,
+  );
+
+export const stageQuotaPausedActivityId = (
+  stageThreadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  sourceKey: string,
+): EventId =>
+  EventId.make(`server:quota-paused:${stageThreadId}:${providerInstanceId}:${sourceKey}`);
 
 export function originalStageInstructions(thread: OrchestrationThread): string | null {
   const userMessage = thread.messages.find((message) => message.role === "user");

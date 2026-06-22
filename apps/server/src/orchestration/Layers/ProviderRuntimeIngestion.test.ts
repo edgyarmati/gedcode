@@ -2835,6 +2835,20 @@ describe("ProviderRuntimeIngestion", () => {
       resumedAt: null,
     });
 
+    // WP-Q7: a calm info-tone "paused on quota" marker lands on the stage thread.
+    const pausedThread = await waitForThread(
+      harness.readModel,
+      (thread) => thread.activities.some((activity) => activity.kind === "quota.paused"),
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      blockedStageThreadId,
+    );
+    expect(
+      pausedThread.activities.find((activity) => activity.kind === "quota.paused"),
+    ).toMatchObject({
+      tone: "info",
+      summary: `Paused — ${providerInstanceId} usage limit reached`,
+    });
+
     harness.emit({
       type: "account.rate-limits.updated",
       eventId: asEventId("evt-rate-limits-ok-resume"),

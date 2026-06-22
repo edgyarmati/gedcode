@@ -49,6 +49,8 @@ import {
   findTaskForStageThread,
   stageBlockCommandId,
   stageCompleteCommandId,
+  stageQuotaPausedActivityCommandId,
+  stageQuotaPausedActivityId,
 } from "../stageResolution.ts";
 import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
 
@@ -768,6 +770,41 @@ const make = Effect.gen(function* () {
       ...(input.resetAt !== null ? { resetAt: input.resetAt } : {}),
       createdAt: input.createdAt,
     });
+
+    // Calm, info-tone timeline marker on the worker stage thread so the task log
+    // explains the pause ("Paused — <backend> usage limit reached") rather than
+    // going silent. Deterministic ids keep it exactly-once across retries
+    // (engine command-receipt dedup + projector activity dedup).
+    yield* orchestrationEngine
+      .dispatch({
+        type: "thread.activity.append",
+        commandId: stageQuotaPausedActivityCommandId(
+          input.threadId,
+          input.providerInstanceId,
+          input.sourceKey,
+        ),
+        threadId: input.threadId,
+        activity: {
+          id: stageQuotaPausedActivityId(input.threadId, input.providerInstanceId, input.sourceKey),
+          tone: "info",
+          kind: "quota.paused",
+          summary: `Paused — ${input.providerInstanceId} usage limit reached`,
+          payload: { providerInstanceId: input.providerInstanceId, resetAt: input.resetAt },
+          turnId: null,
+          createdAt: input.createdAt,
+        },
+        createdAt: input.createdAt,
+      })
+      .pipe(
+        // Never let the calm-timeline tap break the block itself.
+        Effect.catch((error) =>
+          Effect.logWarning("failed to append quota-paused stage activity", {
+            threadId: String(input.threadId),
+            providerInstanceId: String(input.providerInstanceId),
+            error,
+          }),
+        ),
+      );
     return true;
   });
 
