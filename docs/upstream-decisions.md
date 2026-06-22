@@ -48,8 +48,9 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
   `review`/`verify` worker roles, human-controlled per-task role model
   overrides, per-role prompt prefixes, deterministic backend/model selection,
   PM handoff support for the new roles, and a durable stage-history projection.
-  The follow-on UX/E2E lane owns the project/task editors, stage-timeline UI,
-  and full restart/E2E proof.
+  The follow-on UX/E2E lane has added the stage-timeline UI and the P7
+  full-pipeline/restart-durability integration proof; project/task configuration
+  editors remain in progress.
 
 ## Removed Forked-In Features
 

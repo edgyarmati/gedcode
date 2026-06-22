@@ -952,6 +952,7 @@ export function projectEvent(
                     ...nextBase.stageHistory,
                     [payload.stageThreadId]: {
                       ...nextBase.stageHistory[payload.stageThreadId],
+                      providerInstanceId: payload.providerInstanceId,
                       status: "blocked" as const,
                       endedAt: payload.updatedAt,
                     },

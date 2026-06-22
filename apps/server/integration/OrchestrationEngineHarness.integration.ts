@@ -8,6 +8,7 @@ import {
   ProviderDriverKind,
   type OrchestrationEvent,
   type OrchestrationThread,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -45,6 +46,7 @@ import {
 } from "../src/provider/Layers/ProviderEventLoggers.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
+import { CheckpointReactor } from "../src/orchestration/Services/CheckpointReactor.ts";
 import { RepositoryIdentityResolverLive } from "../src/project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "../src/orchestration/Layers/ProjectionPipeline.ts";
@@ -53,6 +55,8 @@ import { RuntimeReceiptBusTest } from "../src/orchestration/Layers/RuntimeReceip
 import { OrchestrationReactorLive } from "../src/orchestration/Layers/OrchestrationReactor.ts";
 import { ProviderCommandReactorLive } from "../src/orchestration/Layers/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionLive } from "../src/orchestration/Layers/ProviderRuntimeIngestion.ts";
+import { ProviderCommandReactor } from "../src/orchestration/Services/ProviderCommandReactor.ts";
+import { ProviderRuntimeIngestionService } from "../src/orchestration/Services/ProviderRuntimeIngestion.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -219,12 +223,15 @@ export interface OrchestrationIntegrationHarness {
       timeoutMs?: number,
     ): Effect.Effect<Receipt, never>;
   };
+  readonly drainReactors: Effect.Effect<void, never>;
   readonly dispose: Effect.Effect<void, never>;
 }
 
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
+  readonly rootDir?: string;
+  readonly additionalProviderInstances?: ReadonlyArray<ProviderInstanceId>;
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -244,19 +251,37 @@ export const makeOrchestrationIntegrationHarness = (
     const fakeRegistry = adapterHarness
       ? Layer.succeed(
           ProviderAdapterRegistry,
-          makeAdapterRegistryMock({ [adapterHarness.provider]: adapterHarness.adapter }),
+          makeAdapterRegistryMock(
+            { [adapterHarness.provider]: adapterHarness.adapter },
+            {
+              additionalInstances: (options?.additionalProviderInstances ?? []).map(
+                (instanceId) => ({
+                  instanceId,
+                  driverKind: adapterHarness.provider,
+                }),
+              ),
+            },
+          ),
         )
       : null;
-    const rootDir = yield* fileSystem.makeTempDirectoryScoped({
-      prefix: "t3-orchestration-integration-",
-    });
+    const rootDir =
+      options?.rootDir ??
+      (yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-orchestration-integration-",
+      }));
     const workspaceDir = path.join(rootDir, "workspace");
     const { stateDir, dbPath } = yield* deriveServerPaths(rootDir, undefined).pipe(
       Effect.provideService(Path.Path, path),
     );
+    yield* fileSystem.makeDirectory(rootDir, { recursive: true });
     yield* fileSystem.makeDirectory(workspaceDir, { recursive: true });
     yield* fileSystem.makeDirectory(stateDir, { recursive: true });
-    yield* initializeGitWorkspace(workspaceDir);
+    const workspaceGitDirExists = yield* fileSystem
+      .exists(path.join(workspaceDir, ".git"))
+      .pipe(Effect.orElseSucceed(() => false));
+    if (!workspaceGitDirExists) {
+      yield* initializeGitWorkspace(workspaceDir);
+    }
 
     const persistenceLayer = makeSqlitePersistenceLive(dbPath);
     const orchestrationLayer = OrchestrationEngineLive.pipe(
@@ -404,6 +429,17 @@ export const makeOrchestrationIntegrationHarness = (
     const reactor = yield* tryRuntimePromise("load OrchestrationReactor service", () =>
       runtime.runPromise(Effect.service(OrchestrationReactor)),
     ).pipe(Effect.orDie);
+    const providerCommandReactor = yield* tryRuntimePromise(
+      "load ProviderCommandReactor service",
+      () => runtime.runPromise(Effect.service(ProviderCommandReactor)),
+    ).pipe(Effect.orDie);
+    const providerRuntimeIngestion = yield* tryRuntimePromise(
+      "load ProviderRuntimeIngestion service",
+      () => runtime.runPromise(Effect.service(ProviderRuntimeIngestionService)),
+    ).pipe(Effect.orDie);
+    const checkpointReactor = yield* tryRuntimePromise("load CheckpointReactor service", () =>
+      runtime.runPromise(Effect.service(CheckpointReactor)),
+    ).pipe(Effect.orDie);
     const snapshotQuery = yield* tryRuntimePromise("load ProjectionSnapshotQuery service", () =>
       runtime.runPromise(Effect.service(ProjectionSnapshotQuery)),
     ).pipe(Effect.orDie);
@@ -528,6 +564,15 @@ export const makeOrchestrationIntegrationHarness = (
       );
     }
 
+    const drainReactors = Effect.gen(function* () {
+      yield* Effect.sleep(25);
+      yield* providerRuntimeIngestion.drain;
+      yield* providerCommandReactor.drain;
+      yield* Effect.sleep(25);
+      yield* providerRuntimeIngestion.drain;
+      yield* checkpointReactor.drain;
+    });
+
     let disposed = false;
     const dispose = Effect.gen(function* () {
       if (disposed) {
@@ -568,6 +613,7 @@ export const makeOrchestrationIntegrationHarness = (
       waitForDomainEvent,
       waitForPendingApproval,
       waitForReceipt,
+      drainReactors,
       dispose,
     } satisfies OrchestrationIntegrationHarness;
   });
