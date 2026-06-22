@@ -268,6 +268,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           roleModelSelections: {},
+          rolePromptPrefixes: {},
           orchestratorConfig: {},
           scripts: [
             {
@@ -382,6 +383,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           roleModelSelections: {},
+          rolePromptPrefixes: {},
           orchestratorConfig: {},
           scripts: [
             {

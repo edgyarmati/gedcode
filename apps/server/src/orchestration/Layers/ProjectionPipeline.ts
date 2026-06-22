@@ -21,6 +21,7 @@ import { ProjectionPendingApprovalRepository } from "../../persistence/Services/
 import { ProjectionPendingGateRepository } from "../../persistence/Services/ProjectionPendingGates.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
+import { ProjectionStageHistoryRepository } from "../../persistence/Services/ProjectionStageHistory.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionTaskRepository } from "../../persistence/Services/ProjectionTasks.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -44,6 +45,7 @@ import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layer
 import { ProjectionPendingGateRepositoryLive } from "../../persistence/Layers/ProjectionPendingGates.ts";
 import { ProjectionQuotaBlockedStageRepositoryLive } from "../../persistence/Layers/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
+import { ProjectionStageHistoryRepositoryLive } from "../../persistence/Layers/ProjectionStageHistory.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionTaskRepositoryLive } from "../../persistence/Layers/ProjectionTasks.ts";
 import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
@@ -63,6 +65,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { resolveStageModelSelection, taskStatusForStageRole } from "../stageModelSelection.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -75,6 +78,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
   tasks: "projection.tasks",
+  stageHistory: "projection.stage-history",
   awaitedStages: "projection.awaited-stages",
   pendingGates: "projection.pending-gates",
   quotaBlockedStages: "projection.quota-blocked-stages",
@@ -489,6 +493,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
     const projectionTaskRepository = yield* ProjectionTaskRepository;
+    const projectionStageHistoryRepository = yield* ProjectionStageHistoryRepository;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
     const projectionPendingGateRepository = yield* ProjectionPendingGateRepository;
     const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
@@ -508,6 +513,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             workspaceRoot: event.payload.workspaceRoot,
             defaultModelSelection: event.payload.defaultModelSelection,
             roleModelSelections: event.payload.roleModelSelections ?? {},
+            rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
             orchestratorConfig: event.payload.orchestratorConfig ?? {},
             scripts: event.payload.scripts,
             createdAt: event.payload.createdAt,
@@ -534,6 +540,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.roleModelSelections !== undefined
               ? { roleModelSelections: event.payload.roleModelSelections }
+              : {}),
+            ...(event.payload.rolePromptPrefixes !== undefined
+              ? { rolePromptPrefixes: event.payload.rolePromptPrefixes }
               : {}),
             ...(event.payload.orchestratorConfig !== undefined
               ? { orchestratorConfig: event.payload.orchestratorConfig }
@@ -1460,7 +1469,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     // implemented in the in-memory `projector.ts` (design §5):
     //   created → draft; classified → classified;
     //   stage-started(classify) → classified; stage-started(plan) → planning;
-    //   stage-started(work) → working; stage-completed(work) → review;
+    //   stage-started(review) → reviewing; stage-started(work) → working;
+    //   stage-started(verify) → verifying; stage-completed(work) → review;
     //   gate-requested(plan) → plan-review; gate-requested(land) → review;
     //   gate-resolved(plan, approved) → planning;
     //   gate-resolved(plan, rejected) → blocked;
@@ -1481,6 +1491,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               pmMessageId: event.payload.pmMessageId,
               stageThreadIds: [],
               currentStageThreadId: null,
+              roleModelSelections: {},
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
               updatedAt: event.payload.updatedAt,
@@ -1504,6 +1515,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.role-selections-updated": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              roleModelSelections: event.payload.roleModelSelections,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.stage-started": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,
@@ -1511,12 +1537,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             if (Option.isNone(existingRow)) {
               return;
             }
-            const status =
-              event.payload.role === "plan"
-                ? "planning"
-                : event.payload.role === "work"
-                  ? "working"
-                  : "classified";
+            const status = taskStatusForStageRole(event.payload.role);
             const stageThreadIds = existingRow.value.stageThreadIds.includes(
               event.payload.stageThreadId,
             )
@@ -1641,6 +1662,81 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         }
       },
     );
+
+    const applyStageHistoryProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyStageHistoryProjection",
+    )(function* (event, _attachmentSideEffects) {
+      switch (event.type) {
+        case "task.stage-started": {
+          const task = yield* projectionTaskRepository.getById({
+            taskId: event.payload.taskId,
+          });
+          if (Option.isNone(task)) {
+            return;
+          }
+          const project = yield* projectionProjectRepository.getById({
+            projectId: task.value.projectId,
+          });
+          if (Option.isNone(project)) {
+            return;
+          }
+          const modelSelection = resolveStageModelSelection({
+            project: project.value,
+            task: task.value,
+            role: event.payload.role,
+          });
+          if (modelSelection === null) {
+            return;
+          }
+          yield* projectionStageHistoryRepository.upsert({
+            projectId: task.value.projectId,
+            taskId: event.payload.taskId,
+            stageThreadId: event.payload.stageThreadId,
+            role: event.payload.role,
+            providerInstanceId: modelSelection.instanceId,
+            model: modelSelection.model,
+            status: "running",
+            startedAt: event.payload.updatedAt,
+            endedAt: null,
+          });
+          return;
+        }
+
+        case "task.stage-completed": {
+          const existing = yield* projectionStageHistoryRepository.getByStageThreadId({
+            stageThreadId: event.payload.stageThreadId,
+          });
+          if (Option.isNone(existing)) {
+            return;
+          }
+          yield* projectionStageHistoryRepository.upsert({
+            ...existing.value,
+            status: "completed",
+            endedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "task.stage-blocked": {
+          const existing = yield* projectionStageHistoryRepository.getByStageThreadId({
+            stageThreadId: event.payload.stageThreadId,
+          });
+          if (Option.isNone(existing)) {
+            return;
+          }
+          yield* projectionStageHistoryRepository.upsert({
+            ...existing.value,
+            providerInstanceId: event.payload.providerInstanceId,
+            status: "blocked",
+            endedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        default:
+          return;
+      }
+    });
 
     // Awaited-stages reconciliation source (migration 034). A stage-started
     // with a non-null `awaitedTurnId` opens an `awaited` row; the matching
@@ -1844,6 +1940,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyTasksProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.stageHistory,
+        apply: applyStageHistoryProjection,
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.awaitedStages,
         apply: applyAwaitedStagesProjection,
       },
@@ -1964,6 +2064,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionTaskRepositoryLive),
+  Layer.provideMerge(ProjectionStageHistoryRepositoryLive),
   Layer.provideMerge(ProjectionAwaitedStageRepositoryLive),
   Layer.provideMerge(ProjectionQuotaBlockedStageRepositoryLive),
   Layer.provideMerge(ProjectionPendingGateRepositoryLive),

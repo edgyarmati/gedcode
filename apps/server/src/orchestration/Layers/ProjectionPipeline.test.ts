@@ -6,6 +6,8 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
   ProviderInstanceId,
@@ -172,6 +174,159 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       for (const row of stateRows) {
         assert.equal(row.lastAppliedSequence, 3);
       }
+    }),
+  );
+
+  it.effect("projects stage history with task-level model overrides and blocked status", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-06-22T00:00:00.000Z";
+      const projectId = ProjectId.make("project-stage-history");
+      const taskId = TaskId.make("task-stage-history");
+      const stageThreadId = ThreadId.make("thread-stage-history");
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-stage-history-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-stage-history-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Stage history project",
+          workspaceRoot: "/tmp/stage-history-project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex_default"),
+            model: "gpt-default",
+          },
+          roleModelSelections: {
+            work: {
+              instanceId: ProviderInstanceId.make("codex_project"),
+              model: "gpt-project",
+            },
+          },
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.created",
+        eventId: EventId.make("evt-stage-history-task"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-stage-history-task"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-task"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Stage history task",
+          branch: "orchestrator/stage-history",
+          worktreePath: "/tmp/stage-history-project/.gedcode/orchestrator/tasks/task-stage-history",
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.role-selections-updated",
+        eventId: EventId.make("evt-stage-history-role-selection"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:01.000Z",
+        commandId: CommandId.make("cmd-stage-history-role-selection"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-role-selection"),
+        metadata: {},
+        payload: {
+          taskId,
+          roleModelSelections: {
+            work: {
+              instanceId: ProviderInstanceId.make("codex_task"),
+              model: "gpt-task",
+            },
+          },
+          origin: "client",
+          updatedAt: "2026-06-22T00:00:01.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.stage-started",
+        eventId: EventId.make("evt-stage-history-started"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:02.000Z",
+        commandId: CommandId.make("cmd-stage-history-start"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-start"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          awaitedTurnId: null,
+          updatedAt: "2026-06-22T00:00:02.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.stage-blocked",
+        eventId: EventId.make("evt-stage-history-blocked"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:03.000Z",
+        commandId: CommandId.make("cmd-stage-history-block"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-block"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          reason: "quota",
+          providerInstanceId: ProviderInstanceId.make("codex_task"),
+          updatedAt: "2026-06-22T00:00:03.000Z",
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly providerInstanceId: string;
+        readonly model: string;
+        readonly status: string;
+        readonly endedAt: string | null;
+      }>`
+        SELECT
+          provider_instance_id AS "providerInstanceId",
+          model,
+          status,
+          ended_at AS "endedAt"
+        FROM projection_stage_history
+        WHERE stage_thread_id = ${stageThreadId}
+      `;
+      assert.deepEqual(rows, [
+        {
+          providerInstanceId: "codex_task",
+          model: "gpt-task",
+          status: "blocked",
+          endedAt: "2026-06-22T00:00:03.000Z",
+        },
+      ]);
     }),
   );
 });

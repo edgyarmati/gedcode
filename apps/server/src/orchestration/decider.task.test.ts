@@ -191,6 +191,64 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("updates per-task role model selections from human/client origins", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel();
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.role-selections.set",
+          commandId: asCommandId("cmd-role-selections"),
+          taskId: asTaskId("task-1"),
+          roleModelSelections: {
+            verify: {
+              instanceId: ProviderInstanceId.make("codex_verify"),
+              model: "gpt-5-verify",
+            },
+          },
+          origin: "human",
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.role-selections-updated");
+      expect(singleEvent?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        origin: "human",
+        roleModelSelections: {
+          verify: {
+            instanceId: ProviderInstanceId.make("codex_verify"),
+            model: "gpt-5-verify",
+          },
+        },
+      });
+    }),
+  );
+
+  it.effect("rejects per-task role model selections from PM/runtime origins", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel();
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.role-selections.set",
+            commandId: asCommandId("cmd-role-selections-pm"),
+            taskId: asTaskId("task-1"),
+            roleModelSelections: {},
+            origin: "pm-runtime",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("starts a stage with clamped worker runtime and an existing project model", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
@@ -231,6 +289,61 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           model: "gpt-5-codex",
         },
       });
+    }),
+  );
+
+  it.effect("starts a stage with task-level model precedence and one prepared role prefix", () =>
+    Effect.gen(function* () {
+      const baseReadModel = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+        roleModelSelections: {
+          work: {
+            instanceId: ProviderInstanceId.make("codex_task"),
+            model: "gpt-5-task",
+          },
+        },
+      });
+      const readModel: OrchestrationReadModel = {
+        ...baseReadModel,
+        projects: baseReadModel.projects.map((project) =>
+          Object.assign({}, project, {
+            roleModelSelections: {
+              work: {
+                instanceId: ProviderInstanceId.make("codex_project"),
+                model: "gpt-5-project",
+              },
+            },
+            rolePromptPrefixes: {
+              work: "Use the project implementation playbook.",
+            },
+          }),
+        ),
+      };
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-override"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      const events = Array.isArray(result) ? result : [result];
+      const threadCreated = events.find((event) => event.type === "thread.created");
+      const userMessage = events.find((event) => event.type === "thread.message-sent");
+      expect(threadCreated?.payload.modelSelection).toEqual({
+        instanceId: ProviderInstanceId.make("codex_task"),
+        model: "gpt-5-task",
+      });
+      expect(userMessage?.payload.text).toContain("Role: work");
+      expect(userMessage?.payload.text).toContain("Use the project implementation playbook.");
+      expect(userMessage?.payload.text).toContain("Implement the accepted plan.");
+      expect(userMessage?.payload.text.match(/BEGIN GEDCODE STAGE PROMPT PREFIX/g)).toHaveLength(1);
     }),
   );
 

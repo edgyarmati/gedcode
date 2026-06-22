@@ -37,6 +37,7 @@ const makeReadModel = () => ({
       pmMessageId: null,
       stageThreadIds: [stageThreadId],
       currentStageThreadId: stageThreadId,
+      roleModelSelections: {},
       playbookVersion: null,
       createdAt: now,
       updatedAt: now,
@@ -114,6 +115,27 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
       stageThreadId,
       awaitedTurnId: null,
     });
+  }),
+);
+
+it.effect("handoffWorker accepts verify stage handoffs", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const handoffWorker = findTool(tools, "handoffWorker");
+
+    yield* Effect.promise(() =>
+      handoffWorker.execute("tool-verify", {
+        taskId,
+        role: "verify",
+        instructions: "Verify the work.",
+      }),
+    );
+
+    assert.strictEqual(dispatched[0]?.type, "task.stage.start");
+    if (dispatched[0]?.type === "task.stage.start") {
+      assert.strictEqual(dispatched[0].role, "verify");
+    }
   }),
 );
 

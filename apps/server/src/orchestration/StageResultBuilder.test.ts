@@ -197,6 +197,17 @@ describe("StageResultBuilder", () => {
       expect(message).not.toContain("BEGIN WORKER DIFF");
     });
 
+    it("serializes verify stage results without role-specific branching", () => {
+      const result = buildStageResult({
+        ...baseInput,
+        role: "verify",
+        assistantText: "Verified the implementation.",
+      });
+      const message = serializeStageResultToMessage(result);
+      expect(message).toContain("Role: verify");
+      expect(message).toContain("Verified the implementation.");
+    });
+
     it("bounds the whole serialized envelope to the documented limit", () => {
       const huge = `diff --git a/big.ts b/big.ts\n${"y".repeat(MAX_PM_REENTRY_CONTENT_CHARS)}`;
       const result = buildStageResult({

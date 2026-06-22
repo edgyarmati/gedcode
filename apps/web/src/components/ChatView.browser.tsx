@@ -401,6 +401,7 @@ function createSnapshotForTargetUser(options: {
     ],
     tasks: [],
     quotaBlockedStages: [],
+    stageHistory: {},
     updatedAt: NOW_ISO,
   };
 }

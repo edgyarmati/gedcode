@@ -10,6 +10,8 @@ import {
   OrchestrationQuotaBlockedStage,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
+  OrchestrationStageHistory,
+  OrchestrationStageHistoryEntry,
   OrchestrationTask,
   OrchestrationThread,
   ProjectScript,
@@ -24,6 +26,7 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
   GedRoleModelSelections,
+  GedRolePromptPrefixes,
   ModelSelection,
   OrchestratorConfigJson,
   ProjectId,
@@ -71,6 +74,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
+    rolePromptPrefixes: Schema.fromJsonString(GedRolePromptPrefixes),
     orchestratorConfig: Schema.fromJsonString(OrchestratorConfigJson),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
@@ -115,9 +119,11 @@ const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionTaskDbRowSchema = ProjectionTask.mapFields(
   Struct.assign({
     stageThreadIds: Schema.fromJsonString(Schema.Array(ThreadId)),
+    roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
   }),
 );
 const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate;
+const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
@@ -163,6 +169,7 @@ const REQUIRED_SNAPSHOT_PROJECTORS = [
   ORCHESTRATION_PROJECTOR_NAMES.threadSessions,
   ORCHESTRATION_PROJECTOR_NAMES.checkpoints,
   ORCHESTRATION_PROJECTOR_NAMES.tasks,
+  ORCHESTRATION_PROJECTOR_NAMES.stageHistory,
 ] as const;
 
 function maxIso(left: string | null, right: string): string {
@@ -250,6 +257,7 @@ function mapProjectShellRow(
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     roleModelSelections: row.roleModelSelections,
+    rolePromptPrefixes: row.rolePromptPrefixes,
     orchestratorConfig: row.orchestratorConfig,
     scripts: row.scripts,
     createdAt: row.createdAt,
@@ -269,10 +277,17 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     pmMessageId: row.pmMessageId,
     stageThreadIds: row.stageThreadIds,
     currentStageThreadId: row.currentStageThreadId,
+    roleModelSelections: row.roleModelSelections,
     playbookVersion: row.playbookVersion,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function mapStageHistoryRows(
+  rows: ReadonlyArray<Schema.Schema.Type<typeof ProjectionStageHistoryDbRowSchema>>,
+): OrchestrationStageHistory {
+  return Object.fromEntries(rows.map((row) => [row.stageThreadId, row]));
 }
 
 function mapProposedPlanRow(
@@ -343,6 +358,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           role_model_selections_json AS "roleModelSelections",
+          role_prompt_prefixes_json AS "rolePromptPrefixes",
           orchestrator_config_json AS "orchestratorConfig",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -638,6 +654,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -685,6 +702,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           resumed_at AS "resumedAt"
         FROM projection_quota_blocked_stages
         ORDER BY blocked_at ASC, stage_thread_id ASC
+      `,
+  });
+
+  const listStageHistoryRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionStageHistoryDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          project_id AS "projectId",
+          task_id AS "taskId",
+          stage_thread_id AS "stageThreadId",
+          role,
+          provider_instance_id AS "providerInstanceId",
+          model,
+          status,
+          started_at AS "startedAt",
+          ended_at AS "endedAt"
+        FROM projection_stage_history
+        ORDER BY started_at ASC, stage_thread_id ASC
       `,
   });
 
@@ -775,6 +812,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           role_model_selections_json AS "roleModelSelections",
+          role_prompt_prefixes_json AS "rolePromptPrefixes",
           orchestrator_config_json AS "orchestratorConfig",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -799,6 +837,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           role_model_selections_json AS "roleModelSelections",
+          role_prompt_prefixes_json AS "rolePromptPrefixes",
           orchestrator_config_json AS "orchestratorConfig",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -1134,6 +1173,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listStageHistoryRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listStageHistory:query",
+                "ProjectionSnapshotQuery.getSnapshot:listStageHistory:decodeRows",
+              ),
+            ),
+          ),
           listProjectionStateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1158,6 +1205,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             taskRows,
             pendingGateRows,
             quotaBlockedStageRows,
+            stageHistoryRows,
             stateRows,
           ]) =>
             Effect.gen(function* () {
@@ -1187,6 +1235,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               }
               for (const row of quotaBlockedStageRows) {
                 updatedAt = maxIso(updatedAt, row.resumedAt ?? row.blockedAt);
+              }
+              for (const row of stageHistoryRows) {
+                updatedAt = maxIso(updatedAt, row.endedAt ?? row.startedAt);
               }
 
               for (const row of messageRows) {
@@ -1315,6 +1366,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 roleModelSelections: row.roleModelSelections,
+                rolePromptPrefixes: row.rolePromptPrefixes,
                 orchestratorConfig: row.orchestratorConfig,
                 scripts: row.scripts,
                 createdAt: row.createdAt,
@@ -1348,6 +1400,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               const pendingGates: ReadonlyArray<OrchestrationPendingGate> = pendingGateRows;
               const quotaBlockedStages: ReadonlyArray<OrchestrationQuotaBlockedStage> =
                 quotaBlockedStageRows;
+              const stageHistory = mapStageHistoryRows(stageHistoryRows);
 
               const snapshot = {
                 snapshotSequence: computeSnapshotSequence(stateRows),
@@ -1356,6 +1409,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 tasks,
                 pendingGates,
                 quotaBlockedStages,
+                stageHistory,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -1442,6 +1496,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listStageHistoryRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listStageHistory:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listStageHistory:decodeRows",
+              ),
+            ),
+          ),
           listProjectionStateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1463,6 +1525,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             taskRows,
             pendingGateRows,
             quotaBlockedStageRows,
+            stageHistoryRows,
             stateRows,
           ]) =>
             Effect.sync(() => {
@@ -1484,6 +1547,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   workspaceRoot: row.workspaceRoot,
                   defaultModelSelection: row.defaultModelSelection,
                   roleModelSelections: row.roleModelSelections,
+                  rolePromptPrefixes: row.rolePromptPrefixes,
                   orchestratorConfig: row.orchestratorConfig,
                   scripts: row.scripts,
                   createdAt: row.createdAt,
@@ -1554,6 +1618,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 }
                 updatedAt = maxIso(updatedAt, row.resumedAt ?? row.blockedAt);
               }
+              for (let index = 0; index < stageHistoryRows.length; index += 1) {
+                const row = stageHistoryRows[index];
+                if (!row) {
+                  continue;
+                }
+                updatedAt = maxIso(updatedAt, row.endedAt ?? row.startedAt);
+              }
 
               const latestTurnByThread = new Map<string, OrchestrationLatestTurn>();
               for (let index = 0; index < latestTurnRows.length; index += 1) {
@@ -1619,6 +1690,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 tasks,
                 pendingGates,
                 quotaBlockedStages: Array.from(quotaBlockedStageRows),
+                stageHistory: mapStageHistoryRows(stageHistoryRows),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationReadModel;
             }),
@@ -1949,6 +2021,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     workspaceRoot: option.value.workspaceRoot,
                     repositoryIdentity,
                     defaultModelSelection: option.value.defaultModelSelection,
+                    roleModelSelections: option.value.roleModelSelections,
+                    rolePromptPrefixes: option.value.rolePromptPrefixes,
                     scripts: option.value.scripts,
                     createdAt: option.value.createdAt,
                     updatedAt: option.value.updatedAt,

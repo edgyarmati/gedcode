@@ -53,6 +53,7 @@ import Migration0037 from "./Migrations/037_ProjectionProjectOrchestratorConfig.
 import Migration0038 from "./Migrations/038_PmConsumedSettlementsStatus.ts";
 import Migration0039 from "./Migrations/039_ProviderQuotaStatus.ts";
 import Migration0040 from "./Migrations/040_ProjectionQuotaBlockedStages.ts";
+import Migration0041 from "./Migrations/041_ProjectionStageHistoryAndRoleOverrides.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -105,6 +106,7 @@ export const migrationEntries = [
   [38, "PmConsumedSettlementsStatus", Migration0038],
   [39, "ProviderQuotaStatus", Migration0039],
   [40, "ProjectionQuotaBlockedStages", Migration0040],
+  [41, "ProjectionStageHistoryAndRoleOverrides", Migration0041],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

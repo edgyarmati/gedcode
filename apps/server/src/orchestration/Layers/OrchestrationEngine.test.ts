@@ -157,6 +157,7 @@ describe("OrchestrationEngine", () => {
       ],
       tasks: [],
       quotaBlockedStages: [],
+      stageHistory: {},
     };
     const commandReadModel = {
       ...projectionSnapshot,

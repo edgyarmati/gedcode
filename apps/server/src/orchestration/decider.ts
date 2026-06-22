@@ -32,7 +32,8 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { activeStageRoleForTaskStatus } from "./stageResolution.ts";
+import { resolveStageModelSelection } from "./stageModelSelection.ts";
+import { activeStageRoleForTaskStatus, prepareStageInstructions } from "./stageResolution.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
@@ -183,6 +184,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           workspaceRoot: command.workspaceRoot,
           defaultModelSelection: command.defaultModelSelection ?? null,
           roleModelSelections: command.roleModelSelections ?? {},
+          rolePromptPrefixes: command.rolePromptPrefixes ?? {},
           orchestratorConfig: command.orchestratorConfig ?? {},
           scripts: [],
           createdAt: command.createdAt,
@@ -215,6 +217,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.roleModelSelections !== undefined
             ? { roleModelSelections: command.roleModelSelections }
+            : {}),
+          ...(command.rolePromptPrefixes !== undefined
+            ? { rolePromptPrefixes: command.rolePromptPrefixes }
             : {}),
           ...(command.orchestratorConfig !== undefined
             ? { orchestratorConfig: command.orchestratorConfig }
@@ -932,6 +937,41 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "task.role-selections.set": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+      if (command.origin !== "human" && command.origin !== "client") {
+        return yield* invariantError(
+          command.type,
+          `Task role model selections can only be updated by human/client origins; received '${command.origin}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.role-selections-updated",
+        payload: {
+          taskId: command.taskId,
+          roleModelSelections: command.roleModelSelections,
+          origin: command.origin,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "task.stage.start": {
       const task = yield* requireTask({
         readModel,
@@ -987,8 +1027,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         }
       }
 
-      const modelSelection =
-        project.roleModelSelections?.[command.role] ?? project.defaultModelSelection;
+      const modelSelection = resolveStageModelSelection({
+        project,
+        task,
+        role: command.role,
+      });
       if (modelSelection === null || modelSelection === undefined) {
         return yield* invariantError(
           command.type,
@@ -999,6 +1042,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const crypto = yield* Crypto.Crypto;
       const stageThreadId = ThreadId.make(yield* crypto.randomUUIDv4);
       const messageId = MessageId.make(yield* crypto.randomUUIDv4);
+      const stageInstructions = prepareStageInstructions({
+        instructions: command.instructions,
+        role: command.role,
+        rolePromptPrefixes: project.rolePromptPrefixes,
+      });
 
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
@@ -1052,7 +1100,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: stageThreadId,
           messageId,
           role: "user",
-          text: command.instructions,
+          text: stageInstructions,
           attachments: [],
           turnId: null,
           streaming: false,

@@ -36,7 +36,13 @@ type ClassifyRequestParameters = Static<typeof ClassifyRequestParameters>;
 
 const HandoffWorkerParameters = Type.Object({
   taskId: Type.String(),
-  role: Type.Union([Type.Literal("classify"), Type.Literal("plan"), Type.Literal("work")]),
+  role: Type.Union([
+    Type.Literal("classify"),
+    Type.Literal("plan"),
+    Type.Literal("review"),
+    Type.Literal("work"),
+    Type.Literal("verify"),
+  ]),
   instructions: Type.String(),
 });
 type HandoffWorkerParameters = Static<typeof HandoffWorkerParameters>;
@@ -141,7 +147,8 @@ export const makePmTools = Effect.gen(function* () {
   > = {
     name: "handoffWorker",
     label: "Handoff worker",
-    description: "Start a detached worker stage for a task.",
+    description:
+      "Start a detached worker stage for a task. Use classify for task typing, plan for implementation planning, review for pre-work plan critique, work for implementation, and verify for post-work validation before landing.",
     parameters: HandoffWorkerParameters,
     execute: (_toolCallId, params) =>
       runPromise(

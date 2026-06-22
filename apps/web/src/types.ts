@@ -91,6 +91,7 @@ export interface Project {
   repositoryIdentity?: RepositoryIdentity | null;
   defaultModelSelection: ModelSelection | null;
   roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
+  rolePromptPrefixes?: Readonly<Record<string, string>> | undefined;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];

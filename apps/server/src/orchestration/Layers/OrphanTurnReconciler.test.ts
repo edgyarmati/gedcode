@@ -124,6 +124,7 @@ function makeReadModel(threads: ReadonlyArray<OrchestrationThread>): Orchestrati
     ],
     pendingGates: [],
     quotaBlockedStages: [],
+    stageHistory: {},
     updatedAt: now,
   };
 }

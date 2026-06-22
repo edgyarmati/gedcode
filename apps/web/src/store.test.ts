@@ -826,6 +826,7 @@ describe("incremental orchestration updates", () => {
         snapshotSequence: 10,
         task: retainedTask,
         pendingGates: [retainedGate],
+        stageHistory: {},
       },
       localEnvironmentId,
     );
@@ -857,6 +858,7 @@ describe("incremental orchestration updates", () => {
         tasks: [retainedTask],
         pendingGates: [retainedGate],
         quotaBlockedStages: [],
+        stageHistory: {},
       },
       localEnvironmentId,
     );
@@ -912,6 +914,7 @@ describe("incremental orchestration updates", () => {
         tasks: [],
         pendingGates: [],
         quotaBlockedStages: [],
+        stageHistory: {},
       },
       localEnvironmentId,
     );
@@ -945,6 +948,7 @@ describe("incremental orchestration updates", () => {
         tasks: [],
         pendingGates: [],
         quotaBlockedStages: [],
+        stageHistory: {},
       },
       localEnvironmentId,
     );

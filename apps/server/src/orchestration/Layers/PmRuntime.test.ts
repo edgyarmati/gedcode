@@ -98,6 +98,7 @@ const readModel: OrchestrationReadModel = {
   tasks: [task],
   pendingGates: [],
   quotaBlockedStages: [],
+  stageHistory: {},
   updatedAt: now,
 };
 

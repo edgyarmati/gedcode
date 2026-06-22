@@ -129,6 +129,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     type:
       | "task.created"
       | "task.classified"
+      | "task.role-selections-updated"
       | "task.stage-started"
       | "task.stage-completed"
       | "task.stage-blocked"
@@ -141,6 +142,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
   return (
     event.type === "task.created" ||
     event.type === "task.classified" ||
+    event.type === "task.role-selections-updated" ||
     event.type === "task.stage-started" ||
     event.type === "task.stage-completed" ||
     event.type === "task.stage-blocked" ||
@@ -594,12 +596,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             Effect.gen(function* () {
               const project = snapshot.projects.find((entry) => entry.id === projectId);
               if (project === undefined) {
-                return yield* Effect.fail(
-                  new OrchestrationGetSnapshotError({
-                    message: `Project ${projectId} was not found`,
-                    cause: projectId,
-                  }),
-                );
+                return yield* new OrchestrationGetSnapshotError({
+                  message: `Project ${projectId} was not found`,
+                  cause: projectId,
+                });
               }
               const taskIds = new Set(
                 snapshot.tasks
@@ -611,6 +611,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
               const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
                 taskIds.has(String(stage.taskId)),
+              );
+              const stageHistory = Object.fromEntries(
+                Object.entries(snapshot.stageHistory).filter(([, stage]) =>
+                  taskIds.has(String(stage.taskId)),
+                ),
               );
               const pmThreadId = pmThreadIdForProject(project);
               const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
@@ -645,6 +650,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
                 pendingGates,
                 quotaBlockedStages,
+                stageHistory,
               };
             }),
           ),
@@ -674,6 +680,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               snapshotSequence: snapshot.snapshotSequence,
               task,
               pendingGates: (snapshot.pendingGates ?? []).filter((gate) => gate.taskId === taskId),
+              stageHistory: Object.fromEntries(
+                Object.entries(snapshot.stageHistory).filter(
+                  ([, stage]) => stage.taskId === taskId,
+                ),
+              ),
             });
           }),
           Effect.mapError((cause) =>

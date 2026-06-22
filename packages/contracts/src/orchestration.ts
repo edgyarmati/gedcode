@@ -123,10 +123,58 @@ export const ModelSelection = ModelSelectionSource.pipe(
 );
 export type ModelSelection = typeof ModelSelection.Type;
 
-export const GedRoleModelSelections = Schema.Record(TrimmedNonEmptyString, ModelSelection).pipe(
+export const ORCHESTRATION_STAGE_ROLES = ["classify", "plan", "review", "work", "verify"] as const;
+
+/**
+ * Stage role within a task pipeline. Closed so every runtime mapping and UI
+ * projection is exhaustiveness-checked when roles are added.
+ */
+export const OrchestrationStageRole = Schema.Literals(ORCHESTRATION_STAGE_ROLES);
+export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
+
+const ORCHESTRATION_STAGE_ROLE_SET = new Set<string>(ORCHESTRATION_STAGE_ROLES);
+
+const makeStageRoleKeyedMap = <Value extends Schema.Top>(valueSchema: Value) => {
+  const source = Schema.Record(Schema.String, valueSchema);
+  const target = Schema.Struct({
+    classify: Schema.optionalKey(valueSchema),
+    plan: Schema.optionalKey(valueSchema),
+    review: Schema.optionalKey(valueSchema),
+    work: Schema.optionalKey(valueSchema),
+    verify: Schema.optionalKey(valueSchema),
+  });
+  return source.pipe(
+    Schema.decodeTo(
+      target,
+      SchemaTransformation.transformOrFail({
+        decode: (value: Record<string, unknown>) => {
+          const unknownKeys = Object.keys(value).filter(
+            (key) => !ORCHESTRATION_STAGE_ROLE_SET.has(key),
+          );
+          if (unknownKeys.length > 0) {
+            return Effect.fail(
+              new SchemaIssue.InvalidValue(Option.some(unknownKeys.join(", ")), {
+                message: `Unknown orchestration stage role key(s): ${unknownKeys.join(", ")}`,
+              }),
+            );
+          }
+          return Effect.succeed(value as typeof target.Type);
+        },
+        encode: (value) => Effect.succeed(value as typeof source.Type),
+      }) as never,
+    ),
+  );
+};
+
+export const GedRoleModelSelections = makeStageRoleKeyedMap(ModelSelection).pipe(
   Schema.withDecodingDefault(Effect.succeed({})),
 );
 export type GedRoleModelSelections = typeof GedRoleModelSelections.Type;
+
+export const GedRolePromptPrefixes = makeStageRoleKeyedMap(TrimmedNonEmptyString).pipe(
+  Schema.withDecodingDefault(Effect.succeed({})),
+);
+export type GedRolePromptPrefixes = typeof GedRolePromptPrefixes.Type;
 
 export const RuntimeMode = Schema.Literals([
   "approval-required",
@@ -221,6 +269,7 @@ export const OrchestrationProject = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -396,6 +445,7 @@ export const OrchestrationTaskStatus = Schema.Literals([
   "classified",
   "planning",
   "plan-review",
+  "reviewing",
   "working",
   "review",
   "verifying",
@@ -423,18 +473,12 @@ export const OrchestrationTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 export type OrchestrationTask = typeof OrchestrationTask.Type;
-
-/**
- * Stage role within a task pipeline. Closed for the slice (`feature` →
- * `[classify, plan, work]`); later phases extend it (review/verify).
- */
-export const OrchestrationStageRole = Schema.Literals(["classify", "plan", "work"]);
-export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
 
 /**
  * The gates that can guard a task. `plan` and `land` are the slice's gates;
@@ -462,6 +506,9 @@ export const OrchestrationGateResolutionOrigin = Schema.Literals([
   "system",
 ]);
 export type OrchestrationGateResolutionOrigin = typeof OrchestrationGateResolutionOrigin.Type;
+
+export const OrchestrationHumanConfigOrigin = Schema.Literals(["human", "client"]);
+export type OrchestrationHumanConfigOrigin = typeof OrchestrationHumanConfigOrigin.Type;
 
 /**
  * Decision recorded when a task gate is resolved. Closed literal so the decider
@@ -511,6 +558,28 @@ export const OrchestrationPmQuotaBlock = Schema.Struct({
 });
 export type OrchestrationPmQuotaBlock = typeof OrchestrationPmQuotaBlock.Type;
 
+export const OrchestrationStageHistoryStatus = Schema.Literals(["running", "completed", "blocked"]);
+export type OrchestrationStageHistoryStatus = typeof OrchestrationStageHistoryStatus.Type;
+
+export const OrchestrationStageHistoryEntry = Schema.Struct({
+  projectId: ProjectId,
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  role: OrchestrationStageRole,
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  status: OrchestrationStageHistoryStatus,
+  startedAt: IsoDateTime,
+  endedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationStageHistoryEntry = typeof OrchestrationStageHistoryEntry.Type;
+
+export const OrchestrationStageHistory = Schema.Record(
+  ThreadId,
+  OrchestrationStageHistoryEntry,
+).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type OrchestrationStageHistory = typeof OrchestrationStageHistory.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -526,6 +595,7 @@ export const OrchestrationReadModel = Schema.Struct({
   quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  stageHistory: OrchestrationStageHistory,
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -537,6 +607,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -629,6 +700,7 @@ export const ProjectCreateCommand = Schema.Struct({
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   createdAt: IsoDateTime,
 });
@@ -641,6 +713,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
 });
@@ -844,6 +917,15 @@ const TaskClassifyCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskRoleSelectionsSetCommand = Schema.Struct({
+  type: Schema.Literal("task.role-selections.set"),
+  commandId: CommandId,
+  taskId: TaskId,
+  roleModelSelections: GedRoleModelSelections,
+  origin: OrchestrationGateResolutionOrigin,
+  createdAt: IsoDateTime,
+});
+
 /**
  * The handoff command. Internal/PM-dispatchable. The decider (WP-E) pins
  * `runtimeMode` and the role's model from config — they are intentionally **not**
@@ -941,6 +1023,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadSessionStopCommand,
   TaskCreateCommand,
   TaskClassifyCommand,
+  TaskRoleSelectionsSetCommand,
   TaskStageStartCommand,
   TaskGateRequestCommand,
   TaskGateResolveCommand,
@@ -1089,6 +1172,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.activity-appended",
   "task.created",
   "task.classified",
+  "task.role-selections-updated",
   "task.stage-started",
   "task.stage-completed",
   "task.stage-blocked",
@@ -1110,6 +1194,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -1123,6 +1208,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   roleModelSelections: Schema.optional(GedRoleModelSelections),
+  rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
@@ -1294,6 +1380,13 @@ export const TaskClassifiedPayload = Schema.Struct({
   taskId: TaskId,
   taskType: TaskTypeId,
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskRoleSelectionsUpdatedPayload = Schema.Struct({
+  taskId: TaskId,
+  roleModelSelections: GedRoleModelSelections,
+  origin: OrchestrationHumanConfigOrigin,
   updatedAt: IsoDateTime,
 });
 
@@ -1500,6 +1593,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("task.role-selections-updated"),
+    payload: TaskRoleSelectionsUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("task.stage-started"),
     payload: TaskStageStartedPayload,
   }),
@@ -1583,6 +1681,7 @@ export const OrchestratorProjectDetailSnapshot = Schema.Struct({
   quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  stageHistory: OrchestrationStageHistory,
 });
 export type OrchestratorProjectDetailSnapshot = typeof OrchestratorProjectDetailSnapshot.Type;
 
@@ -1607,6 +1706,7 @@ export const OrchestratorTaskDetailSnapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   task: OrchestrationTask,
   pendingGates: Schema.Array(OrchestrationPendingGate),
+  stageHistory: OrchestrationStageHistory,
 });
 export type OrchestratorTaskDetailSnapshot = typeof OrchestratorTaskDetailSnapshot.Type;
 

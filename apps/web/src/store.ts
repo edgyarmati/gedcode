@@ -278,6 +278,7 @@ function mapProject(
         normalizeModelSelection(selection),
       ]),
     ),
+    rolePromptPrefixes: { ...project.rolePromptPrefixes },
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     scripts: mapProjectScripts(project.scripts),
@@ -291,6 +292,12 @@ function mapOrchestratorTask(
   return {
     ...task,
     stageThreadIds: [...task.stageThreadIds],
+    roleModelSelections: Object.fromEntries(
+      Object.entries(task.roleModelSelections ?? {}).map(([role, selection]) => [
+        role,
+        normalizeModelSelection(selection),
+      ]),
+    ),
     environmentId,
   };
 }
@@ -1762,6 +1769,8 @@ function applyEnvironmentOrchestrationEvent(
           workspaceRoot: event.payload.workspaceRoot,
           repositoryIdentity: event.payload.repositoryIdentity ?? null,
           defaultModelSelection: event.payload.defaultModelSelection,
+          roleModelSelections: event.payload.roleModelSelections ?? {},
+          rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
           scripts: event.payload.scripts,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1834,6 +1843,9 @@ function applyEnvironmentOrchestrationEvent(
               ),
             }
           : {}),
+        ...(event.payload.rolePromptPrefixes !== undefined
+          ? { rolePromptPrefixes: { ...event.payload.rolePromptPrefixes } }
+          : {}),
         ...(event.payload.scripts !== undefined
           ? { scripts: mapProjectScripts(event.payload.scripts) }
           : {}),
@@ -1882,6 +1894,7 @@ function applyEnvironmentOrchestrationEvent(
             pmMessageId: event.payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            roleModelSelections: {},
             playbookVersion: event.payload.playbookVersion,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -1899,15 +1912,31 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
+    case "task.role-selections-updated":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        roleModelSelections: Object.fromEntries(
+          Object.entries(event.payload.roleModelSelections).map(([role, selection]) => [
+            role,
+            normalizeModelSelection(selection),
+          ]),
+        ),
+        updatedAt: event.payload.updatedAt,
+      }));
+
     case "task.stage-started": {
       const taskId = String(event.payload.taskId);
       const nextState = updateTaskState(state, taskId, (task) => {
         const status =
           event.payload.role === "plan"
             ? ("planning" as const)
-            : event.payload.role === "work"
-              ? ("working" as const)
-              : ("classified" as const);
+            : event.payload.role === "review"
+              ? ("reviewing" as const)
+              : event.payload.role === "work"
+                ? ("working" as const)
+                : event.payload.role === "verify"
+                  ? ("verifying" as const)
+                  : ("classified" as const);
         return {
           ...task,
           status,

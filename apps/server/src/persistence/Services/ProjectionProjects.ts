@@ -8,6 +8,7 @@
  */
 import {
   GedRoleModelSelections,
+  GedRolePromptPrefixes,
   IsoDateTime,
   ModelSelection,
   OrchestratorConfigJson,
@@ -27,6 +28,7 @@ export const ProjectionProject = Schema.Struct({
   workspaceRoot: Schema.String,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: GedRoleModelSelections,
+  rolePromptPrefixes: GedRolePromptPrefixes,
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,

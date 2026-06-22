@@ -3,6 +3,7 @@ import type {
   OrchestrationPendingGate,
   OrchestrationReadModel,
   OrchestrationTask,
+  OrchestrationStageHistory,
   TaskId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -17,6 +18,7 @@ import {
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
+  TaskRoleSelectionsUpdatedPayload,
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
   TaskStageStartedPayload,
@@ -25,6 +27,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
+import { resolveStageModelSelection, taskStatusForStageRole } from "./stageModelSelection.ts";
 import {
   MessageSentPayloadSchema,
   ProjectCreatedPayload,
@@ -215,6 +218,7 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     tasks: [],
     pendingGates: [],
     quotaBlockedStages: [],
+    stageHistory: {},
     updatedAt: nowIso,
   };
 }
@@ -240,6 +244,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             roleModelSelections: payload.roleModelSelections ?? {},
+            rolePromptPrefixes: payload.rolePromptPrefixes ?? {},
             orchestratorConfig: payload.orchestratorConfig ?? {},
             scripts: payload.scripts,
             createdAt: payload.createdAt,
@@ -275,6 +280,9 @@ export function projectEvent(
                     : {}),
                   ...(payload.roleModelSelections !== undefined
                     ? { roleModelSelections: payload.roleModelSelections }
+                    : {}),
+                  ...(payload.rolePromptPrefixes !== undefined
+                    ? { rolePromptPrefixes: payload.rolePromptPrefixes }
                     : {}),
                   ...(payload.orchestratorConfig !== undefined
                     ? { orchestratorConfig: payload.orchestratorConfig }
@@ -752,6 +760,7 @@ export function projectEvent(
             pmMessageId: payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            roleModelSelections: {},
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -780,12 +789,30 @@ export function projectEvent(
         })),
       );
 
+    case "task.role-selections-updated":
+      return decodeForEvent(
+        TaskRoleSelectionsUpdatedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            roleModelSelections: payload.roleModelSelections,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "task.stage-started":
       // Status by role:
       //   classify → classified (classify runs while the task is `classified`;
       //              no distinct status)
       //   plan     → planning
+      //   review   → reviewing
       //   work     → working
+      //   verify   → verifying
       // Always records the stage thread and points `currentStageThreadId` at it.
       return decodeForEvent(TaskStageStartedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {
@@ -793,12 +820,16 @@ export function projectEvent(
           if (!task) {
             return nextBase;
           }
-          const status =
-            payload.role === "plan"
-              ? ("planning" as const)
-              : payload.role === "work"
-                ? ("working" as const)
-                : ("classified" as const);
+          const project = nextBase.projects.find((entry) => entry.id === task.projectId);
+          const modelSelection =
+            project === undefined
+              ? null
+              : resolveStageModelSelection({
+                  project,
+                  task,
+                  role: payload.role,
+                });
+          const status = taskStatusForStageRole(payload.role);
           const stageThreadIds = task.stageThreadIds.includes(payload.stageThreadId)
             ? task.stageThreadIds
             : [...task.stageThreadIds, payload.stageThreadId];
@@ -830,6 +861,23 @@ export function projectEvent(
                       ? { ...stage, status: "resumed" as const, resumedAt: payload.updatedAt }
                       : stage,
                   ),
+            stageHistory:
+              modelSelection === null
+                ? nextBase.stageHistory
+                : ({
+                    ...nextBase.stageHistory,
+                    [payload.stageThreadId]: {
+                      projectId: task.projectId,
+                      taskId: payload.taskId,
+                      stageThreadId: payload.stageThreadId,
+                      role: payload.role,
+                      providerInstanceId: modelSelection.instanceId,
+                      model: modelSelection.model,
+                      status: "running",
+                      startedAt: payload.updatedAt,
+                      endedAt: null,
+                    },
+                  } satisfies OrchestrationStageHistory),
           };
         }),
       );
@@ -840,14 +888,28 @@ export function projectEvent(
       // transition is driven by the next stage starting or a gate event, so a
       // completed classify/plan stage does not regress the derived status.
       return decodeForEvent(TaskStageCompletedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          tasks: updateTask(nextBase.tasks, payload.taskId, {
-            ...(payload.role === "work" ? { status: "review" as const } : {}),
-            currentStageThreadId: null,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
+        Effect.map((payload) => {
+          const existingStage = nextBase.stageHistory[payload.stageThreadId];
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              ...(payload.role === "work" ? { status: "review" as const } : {}),
+              currentStageThreadId: null,
+              updatedAt: payload.updatedAt,
+            }),
+            stageHistory:
+              existingStage === undefined
+                ? nextBase.stageHistory
+                : {
+                    ...nextBase.stageHistory,
+                    [payload.stageThreadId]: {
+                      ...existingStage,
+                      status: "completed" as const,
+                      endedAt: payload.updatedAt,
+                    },
+                  },
+          };
+        }),
       );
 
     case "task.stage-blocked":
@@ -878,6 +940,17 @@ export function projectEvent(
                 resumedAt: null,
               },
             ],
+            stageHistory:
+              nextBase.stageHistory[payload.stageThreadId] === undefined
+                ? nextBase.stageHistory
+                : {
+                    ...nextBase.stageHistory,
+                    [payload.stageThreadId]: {
+                      ...nextBase.stageHistory[payload.stageThreadId],
+                      status: "blocked" as const,
+                      endedAt: payload.updatedAt,
+                    },
+                  },
           };
         }),
       );

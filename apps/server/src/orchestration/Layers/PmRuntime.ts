@@ -99,6 +99,11 @@ export interface PmRuntimeLiveOptions {
 }
 
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+const PM_SYSTEM_PROMPT = [
+  "You are the orchestrator project manager.",
+  "Use the stage roles precisely: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
+  "Use tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
+].join("\n");
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" ||
@@ -987,6 +992,7 @@ export const makePiProjectRuntimeFactory = Effect.gen(function* () {
         sessionStorage,
         model,
         tools,
+        systemPrompt: PM_SYSTEM_PROMPT,
         getApiKeyAndHeaders: async () => ({ apiKey }),
       });
       const eventProjection = yield* makePmEventProjectionRuntime({

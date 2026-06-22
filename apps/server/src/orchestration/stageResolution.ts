@@ -1,6 +1,7 @@
 import {
   CommandId,
   EventId,
+  type GedRolePromptPrefixes,
   type OrchestrationThread,
   type OrchestrationReadModel,
   type OrchestrationStageRole,
@@ -73,9 +74,44 @@ export const pmQuotaPausedActivityCommandId = (
 export const pmQuotaPausedActivityId = (pmThreadId: ThreadId, occurredAt: string): EventId =>
   EventId.make(`server:pm-quota-paused:${pmThreadId}:${occurredAt}`);
 
+const STAGE_PROMPT_PREFIX_OPEN = "----- BEGIN GEDCODE STAGE PROMPT PREFIX -----";
+const STAGE_PROMPT_PREFIX_CLOSE = "----- END GEDCODE STAGE PROMPT PREFIX -----";
+
+export function stripStagePromptPrefix(instructions: string): string {
+  const leadingWhitespaceLength = instructions.length - instructions.trimStart().length;
+  const trimmedStart = instructions.slice(leadingWhitespaceLength);
+  if (!trimmedStart.startsWith(STAGE_PROMPT_PREFIX_OPEN)) {
+    return instructions;
+  }
+  const closeIndex = trimmedStart.indexOf(STAGE_PROMPT_PREFIX_CLOSE);
+  if (closeIndex < 0) {
+    return instructions;
+  }
+  return trimmedStart.slice(closeIndex + STAGE_PROMPT_PREFIX_CLOSE.length).trimStart();
+}
+
+export function prepareStageInstructions(input: {
+  readonly instructions: string;
+  readonly role: OrchestrationStageRole;
+  readonly rolePromptPrefixes: GedRolePromptPrefixes | undefined;
+}): string {
+  const rawInstructions = stripStagePromptPrefix(input.instructions);
+  const promptPrefix = input.rolePromptPrefixes?.[input.role];
+  if (promptPrefix === undefined) {
+    return rawInstructions;
+  }
+  return `${STAGE_PROMPT_PREFIX_OPEN}
+Role: ${input.role}
+${promptPrefix}
+${STAGE_PROMPT_PREFIX_CLOSE}
+
+${rawInstructions}`;
+}
+
 export function originalStageInstructions(thread: OrchestrationThread): string | null {
   const userMessage = thread.messages.find((message) => message.role === "user");
-  const trimmed = userMessage?.text.trim();
+  const trimmed =
+    userMessage === undefined ? undefined : stripStagePromptPrefix(userMessage.text).trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
@@ -96,8 +132,12 @@ export function activeStageRoleForTaskStatus(
       return "classify";
     case "planning":
       return "plan";
+    case "reviewing":
+      return "review";
     case "working":
       return "work";
+    case "verifying":
+      return "verify";
     default:
       return null;
   }

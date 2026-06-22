@@ -6,11 +6,16 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
+  GedRoleModelSelections,
+  GedRolePromptPrefixes,
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationStageHistory,
+  OrchestrationStageRole,
+  OrchestrationTaskStatus,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -23,6 +28,7 @@ import {
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -49,6 +55,11 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+const decodeRoleModelSelections = Schema.decodeUnknownEffect(GedRoleModelSelections);
+const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixes);
+const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory);
+const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
+const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -671,6 +682,154 @@ it.effect("decodes task.stage-blocked events through the orchestration event uni
       assert.strictEqual(parsed.payload.providerInstanceId, "codex");
       assert.strictEqual(parsed.payload.reason, "quota");
     }
+  }),
+);
+
+it.effect("accepts review and verify stage roles plus reviewing task status", () =>
+  Effect.gen(function* () {
+    const review = yield* decodeStageRole("review");
+    const verify = yield* decodeStageRole("verify");
+    const reviewing = yield* decodeTaskStatus("reviewing");
+
+    assert.strictEqual(review, "review");
+    assert.strictEqual(verify, "verify");
+    assert.strictEqual(reviewing, "reviewing");
+  }),
+);
+
+it.effect("role model selections are keyed only by known stage roles", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeRoleModelSelections({
+      review: {
+        instanceId: "codex_review",
+        model: "gpt-5.2",
+      },
+      verify: {
+        provider: "claudeAgent",
+        model: "claude-opus-4-6",
+      },
+    });
+
+    assert.strictEqual(parsed.review?.instanceId, ProviderInstanceId.make("codex_review"));
+    assert.strictEqual(parsed.verify?.instanceId, ProviderInstanceId.make("claudeAgent"));
+
+    const result = yield* Effect.exit(
+      decodeRoleModelSelections({
+        verfiy: {
+          instanceId: "codex",
+          model: "gpt-5.2",
+        },
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("role prompt prefixes are keyed only by known stage roles", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeRolePromptPrefixes({
+      review: "Focus on plan defects.",
+      verify: "Run targeted verification before reporting success.",
+    });
+
+    assert.strictEqual(parsed.review, "Focus on plan defects.");
+    assert.strictEqual(parsed.verify, "Run targeted verification before reporting success.");
+
+    const result = yield* Effect.exit(
+      decodeRolePromptPrefixes({
+        verfy: "typo",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes task role-selection commands and narrows persisted event origin", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeOrchestrationCommand({
+      type: "task.role-selections.set",
+      commandId: "cmd-role-selections",
+      taskId: "task-1",
+      roleModelSelections: {
+        review: {
+          instanceId: "codex_review",
+          model: "gpt-5.2",
+        },
+      },
+      origin: "human",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(command.type, "task.role-selections.set");
+
+    const event = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-role-selections",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.role-selections-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-role-selections",
+      causationEventId: null,
+      correlationId: "cmd-role-selections",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        roleModelSelections: {
+          review: {
+            instanceId: "codex_review",
+            model: "gpt-5.2",
+          },
+        },
+        origin: "client",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.strictEqual(event.type, "task.role-selections-updated");
+
+    const result = yield* Effect.exit(
+      decodeOrchestrationEvent({
+        sequence: 2,
+        eventId: "evt-role-selections-pm",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        type: "task.role-selections-updated",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        commandId: "cmd-role-selections",
+        causationEventId: null,
+        correlationId: "cmd-role-selections",
+        metadata: {},
+        payload: {
+          taskId: "task-1",
+          roleModelSelections: {},
+          origin: "pm-runtime",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes stage history keyed by stage thread id", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeStageHistory({
+      "thread-stage-1": {
+        projectId: "project-1",
+        taskId: "task-1",
+        stageThreadId: "thread-stage-1",
+        role: "verify",
+        providerInstanceId: "codex_verify",
+        model: "gpt-5.2",
+        status: "blocked",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:10:00.000Z",
+      },
+    });
+
+    const stage = parsed[ThreadId.make("thread-stage-1")];
+    assert.strictEqual(stage?.role, "verify");
+    assert.strictEqual(stage?.providerInstanceId, "codex_verify");
+    assert.strictEqual(stage?.status, "blocked");
   }),
 );
 

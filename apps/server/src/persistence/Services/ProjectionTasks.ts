@@ -11,6 +11,7 @@
  * @module ProjectionTaskRepository
  */
 import {
+  GedRoleModelSelections,
   IsoDateTime,
   MessageId,
   OrchestrationTaskStatus,
@@ -38,6 +39,7 @@ export const ProjectionTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  roleModelSelections: GedRoleModelSelections,
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

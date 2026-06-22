@@ -39,6 +39,18 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
   periodic leaked-worktree reaper, durability-path Effect Metrics, and
   measure-only command-queue contention instrumentation.
 
+### Orchestrator mode Phase 3
+
+- Tracking issue: [#51](https://github.com/edgyarmati/gedcode/issues/51)
+- Status: In progress in this fork as of 2026-06-22.
+- Notes: Fork-original multi-stage role and multi-backend work, not a
+  cherry-pick from `pingdotgg/t3code`. The P1-P3 engine foundation adds
+  `review`/`verify` worker roles, human-controlled per-task role model
+  overrides, per-role prompt prefixes, deterministic backend/model selection,
+  PM handoff support for the new roles, and a durable stage-history projection.
+  The follow-on UX/E2E lane owns the project/task editors, stage-timeline UI,
+  and full restart/E2E proof.
+
 ## Removed Forked-In Features
 
 Subsystems inherited from upstream that this fork has deliberately deleted to
