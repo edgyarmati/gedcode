@@ -50,6 +50,7 @@ import { ProposedPlanCard } from "../chat/ProposedPlanCard";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
+import { StageTimeline } from "./StageTimeline";
 import { type ComposerImageAttachment, useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import {
@@ -845,6 +846,7 @@ function TaskDetailRail({
 }) {
   return (
     <div className="space-y-4">
+      <StageTimeline environmentId={environmentId} taskId={taskId} />
       <GatePanel environmentId={environmentId} gates={gates} taskId={taskId} />
       <StageProposedPlan
         environmentId={environmentId}
