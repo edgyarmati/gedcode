@@ -1674,18 +1674,23 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           if (Option.isNone(task)) {
             return;
           }
+          // Prefer the backend/model stamped on the event; fall back to
+          // re-deriving from config for events appended before the payload
+          // carried them (append-only compatibility).
           const project = yield* projectionProjectRepository.getById({
             projectId: task.value.projectId,
           });
-          if (Option.isNone(project)) {
-            return;
-          }
-          const modelSelection = resolveStageModelSelection({
-            project: project.value,
-            task: task.value,
-            role: event.payload.role,
-          });
-          if (modelSelection === null) {
+          const fallbackSelection = Option.isNone(project)
+            ? null
+            : resolveStageModelSelection({
+                project: project.value,
+                task: task.value,
+                role: event.payload.role,
+              });
+          const providerInstanceId =
+            event.payload.providerInstanceId ?? fallbackSelection?.instanceId;
+          const model = event.payload.model ?? fallbackSelection?.model;
+          if (providerInstanceId === undefined || model === undefined) {
             return;
           }
           yield* projectionStageHistoryRepository.upsert({
@@ -1693,8 +1698,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             taskId: event.payload.taskId,
             stageThreadId: event.payload.stageThreadId,
             role: event.payload.role,
-            providerInstanceId: modelSelection.instanceId,
-            model: modelSelection.model,
+            providerInstanceId,
+            model,
             status: "running",
             startedAt: event.payload.updatedAt,
             endedAt: null,

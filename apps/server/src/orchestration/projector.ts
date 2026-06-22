@@ -821,7 +821,10 @@ export function projectEvent(
             return nextBase;
           }
           const project = nextBase.projects.find((entry) => entry.id === task.projectId);
-          const modelSelection =
+          // Prefer the backend/model stamped on the event; fall back to
+          // re-deriving from config for events appended before the payload
+          // carried them (append-only compatibility).
+          const fallbackSelection =
             project === undefined
               ? null
               : resolveStageModelSelection({
@@ -829,6 +832,8 @@ export function projectEvent(
                   task,
                   role: payload.role,
                 });
+          const providerInstanceId = payload.providerInstanceId ?? fallbackSelection?.instanceId;
+          const model = payload.model ?? fallbackSelection?.model;
           const status = taskStatusForStageRole(payload.role);
           const stageThreadIds = task.stageThreadIds.includes(payload.stageThreadId)
             ? task.stageThreadIds
@@ -862,7 +867,7 @@ export function projectEvent(
                       : stage,
                   ),
             stageHistory:
-              modelSelection === null
+              providerInstanceId === undefined || model === undefined
                 ? nextBase.stageHistory
                 : ({
                     ...nextBase.stageHistory,
@@ -871,8 +876,8 @@ export function projectEvent(
                       taskId: payload.taskId,
                       stageThreadId: payload.stageThreadId,
                       role: payload.role,
-                      providerInstanceId: modelSelection.instanceId,
-                      model: modelSelection.model,
+                      providerInstanceId,
+                      model,
                       status: "running",
                       startedAt: payload.updatedAt,
                       endedAt: null,

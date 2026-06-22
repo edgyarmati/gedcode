@@ -1395,6 +1395,13 @@ export const TaskStageStartedPayload = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
+  // Resolved backend/model for this stage, stamped by the decider at start so the
+  // stage-history projection and the web timeline record what actually ran rather
+  // than re-resolving config. Optional for append-only compatibility: events
+  // appended before these fields existed still decode, and projections fall back
+  // to re-deriving the selection from config when they are absent.
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  model: Schema.optional(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
 

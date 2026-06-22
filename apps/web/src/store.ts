@@ -13,6 +13,7 @@ import type {
   OrchestrationShellStreamEvent,
   OrchestrationSession,
   OrchestrationSessionStatus,
+  OrchestrationStageHistoryEntry,
   OrchestrationTask,
   OrchestrationThread,
   OrchestrationThreadShell,
@@ -72,6 +73,12 @@ export interface EnvironmentState {
   // (set) / `task.stage-started` (clear) events. Drives the "resets ~HH:MM"
   // task-board badge; the badge itself is gated on `task.status`.
   quotaBlockedStageByTaskId: Record<string, TaskQuotaBlock>;
+  // Durable per-task stage history (the classify→plan→review→work→verify
+  // pipeline) keyed by stage thread id. Seeded from the project/task snapshot
+  // and kept live by `task.stage-started`/`-completed`/`-blocked` events. Drives
+  // the stage-timeline; the backend/model is stamped on the stage-started event
+  // so the client never re-resolves config.
+  stageHistoryByTaskId: Record<string, Record<string, OrchestrationStageHistoryEntry>>;
   // Active PM-provider quota block per project. Seeded from the project snapshot,
   // updated live from PM-thread quota-paused activity, and cleared when the PM
   // starts speaking again.
@@ -143,6 +150,7 @@ const initialEnvironmentState: EnvironmentState = {
   pendingGateIdsByTaskId: {},
   pendingGateById: {},
   quotaBlockedStageByTaskId: {},
+  stageHistoryByTaskId: {},
   pmQuotaBlockByProjectId: {},
   threadIds: [],
   threadIdsByProjectId: {},
@@ -698,6 +706,71 @@ function clearTaskQuotaBlock(state: EnvironmentState, taskId: string): Environme
   const nextQuota = { ...state.quotaBlockedStageByTaskId };
   delete nextQuota[taskId];
   return { ...state, quotaBlockedStageByTaskId: nextQuota };
+}
+
+function upsertStageHistoryEntry(
+  state: EnvironmentState,
+  entry: OrchestrationStageHistoryEntry,
+): EnvironmentState {
+  const taskId = String(entry.taskId);
+  const stageThreadId = String(entry.stageThreadId);
+  return {
+    ...state,
+    stageHistoryByTaskId: {
+      ...state.stageHistoryByTaskId,
+      [taskId]: {
+        ...state.stageHistoryByTaskId[taskId],
+        [stageThreadId]: entry,
+      },
+    },
+  };
+}
+
+// Patches an existing stage-history entry's lifecycle fields. A no-op when the
+// stage was never seeded (a snapshot will fill it), so `-completed`/`-blocked`
+// arriving before the seed never invents a partial row.
+function patchStageHistoryEntry(
+  state: EnvironmentState,
+  taskId: string,
+  stageThreadId: string,
+  patch: Partial<OrchestrationStageHistoryEntry>,
+): EnvironmentState {
+  const existing = state.stageHistoryByTaskId[taskId]?.[stageThreadId];
+  if (existing === undefined) {
+    return state;
+  }
+  return {
+    ...state,
+    stageHistoryByTaskId: {
+      ...state.stageHistoryByTaskId,
+      [taskId]: {
+        ...state.stageHistoryByTaskId[taskId],
+        [stageThreadId]: { ...existing, ...patch },
+      },
+    },
+  };
+}
+
+function resetTaskStageHistory(
+  state: EnvironmentState,
+  taskIds: ReadonlySet<string>,
+): EnvironmentState {
+  const next: Record<string, Record<string, OrchestrationStageHistoryEntry>> = {};
+  for (const taskId of taskIds) {
+    next[taskId] = {};
+  }
+  return { ...state, stageHistoryByTaskId: { ...state.stageHistoryByTaskId, ...next } };
+}
+
+function seedStageHistory(
+  state: EnvironmentState,
+  entries: ReadonlyArray<OrchestrationStageHistoryEntry>,
+): EnvironmentState {
+  let nextState = state;
+  for (const entry of entries) {
+    nextState = upsertStageHistoryEntry(nextState, entry);
+  }
+  return nextState;
 }
 
 function setProjectPmQuotaBlock(
@@ -1716,6 +1789,14 @@ export function syncOrchestratorProjectSnapshot(
     });
   }
 
+  // Stage history is authoritative at subscribe time: reset this project's tasks,
+  // then seed from the snapshot (scoped server-side to this project's tasks).
+  nextEnvironmentState = resetTaskStageHistory(nextEnvironmentState, snapshotTaskIds);
+  nextEnvironmentState = seedStageHistory(
+    nextEnvironmentState,
+    Object.values(snapshot.stageHistory),
+  );
+
   nextEnvironmentState = retainProjectSnapshotTaskState({
     state: nextEnvironmentState,
     projectId: snapshot.project.id,
@@ -1750,6 +1831,16 @@ export function syncOrchestratorTaskSnapshot(
     nextEnvironmentState,
     String(snapshot.task.id),
     snapshotGateIds,
+  );
+
+  // Reset and re-seed this task's stage history from the authoritative snapshot.
+  nextEnvironmentState = resetTaskStageHistory(
+    nextEnvironmentState,
+    new Set([String(snapshot.task.id)]),
+  );
+  nextEnvironmentState = seedStageHistory(
+    nextEnvironmentState,
+    Object.values(snapshot.stageHistory),
   );
 
   return commitEnvironmentState(state, environmentId, nextEnvironmentState);
@@ -1948,16 +2039,41 @@ function applyEnvironmentOrchestrationEvent(
         };
       });
       // A (re)started stage means the task is no longer parked on quota.
-      return clearTaskQuotaBlock(nextState, taskId);
+      const withoutQuota = clearTaskQuotaBlock(nextState, taskId);
+      const projectId = withoutQuota.taskById[taskId]?.projectId;
+      const { providerInstanceId, model } = event.payload;
+      // The backend/model is stamped on the stage-started event; if absent
+      // (events appended before that field existed) or the task is unknown, the
+      // snapshot remains the source for this stage's history row.
+      if (projectId === undefined || providerInstanceId === undefined || model === undefined) {
+        return withoutQuota;
+      }
+      return upsertStageHistoryEntry(withoutQuota, {
+        projectId,
+        taskId: event.payload.taskId,
+        stageThreadId: event.payload.stageThreadId,
+        role: event.payload.role,
+        providerInstanceId,
+        model,
+        status: "running",
+        startedAt: event.payload.updatedAt,
+        endedAt: null,
+      });
     }
 
-    case "task.stage-completed":
-      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+    case "task.stage-completed": {
+      const taskId = String(event.payload.taskId);
+      const withTask = updateTaskState(state, taskId, (task) => ({
         ...task,
         ...(event.payload.role === "work" ? { status: "review" as const } : {}),
         currentStageThreadId: null,
         updatedAt: event.payload.updatedAt,
       }));
+      return patchStageHistoryEntry(withTask, taskId, String(event.payload.stageThreadId), {
+        status: "completed",
+        endedAt: event.payload.updatedAt,
+      });
+    }
 
     case "task.stage-blocked": {
       const taskId = String(event.payload.taskId);
@@ -1967,10 +2083,15 @@ function applyEnvironmentOrchestrationEvent(
         currentStageThreadId: null,
         updatedAt: event.payload.updatedAt,
       }));
-      return setTaskQuotaBlock(withTask, taskId, {
+      const withQuota = setTaskQuotaBlock(withTask, taskId, {
         resetAt: event.payload.resetAt ?? null,
         providerInstanceId: event.payload.providerInstanceId,
         stageThreadId: event.payload.stageThreadId,
+      });
+      return patchStageHistoryEntry(withQuota, taskId, String(event.payload.stageThreadId), {
+        status: "blocked",
+        endedAt: event.payload.updatedAt,
+        providerInstanceId: event.payload.providerInstanceId,
       });
     }
 
@@ -2687,6 +2808,29 @@ export function selectTaskQuotaBlockByRef(
   return ref
     ? selectEnvironmentState(state, ref.environmentId).quotaBlockedStageByTaskId[String(ref.taskId)]
     : undefined;
+}
+
+// Per-task stage history (classify→plan→review→work→verify) in chronological
+// start order, for the stage timeline. Ties broken by stage thread id so the
+// order is stable across renders.
+export function selectTaskStageHistoryByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestrationStageHistoryEntry[] {
+  if (!ref) {
+    return [];
+  }
+  const byThreadId = selectEnvironmentState(state, ref.environmentId).stageHistoryByTaskId[
+    String(ref.taskId)
+  ];
+  if (byThreadId === undefined) {
+    return [];
+  }
+  return Object.values(byThreadId).toSorted(
+    (left, right) =>
+      left.startedAt.localeCompare(right.startedAt) ||
+      String(left.stageThreadId).localeCompare(String(right.stageThreadId)),
+  );
 }
 
 export function selectProjectPmQuotaBlockByRef(

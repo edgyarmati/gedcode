@@ -1061,6 +1061,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           role: command.role,
           stageThreadId,
           awaitedTurnId: null,
+          providerInstanceId: modelSelection.instanceId,
+          model: modelSelection.model,
           updatedAt: command.createdAt,
         },
       };

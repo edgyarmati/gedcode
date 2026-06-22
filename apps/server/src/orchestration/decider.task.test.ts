@@ -335,11 +335,18 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const events = Array.isArray(result) ? result : [result];
       const threadCreated = events.find((event) => event.type === "thread.created");
+      const stageStarted = events.find((event) => event.type === "task.stage-started");
       const userMessage = events.find((event) => event.type === "thread.message-sent");
       expect(threadCreated?.payload.modelSelection).toEqual({
         instanceId: ProviderInstanceId.make("codex_task"),
         model: "gpt-5-task",
       });
+      // The resolved backend/model is stamped on the stage-started event so the
+      // stage-history projection and the web timeline never re-resolve config.
+      expect(stageStarted?.payload.providerInstanceId).toEqual(
+        ProviderInstanceId.make("codex_task"),
+      );
+      expect(stageStarted?.payload.model).toBe("gpt-5-task");
       expect(userMessage?.payload.text).toContain("Role: work");
       expect(userMessage?.payload.text).toContain("Use the project implementation playbook.");
       expect(userMessage?.payload.text).toContain("Implement the accepted plan.");

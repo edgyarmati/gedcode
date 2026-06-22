@@ -13,6 +13,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationStageHistoryEntry,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -26,6 +27,7 @@ import {
   selectProjectPmQuotaBlockByRef,
   selectProjectsAcrossEnvironments,
   selectTaskByRef,
+  selectTaskStageHistoryByRef,
   selectTasksForProjectRef,
   selectThreadByRef,
   selectThreadExistsByRef,
@@ -126,6 +128,7 @@ function makeState(thread: Thread): AppState {
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},
+    stageHistoryByTaskId: {},
     pmQuotaBlockByProjectId: {},
     threadIds: [thread.id],
     threadIdsByProjectId,
@@ -208,6 +211,7 @@ function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): A
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},
+    stageHistoryByTaskId: {},
     pmQuotaBlockByProjectId: {},
     threadIds: [],
     threadIdsByProjectId: {},
@@ -1816,5 +1820,203 @@ describe("incremental slice characterization (plan 012 contract)", () => {
     const newestId = EventId.make(`activity-${String(total - 1).padStart(4, "0")}`);
     expect(thread1.activities[thread1.activities.length - 1]?.id).toBe(newestId);
     expect(derivedIds).toContain(newestId);
+  });
+});
+
+describe("orchestrator stage history", () => {
+  const projectId = ProjectId.make("sh-project");
+  const taskId = TaskId.make("sh-task");
+  const planThreadId = ThreadId.make("sh-stage-plan");
+  const workThreadId = ThreadId.make("sh-stage-work");
+  const taskRef = { environmentId: localEnvironmentId, taskId };
+  const codex = ProviderInstanceId.make("codex_plan");
+  const claude = ProviderInstanceId.make("claude_work");
+
+  function seedProjectAndTask(): AppState {
+    return applyOrchestrationEvents(
+      makeEmptyState({ activeEnvironmentId: localEnvironmentId }),
+      [
+        makeEvent(
+          "project.created",
+          {
+            projectId,
+            title: "Stage History",
+            workspaceRoot: "/tmp/sh",
+            defaultModelSelection: { instanceId: codex, model: DEFAULT_MODEL },
+            scripts: [],
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-01T00:00:00.000Z",
+          },
+          { sequence: 1, aggregateKind: "project", aggregateId: projectId },
+        ),
+        makeEvent(
+          "task.created",
+          {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Build the timeline",
+            branch: "orchestrator/sh-task",
+            worktreePath: "/tmp/sh/wt",
+            pmMessageId: MessageId.make("sh-pm-msg"),
+            playbookVersion: "feature@v1",
+            createdAt: "2026-06-01T00:00:01.000Z",
+            updatedAt: "2026-06-01T00:00:01.000Z",
+          },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+  }
+
+  it("records running, completed, and blocked stages from streamed events in start order", () => {
+    let state = seedProjectAndTask();
+
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-started",
+        {
+          taskId,
+          role: "plan",
+          stageThreadId: planThreadId,
+          awaitedTurnId: null,
+          providerInstanceId: codex,
+          model: "gpt-5-plan",
+          updatedAt: "2026-06-01T00:00:02.000Z",
+        },
+        { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+
+    const afterPlanStart = selectTaskStageHistoryByRef(state, taskRef);
+    expect(afterPlanStart).toHaveLength(1);
+    expect(afterPlanStart[0]).toMatchObject({
+      role: "plan",
+      status: "running",
+      providerInstanceId: codex,
+      model: "gpt-5-plan",
+      endedAt: null,
+    });
+
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-completed",
+        {
+          taskId,
+          role: "plan",
+          stageThreadId: planThreadId,
+          awaitedTurnId: null,
+          updatedAt: "2026-06-01T00:00:03.000Z",
+        },
+        { sequence: 4, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+
+    expect(selectTaskStageHistoryByRef(state, taskRef)[0]).toMatchObject({
+      role: "plan",
+      status: "completed",
+      endedAt: "2026-06-01T00:00:03.000Z",
+    });
+
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-started",
+        {
+          taskId,
+          role: "work",
+          stageThreadId: workThreadId,
+          awaitedTurnId: null,
+          providerInstanceId: claude,
+          model: "claude-opus-work",
+          updatedAt: "2026-06-01T00:00:04.000Z",
+        },
+        { sequence: 5, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-blocked",
+        {
+          taskId,
+          role: "work",
+          stageThreadId: workThreadId,
+          reason: "quota",
+          providerInstanceId: claude,
+          updatedAt: "2026-06-01T00:00:05.000Z",
+        },
+        { sequence: 6, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+
+    const stages = selectTaskStageHistoryByRef(state, taskRef);
+    expect(stages.map((stage) => stage.role)).toEqual(["plan", "work"]);
+    expect(stages[1]).toMatchObject({
+      role: "work",
+      status: "blocked",
+      providerInstanceId: claude,
+      endedAt: "2026-06-01T00:00:05.000Z",
+    });
+  });
+
+  it("seeds stage history from the project snapshot and resets stale rows", () => {
+    const seeded = seedProjectAndTask();
+    const task = selectTaskByRef(seeded, taskRef);
+    if (task === undefined) {
+      throw new Error("expected the seeded task to exist");
+    }
+
+    const entry: OrchestrationStageHistoryEntry = {
+      projectId,
+      taskId,
+      stageThreadId: planThreadId,
+      role: "plan",
+      providerInstanceId: codex,
+      model: "gpt-5-plan",
+      status: "completed",
+      startedAt: "2026-06-01T00:00:02.000Z",
+      endedAt: "2026-06-01T00:00:03.000Z",
+    };
+
+    const snapshotWith = (stageHistory: Record<string, OrchestrationStageHistoryEntry>): AppState =>
+      syncOrchestratorProjectSnapshot(
+        seeded,
+        {
+          snapshotSequence: 10,
+          project: {
+            id: projectId,
+            title: "Stage History",
+            workspaceRoot: "/tmp/sh",
+            defaultModelSelection: { instanceId: codex, model: DEFAULT_MODEL },
+            scripts: [],
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-01T00:00:00.000Z",
+            deletedAt: null,
+          },
+          pmThreadId: ThreadId.make("pm:sh-project"),
+          pmThread: null,
+          pmQuotaBlock: null,
+          tasks: [task],
+          pendingGates: [],
+          quotaBlockedStages: [],
+          stageHistory,
+        },
+        localEnvironmentId,
+      );
+
+    const seededState = snapshotWith({ [String(planThreadId)]: entry });
+    expect(selectTaskStageHistoryByRef(seededState, taskRef)).toEqual([entry]);
+
+    const resetState = snapshotWith({});
+    expect(selectTaskStageHistoryByRef(resetState, taskRef)).toEqual([]);
   });
 });
