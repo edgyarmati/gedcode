@@ -2658,20 +2658,20 @@ describe("ProviderRuntimeIngestion", () => {
     expect(activityPayload?.message).toBe("runtime activity exploded");
   });
 
-  it("projects account rate-limit telemetry into provider instance quota state", async () => {
+  it("projects exhausted account rate-limit telemetry into provider instance quota state", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
     const providerInstanceId = ProviderInstanceId.make("codex");
 
     harness.emit({
       type: "account.rate-limits.updated",
-      eventId: asEventId("evt-rate-limits-warning"),
+      eventId: asEventId("evt-rate-limits-exhausted"),
       provider: ProviderDriverKind.make("codex"),
       providerInstanceId,
       createdAt: now,
       threadId: asThreadId("thread-1"),
       payload: {
-        status: "warning",
+        status: "exhausted",
         resetAtEpochMs: 1767225600000,
       },
     });
@@ -2699,6 +2699,30 @@ describe("ProviderRuntimeIngestion", () => {
     expect(cleared.blocked).toBe(false);
     expect(cleared.status).toBe("ok");
     expect(cleared.resetAt).toBe(null);
+  });
+
+  it("keeps warning account rate-limit telemetry non-blocking", async () => {
+    const harness = await createHarness();
+    const providerInstanceId = ProviderInstanceId.make("codex");
+
+    harness.emit({
+      type: "account.rate-limits.updated",
+      eventId: asEventId("evt-rate-limits-warning"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      payload: {
+        status: "warning",
+        resetAtEpochMs: 1767225600000,
+      },
+    });
+    await harness.drain();
+
+    const state = await harness.quotaState(providerInstanceId);
+    expect(state.blocked).toBe(false);
+    expect(state.status).toBe("ok");
+    expect(state.resetAt).toBe(null);
   });
 
   it("projects classified rate-limit runtime errors into blocked-unknown quota state", async () => {

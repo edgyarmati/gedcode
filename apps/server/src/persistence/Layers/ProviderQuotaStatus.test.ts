@@ -29,7 +29,7 @@ layer("ProviderQuotaStatusRepository", (it) => {
     }),
   );
 
-  it.effect("observes warning telemetry as blocked-until when reset is known", () =>
+  it.effect("observes warning telemetry as ok because the instance is still usable", () =>
     Effect.gen(function* () {
       const repository = yield* ProviderQuotaStatusRepository;
       const providerInstanceId = ProviderInstanceId.make("claude_work");
@@ -37,6 +37,29 @@ layer("ProviderQuotaStatusRepository", (it) => {
       const change = yield* repository.observeRuntimeStatus({
         providerInstanceId,
         runtimeStatus: "warning",
+        resetAt: "2026-06-21T12:00:00.000Z",
+        updatedAt: "2026-06-21T10:00:00.000Z",
+      });
+
+      assert.ok(Option.isSome(change));
+      assert.strictEqual(change.value.previousStatus, null);
+      assert.strictEqual(change.value.nextStatus, "ok");
+
+      const state = yield* repository.isInstanceQuotaBlocked({ providerInstanceId });
+      assert.strictEqual(state.blocked, false);
+      assert.strictEqual(state.status, "ok");
+      assert.strictEqual(state.resetAt, null);
+    }),
+  );
+
+  it.effect("observes exhausted telemetry as blocked-until when reset is known", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProviderQuotaStatusRepository;
+      const providerInstanceId = ProviderInstanceId.make("claude_work_exhausted");
+
+      const change = yield* repository.observeRuntimeStatus({
+        providerInstanceId,
+        runtimeStatus: "exhausted",
         resetAt: "2026-06-21T12:00:00.000Z",
         updatedAt: "2026-06-21T10:00:00.000Z",
       });

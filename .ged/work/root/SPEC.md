@@ -2,22 +2,31 @@
 
 ## Goal
 
-Backport compatible web markdown and visual polish from upstream `7f741a56` (`Misc markdown styling improvements (#3017)`).
+Implement WP-Q2, WP-Q3, and WP-Q4 from GitHub issues #45, #46, and #47:
 
-## Scope
+- derive durable per-provider-instance quota status from WP-Q1 provider runtime signals;
+- block active worker stages on quota exhaustion without failing or abandoning the task;
+- skip new worker starts on quota-blocked instances;
+- resume blocked stages exactly once when quota returns or an operator re-drives the stage;
+- bound quota retry loops with `maxRetriesPerStage`.
 
-- Improve `ChatMarkdown` rendering, clipboard handling, markdown file tags, and related browser coverage.
-- Port compatible web visual polish in timeline/composer/sidebar/status surfaces when it is part of the markdown usability slice.
-- Update changelog and upstream decision bookkeeping.
+## Constraints
 
-## Non-Goals
-
-- Do not port upstream mobile changes.
-- Do not port `pnpm-lock.yaml` or package-manager/test-runner migration artifacts in this UI task.
-- Do not broaden into the remaining composer/chrome/changed-files commits unless directly required by markdown compatibility.
+- WP-Q1 is present locally as commit `eef76fef`; use its structured `account.rate-limits.updated` payload and `runtime.error.payload.class === "rate_limit"`.
+- Do not invent additional fallback/degraded paths beyond the quota-blocked path approved in #43.
+- Keep `packages/contracts` schema-only.
+- Event store remains append-only. Migrations may add derived projection tables/columns only.
+- Preserve deterministic command id + persisted command receipt dedup for exactly-once resumption.
+- Do not call paid/networked LLMs in tests.
+- Do not run `bun test`; use `bun run test`.
 
 ## Acceptance Criteria
 
-- Markdown-heavy chat content, file links, code blocks, and copied markdown behavior have focused coverage.
-- Web package typecheck and required repo checks pass.
-- `docs/upstream-decisions.md` records `7f741a56` as completed and removes it from Want To Implement.
+- Q2: Provider instance quota status query returns `ok`, `blocked-until-T`, or `blocked-unknown` per `providerInstanceId`.
+- Q2: Rate-limit telemetry transitions `warning`/`exhausted` into blocked states and `ok` into clear/ok state; classified `rate_limit` runtime errors block unknown-reset instances.
+- Q3: `task.stage.block` command emits `task.stage-blocked` with `{ taskId, stageThreadId, role, reason: "quota", providerInstanceId, resetAt? }`.
+- Q3: Projector derives `blocked-on-quota`; the task remains resumable and non-terminal, and the blocked event is visible to PM/UI event consumers.
+- Q3: Worker start admission skips a worker whose target `providerInstanceId` is quota-blocked and dispatches the stage block exactly once.
+- Q4: A blocked stage is re-driven through `task.stage.start` with deterministic command ids so concurrent/manual/detected resumptions dedup.
+- Q4: `maxRetriesPerStage` defaults safely, is configurable in project/global orchestrator config, and prevents quota retry loops fail-closed.
+- CHANGELOG documents user/operator-visible unreleased behavior.

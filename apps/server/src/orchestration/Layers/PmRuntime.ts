@@ -4,6 +4,7 @@ import {
   type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -81,7 +82,7 @@ import { boundUntrustedContent } from "../untrustedContent.ts";
 
 type SettlementEvent = Extract<
   OrchestrationEvent,
-  { type: "task.stage-completed" | "task.gate-resolved" }
+  { type: "task.stage-completed" | "task.stage-blocked" | "task.gate-resolved" }
 >;
 
 type SettlementEnvelope = {
@@ -100,10 +101,15 @@ export interface PmRuntimeLiveOptions {
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
-  event.type === "task.stage-completed" || event.type === "task.gate-resolved";
+  event.type === "task.stage-completed" ||
+  event.type === "task.stage-blocked" ||
+  event.type === "task.gate-resolved";
 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
-  event.type === "task.stage-completed" ? "stage" : "gate";
+  event.type === "task.gate-resolved" ? "gate" : "stage";
+
+const quotaBlockedStageSettlementKey = (stageThreadId: ThreadId): string =>
+  `${stageThreadId}::quota-blocked`;
 
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
@@ -111,7 +117,9 @@ const settlementEventKey = (event: SettlementEvent): string =>
         stageThreadId: event.payload.stageThreadId,
         awaitedTurnId: event.payload.awaitedTurnId,
       })
-    : makeGateSettlementKey(event.payload.gateId);
+    : event.type === "task.stage-blocked"
+      ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
+      : makeGateSettlementKey(event.payload.gateId);
 
 const findSettlementEvent = (
   events: ReadonlyArray<SettlementEvent>,
@@ -146,6 +154,23 @@ Decision: ${payload.decision}
 Origin: ${payload.origin}
 Approved hash: ${payload.approvedHash}
 Gate ID: ${payload.gateId}`);
+};
+
+const quotaBlockedStageMessage = (input: {
+  readonly event: Extract<SettlementEvent, { type: "task.stage-blocked" }>;
+  readonly task: OrchestrationTask;
+}): string => {
+  const payload = input.event.payload;
+  return boundUntrustedContent(`A worker stage paused on subscription quota.
+
+Task: ${input.task.title}
+Task ID: ${input.task.id}
+Stage role: ${payload.role}
+Stage thread ID: ${payload.stageThreadId}
+Provider instance: ${payload.providerInstanceId}
+Reset time: ${payload.resetAt ?? "unknown"}
+
+The task is now blocked-on-quota and should be resumed when the provider instance recovers or after an operator switches the role backend.`);
 };
 
 const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =>
@@ -292,6 +317,16 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         } satisfies SettlementEnvelope;
       }
 
+      if (event.type === "task.stage-blocked") {
+        return {
+          event,
+          ...resolved,
+          kind: "stage" as const,
+          settlementKey: quotaBlockedStageSettlementKey(event.payload.stageThreadId),
+          message: quotaBlockedStageMessage({ event, task: resolved.task }),
+        } satisfies SettlementEnvelope;
+      }
+
       return {
         event,
         ...resolved,
@@ -331,8 +366,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return false;
       }
       const providerInstanceId = config.value.pmModelSelection.instanceId;
-      // Fail open on BOTH a typed read error and an unexpected defect: a quota
-      // read must never wedge PM re-entry. Interrupts still propagate.
+      // Deliberately fail open on BOTH a typed read error and an unexpected
+      // defect: a quota read must never wedge PM re-entry. Approved as the
+      // explicit fallback for the PM quota gate; interrupts still propagate.
       const state = yield* providerQuotaStatusRepository
         .isInstanceQuotaBlocked({ providerInstanceId })
         .pipe(
@@ -496,9 +532,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         const gateKeys = (input.readModel.pendingGates ?? [])
           .filter((gate) => gate.status === "pending" && taskIds.has(String(gate.taskId)))
           .map((gate) => makeGateSettlementKey(gate.gateId));
+        const quotaBlockedStageKeys = (input.readModel.quotaBlockedStages ?? [])
+          .filter((stage) => stage.status === "blocked" && taskIds.has(String(stage.taskId)))
+          .map((stage) => quotaBlockedStageSettlementKey(stage.stageThreadId));
 
         return {
-          stageKeys,
+          stageKeys: [...stageKeys, ...quotaBlockedStageKeys],
           gateKeys,
         };
       },
@@ -690,7 +729,19 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
                 createdAt: resumedAt,
                 orchestrationEngine,
                 projectionSnapshotQuery,
-              });
+              }).pipe(
+                Effect.catchCause((cause) => {
+                  if (Cause.hasInterruptsOnly(cause)) {
+                    return Effect.failCause(cause);
+                  }
+                  return Effect.logWarning("quota blocked stage resume skipped during sweep", {
+                    taskId: String(stage.taskId),
+                    stageThreadId: String(stage.stageThreadId),
+                    providerInstanceId: String(stage.providerInstanceId),
+                    cause: Cause.pretty(cause),
+                  }).pipe(Effect.as(false));
+                }),
+              );
               if (resumed) {
                 resumedCount += 1;
                 const blockedMs = Date.parse(resumedAt) - Date.parse(stage.blockedAt);

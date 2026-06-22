@@ -87,6 +87,7 @@ function makeEmptyEnvironmentState(): EnvironmentState {
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},
+    pmQuotaBlockByProjectId: {},
     threadIds: [],
     threadIdsByProjectId: {},
     threadShellById: {},

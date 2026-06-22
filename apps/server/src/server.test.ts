@@ -87,6 +87,11 @@ import {
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import {
+  defaultOkQuotaState,
+  ProviderQuotaStatusRepository,
+  type ProviderQuotaStatusRepositoryShape,
+} from "./persistence/Services/ProviderQuotaStatus.ts";
+import {
   ProviderRegistry,
   type ProviderRegistryShape,
 } from "./provider/Services/ProviderRegistry.ts";
@@ -346,6 +351,7 @@ const buildAppUnderTest = (options?: {
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
     pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
+    providerQuotaStatusRepository?: Partial<ProviderQuotaStatusRepositoryShape>;
     checkpointDiffQuery?: Partial<CheckpointDiffQueryShape>;
     browserTraceCollector?: Partial<BrowserTraceCollectorShape>;
     serverLifecycleEvents?: Partial<ServerLifecycleEventsShape>;
@@ -718,23 +724,47 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(CheckpointDiffQuery)({
-          getTurnDiff: () =>
-            Effect.succeed({
-              threadId: defaultThreadId,
-              fromTurnCount: 0,
-              toTurnCount: 0,
-              diff: "",
-            }),
-          getFullThreadDiff: () =>
-            Effect.succeed({
-              threadId: defaultThreadId,
-              fromTurnCount: 0,
-              toTurnCount: 0,
-              diff: "",
-            }),
-          ...options?.layers?.checkpointDiffQuery,
-        }),
+        Layer.mergeAll(
+          Layer.mock(ProviderQuotaStatusRepository)({
+            upsert: (input) =>
+              Effect.succeed({
+                providerInstanceId: input.providerInstanceId,
+                previousStatus: null,
+                nextStatus: input.status,
+                resetAt: input.resetAt,
+              }),
+            markBlocked: (input) =>
+              Effect.succeed({
+                providerInstanceId: input.providerInstanceId,
+                previousStatus: null,
+                nextStatus: input.resetAt === null ? "blocked-unknown" : "blocked-until",
+                resetAt: input.resetAt,
+              }),
+            observeRuntimeStatus: () => Effect.succeed(Option.none()),
+            getByProviderInstanceId: () => Effect.succeed(Option.none()),
+            isInstanceQuotaBlocked: (input) =>
+              Effect.succeed(defaultOkQuotaState(input.providerInstanceId)),
+            listBlocked: () => Effect.succeed([]),
+            ...options?.layers?.providerQuotaStatusRepository,
+          }),
+          Layer.mock(CheckpointDiffQuery)({
+            getTurnDiff: () =>
+              Effect.succeed({
+                threadId: defaultThreadId,
+                fromTurnCount: 0,
+                toTurnCount: 0,
+                diff: "",
+              }),
+            getFullThreadDiff: () =>
+              Effect.succeed({
+                threadId: defaultThreadId,
+                fromTurnCount: 0,
+                toTurnCount: 0,
+                diff: "",
+              }),
+            ...options?.layers?.checkpointDiffQuery,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(GedWorkflowService)({

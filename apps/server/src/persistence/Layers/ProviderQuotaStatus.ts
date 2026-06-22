@@ -25,8 +25,8 @@ const statusFromRuntimeStatus = (
 ): ProviderQuotaProjectionStatus | null => {
   switch (runtimeStatus) {
     case "ok":
-      return "ok";
     case "warning":
+      return "ok";
     case "exhausted":
       return resetAt === null ? "blocked-unknown" : "blocked-until";
     default:

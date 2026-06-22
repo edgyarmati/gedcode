@@ -1,4 +1,5 @@
 import type { OrchestrationQuotaBlockedStage, ProviderInstanceId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -94,7 +95,19 @@ export const resumeQuotaBlockedStagesForProviderWithServices = Effect.fn(
         createdAt: input.createdAt,
         orchestrationEngine: input.orchestrationEngine,
         projectionSnapshotQuery: input.projectionSnapshotQuery,
-      }),
+      }).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.failCause(cause);
+          }
+          return Effect.logWarning("quota blocked stage resume skipped after dispatch failure", {
+            taskId: String(stage.taskId),
+            stageThreadId: String(stage.stageThreadId),
+            providerInstanceId: String(stage.providerInstanceId),
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(false));
+        }),
+      ),
     { concurrency: 1, discard: true },
   );
 });

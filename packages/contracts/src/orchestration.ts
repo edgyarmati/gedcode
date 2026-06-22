@@ -504,6 +504,13 @@ export const OrchestrationQuotaBlockedStage = Schema.Struct({
 });
 export type OrchestrationQuotaBlockedStage = typeof OrchestrationQuotaBlockedStage.Type;
 
+export const OrchestrationPmQuotaBlock = Schema.Struct({
+  providerInstanceId: ProviderInstanceId,
+  status: Schema.Literals(["blocked-until", "blocked-unknown"]),
+  resetAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationPmQuotaBlock = typeof OrchestrationPmQuotaBlock.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -1562,6 +1569,11 @@ export const OrchestratorProjectDetailSnapshot = Schema.Struct({
   project: OrchestrationProject,
   pmThreadId: ThreadId,
   pmThread: Schema.NullOr(OrchestrationThread),
+  // Project-wide PM quota block, when the PM provider instance itself is parked.
+  // `null` means the PM is currently available or no PM instance is configured.
+  pmQuotaBlock: Schema.NullOr(OrchestrationPmQuotaBlock).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   tasks: Schema.Array(OrchestrationTask),
   pendingGates: Schema.Array(OrchestrationPendingGate),
   // Active quota-blocked stages for this project's tasks, so the web can surface

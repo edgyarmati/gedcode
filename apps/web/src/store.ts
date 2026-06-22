@@ -6,6 +6,7 @@ import type {
   OrchestrationLatestTurn,
   OrchestrationMessage,
   OrchestrationPendingGate,
+  OrchestrationPmQuotaBlock,
   OrchestrationProposedPlan,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
@@ -24,8 +25,8 @@ import type {
   ScopedProjectRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { isProviderDriverKind, ProviderDriverKind } from "@t3tools/contracts";
-import type { GateId, ProviderInstanceId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
+import { isProviderDriverKind, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import type { GateId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { resolveModelSlugForProvider } from "@t3tools/shared/model";
 import { create } from "zustand";
@@ -56,6 +57,8 @@ export interface TaskQuotaBlock {
   readonly stageThreadId: ThreadId;
 }
 
+export type ProjectPmQuotaBlock = OrchestrationPmQuotaBlock;
+
 export interface EnvironmentState {
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
@@ -69,6 +72,10 @@ export interface EnvironmentState {
   // (set) / `task.stage-started` (clear) events. Drives the "resets ~HH:MM"
   // task-board badge; the badge itself is gated on `task.status`.
   quotaBlockedStageByTaskId: Record<string, TaskQuotaBlock>;
+  // Active PM-provider quota block per project. Seeded from the project snapshot,
+  // updated live from PM-thread quota-paused activity, and cleared when the PM
+  // starts speaking again.
+  pmQuotaBlockByProjectId: Record<string, ProjectPmQuotaBlock>;
 
   // ---------------------------------------------------------------------------
   // Thread bookkeeping — written by BOTH shell stream and detail stream.
@@ -136,6 +143,7 @@ const initialEnvironmentState: EnvironmentState = {
   pendingGateIdsByTaskId: {},
   pendingGateById: {},
   quotaBlockedStageByTaskId: {},
+  pmQuotaBlockByProjectId: {},
   threadIds: [],
   threadIdsByProjectId: {},
   threadShellById: {},
@@ -685,6 +693,59 @@ function clearTaskQuotaBlock(state: EnvironmentState, taskId: string): Environme
   return { ...state, quotaBlockedStageByTaskId: nextQuota };
 }
 
+function setProjectPmQuotaBlock(
+  state: EnvironmentState,
+  projectId: ProjectId,
+  block: ProjectPmQuotaBlock,
+): EnvironmentState {
+  return {
+    ...state,
+    pmQuotaBlockByProjectId: {
+      ...state.pmQuotaBlockByProjectId,
+      [projectId]: block,
+    },
+  };
+}
+
+function clearProjectPmQuotaBlock(state: EnvironmentState, projectId: ProjectId): EnvironmentState {
+  if (state.pmQuotaBlockByProjectId[projectId] === undefined) {
+    return state;
+  }
+  const nextQuota = { ...state.pmQuotaBlockByProjectId };
+  delete nextQuota[projectId];
+  return { ...state, pmQuotaBlockByProjectId: nextQuota };
+}
+
+function isPmThreadForProject(thread: Pick<Thread, "id" | "projectId">): boolean {
+  return String(thread.id) === `pm:${thread.projectId}`;
+}
+
+function pmQuotaBlockFromActivity(
+  activity: OrchestrationThreadActivity,
+): ProjectPmQuotaBlock | null {
+  if (activity.kind !== "quota.paused") {
+    return null;
+  }
+  const payload = activity.payload;
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const providerInstanceId = (payload as { providerInstanceId?: unknown }).providerInstanceId;
+  const resetAt = (payload as { resetAt?: unknown }).resetAt;
+  if (typeof providerInstanceId !== "string") {
+    return null;
+  }
+  if (resetAt !== null && resetAt !== undefined && typeof resetAt !== "string") {
+    return null;
+  }
+  const normalizedResetAt = typeof resetAt === "string" ? resetAt : null;
+  return {
+    providerInstanceId: ProviderInstanceId.make(providerInstanceId),
+    status: normalizedResetAt === null ? "blocked-unknown" : "blocked-until",
+    resetAt: normalizedResetAt,
+  };
+}
+
 function writePendingGateState(
   state: EnvironmentState,
   pendingGate: OrchestratorPendingGate,
@@ -1147,6 +1208,17 @@ function retainThreadScopedRecord<T>(
   ) as Record<ThreadId, T>;
 }
 
+function retainProjectScopedRecord<T>(
+  record: Record<string, T>,
+  nextProjectIds: ReadonlySet<ProjectId>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([projectId, value]) =>
+      nextProjectIds.has(projectId as ProjectId) ? [[projectId, value] as const] : [],
+    ),
+  );
+}
+
 function removeThreadState(state: EnvironmentState, threadId: ThreadId): EnvironmentState {
   const shell = state.threadShellById[threadId];
   if (!shell) {
@@ -1508,10 +1580,15 @@ function syncEnvironmentShellSnapshot(
   environmentId: EnvironmentId,
 ): EnvironmentState {
   const nextProjects = snapshot.projects.map((project) => mapProject(project, environmentId));
+  const nextProjectIds = new Set(nextProjects.map((project) => project.id));
   const nextThreadIds = new Set(snapshot.threads.map((thread) => thread.id));
   let nextState: EnvironmentState = {
     ...state,
     ...buildProjectState(nextProjects),
+    pmQuotaBlockByProjectId: retainProjectScopedRecord(
+      state.pmQuotaBlockByProjectId,
+      nextProjectIds,
+    ),
     threadIds: [],
     threadIdsByProjectId: {},
     threadShellById: {},
@@ -1585,6 +1662,10 @@ export function syncOrchestratorProjectSnapshot(
     getStoredEnvironmentState(state, environmentId),
     mapProject(snapshot.project, environmentId),
   );
+  nextEnvironmentState =
+    snapshot.pmQuotaBlock === null
+      ? clearProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id)
+      : setProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id, snapshot.pmQuotaBlock);
 
   if (snapshot.pmThread !== null) {
     const previousThread = getThreadFromEnvironmentState(
@@ -1776,9 +1857,12 @@ function applyEnvironmentOrchestrationEvent(
         nextState = removeTaskState(nextState, taskKey);
       }
       const { [event.payload.projectId]: _removedProject, ...projectById } = state.projectById;
+      const { [event.payload.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
+        nextState.pmQuotaBlockByProjectId;
       return {
         ...nextState,
         projectById,
+        pmQuotaBlockByProjectId,
         projectIds: removeId(nextState.projectIds, event.payload.projectId),
       };
     }
@@ -2076,8 +2160,8 @@ function applyEnvironmentOrchestrationEvent(
       });
     }
 
-    case "thread.message-sent":
-      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
+    case "thread.message-sent": {
+      const nextState = updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const message = mapMessage(thread.environmentId, {
           id: event.payload.messageId,
           role: event.payload.role,
@@ -2181,6 +2265,11 @@ function applyEnvironmentOrchestrationEvent(
           hints: { changedMessage: changedMessage! },
         };
       });
+      const thread = getThreadFromEnvironmentState(nextState, event.payload.threadId);
+      return thread && isPmThreadForProject(thread)
+        ? clearProjectPmQuotaBlock(nextState, thread.projectId)
+        : nextState;
+    }
 
     case "thread.session-set":
       return updateThreadState(state, event.payload.threadId, (thread) => {
@@ -2368,8 +2457,8 @@ function applyEnvironmentOrchestrationEvent(
         };
       });
 
-    case "thread.activity-appended":
-      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
+    case "thread.activity-appended": {
+      const nextState = updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const newActivity = { ...event.payload.activity };
         const existingActivity = state.activityByThreadId[event.payload.threadId]?.[newActivity.id];
         let activities: OrchestrationThreadActivity[];
@@ -2406,6 +2495,12 @@ function applyEnvironmentOrchestrationEvent(
           hints: changedActivity !== undefined ? { changedActivity } : {},
         };
       });
+      const thread = getThreadFromEnvironmentState(nextState, event.payload.threadId);
+      const quotaBlock = pmQuotaBlockFromActivity(event.payload.activity);
+      return thread && isPmThreadForProject(thread) && quotaBlock !== null
+        ? setProjectPmQuotaBlock(nextState, thread.projectId, quotaBlock)
+        : nextState;
+    }
 
     case "thread.approval-response-requested":
     case "thread.user-input-response-requested":
@@ -2463,9 +2558,12 @@ function applyEnvironmentShellEvent(
         return state;
       }
       const { [event.projectId]: _removedProject, ...projectById } = state.projectById;
+      const { [event.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
+        state.pmQuotaBlockByProjectId;
       return {
         ...state,
         projectById,
+        pmQuotaBlockByProjectId,
         projectIds: removeId(state.projectIds, event.projectId),
       };
     }
@@ -2559,6 +2657,17 @@ export function selectTaskQuotaBlockByRef(
 ): TaskQuotaBlock | undefined {
   return ref
     ? selectEnvironmentState(state, ref.environmentId).quotaBlockedStageByTaskId[String(ref.taskId)]
+    : undefined;
+}
+
+export function selectProjectPmQuotaBlockByRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): ProjectPmQuotaBlock | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).pmQuotaBlockByProjectId[
+        String(ref.projectId)
+      ]
     : undefined;
 }
 

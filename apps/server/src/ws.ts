@@ -24,6 +24,7 @@ import {
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
+  OrchestratorProjectConfig,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
@@ -55,6 +56,7 @@ import {
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+import { ProviderQuotaStatusRepository } from "./persistence/Services/ProviderQuotaStatus.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
@@ -97,6 +99,7 @@ const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError)
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
@@ -205,6 +208,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
+      const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
@@ -586,39 +590,64 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
 
       const loadOrchestratorProjectSnapshot = (projectId: ProjectId) =>
         projectionSnapshotQuery.getSnapshot().pipe(
-          Effect.flatMap((snapshot) => {
-            const project = snapshot.projects.find((entry) => entry.id === projectId);
-            if (project === undefined) {
-              return Effect.fail(
-                new OrchestrationGetSnapshotError({
-                  message: `Project ${projectId} was not found`,
-                  cause: projectId,
-                }),
+          Effect.flatMap((snapshot) =>
+            Effect.gen(function* () {
+              const project = snapshot.projects.find((entry) => entry.id === projectId);
+              if (project === undefined) {
+                return yield* Effect.fail(
+                  new OrchestrationGetSnapshotError({
+                    message: `Project ${projectId} was not found`,
+                    cause: projectId,
+                  }),
+                );
+              }
+              const taskIds = new Set(
+                snapshot.tasks
+                  .filter((task) => task.projectId === projectId)
+                  .map((task) => String(task.id)),
               );
-            }
-            const taskIds = new Set(
-              snapshot.tasks
-                .filter((task) => task.projectId === projectId)
-                .map((task) => String(task.id)),
-            );
-            const pendingGates = (snapshot.pendingGates ?? []).filter((gate) =>
-              taskIds.has(String(gate.taskId)),
-            );
-            const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
-              taskIds.has(String(stage.taskId)),
-            );
-            const pmThreadId = pmThreadIdForProject(project);
-            const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
-            return Effect.succeed({
-              snapshotSequence: snapshot.snapshotSequence,
-              project,
-              pmThreadId,
-              pmThread,
-              tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
-              pendingGates,
-              quotaBlockedStages,
-            });
-          }),
+              const pendingGates = (snapshot.pendingGates ?? []).filter((gate) =>
+                taskIds.has(String(gate.taskId)),
+              );
+              const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
+                taskIds.has(String(stage.taskId)),
+              );
+              const pmThreadId = pmThreadIdForProject(project);
+              const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
+              const projectConfig = decodeOrchestratorConfig(project.orchestratorConfig ?? {});
+              const pmQuotaBlock =
+                Option.isSome(projectConfig) &&
+                projectConfig.value.enabled === true &&
+                projectConfig.value.pmModelSelection !== null
+                  ? yield* providerQuotaStatusRepository
+                      .isInstanceQuotaBlocked({
+                        providerInstanceId: projectConfig.value.pmModelSelection.instanceId,
+                      })
+                      .pipe(
+                        Effect.map((quotaState) =>
+                          quotaState.status === "blocked-until" ||
+                          quotaState.status === "blocked-unknown"
+                            ? {
+                                providerInstanceId: quotaState.providerInstanceId,
+                                status: quotaState.status,
+                                resetAt: quotaState.resetAt,
+                              }
+                            : null,
+                        ),
+                      )
+                  : null;
+              return {
+                snapshotSequence: snapshot.snapshotSequence,
+                project,
+                pmThreadId,
+                pmThread,
+                pmQuotaBlock,
+                tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
+                pendingGates,
+                quotaBlockedStages,
+              };
+            }),
+          ),
           Effect.mapError((cause) =>
             isOrchestrationGetSnapshotError(cause)
               ? cause

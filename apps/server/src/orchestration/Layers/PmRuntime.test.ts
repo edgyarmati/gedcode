@@ -53,6 +53,7 @@ const projectId = ProjectId.make("project-1");
 const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("thread-stage-1");
 const turnId = TurnId.make("turn-1");
+const quotaBlockedSettlementKey = `${stageThreadId}::quota-blocked`;
 
 const project: OrchestrationProject = {
   id: projectId,
@@ -173,6 +174,28 @@ const stageCompletedEvent: OrchestrationEvent = {
   },
 };
 
+const stageBlockedEvent: OrchestrationEvent = {
+  sequence: 11,
+  eventId: EventId.make("evt-stage-blocked"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.stage-blocked",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-stage-blocked"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-stage-blocked"),
+  metadata: {},
+  payload: {
+    taskId,
+    role: "work",
+    stageThreadId,
+    reason: "quota",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    resetAt: "2026-06-14T12:00:00.000Z",
+    updatedAt: now,
+  },
+};
+
 const makeLayer = (input: {
   readonly liveEvents: ReadonlyArray<OrchestrationEvent>;
   readonly historicalEvents: ReadonlyArray<OrchestrationEvent>;
@@ -192,6 +215,8 @@ const makeLayer = (input: {
   readonly providerQuotaBlockedRows?: ProviderQuotaStatusRow[];
   readonly quotaUpsertCalls?: UpsertProviderQuotaStatusInput[];
   readonly dispatchCalls?: unknown[];
+  readonly dispatchFailureCommandIds?: ReadonlySet<string>;
+  readonly threadDetails?: ReadonlyMap<string, OrchestrationThread>;
   // WP-4 diff-capture knobs. By default the stage thread has no captured
   // checkpoint (latestCheckpointTurnCount = 0 → diff-unavailable), preserving
   // the pre-WP-4 behavior of the existing suite (no diff section).
@@ -221,10 +246,12 @@ const makeLayer = (input: {
         },
         dispatch: (command) =>
           input.dispatchCalls
-            ? Effect.sync(() => {
-                input.dispatchCalls?.push(command);
-                return { sequence: 100 };
-              })
+            ? input.dispatchFailureCommandIds?.has(String(command.commandId))
+              ? Effect.die("dispatch failed (test)")
+              : Effect.sync(() => {
+                  input.dispatchCalls?.push(command);
+                  return { sequence: 100 };
+                })
             : Effect.die("dispatch should not be called by PmRuntime"),
         streamDomainEvents: Stream.fromIterable(input.liveEvents),
         streamShellEvents: Stream.empty,
@@ -233,8 +260,16 @@ const makeLayer = (input: {
     Layer.provide(
       Layer.mock(ProjectionSnapshotQuery)({
         getCommandReadModel: () => Effect.succeed(input.commandReadModel ?? readModel),
-        getThreadDetailById: (threadId: ThreadId) =>
-          Effect.succeed(threadId === stageThreadId ? Option.some(stageThread) : Option.none()),
+        getThreadDetailById: (threadId: ThreadId) => {
+          const detail = input.threadDetails?.get(String(threadId));
+          return Effect.succeed(
+            detail !== undefined
+              ? Option.some(detail)
+              : threadId === stageThreadId
+                ? Option.some(stageThread)
+                : Option.none(),
+          );
+        },
         getFullThreadDiffContext: (threadId: ThreadId) =>
           Effect.succeed(
             threadId === stageThreadId && latestCheckpointTurnCount > 0
@@ -464,6 +499,39 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("notifies the PM when a worker stage is blocked on quota", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageBlockedEvent, stageBlockedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /A worker stage paused on subscription quota/);
+      assert.match(messages[0] ?? "", /Provider instance: codex/);
+      assert.deepStrictEqual(
+        consumeCalls.map((call) => ({
+          projectId: call.projectId,
+          kind: call.kind,
+          settlementKey: call.settlementKey,
+        })),
+        [{ projectId, kind: "stage", settlementKey: quotaBlockedSettlementKey }],
+      );
+    }),
+  );
+
   // WP-Q5: when the PM's own provider instance is quota-blocked, re-entry is held
   // BEFORE the settlement is consumed — nothing is delivered to the PM and nothing
   // is consumed, so the reconciliation sweep re-drives it once quota recovers
@@ -663,6 +731,99 @@ describe("PmRuntime", () => {
       assert.strictEqual(command.role, "work");
       assert.strictEqual(command.instructions, "Implement feature");
       assert.strictEqual(typeof command.createdAt, "string");
+    }),
+  );
+
+  it.effect("continues quota resume reconciliation after one stage dispatch fails", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const dispatchCalls: unknown[] = [];
+      const secondTaskId = TaskId.make("task-2");
+      const secondStageThreadId = ThreadId.make("thread-stage-2");
+      const secondStageThread: OrchestrationThread = {
+        ...stageThread,
+        id: secondStageThreadId,
+        title: "Implement second feature (work)",
+        messages: [
+          {
+            id: MessageId.make("user-2"),
+            role: "user",
+            text: "Implement second feature",
+            attachments: [],
+            turnId: null,
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      };
+      const firstBlockedStage: OrchestrationReadModel["quotaBlockedStages"][number] = {
+        taskId,
+        stageThreadId,
+        role: "work",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: null,
+        status: "blocked",
+        retryCount: 1,
+        blockedAt: now,
+        resumedAt: null,
+      };
+      const secondBlockedStage: OrchestrationReadModel["quotaBlockedStages"][number] = {
+        taskId: secondTaskId,
+        stageThreadId: secondStageThreadId,
+        role: "work",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: null,
+        status: "blocked",
+        retryCount: 1,
+        blockedAt: "2026-06-14T10:01:00.000Z",
+        resumedAt: null,
+      };
+      const firstResumeCommandId = quotaStageResumeCommandId(stageThreadId, 1);
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel: {
+          ...readModel,
+          tasks: [
+            { ...task, status: "blocked-on-quota", currentStageThreadId: null },
+            {
+              ...task,
+              id: secondTaskId,
+              title: "Implement second feature",
+              status: "blocked-on-quota",
+              stageThreadIds: [secondStageThreadId],
+              currentStageThreadId: null,
+            },
+          ],
+          quotaBlockedStages: [firstBlockedStage, secondBlockedStage],
+        },
+        quotaBlockedStages: [firstBlockedStage, secondBlockedStage],
+        providerQuotaStatuses: new Map([[String(ProviderInstanceId.make("codex")), "ok"]]),
+        threadDetails: new Map([[String(secondStageThreadId), secondStageThread]]),
+        dispatchFailureCommandIds: new Set([String(firstResumeCommandId)]),
+        dispatchCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        for (let index = 0; index < 50 && dispatchCalls.length === 0; index += 1) {
+          yield* Effect.yieldNow;
+        }
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(dispatchCalls.length, 1);
+      const command = dispatchCalls[0] as Record<string, unknown>;
+      assert.strictEqual(command.type, "task.stage.start");
+      assert.strictEqual(command.commandId, quotaStageResumeCommandId(secondStageThreadId, 1));
+      assert.strictEqual(command.taskId, secondTaskId);
+      assert.strictEqual(command.instructions, "Implement second feature");
     }),
   );
 

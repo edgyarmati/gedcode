@@ -59,6 +59,7 @@ import {
 } from "../../environments/runtime/service";
 import {
   selectPendingGatesForTaskRef,
+  selectProjectPmQuotaBlockByRef,
   selectProjectByRef,
   selectProjectsAcrossEnvironments,
   selectTaskByRef,
@@ -241,6 +242,7 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
           Projects
         </Button>
       </OrchestratorPageChrome>
+      <ProjectPmQuotaBanner projectRef={projectRef} />
       <main className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="flex min-h-0 min-w-0 flex-col border-b border-border lg:border-r lg:border-b-0">
           <PmConversation
@@ -254,6 +256,23 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
         <TaskBoard environmentId={environmentId} projectId={projectId} tasks={tasks} />
       </main>
     </OrchestratorPage>
+  );
+}
+
+function ProjectPmQuotaBanner({ projectRef }: { projectRef: ReturnType<typeof scopeProjectRef> }) {
+  const quotaBlock = useStore((state) => selectProjectPmQuotaBlockByRef(state, projectRef));
+  if (!quotaBlock) {
+    return null;
+  }
+  const resetLabel = quotaBlock.resetAt ? formatQuotaResetLabel(quotaBlock.resetAt) : null;
+  return (
+    <div className="flex items-center gap-2 border-b border-warning/24 bg-warning/8 px-3 py-2 text-xs text-warning-foreground sm:px-5">
+      <CircleAlertIcon className="size-4 shrink-0 text-warning" />
+      <span className="min-w-0 truncate">
+        PM paused on quota · {quotaBlock.providerInstanceId}
+        {resetLabel ? ` · resets ${resetLabel}` : ""}
+      </span>
+    </div>
   );
 }
 
