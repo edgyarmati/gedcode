@@ -134,6 +134,52 @@ describe("PmReEntryQueue", () => {
     ),
   );
 
+  it.effect("serializes exclusive operations behind an in-flight turn", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const events: string[] = [];
+        const promptEntered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+
+        const queue = yield* makePmReEntryQueue({
+          isIdle: Effect.succeed(true),
+          prompt: () =>
+            Effect.gen(function* () {
+              events.push("prompt:start");
+              yield* Deferred.succeed(promptEntered, void 0);
+              yield* Deferred.await(release);
+              events.push("prompt:end");
+            }) as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: noAssistantUsage,
+          compact: () => Effect.succeed(compactResult),
+        });
+
+        yield* queue.enqueue("stage result");
+        const drain = yield* queue.drain.pipe(Effect.forkScoped);
+        yield* Deferred.await(promptEntered);
+
+        const exclusive = yield* queue
+          .runExclusive(
+            Effect.sync(() => {
+              events.push("exclusive");
+            }),
+          )
+          .pipe(Effect.forkScoped);
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+
+        assert.deepStrictEqual(events, ["prompt:start"]);
+
+        yield* Deferred.succeed(release, void 0);
+        yield* Fiber.join(drain);
+        yield* Fiber.join(exclusive);
+
+        assert.deepStrictEqual(events, ["prompt:start", "prompt:end", "exclusive"]);
+      }),
+    ),
+  );
+
   // WP-Q5: a failed PM turn is observed by `onTurnError` (so the runtime can
   // detect provider-instance quota exhaustion and mark it blocked) while the
   // original error still propagates out of `drain` unchanged.

@@ -4,6 +4,7 @@ import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import { increment, orchestrationPmCompactionsTotal } from "../../observability/Metrics.ts";
@@ -15,6 +16,10 @@ export const PM_COMPACTION_TIMEOUT = Duration.minutes(5);
 export type PmReEntryQueueShape = {
   readonly enqueue: (message: string) => Effect.Effect<void>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
+  readonly runExclusive: <E>(operation: Effect.Effect<void, E>) => Effect.Effect<void, E>;
+  readonly setAutoCompaction: (
+    autoCompaction: PmReEntryQueueOptions["autoCompaction"],
+  ) => Effect.Effect<void>;
 };
 
 export type PmReEntryQueueOptions = {
@@ -43,9 +48,10 @@ export const makePmReEntryQueue = (
     const queue = yield* Queue.unbounded<string>();
     const semaphore = yield* Semaphore.make(1);
     const onTurnError = options?.onTurnError;
-    const autoCompaction = options?.autoCompaction;
+    const autoCompactionRef = yield* Ref.make(options?.autoCompaction);
 
     const compactIfNeeded = Effect.gen(function* () {
+      const autoCompaction = yield* Ref.get(autoCompactionRef);
       if (autoCompaction === undefined || !autoCompaction.enabled) return;
 
       const idle = yield* adapter.isIdle;
@@ -116,5 +122,7 @@ export const makePmReEntryQueue = (
     return {
       enqueue: (message) => Queue.offer(queue, message).pipe(Effect.asVoid),
       drain,
+      runExclusive: (operation) => semaphore.withPermits(1)(operation),
+      setAutoCompaction: (autoCompaction) => Ref.set(autoCompactionRef, autoCompaction),
     } satisfies PmReEntryQueueShape;
   });

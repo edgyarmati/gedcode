@@ -1,5 +1,6 @@
 import {
   OrchestratorProjectConfig,
+  type ModelSelection,
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
@@ -16,6 +17,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -73,8 +75,13 @@ import {
 } from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
-import { resolvePiApiKey, resolvePiModel, resolvePiProvider } from "../pi/PmModelResolver.ts";
-import { makePmReEntryQueue } from "../pi/PmReEntryQueue.ts";
+import {
+  resolvePiApiKey,
+  resolvePiModel,
+  resolvePiProvider,
+  type PiModel,
+} from "../pi/PmModelResolver.ts";
+import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
 import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
 import { makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
@@ -206,6 +213,85 @@ const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =
     detail,
     ...(cause !== undefined ? { cause } : {}),
   });
+
+type ResolvedPmHarnessConfig = {
+  readonly selection: ModelSelection;
+  readonly providerInstanceId: string;
+  readonly provider: string;
+  readonly apiKey: string;
+  readonly model: PiModel;
+};
+
+type ResolvePmHarnessConfigResult =
+  | { readonly _tag: "ok"; readonly value: ResolvedPmHarnessConfig }
+  | { readonly _tag: "error"; readonly error: PmRuntimeError };
+
+const samePmModelSelection = (left: ModelSelection, right: ModelSelection): boolean =>
+  left.instanceId === right.instanceId && left.model === right.model;
+
+const canApplyPmModelInPlace = (
+  current: ResolvedPmHarnessConfig,
+  next: ResolvedPmHarnessConfig,
+): boolean =>
+  current.providerInstanceId === next.providerInstanceId &&
+  current.provider === next.provider &&
+  current.apiKey === next.apiKey;
+
+const resolvePmHarnessConfigResult = (
+  project: OrchestrationProject,
+): ResolvePmHarnessConfigResult => {
+  const config = resolveProjectConfig(project);
+  if (Option.isNone(config) || config.value.enabled !== true) {
+    return {
+      _tag: "error",
+      error: makeNoPmRuntimeError(`Orchestrator mode is not enabled for project '${project.id}'.`),
+    };
+  }
+  const pmModelSelection = config.value.pmModelSelection;
+  if (pmModelSelection === null) {
+    return {
+      _tag: "error",
+      error: makeNoPmRuntimeError(`Project '${project.id}' has no PM model selection configured.`),
+    };
+  }
+
+  const providerInstanceId = String(pmModelSelection.instanceId);
+  const provider = resolvePiProvider(providerInstanceId);
+  const model = resolvePiModel(provider, pmModelSelection.model);
+  if (model === undefined) {
+    return {
+      _tag: "error",
+      error: makeNoPmRuntimeError(
+        `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
+      ),
+    };
+  }
+  const apiKey = resolvePiApiKey(provider);
+  if (apiKey === undefined) {
+    return {
+      _tag: "error",
+      error: makeNoPmRuntimeError(`No PM API key is configured for provider '${provider}'.`),
+    };
+  }
+
+  return {
+    _tag: "ok",
+    value: {
+      selection: pmModelSelection,
+      providerInstanceId,
+      provider,
+      apiKey,
+      model,
+    },
+  };
+};
+
+const resolvePmHarnessConfig = (
+  project: OrchestrationProject,
+): Effect.Effect<ResolvedPmHarnessConfig, PmRuntimeError> => {
+  const result = resolvePmHarnessConfigResult(project);
+  return result._tag === "ok" ? Effect.succeed(result.value) : Effect.fail(result.error);
+};
 
 export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
   Effect.gen(function* () {
@@ -971,31 +1057,15 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
         }
 
         const config = resolveProjectConfig(project);
-        if (Option.isNone(config) || config.value.enabled !== true) {
+        if (Option.isNone(config)) {
           return yield* makeNoPmRuntimeError(
             `Orchestrator mode is not enabled for project '${project.id}'.`,
           );
         }
-        const pmModelSelection = config.value.pmModelSelection;
-        if (pmModelSelection === null) {
-          return yield* makeNoPmRuntimeError(
-            `Project '${project.id}' has no PM model selection configured.`,
-          );
-        }
-
-        const provider = resolvePiProvider(String(pmModelSelection.instanceId));
-        const model = resolvePiModel(provider, pmModelSelection.model);
-        if (model === undefined) {
-          return yield* makeNoPmRuntimeError(
-            `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
-          );
-        }
-        const apiKey = resolvePiApiKey(provider);
-        if (apiKey === undefined) {
-          return yield* makeNoPmRuntimeError(
-            `No PM API key is configured for provider '${provider}'.`,
-          );
-        }
+        const harnessConfig = yield* resolvePmHarnessConfig(project);
+        const pmModelSelection = harnessConfig.selection;
+        const model = harnessConfig.model;
+        const apiKey = harnessConfig.apiKey;
 
         const sessionStorage = yield* makeSqliteSessionStorage({
           sessionId: `pm:${project.id}`,
@@ -1038,11 +1108,12 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
         );
         const pmProviderInstanceId = pmModelSelection.instanceId;
         const pmThreadId = pmThreadIdForProject(project);
+        const autoCompactionForModel = (nextModel: PiModel) => ({
+          ...autoCompactionDefaults,
+          contextWindow: nextModel.contextWindow,
+        });
         const queue = yield* makePmReEntryQueue(adapter, {
-          autoCompaction: {
-            ...autoCompactionDefaults,
-            contextWindow: model.contextWindow,
-          },
+          autoCompaction: autoCompactionForModel(model),
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
           // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
           // provider event), so it bypasses the ingestion-path detection that marks
@@ -1104,9 +1175,135 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
               );
             }),
         });
+        const currentHarnessConfig = yield* Ref.make(harnessConfig);
+        const runtimeActive = yield* Ref.make(true);
+
+        const invalidateRuntime = (reason: string) =>
+          queue.runExclusive(
+            Effect.gen(function* () {
+              if (!(yield* Ref.get(runtimeActive))) return;
+              yield* adapter.waitForIdle;
+              yield* Ref.set(runtimeActive, false);
+              runtimes.delete(key);
+              yield* Effect.logInfo("PM runtime cache entry invalidated", {
+                projectId: String(project.id),
+                reason,
+              });
+            }),
+          );
+
+        const compactBeforeModelSwitch = (nextModelSelection: ModelSelection) =>
+          adapter.compact(autoCompactionDefaults.customInstructions).pipe(
+            Effect.timeout(PM_COMPACTION_TIMEOUT),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("PM model-switch compaction failed or timed out", {
+                projectId: String(project.id),
+                nextProviderInstanceId: String(nextModelSelection.instanceId),
+                nextModel: nextModelSelection.model,
+                timeoutMs: Duration.toMillis(PM_COMPACTION_TIMEOUT),
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+
+        const applyUpdatedPmHarnessConfig = (updatedProject: OrchestrationProject) =>
+          Effect.gen(function* () {
+            const active = yield* Ref.get(runtimeActive);
+            if (!active) return;
+
+            const nextHarnessConfigResult = resolvePmHarnessConfigResult(updatedProject);
+            if (nextHarnessConfigResult._tag === "error") {
+              yield* invalidateRuntime(nextHarnessConfigResult.error.detail);
+              return;
+            }
+            const nextHarnessConfig = nextHarnessConfigResult.value;
+
+            const current = yield* Ref.get(currentHarnessConfig);
+            if (
+              samePmModelSelection(current.selection, nextHarnessConfig.selection) &&
+              canApplyPmModelInPlace(current, nextHarnessConfig)
+            ) {
+              return;
+            }
+
+            if (!canApplyPmModelInPlace(current, nextHarnessConfig)) {
+              yield* invalidateRuntime("PM provider instance changed");
+              return;
+            }
+
+            yield* queue.runExclusive(
+              Effect.gen(function* () {
+                if (!(yield* Ref.get(runtimeActive))) return;
+                const latest = yield* Ref.get(currentHarnessConfig);
+                if (samePmModelSelection(latest.selection, nextHarnessConfig.selection)) return;
+
+                yield* adapter.waitForIdle;
+                yield* compactBeforeModelSwitch(nextHarnessConfig.selection);
+                yield* adapter.setModel(nextHarnessConfig.model);
+                yield* queue.setAutoCompaction(autoCompactionForModel(nextHarnessConfig.model));
+                yield* Ref.set(currentHarnessConfig, nextHarnessConfig);
+                yield* Effect.logInfo("PM model changed in place", {
+                  projectId: String(project.id),
+                  providerInstanceId: nextHarnessConfig.providerInstanceId,
+                  previousModel: latest.selection.model,
+                  nextModel: nextHarnessConfig.selection.model,
+                });
+              }),
+            );
+          });
+
+        const watchPmConfigChanges = orchestrationEngine.streamDomainEvents.pipe(
+          Stream.runForEach((event) => {
+            if (
+              event.type !== "project.meta-updated" ||
+              event.payload.projectId !== project.id ||
+              event.payload.orchestratorConfig === undefined
+            ) {
+              return Effect.void;
+            }
+
+            return applyUpdatedPmHarnessConfig({
+              ...project,
+              orchestratorConfig: event.payload.orchestratorConfig,
+              updatedAt: event.payload.updatedAt,
+            }).pipe(
+              Effect.catchCause((cause) => {
+                if (Cause.hasInterruptsOnly(cause)) {
+                  return Effect.failCause(cause);
+                }
+                return Effect.logWarning("PM runtime config update failed", {
+                  projectId: String(project.id),
+                  sequence: event.sequence,
+                  cause: Cause.pretty(cause),
+                });
+              }),
+            );
+          }),
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.void;
+            }
+            return Effect.logWarning("PM runtime config watcher failed", {
+              projectId: String(project.id),
+              cause: Cause.pretty(cause),
+            });
+          }),
+          Effect.forkIn(runtimeScope),
+        );
+        yield* watchPmConfigChanges;
+        const ensureRuntimeActive = Effect.gen(function* () {
+          if (yield* Ref.get(runtimeActive)) return;
+          return yield* new PmRuntimeError({
+            operation: "PmProjectRuntime.drain",
+            detail: `PM runtime for project '${project.id}' was invalidated and must be rebuilt.`,
+          });
+        });
         const runtime: PmProjectRuntime = {
-          enqueue: queue.enqueue,
-          drain: queue.drain.pipe(Effect.andThen(eventProjection.drain)),
+          enqueue: (message) => ensureRuntimeActive.pipe(Effect.andThen(queue.enqueue(message))),
+          drain: ensureRuntimeActive.pipe(
+            Effect.andThen(queue.drain),
+            Effect.andThen(eventProjection.drain),
+          ),
         };
         runtimes.set(key, runtime);
         return runtime;

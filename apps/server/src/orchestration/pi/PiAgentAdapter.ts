@@ -30,6 +30,7 @@ type HarnessLike = {
   readonly compact: (customInstructions?: string) => Promise<CompactResult>;
   readonly abort: () => Promise<unknown>;
   readonly waitForIdle: () => Promise<void>;
+  readonly setModel: (model: Model<any>) => Promise<void>;
   readonly setResources: (resources: AgentHarnessResources<Skill, PromptTemplate>) => Promise<void>;
   readonly subscribe: (listener: (event: AgentHarnessEvent) => void | Promise<void>) => () => void;
 };
@@ -61,6 +62,7 @@ export type PiAgentAdapterShape = {
     options?: { readonly images?: ReadonlyArray<ImageContent> },
   ) => Effect.Effect<void, PmRuntimeError>;
   readonly compact: (customInstructions?: string) => Effect.Effect<CompactResult, PmRuntimeError>;
+  readonly setModel: (model: Model<any>) => Effect.Effect<void, PmRuntimeError>;
   readonly setResources: (
     resources: AgentHarnessResources<Skill, PromptTemplate>,
   ) => Effect.Effect<void, PmRuntimeError>;
@@ -153,6 +155,11 @@ export const makePiAgentAdapter = (
         Effect.tryPromise({
           try: () => harness.compact(customInstructions),
           catch: toPmRuntimeError("PiAgentAdapter.compact", "PM compaction failed."),
+        }),
+      setModel: (model) =>
+        Effect.tryPromise({
+          try: () => harness.setModel(model),
+          catch: toPmRuntimeError("PiAgentAdapter.setModel", "PM model update failed."),
         }),
       setResources: (resources) =>
         Effect.tryPromise({

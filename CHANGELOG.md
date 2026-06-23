@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Apply Orchestrator PM model changes to a running PM immediately when the provider instance is unchanged, compacting first and serializing the switch through the PM re-entry queue; provider-instance changes now safely invalidate the cached PM runtime so the next use rebuilds with the new backend.
 - Fix: Bound Orchestrator PM auto-compaction with a five-minute timeout and swallow typed failures, defects, and timeouts so a stuck compaction cannot stall PM re-entry settlement.
 - Fix: Allow persisted Orchestrator `task.role-selections-updated` events to decode `pm-runtime` origins, matching the Phase 4 decider path that lets the PM set per-task backend overrides while still keeping gate resolution human/client-only.
 - Internal: Add Orchestrator mode Phase 4 integration proofs for gate autonomy, stage toggles, built-in playbook snapshots, PM-origin per-task backend overrides, and restart replay durability through the real engine/projector/reactor pipeline.

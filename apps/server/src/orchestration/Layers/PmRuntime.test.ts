@@ -18,10 +18,13 @@ import {
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { assert, describe, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
@@ -49,6 +52,7 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { PmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterOptions } from "../pi/PiAgentAdapter.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
@@ -435,14 +439,16 @@ const makeLayer = (input: {
   );
 };
 
-const makeFactoryCaptureLayer = () =>
+const makeFactoryCaptureLayer = (input?: {
+  readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
+}) =>
   Layer.mergeAll(
     SqlitePersistenceMemory,
     NodeServices.layer,
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
       dispatch: () => Effect.succeed({ sequence: 1 }),
-      streamDomainEvents: Stream.empty,
+      streamDomainEvents: input?.streamDomainEvents ?? Stream.empty,
       streamShellEvents: Stream.empty,
     }),
     Layer.mock(ProjectionSnapshotQuery)({
@@ -518,12 +524,78 @@ const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
             firstKeptEntryId: "entry-1",
             tokensBefore: 1,
           }),
+        setModel: () => Effect.void,
         setResources: () => Effect.void,
         abort: Effect.void,
       };
     })) satisfies NonNullable<
     Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
   >["makePiAgentAdapterOverride"];
+
+const projectWithPmModel = (instanceId: string, model: string): OrchestrationProject => ({
+  ...project,
+  orchestratorConfig: {
+    enabled: true,
+    pmModelSelection: {
+      instanceId: ProviderInstanceId.make(instanceId),
+      model,
+    },
+  },
+});
+
+const projectMetaUpdatedEvent = (input: {
+  readonly sequence: number;
+  readonly instanceId: string;
+  readonly model: string;
+}): OrchestrationEvent => ({
+  sequence: input.sequence,
+  eventId: EventId.make(`evt-project-meta-${input.sequence}`),
+  aggregateKind: "project",
+  aggregateId: projectId,
+  type: "project.meta-updated",
+  occurredAt: now,
+  commandId: CommandId.make(`cmd-project-meta-${input.sequence}`),
+  causationEventId: null,
+  correlationId: CommandId.make(`cmd-project-meta-${input.sequence}`),
+  metadata: {},
+  payload: {
+    projectId,
+    orchestratorConfig: {
+      enabled: true,
+      pmModelSelection: {
+        instanceId: ProviderInstanceId.make(input.instanceId),
+        model: input.model,
+      },
+    },
+    updatedAt: now,
+  },
+});
+
+const withEnvVars = <A, E, R>(
+  vars: Record<string, string>,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = new Map<string, string | undefined>();
+      for (const [key, value] of Object.entries(vars)) {
+        previous.set(key, process.env[key]);
+        process.env[key] = value;
+      }
+      return previous;
+    }),
+    () => effect,
+    (previous) =>
+      Effect.sync(() => {
+        for (const [key, value] of previous) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      }),
+  );
 
 const counterCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: string): number => {
   const snapshot = snapshots.find(
@@ -587,6 +659,300 @@ describe("PmRuntime", () => {
   it("omits PM harness resources when no configured playbook resolves", () => {
     assert.strictEqual(resolvePmHarnessResources(["unknown"]), undefined);
   });
+
+  it.effect(
+    "applies same-provider PM model changes in place after the current turn and compaction",
+    () =>
+      Effect.scoped(
+        withEnvVars(
+          { OPENAI_API_KEY: "test-openai-key" },
+          Effect.gen(function* () {
+            const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+            const calls: string[] = [];
+            const promptEntered = yield* Deferred.make<void>();
+            const releasePrompt = yield* Deferred.make<void>();
+            const eventSeen = yield* Deferred.make<void>();
+            const modelSwitched = yield* Deferred.make<void>();
+
+            yield* Effect.gen(function* () {
+              const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+                makePiAgentAdapterOverride: ((_options: PiAgentAdapterOptions) =>
+                  Effect.succeed({
+                    events: Stream.empty,
+                    isIdle: Effect.succeed(true),
+                    latestAssistantUsage: Effect.sync(() => undefined),
+                    waitForIdle: Effect.sync(() => {
+                      calls.push("waitForIdle");
+                    }),
+                    prompt: () =>
+                      Effect.gen(function* () {
+                        calls.push("prompt:start");
+                        yield* Deferred.succeed(promptEntered, void 0);
+                        yield* Deferred.await(releasePrompt);
+                        calls.push("prompt:end");
+                        return fauxAssistantMessage("ok");
+                      }),
+                    followUp: () => Effect.void,
+                    compact: () =>
+                      Effect.sync(() => {
+                        calls.push("compact");
+                        return {
+                          summary: "summary",
+                          firstKeptEntryId: "entry-1",
+                          tokensBefore: 1,
+                        };
+                      }),
+                    setModel: (model) =>
+                      Effect.gen(function* () {
+                        calls.push(`setModel:${model.id}`);
+                        yield* Deferred.succeed(modelSwitched, void 0);
+                      }),
+                    setResources: () => Effect.void,
+                    abort: Effect.void,
+                  })) satisfies NonNullable<
+                  Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+                >["makePiAgentAdapterOverride"],
+              });
+
+              const runtime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+              yield* runtime.enqueue("stage result");
+              const drain = yield* runtime.drain.pipe(Effect.forkScoped);
+              yield* Deferred.await(promptEntered);
+
+              yield* Queue.offer(
+                domainEvents,
+                projectMetaUpdatedEvent({
+                  sequence: 101,
+                  instanceId: "openai",
+                  model: "gpt-5-mini",
+                }),
+              );
+              yield* Deferred.await(eventSeen);
+              yield* Effect.yieldNow;
+              yield* Effect.yieldNow;
+
+              assert.deepStrictEqual(calls, ["prompt:start"]);
+
+              yield* Deferred.succeed(releasePrompt, void 0);
+              yield* Fiber.join(drain);
+              yield* Deferred.await(modelSwitched);
+
+              assert.deepStrictEqual(calls, [
+                "prompt:start",
+                "prompt:end",
+                "waitForIdle",
+                "compact",
+                "setModel:gpt-5-mini",
+              ]);
+              yield* Queue.shutdown(domainEvents);
+            }).pipe(
+              Effect.provide(
+                makeFactoryCaptureLayer({
+                  streamDomainEvents: Stream.fromQueue(domainEvents).pipe(
+                    Stream.tap(() => Deferred.succeed(eventSeen, void 0)),
+                  ),
+                }),
+              ),
+            );
+          }),
+        ),
+      ),
+  );
+
+  it.effect("still switches the PM model when compact-first fails", () =>
+    Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "test-openai-key" },
+        Effect.gen(function* () {
+          const calls: string[] = [];
+          const modelSwitched = yield* Deferred.make<void>();
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: (() =>
+              Effect.succeed({
+                events: Stream.empty,
+                isIdle: Effect.succeed(true),
+                latestAssistantUsage: Effect.sync(() => undefined),
+                waitForIdle: Effect.sync(() => {
+                  calls.push("waitForIdle");
+                }),
+                prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+                followUp: () => Effect.void,
+                compact: () =>
+                  Effect.gen(function* () {
+                    calls.push("compact");
+                    return yield* new PmRuntimeError({
+                      operation: "PiAgentAdapter.compact",
+                      detail: "PM compaction failed.",
+                      cause: new Error("compact failed"),
+                    });
+                  }),
+                setModel: (model) =>
+                  Effect.gen(function* () {
+                    calls.push(`setModel:${model.id}`);
+                    yield* Deferred.succeed(modelSwitched, void 0);
+                  }),
+                setResources: () => Effect.void,
+                abort: Effect.void,
+              })) satisfies NonNullable<
+              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            >["makePiAgentAdapterOverride"],
+          });
+
+          yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          yield* Deferred.await(modelSwitched);
+
+          assert.deepStrictEqual(calls, ["waitForIdle", "compact", "setModel:gpt-5-mini"]);
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              streamDomainEvents: Stream.fromIterable([
+                projectMetaUpdatedEvent({
+                  sequence: 102,
+                  instanceId: "openai",
+                  model: "gpt-5-mini",
+                }),
+              ]),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("ignores PM model selection updates that do not change the live config", () =>
+    Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "test-openai-key" },
+        Effect.gen(function* () {
+          const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+          const calls: string[] = [];
+          const eventSeen = yield* Deferred.make<void>();
+          yield* Effect.gen(function* () {
+            const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+              makePiAgentAdapterOverride: (() =>
+                Effect.succeed({
+                  events: Stream.empty,
+                  isIdle: Effect.succeed(true),
+                  latestAssistantUsage: Effect.sync(() => undefined),
+                  waitForIdle: Effect.sync(() => {
+                    calls.push("waitForIdle");
+                  }),
+                  prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+                  followUp: () => Effect.void,
+                  compact: () =>
+                    Effect.sync(() => {
+                      calls.push("compact");
+                      return {
+                        summary: "summary",
+                        firstKeptEntryId: "entry-1",
+                        tokensBefore: 1,
+                      };
+                    }),
+                  setModel: (model) =>
+                    Effect.sync(() => {
+                      calls.push(`setModel:${model.id}`);
+                    }),
+                  setResources: () => Effect.void,
+                  abort: Effect.void,
+                })) satisfies NonNullable<
+                Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+              >["makePiAgentAdapterOverride"],
+            });
+
+            yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+            yield* Queue.offer(
+              domainEvents,
+              projectMetaUpdatedEvent({
+                sequence: 103,
+                instanceId: "openai",
+                model: "gpt-5",
+              }),
+            );
+            yield* Deferred.await(eventSeen);
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+
+            assert.deepStrictEqual(calls, []);
+            yield* Queue.shutdown(domainEvents);
+          }).pipe(
+            Effect.provide(
+              makeFactoryCaptureLayer({
+                streamDomainEvents: Stream.fromQueue(domainEvents).pipe(
+                  Stream.tap(() => Deferred.succeed(eventSeen, void 0)),
+                ),
+              }),
+            ),
+          );
+        }),
+      ),
+    ),
+  );
+
+  it.effect("invalidates the cached PM runtime when the provider instance changes", () =>
+    Effect.scoped(
+      withEnvVars(
+        {
+          OPENAI_API_KEY: "test-openai-key",
+          AZURE_OPENAI_API_KEY: "test-azure-key",
+        },
+        Effect.gen(function* () {
+          const captured: string[] = [];
+          const invalidated = yield* Deferred.make<void>();
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: ((options: PiAgentAdapterOptions) =>
+              Effect.sync(() => {
+                captured.push(`${options.model.provider}:${options.model.id}`);
+                return {
+                  events: Stream.empty,
+                  isIdle: Effect.succeed(true),
+                  latestAssistantUsage: Effect.sync(() => undefined),
+                  waitForIdle: Deferred.succeed(invalidated, void 0).pipe(Effect.asVoid),
+                  prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+                  followUp: () => Effect.void,
+                  compact: () =>
+                    Effect.succeed({
+                      summary: "summary",
+                      firstKeptEntryId: "entry-1",
+                      tokensBefore: 1,
+                    }),
+                  setModel: () => Effect.void,
+                  setResources: () => Effect.void,
+                  abort: Effect.void,
+                };
+              })) satisfies NonNullable<
+              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            >["makePiAgentAdapterOverride"],
+          });
+
+          const first = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          yield* Deferred.await(invalidated);
+
+          let second = first;
+          for (let index = 0; index < 20 && second === first; index += 1) {
+            yield* Effect.yieldNow;
+            second = yield* factory.getOrCreate(
+              projectWithPmModel("azure-openai-responses", "gpt-5"),
+            );
+          }
+
+          assert.notStrictEqual(second, first);
+          assert.deepStrictEqual(captured, ["openai:gpt-5", "azure-openai-responses:gpt-5"]);
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              streamDomainEvents: Stream.fromIterable([
+                projectMetaUpdatedEvent({
+                  sequence: 104,
+                  instanceId: "azure-openai-responses",
+                  model: "gpt-5",
+                }),
+              ]),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
 
   it.effect("records reconciliation sweep and PM re-entry durability metrics", () =>
     Effect.gen(function* () {

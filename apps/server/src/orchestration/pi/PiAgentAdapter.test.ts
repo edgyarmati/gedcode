@@ -42,6 +42,7 @@ describe("PiAgentAdapter", () => {
           }),
           abort: async () => {},
           waitForIdle: async () => {},
+          setModel: async () => {},
           setResources: async () => {},
           subscribe: (next) => {
             listener = next;
@@ -69,6 +70,52 @@ describe("PiAgentAdapter", () => {
       assert.strictEqual(unsubscribed, true);
       assert.deepStrictEqual(prompts, []);
 
+      faux.unregister();
+    }),
+  );
+
+  it.effect("wraps harness model updates", () =>
+    Effect.gen(function* () {
+      const faux = registerFauxProvider();
+      const models: unknown[] = [];
+
+      const adapter = yield* makePiAgentAdapter({
+        env: new DenyingExecutionEnv("/repo"),
+        sessionStorage: {
+          getMetadata: async () => ({ id: "session-1", createdAt: "2026-06-14T00:00:00.000Z" }),
+          getLeafId: async () => null,
+          setLeafId: async () => {},
+          createEntryId: async () => "entry-1",
+          appendEntry: async () => {},
+          getEntry: async () => undefined,
+          findEntries: async () => [],
+          getLabel: async () => undefined,
+          getPathToRoot: async () => [],
+          getEntries: async () => [],
+        },
+        model: faux.getModel(),
+        harnessFactory: (_options: AgentHarnessOptions) => ({
+          prompt: async () => fauxAssistantMessage("ok"),
+          followUp: async () => {},
+          compact: async () => ({
+            summary: "summary",
+            firstKeptEntryId: "entry-1",
+            tokensBefore: 1,
+          }),
+          abort: async () => {},
+          waitForIdle: async () => {},
+          setModel: async (model) => {
+            models.push(model);
+          },
+          setResources: async () => {},
+          subscribe: () => () => {},
+        }),
+      });
+
+      const nextModel = faux.getModel();
+      yield* adapter.setModel(nextModel);
+
+      assert.deepStrictEqual(models, [nextModel]);
       faux.unregister();
     }),
   );
