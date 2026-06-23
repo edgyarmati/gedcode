@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Allow persisted Orchestrator `task.role-selections-updated` events to decode `pm-runtime` origins, matching the Phase 4 decider path that lets the PM set per-task backend overrides while still keeping gate resolution human/client-only.
+- Internal: Add Orchestrator mode Phase 4 integration proofs for gate autonomy, stage toggles, built-in playbook snapshots, PM-origin per-task backend overrides, and restart replay durability through the real engine/projector/reactor pipeline.
 - Internal: Add Orchestrator PM auto-compaction. The PM re-entry queue now checks pi's latest assistant usage after an idle serialized turn, uses pi's built-in `shouldCompact` threshold against the PM model context window, and invokes pi `compact()` best-effort when enabled by the new global `orchestratorDefaults.autoCompaction` settings.
 - Internal: Wire the built-in Orchestrator `feature` playbook into the PM pi harness as a skill resource and snapshot the loader-resolved deterministic `playbookVersion` during PM classification, so tasks record the actual built-in playbook version that guided classification.
 - Internal: Add a source-agnostic Orchestrator playbook loader and bundled built-in `feature` playbook. The loader parses playbook frontmatter, maps it to the pi `Skill` shape, and produces deterministic `builtin:<sha256-prefix>` playbook versions without wiring the resources into the PM runtime yet.

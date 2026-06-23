@@ -20,7 +20,6 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -504,18 +503,6 @@ it.live(
     withHarness((harness) =>
       Effect.gen(function* () {
         yield* seedProjectAndTask(harness);
-
-        const rejectedRoleSelection = yield* Effect.exit(
-          harness.engine.dispatch({
-            type: "task.role-selections.set",
-            commandId: commandId("task-role-selection-pm-rejected"),
-            taskId: TASK_ID,
-            roleModelSelections: {},
-            origin: "pm-runtime",
-            createdAt: iso(3),
-          }),
-        );
-        assert.equal(Exit.isFailure(rejectedRoleSelection), true);
 
         yield* harness.engine
           .dispatch({

@@ -817,27 +817,25 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
     });
     assert.strictEqual(event.type, "task.role-selections-updated");
 
-    const result = yield* Effect.exit(
-      decodeOrchestrationEvent({
-        sequence: 2,
-        eventId: "evt-role-selections-pm",
-        aggregateKind: "task",
-        aggregateId: "task-1",
-        type: "task.role-selections-updated",
-        occurredAt: "2026-01-01T00:00:00.000Z",
-        commandId: "cmd-role-selections",
-        causationEventId: null,
-        correlationId: "cmd-role-selections",
-        metadata: {},
-        payload: {
-          taskId: "task-1",
-          roleModelSelections: {},
-          origin: "pm-runtime",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        },
-      }),
-    );
-    assert.strictEqual(result._tag, "Failure");
+    const pmEvent = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "evt-role-selections-pm",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.role-selections-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-role-selections",
+      causationEventId: null,
+      correlationId: "cmd-role-selections",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        roleModelSelections: {},
+        origin: "pm-runtime",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.strictEqual(pmEvent.type, "task.role-selections-updated");
   }),
 );
 

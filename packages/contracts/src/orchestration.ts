@@ -518,6 +518,13 @@ export type OrchestrationGateResolutionOrigin = typeof OrchestrationGateResoluti
 export const OrchestrationHumanConfigOrigin = Schema.Literals(["human", "client"]);
 export type OrchestrationHumanConfigOrigin = typeof OrchestrationHumanConfigOrigin.Type;
 
+export const OrchestrationTaskRoleSelectionOrigin = Schema.Literals([
+  "human",
+  "client",
+  "pm-runtime",
+]);
+export type OrchestrationTaskRoleSelectionOrigin = typeof OrchestrationTaskRoleSelectionOrigin.Type;
+
 /**
  * Decision recorded when a task gate is resolved. Closed literal so the decider
  * and projections agree on the resolution outcome.
@@ -930,7 +937,7 @@ const TaskRoleSelectionsSetCommand = Schema.Struct({
   commandId: CommandId,
   taskId: TaskId,
   roleModelSelections: GedRoleModelSelections,
-  origin: OrchestrationGateResolutionOrigin,
+  origin: OrchestrationTaskRoleSelectionOrigin,
   createdAt: IsoDateTime,
 });
 
@@ -1394,7 +1401,7 @@ export const TaskClassifiedPayload = Schema.Struct({
 export const TaskRoleSelectionsUpdatedPayload = Schema.Struct({
   taskId: TaskId,
   roleModelSelections: GedRoleModelSelections,
-  origin: OrchestrationHumanConfigOrigin,
+  origin: OrchestrationTaskRoleSelectionOrigin,
   updatedAt: IsoDateTime,
 });
 
