@@ -14,6 +14,7 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
   OrchestrationGateResolutionOrigin,
+  OrchestratorPlaybookFrontmatter,
   OrchestrationStageHistory,
   OrchestrationStageRole,
   OrchestrationTaskStatus,
@@ -63,6 +64,7 @@ const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory)
 const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
 const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
 const decodeGateResolutionOrigin = Schema.decodeUnknownEffect(OrchestrationGateResolutionOrigin);
+const decodePlaybookFrontmatter = Schema.decodeUnknownEffect(OrchestratorPlaybookFrontmatter);
 const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
   OrchestratorSetTaskRoleSelectionsInput,
 );
@@ -213,6 +215,29 @@ it.effect("rejects command fields that become empty after trim", () =>
         title: "  ",
         workspaceRoot: "/tmp/workspace",
         createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes playbook frontmatter and trims string fields", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodePlaybookFrontmatter({
+      name: " feature-orchestration ",
+      description: " Feature orchestration playbook. ",
+    });
+    assert.strictEqual(parsed.name, "feature-orchestration");
+    assert.strictEqual(parsed.description, "Feature orchestration playbook.");
+  }),
+);
+
+it.effect("rejects playbook frontmatter fields that become empty after trim", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodePlaybookFrontmatter({
+        name: "feature-orchestration",
+        description: "  ",
       }),
     );
     assert.strictEqual(result._tag, "Failure");

@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Add a source-agnostic Orchestrator playbook loader and bundled built-in `feature` playbook. The loader parses playbook frontmatter, maps it to the pi `Skill` shape, and produces deterministic `builtin:<sha256-prefix>` playbook versions without wiring the resources into the PM runtime yet.
 - UI: Add a persisted task-board visibility toggle to the Orchestrator project view so the PM chat can use the full width when the board is hidden.
 - UI: Add global Orchestrator defaults under Settings → Orchestrator. Operators can set default stages, gate autonomy, resource limits, PM reconciliation cadence, worktree cleanup cadence, and the full-access worker opt-in; projects with no existing Orchestrator config now seed their project editor from those globals the first time it opens, then own their config independently.
 - UI: Extend the project Orchestration settings dialog with HARD Orchestrator config editing. Humans can now toggle project orchestrator mode, choose or clear the PM model, enable optional review/verify stages, set classify/plan/work/review gate autonomy while keeping land approval-only, and edit resource limits including the full-access worker safety opt-in; saves continue through one human-origin `project.meta.update` with the full replace-wholesale config plus the existing role backend/prompt-prefix maps.

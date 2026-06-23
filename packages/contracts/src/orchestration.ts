@@ -42,6 +42,12 @@ export const ORCHESTRATOR_WS_METHODS = {
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
 } as const;
 
+export const OrchestratorPlaybookFrontmatter = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: TrimmedNonEmptyString,
+});
+export type OrchestratorPlaybookFrontmatter = typeof OrchestratorPlaybookFrontmatter.Type;
+
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
   "on-failure",
