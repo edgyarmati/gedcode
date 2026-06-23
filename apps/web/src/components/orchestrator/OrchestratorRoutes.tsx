@@ -51,7 +51,6 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
-import { TaskOrchestrationOverridesDialog } from "./TaskOrchestrationOverridesDialog";
 import { type ComposerImageAttachment, useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import {
@@ -810,7 +809,6 @@ export function OrchestratorTaskRoute(props: {
 }
 
 function TaskHeader({ task }: { task: OrchestratorTask }) {
-  const [overridesOpen, setOverridesOpen] = useState(false);
   return (
     <div className="border-b border-border bg-card/70 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -823,22 +821,10 @@ function TaskHeader({ task }: { task: OrchestratorTask }) {
           </Badge>
         ) : null}
         <TaskQuotaBadge environmentId={task.environmentId} taskId={task.id} status={task.status} />
-        <Button
-          className="ml-auto"
-          size="sm"
-          variant="outline"
-          onClick={() => setOverridesOpen(true)}
-        >
-          Backends…
-        </Button>
       </div>
       {task.worktreePath ? (
         <p className="mt-3 truncate text-xs text-muted-foreground">{task.worktreePath}</p>
       ) : null}
-      <TaskOrchestrationOverridesDialog
-        task={overridesOpen ? task : null}
-        onClose={() => setOverridesOpen(false)}
-      />
     </div>
   );
 }

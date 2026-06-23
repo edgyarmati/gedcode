@@ -1,5 +1,6 @@
 import {
   ProjectId,
+  ProviderInstanceId,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -37,7 +38,12 @@ const makeReadModel = () => ({
       pmMessageId: null,
       stageThreadIds: [stageThreadId],
       currentStageThreadId: stageThreadId,
-      roleModelSelections: {},
+      roleModelSelections: {
+        plan: {
+          instanceId: ProviderInstanceId.make("codex_plan"),
+          model: "gpt-5-plan",
+        },
+      },
       playbookVersion: null,
       createdAt: now,
       updatedAt: now,
@@ -158,5 +164,43 @@ it.effect("requestApproval dispatches a task.gate.request command", () =>
     assert.strictEqual(dispatched[0]?.type, "task.gate.request");
     assert.strictEqual(result.details.taskId, taskId);
     assert.strictEqual(result.details.sequence, 1);
+  }),
+);
+
+it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.set command", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const setTaskBackend = findTool(tools, "setTaskBackend");
+
+    const result = yield* Effect.promise(() =>
+      setTaskBackend.execute("tool-backend", {
+        taskId,
+        role: "work",
+        instanceId: "codex_work",
+        model: "gpt-5-work",
+      }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.role-selections.set");
+    if (dispatched[0]?.type === "task.role-selections.set") {
+      assert.strictEqual(dispatched[0].origin, "pm-runtime");
+      assert.deepStrictEqual(dispatched[0].roleModelSelections, {
+        plan: {
+          instanceId: ProviderInstanceId.make("codex_plan"),
+          model: "gpt-5-plan",
+        },
+        work: {
+          instanceId: ProviderInstanceId.make("codex_work"),
+          model: "gpt-5-work",
+        },
+      });
+    }
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      role: "work",
+      sequence: 1,
+    });
   }),
 );

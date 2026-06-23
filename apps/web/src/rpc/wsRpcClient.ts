@@ -351,6 +351,7 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
       resolveGate: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.resolveGate](input)),
+      // Dialog caller was removed; per-task model selection is now PM-driven, but this remains a human-origin RPC.
       setTaskRoleSelections: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections](input)),
     },

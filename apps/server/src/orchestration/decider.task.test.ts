@@ -232,19 +232,57 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     Effect.gen(function* () {
       const readModel = yield* taskReadModel();
 
-      const event = yield* decideOrchestrationCommand({
-        readModel,
-        command: {
-          type: "task.role-selections.set",
-          commandId: asCommandId("cmd-role-selections"),
+      for (const origin of ["human", "client"] as const) {
+        const event = yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.role-selections.set",
+            commandId: asCommandId(`cmd-role-selections-${origin}`),
+            taskId: asTaskId("task-1"),
+            roleModelSelections: {
+              verify: {
+                instanceId: ProviderInstanceId.make("codex_verify"),
+                model: "gpt-5-verify",
+              },
+            },
+            origin,
+            createdAt: now,
+          },
+        });
+
+        const singleEvent = Array.isArray(event) ? event[0] : event;
+        expect(singleEvent?.type).toBe("task.role-selections-updated");
+        expect(singleEvent?.payload).toMatchObject({
           taskId: asTaskId("task-1"),
+          origin,
           roleModelSelections: {
             verify: {
               instanceId: ProviderInstanceId.make("codex_verify"),
               model: "gpt-5-verify",
             },
           },
-          origin: "human",
+        });
+      }
+    }),
+  );
+
+  it.effect("updates per-task role model selections from PM/runtime origins", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel();
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.role-selections.set",
+          commandId: asCommandId("cmd-role-selections-pm"),
+          taskId: asTaskId("task-1"),
+          roleModelSelections: {
+            work: {
+              instanceId: ProviderInstanceId.make("codex_work"),
+              model: "gpt-5-work",
+            },
+          },
+          origin: "pm-runtime",
           createdAt: now,
         },
       });
@@ -253,36 +291,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       expect(singleEvent?.type).toBe("task.role-selections-updated");
       expect(singleEvent?.payload).toMatchObject({
         taskId: asTaskId("task-1"),
-        origin: "human",
+        origin: "pm-runtime",
         roleModelSelections: {
-          verify: {
-            instanceId: ProviderInstanceId.make("codex_verify"),
-            model: "gpt-5-verify",
+          work: {
+            instanceId: ProviderInstanceId.make("codex_work"),
+            model: "gpt-5-work",
           },
         },
       });
-    }),
-  );
-
-  it.effect("rejects per-task role model selections from PM/runtime origins", () =>
-    Effect.gen(function* () {
-      const readModel = yield* taskReadModel();
-
-      const result = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.role-selections.set",
-            commandId: asCommandId("cmd-role-selections-pm"),
-            taskId: asTaskId("task-1"),
-            roleModelSelections: {},
-            origin: "pm-runtime",
-            createdAt: now,
-          },
-        }),
-      );
-
-      expect(result._tag).toBe("Failure");
     }),
   );
 

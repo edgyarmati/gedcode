@@ -951,10 +951,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorEnabled({ command, project });
-      if (command.origin !== "human" && command.origin !== "client") {
+      // Model selection is not a guardrail, so the PM may set it; gates/runtime stay human-only.
+      if (
+        command.origin !== "human" &&
+        command.origin !== "client" &&
+        command.origin !== "pm-runtime"
+      ) {
         return yield* invariantError(
           command.type,
-          `Task role model selections can only be updated by human/client origins; received '${command.origin}'.`,
+          `Task role model selections can only be updated by human/client/pm-runtime origins; received '${command.origin}'.`,
         );
       }
       return {

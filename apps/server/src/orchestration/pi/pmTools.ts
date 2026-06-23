@@ -3,11 +3,13 @@ import { Type, type Static } from "@earendil-works/pi-ai";
 import {
   CommandId,
   GateId,
+  ProviderInstanceId,
   MessageId,
   ProjectId,
   TaskId,
   TaskTypeId,
   ThreadId,
+  type GedRoleModelSelections,
   type OrchestrationGateKind,
   type OrchestrationStageRole,
   type OrchestrationTask,
@@ -54,6 +56,20 @@ const RequestApprovalParameters = Type.Object({
   stageThreadId: Type.Optional(Type.String()),
 });
 type RequestApprovalParameters = Static<typeof RequestApprovalParameters>;
+
+const SetTaskBackendParameters = Type.Object({
+  taskId: Type.String(),
+  role: Type.Union([
+    Type.Literal("classify"),
+    Type.Literal("plan"),
+    Type.Literal("review"),
+    Type.Literal("work"),
+    Type.Literal("verify"),
+  ]),
+  instanceId: Type.String(),
+  model: Type.String(),
+});
+type SetTaskBackendParameters = Static<typeof SetTaskBackendParameters>;
 
 const InspectStageParameters = Type.Object({
   taskId: Type.String(),
@@ -208,6 +224,42 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
+  const setTaskBackend: AgentTool<
+    typeof SetTaskBackendParameters,
+    { taskId: string; role: OrchestrationStageRole; sequence: number }
+  > = {
+    name: "setTaskBackend",
+    label: "Set task backend",
+    description:
+      "Change which provider/model a task stage role runs on when asked. This overrides the project's per-role default for that task only.",
+    parameters: SetTaskBackendParameters,
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId);
+          const role = params.role as OrchestrationStageRole;
+          const roleModelSelections: GedRoleModelSelections = {
+            ...task?.roleModelSelections,
+            [role]: {
+              instanceId: ProviderInstanceId.make(params.instanceId),
+              model: params.model,
+            },
+          };
+          const sequence = yield* dispatch({
+            type: "task.role-selections.set",
+            commandId: yield* commandId("set-task-backend"),
+            taskId,
+            roleModelSelections,
+            origin: "pm-runtime",
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Set ${role} backend for task ${taskId}.`, { taskId, role, sequence });
+        }),
+      ),
+  };
+
   const inspectStage: AgentTool<typeof InspectStageParameters, { task: OrchestrationTask | null }> =
     {
       name: "inspectStage",
@@ -254,6 +306,7 @@ export const makePmTools = Effect.gen(function* () {
     createTask,
     handoffWorker,
     requestApproval,
+    setTaskBackend,
     inspectStage,
     getTaskLedger,
   ] as const satisfies ReadonlyArray<AgentTool>;
