@@ -39,6 +39,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   subscribeProject: "orchestrator.subscribeProject",
   subscribeTask: "orchestrator.subscribeTask",
   resolveGate: "orchestrator.resolveGate",
+  setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
 } as const;
 
 export const ProviderApprovalPolicy = Schema.Literals([
@@ -1738,6 +1739,13 @@ export const OrchestratorResolveGateInput = Schema.Struct({
 });
 export type OrchestratorResolveGateInput = typeof OrchestratorResolveGateInput.Type;
 
+export const OrchestratorSetTaskRoleSelectionsInput = Schema.Struct({
+  taskId: TaskId,
+  roleModelSelections: GedRoleModelSelections,
+});
+export type OrchestratorSetTaskRoleSelectionsInput =
+  typeof OrchestratorSetTaskRoleSelectionsInput.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1878,6 +1886,10 @@ export const OrchestratorRpcSchemas = {
   },
   resolveGate: {
     input: OrchestratorResolveGateInput,
+    output: DispatchResult,
+  },
+  setTaskRoleSelections: {
+    input: OrchestratorSetTaskRoleSelectionsInput,
     output: DispatchResult,
   },
 } as const;

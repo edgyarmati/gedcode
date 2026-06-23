@@ -22,6 +22,7 @@ import {
   OrchestrationSession,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
+  OrchestratorSetTaskRoleSelectionsInput,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
@@ -60,6 +61,9 @@ const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixe
 const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory);
 const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
 const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
+const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
+  OrchestratorSetTaskRoleSelectionsInput,
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -803,6 +807,35 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
           roleModelSelections: {},
           origin: "pm-runtime",
           updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes task role-selection websocket input with role-keyed selections", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorSetTaskRoleSelectionsInput({
+      taskId: "task-1",
+      roleModelSelections: {
+        work: {
+          instanceId: "codex_task",
+          model: "gpt-5.2",
+        },
+      },
+    });
+    assert.strictEqual(input.taskId, "task-1");
+    assert.strictEqual(input.roleModelSelections.work?.instanceId, "codex_task");
+
+    const result = yield* Effect.exit(
+      decodeOrchestratorSetTaskRoleSelectionsInput({
+        taskId: "task-1",
+        roleModelSelections: {
+          wrk: {
+            instanceId: "codex_task",
+            model: "gpt-5.2",
+          },
         },
       }),
     );

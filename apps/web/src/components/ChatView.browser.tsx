@@ -238,6 +238,9 @@ function createMockEnvironmentApi(input: {
       resolveGate: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["resolveGate"],
+      setTaskRoleSelections: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["setTaskRoleSelections"],
     },
     gedWorkflow: {
       getState: (() =>

@@ -3,7 +3,13 @@ import type {
   VcsStatusRemoteResult,
   VcsStatusStreamEvent,
 } from "@t3tools/contracts";
-import { GateId, ORCHESTRATOR_WS_METHODS, ProjectId, TaskId } from "@t3tools/contracts";
+import {
+  GateId,
+  ORCHESTRATOR_WS_METHODS,
+  ProjectId,
+  ProviderInstanceId,
+  TaskId,
+} from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./wsTransport", () => ({
@@ -113,6 +119,7 @@ describe("wsRpcClient", () => {
       [ORCHESTRATOR_WS_METHODS.subscribeProject]: vi.fn(() => "project-stream"),
       [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
       [ORCHESTRATOR_WS_METHODS.resolveGate]: vi.fn(() => ({ sequence: 7 })),
+      [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: vi.fn(() => ({ sequence: 8 })),
     };
     const request = vi.fn((execute: (client: typeof protocolClient) => unknown) =>
       Promise.resolve(execute(protocolClient)),
@@ -157,6 +164,17 @@ describe("wsRpcClient", () => {
         decision: "approved",
       }),
     ).resolves.toEqual({ sequence: 7 });
+    await expect(
+      client.orchestrator.setTaskRoleSelections({
+        taskId,
+        roleModelSelections: {
+          work: {
+            instanceId: ProviderInstanceId.make("codex_task"),
+            model: "gpt-5-task",
+          },
+        },
+      }),
+    ).resolves.toEqual({ sequence: 8 });
 
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
       projectId,
@@ -172,6 +190,15 @@ describe("wsRpcClient", () => {
       gate: "plan",
       approvedHash: "hash-1",
       decision: "approved",
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]).toHaveBeenCalledWith({
+      taskId,
+      roleModelSelections: {
+        work: {
+          instanceId: ProviderInstanceId.make("codex_task"),
+          model: "gpt-5-task",
+        },
+      },
     });
     expect(subscribe.mock.calls[0]?.[2]).toEqual({
       onResubscribe,

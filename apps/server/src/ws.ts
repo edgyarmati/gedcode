@@ -1093,6 +1093,26 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestrator" },
           ),
+        [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+            Effect.all({
+              commandId: serverCommandId("orchestrator-set-task-role-selections"),
+              createdAt: nowIso,
+            }).pipe(
+              Effect.flatMap(({ commandId, createdAt }) =>
+                dispatchNormalizedCommand({
+                  type: "task.role-selections.set",
+                  commandId,
+                  taskId: input.taskId,
+                  roleModelSelections: input.roleModelSelections,
+                  origin: "human",
+                  createdAt,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
         [WS_METHODS.serverGetConfig]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetConfig, loadServerConfig, {
             "rpc.aggregate": "server",

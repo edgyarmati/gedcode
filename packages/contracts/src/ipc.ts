@@ -65,6 +65,7 @@ import type {
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
+  OrchestratorSetTaskRoleSelectionsInput,
   OrchestratorSubscribeProjectInput,
   OrchestratorSubscribeTaskInput,
   OrchestratorTaskStreamItem,
@@ -590,6 +591,9 @@ export interface EnvironmentApi {
       },
     ) => () => void;
     resolveGate: (input: OrchestratorResolveGateInput) => Promise<{ sequence: number }>;
+    setTaskRoleSelections: (
+      input: OrchestratorSetTaskRoleSelectionsInput,
+    ) => Promise<{ sequence: number }>;
   };
   gedWorkflow: {
     getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;

@@ -88,7 +88,10 @@ function RoleConfigRow({
     : "Use project default";
 
   const handleInstanceChange = useCallback(
-    (value: string) => {
+    (value: string | null) => {
+      if (value === null) {
+        return;
+      }
       if (value === USE_DEFAULT_VALUE) {
         onSelectionChange(role, null);
         return;
@@ -108,8 +111,8 @@ function RoleConfigRow({
   );
 
   const handleModelChange = useCallback(
-    (value: string) => {
-      if (!selection) {
+    (value: string | null) => {
+      if (!selection || value === null) {
         return;
       }
       onSelectionChange(role, { instanceId: selection.instanceId, model: value });

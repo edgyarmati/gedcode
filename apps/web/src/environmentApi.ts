@@ -60,6 +60,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeTask: (input, callback, options) =>
         rpcClient.orchestrator.subscribeTask(input, callback, options),
       resolveGate: rpcClient.orchestrator.resolveGate,
+      setTaskRoleSelections: rpcClient.orchestrator.setTaskRoleSelections,
     },
     gedWorkflow: {
       getState: rpcClient.gedWorkflow.getState,

@@ -192,6 +192,7 @@ describe("retainThreadDetailSubscription", () => {
       orchestrator: {
         subscribeProject: mockSubscribeProject,
         subscribeTask: mockSubscribeTask,
+        setTaskRoleSelections: vi.fn(),
       },
     });
     mockCreateEnvironmentConnection.mockImplementation((input) => {

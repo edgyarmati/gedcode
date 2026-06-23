@@ -3566,6 +3566,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               decision: "approved",
             });
             assert.equal(resolveResult.sequence, 41);
+
+            const setTaskRoleSelectionsResult = yield* client[
+              ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+            ]({
+              taskId,
+              roleModelSelections: {
+                work: {
+                  instanceId: ProviderInstanceId.make("codex_task"),
+                  model: "gpt-5-task",
+                },
+              },
+            });
+            assert.equal(setTaskRoleSelectionsResult.sequence, 41);
           }),
         ),
       );
@@ -3578,6 +3591,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(resolveCommand.origin, "human");
         assert.equal(resolveCommand.approvedHash, "sha256:plan");
         assert.equal(resolveCommand.decision, "approved");
+      }
+
+      const setRoleSelectionsCommand = dispatched.find(
+        (command) => command.type === "task.role-selections.set",
+      );
+      assert.isDefined(setRoleSelectionsCommand);
+      if (setRoleSelectionsCommand?.type === "task.role-selections.set") {
+        assert.equal(setRoleSelectionsCommand.taskId, taskId);
+        assert.equal(setRoleSelectionsCommand.origin, "human");
+        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.instanceId, "codex_task");
+        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.model, "gpt-5-task");
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setRoleSelectionsCommand.createdAt));
       }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

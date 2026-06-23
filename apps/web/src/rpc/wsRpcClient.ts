@@ -161,6 +161,9 @@ export interface WsRpcClient {
     >;
     readonly subscribeTask: RpcInputStreamMethod<typeof ORCHESTRATOR_WS_METHODS.subscribeTask>;
     readonly resolveGate: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.resolveGate>;
+    readonly setTaskRoleSelections: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+    >;
   };
   readonly gedWorkflow: {
     readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
@@ -348,6 +351,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
       resolveGate: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.resolveGate](input)),
+      setTaskRoleSelections: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections](input)),
     },
     gedWorkflow: {
       getState: (input) =>

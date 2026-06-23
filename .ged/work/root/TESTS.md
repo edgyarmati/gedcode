@@ -49,6 +49,9 @@
 - Stage-timeline logic renders 5 stages with role + backend + status.
 - Config editors dispatch human-origin updates; role pickers are enum-bound (typo
   impossible).
+- `orchestrator.setTaskRoleSelections` decodes role-keyed input, dispatches a human-origin
+  `task.role-selections.set` command server-side, and is exposed through `wsRpcClient` +
+  `environmentApi`.
 
 ### E2E / durability
 
@@ -66,6 +69,24 @@
 
 ## Evidence
 
+- 2026-06-23: `cd packages/contracts && bun run test src/orchestration.test.ts`
+  passed (1 file, 44 tests), including `OrchestratorSetTaskRoleSelectionsInput`
+  decode and unknown-role rejection.
+- 2026-06-23: `cd apps/server && bun run test src/server.test.ts` passed (1 file,
+  67 tests), including websocket routing for `orchestrator.setTaskRoleSelections`
+  to a human-origin `task.role-selections.set` command with server-stamped
+  `createdAt`.
+- 2026-06-23: `cd apps/web && bun run test src/rpc/wsRpcClient.test.ts src/localApi.test.ts src/environments/runtime/service.threadSubscriptions.test.ts`
+  passed (3 files, 29 tests), covering typed RPC/client/environment forwarding
+  for `setTaskRoleSelections`.
+- 2026-06-23: `bun fmt` passed.
+- 2026-06-23: `bun lint` passed with existing warnings only.
+- 2026-06-23: `bun typecheck` passed across all 13 packages.
+- 2026-06-23: root `bun run test` passed (13 successful Turbo tasks; server
+  package reported 155 files passed, 1238 tests passed, 1 skipped; web package
+  reported 104 files passed and 1128 tests passed; 8m42s).
+- 2026-06-23: root `bun run build` passed (3 successful Turbo tasks; existing
+  Vite chunk-size and dynamic-import warnings only).
 - 2026-06-22: `cd apps/server && bun run test integration/orchestratorPipeline.integration.test.ts`
   passed (1 file, 2 tests; 22.23s), covering the full
   `classify→plan→review→work→verify→land` pipeline, backend precedence,

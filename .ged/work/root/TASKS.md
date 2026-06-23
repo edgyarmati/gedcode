@@ -50,8 +50,16 @@ Dependency-ordered. Ownership: **[impl]** = implementation-heavy agent's lane,
 - [x] P4.1 Project snapshot + streamed events carry the durable stage history (role+backend+
       status+timestamps) + the project/task selection config. **Done** in the baseline
       (`22c17fe69`); stage-started now also carries resolved backend/model (`0274474c9`).
-- [ ] P4.2 WS mutation methods / typed client helpers for the project per-role editor, the
+- [x] P4.2 WS mutation methods / typed client helpers for the project per-role editor, the
       per-role prompt-prefix editor, and the per-task override. Verify: method round-trip test.
+      **Project editor: no new method needed** — `project.meta.update` is already in the
+      `ClientOrchestrationCommand` union, so P6.1/P6.2 dispatch through the generic
+      `api.orchestration.dispatchCommand`. **Per-task override done [impl]**:
+      `task.role-selections.set` is deliberately excluded from `ClientOrchestrationCommand`
+      (task-level human mutations use dedicated, server-validated RPCs — see
+      `orchestrator.resolveGate`), so `orchestrator.setTaskRoleSelections` now mirrors
+      `resolveGate`: the server stamps `origin: "human"` + `createdAt`, dispatches through the
+      decider, and the typed `wsRpcClient` + `environmentApi` helpers expose the method.
 
 ## WP-P5 — Web: stage-timeline [ux]
 
@@ -67,10 +75,16 @@ Dependency-ordered. Ownership: **[impl]** = implementation-heavy agent's lane,
 
 ## WP-P6 — Web: configuration UI [ux]
 
-- [ ] P6.1 Project-settings per-role backend editor (role → instance picker, "use default").
-      Verify: edit dispatches the human-origin update; typo'd role impossible (enum picker).
-- [ ] P6.2 Per-role prompt-prefix editor. Verify: edit round-trips.
+- [x] P6.1 Project-settings per-role backend editor (role → instance picker, "use default").
+      **Done**: `ProjectOrchestrationSettingsDialog` opened from the sidebar project context-menu
+      item "Orchestration settings…"; per-role instance+model Selects (or "use project default");
+      dispatches `project.meta.update` (origin client/human). Typo'd role impossible — the picker
+      iterates `ORCHESTRATION_STAGE_ROLES` and the contract's role-keyed struct rejects unknown keys.
+- [x] P6.2 Per-role prompt-prefix editor. **Done**: per-role Textarea in the same dialog; blank
+      prefixes omitted, the rest trimmed; round-trip covered by `projectOrchestrationSettings.logic.test.ts`.
 - [ ] P6.3 Per-task backend-override panel on task detail. Verify: override dispatches + reflects.
+      **Unblocked by P4.2** — dispatch through `api.orchestrator.setTaskRoleSelections`; UI reuses
+      the project editor's backend picker + the same draft logic, no prefixes.
 
 ## WP-P7 — E2E + restart-durability + gates [ux]
 

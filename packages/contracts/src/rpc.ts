@@ -488,6 +488,15 @@ export const WsOrchestratorResolveGateRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.res
   error: OrchestrationDispatchCommandError,
 });
 
+export const WsOrchestratorSetTaskRoleSelectionsRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+  {
+    payload: OrchestratorRpcSchemas.setTaskRoleSelections.input,
+    success: OrchestratorRpcSchemas.setTaskRoleSelections.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -567,4 +576,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorSubscribeProjectRpc,
   WsOrchestratorSubscribeTaskRpc,
   WsOrchestratorResolveGateRpc,
+  WsOrchestratorSetTaskRoleSelectionsRpc,
 );

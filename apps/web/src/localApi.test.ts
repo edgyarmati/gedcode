@@ -120,6 +120,7 @@ const rpcClientMock = {
         registerListener(taskStreamListeners, listener),
     ),
     resolveGate: vi.fn(),
+    setTaskRoleSelections: vi.fn(),
   },
   gedWorkflow: {
     getState: vi.fn(),
@@ -471,6 +472,7 @@ describe("wsApi", () => {
   it("forwards orchestrator requests and subscriptions to the RPC client", async () => {
     rpcClientMock.orchestrator.sendMessage.mockResolvedValue({ accepted: true });
     rpcClientMock.orchestrator.resolveGate.mockResolvedValue({ sequence: 42 });
+    rpcClientMock.orchestrator.setTaskRoleSelections.mockResolvedValue({ sequence: 43 });
     const { createEnvironmentApi } = await import("./environmentApi");
 
     const api = createEnvironmentApi(rpcClientMock as never);
@@ -497,6 +499,17 @@ describe("wsApi", () => {
         decision: "approved",
       }),
     ).resolves.toEqual({ sequence: 42 });
+    await expect(
+      api.orchestrator.setTaskRoleSelections({
+        taskId,
+        roleModelSelections: {
+          work: {
+            instanceId: ProviderInstanceId.make("codex_task"),
+            model: "gpt-5-task",
+          },
+        },
+      }),
+    ).resolves.toEqual({ sequence: 43 });
 
     expect(rpcClientMock.orchestrator.sendMessage).toHaveBeenCalledWith({
       projectId,
@@ -518,6 +531,15 @@ describe("wsApi", () => {
       gate: "plan",
       approvedHash: "hash-1",
       decision: "approved",
+    });
+    expect(rpcClientMock.orchestrator.setTaskRoleSelections).toHaveBeenCalledWith({
+      taskId,
+      roleModelSelections: {
+        work: {
+          instanceId: ProviderInstanceId.make("codex_task"),
+          model: "gpt-5-task",
+        },
+      },
     });
 
     unsubscribeProject();
