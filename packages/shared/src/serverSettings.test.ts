@@ -212,6 +212,38 @@ describe("serverSettings helpers", () => {
     ).toEqual({ "ged-explorer": { enabled: true } });
   });
 
+  it("replaces orchestrator defaults so shorter stage arrays clear omitted stages", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      orchestratorDefaults: {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+        stages: ["classify", "plan", "review", "work", "verify"] as const,
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        orchestratorDefaults: {
+          ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+          stages: ["classify", "plan", "work"],
+          gatePolicy: {
+            ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
+            plan: "auto",
+            land: "require-approval",
+          },
+        },
+      }).orchestratorDefaults,
+    ).toEqual({
+      ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+      stages: ["classify", "plan", "work"],
+      gatePolicy: {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
+        plan: "auto",
+        land: "require-approval",
+      },
+    });
+  });
+
   it("updates Ged subagent runtime mode without clearing role model selections", () => {
     const explorerSelection = createModelSelection(
       ProviderInstanceId.make("claude_global"),

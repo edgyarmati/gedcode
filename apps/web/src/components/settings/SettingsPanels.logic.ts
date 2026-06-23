@@ -1,5 +1,8 @@
 import type {
   GedSubagentRole,
+  OrchestratorGatePolicy,
+  OrchestratorGlobalDefaults,
+  OrchestrationStageRole,
   ProviderDriverKind,
   ProviderInstanceConfig,
   ProviderInstanceId,
@@ -7,6 +10,13 @@ import type {
   UnifiedSettings,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import {
+  CANONICAL_ORCHESTRATOR_STAGE_ORDER,
+  MANDATORY_ORCHESTRATOR_STAGES,
+  OPTIONAL_ORCHESTRATOR_STAGES,
+  type EditableOrchestratorGate,
+  type OptionalOrchestratorStage,
+} from "../orchestrator/projectOrchestrationSettings.logic";
 
 function collapseOtelSignalsUrl(input: {
   readonly tracesUrl: string;
@@ -105,5 +115,95 @@ export function buildProviderInstanceUpdatePatch(input: {
     ...(input.textGenerationModelSelection !== undefined
       ? { textGenerationModelSelection: input.textGenerationModelSelection }
       : {}),
+  };
+}
+
+export interface OrchestratorGlobalDefaultsDraft {
+  readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
+  readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  readonly resourceDefaults: OrchestratorGlobalResourceDefaultsDraft;
+}
+
+export interface OrchestratorGlobalResourceDefaultsDraft {
+  readonly maxParallelTasks: number;
+  readonly maxParallelWorkers: number;
+  readonly maxStageHandoffs: number;
+  readonly maxRetriesPerStage: number;
+  readonly pmReconciliationIntervalMs: number;
+  readonly worktreeReaperIntervalMinutes: number;
+  readonly allowFullAccessWorkers: boolean;
+}
+
+export type OrchestratorGlobalNumberDefaultKey = Exclude<
+  keyof OrchestratorGlobalResourceDefaultsDraft,
+  "allowFullAccessWorkers"
+>;
+
+const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults;
+
+export function seedOrchestratorGlobalDefaultsDraft(
+  defaults: OrchestratorGlobalDefaults,
+): OrchestratorGlobalDefaultsDraft {
+  const stageSet = new Set(defaults.stages);
+  return {
+    optionalStages: {
+      review: stageSet.has("review"),
+      verify: stageSet.has("verify"),
+    },
+    gatePolicy: {
+      classify: defaults.gatePolicy.classify,
+      plan: defaults.gatePolicy.plan,
+      work: defaults.gatePolicy.work,
+      review: defaults.gatePolicy.review,
+    },
+    resourceDefaults: {
+      maxParallelTasks:
+        defaults.maxParallelTasks ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelTasks,
+      maxParallelWorkers:
+        defaults.maxParallelWorkers ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelWorkers,
+      maxStageHandoffs:
+        defaults.maxStageHandoffs ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxStageHandoffs,
+      maxRetriesPerStage:
+        defaults.maxRetriesPerStage ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxRetriesPerStage,
+      pmReconciliationIntervalMs:
+        defaults.pmReconciliationIntervalMs ??
+        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.pmReconciliationIntervalMs,
+      worktreeReaperIntervalMinutes:
+        defaults.worktreeReaperIntervalMinutes ??
+        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.worktreeReaperIntervalMinutes,
+      allowFullAccessWorkers:
+        defaults.allowFullAccessWorkers ??
+        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.allowFullAccessWorkers,
+    },
+  };
+}
+
+export function buildOrchestratorGlobalDefaultsPatch(
+  draft: OrchestratorGlobalDefaultsDraft,
+): Pick<UnifiedSettings, "orchestratorDefaults"> {
+  const stageSet = new Set<OrchestrationStageRole>(MANDATORY_ORCHESTRATOR_STAGES);
+  for (const stage of OPTIONAL_ORCHESTRATOR_STAGES) {
+    if (draft.optionalStages[stage]) {
+      stageSet.add(stage);
+    }
+  }
+  return {
+    orchestratorDefaults: {
+      stages: CANONICAL_ORCHESTRATOR_STAGE_ORDER.filter((stage) => stageSet.has(stage)),
+      gatePolicy: {
+        classify: draft.gatePolicy.classify,
+        plan: draft.gatePolicy.plan,
+        work: draft.gatePolicy.work,
+        review: draft.gatePolicy.review,
+        land: "require-approval",
+      },
+      maxParallelTasks: draft.resourceDefaults.maxParallelTasks,
+      maxParallelWorkers: draft.resourceDefaults.maxParallelWorkers,
+      maxStageHandoffs: draft.resourceDefaults.maxStageHandoffs,
+      maxRetriesPerStage: draft.resourceDefaults.maxRetriesPerStage,
+      pmReconciliationIntervalMs: draft.resourceDefaults.pmReconciliationIntervalMs,
+      worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
+      allowFullAccessWorkers: draft.resourceDefaults.allowFullAccessWorkers,
+    },
   };
 }

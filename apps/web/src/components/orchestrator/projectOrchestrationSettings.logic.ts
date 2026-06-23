@@ -4,6 +4,7 @@ import {
   DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
   ORCHESTRATION_STAGE_ROLES,
+  OrchestratorGlobalDefaults,
   OrchestratorProjectConfig,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
@@ -30,8 +31,12 @@ export type OptionalOrchestratorStage = (typeof OPTIONAL_ORCHESTRATOR_STAGES)[nu
 export type EditableOrchestratorGate = (typeof EDITABLE_ORCHESTRATOR_GATES)[number];
 
 const decodeOrchestratorProjectConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+const decodeOrchestratorGlobalDefaults = Schema.decodeUnknownOption(OrchestratorGlobalDefaults);
 
 const DEFAULT_ORCHESTRATOR_CONFIG = Option.getOrThrow(decodeOrchestratorProjectConfig({}));
+const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = Option.getOrThrow(
+  decodeOrchestratorGlobalDefaults({}),
+);
 
 const DEFAULT_FEATURE_CONFIG = DEFAULT_ORCHESTRATOR_CONFIG.taskTypes[0] ?? {
   id: "feature" as const,
@@ -85,6 +90,7 @@ export interface OrchestrationConfigUpdate {
 // selection seed to `null` (use default); roles without a prefix seed to "".
 export function seedOrchestrationSettingsDraft(
   config: ProjectOrchestrationConfig,
+  globalDefaults?: OrchestratorGlobalDefaults,
 ): OrchestrationSettingsDraft {
   const roleSelections = {} as Record<OrchestrationStageRole, ModelSelection | null>;
   const rolePrefixes = {} as Record<OrchestrationStageRole, string>;
@@ -95,7 +101,7 @@ export function seedOrchestrationSettingsDraft(
   return {
     roleSelections,
     rolePrefixes,
-    orchestratorConfig: seedOrchestratorConfigDraft(config.orchestratorConfig),
+    orchestratorConfig: seedOrchestratorConfigDraft(config.orchestratorConfig, globalDefaults),
   };
 }
 
@@ -135,9 +141,52 @@ function normalizeOrchestratorProjectConfig(
   }));
 }
 
+function normalizeOrchestratorGlobalDefaults(
+  globalDefaults: OrchestratorGlobalDefaults | undefined,
+): OrchestratorGlobalDefaults {
+  return Option.getOrElse(decodeOrchestratorGlobalDefaults(globalDefaults ?? {}), () => ({
+    ...DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS,
+    stages: [...DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.stages],
+    gatePolicy: { ...DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.gatePolicy },
+  }));
+}
+
+export function isProjectOrchestratorConfigUnconfigured(
+  config: OrchestratorConfigJson | OrchestratorProjectConfig | undefined,
+): boolean {
+  return config === undefined || Object.keys(config).length === 0;
+}
+
 export function seedOrchestratorConfigDraft(
   config: OrchestratorConfigJson | OrchestratorProjectConfig | undefined,
+  globalDefaults?: OrchestratorGlobalDefaults,
 ): OrchestratorConfigDraft {
+  if (isProjectOrchestratorConfigUnconfigured(config) && globalDefaults !== undefined) {
+    const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
+    const stageSet = new Set(normalizedGlobals.stages);
+    return {
+      enabled: false,
+      pmModelSelection: null,
+      optionalStages: {
+        review: stageSet.has("review"),
+        verify: stageSet.has("verify"),
+      },
+      gatePolicy: {
+        classify: normalizedGlobals.gatePolicy.classify,
+        plan: normalizedGlobals.gatePolicy.plan,
+        work: normalizedGlobals.gatePolicy.work,
+        review: normalizedGlobals.gatePolicy.review,
+      },
+      resourceLimits: {
+        maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
+        maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
+        maxStageHandoffs: normalizedGlobals.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS,
+        maxRetriesPerStage: normalizedGlobals.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
+        allowFullAccessWorkers: normalizedGlobals.allowFullAccessWorkers ?? false,
+      },
+    };
+  }
+
   const normalized = normalizeOrchestratorProjectConfig(config);
   const featureConfig =
     normalized.taskTypes.find((taskType) => taskType.id === "feature") ?? DEFAULT_FEATURE_CONFIG;

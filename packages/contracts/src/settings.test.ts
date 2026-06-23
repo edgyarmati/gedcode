@@ -120,6 +120,14 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
 describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("defaults the nested orchestrator block with a safe-by-default floor", () => {
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual([
+      "classify",
+      "plan",
+      "review",
+      "work",
+      "verify",
+    ]);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
@@ -133,6 +141,20 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     // STOP-condition anchor: nesting the new optional defaults block must not
     // break existing settings that predate the key.
     const decoded = decodeServerSettings({});
+    expect(decoded.orchestratorDefaults.stages).toEqual([
+      "classify",
+      "plan",
+      "review",
+      "work",
+      "verify",
+    ]);
+    expect(decoded.orchestratorDefaults.gatePolicy).toEqual({
+      classify: "require-approval",
+      plan: "require-approval",
+      work: "require-approval",
+      review: "require-approval",
+      land: "require-approval",
+    });
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
@@ -148,6 +170,14 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("honors an explicit human-set allowFullAccessWorkers floor", () => {
     const decoded = decodeServerSettings({
       orchestratorDefaults: {
+        stages: ["classify", "plan", "work"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "require-approval",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
         allowFullAccessWorkers: true,
         maxStageHandoffs: 20,
         maxRetriesPerStage: 4,
@@ -155,6 +185,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         worktreeReaperIntervalMinutes: 2,
       },
     });
+    expect(decoded.orchestratorDefaults.stages).toEqual(["classify", "plan", "work"]);
+    expect(decoded.orchestratorDefaults.gatePolicy.classify).toBe("auto");
+    expect(decoded.orchestratorDefaults.gatePolicy.work).toBe("auto");
+    expect(decoded.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
     expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
@@ -165,6 +199,14 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("accepts orchestratorDefaults via the settings patch", () => {
     const patch = decodeServerSettingsPatch({
       orchestratorDefaults: {
+        stages: ["classify", "plan", "review", "work"],
+        gatePolicy: {
+          classify: "require-approval",
+          plan: "auto",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
         maxRetriesPerStage: 5,
@@ -172,6 +214,9 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         worktreeReaperIntervalMinutes: 10,
       },
     });
+    expect(patch.orchestratorDefaults?.stages).toEqual(["classify", "plan", "review", "work"]);
+    expect(patch.orchestratorDefaults?.gatePolicy.plan).toBe("auto");
+    expect(patch.orchestratorDefaults?.gatePolicy.land).toBe("require-approval");
     expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
     expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
     expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);

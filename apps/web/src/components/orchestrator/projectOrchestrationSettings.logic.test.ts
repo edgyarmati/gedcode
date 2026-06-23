@@ -1,4 +1,8 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  type ModelSelection,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -41,6 +45,45 @@ describe("seedOrchestrationSettingsDraft", () => {
     const draft = seedOrchestrationSettingsDraft({});
     expect(Object.values(draft.roleSelections).every((value) => value === null)).toBe(true);
     expect(Object.values(draft.rolePrefixes).every((value) => value === "")).toBe(true);
+  });
+
+  it("seeds an unconfigured project from global orchestrator defaults", () => {
+    const draft = seedOrchestrationSettingsDraft(
+      {},
+      {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+        stages: ["classify", "plan", "work"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "auto",
+          work: "require-approval",
+          review: "auto",
+          land: "require-approval",
+        },
+        maxParallelTasks: 3,
+        maxParallelWorkers: 4,
+        maxStageHandoffs: 11,
+        maxRetriesPerStage: 6,
+        allowFullAccessWorkers: true,
+      },
+    );
+
+    expect(draft.orchestratorConfig.enabled).toBe(false);
+    expect(draft.orchestratorConfig.pmModelSelection).toBeNull();
+    expect(draft.orchestratorConfig.optionalStages).toEqual({ review: false, verify: false });
+    expect(draft.orchestratorConfig.gatePolicy).toEqual({
+      classify: "auto",
+      plan: "auto",
+      work: "require-approval",
+      review: "auto",
+    });
+    expect(draft.orchestratorConfig.resourceLimits).toEqual({
+      maxParallelTasks: 3,
+      maxParallelWorkers: 4,
+      maxStageHandoffs: 11,
+      maxRetriesPerStage: 6,
+      allowFullAccessWorkers: true,
+    });
   });
 });
 
@@ -175,6 +218,107 @@ describe("seedOrchestratorConfigDraft", () => {
       maxStageHandoffs: 4,
       maxRetriesPerStage: 5,
       allowFullAccessWorkers: true,
+    });
+  });
+
+  it("uses global defaults only for an empty project config", () => {
+    const draft = seedOrchestratorConfigDraft(
+      {},
+      {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+        stages: ["classify", "plan", "work", "verify"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "auto",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+        maxParallelTasks: 7,
+        maxParallelWorkers: 8,
+        maxStageHandoffs: 9,
+        maxRetriesPerStage: 10,
+        allowFullAccessWorkers: true,
+      },
+    );
+
+    expect(draft.enabled).toBe(false);
+    expect(draft.pmModelSelection).toBeNull();
+    expect(draft.optionalStages).toEqual({ review: false, verify: true });
+    expect(draft.gatePolicy).toEqual({
+      classify: "auto",
+      plan: "auto",
+      work: "auto",
+      review: "require-approval",
+    });
+    expect(draft.resourceLimits).toEqual({
+      maxParallelTasks: 7,
+      maxParallelWorkers: 8,
+      maxStageHandoffs: 9,
+      maxRetriesPerStage: 10,
+      allowFullAccessWorkers: true,
+    });
+  });
+
+  it("keeps a configured project config authoritative over global defaults", () => {
+    const draft = seedOrchestratorConfigDraft(
+      {
+        enabled: true,
+        pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+        taskTypes: [
+          {
+            id: "feature",
+            stages: ["classify", "plan", "review", "work"],
+            gatePolicy: {
+              classify: "require-approval",
+              plan: "require-approval",
+              work: "auto",
+              review: "auto",
+              land: "require-approval",
+            },
+          },
+        ],
+        resourceLimits: {
+          maxParallelTasks: 2,
+          maxParallelWorkers: 3,
+          maxStageHandoffs: 4,
+          maxRetriesPerStage: 5,
+          allowFullAccessWorkers: false,
+        },
+      },
+      {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+        stages: ["classify", "plan", "work", "verify"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "auto",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+        maxParallelTasks: 7,
+        maxParallelWorkers: 8,
+        maxStageHandoffs: 9,
+        maxRetriesPerStage: 10,
+        allowFullAccessWorkers: true,
+      },
+    );
+
+    expect(draft.enabled).toBe(true);
+    expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.optionalStages).toEqual({ review: true, verify: false });
+    expect(draft.gatePolicy).toEqual({
+      classify: "require-approval",
+      plan: "require-approval",
+      work: "auto",
+      review: "auto",
+    });
+    expect(draft.resourceLimits).toEqual({
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxStageHandoffs: 4,
+      maxRetriesPerStage: 5,
+      allowFullAccessWorkers: false,
     });
   });
 });

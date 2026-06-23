@@ -170,6 +170,10 @@ export type OrchestratorProjectConfig = typeof OrchestratorProjectConfig.Type;
  * block — `ServerSettings` nests it with `withDecodingDefault(...{})`.
  */
 export const OrchestratorGlobalDefaults = Schema.Struct({
+  stages: Schema.Array(OrchestrationStageRole).pipe(
+    Schema.withDecodingDefault(Effect.succeed(ORCHESTRATION_STAGE_ROLES)),
+  ),
+  gatePolicy: OrchestratorTaskGatePolicy.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   maxParallelTasks: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_TASKS)),
   ),

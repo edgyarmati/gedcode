@@ -16,6 +16,7 @@ import {
 const decodeProjectConfig = Schema.decodeUnknownSync(OrchestratorProjectConfig);
 const encodeProjectConfig = Schema.encodeSync(OrchestratorProjectConfig);
 const decodeGlobalDefaults = Schema.decodeUnknownSync(OrchestratorGlobalDefaults);
+const encodeGlobalDefaults = Schema.encodeSync(OrchestratorGlobalDefaults);
 const decodeTaskGatePolicy = Schema.decodeUnknownSync(OrchestratorTaskGatePolicy);
 
 describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design §7)", () => {
@@ -58,6 +59,45 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
     expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
     expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
+  });
+
+  it("global defaults include the full stage set and require-approval gate policy", () => {
+    const decoded = decodeGlobalDefaults({});
+    expect(decoded.stages).toEqual(["classify", "plan", "review", "work", "verify"]);
+    expect(decoded.gatePolicy).toEqual({
+      classify: "require-approval",
+      plan: "require-approval",
+      work: "require-approval",
+      review: "require-approval",
+      land: "require-approval",
+    });
+  });
+
+  it("round-trips global stage, gate, and resource defaults", () => {
+    const decoded = decodeGlobalDefaults({
+      stages: ["classify", "plan", "work"],
+      gatePolicy: {
+        classify: "auto",
+        plan: "require-approval",
+        work: "auto",
+        review: "require-approval",
+        land: "require-approval",
+      },
+      maxParallelTasks: 3,
+      maxParallelWorkers: 4,
+      maxStageHandoffs: 9,
+      maxRetriesPerStage: 5,
+      pmReconciliationIntervalMs: 120_000,
+      worktreeReaperIntervalMinutes: 10,
+      allowFullAccessWorkers: true,
+    });
+
+    const reDecoded = decodeGlobalDefaults(encodeGlobalDefaults(decoded));
+
+    expect(reDecoded).toEqual(decoded);
+    expect(reDecoded.stages).toEqual(["classify", "plan", "work"]);
+    expect(reDecoded.gatePolicy.land).toBe("require-approval");
+    expect(reDecoded.allowFullAccessWorkers).toBe(true);
   });
 });
 

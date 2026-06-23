@@ -69,9 +69,17 @@ import {
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
+  NumberLimitRow,
+  OrchestratorGateAutonomyControl,
+  OrchestratorStagesControl,
+} from "../orchestrator/OrchestratorConfigControls";
+import {
+  buildOrchestratorGlobalDefaultsPatch,
   buildGedRoleSettingsPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
+  seedOrchestratorGlobalDefaultsDraft,
+  type OrchestratorGlobalNumberDefaultKey,
 } from "./SettingsPanels.logic";
 import { GED_ROLE_DISPLAY_BY_ROLE } from "../../gedWorkflowRoles";
 import {
@@ -103,6 +111,15 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
+  maxParallelTasks: "Max parallel tasks",
+  maxParallelWorkers: "Max parallel workers",
+  maxStageHandoffs: "Max stage handoffs",
+  maxRetriesPerStage: "Max retries per stage",
+  pmReconciliationIntervalMs: "PM reconciliation interval",
+  worktreeReaperIntervalMinutes: "Worktree cleanup interval",
+} as const satisfies Record<OrchestratorGlobalNumberDefaultKey, string>;
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -1041,6 +1058,147 @@ export function GeneralSettingsPanel() {
             </Button>
           }
         />
+      </SettingsSection>
+    </SettingsPageContainer>
+  );
+}
+
+export function OrchestratorDefaultsSettingsPanel() {
+  const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
+  const draft = useMemo(
+    () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
+    [settings.orchestratorDefaults],
+  );
+  const defaultDraft = useMemo(
+    () => seedOrchestratorGlobalDefaultsDraft(DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults),
+    [],
+  );
+  const numberKeys = Object.keys(
+    GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS,
+  ) as OrchestratorGlobalNumberDefaultKey[];
+
+  const updateDraft = useCallback(
+    (nextDraft: typeof draft) => {
+      updateSettings(buildOrchestratorGlobalDefaultsPatch(nextDraft));
+    },
+    [updateSettings],
+  );
+
+  const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
+  const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
+  const resourceDefaultsDirty = !Equal.equals(
+    draft.resourceDefaults,
+    defaultDraft.resourceDefaults,
+  );
+
+  return (
+    <SettingsPageContainer>
+      <SettingsSection title="Orchestrator defaults">
+        <SettingsRow
+          title="Stages"
+          description="Default stage pipeline for projects that have not configured Orchestrator mode yet."
+          resetAction={
+            stagesDirty ? (
+              <SettingResetButton
+                label="Orchestrator stages"
+                onClick={() =>
+                  updateDraft({ ...draft, optionalStages: defaultDraft.optionalStages })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <OrchestratorStagesControl
+              optionalStages={draft.optionalStages}
+              onOptionalStageChange={(stage, enabled) =>
+                updateDraft({
+                  ...draft,
+                  optionalStages: { ...draft.optionalStages, [stage]: enabled },
+                })
+              }
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Gate autonomy"
+          description="Default approval policy for new project task gates. Land always requires approval."
+          resetAction={
+            gatePolicyDirty ? (
+              <SettingResetButton
+                label="Orchestrator gate autonomy"
+                onClick={() => updateDraft({ ...draft, gatePolicy: defaultDraft.gatePolicy })}
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <OrchestratorGateAutonomyControl
+              gatePolicy={draft.gatePolicy}
+              onGatePolicyChange={(gate, policy) =>
+                updateDraft({
+                  ...draft,
+                  gatePolicy: { ...draft.gatePolicy, [gate]: policy },
+                })
+              }
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Operational knobs"
+          description="Default runtime limits and maintenance intervals used when a project first seeds Orchestrator settings."
+          resetAction={
+            resourceDefaultsDirty ? (
+              <SettingResetButton
+                label="Orchestrator operational knobs"
+                onClick={() =>
+                  updateDraft({ ...draft, resourceDefaults: defaultDraft.resourceDefaults })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="grid gap-2 pb-4 pt-3">
+            {numberKeys.map((key) => (
+              <NumberLimitRow
+                key={key}
+                label={GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS[key]}
+                value={draft.resourceDefaults[key]}
+                onChange={(value) =>
+                  updateDraft({
+                    ...draft,
+                    resourceDefaults: { ...draft.resourceDefaults, [key]: value },
+                  })
+                }
+              >
+                {key === "pmReconciliationIntervalMs"
+                  ? "Milliseconds"
+                  : key === "worktreeReaperIntervalMinutes"
+                    ? "Minutes"
+                    : null}
+              </NumberLimitRow>
+            ))}
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+              <span>Allow full-access workers safety opt-in</span>
+              <Switch
+                checked={draft.resourceDefaults.allowFullAccessWorkers}
+                aria-label="Allow full-access workers safety opt-in by default"
+                onCheckedChange={(checked) =>
+                  updateDraft({
+                    ...draft,
+                    resourceDefaults: {
+                      ...draft.resourceDefaults,
+                      allowFullAccessWorkers: Boolean(checked),
+                    },
+                  })
+                }
+              />
+            </label>
+          </div>
+        </SettingsRow>
       </SettingsSection>
     </SettingsPageContainer>
   );
