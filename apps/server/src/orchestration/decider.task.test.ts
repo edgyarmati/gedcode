@@ -30,7 +30,12 @@ const asTaskTypeId = (value: string): TaskTypeId => TaskTypeId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 
-function makeProjectCreatedEvent(): OrchestrationEvent {
+type ProjectCreatedEvent = Extract<OrchestrationEvent, { type: "project.created" }>;
+type PlannedEvent = Omit<OrchestrationEvent, "sequence">;
+
+function makeProjectCreatedEvent(input?: {
+  readonly orchestratorConfig?: ProjectCreatedEvent["payload"]["orchestratorConfig"];
+}): OrchestrationEvent {
   return {
     sequence: 1,
     eventId: asEventId("evt-project"),
@@ -51,7 +56,7 @@ function makeProjectCreatedEvent(): OrchestrationEvent {
         model: "gpt-5-codex",
       },
       roleModelSelections: {},
-      orchestratorConfig: { enabled: true },
+      orchestratorConfig: input?.orchestratorConfig ?? { enabled: true },
       scripts: [],
       createdAt: now,
       updatedAt: now,
@@ -86,9 +91,15 @@ function makeTaskCreatedEvent(input?: { readonly sequence?: number }): Orchestra
   };
 }
 
-function taskReadModel(overrides?: Partial<NonNullable<OrchestrationReadModel["tasks"][number]>>) {
+function taskReadModel(
+  overrides?: Partial<NonNullable<OrchestrationReadModel["tasks"][number]>>,
+  input?: { readonly orchestratorConfig?: ProjectCreatedEvent["payload"]["orchestratorConfig"] },
+) {
   return Effect.gen(function* () {
-    const withProject = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
+    const withProject = yield* projectEvent(
+      createEmptyReadModel(now),
+      makeProjectCreatedEvent({ orchestratorConfig: input?.orchestratorConfig }),
+    );
     const withTask = yield* projectEvent(withProject, makeTaskCreatedEvent());
     const task = withTask.tasks[0];
     if (!task) {
@@ -105,6 +116,31 @@ function taskReadModel(overrides?: Partial<NonNullable<OrchestrationReadModel["t
     };
   });
 }
+
+const toEvents = (result: PlannedEvent | ReadonlyArray<PlannedEvent>): PlannedEvent[] =>
+  Array.isArray(result) ? [...result] : [result as PlannedEvent];
+
+function withSequence(event: PlannedEvent, sequence: number): OrchestrationEvent {
+  return {
+    ...event,
+    sequence,
+  } as OrchestrationEvent;
+}
+
+const applyEvents = Effect.fn("deciderTask.applyEvents")(function* (
+  readModel: OrchestrationReadModel,
+  plannedEvents: ReadonlyArray<PlannedEvent>,
+) {
+  let nextModel = readModel;
+  let nextSequence = readModel.snapshotSequence;
+
+  for (const plannedEvent of plannedEvents) {
+    nextSequence += 1;
+    nextModel = yield* projectEvent(nextModel, withSequence(plannedEvent, nextSequence));
+  }
+
+  return nextModel;
+});
 
 it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("creates task.created without trusting a payload status", () =>
@@ -655,6 +691,181 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       );
 
       expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("auto-approves a plan gate when the task type policy is auto", () =>
+    Effect.gen(function* () {
+      const contentHash = "sha256:auto-plan";
+      const readModel = yield* taskReadModel(
+        {
+          status: "working",
+          currentStageThreadId: asThreadId("thread-stage-work"),
+          stageThreadIds: [asThreadId("thread-stage-work")],
+        },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                gatePolicy: {
+                  plan: "auto",
+                  land: "require-approval",
+                },
+              },
+            ],
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-auto"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-auto-plan"),
+          gate: "plan",
+          contentHash,
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+      const events = toEvents(result);
+      const projected = yield* applyEvents(readModel, events);
+
+      expect(events.map((event) => event.type)).toEqual([
+        "task.gate-requested",
+        "task.gate-resolved",
+      ]);
+      expect(events[1]?.payload).toMatchObject({
+        gateId: asGateId("gate-auto-plan"),
+        gate: "plan",
+        approvedHash: contentHash,
+        decision: "approved",
+        origin: "system",
+        updatedAt: now,
+      });
+      expect(projected.tasks.find((task) => task.id === asTaskId("task-1"))?.status).toBe(
+        "planning",
+      );
+      expect(
+        (projected.pendingGates ?? []).find((gate) => gate.gateId === asGateId("gate-auto-plan")),
+      ).toMatchObject({
+        status: "resolved",
+        approvedHash: contentHash,
+        decision: "approved",
+        origin: "system",
+      });
+    }),
+  );
+
+  it.effect("requires approval for a plan gate when the task type policy requires approval", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        {
+          status: "working",
+          currentStageThreadId: asThreadId("thread-stage-work"),
+          stageThreadIds: [asThreadId("thread-stage-work")],
+        },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                gatePolicy: {
+                  plan: "require-approval",
+                  land: "require-approval",
+                },
+              },
+            ],
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-manual"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-manual-plan"),
+          gate: "plan",
+          contentHash: "sha256:manual-plan",
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+      const events = toEvents(result);
+      const projected = yield* applyEvents(readModel, events);
+
+      expect(events.map((event) => event.type)).toEqual(["task.gate-requested"]);
+      expect(projected.tasks.find((task) => task.id === asTaskId("task-1"))?.status).toBe(
+        "plan-review",
+      );
+      expect(
+        (projected.pendingGates ?? []).find((gate) => gate.gateId === asGateId("gate-manual-plan")),
+      ).toMatchObject({
+        status: "pending",
+        approvedHash: null,
+        decision: null,
+        origin: null,
+      });
+    }),
+  );
+
+  it.effect("never auto-approves a land gate", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        {
+          status: "review",
+          currentStageThreadId: null,
+          stageThreadIds: [asThreadId("thread-stage-work")],
+        },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                gatePolicy: {
+                  plan: "auto",
+                  land: "require-approval",
+                },
+              },
+            ],
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-land"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-land"),
+          gate: "land",
+          contentHash: "sha256:land",
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+      const events = toEvents(result);
+      const projected = yield* applyEvents(readModel, events);
+
+      expect(events.map((event) => event.type)).toEqual(["task.gate-requested"]);
+      expect(projected.tasks.find((task) => task.id === asTaskId("task-1"))?.status).toBe("review");
+      expect(
+        (projected.pendingGates ?? []).find((gate) => gate.gateId === asGateId("gate-land")),
+      ).toMatchObject({
+        status: "pending",
+        approvedHash: null,
+        decision: null,
+        origin: null,
+      });
     }),
   );
 

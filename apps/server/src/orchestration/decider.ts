@@ -12,6 +12,7 @@ import {
   type OrchestrationProject,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
+import { resolveGatePolicy } from "@t3tools/shared/orchestrator";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -1274,8 +1275,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
-      return {
+      const config = yield* requireOrchestratorEnabled({ command, project });
+      const gatePolicy = resolveGatePolicy({
+        config,
+        taskTypeId: task.type,
+        gate: command.gate,
+      });
+      const gateRequestedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
           aggregateId: command.taskId,
@@ -1292,6 +1298,31 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+
+      if (gatePolicy !== "auto" || command.gate === "land") {
+        return [gateRequestedEvent];
+      }
+
+      const gateResolvedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.gate-resolved",
+        payload: {
+          taskId: command.taskId,
+          gateId: command.gateId,
+          gate: command.gate,
+          approvedHash: command.contentHash,
+          decision: "approved",
+          origin: "system",
+          updatedAt: command.createdAt,
+        },
+      };
+
+      return [gateRequestedEvent, gateResolvedEvent];
     }
 
     case "task.gate.resolve": {
