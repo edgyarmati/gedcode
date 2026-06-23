@@ -287,6 +287,9 @@ function mapProject(
       ]),
     ),
     rolePromptPrefixes: { ...project.rolePromptPrefixes },
+    ...(project.orchestratorConfig !== undefined
+      ? { orchestratorConfig: { ...project.orchestratorConfig } }
+      : {}),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     scripts: mapProjectScripts(project.scripts),
@@ -1862,6 +1865,9 @@ function applyEnvironmentOrchestrationEvent(
           defaultModelSelection: event.payload.defaultModelSelection,
           roleModelSelections: event.payload.roleModelSelections ?? {},
           rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
+          ...(event.payload.orchestratorConfig !== undefined
+            ? { orchestratorConfig: event.payload.orchestratorConfig }
+            : {}),
           scripts: event.payload.scripts,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1936,6 +1942,9 @@ function applyEnvironmentOrchestrationEvent(
           : {}),
         ...(event.payload.rolePromptPrefixes !== undefined
           ? { rolePromptPrefixes: { ...event.payload.rolePromptPrefixes } }
+          : {}),
+        ...(event.payload.orchestratorConfig !== undefined
+          ? { orchestratorConfig: { ...event.payload.orchestratorConfig } }
           : {}),
         ...(event.payload.scripts !== undefined
           ? { scripts: mapProjectScripts(event.payload.scripts) }

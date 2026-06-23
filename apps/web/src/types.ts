@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  OrchestratorConfigJson,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
@@ -92,6 +93,7 @@ export interface Project {
   defaultModelSelection: ModelSelection | null;
   roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
   rolePromptPrefixes?: Readonly<Record<string, string>> | undefined;
+  orchestratorConfig?: OrchestratorConfigJson | undefined;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];

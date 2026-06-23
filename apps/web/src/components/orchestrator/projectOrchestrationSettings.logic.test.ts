@@ -2,10 +2,14 @@ import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildOrchestratorProjectConfig,
   buildOrchestrationConfigUpdate,
+  orchestratorConfigDraftsEqual,
   orchestrationSettingsDraftsEqual,
   resolveRoleDefaultSelection,
+  seedOrchestratorConfigDraft,
   seedOrchestrationSettingsDraft,
+  type OrchestratorConfigDraft,
   type OrchestrationSettingsDraft,
 } from "./projectOrchestrationSettings.logic";
 
@@ -20,7 +24,7 @@ describe("seedOrchestrationSettingsDraft", () => {
       roleModelSelections: { review: selection("codex_project", "gpt-5-project") },
       rolePromptPrefixes: { work: "Use the checklist." },
     });
-    expect(Object.keys(draft.roleSelections).sort()).toEqual([
+    expect(Object.keys(draft.roleSelections).toSorted()).toEqual([
       "classify",
       "plan",
       "review",
@@ -57,6 +61,7 @@ describe("buildOrchestrationConfigUpdate", () => {
         work: "  Implement carefully.  ",
         verify: "Verify behavior.",
       },
+      orchestratorConfig: seedOrchestratorConfigDraft({}),
     };
     const update = buildOrchestrationConfigUpdate(draft);
     expect(update.roleModelSelections).toEqual({
@@ -69,14 +74,177 @@ describe("buildOrchestrationConfigUpdate", () => {
       verify: "Verify behavior.",
     });
     expect(update.rolePromptPrefixes.plan).toBeUndefined();
+    expect(update.orchestratorConfig).toEqual(
+      buildOrchestratorProjectConfig(draft.orchestratorConfig),
+    );
   });
 
   it("round-trips a seeded config back to the same maps", () => {
     const config = {
       roleModelSelections: { work: selection("codex_task", "gpt-5-task") },
       rolePromptPrefixes: { verify: "Verify behavior." },
+      orchestratorConfig: {
+        enabled: true,
+        pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+        taskTypes: [
+          {
+            id: "feature" as const,
+            stages: ["classify", "plan", "work"],
+            gatePolicy: {
+              classify: "auto" as const,
+              plan: "require-approval" as const,
+              work: "auto" as const,
+              review: "require-approval" as const,
+              land: "require-approval" as const,
+            },
+          },
+        ],
+        resourceLimits: {
+          maxParallelTasks: 2,
+          maxParallelWorkers: 3,
+          maxStageHandoffs: 4,
+          maxRetriesPerStage: 5,
+          allowFullAccessWorkers: true,
+        },
+      },
     };
     expect(buildOrchestrationConfigUpdate(seedOrchestrationSettingsDraft(config))).toEqual(config);
+  });
+});
+
+describe("seedOrchestratorConfigDraft", () => {
+  it("uses schema defaults when config is absent", () => {
+    const draft = seedOrchestratorConfigDraft(undefined);
+    expect(draft).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+      optionalStages: { review: true, verify: true },
+      gatePolicy: {
+        classify: "require-approval",
+        plan: "require-approval",
+        work: "require-approval",
+        review: "require-approval",
+      },
+      resourceLimits: {
+        maxParallelTasks: 1,
+        maxParallelWorkers: 1,
+        maxStageHandoffs: 8,
+        maxRetriesPerStage: 2,
+        allowFullAccessWorkers: false,
+      },
+    });
+  });
+
+  it("normalizes a project config into the editor draft", () => {
+    const draft = seedOrchestratorConfigDraft({
+      enabled: true,
+      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      taskTypes: [
+        {
+          id: "feature",
+          stages: ["classify", "plan", "review", "work"],
+          gatePolicy: {
+            classify: "auto",
+            plan: "require-approval",
+            work: "auto",
+            review: "auto",
+            land: "require-approval",
+          },
+        },
+      ],
+      resourceLimits: {
+        maxParallelTasks: 2,
+        maxParallelWorkers: 3,
+        maxStageHandoffs: 4,
+        maxRetriesPerStage: 5,
+        allowFullAccessWorkers: true,
+      },
+    });
+    expect(draft.enabled).toBe(true);
+    expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.optionalStages).toEqual({ review: true, verify: false });
+    expect(draft.gatePolicy).toEqual({
+      classify: "auto",
+      plan: "require-approval",
+      work: "auto",
+      review: "auto",
+    });
+    expect(draft.resourceLimits).toEqual({
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxStageHandoffs: 4,
+      maxRetriesPerStage: 5,
+      allowFullAccessWorkers: true,
+    });
+  });
+});
+
+describe("buildOrchestratorProjectConfig", () => {
+  it("builds the full single-feature config from edited settings", () => {
+    const draft: OrchestratorConfigDraft = {
+      enabled: true,
+      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      optionalStages: { review: false, verify: true },
+      gatePolicy: {
+        classify: "auto",
+        plan: "require-approval",
+        work: "auto",
+        review: "auto",
+      },
+      resourceLimits: {
+        maxParallelTasks: 2,
+        maxParallelWorkers: 3,
+        maxStageHandoffs: 4,
+        maxRetriesPerStage: 5,
+        allowFullAccessWorkers: true,
+      },
+    };
+    expect(buildOrchestratorProjectConfig(draft)).toEqual({
+      enabled: true,
+      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      taskTypes: [
+        {
+          id: "feature",
+          stages: ["classify", "plan", "work", "verify"],
+          gatePolicy: {
+            classify: "auto",
+            plan: "require-approval",
+            work: "auto",
+            review: "auto",
+            land: "require-approval",
+          },
+        },
+      ],
+      resourceLimits: {
+        maxParallelTasks: 2,
+        maxParallelWorkers: 3,
+        maxStageHandoffs: 4,
+        maxRetriesPerStage: 5,
+        allowFullAccessWorkers: true,
+      },
+    });
+  });
+
+  it("keeps land require-approval across round trips", () => {
+    const draft = seedOrchestratorConfigDraft({
+      enabled: true,
+      taskTypes: [
+        {
+          id: "feature",
+          stages: ["classify", "plan", "work"],
+          gatePolicy: {
+            classify: "auto",
+            plan: "auto",
+            work: "auto",
+            review: "auto",
+            land: "require-approval",
+          },
+        },
+      ],
+    });
+    const built = buildOrchestratorProjectConfig(draft);
+    expect(built.taskTypes[0]?.gatePolicy.land).toBe("require-approval");
+    expect(seedOrchestratorConfigDraft(built)).toEqual(draft);
   });
 });
 
@@ -113,6 +281,7 @@ describe("orchestrationSettingsDraftsEqual", () => {
     const padded: OrchestrationSettingsDraft = {
       roleSelections: base.roleSelections,
       rolePrefixes: { ...base.rolePrefixes, verify: "  Verify behavior.  " },
+      orchestratorConfig: base.orchestratorConfig,
     };
     expect(orchestrationSettingsDraftsEqual(base, padded)).toBe(true);
   });
@@ -121,12 +290,76 @@ describe("orchestrationSettingsDraftsEqual", () => {
     const changedSelection: OrchestrationSettingsDraft = {
       roleSelections: { ...base.roleSelections, work: selection("codex", "gpt-5-default") },
       rolePrefixes: base.rolePrefixes,
+      orchestratorConfig: base.orchestratorConfig,
     };
     const changedPrefix: OrchestrationSettingsDraft = {
       roleSelections: base.roleSelections,
       rolePrefixes: { ...base.rolePrefixes, classify: "Classify strictly." },
+      orchestratorConfig: base.orchestratorConfig,
+    };
+    const changedOrchestratorConfig: OrchestrationSettingsDraft = {
+      roleSelections: base.roleSelections,
+      rolePrefixes: base.rolePrefixes,
+      orchestratorConfig: { ...base.orchestratorConfig, enabled: !base.orchestratorConfig.enabled },
     };
     expect(orchestrationSettingsDraftsEqual(base, changedSelection)).toBe(false);
     expect(orchestrationSettingsDraftsEqual(base, changedPrefix)).toBe(false);
+    expect(orchestrationSettingsDraftsEqual(base, changedOrchestratorConfig)).toBe(false);
+  });
+});
+
+describe("orchestratorConfigDraftsEqual", () => {
+  const base = seedOrchestratorConfigDraft({
+    enabled: true,
+    pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+    taskTypes: [
+      {
+        id: "feature",
+        stages: ["classify", "plan", "review", "work", "verify"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "require-approval",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+      },
+    ],
+    resourceLimits: {
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxStageHandoffs: 4,
+      maxRetriesPerStage: 5,
+      allowFullAccessWorkers: false,
+    },
+  });
+
+  it("tracks edits across enabled, pm model, stages, gates, and limits", () => {
+    expect(orchestratorConfigDraftsEqual(base, { ...base })).toBe(true);
+    expect(orchestratorConfigDraftsEqual(base, { ...base, enabled: false })).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(base, {
+        ...base,
+        pmModelSelection: selection("codex_pm", "gpt-5-other"),
+      }),
+    ).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(base, {
+        ...base,
+        optionalStages: { ...base.optionalStages, review: false },
+      }),
+    ).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(base, {
+        ...base,
+        gatePolicy: { ...base.gatePolicy, plan: "auto" },
+      }),
+    ).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(base, {
+        ...base,
+        resourceLimits: { ...base.resourceLimits, maxParallelWorkers: 4 },
+      }),
+    ).toBe(false);
   });
 });
