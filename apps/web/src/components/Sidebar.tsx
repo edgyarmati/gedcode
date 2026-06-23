@@ -87,7 +87,7 @@ import {
 import { useModelPickerOpen } from "../modelPickerOpenState";
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { useGitStatus } from "../lib/gitStatusState";
-import { readLocalApi } from "../localApi";
+import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
@@ -104,13 +104,11 @@ import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { Kbd } from "./ui/kbd";
 import {
   getArm64IntelBuildWarningDescription,
-  getDesktopUpdateActionError,
-  getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateDownloadPageUrl,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
-  shouldToastDesktopUpdateActionResult,
 } from "./desktopUpdate.logic";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
@@ -2585,7 +2583,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 interface SidebarProjectsContentProps {
   showArm64IntelBuildWarning: boolean;
   arm64IntelBuildWarningDescription: string | null;
-  desktopUpdateButtonAction: "download" | "install" | "none";
+  desktopUpdateButtonAction: "open" | "none";
   desktopUpdateButtonDisabled: boolean;
   showDesktopUpdateAction: boolean;
   handleDesktopUpdateButtonClick: () => void;
@@ -2727,9 +2725,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                   disabled={desktopUpdateButtonDisabled}
                   onClick={handleDesktopUpdateButtonClick}
                 >
-                  {desktopUpdateButtonAction === "download"
-                    ? "Download ARM build"
-                    : "Install ARM build"}
+                  Download ARM build
                 </Button>
               </AlertAction>
             ) : null}
@@ -2742,18 +2738,16 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             <CloudIcon />
             <AlertTitle>Update available</AlertTitle>
             <AlertDescription>
-              {desktopUpdateButtonAction === "install"
-                ? "A GedCode update is downloaded and ready to install."
-                : "A GedCode update is ready to download."}
+              A GedCode update is available. Download it from the release page.
             </AlertDescription>
             <AlertAction>
               <Button
                 size="xs"
-                variant={desktopUpdateButtonAction === "install" ? "default" : "outline"}
+                variant="default"
                 disabled={desktopUpdateButtonDisabled}
                 onClick={handleDesktopUpdateButtonClick}
               >
-                {desktopUpdateButtonAction === "install" ? "Restart to Update" : "Download Update"}
+                Download Update
               </Button>
             </AlertAction>
           </Alert>
@@ -3418,73 +3412,20 @@ export default function Sidebar() {
     newThreadShortcutLabelOptions,
   );
   const handleDesktopUpdateButtonClick = useCallback(() => {
-    const bridge = window.desktopBridge;
-    if (!bridge || !desktopUpdateState) return;
+    if (!desktopUpdateState) return;
     if (desktopUpdateButtonDisabled || desktopUpdateButtonAction === "none") return;
 
-    if (desktopUpdateButtonAction === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          if (result.completed) {
-            toastManager.add({
-              type: "success",
-              title: "Update downloaded",
-              description: "Restart the app from the update button to install it.",
-            });
-          }
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not download update",
-              description: actionError,
-            }),
-          );
-        })
-        .catch((error) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not start update download",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        });
-      return;
-    }
-
-    if (desktopUpdateButtonAction === "install") {
-      const confirmed = window.confirm(
-        getDesktopUpdateInstallConfirmationMessage(desktopUpdateState),
-      );
-      if (!confirmed) return;
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          if (!shouldToastDesktopUpdateActionResult(result)) return;
-          const actionError = getDesktopUpdateActionError(result);
-          if (!actionError) return;
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: actionError,
-            }),
-          );
-        })
-        .catch((error) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        });
-    }
+    void ensureLocalApi()
+      .shell.openExternal(getDesktopUpdateDownloadPageUrl(desktopUpdateState))
+      .catch((error) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not open update page",
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          }),
+        );
+      });
   }, [desktopUpdateButtonAction, desktopUpdateButtonDisabled, desktopUpdateState]);
 
   const expandThreadListForProject = useCallback((projectKey: string) => {

@@ -1,3 +1,4 @@
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import type {
   DesktopRuntimeInfo,
   DesktopUpdateActionResult,
@@ -5,6 +6,7 @@ import type {
   DesktopUpdateCheckResult,
   DesktopUpdateState,
 } from "@t3tools/contracts";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -17,12 +19,16 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { ChildProcess } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -43,6 +49,45 @@ import {
 
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
+const GITHUB_RELEASES_API_URL = "https://api.github.com/repos/edgyarmati/gedcode/releases";
+const GITHUB_RELEASES_USER_AGENT = "GedCode Desktop Update Checker";
+
+// electron-builder derives a `dev` channel (dev-mac.yml/dev.yml) from `-dev`
+// versions, so a local mock build's manifest lives on this channel.
+const MOCK_UPDATE_CHANNEL = "dev";
+
+const LOOPBACK_UPDATE_FEED_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+function parseUpdateFeedUrl(url: string): URL | undefined {
+  try {
+    return new URL(url);
+  } catch {
+    return undefined;
+  }
+}
+
+export function isLoopbackUpdateFeedUrl(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+  const parsed = parseUpdateFeedUrl(url);
+  return parsed !== undefined && LOOPBACK_UPDATE_FEED_HOSTS.has(parsed.hostname);
+}
+
+/**
+ * A local mock update feed is a `generic` provider pointed at a loopback host —
+ * exactly what `build-desktop-artifact --mock-updates` bakes into a packaged dev
+ * build's `app-update.yml`. In this mode the updater follows the `dev` channel
+ * and accepts dev-track candidates instead of applying the stable/nightly
+ * channel acceptance rules (see updateChannels), so local update testing works
+ * without publishing to GitHub.
+ */
+export function resolveMockUpdateMode(feed: {
+  readonly provider: string | undefined;
+  readonly url: string | undefined;
+}): boolean {
+  return feed.provider === "generic" && isLoopbackUpdateFeedUrl(feed.url);
+}
 
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
 type AppUpdateYmlConfig = typeof AppUpdateYmlConfig.Type;
@@ -51,11 +96,24 @@ const UpdateInfo = Schema.Struct({
   version: Schema.String,
 });
 
+const GitHubReleaseInfo = Schema.Struct({
+  tag_name: Schema.String,
+  prerelease: Schema.Boolean,
+});
+type GitHubReleaseInfo = typeof GitHubReleaseInfo.Type;
+const GitHubReleaseList = Schema.Array(GitHubReleaseInfo);
+
+const PendingUpdateInfo = Schema.Struct({
+  fileName: Schema.String,
+});
+
 const DownloadProgressInfo = Schema.Struct({
   percent: Schema.Number,
 });
 const decodeAppUpdateYmlConfig = Schema.decodeUnknownEffect(AppUpdateYmlConfig);
 const decodeUpdateInfo = Schema.decodeUnknownEffect(UpdateInfo);
+const decodeGitHubReleaseList = Schema.decodeUnknownEffect(GitHubReleaseList);
+const decodePendingUpdateInfo = Schema.decodeEffect(Schema.fromJsonString(PendingUpdateInfo));
 const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressInfo);
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -77,6 +135,28 @@ export class DesktopUpdatePersistenceError extends Data.TaggedError(
 }> {
   override get message() {
     return "Failed to persist desktop update settings.";
+  }
+}
+
+export class DesktopMockUpdateInstallError extends Data.TaggedError(
+  "DesktopMockUpdateInstallError",
+)<{
+  readonly cause: string;
+}> {
+  override get message() {
+    return `Failed to start mock desktop update installer: ${this.cause}`;
+  }
+}
+
+export class DesktopManualUpdateCheckError extends Data.TaggedError(
+  "DesktopManualUpdateCheckError",
+)<{
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return this.cause instanceof Error
+      ? this.cause.message
+      : "Failed to check GitHub releases for updates.";
   }
 }
 
@@ -108,6 +188,75 @@ const {
   logWarning: logUpdaterWarning,
   logError: logUpdaterError,
 } = DesktopObservability.makeComponentLogger("desktop-updater");
+
+function resolveMacAppBundlePath(
+  execPath: string,
+  path: DesktopEnvironment.DesktopEnvironmentShape["path"],
+): string {
+  return path.dirname(path.dirname(path.dirname(execPath)));
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function launchMockMacInstaller(args: {
+  readonly appName: string;
+  readonly appPath: string;
+  readonly pid: number;
+  readonly zipPath: string;
+}): Effect.Effect<void, DesktopMockUpdateInstallError, ChildProcessSpawner.ChildProcessSpawner> {
+  const script = [
+    "set -eu",
+    `app_pid=${shellSingleQuote(String(args.pid))}`,
+    `zip_path=${shellSingleQuote(args.zipPath)}`,
+    `app_path=${shellSingleQuote(args.appPath)}`,
+    `app_name=${shellSingleQuote(args.appName)}`,
+    'work_dir="${TMPDIR:-/tmp}/gedcode-mock-update-$$"',
+    'while kill -0 "$app_pid" 2>/dev/null; do sleep 0.2; done',
+    'rm -rf "$work_dir"',
+    'mkdir -p "$work_dir"',
+    'ditto -x -k --rsrc --sequesterRsrc "$zip_path" "$work_dir"',
+    'test -d "$work_dir/$app_name"',
+    'rm -rf "$app_path"',
+    'ditto "$work_dir/$app_name" "$app_path"',
+    'rm -rf "$work_dir"',
+    'open "$app_path"',
+  ].join("\n");
+
+  const launcher = ChildProcess.make("/bin/sh", ["-c", `(${script}) >/dev/null 2>&1 &`], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const child = yield* spawner.spawn(launcher).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopMockUpdateInstallError({
+              cause: cause.message,
+            }),
+        ),
+      );
+      const exitCode = yield* child.exitCode.pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopMockUpdateInstallError({
+              cause: cause.message,
+            }),
+        ),
+      );
+      if (exitCode !== 0) {
+        return yield* new DesktopMockUpdateInstallError({
+          cause: `installer launcher exited with code ${exitCode}`,
+        });
+      }
+    }),
+  );
+}
 
 function parseAppUpdateYml(raw: string): Effect.Effect<Option.Option<AppUpdateYmlConfig>> {
   const entries: Record<string, string> = {};
@@ -185,21 +334,39 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
 }
 
+function versionFromReleaseTag(tagName: string): string {
+  return tagName.replace(/^v/, "");
+}
+
+function isManualReleaseAcceptedForChannel(
+  release: GitHubReleaseInfo,
+  channel: DesktopUpdateChannel,
+): boolean {
+  const version = versionFromReleaseTag(release.tag_name);
+  if (channel === "nightly") {
+    return release.prerelease && version.includes("-nightly.");
+  }
+  return !release.prerelease && isDesktopUpdateVersionAcceptedForChannel(version, "latest");
+}
+
 const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
   const backendManager = yield* DesktopBackendManager.DesktopBackendManager;
   const desktopState = yield* DesktopState.DesktopState;
+  const electronApp = yield* ElectronApp.ElectronApp;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const updateCheckInFlightRef = yield* Ref.make(false);
   const updateDownloadInFlightRef = yield* Ref.make(false);
   const updateInstallInFlightRef = yield* Ref.make(false);
   const updaterConfiguredRef = yield* Ref.make(false);
+  const mockUpdateModeRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const updateStateRef = yield* Ref.make<DesktopUpdateState>(
     createInitialDesktopUpdateState(
@@ -271,6 +438,21 @@ const make = Effect.gen(function* () {
   const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
     channel: DesktopUpdateChannel,
   ) {
+    if (yield* Ref.get(mockUpdateModeRef)) {
+      // Follow the local mock build's `dev` manifest and allow prerelease/downgrade
+      // so any locally-served dev version is treated as an upgrade candidate.
+      yield* Effect.annotateCurrentSpan({ channel: MOCK_UPDATE_CHANNEL, mockUpdates: true });
+      yield* electronUpdater.setChannel(MOCK_UPDATE_CHANNEL);
+      yield* electronUpdater.setAllowPrerelease(true);
+      yield* electronUpdater.setAllowDowngrade(true);
+      yield* logUpdaterInfo("using mock update channel", {
+        channel: MOCK_UPDATE_CHANNEL,
+        allowPrerelease: true,
+        allowDowngrade: true,
+      });
+      return;
+    }
+
     yield* Effect.annotateCurrentSpan({ channel });
     const allowsPrerelease = channel === "nightly";
     yield* electronUpdater.setChannel(channel);
@@ -292,7 +474,7 @@ const make = Effect.gen(function* () {
     if (yield* Ref.get(updateCheckInFlightRef)) return false;
 
     const state = yield* Ref.get(updateStateRef);
-    if (state.status === "downloading" || state.status === "downloaded") {
+    if (state.status === "downloading") {
       yield* logUpdaterInfo("skipping update check while update is active", {
         reason,
         status: state.status,
@@ -314,6 +496,83 @@ const make = Effect.gen(function* () {
             reduceDesktopUpdateStateOnCheckFailure(current, error.message, failedAt),
           );
           yield* logUpdaterError("failed to check for updates", { message: error.message });
+          return true;
+        }),
+      ),
+      Effect.ensuring(Ref.set(updateCheckInFlightRef, false)),
+    );
+  });
+
+  const checkGitHubReleasesForManualUpdate = Effect.fn(
+    "desktop.updates.checkGitHubReleasesForManualUpdate",
+  )(function* (reason: string) {
+    yield* Effect.annotateCurrentSpan({ reason, source: "github-releases" });
+    if (yield* Ref.get(desktopState.quitting)) return false;
+    if (yield* Ref.get(updateCheckInFlightRef)) return false;
+
+    const state = yield* Ref.get(updateStateRef);
+    if (state.status === "downloading") return false;
+
+    yield* Ref.set(updateCheckInFlightRef, true);
+    const checkedAt = yield* currentIsoTimestamp;
+    yield* setState(reduceDesktopUpdateStateOnCheckStart(state, checkedAt));
+    yield* logUpdaterInfo("checking GitHub releases for updates", {
+      channel: state.channel,
+      currentVersion: state.currentVersion,
+      reason,
+    });
+
+    const fetchReleases = Effect.gen(function* () {
+      const httpClient = yield* HttpClient.HttpClient;
+      return yield* HttpClientRequest.get(GITHUB_RELEASES_API_URL).pipe(
+        HttpClientRequest.acceptJson,
+        HttpClientRequest.setHeader("accept", "application/vnd.github+json"),
+        HttpClientRequest.setHeader("user-agent", GITHUB_RELEASES_USER_AGENT),
+        HttpClientRequest.setHeader("x-github-api-version", "2022-11-28"),
+        httpClient.execute,
+        Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.flatMap((response) => response.json),
+      );
+    }).pipe(
+      Effect.mapError((cause) => new DesktopManualUpdateCheckError({ cause })),
+      Effect.provide(NodeHttpClient.layerUndici),
+    );
+
+    return yield* fetchReleases.pipe(
+      Effect.flatMap(decodeGitHubReleaseList),
+      Effect.flatMap((releases) => {
+        const current = state.currentVersion;
+        const candidate = releases.find(
+          (release) =>
+            isManualReleaseAcceptedForChannel(release, state.channel) &&
+            compareSemverVersions(versionFromReleaseTag(release.tag_name), current) > 0,
+        );
+        return Effect.gen(function* () {
+          const finishedAt = yield* currentIsoTimestamp;
+          if (!candidate) {
+            yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, finishedAt));
+            yield* logUpdaterInfo("no GitHub release update available", {
+              channel: state.channel,
+              currentVersion: current,
+            });
+            return true;
+          }
+          const version = versionFromReleaseTag(candidate.tag_name);
+          yield* setState(reduceDesktopUpdateStateOnUpdateAvailable(state, version, finishedAt));
+          yield* logUpdaterInfo("GitHub release update available", {
+            channel: state.channel,
+            version,
+          });
+          return true;
+        });
+      }),
+      Effect.catch(
+        Effect.fn("desktop.updates.handleGitHubReleaseCheckFailure")(function* (error) {
+          const failedAt = yield* currentIsoTimestamp;
+          yield* updateState((current) =>
+            reduceDesktopUpdateStateOnCheckFailure(current, error.message, failedAt),
+          );
+          yield* logUpdaterError("failed to check GitHub releases", { message: error.message });
           return true;
         }),
       ),
@@ -354,12 +613,43 @@ const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("desktop.updates.downloadAvailableUpdate"));
 
+  const resolveMockMacPendingZipPath = Effect.gen(function* () {
+    const appUpdateYmlConfig = yield* Ref.get(appUpdateYmlConfigRef);
+    const feed = Option.getOrUndefined(appUpdateYmlConfig);
+    const updaterCacheDirName =
+      feed?.updaterCacheDirName ?? `${environment.userDataDirName}-updater`;
+    const pendingDir = environment.path.join(
+      environment.homeDirectory,
+      "Library",
+      "Caches",
+      updaterCacheDirName,
+      "pending",
+    );
+    const pendingInfoPath = environment.path.join(pendingDir, "update-info.json");
+    const rawPendingInfo = yield* fileSystem.readFileString(pendingInfoPath, "utf-8");
+    const pendingInfo = yield* decodePendingUpdateInfo(rawPendingInfo);
+    return environment.path.join(pendingDir, pendingInfo.fileName);
+  });
+
+  const installMockMacDownloadedUpdate = Effect.gen(function* () {
+    const zipPath = yield* resolveMockMacPendingZipPath;
+    const appPath = resolveMacAppBundlePath(process.execPath, environment.path);
+    yield* launchMockMacInstaller({
+      appName: environment.path.basename(appPath),
+      appPath,
+      pid: process.pid,
+      zipPath,
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner));
+    yield* logUpdaterInfo("mock mac update installer launched", { appPath, zipPath });
+    yield* electronApp.quit;
+  });
+
   const installDownloadedUpdate = Effect.gen(function* () {
     const state = yield* Ref.get(updateStateRef);
     if (
       (yield* Ref.get(desktopState.quitting)) ||
       !(yield* Ref.get(updaterConfiguredRef)) ||
-      state.status !== "downloaded"
+      state.downloadedVersion === null
     ) {
       return { accepted: false, completed: false };
     }
@@ -369,10 +659,14 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.gen(function* () {
       yield* backendManager.stop({ timeout: Duration.seconds(5) });
-      yield* electronUpdater.quitAndInstall({
-        isSilent: environment.platform === "win32",
-        isForceRunAfter: true,
-      });
+      if ((yield* Ref.get(mockUpdateModeRef)) && environment.platform === "darwin") {
+        yield* installMockMacDownloadedUpdate;
+      } else {
+        yield* electronUpdater.quitAndInstall({
+          isSilent: environment.platform === "win32",
+          isForceRunAfter: true,
+        });
+      }
       return { accepted: true, completed: false };
     }).pipe(
       Effect.catch(
@@ -382,6 +676,9 @@ const make = Effect.gen(function* () {
             reduceDesktopUpdateStateOnInstallFailure(current, error.message),
           );
           yield* Ref.set(desktopState.quitting, false);
+          // The backend was stopped before quitAndInstall; the install did not
+          // happen, so bring it back instead of leaving the app dead.
+          yield* backendManager.start;
           yield* logUpdaterError("failed to install update", { message: error.message });
           return { accepted: true, completed: false };
         }),
@@ -414,7 +711,11 @@ const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
-          if (!isDesktopUpdateVersionAcceptedForChannel(info.version, state.channel)) {
+          const mockUpdateMode = yield* Ref.get(mockUpdateModeRef);
+          if (
+            !mockUpdateMode &&
+            !isDesktopUpdateVersionAcceptedForChannel(info.version, state.channel)
+          ) {
             yield* logUpdaterInfo("ignoring update that does not match selected channel", {
               version: info.version,
               channel: state.channel,
@@ -457,6 +758,9 @@ const make = Effect.gen(function* () {
       yield* Ref.set(updateInstallInFlightRef, false);
       yield* Ref.set(desktopState.quitting, false);
       yield* updateState((current) => reduceDesktopUpdateStateOnInstallFailure(current, message));
+      // The backend was stopped before quitAndInstall; the install failed
+      // asynchronously, so bring it back instead of leaving the app dead.
+      yield* backendManager.start;
       yield* logUpdaterError("updater error", { message });
       return;
     }
@@ -537,6 +841,18 @@ const make = Effect.gen(function* () {
       const appUpdateYmlConfig = yield* readAppUpdateYml;
       yield* Ref.set(appUpdateYmlConfigRef, appUpdateYmlConfig);
 
+      const feed = Option.getOrUndefined(appUpdateYmlConfig);
+      const mockUpdateMode = resolveMockUpdateMode({
+        provider: feed?.provider,
+        url: feed?.url,
+      });
+      yield* Ref.set(mockUpdateModeRef, mockUpdateMode);
+      if (mockUpdateMode) {
+        yield* logUpdaterInfo("local mock update feed detected; relaxing channel acceptance", {
+          url: feed?.url,
+        });
+      }
+
       if (config.mockUpdates) {
         yield* electronUpdater.setFeedURL({
           provider: "generic",
@@ -545,9 +861,9 @@ const make = Effect.gen(function* () {
       }
 
       const settings = yield* desktopSettings.get;
-      const enabled = yield* shouldEnableAutoUpdates;
+      const enabled = !config.disableAutoUpdate;
       yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
-      if (!enabled) {
+      if (!(yield* shouldEnableAutoUpdates)) {
         return;
       }
       yield* Ref.set(updaterConfiguredRef, true);
@@ -608,10 +924,10 @@ const make = Effect.gen(function* () {
         .setUpdateChannel(nextChannel)
         .pipe(Effect.mapError((cause) => new DesktopUpdatePersistenceError({ cause })));
 
-      const enabled = yield* shouldEnableAutoUpdates;
+      const enabled = !config.disableAutoUpdate;
       yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
 
-      if (!enabled || !(yield* Ref.get(updaterConfiguredRef))) {
+      if (!(yield* shouldEnableAutoUpdates) || !(yield* Ref.get(updaterConfiguredRef))) {
         return yield* Ref.get(updateStateRef);
       }
 
@@ -626,8 +942,9 @@ const make = Effect.gen(function* () {
     check: Effect.fn("desktop.updates.check")(function* (reason: string) {
       yield* Effect.annotateCurrentSpan({ reason });
       if (!(yield* Ref.get(updaterConfiguredRef))) {
+        const checked = yield* checkGitHubReleasesForManualUpdate(reason);
         return {
-          checked: false,
+          checked,
           state: yield* Ref.get(updateStateRef),
         };
       }

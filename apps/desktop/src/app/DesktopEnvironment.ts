@@ -144,7 +144,10 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
-  const usesDevIdentity = isDevelopment || isDevDesktopVersion(input.appVersion);
+  const appVersion = isDevelopment
+    ? Option.getOrElse(config.desktopAppVersionOverride, () => input.appVersion)
+    : input.appVersion;
+  const usesDevIdentity = isDevelopment || isDevDesktopVersion(appVersion);
   const appDataDirectory =
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
@@ -158,7 +161,7 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const branding = resolveDesktopAppBranding({
     isDevelopment: usesDevIdentity,
-    appVersion: input.appVersion,
+    appVersion,
   });
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, usesDevIdentity ? "dev" : "userdata");
@@ -176,7 +179,7 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
-    appVersion: input.appVersion,
+    appVersion,
     appPath: input.appPath,
     resourcesPath,
     homeDirectory,
@@ -210,7 +213,7 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     userDataDirName,
     legacyUserDataDirName,
     legacyUserDataDirNames,
-    defaultDesktopSettings: resolveDefaultDesktopSettings(input.appVersion),
+    defaultDesktopSettings: resolveDefaultDesktopSettings(appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
       processArch: input.processArch,

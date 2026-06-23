@@ -86,6 +86,8 @@ Windows signing is optional. If any required value is missing, Windows artifacts
 - The current release only publishes Apple Silicon (`arm64`) macOS artifacts.
 - The desktop UI does not automatically download or install updates. Users start the download from
   the update button (rocket/update action), then restart/install after download completes.
+- To exercise the full updater flow locally against a non-GitHub feed, see
+  [desktop-updater-local-testing.md](./desktop-updater-local-testing.md).
 
 Repository slug source:
 

@@ -1,19 +1,25 @@
-import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateState } from "@t3tools/contracts";
 
-export type DesktopUpdateButtonAction = "download" | "install" | "none";
+const DESKTOP_UPDATE_RELEASES_URL = "https://github.com/edgyarmati/gedcode/releases";
+
+export type DesktopUpdateButtonAction = "open" | "none";
+
+export function getDesktopUpdateDownloadPageUrl(state: DesktopUpdateState): string {
+  if (state.channel === "latest") {
+    return `${DESKTOP_UPDATE_RELEASES_URL}/latest`;
+  }
+  return DESKTOP_UPDATE_RELEASES_URL;
+}
 
 export function resolveDesktopUpdateButtonAction(
   state: DesktopUpdateState,
 ): DesktopUpdateButtonAction {
-  if (state.downloadedVersion) {
-    return "install";
-  }
-  if (state.status === "available") {
-    return "download";
+  if (state.availableVersion || state.downloadedVersion || state.status === "available") {
+    return "open";
   }
   if (state.status === "error") {
-    if (state.errorContext === "download" && state.availableVersion) {
-      return "download";
+    if (state.availableVersion || state.downloadedVersion) {
+      return "open";
     }
   }
   return "none";
@@ -42,19 +48,15 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
     return "This install is using the correct architecture.";
   }
 
-  const action = resolveDesktopUpdateButtonAction(state);
-  if (action === "download") {
-    return "This Mac has Apple Silicon, but GedCode is still running the Intel build under Rosetta. Download the available update to switch to the native Apple Silicon build.";
-  }
-  if (action === "install") {
-    return "This Mac has Apple Silicon, but GedCode is still running the Intel build under Rosetta. Restart to install the downloaded Apple Silicon build.";
+  if (resolveDesktopUpdateButtonAction(state) === "open") {
+    return "This Mac has Apple Silicon, but GedCode is still running the Intel build under Rosetta. Open the download page for the available update to switch to the native Apple Silicon build.";
   }
   return "This Mac has Apple Silicon, but GedCode is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (state.status === "available") {
-    return `Update ${state.availableVersion ?? "available"} ready to download`;
+    return `Update ${state.availableVersion ?? "available"} available. Click to open the download page.`;
   }
   if (state.status === "downloading") {
     const progress =
@@ -62,36 +64,18 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     return `Downloading update${progress}`;
   }
   if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
+    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} is available. Click to open the download page.`;
   }
   if (state.status === "error") {
-    if (state.errorContext === "download" && state.availableVersion) {
-      return `Download failed for ${state.availableVersion}. Click to retry.`;
+    if (state.availableVersion) {
+      return `Update ${state.availableVersion} is available. Click to open the download page.`;
     }
-    if (state.errorContext === "install" && state.downloadedVersion) {
-      return `Install failed for ${state.downloadedVersion}. Click to retry.`;
+    if (state.downloadedVersion) {
+      return `Update ${state.downloadedVersion} is available. Click to open the download page.`;
     }
     return state.message ?? "Update failed";
   }
   return "Up to date";
-}
-
-export function getDesktopUpdateInstallConfirmationMessage(
-  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
-): string {
-  const version = state.downloadedVersion ?? state.availableVersion;
-  return `Install update${version ? ` ${version}` : ""} and restart GedCode?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`;
-}
-
-export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {
-  if (!result.accepted || result.completed) return null;
-  if (typeof result.state.message !== "string") return null;
-  const message = result.state.message.trim();
-  return message.length > 0 ? message : null;
-}
-
-export function shouldToastDesktopUpdateActionResult(result: DesktopUpdateActionResult): boolean {
-  return getDesktopUpdateActionError(result) !== null;
 }
 
 export function shouldHighlightDesktopUpdateError(state: DesktopUpdateState | null): boolean {
@@ -102,9 +86,6 @@ export function shouldHighlightDesktopUpdateError(state: DesktopUpdateState | nu
 export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
   if (!state || !state.enabled) return false;
   return (
-    state.status !== "checking" &&
-    state.status !== "downloading" &&
-    state.status !== "downloaded" &&
-    state.status !== "disabled"
+    state.status !== "checking" && state.status !== "downloading" && state.status !== "disabled"
   );
 }

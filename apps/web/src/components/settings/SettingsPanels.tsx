@@ -23,7 +23,7 @@ import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../..
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdateDownloadPageUrl,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
@@ -204,42 +204,16 @@ function AboutVersionSection() {
 
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
-    if (action === "download") {
-      void bridge
-        .downloadUpdate()
-        .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
-        })
+    if (action === "open" && updateState) {
+      void ensureLocalApi()
+        .shell.openExternal(getDesktopUpdateDownloadPageUrl(updateState))
         .catch((error: unknown) => {
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Could not download update",
-              description: error instanceof Error ? error.message : "Download failed.",
-            }),
-          );
-        });
-      return;
-    }
-
-    if (action === "install") {
-      const confirmed = window.confirm(
-        getDesktopUpdateInstallConfirmationMessage(
-          updateState ?? { availableVersion: null, downloadedVersion: null },
-        ),
-      );
-      if (!confirmed) return;
-      void bridge
-        .installUpdate()
-        .then((result) => {
-          setDesktopUpdateStateQueryData(queryClient, result.state);
-        })
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "Install failed.",
+              title: "Could not open update page",
+              description:
+                error instanceof Error ? error.message : "Opening the update page failed.",
             }),
           );
         });
@@ -280,7 +254,7 @@ function AboutVersionSection() {
       ? !canCheckForUpdate(updateState)
       : isDesktopUpdateButtonDisabled(updateState);
 
-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+  const actionLabel: Record<string, string> = { open: "Download" };
   const statusLabel: Record<string, string> = {
     checking: "Checking…",
     downloading: "Downloading…",
@@ -289,8 +263,8 @@ function AboutVersionSection() {
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
   const description =
-    action === "download" || action === "install"
-      ? "Update available."
+    action === "open"
+      ? "Update available. Download it from the release page."
       : "Current version of the application.";
 
   return (
@@ -304,7 +278,7 @@ function AboutVersionSection() {
               render={
                 <Button
                   size="xs"
-                  variant={action === "install" ? "default" : "outline"}
+                  variant={action === "open" ? "default" : "outline"}
                   disabled={buttonDisabled}
                   onClick={handleButtonClick}
                 >

@@ -6,6 +6,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
@@ -13,6 +14,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -24,8 +26,10 @@ interface UpdatesHarnessOptions {
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
   >;
+  readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
   readonly env?: Record<string, string | undefined>;
   readonly platform?: NodeJS.Platform;
+  readonly resourcesPath?: string;
 }
 
 const flushCallbacks = Effect.yieldNow;
@@ -33,6 +37,7 @@ const flushCallbacks = Effect.yieldNow;
 function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let allowDowngrade = false;
+  let lastChannel: string | undefined;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -41,7 +46,9 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     readonly isForceRunAfter: boolean;
   }> = [];
   let backendStopCount = 0;
+  let backendStartCount = 0;
   let destroyAllCount = 0;
+  let appQuitCount = 0;
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -67,7 +74,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
       }),
     setAutoDownload: () => Effect.void,
     setAutoInstallOnAppQuit: () => Effect.void,
-    setChannel: () => Effect.void,
+    setChannel: (channel) =>
+      Effect.sync(() => {
+        lastChannel = channel;
+      }),
     setAllowPrerelease: () => Effect.void,
     allowDowngrade: Effect.sync(() => allowDowngrade),
     setAllowDowngrade: (value) =>
@@ -82,7 +92,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     quitAndInstall: (installOptions) =>
       Effect.sync(() => {
         quitAndInstallCalls.push(installOptions);
-      }),
+      }).pipe(Effect.andThen(options.quitAndInstall ?? Effect.void)),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -113,8 +123,29 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindowShape);
 
+  const appLayer = Layer.succeed(ElectronApp.ElectronApp, {
+    metadata: Effect.die("unexpected app metadata read"),
+    name: Effect.succeed("GedCode (Dev)"),
+    whenReady: Effect.void,
+    quit: Effect.sync(() => {
+      appQuitCount += 1;
+    }),
+    exit: () => Effect.die("unexpected app exit"),
+    relaunch: () => Effect.die("unexpected app relaunch"),
+    setPath: () => Effect.void,
+    setName: () => Effect.void,
+    setAboutPanelOptions: () => Effect.void,
+    setAppUserModelId: () => Effect.void,
+    setDesktopName: () => Effect.void,
+    setDockIcon: () => Effect.void,
+    appendCommandLineSwitch: () => Effect.void,
+    on: () => Effect.void,
+  } satisfies ElectronApp.ElectronAppShape);
+
   const backendLayer = Layer.succeed(DesktopBackendManager.DesktopBackendManager, {
-    start: Effect.void,
+    start: Effect.sync(() => {
+      backendStartCount += 1;
+    }),
     stop: () =>
       Effect.sync(() => {
         backendStopCount += 1;
@@ -137,7 +168,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     appVersion: "1.2.3",
     appPath: "/repo",
     isPackaged: true,
-    resourcesPath: "/missing/resources",
+    resourcesPath: options.resourcesPath ?? "/missing/resources",
     runningUnderArm64Translation: false,
   }).pipe(
     Layer.provide(
@@ -156,6 +187,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(updaterLayer),
     Layer.provideMerge(windowLayer),
+    Layer.provideMerge(appLayer),
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(DesktopState.layer),
     Layer.provideMerge(DesktopAppSettings.layer),
@@ -177,7 +209,10 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     feedUrls: () => feedUrls,
     quitAndInstallCalls: () => quitAndInstallCalls,
     backendStopCount: () => backendStopCount,
+    backendStartCount: () => backendStartCount,
+    appQuitCount: () => appQuitCount,
     destroyAllCount: () => destroyAllCount,
+    lastChannel: () => lastChannel,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -191,6 +226,45 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     },
   };
 }
+
+describe("resolveMockUpdateMode", () => {
+  it("treats a generic loopback feed as mock mode", () => {
+    for (const url of ["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"]) {
+      assert.equal(DesktopUpdates.resolveMockUpdateMode({ provider: "generic", url }), true, url);
+    }
+  });
+
+  it("ignores generic feeds that are not loopback", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({
+        provider: "generic",
+        url: "https://updates.example.com",
+      }),
+      false,
+    );
+  });
+
+  it("ignores non-generic providers even on loopback", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({
+        provider: "github",
+        url: "http://localhost:3000",
+      }),
+      false,
+    );
+  });
+
+  it("ignores missing provider or url", () => {
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({ provider: undefined, url: undefined }),
+      false,
+    );
+    assert.equal(
+      DesktopUpdates.resolveMockUpdateMode({ provider: "generic", url: undefined }),
+      false,
+    );
+  });
+});
 
 describe("DesktopUpdates", () => {
   it.effect("configures the updater and runs startup checks on the test clock", () => {
@@ -281,6 +355,38 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("uses the dev channel and accepts dev candidates when the feed is a local mock", () => {
+    const resourcesPath = `/tmp/t3-desktop-mock-feed-${process.pid}`;
+    const harness = makeHarness({ platform: "darwin", resourcesPath });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        yield* fileSystem.makeDirectory(resourcesPath, { recursive: true });
+        yield* fileSystem.writeFileString(
+          `${resourcesPath}/app-update.yml`,
+          "provider: generic\nurl: http://localhost:3000\nchannel: dev\n",
+        );
+
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        // The packaged dev manifest is dev-mac.yml, so the updater must request
+        // the "dev" channel rather than the contract default ("latest").
+        assert.equal(harness.lastChannel(), "dev");
+
+        // A -dev candidate would be rejected on the latest channel; mock mode
+        // must accept it so the local update flow completes.
+        harness.emit("update-available", { version: "0.0.2-dev" });
+        yield* flushCallbacks;
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "available");
+        assert.equal(state.availableVersion, "0.0.2-dev");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("persists channel changes through the settings service", () => {
     const harness = makeHarness();
 
@@ -346,6 +452,35 @@ describe("DesktopUpdates", () => {
     },
   );
 
+  it.effect("installs a staged update after a retryable updater error", () => {
+    const harness = makeHarness({ platform: "darwin" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        harness.emit("error", new Error("previous install handoff failed"));
+        yield* flushCallbacks;
+
+        const erroredState = yield* updates.getState;
+        assert.equal(erroredState.status, "error");
+        assert.equal(erroredState.downloadedVersion, "1.2.4");
+
+        const result = yield* updates.install;
+
+        assert.equal(result.accepted, true);
+        assert.equal(result.completed, false);
+        assert.deepEqual(harness.quitAndInstallCalls(), [
+          { isSilent: false, isForceRunAfter: true },
+        ]);
+        assert.equal(harness.backendStopCount(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("keeps silent update installs limited to Windows", () => {
     const harness = makeHarness({ platform: "win32" });
 
@@ -366,6 +501,69 @@ describe("DesktopUpdates", () => {
         ]);
         assert.equal(harness.backendStopCount(), 1);
         assert.equal(harness.destroyAllCount(), 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("restarts the backend when quitAndInstall fails so it is not left dead", () => {
+    const harness = makeHarness({
+      platform: "darwin",
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({ cause: "boom" }),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        const backendStartsAfterConfigure = harness.backendStartCount();
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+
+        // The install was attempted (backend stopped, quitAndInstall called) but
+        // failed; the backend must be restarted instead of left dead.
+        assert.equal(result.accepted, true);
+        assert.equal(result.completed, false);
+        assert.equal(harness.backendStopCount(), 1);
+        assert.equal(harness.backendStartCount() - backendStartsAfterConfigure, 1);
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "downloaded");
+        assert.equal(state.errorContext, "install");
+        assert.equal(state.canRetry, true);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("restarts the backend when the install fails via an async updater error", () => {
+    const harness = makeHarness({ platform: "darwin" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        const backendStartsAfterConfigure = harness.backendStartCount();
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        // quitAndInstall returns, but the install then fails asynchronously via
+        // the updater "error" event while the install is still in flight.
+        const result = yield* updates.install;
+        assert.equal(result.accepted, true);
+        harness.emit("error", new Error("install relaunch failed"));
+        yield* flushCallbacks;
+
+        assert.equal(harness.backendStopCount(), 1);
+        assert.equal(harness.backendStartCount() - backendStartsAfterConfigure, 1);
+
+        const state = yield* updates.getState;
+        assert.equal(state.errorContext, "install");
+        assert.equal(state.canRetry, true);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

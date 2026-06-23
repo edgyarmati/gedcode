@@ -80,6 +80,22 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("allows overriding the app version in desktop development", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {},
+        {
+          VITE_DEV_SERVER_URL: "http://localhost:5173",
+          T3CODE_DESKTOP_APP_VERSION_OVERRIDE: " 0.1.0 ",
+        },
+      );
+
+      assert.equal(environment.isDevelopment, true);
+      assert.equal(environment.appVersion, "0.1.0");
+      assert.equal(environment.defaultDesktopSettings.updateChannel, "latest");
+    }),
+  );
+
   it.effect("derives production state paths under userdata", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(
