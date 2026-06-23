@@ -10,16 +10,9 @@ import { useShallow } from "zustand/react/shallow";
 
 import { Badge } from "../ui/badge";
 import { selectTaskStageHistoryByRef, useStore, type ScopedTaskRef } from "../../store";
+import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 type StageStatusVariant = "info" | "success" | "warning";
-
-const STAGE_ROLE_LABELS: Record<OrchestrationStageRole, string> = {
-  classify: "Classify",
-  plan: "Plan",
-  review: "Review",
-  work: "Work",
-  verify: "Verify",
-};
 
 const STAGE_STATUS_DISPLAY: Record<
   OrchestrationStageHistoryStatus,

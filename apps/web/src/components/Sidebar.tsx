@@ -124,6 +124,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Input } from "./ui/input";
+import { ProjectOrchestrationSettingsDialog } from "./orchestrator/ProjectOrchestrationSettingsDialog";
 import {
   Menu,
   MenuGroup,
@@ -1083,6 +1084,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const [projectGroupingSelection, setProjectGroupingSelection] = useState<
     SidebarProjectGroupingMode | "inherit"
   >("inherit");
+  const [projectOrchestrationTarget, setProjectOrchestrationTarget] =
+    useState<SidebarProjectGroupMember | null>(null);
   const renamingCommittedRef = useRef(false);
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
   const confirmArchiveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -1290,6 +1293,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     setProjectRenameTitle(member.name);
   }, []);
 
+  const openProjectOrchestrationDialog = useCallback((member: SidebarProjectGroupMember) => {
+    setProjectOrchestrationTarget(member);
+  }, []);
+
+  const closeProjectOrchestrationDialog = useCallback(() => {
+    setProjectOrchestrationTarget(null);
+  }, []);
+
   const openProjectGroupingDialog = useCallback(
     (member: SidebarProjectGroupMember) => {
       const overrideKey = deriveProjectGroupingOverrideKey(member);
@@ -1448,7 +1459,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "orchestration" | "copy-path" | "delete",
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1463,6 +1474,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 return;
               case "grouping":
                 openProjectGroupingDialog(member);
+                return;
+              case "orchestration":
+                openProjectOrchestrationDialog(member);
                 return;
               case "copy-path":
                 copyPathToClipboard(member.cwd, { path: member.cwd });
@@ -1481,7 +1495,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "orchestration" | "copy-path" | "delete",
           label: string,
           options?: {
             destructive?: boolean;
@@ -1515,6 +1529,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           [
             buildTargetedItem("rename", "Rename project"),
             buildTargetedItem("grouping", "Project grouping…"),
+            buildTargetedItem("orchestration", "Orchestration settings…"),
             buildTargetedItem("copy-path", "Copy Project Path"),
             buildTargetedItem("delete", "Remove project", {
               destructive: true,
@@ -1537,6 +1552,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       copyPathToClipboard,
       handleRemoveProject,
       openProjectGroupingDialog,
+      openProjectOrchestrationDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
@@ -2246,6 +2262,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           </DialogFooter>
         </DialogPopup>
       </Dialog>
+
+      <ProjectOrchestrationSettingsDialog
+        target={projectOrchestrationTarget}
+        onClose={closeProjectOrchestrationDialog}
+      />
     </>
   );
 });
