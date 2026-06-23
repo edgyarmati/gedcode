@@ -61,10 +61,15 @@ import {
   type PmRuntimeShape,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
-import { makePiAgentAdapter } from "../pi/PiAgentAdapter.ts";
+import {
+  makePiAgentAdapter,
+  type PiAgentAdapterOptions,
+  type PiAgentAdapterShape,
+} from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { resolvePiApiKey, resolvePiModel, resolvePiProvider } from "../pi/PmModelResolver.ts";
@@ -96,6 +101,12 @@ type SettlementEnvelope = {
 
 export interface PmRuntimeLiveOptions {
   readonly reconciliationIntervalMsOverride?: number;
+}
+
+export interface PiProjectRuntimeFactoryOptions {
+  readonly makePiAgentAdapterOverride?: (
+    options: PiAgentAdapterOptions,
+  ) => Effect.Effect<PiAgentAdapterShape, never, never>;
 }
 
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
@@ -138,6 +149,16 @@ const findSettlementEvent = (
 
 const resolveProjectConfig = (project: OrchestrationProject) =>
   decodeOrchestratorConfig(project.orchestratorConfig ?? {});
+
+export const resolvePmHarnessResources = (
+  taskTypeIds: ReadonlyArray<string>,
+): PiAgentAdapterOptions["resources"] | undefined => {
+  const skills = taskTypeIds
+    .map((taskTypeId) => defaultPlaybookLoader.resolve(taskTypeId)?.skill)
+    .filter((skill) => skill !== undefined);
+
+  return skills.length > 0 ? { skills } : undefined;
+};
 
 const gateResultMessage = (input: {
   readonly event: Extract<SettlementEvent, { type: "task.gate-resolved" }>;
@@ -924,162 +945,169 @@ export const makePmRuntimeLive = (options?: PmRuntimeLiveOptions) =>
 
 export const PmRuntimeLive = makePmRuntimeLive();
 
-export const makePiProjectRuntimeFactory = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const tools = yield* makePmTools;
-  const orchestrationEngine = yield* OrchestrationEngineService;
-  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
-  const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
-  const runtimeScope = yield* Scope.make("sequential");
-  yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
-  const runtimes = new Map<string, PmProjectRuntime>();
+export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntimeFactoryOptions) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const tools = yield* makePmTools;
+    const orchestrationEngine = yield* OrchestrationEngineService;
+    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+    const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
+    const runtimeScope = yield* Scope.make("sequential");
+    yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
+    const runtimes = new Map<string, PmProjectRuntime>();
 
-  const getOrCreate: PmProjectRuntimeFactoryShape["getOrCreate"] = (project) =>
-    Effect.gen(function* () {
-      const key = String(project.id);
-      const existing = runtimes.get(key);
-      if (existing !== undefined) {
-        return existing;
-      }
+    const getOrCreate: PmProjectRuntimeFactoryShape["getOrCreate"] = (project) =>
+      Effect.gen(function* () {
+        const key = String(project.id);
+        const existing = runtimes.get(key);
+        if (existing !== undefined) {
+          return existing;
+        }
 
-      const config = resolveProjectConfig(project);
-      if (Option.isNone(config) || config.value.enabled !== true) {
-        return yield* makeNoPmRuntimeError(
-          `Orchestrator mode is not enabled for project '${project.id}'.`,
-        );
-      }
-      const pmModelSelection = config.value.pmModelSelection;
-      if (pmModelSelection === null) {
-        return yield* makeNoPmRuntimeError(
-          `Project '${project.id}' has no PM model selection configured.`,
-        );
-      }
+        const config = resolveProjectConfig(project);
+        if (Option.isNone(config) || config.value.enabled !== true) {
+          return yield* makeNoPmRuntimeError(
+            `Orchestrator mode is not enabled for project '${project.id}'.`,
+          );
+        }
+        const pmModelSelection = config.value.pmModelSelection;
+        if (pmModelSelection === null) {
+          return yield* makeNoPmRuntimeError(
+            `Project '${project.id}' has no PM model selection configured.`,
+          );
+        }
 
-      const provider = resolvePiProvider(String(pmModelSelection.instanceId));
-      const model = resolvePiModel(provider, pmModelSelection.model);
-      if (model === undefined) {
-        return yield* makeNoPmRuntimeError(
-          `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
-        );
-      }
-      const apiKey = resolvePiApiKey(provider);
-      if (apiKey === undefined) {
-        return yield* makeNoPmRuntimeError(
-          `No PM API key is configured for provider '${provider}'.`,
-        );
-      }
+        const provider = resolvePiProvider(String(pmModelSelection.instanceId));
+        const model = resolvePiModel(provider, pmModelSelection.model);
+        if (model === undefined) {
+          return yield* makeNoPmRuntimeError(
+            `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
+          );
+        }
+        const apiKey = resolvePiApiKey(provider);
+        if (apiKey === undefined) {
+          return yield* makeNoPmRuntimeError(
+            `No PM API key is configured for provider '${provider}'.`,
+          );
+        }
 
-      const sessionStorage = yield* makeSqliteSessionStorage({
-        sessionId: `pm:${project.id}`,
-        metadata: {
-          projectId: String(project.id),
-          workspaceRoot: project.workspaceRoot,
-        },
-        createdAt: project.createdAt,
-      }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-      const repairedToolCallCount = yield* repairDanglingToolCalls({
-        storage: sessionStorage,
-        reason: "pm-runtime-startup",
-      });
-      if (repairedToolCallCount > 0) {
-        yield* Effect.logInfo("PM session dangling tool calls repaired", {
-          projectId: String(project.id),
-          repairedToolCallCount,
+        const sessionStorage = yield* makeSqliteSessionStorage({
+          sessionId: `pm:${project.id}`,
+          metadata: {
+            projectId: String(project.id),
+            workspaceRoot: project.workspaceRoot,
+          },
+          createdAt: project.createdAt,
+        }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+        const repairedToolCallCount = yield* repairDanglingToolCalls({
+          storage: sessionStorage,
+          reason: "pm-runtime-startup",
         });
-      }
-      const adapter = yield* makePiAgentAdapter({
-        env: makeDenyingExecutionEnv(project.workspaceRoot),
-        sessionStorage,
-        model,
-        tools,
-        systemPrompt: PM_SYSTEM_PROMPT,
-        getApiKeyAndHeaders: async () => ({ apiKey }),
-      });
-      const eventProjection = yield* makePmEventProjectionRuntime({
-        project,
-        pmModelSelection,
-        events: adapter.events,
-      }).pipe(
-        Effect.provideService(OrchestrationEngineService, orchestrationEngine),
-        Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
-        Scope.provide(runtimeScope),
-      );
-      const pmProviderInstanceId = pmModelSelection.instanceId;
-      const pmThreadId = pmThreadIdForProject(project);
-      const queue = yield* makePmReEntryQueue(adapter, {
-        // Detect PM-instance quota exhaustion from the PM's own failed turn. The
-        // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
-        // provider event), so it bypasses the ingestion-path detection that marks
-        // worker instances blocked — we classify it here and mark the PM instance
-        // blocked so the re-entry gate holds subsequent turns rather than hammering
-        // a dry PM.
-        onTurnError: (error) =>
-          Effect.gen(function* () {
-            const causeText =
-              error.cause instanceof Error
-                ? error.cause.message
-                : typeof error.cause === "string"
-                  ? error.cause
-                  : "";
-            const message = `${error.detail} ${causeText}`.trim();
-            if (
-              classifyRuntimeErrorClass({ message, fallback: "provider_error" }) !== "rate_limit"
-            ) {
-              return;
-            }
-            const updatedAt = DateTime.formatIso(yield* DateTime.now);
-            yield* providerQuotaStatusRepository
-              .markBlocked({ providerInstanceId: pmProviderInstanceId, resetAt: null, updatedAt })
-              .pipe(Effect.ignore);
-            // Surface the pause in the PM conversation timeline (WP-Q7 option A):
-            // PmConversation renders thread activities, so this calm info-tone
-            // marker shows live as "Paused — <backend> usage limit reached".
-            // Best-effort — a failed marker must never mask the original turn error.
-            yield* orchestrationEngine
-              .dispatch({
-                type: "thread.activity.append",
-                commandId: pmQuotaPausedActivityCommandId(pmThreadId, updatedAt),
-                threadId: pmThreadId,
-                activity: {
-                  id: pmQuotaPausedActivityId(pmThreadId, updatedAt),
-                  tone: "info",
-                  kind: "quota.paused",
-                  summary: `Paused — ${pmProviderInstanceId} usage limit reached`,
-                  payload: { providerInstanceId: pmProviderInstanceId, resetAt: null },
-                  turnId: null,
+        if (repairedToolCallCount > 0) {
+          yield* Effect.logInfo("PM session dangling tool calls repaired", {
+            projectId: String(project.id),
+            repairedToolCallCount,
+          });
+        }
+        const resources = resolvePmHarnessResources(
+          config.value.taskTypes.map((taskType) => taskType.id),
+        );
+        const adapter = yield* (options?.makePiAgentAdapterOverride ?? makePiAgentAdapter)({
+          env: makeDenyingExecutionEnv(project.workspaceRoot),
+          sessionStorage,
+          model,
+          tools,
+          ...(resources !== undefined ? { resources } : {}),
+          systemPrompt: PM_SYSTEM_PROMPT,
+          getApiKeyAndHeaders: async () => ({ apiKey }),
+        });
+        const eventProjection = yield* makePmEventProjectionRuntime({
+          project,
+          pmModelSelection,
+          events: adapter.events,
+        }).pipe(
+          Effect.provideService(OrchestrationEngineService, orchestrationEngine),
+          Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
+          Scope.provide(runtimeScope),
+        );
+        const pmProviderInstanceId = pmModelSelection.instanceId;
+        const pmThreadId = pmThreadIdForProject(project);
+        const queue = yield* makePmReEntryQueue(adapter, {
+          // Detect PM-instance quota exhaustion from the PM's own failed turn. The
+          // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
+          // provider event), so it bypasses the ingestion-path detection that marks
+          // worker instances blocked — we classify it here and mark the PM instance
+          // blocked so the re-entry gate holds subsequent turns rather than hammering
+          // a dry PM.
+          onTurnError: (error) =>
+            Effect.gen(function* () {
+              const causeText =
+                error.cause instanceof Error
+                  ? error.cause.message
+                  : typeof error.cause === "string"
+                    ? error.cause
+                    : "";
+              const message = `${error.detail} ${causeText}`.trim();
+              if (
+                classifyRuntimeErrorClass({ message, fallback: "provider_error" }) !== "rate_limit"
+              ) {
+                return;
+              }
+              const updatedAt = DateTime.formatIso(yield* DateTime.now);
+              yield* providerQuotaStatusRepository
+                .markBlocked({ providerInstanceId: pmProviderInstanceId, resetAt: null, updatedAt })
+                .pipe(Effect.ignore);
+              // Surface the pause in the PM conversation timeline (WP-Q7 option A):
+              // PmConversation renders thread activities, so this calm info-tone
+              // marker shows live as "Paused — <backend> usage limit reached".
+              // Best-effort — a failed marker must never mask the original turn error.
+              yield* orchestrationEngine
+                .dispatch({
+                  type: "thread.activity.append",
+                  commandId: pmQuotaPausedActivityCommandId(pmThreadId, updatedAt),
+                  threadId: pmThreadId,
+                  activity: {
+                    id: pmQuotaPausedActivityId(pmThreadId, updatedAt),
+                    tone: "info",
+                    kind: "quota.paused",
+                    summary: `Paused — ${pmProviderInstanceId} usage limit reached`,
+                    payload: { providerInstanceId: pmProviderInstanceId, resetAt: null },
+                    turnId: null,
+                    createdAt: updatedAt,
+                  },
                   createdAt: updatedAt,
+                })
+                .pipe(
+                  Effect.catch((activityError) =>
+                    Effect.logWarning("failed to append PM quota-paused activity", {
+                      projectId: String(project.id),
+                      error: activityError,
+                    }),
+                  ),
+                );
+              yield* Effect.logWarning(
+                "PM provider instance marked quota-blocked after failed turn",
+                {
+                  projectId: String(project.id),
+                  providerInstanceId: String(pmProviderInstanceId),
                 },
-                createdAt: updatedAt,
-              })
-              .pipe(
-                Effect.catch((activityError) =>
-                  Effect.logWarning("failed to append PM quota-paused activity", {
-                    projectId: String(project.id),
-                    error: activityError,
-                  }),
-                ),
               );
-            yield* Effect.logWarning(
-              "PM provider instance marked quota-blocked after failed turn",
-              {
-                projectId: String(project.id),
-                providerInstanceId: String(pmProviderInstanceId),
-              },
-            );
-          }),
+            }),
+        });
+        const runtime: PmProjectRuntime = {
+          enqueue: queue.enqueue,
+          drain: queue.drain.pipe(Effect.andThen(eventProjection.drain)),
+        };
+        runtimes.set(key, runtime);
+        return runtime;
       });
-      const runtime: PmProjectRuntime = {
-        enqueue: queue.enqueue,
-        drain: queue.drain.pipe(Effect.andThen(eventProjection.drain)),
-      };
-      runtimes.set(key, runtime);
-      return runtime;
-    });
 
-  return {
-    getOrCreate,
-  } satisfies PmProjectRuntimeFactoryShape;
-});
+    return {
+      getOrCreate,
+    } satisfies PmProjectRuntimeFactoryShape;
+  });
+
+export const makePiProjectRuntimeFactory = makePiProjectRuntimeFactoryWithOptions();
 
 export const PiProjectRuntimeFactoryLive = Layer.effect(
   PmProjectRuntimeFactory,

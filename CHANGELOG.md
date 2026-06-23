@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Wire the built-in Orchestrator `feature` playbook into the PM pi harness as a skill resource and snapshot the loader-resolved deterministic `playbookVersion` during PM classification, so tasks record the actual built-in playbook version that guided classification.
 - Internal: Add a source-agnostic Orchestrator playbook loader and bundled built-in `feature` playbook. The loader parses playbook frontmatter, maps it to the pi `Skill` shape, and produces deterministic `builtin:<sha256-prefix>` playbook versions without wiring the resources into the PM runtime yet.
 - UI: Add a persisted task-board visibility toggle to the Orchestrator project view so the PM chat can use the full width when the board is hidden.
 - UI: Add global Orchestrator defaults under Settings → Orchestrator. Operators can set default stages, gate autonomy, resource limits, PM reconciliation cadence, worktree cleanup cadence, and the full-access worker opt-in; projects with no existing Orchestrator config now seed their project editor from those globals the first time it opens, then own their config independently.

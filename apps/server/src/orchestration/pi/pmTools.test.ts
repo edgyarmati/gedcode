@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { createEmptyReadModel } from "../projector.ts";
 import { makePmTools } from "./pmTools.ts";
 
@@ -202,5 +203,55 @@ it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.se
       role: "work",
       sequence: 1,
     });
+  }),
+);
+
+it.effect("classifyRequest snapshots the resolved built-in playbook version", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const classifyRequest = findTool(tools, "classifyRequest");
+    const resolved = defaultPlaybookLoader.resolve("feature");
+
+    const result = yield* Effect.promise(() =>
+      classifyRequest.execute("tool-classify", {
+        taskId,
+        taskType: "feature",
+        playbookVersion: "pm-supplied-version",
+      }),
+    );
+
+    assert.ok(resolved);
+    assert.match(resolved.playbookVersion, /^builtin:[a-f0-9]{12}$/);
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.classify");
+    if (dispatched[0]?.type === "task.classify") {
+      assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("feature"));
+      assert.strictEqual(dispatched[0].playbookVersion, resolved.playbookVersion);
+      assert.notStrictEqual(dispatched[0].playbookVersion, "pm-supplied-version");
+    }
+    assert.deepStrictEqual(result.details, { taskId, sequence: 1 });
+  }),
+);
+
+it.effect("classifyRequest snapshots null when the task type has no playbook", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const classifyRequest = findTool(tools, "classifyRequest");
+
+    yield* Effect.promise(() =>
+      classifyRequest.execute("tool-classify-unknown", {
+        taskId,
+        taskType: "unknown",
+        playbookVersion: "pm-supplied-version",
+      }),
+    );
+
+    assert.strictEqual(dispatched[0]?.type, "task.classify");
+    if (dispatched[0]?.type === "task.classify") {
+      assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("unknown"));
+      assert.strictEqual(dispatched[0].playbookVersion, null);
+    }
   }),
 );

@@ -18,6 +18,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
+import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
@@ -144,12 +145,14 @@ export const makePmTools = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
+          const taskType = params.taskType ?? "feature";
+          const resolvedPlaybook = defaultPlaybookLoader.resolve(taskType);
           const sequence = yield* dispatch({
             type: "task.classify",
             commandId: yield* commandId("classify-request"),
             taskId,
-            taskType: TaskTypeId.make(params.taskType ?? "feature"),
-            playbookVersion: params.playbookVersion ?? null,
+            taskType: TaskTypeId.make(taskType),
+            playbookVersion: resolvedPlaybook?.playbookVersion ?? null,
             createdAt: yield* nowIso,
           });
           return textResult(`Classified task ${taskId}.`, { taskId, sequence });

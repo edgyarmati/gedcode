@@ -15,7 +15,9 @@ import {
   type OrchestrationTask,
   type OrchestrationThread,
 } from "@t3tools/contracts";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { assert, describe, it } from "@effect/vitest";
+import { NodeServices } from "@effect/platform-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
@@ -37,7 +39,9 @@ import {
   type MarkPmSettlementActedInput,
   type PmConsumedSettlement,
 } from "../../persistence/Services/PmRuntimeState.ts";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -45,8 +49,13 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import type { PiAgentAdapterOptions } from "../pi/PiAgentAdapter.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
-import { makePmRuntimeLive } from "./PmRuntime.ts";
+import {
+  makePiProjectRuntimeFactoryWithOptions,
+  makePmRuntimeLive,
+  resolvePmHarnessResources,
+} from "./PmRuntime.ts";
 
 const now = "2026-06-14T10:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -426,6 +435,94 @@ const makeLayer = (input: {
   );
 };
 
+const makeFactoryCaptureLayer = () =>
+  Layer.mergeAll(
+    SqlitePersistenceMemory,
+    NodeServices.layer,
+    Layer.mock(OrchestrationEngineService)({
+      readEvents: () => Stream.empty,
+      dispatch: () => Effect.succeed({ sequence: 1 }),
+      streamDomainEvents: Stream.empty,
+      streamShellEvents: Stream.empty,
+    }),
+    Layer.mock(ProjectionSnapshotQuery)({
+      getCommandReadModel: () => Effect.succeed(readModel),
+      getSnapshot: () => Effect.succeed(readModel),
+      getShellSnapshot: () =>
+        Effect.succeed({
+          snapshotSequence: 0,
+          projects: [],
+          threads: [],
+          updatedAt: now,
+        }),
+      getArchivedShellSnapshot: () =>
+        Effect.succeed({
+          snapshotSequence: 0,
+          projects: [],
+          threads: [],
+          updatedAt: now,
+        }),
+      getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+      getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+      getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+      getProjectShellById: () => Effect.succeed(Option.none()),
+      getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+      getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+      getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+      getThreadShellById: () => Effect.succeed(Option.none()),
+      getThreadDetailById: () => Effect.succeed(Option.none()),
+    }),
+    Layer.succeed(ProviderQuotaStatusRepository, {
+      upsert: () =>
+        Effect.succeed({
+          providerInstanceId: ProviderInstanceId.make("openai"),
+          previousStatus: null,
+          nextStatus: "ok" as const,
+          resetAt: null,
+        }),
+      markBlocked: ({ providerInstanceId, resetAt }) =>
+        Effect.succeed({
+          providerInstanceId,
+          previousStatus: null,
+          nextStatus: resetAt === null ? ("blocked-unknown" as const) : ("blocked-until" as const),
+          resetAt,
+        }),
+      observeRuntimeStatus: () => Effect.succeed(Option.none()),
+      getByProviderInstanceId: () => Effect.succeed(Option.none()),
+      isInstanceQuotaBlocked: ({ providerInstanceId }) =>
+        Effect.succeed({
+          providerInstanceId,
+          status: "ok" as const,
+          blocked: false,
+          resetAt: null,
+        }),
+      listBlocked: () => Effect.succeed([]),
+    }),
+  );
+
+const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
+  ((options: PiAgentAdapterOptions) =>
+    Effect.sync(() => {
+      captured.push(options);
+      return {
+        events: Stream.empty,
+        isIdle: Effect.succeed(true),
+        waitForIdle: Effect.void,
+        prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+        followUp: () => Effect.void,
+        compact: () =>
+          Effect.succeed({
+            summary: "summary",
+            firstKeptEntryId: "entry-1",
+            tokensBefore: 1,
+          }),
+        setResources: () => Effect.void,
+        abort: Effect.void,
+      };
+    })) satisfies NonNullable<
+    Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+  >["makePiAgentAdapterOverride"];
+
 const counterCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: string): number => {
   const snapshot = snapshots.find(
     (entry): entry is Extract<Metric.Metric.Snapshot, { readonly type: "Counter" }> =>
@@ -443,6 +540,52 @@ const histogramCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: st
 };
 
 describe("PmRuntime", () => {
+  it.effect("constructs the PM adapter with the built-in feature playbook skill", () =>
+    Effect.gen(function* () {
+      const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = "test-openai-key";
+      const captured: PiAgentAdapterOptions[] = [];
+
+      try {
+        yield* Effect.gen(function* () {
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+          });
+          yield* factory.getOrCreate({
+            ...project,
+            orchestratorConfig: {
+              enabled: true,
+              pmModelSelection: {
+                instanceId: ProviderInstanceId.make("openai"),
+                model: "gpt-5",
+              },
+            },
+          });
+        }).pipe(Effect.scoped, Effect.provide(makeFactoryCaptureLayer()));
+      } finally {
+        if (previousOpenAiApiKey === undefined) {
+          delete process.env.OPENAI_API_KEY;
+        } else {
+          process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+        }
+      }
+
+      const resolved = defaultPlaybookLoader.resolve("feature");
+      assert.ok(resolved);
+      assert.strictEqual(captured.length, 1);
+      assert.deepStrictEqual(captured[0]?.resources?.skills, [resolved.skill]);
+      assert.strictEqual(captured[0]?.resources?.skills?.[0]?.name, resolved.skill.name);
+      assert.strictEqual(
+        captured[0]?.resources?.skills?.[0]?.description,
+        resolved.skill.description,
+      );
+    }),
+  );
+
+  it("omits PM harness resources when no configured playbook resolves", () => {
+    assert.strictEqual(resolvePmHarnessResources(["unknown"]), undefined);
+  });
+
   it.effect("records reconciliation sweep and PM re-entry durability metrics", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
