@@ -1,5 +1,7 @@
 import { calculateContextTokens, shouldCompact } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
+import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
@@ -7,6 +9,8 @@ import * as Semaphore from "effect/Semaphore";
 import { increment, orchestrationPmCompactionsTotal } from "../../observability/Metrics.ts";
 import type { PmRuntimeError } from "./Errors.ts";
 import type { PiAgentAdapterShape } from "./PiAgentAdapter.ts";
+
+export const PM_COMPACTION_TIMEOUT = Duration.minutes(5);
 
 export type PmReEntryQueueShape = {
   readonly enqueue: (message: string) => Effect.Effect<void>;
@@ -64,6 +68,7 @@ export const makePmReEntryQueue = (
       if (!shouldCompact(contextTokens, autoCompaction.contextWindow, settings)) return;
 
       yield* adapter.compact(autoCompaction.customInstructions).pipe(
+        Effect.timeout(PM_COMPACTION_TIMEOUT),
         Effect.tap((result) =>
           Effect.gen(function* () {
             yield* increment(orchestrationPmCompactionsTotal, {});
@@ -74,11 +79,12 @@ export const makePmReEntryQueue = (
             });
           }),
         ),
-        Effect.catch((error) =>
-          Effect.logWarning("PM auto-compaction failed", {
+        Effect.catchCause((cause) =>
+          Effect.logWarning("PM auto-compaction failed or timed out", {
             contextTokens,
             contextWindow: autoCompaction.contextWindow,
-            error,
+            timeoutMs: Duration.toMillis(PM_COMPACTION_TIMEOUT),
+            cause: Cause.pretty(cause),
           }),
         ),
       );

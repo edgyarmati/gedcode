@@ -5,9 +5,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 
 import { PmRuntimeError } from "./Errors.ts";
-import { makePmReEntryQueue } from "./PmReEntryQueue.ts";
+import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "./PmReEntryQueue.ts";
 
 const compactResult = {
   summary: "summary",
@@ -307,6 +308,91 @@ describe("PmReEntryQueue", () => {
       const exit = yield* queue.drain.pipe(Effect.exit);
 
       assert.isTrue(Exit.isSuccess(exit));
+    }),
+  );
+
+  it.effect("times out hung post-turn compaction and releases the drain permit", () =>
+    Effect.gen(function* () {
+      const compactStarted = yield* Deferred.make<void>();
+      const prompts: string[] = [];
+      let compactCount = 0;
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: (message) =>
+            Effect.sync(() => {
+              prompts.push(message);
+            }) as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: Effect.succeed(makeUsage(81)),
+          compact: () =>
+            Effect.gen(function* () {
+              compactCount += 1;
+              if (compactCount === 1) {
+                yield* Deferred.succeed(compactStarted, void 0);
+                return yield* Effect.never;
+              }
+              return compactResult;
+            }),
+        },
+        {
+          autoCompaction: {
+            enabled: true,
+            reserveTokens: 20,
+            keepRecentTokens: 10,
+            contextWindow: 100,
+          },
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      const firstDrain = yield* queue.drain.pipe(Effect.forkChild);
+      yield* Deferred.await(compactStarted);
+      yield* TestClock.adjust(PM_COMPACTION_TIMEOUT);
+
+      const firstExit = yield* Fiber.await(firstDrain);
+      assert.isTrue(Exit.isSuccess(firstExit));
+
+      yield* queue.enqueue("next settlement");
+      yield* queue.drain;
+
+      assert.deepStrictEqual(prompts, ["stage result", "next settlement"]);
+      assert.strictEqual(compactCount, 2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("logs and continues when post-turn compaction dies with a defect", () =>
+    Effect.gen(function* () {
+      const prompts: string[] = [];
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: (message) =>
+            Effect.sync(() => {
+              prompts.push(message);
+            }) as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: Effect.succeed(makeUsage(81)),
+          compact: () =>
+            Effect.sync(() => {
+              throw new Error("compact defect");
+            }),
+        },
+        {
+          autoCompaction: {
+            enabled: true,
+            reserveTokens: 20,
+            keepRecentTokens: 10,
+            contextWindow: 100,
+          },
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      const exit = yield* queue.drain.pipe(Effect.exit);
+
+      assert.isTrue(Exit.isSuccess(exit));
+      assert.deepStrictEqual(prompts, ["stage result"]);
     }),
   );
 });
