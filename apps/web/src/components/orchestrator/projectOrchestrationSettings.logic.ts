@@ -72,6 +72,20 @@ function modelSelectionsEqual(left: ModelSelection | null, right: ModelSelection
   return left.instanceId === right.instanceId && left.model === right.model;
 }
 
+// The backend a per-task override would inherit for a role when left on
+// "use default": the project's per-role selection, else the project default.
+// Shown in the task override editor's "use default" option so the inherited
+// backend is visible.
+export function resolveRoleDefaultSelection(
+  role: OrchestrationStageRole,
+  project: {
+    readonly defaultModelSelection?: ModelSelection | null;
+    readonly roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
+  },
+): ModelSelection | null {
+  return project.roleModelSelections?.[role] ?? project.defaultModelSelection ?? null;
+}
+
 // True when two drafts would produce the same persisted config — used to keep
 // the Save action disabled until the editor actually changes something.
 export function orchestrationSettingsDraftsEqual(

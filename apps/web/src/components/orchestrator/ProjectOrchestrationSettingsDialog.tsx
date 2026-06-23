@@ -1,6 +1,5 @@
 import {
   ORCHESTRATION_STAGE_ROLES,
-  ProviderInstanceId,
   type EnvironmentId,
   type ModelSelection,
   type OrchestrationStageRole,
@@ -26,7 +25,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -35,11 +33,8 @@ import {
   seedOrchestrationSettingsDraft,
   type OrchestrationSettingsDraft,
 } from "./projectOrchestrationSettings.logic";
+import { RoleBackendPicker } from "./RoleBackendPicker";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
-
-// "Use the project default backend" — encoded as a sentinel because a Select
-// value must be a string and `null` selections mean "inherit the default".
-const USE_DEFAULT_VALUE = "__default__";
 
 // The project context the editor needs: identity for dispatch plus the current
 // config to seed the form. `SidebarProjectGroupMember` (which extends `Project`)
@@ -53,11 +48,6 @@ export interface ProjectOrchestrationSettingsTarget {
   readonly defaultModelSelection: ModelSelection | null;
   readonly roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
   readonly rolePromptPrefixes?: Readonly<Record<string, string>> | undefined;
-}
-
-function backendLabel(selection: ModelSelection, entry: ProviderInstanceEntry | undefined): string {
-  const instanceLabel = entry?.displayName ?? String(selection.instanceId);
-  return `${instanceLabel} · ${selection.model}`;
 }
 
 function RoleConfigRow({
@@ -77,102 +67,16 @@ function RoleConfigRow({
   onSelectionChange: (role: OrchestrationStageRole, next: ModelSelection | null) => void;
   onPrefixChange: (role: OrchestrationStageRole, next: string) => void;
 }) {
-  const selectedEntry = selection
-    ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
-    : undefined;
-  const defaultEntry = defaultSelection
-    ? instanceEntries.find((entry) => entry.instanceId === defaultSelection.instanceId)
-    : undefined;
-  const defaultOptionLabel = defaultSelection
-    ? `Use project default (${backendLabel(defaultSelection, defaultEntry)})`
-    : "Use project default";
-
-  const handleInstanceChange = useCallback(
-    (value: string | null) => {
-      if (value === null) {
-        return;
-      }
-      if (value === USE_DEFAULT_VALUE) {
-        onSelectionChange(role, null);
-        return;
-      }
-      const instanceId = ProviderInstanceId.make(value);
-      const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
-      // Preserve the model when re-selecting the same instance; otherwise adopt
-      // the instance's first model. Instances without models can't form a valid
-      // selection, so leave the role on its current value.
-      const model = selection?.instanceId === instanceId ? selection.model : entry?.models[0]?.slug;
-      if (model === undefined) {
-        return;
-      }
-      onSelectionChange(role, { instanceId, model });
-    },
-    [instanceEntries, onSelectionChange, role, selection],
-  );
-
-  const handleModelChange = useCallback(
-    (value: string | null) => {
-      if (!selection || value === null) {
-        return;
-      }
-      onSelectionChange(role, { instanceId: selection.instanceId, model: value });
-    },
-    [onSelectionChange, role, selection],
-  );
-
-  const modelOptions = selectedEntry?.models ?? [];
-  const modelInOptions = modelOptions.some((model) => model.slug === selection?.model);
-
   return (
     <div className="grid gap-2 rounded-lg border border-border bg-card p-3">
       <span className="text-sm font-medium text-foreground">{STAGE_ROLE_LABELS[role]}</span>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Select
-          value={selection ? String(selection.instanceId) : USE_DEFAULT_VALUE}
-          onValueChange={handleInstanceChange}
-        >
-          <SelectTrigger className="w-full" aria-label={`${STAGE_ROLE_LABELS[role]} backend`}>
-            <SelectValue>
-              {selection
-                ? (selectedEntry?.displayName ?? String(selection.instanceId))
-                : "Use project default"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="start" alignItemWithTrigger={false}>
-            <SelectItem hideIndicator value={USE_DEFAULT_VALUE}>
-              {defaultOptionLabel}
-            </SelectItem>
-            {instanceEntries.map((entry) => (
-              <SelectItem
-                key={String(entry.instanceId)}
-                hideIndicator
-                value={String(entry.instanceId)}
-              >
-                {entry.displayName}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        {selection ? (
-          <Select value={selection.model} onValueChange={handleModelChange}>
-            <SelectTrigger className="w-full" aria-label={`${STAGE_ROLE_LABELS[role]} model`}>
-              <SelectValue>{selection.model}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="start" alignItemWithTrigger={false}>
-              {modelInOptions ? null : (
-                <SelectItem hideIndicator value={selection.model}>
-                  {selection.model}
-                </SelectItem>
-              )}
-              {modelOptions.map((model) => (
-                <SelectItem key={model.slug} hideIndicator value={model.slug}>
-                  {model.shortName ?? model.name}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        ) : null}
-      </div>
+      <RoleBackendPicker
+        role={role}
+        selection={selection}
+        instanceEntries={instanceEntries}
+        defaultSelection={defaultSelection}
+        onSelectionChange={onSelectionChange}
+      />
       <Textarea
         aria-label={`${STAGE_ROLE_LABELS[role]} prompt prefix`}
         placeholder="Optional prompt prefix prepended to this stage's instructions"

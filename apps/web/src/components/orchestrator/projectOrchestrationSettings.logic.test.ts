@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildOrchestrationConfigUpdate,
   orchestrationSettingsDraftsEqual,
+  resolveRoleDefaultSelection,
   seedOrchestrationSettingsDraft,
   type OrchestrationSettingsDraft,
 } from "./projectOrchestrationSettings.logic";
@@ -76,6 +77,29 @@ describe("buildOrchestrationConfigUpdate", () => {
       rolePromptPrefixes: { verify: "Verify behavior." },
     };
     expect(buildOrchestrationConfigUpdate(seedOrchestrationSettingsDraft(config))).toEqual(config);
+  });
+});
+
+describe("resolveRoleDefaultSelection", () => {
+  const project = {
+    defaultModelSelection: selection("codex", "gpt-5-default"),
+    roleModelSelections: { review: selection("codex_project", "gpt-5-project") },
+  };
+
+  it("prefers the project per-role selection over the project default", () => {
+    expect(resolveRoleDefaultSelection("review", project)).toEqual(
+      selection("codex_project", "gpt-5-project"),
+    );
+  });
+
+  it("falls back to the project default when the role is unset", () => {
+    expect(resolveRoleDefaultSelection("work", project)).toEqual(
+      selection("codex", "gpt-5-default"),
+    );
+  });
+
+  it("is null when neither a role selection nor a project default exists", () => {
+    expect(resolveRoleDefaultSelection("work", { defaultModelSelection: null })).toBeNull();
   });
 });
 
