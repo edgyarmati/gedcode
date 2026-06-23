@@ -42,15 +42,34 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 ### Orchestrator mode Phase 3
 
 - Tracking issue: [#51](https://github.com/edgyarmati/gedcode/issues/51)
-- Status: In progress in this fork as of 2026-06-22.
+- Status: Complete in this fork as of 2026-06-22 (on `feat/orchestrator-mode`).
 - Notes: Fork-original multi-stage role and multi-backend work, not a
   cherry-pick from `pingdotgg/t3code`. The P1-P3 engine foundation adds
   `review`/`verify` worker roles, human-controlled per-task role model
   overrides, per-role prompt prefixes, deterministic backend/model selection,
   PM handoff support for the new roles, and a durable stage-history projection.
-  The follow-on UX/E2E lane has added the stage-timeline UI and the P7
-  full-pipeline/restart-durability integration proof; project/task configuration
-  editors remain in progress.
+  The follow-on UX/E2E lane added the stage-timeline UI and the P7
+  full-pipeline/restart-durability integration proof. Project/task configuration
+  editing was reshaped into Phase 4 (see below).
+
+### Orchestrator mode Phase 4
+
+- Tracking issue: [#59](https://github.com/edgyarmati/gedcode/issues/59)
+- Status: Complete in this fork as of 2026-06-23 (on `feat/orchestrator-mode`; not
+  yet merged to `main`).
+- Notes: Fork-original configuration, autonomy, and guidance layer over the Phase 3
+  pipeline — not a cherry-pick from `pingdotgg/t3code`. Adds a five-layer
+  `ConfigResolver`; per-gate autonomy (gates flippable to `auto`, auto-resolved by
+  the decider with a `system` origin; `land` hard-pinned to require-approval);
+  per-project stage toggles (review/verify optional, classify/plan/work mandatory)
+  with a global default that seeds new projects; a PM tool for PM-driven per-task
+  backend selection (the per-task settings dialog was removed in favor of
+  chat-driven control); PM-only built-in playbooks (a source-agnostic
+  `PlaybookLoader` + content-hash version, injected into the PM via pi
+  `setResources`); and PM context auto-compaction layered over pi's built-in
+  compaction. Deliberately NO per-task-type taxonomy and NO per-task config maps
+  (the single `feature` task type is an internal implementation detail). A full
+  E2E + restart-durability integration proof closes the phase.
 
 ## Removed Forked-In Features
 
