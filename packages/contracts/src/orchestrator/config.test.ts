@@ -69,7 +69,7 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(decoded.taskTypes).toHaveLength(1);
     const feature = decoded.taskTypes[0];
     expect(feature?.id).toBe("feature");
-    expect(feature?.stages).toEqual(["classify", "plan", "work"]);
+    expect(feature?.stages).toEqual(["classify", "plan", "review", "work", "verify"]);
     expect(feature?.gatePolicy.classify).toBe("require-approval");
     expect(feature?.gatePolicy.plan).toBe("require-approval");
     expect(feature?.gatePolicy.work).toBe("require-approval");

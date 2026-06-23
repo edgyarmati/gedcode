@@ -3,6 +3,7 @@ import {
   EventId,
   GateId,
   MessageId,
+  ORCHESTRATION_STAGE_ROLES,
   ProjectId,
   ProviderInstanceId,
   TaskId,
@@ -325,6 +326,73 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           model: "gpt-5-codex",
         },
       });
+    }),
+  );
+
+  it.effect("rejects a stage role omitted from the task type stages", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "review", currentStageThreadId: null },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                stages: ["classify", "plan", "work", "verify"],
+              },
+            ],
+          },
+        },
+      );
+
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-disabled-review"),
+            taskId: asTaskId("task-1"),
+            role: "review",
+            instructions: "Review the accepted plan.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toBe("Stage role 'review' is not enabled for task type 'feature'.");
+      }
+    }),
+  );
+
+  it.effect("allows every canonical stage role for the default task type", () =>
+    Effect.gen(function* () {
+      for (const role of ORCHESTRATION_STAGE_ROLES) {
+        const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+
+        const result = yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId(`cmd-stage-start-default-${role}`),
+            taskId: asTaskId("task-1"),
+            role,
+            instructions: `Start the ${role} stage.`,
+            createdAt: now,
+          },
+        });
+
+        const events = toEvents(result);
+        const stageStarted = events.find((event) => event.type === "task.stage-started");
+        expect(stageStarted?.type).toBe("task.stage-started");
+        expect(stageStarted?.payload).toMatchObject({
+          role,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        });
+      }
     }),
   );
 

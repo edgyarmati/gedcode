@@ -5,6 +5,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
+  ORCHESTRATION_STAGE_ROLES,
   OrchestratorProjectConfig,
   ThreadId,
   type OrchestrationCommand,
@@ -12,7 +13,7 @@ import {
   type OrchestrationProject,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
-import { resolveGatePolicy } from "@t3tools/shared/orchestrator";
+import { findTaskType, resolveGatePolicy } from "@t3tools/shared/orchestrator";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -985,6 +986,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       const config = yield* requireOrchestratorEnabled({ command, project });
+      const allowedStages = findTaskType(config, task.type)?.stages ?? ORCHESTRATION_STAGE_ROLES;
+      if (!allowedStages.includes(command.role)) {
+        return yield* invariantError(
+          command.type,
+          `Stage role '${command.role}' is not enabled for task type '${task.type}'.`,
+        );
+      }
 
       if (task.currentStageThreadId !== null) {
         return yield* invariantError(

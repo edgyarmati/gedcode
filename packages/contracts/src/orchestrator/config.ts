@@ -2,7 +2,11 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { PositiveInt } from "../baseSchemas.ts";
-import { ModelSelection, OrchestrationStageRole } from "../orchestration.ts";
+import {
+  ModelSelection,
+  ORCHESTRATION_STAGE_ROLES,
+  OrchestrationStageRole,
+} from "../orchestration.ts";
 
 /**
  * Minimal, **schema-only** HARD orchestrator config (Plan 018 WP-B; design
@@ -64,9 +68,8 @@ export type OrchestratorTaskGatePolicy = typeof OrchestratorTaskGatePolicy.Type;
 
 /**
  * One configurable task type. The slice ships a single type — `feature` —
- * whose stages reuse the existing closed `OrchestrationStageRole`
- * (`[classify, plan, work]`). Later phases extend the taxonomy (design §12,
- * Phase 4); the schema is already an array so that growth is additive.
+ * whose default stages use the full canonical pipeline. Per-type config may
+ * opt out of optional stages such as `review` and `verify`.
  */
 export const OrchestratorTaskType = Schema.Struct({
   id: Schema.Literal("feature"),
@@ -77,9 +80,7 @@ export const OrchestratorTaskType = Schema.Struct({
    * `land` is terminal. Reordering / free composition is out of scope.
    */
   stages: Schema.Array(OrchestrationStageRole).pipe(
-    Schema.withDecodingDefault(
-      Effect.succeed(["classify", "plan", "work"] as ReadonlyArray<OrchestrationStageRole>),
-    ),
+    Schema.withDecodingDefault(Effect.succeed(ORCHESTRATION_STAGE_ROLES)),
   ),
   gatePolicy: OrchestratorTaskGatePolicy.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
@@ -144,7 +145,7 @@ export const OrchestratorProjectConfig = Schema.Struct({
       Effect.succeed([
         {
           id: "feature" as const,
-          stages: ["classify", "plan", "work"] as ReadonlyArray<OrchestrationStageRole>,
+          stages: ORCHESTRATION_STAGE_ROLES,
           gatePolicy: { plan: "require-approval" as const, land: "require-approval" as const },
         },
       ]),
