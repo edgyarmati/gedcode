@@ -496,9 +496,10 @@ export const OrchestrationGateKind = Schema.Literals([
 export type OrchestrationGateKind = typeof OrchestrationGateKind.Type;
 
 /**
- * Origin actor for a gate resolution. The decider (WP-E) accepts only
- * `human`/`client` origins and **rejects `pm-runtime`** so the LLM-driven PM
- * cannot self-approve its own gates.
+ * Origin actor for a gate resolution. `system` is reserved for internally
+ * emitted engine decisions. The decider (WP-E) accepts only `human`/`client`
+ * origins from external commands and **rejects `pm-runtime`** so the LLM-driven
+ * PM cannot self-approve its own gates.
  */
 export const OrchestrationGateResolutionOrigin = Schema.Literals([
   "human",

@@ -13,6 +13,7 @@ import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationGateResolutionOrigin,
   OrchestrationStageHistory,
   OrchestrationStageRole,
   OrchestrationTaskStatus,
@@ -61,6 +62,7 @@ const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixe
 const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory);
 const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
 const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
+const decodeGateResolutionOrigin = Schema.decodeUnknownEffect(OrchestrationGateResolutionOrigin);
 const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
   OrchestratorSetTaskRoleSelectionsInput,
 );
@@ -811,6 +813,13 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
       }),
     );
     assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes system gate-resolution origin for internal engine decisions", () =>
+  Effect.gen(function* () {
+    const origin = yield* decodeGateResolutionOrigin("system");
+    assert.strictEqual(origin, "system");
   }),
 );
 

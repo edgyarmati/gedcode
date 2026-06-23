@@ -25,7 +25,7 @@ import { ModelSelection, OrchestrationStageRole } from "../orchestration.ts";
  */
 
 /**
- * Per-gate policy for the slice's gates. `require-approval` means a
+ * Per-gate policy for task gates. `require-approval` means a
  * human/client-origin `task.gate.resolve` is required (the decider rejects
  * PM-runtime origin — WP-E); `auto` lets the engine resolve the gate without a
  * human. The `land` gate is hard-pinned to `require-approval` (design §7) — the
@@ -34,17 +34,29 @@ import { ModelSelection, OrchestrationStageRole } from "../orchestration.ts";
 export const OrchestratorGatePolicy = Schema.Literals(["auto", "require-approval"]);
 export type OrchestratorGatePolicy = typeof OrchestratorGatePolicy.Type;
 
+export const OrchestratorLandGatePolicy = Schema.Literal("require-approval");
+export type OrchestratorLandGatePolicy = typeof OrchestratorLandGatePolicy.Type;
+
 /**
- * Gate policy for a task type. The slice guards exactly two gates:
- * `plan` (default `require-approval`) and `land` (hard-pinned
- * `require-approval`). Both default to `require-approval` so a config that
- * omits them is safe-by-default.
+ * Gate policy for a task type. `classify`, `plan`, `work`, and `review` may be
+ * `auto` or `require-approval`. `land` is hard-pinned to `require-approval`.
+ * Every gate defaults to `require-approval` so a config that omits gate policy
+ * is safe-by-default.
  */
 export const OrchestratorTaskGatePolicy = Schema.Struct({
+  classify: OrchestratorGatePolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
+  ),
   plan: OrchestratorGatePolicy.pipe(
     Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
   ),
-  land: OrchestratorGatePolicy.pipe(
+  work: OrchestratorGatePolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
+  ),
+  review: OrchestratorGatePolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
+  ),
+  land: OrchestratorLandGatePolicy.pipe(
     Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
   ),
 });
@@ -58,6 +70,12 @@ export type OrchestratorTaskGatePolicy = typeof OrchestratorTaskGatePolicy.Type;
  */
 export const OrchestratorTaskType = Schema.Struct({
   id: Schema.Literal("feature"),
+  /**
+   * Locked invariant: the stage list follows canonical order
+   * `classify → plan → [review] → work → [verify] → land`; `classify`/`plan`/
+   * `work` are mandatory, `review` and `verify` are individually optional,
+   * `land` is terminal. Reordering / free composition is out of scope.
+   */
   stages: Schema.Array(OrchestrationStageRole).pipe(
     Schema.withDecodingDefault(
       Effect.succeed(["classify", "plan", "work"] as ReadonlyArray<OrchestrationStageRole>),

@@ -10,11 +10,13 @@ import {
   DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES,
   OrchestratorGlobalDefaults,
   OrchestratorProjectConfig,
+  OrchestratorTaskGatePolicy,
 } from "./config.ts";
 
 const decodeProjectConfig = Schema.decodeUnknownSync(OrchestratorProjectConfig);
 const encodeProjectConfig = Schema.encodeSync(OrchestratorProjectConfig);
 const decodeGlobalDefaults = Schema.decodeUnknownSync(OrchestratorGlobalDefaults);
+const decodeTaskGatePolicy = Schema.decodeUnknownSync(OrchestratorTaskGatePolicy);
 
 describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design §7)", () => {
   it("defaults allowFullAccessWorkers to false (the runtime-mode clamp anchor)", () => {
@@ -68,7 +70,10 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     const feature = decoded.taskTypes[0];
     expect(feature?.id).toBe("feature");
     expect(feature?.stages).toEqual(["classify", "plan", "work"]);
+    expect(feature?.gatePolicy.classify).toBe("require-approval");
     expect(feature?.gatePolicy.plan).toBe("require-approval");
+    expect(feature?.gatePolicy.work).toBe("require-approval");
+    expect(feature?.gatePolicy.review).toBe("require-approval");
     expect(feature?.gatePolicy.land).toBe("require-approval");
   });
 
@@ -78,6 +83,28 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(DEFAULT_MAX_PARALLEL_WORKERS);
     expect(decoded.resourceLimits.maxStageHandoffs).toBe(DEFAULT_MAX_STAGE_HANDOFFS);
     expect(decoded.resourceLimits.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
+  });
+});
+
+describe("OrchestratorTaskGatePolicy", () => {
+  it("rejects auto policy for the terminal land gate", () => {
+    expect(() => decodeTaskGatePolicy({ land: "auto" })).toThrow();
+  });
+
+  it("accepts per-gate auto and require-approval policy before land", () => {
+    const decoded = decodeTaskGatePolicy({
+      classify: "auto",
+      plan: "require-approval",
+      work: "auto",
+      review: "require-approval",
+      land: "require-approval",
+    });
+
+    expect(decoded.classify).toBe("auto");
+    expect(decoded.plan).toBe("require-approval");
+    expect(decoded.work).toBe("auto");
+    expect(decoded.review).toBe("require-approval");
+    expect(decoded.land).toBe("require-approval");
   });
 });
 
@@ -96,7 +123,13 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
         {
           id: "feature",
           stages: ["classify", "plan", "work"],
-          gatePolicy: { plan: "auto", land: "require-approval" },
+          gatePolicy: {
+            classify: "require-approval",
+            plan: "auto",
+            work: "auto",
+            review: "require-approval",
+            land: "require-approval",
+          },
         },
       ],
       resourceLimits: {
@@ -115,7 +148,10 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.enabled).toBe(true);
     expect(reDecoded.pmModelSelection?.instanceId).toBe("codex");
     expect(reDecoded.pmModelSelection?.model).toBe("gpt-5.5");
+    expect(reDecoded.taskTypes[0]?.gatePolicy.classify).toBe("require-approval");
     expect(reDecoded.taskTypes[0]?.gatePolicy.plan).toBe("auto");
+    expect(reDecoded.taskTypes[0]?.gatePolicy.work).toBe("auto");
+    expect(reDecoded.taskTypes[0]?.gatePolicy.review).toBe("require-approval");
     expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
     expect(reDecoded.resourceLimits.allowFullAccessWorkers).toBe(true);
   });
