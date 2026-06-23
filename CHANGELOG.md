@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Make server-side Orchestrator global defaults live in the decider. Sparse project config now resolves guarded stages, gate policies, and resource limits as project-explicit value -> `ServerSettings.orchestratorDefaults` -> safe constant, while fully configured projects continue to use their own values.
 - Fix: Apply Orchestrator PM model changes to a running PM immediately when the provider instance is unchanged, compacting first and serializing the switch through the PM re-entry queue; provider-instance changes now safely invalidate the cached PM runtime so the next use rebuilds with the new backend.
 - Fix: Bound Orchestrator PM auto-compaction with a five-minute timeout and swallow typed failures, defects, and timeouts so a stuck compaction cannot stall PM re-entry settlement.
 - Fix: Allow persisted Orchestrator `task.role-selections-updated` events to decode `pm-runtime` origins, matching the Phase 4 decider path that lets the PM set per-task backend overrides while still keeping gate resolution human/client-only.

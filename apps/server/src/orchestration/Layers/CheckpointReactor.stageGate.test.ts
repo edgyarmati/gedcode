@@ -69,6 +69,7 @@ import {
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { WorkspaceEntriesLive } from "../../workspace/Layers/WorkspaceEntries.ts";
 import { WorkspacePathsLive } from "../../workspace/Layers/WorkspacePaths.ts";
 import { stageCompleteCommandId } from "../stageResolution.ts";
@@ -239,6 +240,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
+      Layer.provide(ServerSettingsService.layerTest()),
     );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(RepositoryIdentityResolverLive),

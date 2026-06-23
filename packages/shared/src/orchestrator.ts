@@ -6,6 +6,8 @@ import {
   DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
+  ORCHESTRATION_STAGE_ROLES,
+  type OrchestrationStageRole,
   type OrchestratorAutoCompactionDefaults,
   type OrchestrationGateKind,
   type OrchestratorGatePolicy,
@@ -36,10 +38,39 @@ export type OrchestratorResourceLimitGlobalDefaults = Partial<
   Pick<OrchestratorGlobalDefaults, OrchestratorResourceLimitKey>
 >;
 
+export type OrchestratorGatePolicyProjectConfig = {
+  readonly taskTypes?: ReadonlyArray<{
+    readonly id: TaskTypeId | string;
+    readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>> | null;
+  }> | null;
+};
+
+export type OrchestratorGatePolicyGlobalDefaults = {
+  readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>> | null;
+};
+
+export type OrchestratorStagesProjectConfig = {
+  readonly taskTypes?: ReadonlyArray<{
+    readonly id: TaskTypeId | string;
+    readonly stages?: ReadonlyArray<OrchestrationStageRole> | null;
+  }> | null;
+};
+
+export type OrchestratorStagesGlobalDefaults = {
+  readonly stages?: ReadonlyArray<OrchestrationStageRole> | null;
+};
+
 export interface ResolveGatePolicyInput {
-  readonly config: OrchestratorProjectConfig;
+  readonly config: OrchestratorGatePolicyProjectConfig;
+  readonly defaults?: OrchestratorGatePolicyGlobalDefaults;
   readonly taskTypeId: TaskTypeId | string;
   readonly gate: OrchestrationGateKind;
+}
+
+export interface ResolveStagesInput {
+  readonly config: OrchestratorStagesProjectConfig;
+  readonly defaults?: OrchestratorStagesGlobalDefaults;
+  readonly taskTypeId: TaskTypeId | string;
 }
 
 export interface ResolveResourceLimitInput {
@@ -94,13 +125,33 @@ export function findTaskType(
   return config.taskTypes.find((taskType) => taskType.id === typeId);
 }
 
+function findConfiguredTaskType<TTaskType extends { readonly id: TaskTypeId | string }>(
+  taskTypes: ReadonlyArray<TTaskType> | null | undefined,
+  typeId: TaskTypeId | string,
+): TTaskType | undefined {
+  return taskTypes?.find((taskType) => taskType.id === typeId);
+}
+
+export function resolveStages(input: ResolveStagesInput): ReadonlyArray<OrchestrationStageRole> {
+  return resolveConfigValue(
+    [
+      findConfiguredTaskType(input.config.taskTypes, input.taskTypeId)?.stages,
+      input.defaults?.stages,
+    ],
+    ORCHESTRATION_STAGE_ROLES,
+  );
+}
+
 export function resolveGatePolicy(input: ResolveGatePolicyInput): OrchestratorGatePolicy {
   if (input.gate === "land") {
     return "require-approval";
   }
 
   return resolveConfigValue(
-    [findTaskType(input.config, input.taskTypeId)?.gatePolicy[input.gate]],
+    [
+      findConfiguredTaskType(input.config.taskTypes, input.taskTypeId)?.gatePolicy?.[input.gate],
+      input.defaults?.gatePolicy?.[input.gate],
+    ],
     "require-approval",
   );
 }

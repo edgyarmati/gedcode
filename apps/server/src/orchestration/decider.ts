@@ -1,19 +1,26 @@
 import {
-  DEFAULT_MAX_PARALLEL_TASKS,
-  DEFAULT_MAX_RETRIES_PER_STAGE,
-  DEFAULT_MAX_STAGE_HANDOFFS,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
-  ORCHESTRATION_STAGE_ROLES,
   OrchestratorProjectConfig,
   ThreadId,
   type OrchestrationCommand,
   type OrchestrationEvent,
+  type OrchestrationGateKind,
   type OrchestrationProject,
   type OrchestrationReadModel,
+  type OrchestrationStageRole,
+  type OrchestratorConfigJson,
+  type OrchestratorGatePolicy,
+  type OrchestratorGlobalDefaults,
+  type OrchestratorResourceLimits,
 } from "@t3tools/contracts";
-import { findTaskType, resolveGatePolicy } from "@t3tools/shared/orchestrator";
+import {
+  resolveGatePolicy,
+  resolveResourceLimit,
+  resolveStages,
+  type OrchestratorResourceLimitKey,
+} from "@t3tools/shared/orchestrator";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -39,6 +46,98 @@ import { activeStageRoleForTaskStatus, prepareStageInstructions } from "./stageR
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+
+type DeciderSparseTaskTypeConfig = {
+  readonly id: string;
+  readonly stages?: ReadonlyArray<OrchestrationStageRole>;
+  readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>>;
+};
+
+type DeciderSparseResourceLimits = Partial<{
+  -readonly [Key in OrchestratorResourceLimitKey]: OrchestratorResourceLimits[Key];
+}>;
+
+type DeciderSparseProjectConfig = {
+  readonly resourceLimits?: DeciderSparseResourceLimits | null;
+  readonly taskTypes?: ReadonlyArray<DeciderSparseTaskTypeConfig>;
+};
+
+type DeciderOrchestratorDefaults = Partial<Omit<OrchestratorGlobalDefaults, "gatePolicy">> & {
+  readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>>;
+};
+
+const resourceLimitKeys = [
+  "maxParallelTasks",
+  "maxParallelWorkers",
+  "maxStageHandoffs",
+  "maxRetriesPerStage",
+] as const satisfies ReadonlyArray<keyof OrchestratorResourceLimits>;
+
+const gatePolicyKeys = [
+  "classify",
+  "plan",
+  "work",
+  "review",
+  "land",
+] as const satisfies ReadonlyArray<OrchestrationGateKind>;
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function explicitlySetProjectConfig(rawConfig: OrchestratorConfigJson | undefined) {
+  const raw: Record<string, unknown> = rawConfig ?? {};
+  const resourceLimits = asRecord(raw.resourceLimits);
+  const sparseResourceLimits: DeciderSparseResourceLimits = {};
+  if (resourceLimits !== undefined) {
+    for (const key of resourceLimitKeys) {
+      if (typeof resourceLimits[key] === "number") {
+        sparseResourceLimits[key] = resourceLimits[key];
+      }
+    }
+    if (typeof resourceLimits.allowFullAccessWorkers === "boolean") {
+      sparseResourceLimits.allowFullAccessWorkers = resourceLimits.allowFullAccessWorkers;
+    }
+  }
+
+  const taskTypes = Array.isArray(raw.taskTypes)
+    ? raw.taskTypes.flatMap((rawTaskType): ReadonlyArray<DeciderSparseTaskTypeConfig> => {
+        const taskType = asRecord(rawTaskType);
+        if (taskType === undefined || typeof taskType.id !== "string") {
+          return [];
+        }
+
+        const gatePolicy = asRecord(taskType.gatePolicy);
+        const sparseGatePolicy: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>> = {};
+        if (gatePolicy !== undefined) {
+          for (const key of gatePolicyKeys) {
+            if (gatePolicy[key] === "auto" || gatePolicy[key] === "require-approval") {
+              sparseGatePolicy[key] = gatePolicy[key];
+            }
+          }
+        }
+
+        return [
+          {
+            id: taskType.id,
+            ...(Array.isArray(taskType.stages)
+              ? { stages: taskType.stages as ReadonlyArray<OrchestrationStageRole> }
+              : {}),
+            ...(Object.keys(sparseGatePolicy).length > 0 ? { gatePolicy: sparseGatePolicy } : {}),
+          },
+        ];
+      })
+    : undefined;
+
+  return {
+    ...(Object.keys(sparseResourceLimits).length > 0
+      ? { resourceLimits: sparseResourceLimits }
+      : {}),
+    ...(taskTypes !== undefined ? { taskTypes } : {}),
+  } satisfies DeciderSparseProjectConfig;
+}
 
 function taskWorktreePath(input: { readonly workspaceRoot: string; readonly taskId: string }) {
   return `${input.workspaceRoot.replace(/[\\/]+$/, "")}/.gedcode/orchestrator/tasks/${input.taskId}`;
@@ -121,9 +220,11 @@ type DecideOrchestrationCommandResult =
 
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
+  orchestratorDefaults,
   readModel,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
+  readonly orchestratorDefaults?: DeciderOrchestratorDefaults;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   ReadonlyArray<PlannedOrchestrationEvent>,
@@ -138,6 +239,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
     const decided = yield* decideOrchestrationCommand({
       command: nextCommand,
       readModel: nextReadModel,
+      ...(orchestratorDefaults !== undefined ? { orchestratorDefaults } : {}),
     });
     const nextEvents = Array.isArray(decided) ? decided : [decided];
     for (const nextEvent of nextEvents) {
@@ -155,9 +257,11 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
+  orchestratorDefaults = {},
   readModel,
 }: {
   readonly command: OrchestrationCommand;
+  readonly orchestratorDefaults?: DeciderOrchestratorDefaults;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
@@ -250,6 +354,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (activeThreads.length > 0) {
         return yield* decideCommandSequence({
           readModel,
+          ...(orchestratorDefaults !== undefined ? { orchestratorDefaults } : {}),
           commands: [
             ...activeThreads.map(
               (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
@@ -866,13 +971,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
-      const config = yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorEnabled({ command, project });
       yield* requireTaskAbsent({
         readModel,
         command,
         taskId: command.taskId,
       });
-      const maxParallelTasks = config.resourceLimits.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
+      const maxParallelTasks = resolveResourceLimit({
+        config: projectConfig,
+        defaults: orchestratorDefaults,
+        key: "maxParallelTasks",
+      });
       const activeTaskWorktrees = countActiveTaskWorktrees({
         readModel,
         projectId: command.projectId,
@@ -990,8 +1100,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      const config = yield* requireOrchestratorEnabled({ command, project });
-      const allowedStages = findTaskType(config, task.type)?.stages ?? ORCHESTRATION_STAGE_ROLES;
+      yield* requireOrchestratorEnabled({ command, project });
+      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
+      const allowedStages = resolveStages({
+        config: projectConfig,
+        defaults: orchestratorDefaults,
+        taskTypeId: task.type,
+      });
       if (!allowedStages.includes(command.role)) {
         return yield* invariantError(
           command.type,
@@ -1005,7 +1120,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
         );
       }
-      const maxStageHandoffs = config.resourceLimits.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS;
+      const maxStageHandoffs = resolveResourceLimit({
+        config: projectConfig,
+        defaults: orchestratorDefaults,
+        key: "maxStageHandoffs",
+      });
       if (task.stageThreadIds.length >= maxStageHandoffs) {
         return yield* invariantError(
           command.type,
@@ -1031,8 +1150,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             `Task '${command.taskId}' is blocked on quota but has no resumable blocked stage for role '${command.role}'.`,
           );
         }
-        const maxRetriesPerStage =
-          config.resourceLimits.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE;
+        const maxRetriesPerStage = resolveResourceLimit({
+          config: projectConfig,
+          defaults: orchestratorDefaults,
+          key: "maxRetriesPerStage",
+        });
         if (blockedStage.retryCount > maxRetriesPerStage) {
           return yield* invariantError(
             command.type,
@@ -1288,9 +1410,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      const config = yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorEnabled({ command, project });
+      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const gatePolicy = resolveGatePolicy({
-        config,
+        config: projectConfig,
+        defaults: orchestratorDefaults,
         taskTypeId: task.type,
         gate: command.gate,
       });

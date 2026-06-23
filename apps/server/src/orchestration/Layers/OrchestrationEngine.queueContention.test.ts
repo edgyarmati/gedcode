@@ -23,6 +23,7 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const createdAt = "2026-01-01T00:00:00.000Z";
@@ -39,6 +40,7 @@ async function createOrchestrationSystem() {
     Layer.provide(RepositoryIdentityResolverLive),
     Layer.provide(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(NodeServices.layer),
   );
   const runtime = ManagedRuntime.make(orchestrationLayer);

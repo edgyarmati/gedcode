@@ -52,6 +52,7 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
@@ -259,6 +260,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const serverSettings = yield* ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -343,8 +345,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        const orchestratorDefaults = (yield* serverSettings.getSettings).orchestratorDefaults;
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
+          orchestratorDefaults,
           readModel: commandReadModel,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),

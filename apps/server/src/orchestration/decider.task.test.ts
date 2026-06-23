@@ -200,6 +200,71 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("inherits global maxParallelTasks when the project limit is omitted", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "working" });
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: {
+          maxParallelTasks: 2,
+        },
+        command: {
+          type: "task.create",
+          commandId: asCommandId("cmd-create-task-global-cap"),
+          taskId: asTaskId("task-2"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Task 2",
+          pmMessageId: null,
+          branch: null,
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(result) ? result[0] : result;
+      expect(singleEvent?.type).toBe("task.created");
+    }),
+  );
+
+  it.effect("uses explicitly-set project maxParallelTasks over global maxParallelTasks", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "working" },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            resourceLimits: {
+              maxParallelTasks: 1,
+            },
+          },
+        },
+      );
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: {
+            maxParallelTasks: 2,
+          },
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-task-project-cap"),
+            taskId: asTaskId("task-2"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Task 2",
+            pmMessageId: null,
+            branch: null,
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("does not count landed tasks against the task worktree cap", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "landed" });
@@ -380,6 +445,85 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       if (error._tag === "OrchestrationCommandInvariantError") {
         expect(error.detail).toBe("Stage role 'review' is not enabled for task type 'feature'.");
       }
+    }),
+  );
+
+  it.effect("inherits global stages when project stages are omitted", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+
+      const rejected = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: {
+            stages: ["classify", "plan", "work", "verify"],
+          },
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-global-reject-review"),
+            taskId: asTaskId("task-1"),
+            role: "review",
+            instructions: "Review the accepted plan.",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(rejected._tag).toBe("Failure");
+
+      const accepted = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: {
+          stages: ["classify", "plan", "review", "work", "verify"],
+        },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-global-allow-review"),
+          taskId: asTaskId("task-1"),
+          role: "review",
+          instructions: "Review the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(accepted).map((event) => event.type)).toContain("task.stage-started");
+    }),
+  );
+
+  it.effect("uses explicitly-set project stages over global stages", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "review", currentStageThreadId: null },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                stages: ["classify", "plan", "work", "verify"],
+              },
+            ],
+          },
+        },
+      );
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: {
+            stages: ["classify", "plan", "review", "work", "verify"],
+          },
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-project-reject-review"),
+            taskId: asTaskId("task-1"),
+            role: "review",
+            instructions: "Review the accepted plan.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
     }),
   );
 
@@ -900,6 +1044,190 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("inherits global gate policy when the project gate policy is omitted", () =>
+    Effect.gen(function* () {
+      const contentHash = "sha256:global-plan";
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+      });
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: {
+          gatePolicy: {
+            plan: "auto",
+            land: "require-approval",
+          },
+        },
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-global-auto"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-global-plan"),
+          gate: "plan",
+          contentHash,
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(result).map((event) => event.type)).toEqual([
+        "task.gate-requested",
+        "task.gate-resolved",
+      ]);
+    }),
+  );
+
+  it.effect("uses explicitly-set project gate policy over global gate policy", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        {
+          status: "working",
+          currentStageThreadId: asThreadId("thread-stage-work"),
+          stageThreadIds: [asThreadId("thread-stage-work")],
+        },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            taskTypes: [
+              {
+                id: "feature",
+                gatePolicy: {
+                  plan: "require-approval",
+                  land: "require-approval",
+                },
+              },
+            ],
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: {
+          gatePolicy: {
+            plan: "auto",
+            land: "require-approval",
+          },
+        },
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-project-manual"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-project-plan"),
+          gate: "plan",
+          contentHash: "sha256:project-plan",
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(result).map((event) => event.type)).toEqual(["task.gate-requested"]);
+    }),
+  );
+
+  it.effect("keeps a fully-configured project's own limits, stages, and gate policy", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        {
+          status: "working",
+          currentStageThreadId: asThreadId("thread-stage-work"),
+          stageThreadIds: [asThreadId("thread-stage-work")],
+        },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            pmModelSelection: null,
+            taskTypes: [
+              {
+                id: "feature",
+                stages: ["classify", "plan", "work", "verify"],
+                gatePolicy: {
+                  classify: "require-approval",
+                  plan: "require-approval",
+                  work: "require-approval",
+                  review: "require-approval",
+                  land: "require-approval",
+                },
+              },
+            ],
+            resourceLimits: {
+              maxParallelTasks: 1,
+              maxParallelWorkers: 1,
+              maxStageHandoffs: 8,
+              maxRetriesPerStage: 2,
+              allowFullAccessWorkers: false,
+            },
+          },
+        },
+      );
+      const globals = {
+        stages: ["classify", "plan", "review", "work", "verify"],
+        gatePolicy: {
+          plan: "auto",
+          land: "require-approval",
+        },
+        maxParallelTasks: 2,
+      } as const;
+
+      const taskCreate = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: globals,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-task-fully-configured"),
+            taskId: asTaskId("task-2"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Task 2",
+            pmMessageId: null,
+            branch: null,
+            createdAt: now,
+          },
+        }),
+      );
+      expect(taskCreate._tag).toBe("Failure");
+
+      const stageStart = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: {
+            ...readModel,
+            tasks: [{ ...readModel.tasks[0]!, currentStageThreadId: null }],
+          },
+          orchestratorDefaults: globals,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-fully-configured"),
+            taskId: asTaskId("task-1"),
+            role: "review",
+            instructions: "Review the accepted plan.",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(stageStart._tag).toBe("Failure");
+
+      const gateRequest = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: globals,
+        command: {
+          type: "task.gate.request",
+          commandId: asCommandId("cmd-gate-request-fully-configured"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-fully-configured-plan"),
+          gate: "plan",
+          contentHash: "sha256:fully-configured-plan",
+          stageThreadId: asThreadId("thread-stage-work"),
+          createdAt: now,
+        },
+      });
+      expect(toEvents(gateRequest).map((event) => event.type)).toEqual(["task.gate-requested"]);
+    }),
+  );
+
   it.effect("never auto-approves a land gate", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(
@@ -926,6 +1254,11 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const result = yield* decideOrchestrationCommand({
         readModel,
+        orchestratorDefaults: {
+          gatePolicy: {
+            land: "auto",
+          },
+        },
         command: {
           type: "task.gate.request",
           commandId: asCommandId("cmd-gate-request-land"),

@@ -17,6 +17,7 @@ import {
   resolveGatePolicy,
   resolveResourceLimit,
   resolveResourceLimits,
+  resolveStages,
 } from "./orchestrator.ts";
 
 const featureTaskType = {
@@ -91,6 +92,28 @@ describe("resolveGatePolicy", () => {
     ).toBe("require-approval");
   });
 
+  it("resolves from global defaults when the project gate policy entry is missing", () => {
+    expect(
+      resolveGatePolicy({
+        config: { taskTypes: [{ id: "feature", gatePolicy: {} }] },
+        defaults: { gatePolicy: { review: "auto" } },
+        taskTypeId: "feature",
+        gate: "review",
+      }),
+    ).toBe("auto");
+  });
+
+  it("prefers project gate policy over global defaults", () => {
+    expect(
+      resolveGatePolicy({
+        config: { taskTypes: [{ id: "feature", gatePolicy: { review: "require-approval" } }] },
+        defaults: { gatePolicy: { review: "auto" } },
+        taskTypeId: "feature",
+        gate: "review",
+      }),
+    ).toBe("require-approval");
+  });
+
   it("falls back to require-approval for a missing gate policy entry", () => {
     const sparseGateConfig = projectConfig([
       {
@@ -123,6 +146,39 @@ describe("resolveGatePolicy", () => {
         gate: "land",
       }),
     ).toBe("require-approval");
+  });
+
+  it("always requires approval for land even if global defaults say auto", () => {
+    expect(
+      resolveGatePolicy({
+        config: { taskTypes: [] },
+        defaults: { gatePolicy: { land: "auto" } },
+        taskTypeId: "feature",
+        gate: "land",
+      }),
+    ).toBe("require-approval");
+  });
+});
+
+describe("resolveStages", () => {
+  it("resolves stages from global defaults when the project layer is empty", () => {
+    expect(
+      resolveStages({
+        config: { taskTypes: [] },
+        defaults: { stages: ["classify", "plan", "work", "verify"] },
+        taskTypeId: "feature",
+      }),
+    ).toEqual(["classify", "plan", "work", "verify"]);
+  });
+
+  it("prefers project stages over global defaults", () => {
+    expect(
+      resolveStages({
+        config: { taskTypes: [{ id: "feature", stages: ["classify", "plan", "work"] }] },
+        defaults: { stages: ["classify", "plan", "review", "work", "verify"] },
+        taskTypeId: "feature",
+      }),
+    ).toEqual(["classify", "plan", "work"]);
   });
 });
 
