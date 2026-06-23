@@ -145,6 +145,12 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
+      autoCompaction: {
+        enabled: false,
+        reserveTokens: 7_000,
+        keepRecentTokens: 8_000,
+        customInstructions: "Keep live task IDs.",
+      },
       allowFullAccessWorkers: true,
     });
 
@@ -163,6 +169,12 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
       allowFullAccessWorkers: true,
+    });
+    expect(draft.autoCompaction).toEqual({
+      enabled: false,
+      reserveTokens: 7_000,
+      keepRecentTokens: 8_000,
+      customInstructions: "Keep live task IDs.",
     });
   });
 
@@ -184,6 +196,11 @@ describe("Orchestrator global defaults settings logic", () => {
         worktreeReaperIntervalMinutes: 9,
         allowFullAccessWorkers: false,
       },
+      autoCompaction: {
+        enabled: true,
+        reserveTokens: 6_000,
+        keepRecentTokens: 11_000,
+      },
     });
 
     expect(patch.orchestratorDefaults).toEqual({
@@ -201,6 +218,11 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 6,
       pmReconciliationIntervalMs: 180_000,
       worktreeReaperIntervalMinutes: 9,
+      autoCompaction: {
+        enabled: true,
+        reserveTokens: 6_000,
+        keepRecentTokens: 11_000,
+      },
       allowFullAccessWorkers: false,
     });
   });

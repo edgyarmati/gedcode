@@ -4,6 +4,9 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
   DEFAULT_PM_RECONCILIATION_INTERVAL_MS,
@@ -61,6 +64,15 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
   });
 
+  it("global defaults include enabled PM auto-compaction using pi defaults", () => {
+    const decoded = decodeGlobalDefaults({});
+    expect(decoded.autoCompaction).toEqual({
+      enabled: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED,
+      reserveTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
+      keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+    });
+  });
+
   it("global defaults include the full stage set and require-approval gate policy", () => {
     const decoded = decodeGlobalDefaults({});
     expect(decoded.stages).toEqual(["classify", "plan", "review", "work", "verify"]);
@@ -89,6 +101,12 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       maxRetriesPerStage: 5,
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
+      autoCompaction: {
+        enabled: false,
+        reserveTokens: 8_000,
+        keepRecentTokens: 12_000,
+        customInstructions: "Keep active task IDs and gate state.",
+      },
       allowFullAccessWorkers: true,
     });
 
@@ -97,6 +115,12 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
     expect(reDecoded).toEqual(decoded);
     expect(reDecoded.stages).toEqual(["classify", "plan", "work"]);
     expect(reDecoded.gatePolicy.land).toBe("require-approval");
+    expect(reDecoded.autoCompaction).toEqual({
+      enabled: false,
+      reserveTokens: 8_000,
+      keepRecentTokens: 12_000,
+      customInstructions: "Keep active task IDs and gate state.",
+    });
     expect(reDecoded.allowFullAccessWorkers).toBe(true);
   });
 });

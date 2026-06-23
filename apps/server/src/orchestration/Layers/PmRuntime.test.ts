@@ -498,6 +498,7 @@ const makeFactoryCaptureLayer = () =>
         }),
       listBlocked: () => Effect.succeed([]),
     }),
+    ServerSettingsService.layerTest(),
   );
 
 const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
@@ -507,6 +508,7 @@ const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
       return {
         events: Stream.empty,
         isIdle: Effect.succeed(true),
+        latestAssistantUsage: Effect.sync(() => undefined),
         waitForIdle: Effect.void,
         prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
         followUp: () => Effect.void,

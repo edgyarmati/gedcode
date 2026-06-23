@@ -108,6 +108,13 @@ export const orchestrationPmReEntryDuration = Metric.timer("t3_orchestration_pm_
     "PM re-entry latency: time to enqueue a settlement and drain the PM project runtime turn.",
 });
 
+export const orchestrationPmCompactionsTotal = Metric.counter(
+  "t3_orchestration_pm_compactions_total",
+  {
+    description: "Total successful automatic PM context compactions.",
+  },
+);
+
 export const orchestrationBusyRetryAttemptsTotal = Metric.counter(
   "t3_orchestration_busy_retry_attempts_total",
   {

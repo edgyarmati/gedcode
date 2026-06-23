@@ -1,5 +1,7 @@
 import {
   DEFAULT_MAX_PARALLEL_TASKS,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   TaskTypeId,
   type OrchestratorProjectConfig,
@@ -9,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findTaskType,
+  resolveAutoCompaction,
   resolveAllowFullAccessWorkers,
   resolveConfigValue,
   resolveGatePolicy,
@@ -187,6 +190,59 @@ describe("resolveResourceLimit", () => {
       maxStageHandoffs: 10,
       maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
       allowFullAccessWorkers: true,
+    });
+  });
+});
+
+describe("resolveAutoCompaction", () => {
+  it("resolves auto-compaction from global defaults and safe constants", () => {
+    expect(
+      resolveAutoCompaction({
+        defaults: {
+          autoCompaction: {
+            enabled: false,
+            reserveTokens: 9_000,
+          },
+        },
+      }),
+    ).toEqual({
+      enabled: false,
+      reserveTokens: 9_000,
+      keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+    });
+  });
+
+  it("prefers a future project layer over global auto-compaction defaults", () => {
+    expect(
+      resolveAutoCompaction({
+        config: {
+          autoCompaction: {
+            enabled: false,
+            customInstructions: "Keep the active task ledger.",
+          },
+        },
+        defaults: {
+          autoCompaction: {
+            enabled: true,
+            reserveTokens: 9_000,
+            keepRecentTokens: 10_000,
+            customInstructions: "Global instructions",
+          },
+        },
+      }),
+    ).toEqual({
+      enabled: false,
+      reserveTokens: 9_000,
+      keepRecentTokens: 10_000,
+      customInstructions: "Keep the active task ledger.",
+    });
+  });
+
+  it("falls back to safe auto-compaction constants when all layers are empty", () => {
+    expect(resolveAutoCompaction({ defaults: {} })).toEqual({
+      enabled: true,
+      reserveTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
+      keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
     });
   });
 });

@@ -92,6 +92,27 @@ export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
 export const DEFAULT_MAX_RETRIES_PER_STAGE = 2;
 export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
 export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 5;
+export const DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED = true;
+// Mirrors @earendil-works/pi-agent-core DEFAULT_COMPACTION_SETTINGS.
+// Contracts intentionally stays schema-only and does not depend on pi runtime packages.
+export const DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS = 16_384;
+export const DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS = 20_000;
+
+export const OrchestratorAutoCompactionDefaults = Schema.Struct({
+  enabled: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED)),
+  ),
+  reserveTokens: PositiveInt.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS)),
+  ),
+  keepRecentTokens: PositiveInt.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed(DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS),
+    ),
+  ),
+  customInstructions: Schema.optionalKey(Schema.String),
+});
+export type OrchestratorAutoCompactionDefaults = typeof OrchestratorAutoCompactionDefaults.Type;
 
 /**
  * Hard resource limits the decider enforces as invariants (design §7). These
@@ -201,6 +222,9 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   ),
   worktreeReaperIntervalMinutes: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES)),
+  ),
+  autoCompaction: OrchestratorAutoCompactionDefaults.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
   // Floor for the runtime-mode clamp. Defaults to `false` so the safe default
   // holds even before a project sets its own `resourceLimits`.

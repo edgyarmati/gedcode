@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import type { Usage } from "@earendil-works/pi-ai";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -7,6 +8,28 @@ import * as Ref from "effect/Ref";
 
 import { PmRuntimeError } from "./Errors.ts";
 import { makePmReEntryQueue } from "./PmReEntryQueue.ts";
+
+const compactResult = {
+  summary: "summary",
+  firstKeptEntryId: "entry-1",
+  tokensBefore: 1,
+};
+
+const makeUsage = (totalTokens: number): Usage => ({
+  input: totalTokens,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  },
+});
+const noAssistantUsage = Effect.sync((): Usage | undefined => undefined);
 
 describe("PmReEntryQueue", () => {
   it.effect("prompts when idle and buffers into follow-up when busy", () =>
@@ -24,6 +47,8 @@ describe("PmReEntryQueue", () => {
           Effect.sync(() => {
             followUps.push(message);
           }) as never,
+        latestAssistantUsage: noAssistantUsage,
+        compact: () => Effect.succeed(compactResult),
       });
 
       yield* queue.enqueue("stage result 1");
@@ -73,6 +98,8 @@ describe("PmReEntryQueue", () => {
             Effect.sync(() => {
               followUps.push(message);
             }) as never,
+          latestAssistantUsage: noAssistantUsage,
+          compact: () => Effect.succeed(compactResult),
         });
 
         yield* queue.enqueue("first turn");
@@ -122,6 +149,8 @@ describe("PmReEntryQueue", () => {
           isIdle: Effect.succeed(true),
           prompt: () => Effect.fail(failure) as never,
           followUp: () => Effect.void as never,
+          latestAssistantUsage: noAssistantUsage,
+          compact: () => Effect.succeed(compactResult),
         },
         {
           onTurnError: (error) =>
@@ -152,6 +181,8 @@ describe("PmReEntryQueue", () => {
               prompts.push(message);
             }) as never,
           followUp: () => Effect.void as never,
+          latestAssistantUsage: noAssistantUsage,
+          compact: () => Effect.succeed(compactResult),
         },
         {
           onTurnError: (error) =>
@@ -166,6 +197,116 @@ describe("PmReEntryQueue", () => {
 
       assert.deepStrictEqual(prompts, ["stage result"]);
       assert.strictEqual(observed.length, 0);
+    }),
+  );
+
+  it.effect("compacts once after an idle turn when pi says the context exceeds threshold", () =>
+    Effect.gen(function* () {
+      const idle = yield* Ref.make(true);
+      const compactIdleObservations: boolean[] = [];
+      let compactCount = 0;
+      let customInstructions: string | undefined;
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Ref.get(idle),
+          prompt: () =>
+            Effect.gen(function* () {
+              yield* Ref.set(idle, false);
+              yield* Ref.set(idle, true);
+            }) as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: Effect.succeed(makeUsage(81)),
+          compact: (instructions) =>
+            Effect.gen(function* () {
+              compactIdleObservations.push(yield* Ref.get(idle));
+              compactCount += 1;
+              customInstructions = instructions;
+              return compactResult;
+            }),
+        },
+        {
+          autoCompaction: {
+            enabled: true,
+            reserveTokens: 20,
+            keepRecentTokens: 10,
+            contextWindow: 100,
+            customInstructions: "Preserve active gate state.",
+          },
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      yield* queue.drain;
+
+      assert.strictEqual(compactCount, 1);
+      assert.deepStrictEqual(compactIdleObservations, [true]);
+      assert.strictEqual(customInstructions, "Preserve active gate state.");
+    }),
+  );
+
+  it.effect("does not compact when auto-compaction is disabled", () =>
+    Effect.gen(function* () {
+      let compactCount = 0;
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: () => Effect.void as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: Effect.succeed(makeUsage(99)),
+          compact: () =>
+            Effect.sync(() => {
+              compactCount += 1;
+              return compactResult;
+            }),
+        },
+        {
+          autoCompaction: {
+            enabled: false,
+            reserveTokens: 20,
+            keepRecentTokens: 10,
+            contextWindow: 100,
+          },
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      yield* queue.drain;
+
+      assert.strictEqual(compactCount, 0);
+    }),
+  );
+
+  it.effect("logs and continues when post-turn compaction fails", () =>
+    Effect.gen(function* () {
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: () => Effect.void as never,
+          followUp: () => Effect.void as never,
+          latestAssistantUsage: Effect.succeed(makeUsage(81)),
+          compact: () =>
+            Effect.fail(
+              new PmRuntimeError({
+                operation: "PiAgentAdapter.compact",
+                detail: "PM compaction failed.",
+                cause: new Error("summary model unavailable"),
+              }),
+            ),
+        },
+        {
+          autoCompaction: {
+            enabled: true,
+            reserveTokens: 20,
+            keepRecentTokens: 10,
+            contextWindow: 100,
+          },
+        },
+      );
+
+      yield* queue.enqueue("stage result");
+      const exit = yield* queue.drain.pipe(Effect.exit);
+
+      assert.isTrue(Exit.isSuccess(exit));
     }),
   );
 });

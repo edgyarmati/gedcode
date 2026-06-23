@@ -53,9 +53,14 @@ describe("PiAgentAdapter", () => {
       });
 
       assert.strictEqual(yield* adapter.isIdle, true);
+      assert.strictEqual(yield* adapter.latestAssistantUsage, undefined);
 
       listener?.({ type: "agent_start" });
       assert.strictEqual(yield* adapter.isIdle, false);
+
+      const assistant = fauxAssistantMessage("ok");
+      listener?.({ type: "message_end", message: assistant });
+      assert.deepStrictEqual(yield* adapter.latestAssistantUsage, assistant.usage);
 
       listener?.({ type: "settled", nextTurnCount: 0 });
       assert.strictEqual(yield* adapter.isIdle, true);

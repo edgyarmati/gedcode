@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { resolveAutoCompaction } from "@t3tools/shared/orchestrator";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -952,6 +953,11 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
     const orchestrationEngine = yield* OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
+    const serverSettings = yield* ServerSettingsService;
+    const settings = yield* serverSettings.getSettings;
+    const autoCompactionDefaults = resolveAutoCompaction({
+      defaults: settings.orchestratorDefaults,
+    });
     const runtimeScope = yield* Scope.make("sequential");
     yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
     const runtimes = new Map<string, PmProjectRuntime>();
@@ -1033,6 +1039,10 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
         const pmProviderInstanceId = pmModelSelection.instanceId;
         const pmThreadId = pmThreadIdForProject(project);
         const queue = yield* makePmReEntryQueue(adapter, {
+          autoCompaction: {
+            ...autoCompactionDefaults,
+            contextWindow: model.contextWindow,
+          },
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
           // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
           // provider event), so it bypasses the ingestion-path detection that marks

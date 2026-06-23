@@ -10,7 +10,7 @@ import {
   type PromptTemplate,
   type Skill,
 } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ImageContent, Model } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, Model, Usage } from "@earendil-works/pi-ai";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -50,6 +50,7 @@ export type PiAgentAdapterOptions = {
 export type PiAgentAdapterShape = {
   readonly events: Stream.Stream<AgentHarnessEvent>;
   readonly isIdle: Effect.Effect<boolean>;
+  readonly latestAssistantUsage: Effect.Effect<Usage | undefined>;
   readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
   readonly prompt: (
     text: string,
@@ -73,11 +74,25 @@ const readonlyImages = (options?: {
 }): { images?: ImageContent[] } | undefined =>
   options?.images === undefined ? undefined : { images: [...options.images] };
 
+const eventAssistantUsage = (event: AgentHarnessEvent): Usage | undefined => {
+  if (
+    (event.type === "message_end" || event.type === "turn_end") &&
+    event.message.role === "assistant" &&
+    event.message.stopReason !== "aborted" &&
+    event.message.stopReason !== "error"
+  ) {
+    return event.message.usage;
+  }
+
+  return undefined;
+};
+
 export const makePiAgentAdapter = (
   options: PiAgentAdapterOptions,
 ): Effect.Effect<PiAgentAdapterShape, never, never> =>
   Effect.gen(function* () {
     const idle = yield* Ref.make(true);
+    const latestAssistantUsage = yield* Ref.make<Usage | undefined>(undefined);
     const eventQueue = yield* Queue.unbounded<AgentHarnessEvent>();
     const runtimeContext = yield* Effect.context<never>();
     const runSync = Effect.runSyncWith(runtimeContext);
@@ -106,12 +121,17 @@ export const makePiAgentAdapter = (
       } else if (event.type === "agent_end" || event.type === "settled") {
         runSync(Ref.set(idle, true));
       }
+      const usage = eventAssistantUsage(event);
+      if (usage !== undefined) {
+        runSync(Ref.set(latestAssistantUsage, usage));
+      }
       runSync(Queue.offer(eventQueue, event));
     });
 
     return {
       events: Stream.fromQueue(eventQueue),
       isIdle: Ref.get(idle),
+      latestAssistantUsage: Ref.get(latestAssistantUsage),
       waitForIdle: Effect.tryPromise({
         try: () => harness.waitForIdle(),
         catch: toPmRuntimeError("PiAgentAdapter.waitForIdle", "Failed while waiting for PM idle."),

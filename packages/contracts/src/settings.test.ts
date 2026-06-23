@@ -3,6 +3,10 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
+} from "./orchestrator/config.ts";
+import {
   DEFAULT_CODEX_GED_SUBAGENT_PRESET,
   DEFAULT_SERVER_SETTINGS,
   CodexSettings,
@@ -135,6 +139,11 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       5 * 60 * 1000,
     );
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.autoCompaction).toEqual({
+      enabled: true,
+      reserveTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
+      keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
+    });
   });
 
   it("decodes a legacy config (no orchestrator key) without complaint", () => {
@@ -159,6 +168,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+    expect(decoded.orchestratorDefaults.autoCompaction.enabled).toBe(true);
   });
 
   it("round-trips a fully empty config without dropping the orchestrator block", () => {
@@ -183,6 +193,12 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
         worktreeReaperIntervalMinutes: 2,
+        autoCompaction: {
+          enabled: false,
+          reserveTokens: 7_000,
+          keepRecentTokens: 9_000,
+          customInstructions: "Keep unresolved gate decisions.",
+        },
       },
     });
     expect(decoded.orchestratorDefaults.stages).toEqual(["classify", "plan", "work"]);
@@ -194,6 +210,12 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);
+    expect(decoded.orchestratorDefaults.autoCompaction).toEqual({
+      enabled: false,
+      reserveTokens: 7_000,
+      keepRecentTokens: 9_000,
+      customInstructions: "Keep unresolved gate decisions.",
+    });
   });
 
   it("accepts orchestratorDefaults via the settings patch", () => {
@@ -212,6 +234,11 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
+        autoCompaction: {
+          enabled: true,
+          reserveTokens: 6_000,
+          keepRecentTokens: 8_000,
+        },
       },
     });
     expect(patch.orchestratorDefaults?.stages).toEqual(["classify", "plan", "review", "work"]);
@@ -222,6 +249,8 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);
     expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
     expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);
+    expect(patch.orchestratorDefaults?.autoCompaction.reserveTokens).toBe(6_000);
+    expect(patch.orchestratorDefaults?.autoCompaction.keepRecentTokens).toBe(8_000);
   });
 });
 
