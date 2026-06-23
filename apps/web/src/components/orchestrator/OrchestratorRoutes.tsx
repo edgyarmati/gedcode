@@ -82,6 +82,12 @@ import { useTheme } from "../../hooks/useTheme";
 import { useTurnDiffSummaries } from "../../hooks/useTurnDiffSummaries";
 import type { TerminalContextDraft } from "../../lib/terminalContext";
 import { useServerConfig, useServerKeybindings } from "../../rpc/serverState";
+import { useUiStateStore } from "../../uiStateStore";
+import {
+  getOrchestratorProjectGridClassName,
+  getOrchestratorPmSectionClassName,
+  OrchestratorBoardVisibilityButton,
+} from "./OrchestratorProjectLayout";
 
 const LazyDiffPanel = lazy(() => import("../DiffPanel"));
 
@@ -225,6 +231,8 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
   const project = useStore((state) => selectProjectByRef(state, projectRef));
   const tasks = useStore(useShallow((state) => selectTasksForProjectRef(state, projectRef)));
   const pmThread = useStore((state) => selectThreadByRef(state, pmThreadRef));
+  const boardCollapsed = useUiStateStore((state) => state.orchestratorBoardCollapsed);
+  const setBoardCollapsed = useUiStateStore((state) => state.setOrchestratorBoardCollapsed);
 
   useEffect(() => {
     return retainOrchestratorProjectSubscription(environmentId, projectId);
@@ -240,14 +248,18 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
         title={project?.name ?? "Project"}
         description={project?.cwd ?? props.projectId}
       >
+        <OrchestratorBoardVisibilityButton
+          collapsed={boardCollapsed}
+          setCollapsed={setBoardCollapsed}
+        />
         <Button render={<Link to="/orch" />} size="sm" variant="outline">
           <ArrowLeftIcon className="size-4" />
           Projects
         </Button>
       </OrchestratorPageChrome>
       <ProjectPmQuotaBanner projectRef={projectRef} />
-      <main className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="flex min-h-0 min-w-0 flex-col border-b border-border lg:border-r lg:border-b-0">
+      <main className={getOrchestratorProjectGridClassName(boardCollapsed)}>
+        <section className={getOrchestratorPmSectionClassName(boardCollapsed)}>
           <PmConversation
             environmentId={environmentId}
             project={project}
@@ -256,7 +268,9 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
             threadRef={pmThreadRef}
           />
         </section>
-        <TaskBoard environmentId={environmentId} projectId={projectId} tasks={tasks} />
+        {boardCollapsed ? null : (
+          <TaskBoard environmentId={environmentId} projectId={projectId} tasks={tasks} />
+        )}
       </main>
     </OrchestratorPage>
   );

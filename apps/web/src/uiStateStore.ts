@@ -22,6 +22,7 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   orchestratorMode?: boolean;
+  orchestratorBoardCollapsed?: boolean;
 }
 
 export interface UiProjectState {
@@ -40,6 +41,7 @@ export interface UiEndpointState {
 
 export interface UiModeState {
   orchestratorMode: boolean;
+  orchestratorBoardCollapsed: boolean;
 }
 
 export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiModeState {}
@@ -64,6 +66,7 @@ const initialState: UiState = {
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
   orchestratorMode: false,
+  orchestratorBoardCollapsed: false,
 };
 
 const persistedCollapsedProjectCwds = new Set<string>();
@@ -110,6 +113,7 @@ function readPersistedState(): UiState {
         parsed.threadChangedFilesExpandedById,
       ),
       orchestratorMode: parsed.orchestratorMode === true,
+      orchestratorBoardCollapsed: parsed.orchestratorBoardCollapsed === true,
     };
   } catch {
     return initialState;
@@ -203,6 +207,7 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpandedById,
         orchestratorMode: state.orchestratorMode,
+        orchestratorBoardCollapsed: state.orchestratorBoardCollapsed,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -584,6 +589,16 @@ export function setOrchestratorMode(state: UiState, enabled: boolean): UiState {
   };
 }
 
+export function setOrchestratorBoardCollapsed(state: UiState, collapsed: boolean): UiState {
+  if (state.orchestratorBoardCollapsed === collapsed) {
+    return state;
+  }
+  return {
+    ...state,
+    orchestratorBoardCollapsed: collapsed,
+  };
+}
+
 export function toggleProject(state: UiState, projectId: string): UiState {
   const expanded = state.projectExpandedById[projectId] ?? true;
   return {
@@ -660,6 +675,7 @@ interface UiStateStore extends UiState {
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setOrchestratorMode: (enabled: boolean) => void;
+  setOrchestratorBoardCollapsed: (collapsed: boolean) => void;
   toggleProject: (projectId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
   reorderProjects: (
@@ -682,6 +698,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setOrchestratorMode: (enabled) => set((state) => setOrchestratorMode(state, enabled)),
+  setOrchestratorBoardCollapsed: (collapsed) =>
+    set((state) => setOrchestratorBoardCollapsed(state, collapsed)),
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
     set((state) => setProjectExpanded(state, projectId, expanded)),

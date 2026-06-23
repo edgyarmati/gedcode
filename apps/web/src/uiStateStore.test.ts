@@ -11,6 +11,7 @@ import {
   persistState,
   reorderProjects,
   setDefaultAdvertisedEndpointKey,
+  setOrchestratorBoardCollapsed,
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   syncProjects,
@@ -26,6 +27,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     orchestratorMode: false,
+    orchestratorBoardCollapsed: false,
     ...overrides,
   };
 }
@@ -114,6 +116,18 @@ describe("uiStateStore pure functions", () => {
     expect(setDefaultAdvertisedEndpointKey(next, "desktop-core:lan:http")).toBe(next);
     expect(setDefaultAdvertisedEndpointKey(next, "")).toMatchObject({
       defaultAdvertisedEndpointKey: null,
+    });
+  });
+
+  it("setOrchestratorBoardCollapsed stores the board visibility preference", () => {
+    const initialState = makeUiState();
+
+    const next = setOrchestratorBoardCollapsed(initialState, true);
+
+    expect(next.orchestratorBoardCollapsed).toBe(true);
+    expect(setOrchestratorBoardCollapsed(next, true)).toBe(next);
+    expect(setOrchestratorBoardCollapsed(next, false)).toMatchObject({
+      orchestratorBoardCollapsed: false,
     });
   });
 
@@ -578,6 +592,17 @@ describe("uiStateStore persistence round-trip", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(persisted.defaultAdvertisedEndpointKey).toBe("desktop-core:lan:http");
+  });
+
+  it("persists the orchestrator board collapsed preference", () => {
+    const state = setOrchestratorBoardCollapsed(makeUiState(), true);
+
+    persistState(state);
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(persisted.orchestratorBoardCollapsed).toBe(true);
   });
 
   it("preserves expand state across restart when project's logical key changes", () => {
