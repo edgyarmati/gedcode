@@ -84,7 +84,14 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
     const provider = yield* makeProvider({
       createMergeRequest: (input) => {
         createInput = input;
-        return Effect.void;
+        return Effect.succeed({
+          number: 42,
+          title: input.title,
+          url: "https://gitlab.com/acme/repo/-/merge_requests/42",
+          baseRefName: input.baseBranch,
+          headRefName: "feature/provider",
+          state: "open",
+        });
       },
     });
 
@@ -94,6 +101,7 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
       headSelector: "owner:feature/provider",
       title: "Provider MR",
       bodyFile: "/tmp/body.md",
+      draft: true,
     });
 
     assert.deepStrictEqual(createInput, {
@@ -106,6 +114,7 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
       },
       title: "Provider MR",
       bodyFile: "/tmp/body.md",
+      draft: true,
     });
   }),
 );

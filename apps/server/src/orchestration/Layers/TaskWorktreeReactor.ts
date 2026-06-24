@@ -1,9 +1,20 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import path from "node:path";
 
-import type { OrchestrationEvent, OrchestrationReadModel } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  type ChangeRequest,
+  type OrchestrationEvent,
+  type OrchestrationProject,
+  type OrchestrationReadModel,
+  type OrchestrationTask,
+} from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { resolveOpenPrAsDraft } from "@t3tools/shared/orchestrator";
 import * as Cause from "effect/Cause";
+import * as Data from "effect/Data";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -18,6 +29,7 @@ import {
   orchestrationWorktreeReaperOrphansRemovedTotal,
 } from "../../observability/Metrics.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -37,7 +49,19 @@ type CleanupCandidate = {
 
 export interface TaskWorktreeReactorLiveOptions {
   readonly reaperIntervalMsOverride?: number;
+  readonly landingRetryDelayMsOverride?: number;
+  readonly landingMaxAttemptsOverride?: number;
 }
+
+type LandedTaskContext = {
+  readonly task: OrchestrationTask;
+  readonly project: OrchestrationProject;
+  readonly worktreePath: string;
+};
+
+class TaskLandingPrError extends Data.TaggedError("TaskLandingPrError")<{
+  readonly detail: string;
+}> {}
 
 function expectedTaskWorktreePath(input: {
   readonly workspaceRoot: string;
@@ -65,6 +89,9 @@ export function listTerminalTaskWorktreeCleanupCandidates(
     if (task.worktreePath === null || (task.status !== "landed" && task.status !== "abandoned")) {
       return [];
     }
+    if (task.status === "landed" && task.prUrl === null) {
+      return [];
+    }
     const project = projectById.get(String(task.projectId));
     if (!project) {
       return [];
@@ -80,11 +107,89 @@ export function listTerminalTaskWorktreeCleanupCandidates(
   });
 }
 
+function listPendingLandedTaskContexts(
+  readModel: OrchestrationReadModel,
+): ReadonlyArray<LandedTaskContext> {
+  const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
+  return readModel.tasks.flatMap((task) => {
+    if (task.status !== "landed" || task.prUrl !== null || task.worktreePath === null) {
+      return [];
+    }
+    const project = projectById.get(String(task.projectId));
+    if (!project) {
+      return [];
+    }
+    return [{ task, project, worktreePath: task.worktreePath }];
+  });
+}
+
+function taskPrOpenedCommandId(taskId: string): CommandId {
+  return CommandId.make(`task-pr-opened:${taskId}`);
+}
+
+function taskPrOpenFailedCommandId(taskId: string): CommandId {
+  return CommandId.make(`task-pr-open-failed:${taskId}`);
+}
+
+function landingFailureActivityId(taskId: string): EventId {
+  return EventId.make(`task-pr-open-failed:${taskId}`);
+}
+
+function firstTaskThread(task: OrchestrationTask) {
+  return task.currentStageThreadId ?? task.stageThreadIds.at(-1) ?? null;
+}
+
+function createPrBody(input: {
+  readonly task: OrchestrationTask;
+  readonly baseRefName: string;
+  readonly headRefName: string;
+  readonly commitSummary: string;
+  readonly diffSummary: string;
+}): string {
+  const commitSummary = input.commitSummary.trim() || `Task: ${input.task.title}`;
+  const diffSummary = input.diffSummary.trim() || "No diff stats were available.";
+  return [
+    "## Summary",
+    "",
+    commitSummary,
+    "",
+    "## Diff stats",
+    "",
+    "```",
+    diffSummary,
+    "```",
+    "",
+    `Base: ${input.baseRefName}`,
+    `Head: ${input.headRefName}`,
+    "",
+    "Opened by GedCode orchestrator",
+    "",
+  ].join("\n");
+}
+
+function errorDetail(cause: Cause.Cause<unknown>): string {
+  return Cause.pretty(cause)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function landingPrError(detail: string): TaskLandingPrError {
+  return new TaskLandingPrError({ detail });
+}
+
+function explicitOpenPrAsDraftConfig(project: OrchestrationProject) {
+  const raw = project.orchestratorConfig ?? {};
+  return typeof raw.openPrAsDraft === "boolean" ? { openPrAsDraft: raw.openPrAsDraft } : {};
+}
+
 export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions) =>
   Effect.gen(function* () {
     const orchestrationEngine = yield* OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const gitWorkflow = yield* GitWorkflowService;
+    const sourceControlProviders = yield* SourceControlProviderRegistry;
     const vcsProcess = yield* VcsProcess;
     const fileSystem = yield* FileSystem.FileSystem;
     const serverSettings = yield* ServerSettingsService;
@@ -94,6 +199,8 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       options?.reaperIntervalMsOverride ??
         settings.orchestratorDefaults.worktreeReaperIntervalMinutes * 60_000,
     );
+    const landingRetryDelayMs = Math.max(1, options?.landingRetryDelayMsOverride ?? 1_000);
+    const landingMaxAttempts = Math.max(1, options?.landingMaxAttemptsOverride ?? 3);
     const cleanupSemaphore = yield* Semaphore.make(1);
     const cleanedWorktreePaths = new Set<string>();
 
@@ -167,6 +274,211 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         }),
       );
 
+    const cleanupLandedTaskContext = (context: LandedTaskContext) =>
+      cleanupTaskWorktreeSafely({
+        taskId: String(context.task.id),
+        worktreePath: context.worktreePath,
+        workspaceRoot: context.project.workspaceRoot,
+        reason: "terminal",
+      });
+
+    const appendLandingFailureActivity = Effect.fn("appendLandingFailureActivity")(
+      function* (input: {
+        readonly context: LandedTaskContext;
+        readonly detail: string;
+        readonly branchPushed: boolean;
+      }) {
+        const threadId = firstTaskThread(input.context.task);
+        if (threadId === null) {
+          yield* Effect.logWarning("landing PR open failed with no task thread to annotate", {
+            taskId: String(input.context.task.id),
+            detail: input.detail,
+            branchPushed: input.branchPushed,
+          });
+          return;
+        }
+
+        const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+        yield* orchestrationEngine
+          .dispatch({
+            type: "thread.activity.append",
+            commandId: taskPrOpenFailedCommandId(String(input.context.task.id)),
+            threadId,
+            activity: {
+              id: landingFailureActivityId(String(input.context.task.id)),
+              tone: "error",
+              kind: "task.landing.pr-open-failed",
+              summary: `Landing: PR open failed - ${input.detail}; branch pushed: ${
+                input.branchPushed ? "yes" : "no"
+              }`,
+              payload: {
+                taskId: String(input.context.task.id),
+                branch: input.context.task.branch,
+                worktreePath: input.context.worktreePath,
+                branchPushed: input.branchPushed,
+              },
+              turnId: null,
+              createdAt,
+            },
+            createdAt,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("landing PR failure activity append failed", {
+                taskId: String(input.context.task.id),
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+      },
+    );
+
+    const openTaskPrAndRecord = Effect.fn("openTaskPrAndRecord")(function* (input: {
+      readonly context: LandedTaskContext;
+      readonly onBranchPushed: Effect.Effect<void, never>;
+    }) {
+      const { context } = input;
+      const taskId = String(context.task.id);
+      const branch = context.task.branch;
+      if (branch === null) {
+        return yield* landingPrError(`Task '${taskId}' has no branch to push.`);
+      }
+      if (
+        !isDeterministicTaskWorktreePath({
+          workspaceRoot: context.project.workspaceRoot,
+          taskId,
+          worktreePath: context.worktreePath,
+        })
+      ) {
+        return yield* landingPrError(
+          `Task '${taskId}' has unexpected worktree path '${context.worktreePath}'.`,
+        );
+      }
+
+      const handle = yield* sourceControlProviders.resolveHandle({ cwd: context.worktreePath });
+      if (handle.provider.kind === "unknown") {
+        return yield* landingPrError(
+          `No supported source-control provider is configured for '${context.worktreePath}'.`,
+        );
+      }
+
+      const baseRefName = yield* handle.provider.getDefaultBranch({ cwd: context.worktreePath });
+      if (baseRefName === null) {
+        return yield* landingPrError(
+          `Could not resolve the default branch for '${context.worktreePath}'.`,
+        );
+      }
+
+      const currentSettings = yield* serverSettings.getSettings;
+      const openPrAsDraft = resolveOpenPrAsDraft({
+        config: explicitOpenPrAsDraftConfig(context.project),
+        defaults: currentSettings.orchestratorDefaults,
+      });
+
+      yield* gitWorkflow.pushCurrentBranch({
+        cwd: context.worktreePath,
+        fallbackBranch: branch,
+        remoteName: handle.context?.remoteName ?? null,
+      });
+      yield* input.onBranchPushed;
+
+      const existing = yield* handle.provider.listChangeRequests({
+        cwd: context.worktreePath,
+        headSelector: branch,
+        state: "open",
+        limit: 1,
+      });
+      const changeRequest: ChangeRequest =
+        existing[0] ??
+        (yield* Effect.scoped(
+          Effect.gen(function* () {
+            const rangeContext = yield* gitWorkflow.readRangeContext({
+              cwd: context.worktreePath,
+              baseRef: baseRefName,
+            });
+            const bodyFile = yield* fileSystem.makeTempFileScoped({
+              prefix: "gedcode-task-pr-",
+              suffix: ".md",
+            });
+            yield* fileSystem.writeFileString(
+              bodyFile,
+              createPrBody({
+                task: context.task,
+                baseRefName,
+                headRefName: branch,
+                commitSummary: rangeContext.commitSummary,
+                diffSummary: rangeContext.diffSummary,
+              }),
+            );
+            return yield* handle.provider.createChangeRequest({
+              cwd: context.worktreePath,
+              baseRefName,
+              headSelector: branch,
+              title: context.task.title,
+              bodyFile,
+              draft: openPrAsDraft,
+            });
+          }),
+        ));
+
+      const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+      yield* orchestrationEngine.dispatch({
+        type: "task.pr.opened",
+        commandId: taskPrOpenedCommandId(taskId),
+        taskId: context.task.id,
+        prUrl: changeRequest.url,
+        prNumber: changeRequest.number,
+        createdAt,
+      });
+    });
+
+    const processLandedTaskContext = Effect.fn("processLandedTaskContext")(function* (
+      context: LandedTaskContext,
+    ) {
+      if (context.task.prUrl !== null) {
+        yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
+        return;
+      }
+
+      let branchPushed = false;
+      const landing = openTaskPrAndRecord({
+        context,
+        onBranchPushed: Effect.sync(() => {
+          branchPushed = true;
+        }),
+      }).pipe(
+        Effect.retry(
+          Schedule.spaced(Duration.millis(landingRetryDelayMs)).pipe(
+            Schedule.both(Schedule.recurs(landingMaxAttempts - 1)),
+          ),
+        ),
+      );
+      const exit = yield* Effect.exit(landing);
+      if (exit._tag === "Success") {
+        yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
+        return;
+      }
+
+      const detail = errorDetail(exit.cause);
+      yield* appendLandingFailureActivity({ context, detail, branchPushed });
+      yield* Effect.logWarning("landing PR open failed; leaving task worktree intact", {
+        taskId: String(context.task.id),
+        branch: context.task.branch,
+        worktreePath: context.worktreePath,
+        branchPushed,
+        cause: Cause.pretty(exit.cause),
+      });
+    });
+
+    const resolveLandedTaskContext = Effect.fn("resolveLandedTaskContext")(function* (
+      taskId: string,
+    ) {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      return listPendingLandedTaskContexts(readModel).find(
+        (context) => String(context.task.id) === taskId,
+      );
+    });
+
     const resolveCandidate = Effect.fn("resolveTerminalTaskCleanupCandidate")(function* (
       event: TerminalTaskEvent,
     ) {
@@ -179,6 +491,14 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     const processTerminalTaskEvent = Effect.fn("processTerminalTaskEvent")(function* (
       event: TerminalTaskEvent,
     ) {
+      if (event.type === "task.landed") {
+        const context = yield* resolveLandedTaskContext(String(event.payload.taskId));
+        if (context) {
+          yield* processLandedTaskContext(context);
+          return;
+        }
+      }
+
       const candidate = yield* resolveCandidate(event);
       if (!candidate) {
         return;
@@ -201,6 +521,26 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
 
     const worker = yield* makeDrainableWorker(processTerminalTaskEventSafely);
+
+    const processPendingLandedTasks = Effect.fn("processPendingLandedTasks")(function* () {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      const contexts = listPendingLandedTaskContexts(readModel);
+      yield* Effect.forEach(contexts, processLandedTaskContext, {
+        concurrency: 1,
+        discard: true,
+      });
+    });
+
+    const processPendingLandedTasksSafely = processPendingLandedTasks().pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.void;
+        }
+        return Effect.logWarning("task worktree startup landing PR processing failed", {
+          cause: Cause.pretty(cause),
+        });
+      }),
+    );
 
     const cleanupTerminalTaskWorktrees = Effect.fn("cleanupTerminalTaskWorktrees")(function* () {
       const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
@@ -246,7 +586,11 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         const projectTasks = readModel.tasks.filter((task) => task.projectId === project.id);
         const liveTaskIds = new Set(
           projectTasks
-            .filter((task) => task.status !== "landed" && task.status !== "abandoned")
+            .filter(
+              (task) =>
+                (task.status !== "landed" && task.status !== "abandoned") ||
+                (task.status === "landed" && task.prUrl === null),
+            )
             .map((task) => String(task.id)),
         );
 
@@ -312,6 +656,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
 
     const start: TaskWorktreeReactorShape["start"] = Effect.fn("start")(function* () {
+      yield* processPendingLandedTasksSafely;
       yield* cleanupTerminalTaskWorktreesSafely;
       yield* Effect.forkScoped(
         Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {

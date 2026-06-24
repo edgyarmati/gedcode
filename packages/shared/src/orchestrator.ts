@@ -102,6 +102,19 @@ export interface ResolveAutoCompactionInput {
   readonly defaults: OrchestratorAutoCompactionGlobalDefaults;
 }
 
+export type OrchestratorOpenPrAsDraftProjectConfig = {
+  readonly openPrAsDraft?: boolean | null;
+};
+
+export type OrchestratorOpenPrAsDraftGlobalDefaults = {
+  readonly openPrAsDraft?: boolean | null;
+};
+
+export interface ResolveOpenPrAsDraftInput {
+  readonly config?: OrchestratorOpenPrAsDraftProjectConfig | null;
+  readonly defaults?: OrchestratorOpenPrAsDraftGlobalDefaults | null;
+}
+
 const DEFAULT_RESOURCE_LIMIT_BY_KEY = {
   maxParallelTasks: DEFAULT_MAX_PARALLEL_TASKS,
   maxParallelWorkers: DEFAULT_MAX_PARALLEL_WORKERS,
@@ -211,4 +224,8 @@ export function resolveAutoCompaction(
     ),
     ...(customInstructions !== undefined ? { customInstructions } : {}),
   };
+}
+
+export function resolveOpenPrAsDraft(input: ResolveOpenPrAsDraftInput): boolean {
+  return resolveConfigValue([input.config?.openPrAsDraft, input.defaults?.openPrAsDraft], false);
 }

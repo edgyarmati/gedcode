@@ -36,6 +36,7 @@ export const ProjectionTask = Schema.Struct({
   status: OrchestrationTaskStatus,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  prUrl: Schema.NullOr(TrimmedNonEmptyString),
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),

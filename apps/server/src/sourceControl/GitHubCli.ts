@@ -79,7 +79,8 @@ export interface GitHubCliShape {
     readonly headSelector: string;
     readonly title: string;
     readonly bodyFile: string;
-  }) => Effect.Effect<void, GitHubCliError>;
+    readonly draft?: boolean;
+  }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
 
   readonly getDefaultBranch: (input: {
     readonly cwd: string;
@@ -169,6 +170,40 @@ function normalizeRepositoryCloneUrls(
     url: raw.url,
     sshUrl: raw.sshUrl,
   };
+}
+
+function normalizeHeadRefName(headSelector: string): string {
+  const trimmed = headSelector.trim();
+  const ownerBranch = /^[^:]+:(.+)$/u.exec(trimmed);
+  return ownerBranch?.[1]?.trim() || trimmed;
+}
+
+function parseCreatedPullRequest(input: {
+  readonly stdout: string;
+  readonly baseBranch: string;
+  readonly headSelector: string;
+  readonly title: string;
+}): Effect.Effect<GitHubPullRequestSummary, GitHubCliError> {
+  const url = input.stdout.match(/https?:\/\/[^\s]+/u)?.[0]?.trim();
+  const numberText = url?.match(/\/pull\/(\d+)(?:\D|$)/u)?.[1];
+  const number = numberText ? Number.parseInt(numberText, 10) : Number.NaN;
+  if (!url || !Number.isSafeInteger(number) || number <= 0) {
+    return Effect.fail(
+      new GitHubCliError({
+        operation: "createPullRequest",
+        detail: "GitHub CLI did not return a pull request URL.",
+      }),
+    );
+  }
+
+  return Effect.succeed({
+    number,
+    title: input.title,
+    url,
+    baseRefName: input.baseBranch,
+    headRefName: normalizeHeadRefName(input.headSelector),
+    state: "open",
+  });
 }
 
 /**
@@ -344,6 +379,7 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
         args: [
           "pr",
           "create",
+          ...(input.draft === true ? ["--draft"] : []),
           "--base",
           input.baseBranch,
           "--head",
@@ -353,7 +389,16 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
           "--body-file",
           input.bodyFile,
         ],
-      }).pipe(Effect.asVoid),
+      }).pipe(
+        Effect.flatMap((result) =>
+          parseCreatedPullRequest({
+            stdout: result.stdout,
+            baseBranch: input.baseBranch,
+            headSelector: input.headSelector,
+            title: input.title,
+          }),
+        ),
+      ),
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,

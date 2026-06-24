@@ -15,6 +15,7 @@ import {
   resolveAllowFullAccessWorkers,
   resolveConfigValue,
   resolveGatePolicy,
+  resolveOpenPrAsDraft,
   resolveResourceLimit,
   resolveResourceLimits,
   resolveStages,
@@ -301,5 +302,27 @@ describe("resolveAutoCompaction", () => {
       reserveTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
       keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
     });
+  });
+});
+
+describe("resolveOpenPrAsDraft", () => {
+  it("prefers project explicit values over global defaults", () => {
+    expect(
+      resolveOpenPrAsDraft({
+        config: { openPrAsDraft: false },
+        defaults: { openPrAsDraft: true },
+      }),
+    ).toBe(false);
+    expect(
+      resolveOpenPrAsDraft({
+        config: { openPrAsDraft: true },
+        defaults: { openPrAsDraft: false },
+      }),
+    ).toBe(true);
+  });
+
+  it("falls back to global defaults and then false", () => {
+    expect(resolveOpenPrAsDraft({ config: {}, defaults: { openPrAsDraft: true } })).toBe(true);
+    expect(resolveOpenPrAsDraft({ config: {}, defaults: {} })).toBe(false);
   });
 });

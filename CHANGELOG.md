@@ -6,6 +6,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 ## Unreleased
 
 - Internal: Add Phase 5 Orchestrator landing contracts for real PR creation. Orchestrator config now carries inheritable `openPrAsDraft` defaults, tasks expose `prUrl`, and the internal `task.pr.opened` command records a `task.pr-opened` event without wiring the landing reactor yet.
+- Internal: Wire Orchestrator task landing to push the task branch with server git credentials, open a gated GitHub/GitLab PR or merge request after the approved land gate, record the resulting `prUrl` durably, and leave failed landings surfaced with the worktree intact for retry.
 - Internal: Add real-engine Orchestrator integration coverage proving sparse projects inherit live `ServerSettings.orchestratorDefaults` for gate policy, enabled stages, and stage handoff limits, while explicit project overrides win and `land` never auto-resolves.
 - Fix: Make the project Orchestrator settings editor write sparse project overrides. Project stages, gate autonomy, and resource limits now render as "use global" versus explicit override, save only explicit project keys, never write `land` as an override, and no longer seed unconfigured projects from global defaults.
 - Fix: Make server-side Orchestrator global defaults live in the decider. Sparse project config now resolves guarded stages, gate policies, and resource limits as project-explicit value -> `ServerSettings.orchestratorDefaults` -> safe constant, while fully configured projects continue to use their own values.

@@ -4,12 +4,16 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  type ChangeRequest,
   CommandId,
   EventId,
+  GitCommandError,
   ProviderInstanceId,
   ProjectId,
+  SourceControlProviderError,
   TaskId,
   TaskTypeId,
+  ThreadId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
@@ -18,6 +22,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -30,8 +35,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import * as SourceControlProvider from "../../sourceControl/SourceControlProvider.ts";
+import {
+  SourceControlProviderRegistry,
+  type SourceControlProviderRegistryShape,
+} from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
-import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import {
+  OrchestrationEngineService,
+  type OrchestrationEngineShape,
+} from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
 import {
@@ -44,16 +57,17 @@ const projectId = ProjectId.make("project-1");
 const taskId = TaskId.make("task-1");
 const taskType = TaskTypeId.make("feature");
 const providerInstanceId = ProviderInstanceId.make("codex");
+const stageThreadId = ThreadId.make("thread-stage");
 
 const unsupportedProjectionQuery = () =>
   Effect.die(new Error("unsupported projection query call")) as never;
-const unsupportedGitWorkflowCall = () =>
-  Effect.die(new Error("unsupported git workflow call")) as never;
 
 function makeReadModel(input: {
   readonly workspaceRoot: string;
   readonly worktreePath: string | null;
   readonly taskStatus: OrchestrationReadModel["tasks"][number]["status"];
+  readonly prUrl?: string | null;
+  readonly openPrAsDraft?: boolean;
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 1,
@@ -67,14 +81,41 @@ function makeReadModel(input: {
           model: "gpt-5-codex",
         },
         roleModelSelections: {},
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {
+          enabled: true,
+          ...(input.openPrAsDraft !== undefined ? { openPrAsDraft: input.openPrAsDraft } : {}),
+        },
         scripts: [],
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
       },
     ],
-    threads: [],
+    threads: [
+      {
+        id: stageThreadId,
+        projectId,
+        title: "Task stage",
+        modelSelection: {
+          instanceId: providerInstanceId,
+          model: "gpt-5-codex",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "orchestrator/task-1",
+        worktreePath: input.worktreePath,
+        latestTurn: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
+        messages: [],
+        proposedPlans: [],
+        activities: [],
+        checkpoints: [],
+        session: null,
+      },
+    ],
     tasks: [
       {
         id: taskId,
@@ -84,9 +125,9 @@ function makeReadModel(input: {
         status: input.taskStatus,
         branch: "orchestrator/task-1",
         worktreePath: input.worktreePath,
-        prUrl: null,
+        prUrl: input.prUrl ?? null,
         pmMessageId: null,
-        stageThreadIds: [],
+        stageThreadIds: [stageThreadId],
         currentStageThreadId: null,
         playbookVersion: "feature@v1",
         createdAt: now,
@@ -161,16 +202,103 @@ function taskWorktreePath(workspaceRoot: string, id: string) {
   return path.join(workspaceRoot, ".gedcode", "orchestrator", "tasks", id);
 }
 
+const createdChangeRequest: ChangeRequest = {
+  provider: "github",
+  number: 42,
+  title: "Task",
+  url: "https://github.com/acme/repo/pull/42",
+  baseRefName: "main",
+  headRefName: "orchestrator/task-1",
+  state: "open",
+  updatedAt: Option.none(),
+};
+
 async function createHarness(input: {
   readonly readModel: OrchestrationReadModel;
   readonly eventPubSub?: PubSub.PubSub<OrchestrationEvent>;
   readonly reaperIntervalMsOverride?: number;
   readonly useTestClock?: boolean;
+  readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
+  readonly sourceControlProvider?: SourceControlProvider.SourceControlProviderShape;
+  readonly resolveHandle?: SourceControlProviderRegistryShape["resolveHandle"];
+  readonly dispatch?: OrchestrationEngineShape["dispatch"];
+  readonly pushCurrentBranch?: GitWorkflowServiceShape["pushCurrentBranch"];
+  readonly readRangeContext?: GitWorkflowServiceShape["readRangeContext"];
 }) {
   const readModelRef = { current: input.readModel };
   const eventPubSub = input.eventPubSub ?? Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+  const order: string[] = [];
   const removeWorktree = vi.fn<GitWorkflowServiceShape["removeWorktree"]>(() => Effect.void);
+  const pushCurrentBranch = vi.fn<GitWorkflowServiceShape["pushCurrentBranch"]>(
+    input.pushCurrentBranch ??
+      (() => {
+        order.push("push");
+        return Effect.succeed({
+          status: "pushed",
+          branch: "orchestrator/task-1",
+          upstreamBranch: "origin/orchestrator/task-1",
+          setUpstream: true,
+        });
+      }),
+  );
+  const readRangeContext = vi.fn<GitWorkflowServiceShape["readRangeContext"]>(
+    input.readRangeContext ??
+      (() =>
+        Effect.succeed({
+          commitSummary: "- Implement task landing",
+          diffSummary: " 2 files changed, 10 insertions(+)",
+          diffPatch: "",
+        })),
+  );
   const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() => Effect.succeed(processOutput()));
+  const createChangeRequest = vi.fn<
+    SourceControlProvider.SourceControlProviderShape["createChangeRequest"]
+  >((request) => {
+    order.push("createChangeRequest");
+    return Effect.succeed({
+      ...createdChangeRequest,
+      title: request.title,
+      baseRefName: request.baseRefName,
+      headRefName: request.headSelector,
+    });
+  });
+  const sourceControlProvider =
+    input.sourceControlProvider ??
+    SourceControlProvider.SourceControlProvider.of({
+      kind: "github",
+      listChangeRequests: () => Effect.succeed([]),
+      getChangeRequest: () => Effect.succeed(createdChangeRequest),
+      createChangeRequest,
+      getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
+      createRepository: () => unsupportedProjectionQuery(),
+      getDefaultBranch: () => Effect.succeed("main"),
+      checkoutChangeRequest: () => Effect.void,
+    });
+  const resolveHandle = vi.fn<SourceControlProviderRegistryShape["resolveHandle"]>(
+    input.resolveHandle ??
+      (() =>
+        Effect.succeed({
+          provider: sourceControlProvider,
+          context: {
+            provider: {
+              kind: "github",
+              name: "GitHub",
+              baseUrl: "https://github.com",
+            },
+            remoteName: "origin",
+            remoteUrl: "git@github.com:acme/repo.git",
+          },
+        })),
+  );
+  const dispatch = vi.fn<OrchestrationEngineShape["dispatch"]>(
+    input.dispatch ??
+      ((command) => {
+        if (command.type === "task.pr.opened") {
+          order.push("dispatchPrOpened");
+        }
+        return Effect.succeed({ sequence: 10 });
+      }),
+  );
   // Fresh per-harness metric registry isolates WP-6 counters from the
   // process-global default registry that other tests also write to.
   const metricRegistry = new Map();
@@ -180,12 +308,14 @@ async function createHarness(input: {
   const metricRegistryLayer = Layer.succeed(Metric.MetricRegistry, metricRegistry);
   const reactorLayer = makeTaskWorktreeReactorLive({
     reaperIntervalMsOverride: input.reaperIntervalMsOverride ?? 60_000,
+    landingMaxAttemptsOverride: 1,
+    landingRetryDelayMsOverride: 1,
   }).pipe(
     Layer.provide(makeProjectionSnapshotQueryLayer(readModelRef)),
     Layer.provide(
       Layer.succeed(OrchestrationEngineService, {
         readEvents: () => Stream.empty,
-        dispatch: () => unsupportedGitWorkflowCall(),
+        dispatch,
         streamDomainEvents: Stream.fromPubSub(eventPubSub),
         streamShellEvents: Stream.empty,
       }),
@@ -193,14 +323,24 @@ async function createHarness(input: {
     Layer.provide(
       Layer.mock(GitWorkflowService)({
         removeWorktree,
+        pushCurrentBranch,
+        readRangeContext,
       } satisfies Partial<GitWorkflowServiceShape>),
+    ),
+    Layer.provide(
+      Layer.succeed(SourceControlProviderRegistry, {
+        get: () => Effect.succeed(sourceControlProvider),
+        resolveHandle,
+        resolve: (request) => resolveHandle(request).pipe(Effect.map((handle) => handle.provider)),
+        discover: Effect.succeed([]),
+      }),
     ),
     Layer.provide(
       Layer.succeed(VcsProcess, {
         run: vcsProcessRun,
       }),
     ),
-    Layer.provide(ServerSettingsService.layerTest()),
+    Layer.provide(ServerSettingsService.layerTest(input.serverSettingsOverrides ?? {})),
     Layer.provide(platformLayer),
   );
   const runtimeLayer = input.useTestClock
@@ -216,8 +356,14 @@ async function createHarness(input: {
     readModelRef,
     eventPubSub,
     removeWorktree,
+    pushCurrentBranch,
+    readRangeContext,
+    createChangeRequest,
+    resolveHandle,
+    dispatch,
     vcsProcessRun,
     metricRegistry,
+    order,
   };
 }
 
@@ -316,6 +462,281 @@ describe("TaskWorktreeReactor", () => {
       force: true,
     });
     expect(harness.vcsProcessRun).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("pushes, opens a draft PR, records it, then cleans a landed task worktree", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "working",
+        openPrAsDraft: true,
+      }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+      openPrAsDraft: true,
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.resolveHandle).toHaveBeenCalledWith({ cwd: worktreePath });
+    expect(harness.pushCurrentBranch).toHaveBeenCalledWith({
+      cwd: worktreePath,
+      fallbackBranch: "orchestrator/task-1",
+      remoteName: "origin",
+    });
+    expect(harness.createChangeRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: worktreePath,
+        baseRefName: "main",
+        headSelector: "orchestrator/task-1",
+        title: "Task",
+        draft: true,
+      }),
+    );
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.pr.opened",
+        commandId: CommandId.make("task-pr-opened:task-1"),
+        taskId,
+        prUrl: "https://github.com/acme/repo/pull/42",
+        prNumber: 42,
+      }),
+    );
+    expect(harness.order).toEqual(["push", "createChangeRequest", "dispatchPrOpened"]);
+    expect(harness.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: worktreePath,
+      force: true,
+    });
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("resolves draft PRs from global defaults when the project omits the setting", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      serverSettingsOverrides: {
+        orchestratorDefaults: {
+          openPrAsDraft: true,
+        },
+      },
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.createChangeRequest.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.createChangeRequest.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ draft: true }),
+    );
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("does not open a duplicate PR when the landed task already has a prUrl", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "landed",
+        prUrl: "https://github.com/acme/repo/pull/42",
+      }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: worktreePath,
+      force: true,
+    });
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("fails loud and keeps the worktree when the source-control provider is unsupported", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const unsupportedProvider = SourceControlProvider.SourceControlProvider.of({
+      kind: "unknown",
+      listChangeRequests: () => Effect.succeed([]),
+      getChangeRequest: () =>
+        Effect.fail(
+          new SourceControlProviderError({
+            provider: "unknown",
+            operation: "getChangeRequest",
+            detail: "unsupported",
+          }),
+        ),
+      createChangeRequest: () =>
+        Effect.fail(
+          new SourceControlProviderError({
+            provider: "unknown",
+            operation: "createChangeRequest",
+            detail: "unsupported",
+          }),
+        ),
+      getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
+      createRepository: () => unsupportedProjectionQuery(),
+      getDefaultBranch: () => Effect.succeed(null),
+      checkoutChangeRequest: () => Effect.void,
+    });
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      sourceControlProvider: unsupportedProvider,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        type: "thread.activity.append",
+        commandId: CommandId.make("task-pr-open-failed:task-1"),
+      }),
+    );
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("fails loud and keeps the worktree when push fails", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      pushCurrentBranch: () =>
+        Effect.fail(
+          new GitCommandError({
+            operation: "pushCurrentBranch",
+            command: "git push",
+            cwd: worktreePath,
+            detail: "denied",
+          }),
+        ),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        type: "thread.activity.append",
+        activity: expect.objectContaining({
+          summary: expect.stringContaining("branch pushed: no"),
+        }),
+      }),
+    );
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("fails loud and keeps the worktree when PR creation fails after push", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const failingProvider = SourceControlProvider.SourceControlProvider.of({
+      kind: "github",
+      listChangeRequests: () => Effect.succeed([]),
+      getChangeRequest: () => Effect.succeed(createdChangeRequest),
+      createChangeRequest: () =>
+        Effect.fail(
+          new SourceControlProviderError({
+            provider: "github",
+            operation: "createChangeRequest",
+            detail: "network down",
+          }),
+        ),
+      getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
+      createRepository: () => unsupportedProjectionQuery(),
+      getDefaultBranch: () => Effect.succeed("main"),
+      checkoutChangeRequest: () => Effect.void,
+    });
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      sourceControlProvider: failingProvider,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.pushCurrentBranch).toHaveBeenCalled();
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        type: "thread.activity.append",
+        activity: expect.objectContaining({
+          summary: expect.stringContaining("branch pushed: yes"),
+        }),
+      }),
+    );
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

@@ -304,6 +304,24 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
 
+      yield* eventStore.append({
+        type: "task.pr-opened",
+        eventId: EventId.make("evt-stage-history-pr-opened"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:04.000Z",
+        commandId: CommandId.make("cmd-stage-history-pr-opened"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-pr-opened"),
+        metadata: {},
+        payload: {
+          taskId,
+          prUrl: "https://github.com/acme/repo/pull/42",
+          prNumber: 42,
+          updatedAt: "2026-06-22T00:00:04.000Z",
+        },
+      });
+
       yield* projectionPipeline.bootstrap;
 
       const rows = yield* sql<{
@@ -328,6 +346,13 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           endedAt: "2026-06-22T00:00:03.000Z",
         },
       ]);
+
+      const taskRows = yield* sql<{ readonly prUrl: string | null }>`
+        SELECT pr_url AS "prUrl"
+        FROM projection_tasks
+        WHERE task_id = ${taskId}
+      `;
+      assert.strictEqual(taskRows[0]?.prUrl, "https://github.com/acme/repo/pull/42");
     }),
   );
 });

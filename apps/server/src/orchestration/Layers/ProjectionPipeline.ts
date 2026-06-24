@@ -1488,6 +1488,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               status: "draft",
               branch: event.payload.branch,
               worktreePath: event.payload.worktreePath,
+              prUrl: null,
               pmMessageId: event.payload.pmMessageId,
               stageThreadIds: [],
               currentStageThreadId: null,
@@ -1637,6 +1638,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               status: "landed",
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.pr-opened": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              prUrl: event.payload.prUrl,
               updatedAt: event.payload.updatedAt,
             });
             return;

@@ -571,7 +571,18 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "--body-file",
             input.bodyFile,
           ],
-        }).pipe(Effect.asVoid),
+        }).pipe(
+          Effect.map((result) => ({
+            number: 1,
+            title: input.title,
+            url: result.stdout.trim() || "https://github.com/acme/repo/pull/1",
+            baseRefName: input.baseBranch,
+            headRefName: input.headSelector.includes(":")
+              ? (input.headSelector.split(":").at(-1) ?? input.headSelector)
+              : input.headSelector,
+            state: "open" as const,
+          })),
+        ),
       getDefaultBranch: (input) =>
         execute({
           cwd: input.cwd,

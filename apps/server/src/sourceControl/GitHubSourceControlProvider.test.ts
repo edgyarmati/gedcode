@@ -143,7 +143,14 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
     const provider = yield* makeProvider({
       createPullRequest: (input) => {
         createInput = input;
-        return Effect.void;
+        return Effect.succeed({
+          number: 42,
+          title: input.title,
+          url: "https://github.com/acme/repo/pull/42",
+          baseRefName: input.baseBranch,
+          headRefName: "feature/provider",
+          state: "open",
+        });
       },
     });
 
@@ -153,6 +160,7 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
       headSelector: "owner:feature/provider",
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
+      draft: true,
     });
 
     assert.deepStrictEqual(createInput, {
@@ -161,6 +169,7 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
       headSelector: "owner:feature/provider",
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
+      draft: true,
     });
   }),
 );
