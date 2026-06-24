@@ -24,17 +24,20 @@ S4 `df4160e17` · S5 `d32d8ad61` · docs `af135bd26`.
   watcher on project.meta-updated; same-provider compact-first switch via queue permit; different
   provider/key/invalid → recreate; `runtimeActive` guard). Low-pri nit: invalidate leaves an inert
   (guarded) watcher fiber — could also interrupt it.
-- **#1 — LIVE global defaults (Change A): IN PROGRESS.**
-  - **A1 DONE** `3c8440cd5`: OrchestrationEngine reads `orchestratorDefaults` per-command (live) →
-    decider resolves project-explicit (from RAW sparse `project.orchestratorConfig`) ?? global ??
-    constant via the shared resolver (`resolveStages` added, `resolveGatePolicy` takes globals).
-    `land` pinned. No canonical-schema change → fully-configured projects keep their values
-    (backward-compat). Engine now depends on `ServerSettingsService` (test harnesses updated).
-  - **A2 — PENDING (next):** rework the project editor to write SPARSE overrides ("use global" vs
-    explicit per setting, reusing the "use default" pattern; show inherited/effective) and DROP the
-    S2.2 client-side seed (so projects stay sparse and inherit global live). Spec: `A2-spec.md` (TBD).
-  - **A3 — PENDING:** E2E proving a global change affects non-overriding projects live + explicit
-    project overrides win. Spec: `A3-spec.md` (TBD).
+- **#1 — LIVE global defaults (Change A): DONE.** A1 `3c8440cd5` (engine reads `orchestratorDefaults`
+  per-command; decider resolves project-explicit-from-RAW-sparse ?? global ?? constant; `resolveStages`
+  added, `resolveGatePolicy` takes globals; `land` pinned; backward-compat — no canonical-schema change).
+  A2 `a147d25d7` (project editor writes SPARSE overrides — null=inherit per setting; S2.2 seed removed;
+  shows inherited/effective). A3 `850a197f6` (live-global E2E proof through the real engine; no defect).
+
+## ALL DONE — Phase 4 + post-review follow-up complete (2026-06-24)
+
+Everything committed on `feat/orchestrator-mode`, full monorepo gate green. Nothing outstanding in
+Phase 4 or the review. **Next is the user's call:** Phase 5 (scale / OS sandbox / per-task clone /
+real `task.land → openPullRequest` + branch protection / board drag-drop / pagination), or merge to
+`main` (branch policy: only when the orchestrator is fully finished — Phase 5 still pending).
+Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate; the stale Phase-3 content
+still in `.ged/work/root/{SPEC,TASKS,TESTS}.md` (regenerate via ged-planning when Phase 5 starts).
 
 ## Codex handoff mechanics (for resume)
 
