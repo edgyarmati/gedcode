@@ -1,8 +1,4 @@
-import {
-  DEFAULT_SERVER_SETTINGS,
-  ProviderInstanceId,
-  type ModelSelection,
-} from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +8,7 @@ import {
   orchestrationSettingsDraftsEqual,
   resolveRoleDefaultSelection,
   seedOrchestratorConfigDraft,
+  seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
   type OrchestratorConfigDraft,
   type OrchestrationSettingsDraft,
@@ -47,42 +44,26 @@ describe("seedOrchestrationSettingsDraft", () => {
     expect(Object.values(draft.rolePrefixes).every((value) => value === "")).toBe(true);
   });
 
-  it("seeds an unconfigured project from global orchestrator defaults", () => {
-    const draft = seedOrchestrationSettingsDraft(
-      {},
-      {
-        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-        stages: ["classify", "plan", "work"],
-        gatePolicy: {
-          classify: "auto",
-          plan: "auto",
-          work: "require-approval",
-          review: "auto",
-          land: "require-approval",
-        },
-        maxParallelTasks: 3,
-        maxParallelWorkers: 4,
-        maxStageHandoffs: 11,
-        maxRetriesPerStage: 6,
-        allowFullAccessWorkers: true,
-      },
-    );
+  it("seeds an unconfigured project as all inherited orchestrator settings", () => {
+    const draft = seedOrchestrationSettingsDraft({});
 
-    expect(draft.orchestratorConfig.enabled).toBe(false);
-    expect(draft.orchestratorConfig.pmModelSelection).toBeNull();
-    expect(draft.orchestratorConfig.optionalStages).toEqual({ review: false, verify: false });
-    expect(draft.orchestratorConfig.gatePolicy).toEqual({
-      classify: "auto",
-      plan: "auto",
-      work: "require-approval",
-      review: "auto",
-    });
-    expect(draft.orchestratorConfig.resourceLimits).toEqual({
-      maxParallelTasks: 3,
-      maxParallelWorkers: 4,
-      maxStageHandoffs: 11,
-      maxRetriesPerStage: 6,
-      allowFullAccessWorkers: true,
+    expect(draft.orchestratorConfig).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+      optionalStages: null,
+      gatePolicy: {
+        classify: null,
+        plan: null,
+        work: null,
+        review: null,
+      },
+      resourceLimits: {
+        maxParallelTasks: null,
+        maxParallelWorkers: null,
+        maxStageHandoffs: null,
+        maxRetriesPerStage: null,
+        allowFullAccessWorkers: null,
+      },
     });
   });
 });
@@ -120,9 +101,10 @@ describe("buildOrchestrationConfigUpdate", () => {
     expect(update.orchestratorConfig).toEqual(
       buildOrchestratorProjectConfig(draft.orchestratorConfig),
     );
+    expect(update.orchestratorConfig).toEqual({ enabled: false, pmModelSelection: null });
   });
 
-  it("round-trips a seeded config back to the same maps", () => {
+  it("round-trips a seeded sparse config back to the same maps", () => {
     const config = {
       roleModelSelections: { work: selection("codex_task", "gpt-5-task") },
       rolePromptPrefixes: { verify: "Verify behavior." },
@@ -134,20 +116,12 @@ describe("buildOrchestrationConfigUpdate", () => {
             id: "feature" as const,
             stages: ["classify", "plan", "work"],
             gatePolicy: {
-              classify: "auto" as const,
               plan: "require-approval" as const,
-              work: "auto" as const,
-              review: "require-approval" as const,
-              land: "require-approval" as const,
             },
           },
         ],
         resourceLimits: {
-          maxParallelTasks: 2,
           maxParallelWorkers: 3,
-          maxStageHandoffs: 4,
-          maxRetriesPerStage: 5,
-          allowFullAccessWorkers: true,
         },
       },
     };
@@ -156,24 +130,24 @@ describe("buildOrchestrationConfigUpdate", () => {
 });
 
 describe("seedOrchestratorConfigDraft", () => {
-  it("uses schema defaults when config is absent", () => {
+  it("uses inherited values when config is absent", () => {
     const draft = seedOrchestratorConfigDraft(undefined);
     expect(draft).toEqual({
       enabled: false,
       pmModelSelection: null,
-      optionalStages: { review: true, verify: true },
+      optionalStages: null,
       gatePolicy: {
-        classify: "require-approval",
-        plan: "require-approval",
-        work: "require-approval",
-        review: "require-approval",
+        classify: null,
+        plan: null,
+        work: null,
+        review: null,
       },
       resourceLimits: {
-        maxParallelTasks: 1,
-        maxParallelWorkers: 1,
-        maxStageHandoffs: 8,
-        maxRetriesPerStage: 2,
-        allowFullAccessWorkers: false,
+        maxParallelTasks: null,
+        maxParallelWorkers: null,
+        maxStageHandoffs: null,
+        maxRetriesPerStage: null,
+        allowFullAccessWorkers: null,
       },
     });
   });
@@ -221,110 +195,120 @@ describe("seedOrchestratorConfigDraft", () => {
     });
   });
 
-  it("uses global defaults only for an empty project config", () => {
-    const draft = seedOrchestratorConfigDraft(
-      {},
-      {
-        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-        stages: ["classify", "plan", "work", "verify"],
-        gatePolicy: {
-          classify: "auto",
-          plan: "auto",
-          work: "auto",
-          review: "require-approval",
-          land: "require-approval",
-        },
-        maxParallelTasks: 7,
-        maxParallelWorkers: 8,
-        maxStageHandoffs: 9,
-        maxRetriesPerStage: 10,
-        allowFullAccessWorkers: true,
-      },
-    );
+  it("seeds an empty project config as inherited rather than global-filled", () => {
+    const draft = seedOrchestratorConfigDraft({});
 
     expect(draft.enabled).toBe(false);
     expect(draft.pmModelSelection).toBeNull();
-    expect(draft.optionalStages).toEqual({ review: false, verify: true });
+    expect(draft.optionalStages).toBeNull();
     expect(draft.gatePolicy).toEqual({
-      classify: "auto",
-      plan: "auto",
-      work: "auto",
-      review: "require-approval",
+      classify: null,
+      plan: null,
+      work: null,
+      review: null,
     });
     expect(draft.resourceLimits).toEqual({
-      maxParallelTasks: 7,
-      maxParallelWorkers: 8,
-      maxStageHandoffs: 9,
-      maxRetriesPerStage: 10,
-      allowFullAccessWorkers: true,
+      maxParallelTasks: null,
+      maxParallelWorkers: null,
+      maxStageHandoffs: null,
+      maxRetriesPerStage: null,
+      allowFullAccessWorkers: null,
     });
   });
 
-  it("keeps a configured project config authoritative over global defaults", () => {
-    const draft = seedOrchestratorConfigDraft(
-      {
-        enabled: true,
-        pmModelSelection: selection("codex_pm", "gpt-5-pm"),
-        taskTypes: [
-          {
-            id: "feature",
-            stages: ["classify", "plan", "review", "work"],
-            gatePolicy: {
-              classify: "require-approval",
-              plan: "require-approval",
-              work: "auto",
-              review: "auto",
-              land: "require-approval",
-            },
+  it("seeds only the current project's explicit sparse config", () => {
+    const draft = seedOrchestratorConfigDraft({
+      enabled: true,
+      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      taskTypes: [
+        {
+          id: "feature",
+          gatePolicy: {
+            work: "auto",
           },
-        ],
-        resourceLimits: {
-          maxParallelTasks: 2,
-          maxParallelWorkers: 3,
-          maxStageHandoffs: 4,
-          maxRetriesPerStage: 5,
-          allowFullAccessWorkers: false,
         },
+      ],
+      resourceLimits: {
+        maxRetriesPerStage: 5,
       },
-      {
-        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-        stages: ["classify", "plan", "work", "verify"],
-        gatePolicy: {
-          classify: "auto",
-          plan: "auto",
-          work: "auto",
-          review: "require-approval",
-          land: "require-approval",
-        },
-        maxParallelTasks: 7,
-        maxParallelWorkers: 8,
-        maxStageHandoffs: 9,
-        maxRetriesPerStage: 10,
-        allowFullAccessWorkers: true,
-      },
-    );
+    });
 
     expect(draft.enabled).toBe(true);
     expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
-    expect(draft.optionalStages).toEqual({ review: true, verify: false });
+    expect(draft.optionalStages).toBeNull();
     expect(draft.gatePolicy).toEqual({
-      classify: "require-approval",
-      plan: "require-approval",
+      classify: null,
+      plan: null,
       work: "auto",
-      review: "auto",
+      review: null,
     });
     expect(draft.resourceLimits).toEqual({
-      maxParallelTasks: 2,
-      maxParallelWorkers: 3,
-      maxStageHandoffs: 4,
+      maxParallelTasks: null,
+      maxParallelWorkers: null,
+      maxStageHandoffs: null,
       maxRetriesPerStage: 5,
-      allowFullAccessWorkers: false,
+      allowFullAccessWorkers: null,
     });
   });
 });
 
 describe("buildOrchestratorProjectConfig", () => {
-  it("builds the full single-feature config from edited settings", () => {
+  it("builds a minimal sparse config when all inheritable settings use global", () => {
+    const draft = seedOrchestratorConfigDraft({});
+
+    expect(buildOrchestratorProjectConfig(draft)).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+    });
+  });
+
+  it("writes only one overridden gate under the feature task type", () => {
+    const draft: OrchestratorConfigDraft = {
+      ...seedOrchestratorConfigDraft({}),
+      gatePolicy: {
+        classify: null,
+        plan: "auto",
+        work: null,
+        review: null,
+      },
+    };
+
+    expect(buildOrchestratorProjectConfig(draft)).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+      taskTypes: [
+        {
+          id: "feature",
+          gatePolicy: {
+            plan: "auto",
+          },
+        },
+      ],
+    });
+  });
+
+  it("writes only one overridden resource limit", () => {
+    const draft: OrchestratorConfigDraft = {
+      ...seedOrchestratorConfigDraft({}),
+      resourceLimits: {
+        maxParallelTasks: null,
+        maxParallelWorkers: 3,
+        maxStageHandoffs: null,
+        maxRetriesPerStage: null,
+        allowFullAccessWorkers: null,
+      },
+    };
+
+    expect(buildOrchestratorProjectConfig(draft)).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+      resourceLimits: {
+        maxParallelWorkers: 3,
+      },
+    });
+  });
+
+  it("builds sparse feature config from edited settings", () => {
     const draft: OrchestratorConfigDraft = {
       enabled: true,
       pmModelSelection: selection("codex_pm", "gpt-5-pm"),
@@ -355,7 +339,6 @@ describe("buildOrchestratorProjectConfig", () => {
             plan: "require-approval",
             work: "auto",
             review: "auto",
-            land: "require-approval",
           },
         },
       ],
@@ -387,8 +370,57 @@ describe("buildOrchestratorProjectConfig", () => {
       ],
     });
     const built = buildOrchestratorProjectConfig(draft);
-    expect(built.taskTypes[0]?.gatePolicy.land).toBe("require-approval");
+    const feature = (
+      built.taskTypes as
+        | ReadonlyArray<{ readonly gatePolicy?: Record<string, unknown> }>
+        | undefined
+    )?.[0];
+    expect(feature?.gatePolicy).not.toHaveProperty("land");
     expect(seedOrchestratorConfigDraft(built)).toEqual(draft);
+  });
+});
+
+describe("seedOrchestratorInheritedDefaultsDraft", () => {
+  it("formats global defaults for inherited display without writing them to project seed", () => {
+    expect(
+      seedOrchestratorInheritedDefaultsDraft({
+        stages: ["classify", "plan", "work", "verify"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "require-approval",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+        maxParallelTasks: 3,
+        maxParallelWorkers: 4,
+        maxStageHandoffs: 9,
+        maxRetriesPerStage: 5,
+        pmReconciliationIntervalMs: 120_000,
+        worktreeReaperIntervalMinutes: 10,
+        autoCompaction: {
+          enabled: true,
+          reserveTokens: 8_000,
+          keepRecentTokens: 12_000,
+        },
+        allowFullAccessWorkers: true,
+      }),
+    ).toEqual({
+      optionalStages: { review: false, verify: true },
+      gatePolicy: {
+        classify: "auto",
+        plan: "require-approval",
+        work: "auto",
+        review: "require-approval",
+      },
+      resourceLimits: {
+        maxParallelTasks: 3,
+        maxParallelWorkers: 4,
+        maxStageHandoffs: 9,
+        maxRetriesPerStage: 5,
+        allowFullAccessWorkers: true,
+      },
+    });
   });
 });
 
@@ -490,7 +522,7 @@ describe("orchestratorConfigDraftsEqual", () => {
     expect(
       orchestratorConfigDraftsEqual(base, {
         ...base,
-        optionalStages: { ...base.optionalStages, review: false },
+        optionalStages: { review: false, verify: true },
       }),
     ).toBe(false);
     expect(
@@ -503,6 +535,12 @@ describe("orchestratorConfigDraftsEqual", () => {
       orchestratorConfigDraftsEqual(base, {
         ...base,
         resourceLimits: { ...base.resourceLimits, maxParallelWorkers: 4 },
+      }),
+    ).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(seedOrchestratorConfigDraft({}), {
+        ...seedOrchestratorConfigDraft({}),
+        optionalStages: { review: true, verify: true },
       }),
     ).toBe(false);
   });

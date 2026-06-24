@@ -13,6 +13,9 @@ import {
   EDITABLE_ORCHESTRATOR_GATES,
   MANDATORY_ORCHESTRATOR_STAGES,
   type EditableOrchestratorGate,
+  type InheritableOrchestratorGatePolicy,
+  type InheritableOrchestratorResourceLimits,
+  type InheritableOrchestratorStages,
   type OptionalOrchestratorStage,
 } from "./projectOrchestrationSettings.logic";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
@@ -28,6 +31,8 @@ const PROJECT_RESOURCE_LIMIT_LABELS: Record<ProjectResourceLimitNumberKey, strin
   maxStageHandoffs: "Max stage handoffs",
   maxRetriesPerStage: "Max retries per stage",
 };
+const USE_GLOBAL_VALUE = "__global__";
+const CUSTOMIZE_VALUE = "__customize__";
 
 export type ProjectResourceLimitNumberKey = Exclude<
   keyof OrchestratorResourceLimits,
@@ -36,9 +41,11 @@ export type ProjectResourceLimitNumberKey = Exclude<
 
 export function OrchestratorStagesControl({
   optionalStages,
+  disabled = false,
   onOptionalStageChange,
 }: {
-  optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
+  optionalStages: Exclude<InheritableOrchestratorStages, null>;
+  disabled?: boolean;
   onOptionalStageChange: (stage: OptionalOrchestratorStage, enabled: boolean) => void;
 }) {
   const mandatoryStageSet = new Set<OrchestrationStageRole>(MANDATORY_ORCHESTRATOR_STAGES);
@@ -55,10 +62,10 @@ export function OrchestratorStagesControl({
             <span>{STAGE_ROLE_LABELS[stage]}</span>
             <Switch
               checked={checked}
-              disabled={mandatory}
+              disabled={mandatory || disabled}
               aria-label={`${STAGE_ROLE_LABELS[stage]} stage`}
               onCheckedChange={(next) =>
-                mandatory
+                mandatory || disabled
                   ? undefined
                   : onOptionalStageChange(stage as OptionalOrchestratorStage, Boolean(next))
               }
@@ -72,41 +79,66 @@ export function OrchestratorStagesControl({
 
 export function OrchestratorGateAutonomyControl({
   gatePolicy,
+  inheritedGatePolicy,
   onGatePolicyChange,
 }: {
-  gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
-  onGatePolicyChange: (gate: EditableOrchestratorGate, policy: OrchestratorGatePolicy) => void;
+  gatePolicy:
+    | Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>
+    | InheritableOrchestratorGatePolicy;
+  inheritedGatePolicy?: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  onGatePolicyChange: (
+    gate: EditableOrchestratorGate,
+    policy: OrchestratorGatePolicy | null,
+  ) => void;
 }) {
   return (
     <div className="grid gap-2">
-      {EDITABLE_ORCHESTRATOR_GATES.map((gate) => (
-        <div
-          key={gate}
-          className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_12rem] sm:items-center"
-        >
-          <span>{STAGE_ROLE_LABELS[gate]}</span>
-          <Select
-            value={gatePolicy[gate]}
-            onValueChange={(value) => {
-              if (value === "auto" || value === "require-approval") {
-                onGatePolicyChange(gate, value);
-              }
-            }}
+      {EDITABLE_ORCHESTRATOR_GATES.map((gate) => {
+        const explicitPolicy = gatePolicy[gate];
+        const inheritedPolicy = inheritedGatePolicy?.[gate];
+        const displayedPolicy = explicitPolicy ?? inheritedPolicy ?? "require-approval";
+        return (
+          <div
+            key={gate}
+            className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_12rem] sm:items-center"
           >
-            <SelectTrigger size="sm" aria-label={`${STAGE_ROLE_LABELS[gate]} gate autonomy`}>
-              <SelectValue>{GATE_POLICY_LABELS[gatePolicy[gate]]}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="start" alignItemWithTrigger={false}>
-              <SelectItem hideIndicator value="auto">
-                {GATE_POLICY_LABELS.auto}
-              </SelectItem>
-              <SelectItem hideIndicator value="require-approval">
-                {GATE_POLICY_LABELS["require-approval"]}
-              </SelectItem>
-            </SelectPopup>
-          </Select>
-        </div>
-      ))}
+            <span>{STAGE_ROLE_LABELS[gate]}</span>
+            <Select
+              value={explicitPolicy ?? USE_GLOBAL_VALUE}
+              onValueChange={(value) => {
+                if (value === USE_GLOBAL_VALUE) {
+                  onGatePolicyChange(gate, null);
+                  return;
+                }
+                if (value === "auto" || value === "require-approval") {
+                  onGatePolicyChange(gate, value);
+                }
+              }}
+            >
+              <SelectTrigger size="sm" aria-label={`${STAGE_ROLE_LABELS[gate]} gate autonomy`}>
+                <SelectValue>
+                  {explicitPolicy === null && inheritedPolicy !== undefined
+                    ? `Use global (${GATE_POLICY_LABELS[inheritedPolicy]})`
+                    : GATE_POLICY_LABELS[displayedPolicy]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="start" alignItemWithTrigger={false}>
+                {inheritedPolicy !== undefined ? (
+                  <SelectItem hideIndicator value={USE_GLOBAL_VALUE}>
+                    Use global ({GATE_POLICY_LABELS[inheritedPolicy]})
+                  </SelectItem>
+                ) : null}
+                <SelectItem hideIndicator value="auto">
+                  {GATE_POLICY_LABELS.auto}
+                </SelectItem>
+                <SelectItem hideIndicator value="require-approval">
+                  {GATE_POLICY_LABELS["require-approval"]}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          </div>
+        );
+      })}
       <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
         <span>Land</span>
         <span className="text-muted-foreground">Require approval (always)</span>
@@ -117,32 +149,113 @@ export function OrchestratorGateAutonomyControl({
 
 export function ProjectOrchestratorResourceLimitsControl({
   resourceLimits,
+  inheritedResourceLimits,
   onNumberLimitChange,
   onAllowFullAccessWorkersChange,
 }: {
-  resourceLimits: OrchestratorResourceLimits;
-  onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number) => void;
-  onAllowFullAccessWorkersChange: (enabled: boolean) => void;
+  resourceLimits: OrchestratorResourceLimits | InheritableOrchestratorResourceLimits;
+  inheritedResourceLimits?: OrchestratorResourceLimits;
+  onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number | null) => void;
+  onAllowFullAccessWorkersChange: (enabled: boolean | null) => void;
 }) {
   const numberKeys = Object.keys(PROJECT_RESOURCE_LIMIT_LABELS) as ProjectResourceLimitNumberKey[];
   return (
     <div className="grid gap-2">
-      {numberKeys.map((key) => (
-        <NumberLimitRow
-          key={key}
-          label={PROJECT_RESOURCE_LIMIT_LABELS[key]}
-          value={resourceLimits[key]}
-          onChange={(value) => onNumberLimitChange(key, value)}
-        />
-      ))}
-      <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+      {numberKeys.map((key) => {
+        const explicitValue = resourceLimits[key];
+        const inheritedValue = inheritedResourceLimits?.[key];
+        const displayedValue = explicitValue ?? inheritedValue ?? 1;
+        const inheriting = explicitValue === null && inheritedValue !== undefined;
+        return (
+          <div
+            key={key}
+            className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_10rem_7rem] sm:items-center"
+          >
+            <span>{PROJECT_RESOURCE_LIMIT_LABELS[key]}</span>
+            {inheritedValue !== undefined ? (
+              <Select
+                value={inheriting ? USE_GLOBAL_VALUE : CUSTOMIZE_VALUE}
+                onValueChange={(value) => {
+                  onNumberLimitChange(key, value === USE_GLOBAL_VALUE ? null : displayedValue);
+                }}
+              >
+                <SelectTrigger size="sm" aria-label={`${PROJECT_RESOURCE_LIMIT_LABELS[key]} mode`}>
+                  <SelectValue>
+                    {inheriting ? `Use global (${inheritedValue})` : "Override"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="start" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value={USE_GLOBAL_VALUE}>
+                    Use global ({inheritedValue})
+                  </SelectItem>
+                  <SelectItem hideIndicator value={CUSTOMIZE_VALUE}>
+                    Override
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            ) : null}
+            <Input
+              nativeInput
+              type="number"
+              min={1}
+              step={1}
+              value={displayedValue}
+              disabled={inheriting}
+              aria-label={PROJECT_RESOURCE_LIMIT_LABELS[key]}
+              onChange={(event) => {
+                const parsed = Number.parseInt(event.target.value, 10);
+                onNumberLimitChange(key, Number.isFinite(parsed) && parsed > 0 ? parsed : 1);
+              }}
+            />
+          </div>
+        );
+      })}
+      <div className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_10rem_auto] sm:items-center">
         <span>Allow full-access workers safety opt-in</span>
+        {inheritedResourceLimits !== undefined ? (
+          <Select
+            value={
+              resourceLimits.allowFullAccessWorkers === null ? USE_GLOBAL_VALUE : CUSTOMIZE_VALUE
+            }
+            onValueChange={(value) => {
+              onAllowFullAccessWorkersChange(
+                value === USE_GLOBAL_VALUE
+                  ? null
+                  : (resourceLimits.allowFullAccessWorkers ??
+                      inheritedResourceLimits.allowFullAccessWorkers),
+              );
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Allow full-access workers mode">
+              <SelectValue>
+                {resourceLimits.allowFullAccessWorkers === null
+                  ? `Use global (${inheritedResourceLimits.allowFullAccessWorkers ? "On" : "Off"})`
+                  : "Override"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value={USE_GLOBAL_VALUE}>
+                Use global ({inheritedResourceLimits.allowFullAccessWorkers ? "On" : "Off"})
+              </SelectItem>
+              <SelectItem hideIndicator value={CUSTOMIZE_VALUE}>
+                Override
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        ) : null}
         <Switch
-          checked={resourceLimits.allowFullAccessWorkers}
+          checked={
+            resourceLimits.allowFullAccessWorkers ??
+            inheritedResourceLimits?.allowFullAccessWorkers ??
+            false
+          }
+          disabled={
+            resourceLimits.allowFullAccessWorkers === null && inheritedResourceLimits !== undefined
+          }
           aria-label="Allow full-access workers safety opt-in"
           onCheckedChange={(checked) => onAllowFullAccessWorkersChange(Boolean(checked))}
         />
-      </label>
+      </div>
     </div>
   );
 }

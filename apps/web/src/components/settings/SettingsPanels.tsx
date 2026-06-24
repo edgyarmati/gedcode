@@ -1137,12 +1137,15 @@ export function OrchestratorDefaultsSettingsPanel() {
           <div className="pb-4 pt-3">
             <OrchestratorGateAutonomyControl
               gatePolicy={draft.gatePolicy}
-              onGatePolicyChange={(gate, policy) =>
+              onGatePolicyChange={(gate, policy) => {
+                if (policy === null) {
+                  return;
+                }
                 updateDraft({
                   ...draft,
                   gatePolicy: { ...draft.gatePolicy, [gate]: policy },
-                })
-              }
+                });
+              }}
             />
           </div>
         </SettingsRow>

@@ -4,7 +4,6 @@ import {
   type ModelSelection,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
-  type OrchestratorResourceLimits,
   type OrchestrationStageRole,
   type ProjectId,
 } from "@t3tools/contracts";
@@ -30,14 +29,18 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   buildOrchestrationConfigUpdate,
   orchestrationSettingsDraftsEqual,
+  seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
   type EditableOrchestratorGate,
+  type InheritableOrchestratorResourceLimits,
+  type InheritableOrchestratorStages,
   type OptionalOrchestratorStage,
   type OrchestrationSettingsDraft,
 } from "./projectOrchestrationSettings.logic";
@@ -168,17 +171,55 @@ function PmModelSection({
   );
 }
 
+function formatEnabledOptionalStages(
+  optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>,
+): string {
+  const enabledStages = (["review", "verify"] as const)
+    .filter((stage) => optionalStages[stage])
+    .map((stage) => STAGE_ROLE_LABELS[stage]);
+  return enabledStages.length > 0 ? enabledStages.join(", ") : "required only";
+}
+
 function StagesSection({
   optionalStages,
+  inheritedOptionalStages,
+  onOptionalStagesModeChange,
   onOptionalStageChange,
 }: {
-  optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
+  optionalStages: InheritableOrchestratorStages;
+  inheritedOptionalStages: Exclude<InheritableOrchestratorStages, null>;
+  onOptionalStagesModeChange: (next: InheritableOrchestratorStages) => void;
   onOptionalStageChange: (stage: OptionalOrchestratorStage, enabled: boolean) => void;
 }) {
+  const inheriting = optionalStages === null;
+  const displayedStages = optionalStages ?? inheritedOptionalStages;
   return (
     <SettingsSection title="Stages" description="Classify, plan, and work always run.">
+      <Select
+        value={inheriting ? "inherit" : "customize"}
+        onValueChange={(value) =>
+          onOptionalStagesModeChange(value === "inherit" ? null : { ...displayedStages })
+        }
+      >
+        <SelectTrigger size="sm" aria-label="Stages inheritance mode">
+          <SelectValue>
+            {inheriting
+              ? `Use global stages (${formatEnabledOptionalStages(inheritedOptionalStages)})`
+              : "Customize"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup align="start" alignItemWithTrigger={false}>
+          <SelectItem hideIndicator value="inherit">
+            Use global stages ({formatEnabledOptionalStages(inheritedOptionalStages)})
+          </SelectItem>
+          <SelectItem hideIndicator value="customize">
+            Customize
+          </SelectItem>
+        </SelectPopup>
+      </Select>
       <OrchestratorStagesControl
-        optionalStages={optionalStages}
+        optionalStages={displayedStages}
+        disabled={inheriting}
         onOptionalStageChange={onOptionalStageChange}
       />
     </SettingsSection>
@@ -187,15 +228,21 @@ function StagesSection({
 
 function GateAutonomySection({
   gatePolicy,
+  inheritedGatePolicy,
   onGatePolicyChange,
 }: {
-  gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
-  onGatePolicyChange: (gate: EditableOrchestratorGate, policy: OrchestratorGatePolicy) => void;
+  gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy | null>>;
+  inheritedGatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  onGatePolicyChange: (
+    gate: EditableOrchestratorGate,
+    policy: OrchestratorGatePolicy | null,
+  ) => void;
 }) {
   return (
     <SettingsSection title="Gate autonomy">
       <OrchestratorGateAutonomyControl
         gatePolicy={gatePolicy}
+        inheritedGatePolicy={inheritedGatePolicy}
         onGatePolicyChange={onGatePolicyChange}
       />
     </SettingsSection>
@@ -204,12 +251,20 @@ function GateAutonomySection({
 
 function ResourceLimitsSection({
   resourceLimits,
+  inheritedResourceLimits,
   onNumberLimitChange,
   onAllowFullAccessWorkersChange,
 }: {
-  resourceLimits: OrchestratorResourceLimits;
-  onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number) => void;
-  onAllowFullAccessWorkersChange: (enabled: boolean) => void;
+  resourceLimits: InheritableOrchestratorResourceLimits;
+  inheritedResourceLimits: {
+    readonly maxParallelTasks: number;
+    readonly maxParallelWorkers: number;
+    readonly maxStageHandoffs: number;
+    readonly maxRetriesPerStage: number;
+    readonly allowFullAccessWorkers: boolean;
+  };
+  onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number | null) => void;
+  onAllowFullAccessWorkersChange: (enabled: boolean | null) => void;
 }) {
   return (
     <SettingsSection
@@ -218,6 +273,7 @@ function ResourceLimitsSection({
     >
       <ProjectOrchestratorResourceLimitsControl
         resourceLimits={resourceLimits}
+        inheritedResourceLimits={inheritedResourceLimits}
         onNumberLimitChange={onNumberLimitChange}
         onAllowFullAccessWorkersChange={onAllowFullAccessWorkersChange}
       />
@@ -237,6 +293,10 @@ export function ProjectOrchestrationSettingsDialog({
   onClose: () => void;
 }) {
   const orchestratorDefaults = useSettings((settings) => settings.orchestratorDefaults);
+  const inheritedDefaults = useMemo(
+    () => seedOrchestratorInheritedDefaultsDraft(orchestratorDefaults),
+    [orchestratorDefaults],
+  );
   const serverProviders = useServerProviders();
   const instanceEntries = useMemo(
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
@@ -245,15 +305,12 @@ export function ProjectOrchestrationSettingsDialog({
 
   const seededDraft = useMemo<OrchestrationSettingsDraft>(
     () =>
-      seedOrchestrationSettingsDraft(
-        {
-          roleModelSelections: target?.roleModelSelections,
-          rolePromptPrefixes: target?.rolePromptPrefixes,
-          orchestratorConfig: target?.orchestratorConfig,
-        },
-        orchestratorDefaults,
-      ),
-    [orchestratorDefaults, target],
+      seedOrchestrationSettingsDraft({
+        roleModelSelections: target?.roleModelSelections,
+        rolePromptPrefixes: target?.rolePromptPrefixes,
+        orchestratorConfig: target?.orchestratorConfig,
+      }),
+    [target],
   );
   const [draft, setDraft] = useState<OrchestrationSettingsDraft>(seededDraft);
   const [saving, setSaving] = useState(false);
@@ -296,14 +353,23 @@ export function ProjectOrchestrationSettingsDialog({
         ...current,
         orchestratorConfig: {
           ...current.orchestratorConfig,
-          optionalStages: { ...current.orchestratorConfig.optionalStages, [stage]: enabled },
+          optionalStages: {
+            ...(current.orchestratorConfig.optionalStages ?? inheritedDefaults.optionalStages),
+            [stage]: enabled,
+          },
         },
       }));
     },
-    [],
+    [inheritedDefaults.optionalStages],
   );
+  const handleOptionalStagesModeChange = useCallback((next: InheritableOrchestratorStages) => {
+    setDraft((current) => ({
+      ...current,
+      orchestratorConfig: { ...current.orchestratorConfig, optionalStages: next },
+    }));
+  }, []);
   const handleGatePolicyChange = useCallback(
-    (gate: EditableOrchestratorGate, policy: OrchestratorGatePolicy) => {
+    (gate: EditableOrchestratorGate, policy: OrchestratorGatePolicy | null) => {
       setDraft((current) => ({
         ...current,
         orchestratorConfig: {
@@ -315,7 +381,7 @@ export function ProjectOrchestrationSettingsDialog({
     [],
   );
   const handleNumberLimitChange = useCallback(
-    (key: ProjectResourceLimitNumberKey, value: number) => {
+    (key: ProjectResourceLimitNumberKey, value: number | null) => {
       setDraft((current) => ({
         ...current,
         orchestratorConfig: {
@@ -326,7 +392,7 @@ export function ProjectOrchestrationSettingsDialog({
     },
     [],
   );
-  const handleAllowFullAccessWorkersChange = useCallback((enabled: boolean) => {
+  const handleAllowFullAccessWorkersChange = useCallback((enabled: boolean | null) => {
     setDraft((current) => ({
       ...current,
       orchestratorConfig: {
@@ -411,14 +477,18 @@ export function ProjectOrchestrationSettingsDialog({
           />
           <StagesSection
             optionalStages={draft.orchestratorConfig.optionalStages}
+            inheritedOptionalStages={inheritedDefaults.optionalStages}
+            onOptionalStagesModeChange={handleOptionalStagesModeChange}
             onOptionalStageChange={handleOptionalStageChange}
           />
           <GateAutonomySection
             gatePolicy={draft.orchestratorConfig.gatePolicy}
+            inheritedGatePolicy={inheritedDefaults.gatePolicy}
             onGatePolicyChange={handleGatePolicyChange}
           />
           <ResourceLimitsSection
             resourceLimits={draft.orchestratorConfig.resourceLimits}
+            inheritedResourceLimits={inheritedDefaults.resourceLimits}
             onNumberLimitChange={handleNumberLimitChange}
             onAllowFullAccessWorkersChange={handleAllowFullAccessWorkersChange}
           />

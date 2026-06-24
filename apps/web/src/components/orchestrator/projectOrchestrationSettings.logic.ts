@@ -5,11 +5,9 @@ import {
   DEFAULT_MAX_STAGE_HANDOFFS,
   ORCHESTRATION_STAGE_ROLES,
   OrchestratorGlobalDefaults,
-  OrchestratorProjectConfig,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
   type OrchestratorResourceLimits,
-  type OrchestratorTaskGatePolicy,
   type ModelSelection,
   type OrchestrationStageRole,
 } from "@t3tools/contracts";
@@ -29,26 +27,25 @@ export const CANONICAL_ORCHESTRATOR_STAGE_ORDER = [
 
 export type OptionalOrchestratorStage = (typeof OPTIONAL_ORCHESTRATOR_STAGES)[number];
 export type EditableOrchestratorGate = (typeof EDITABLE_ORCHESTRATOR_GATES)[number];
+export type InheritableOrchestratorStages = Readonly<
+  Record<OptionalOrchestratorStage, boolean>
+> | null;
+export type InheritableOrchestratorGatePolicy = Readonly<
+  Record<EditableOrchestratorGate, OrchestratorGatePolicy | null>
+>;
+export interface InheritableOrchestratorResourceLimits {
+  readonly maxParallelTasks: number | null;
+  readonly maxParallelWorkers: number | null;
+  readonly maxStageHandoffs: number | null;
+  readonly maxRetriesPerStage: number | null;
+  readonly allowFullAccessWorkers: boolean | null;
+}
 
-const decodeOrchestratorProjectConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 const decodeOrchestratorGlobalDefaults = Schema.decodeUnknownOption(OrchestratorGlobalDefaults);
 
-const DEFAULT_ORCHESTRATOR_CONFIG = Option.getOrThrow(decodeOrchestratorProjectConfig({}));
 const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = Option.getOrThrow(
   decodeOrchestratorGlobalDefaults({}),
 );
-
-const DEFAULT_FEATURE_CONFIG = DEFAULT_ORCHESTRATOR_CONFIG.taskTypes[0] ?? {
-  id: "feature" as const,
-  stages: ORCHESTRATION_STAGE_ROLES,
-  gatePolicy: {
-    classify: "require-approval" as const,
-    plan: "require-approval" as const,
-    work: "require-approval" as const,
-    review: "require-approval" as const,
-    land: "require-approval" as const,
-  },
-};
 
 // Per-role draft state for the project orchestration-settings editor. A `null`
 // selection means "use the project default backend"; an empty prefix means "no
@@ -63,9 +60,9 @@ export interface OrchestrationSettingsDraft {
 export interface OrchestratorConfigDraft {
   readonly enabled: boolean;
   readonly pmModelSelection: ModelSelection | null;
-  readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
-  readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
-  readonly resourceLimits: OrchestratorResourceLimits;
+  readonly optionalStages: InheritableOrchestratorStages;
+  readonly gatePolicy: InheritableOrchestratorGatePolicy;
+  readonly resourceLimits: InheritableOrchestratorResourceLimits;
 }
 
 // The subset of project config the editor reads and writes. Matches the
@@ -83,14 +80,13 @@ export interface ProjectOrchestrationConfig {
 export interface OrchestrationConfigUpdate {
   readonly roleModelSelections: Record<string, ModelSelection>;
   readonly rolePromptPrefixes: Record<string, string>;
-  readonly orchestratorConfig: OrchestratorProjectConfig;
+  readonly orchestratorConfig: OrchestratorConfigJson;
 }
 
 // Seed editor state from a project's current config. Roles without a configured
 // selection seed to `null` (use default); roles without a prefix seed to "".
 export function seedOrchestrationSettingsDraft(
   config: ProjectOrchestrationConfig,
-  globalDefaults?: OrchestratorGlobalDefaults,
 ): OrchestrationSettingsDraft {
   const roleSelections = {} as Record<OrchestrationStageRole, ModelSelection | null>;
   const rolePrefixes = {} as Record<OrchestrationStageRole, string>;
@@ -101,7 +97,7 @@ export function seedOrchestrationSettingsDraft(
   return {
     roleSelections,
     rolePrefixes,
-    orchestratorConfig: seedOrchestratorConfigDraft(config.orchestratorConfig, globalDefaults),
+    orchestratorConfig: seedOrchestratorConfigDraft(config.orchestratorConfig),
   };
 }
 
@@ -131,16 +127,6 @@ export function buildOrchestrationConfigUpdate(
   };
 }
 
-function normalizeOrchestratorProjectConfig(
-  config: OrchestratorConfigJson | OrchestratorProjectConfig | undefined,
-): OrchestratorProjectConfig {
-  return Option.getOrElse(decodeOrchestratorProjectConfig(config ?? {}), () => ({
-    ...DEFAULT_ORCHESTRATOR_CONFIG,
-    taskTypes: [...DEFAULT_ORCHESTRATOR_CONFIG.taskTypes],
-    resourceLimits: { ...DEFAULT_ORCHESTRATOR_CONFIG.resourceLimits },
-  }));
-}
-
 function normalizeOrchestratorGlobalDefaults(
   globalDefaults: OrchestratorGlobalDefaults | undefined,
 ): OrchestratorGlobalDefaults {
@@ -151,103 +137,141 @@ function normalizeOrchestratorGlobalDefaults(
   }));
 }
 
-export function isProjectOrchestratorConfigUnconfigured(
-  config: OrchestratorConfigJson | OrchestratorProjectConfig | undefined,
-): boolean {
-  return config === undefined || Object.keys(config).length === 0;
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function asPositiveInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function asGatePolicy(value: unknown): OrchestratorGatePolicy | null {
+  return value === "auto" || value === "require-approval" ? value : null;
+}
+
+function findFeatureTaskType(config: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!Array.isArray(config.taskTypes)) {
+    return undefined;
+  }
+  return config.taskTypes.map(asRecord).find((taskType) => taskType?.id === "feature");
 }
 
 export function seedOrchestratorConfigDraft(
-  config: OrchestratorConfigJson | OrchestratorProjectConfig | undefined,
-  globalDefaults?: OrchestratorGlobalDefaults,
+  config: OrchestratorConfigJson | undefined,
 ): OrchestratorConfigDraft {
-  if (isProjectOrchestratorConfigUnconfigured(config) && globalDefaults !== undefined) {
-    const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
-    const stageSet = new Set(normalizedGlobals.stages);
-    return {
-      enabled: false,
-      pmModelSelection: null,
-      optionalStages: {
-        review: stageSet.has("review"),
-        verify: stageSet.has("verify"),
-      },
-      gatePolicy: {
-        classify: normalizedGlobals.gatePolicy.classify,
-        plan: normalizedGlobals.gatePolicy.plan,
-        work: normalizedGlobals.gatePolicy.work,
-        review: normalizedGlobals.gatePolicy.review,
-      },
-      resourceLimits: {
-        maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
-        maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
-        maxStageHandoffs: normalizedGlobals.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS,
-        maxRetriesPerStage: normalizedGlobals.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
-        allowFullAccessWorkers: normalizedGlobals.allowFullAccessWorkers ?? false,
-      },
-    };
-  }
-
-  const normalized = normalizeOrchestratorProjectConfig(config);
-  const featureConfig =
-    normalized.taskTypes.find((taskType) => taskType.id === "feature") ?? DEFAULT_FEATURE_CONFIG;
-  const stageSet = new Set(featureConfig.stages);
+  const raw = asRecord(config) ?? {};
+  const featureConfig = findFeatureTaskType(raw);
+  const explicitStages = Array.isArray(featureConfig?.stages)
+    ? new Set(featureConfig.stages)
+    : null;
+  const gatePolicy = asRecord(featureConfig?.gatePolicy);
+  const resourceLimits = asRecord(raw.resourceLimits);
   return {
-    enabled: normalized.enabled,
-    pmModelSelection: normalized.pmModelSelection,
-    optionalStages: {
-      review: stageSet.has("review"),
-      verify: stageSet.has("verify"),
-    },
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : false,
+    pmModelSelection: (asRecord(raw.pmModelSelection) as ModelSelection | undefined) ?? null,
+    optionalStages:
+      explicitStages === null
+        ? null
+        : {
+            review: explicitStages.has("review"),
+            verify: explicitStages.has("verify"),
+          },
     gatePolicy: {
-      classify: featureConfig.gatePolicy.classify,
-      plan: featureConfig.gatePolicy.plan,
-      work: featureConfig.gatePolicy.work,
-      review: featureConfig.gatePolicy.review,
+      classify: asGatePolicy(gatePolicy?.classify),
+      plan: asGatePolicy(gatePolicy?.plan),
+      work: asGatePolicy(gatePolicy?.work),
+      review: asGatePolicy(gatePolicy?.review),
     },
     resourceLimits: {
-      maxParallelTasks: normalized.resourceLimits.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
-      maxParallelWorkers:
-        normalized.resourceLimits.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
-      maxStageHandoffs: normalized.resourceLimits.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS,
-      maxRetriesPerStage:
-        normalized.resourceLimits.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
-      allowFullAccessWorkers: normalized.resourceLimits.allowFullAccessWorkers ?? false,
+      maxParallelTasks: asPositiveInt(resourceLimits?.maxParallelTasks),
+      maxParallelWorkers: asPositiveInt(resourceLimits?.maxParallelWorkers),
+      maxStageHandoffs: asPositiveInt(resourceLimits?.maxStageHandoffs),
+      maxRetriesPerStage: asPositiveInt(resourceLimits?.maxRetriesPerStage),
+      allowFullAccessWorkers:
+        typeof resourceLimits?.allowFullAccessWorkers === "boolean"
+          ? resourceLimits.allowFullAccessWorkers
+          : null,
     },
   };
 }
 
 export function buildOrchestratorProjectConfig(
   draft: OrchestratorConfigDraft,
-): OrchestratorProjectConfig {
-  const stageSet = new Set<OrchestrationStageRole>(MANDATORY_ORCHESTRATOR_STAGES);
-  for (const stage of OPTIONAL_ORCHESTRATOR_STAGES) {
-    if (draft.optionalStages[stage]) {
-      stageSet.add(stage);
+): OrchestratorConfigJson {
+  const featureConfig: Record<string, unknown> = { id: "feature" };
+  if (draft.optionalStages !== null) {
+    const stageSet = new Set<OrchestrationStageRole>(MANDATORY_ORCHESTRATOR_STAGES);
+    for (const stage of OPTIONAL_ORCHESTRATOR_STAGES) {
+      if (draft.optionalStages[stage]) {
+        stageSet.add(stage);
+      }
     }
+    featureConfig.stages = CANONICAL_ORCHESTRATOR_STAGE_ORDER.filter((stage) =>
+      stageSet.has(stage),
+    );
   }
-  const gatePolicy: OrchestratorTaskGatePolicy = {
-    classify: draft.gatePolicy.classify,
-    plan: draft.gatePolicy.plan,
-    work: draft.gatePolicy.work,
-    review: draft.gatePolicy.review,
-    land: "require-approval",
-  };
+
+  const gatePolicy = Object.fromEntries(
+    EDITABLE_ORCHESTRATOR_GATES.flatMap((gate) => {
+      const policy = draft.gatePolicy[gate];
+      return policy === null ? [] : [[gate, policy]];
+    }),
+  );
+  if (Object.keys(gatePolicy).length > 0) {
+    featureConfig.gatePolicy = gatePolicy;
+  }
+
+  const resourceLimits = Object.fromEntries(
+    (
+      [
+        "maxParallelTasks",
+        "maxParallelWorkers",
+        "maxStageHandoffs",
+        "maxRetriesPerStage",
+        "allowFullAccessWorkers",
+      ] as const
+    ).flatMap((key) => {
+      const value = draft.resourceLimits[key];
+      return value === null ? [] : [[key, value]];
+    }),
+  );
+
   return {
     enabled: draft.enabled,
     pmModelSelection: draft.pmModelSelection,
-    taskTypes: [
-      {
-        id: "feature",
-        stages: CANONICAL_ORCHESTRATOR_STAGE_ORDER.filter((stage) => stageSet.has(stage)),
-        gatePolicy,
-      },
-    ],
+    ...(Object.keys(featureConfig).length > 1 ? { taskTypes: [featureConfig] } : {}),
+    ...(Object.keys(resourceLimits).length > 0 ? { resourceLimits } : {}),
+  };
+}
+
+export function seedOrchestratorInheritedDefaultsDraft(
+  globalDefaults: OrchestratorGlobalDefaults | undefined,
+): {
+  readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
+  readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  readonly resourceLimits: OrchestratorResourceLimits;
+} {
+  const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
+  const stageSet = new Set(normalizedGlobals.stages);
+  return {
+    optionalStages: {
+      review: stageSet.has("review"),
+      verify: stageSet.has("verify"),
+    },
+    gatePolicy: {
+      classify: normalizedGlobals.gatePolicy.classify,
+      plan: normalizedGlobals.gatePolicy.plan,
+      work: normalizedGlobals.gatePolicy.work,
+      review: normalizedGlobals.gatePolicy.review,
+    },
     resourceLimits: {
-      maxParallelTasks: draft.resourceLimits.maxParallelTasks,
-      maxParallelWorkers: draft.resourceLimits.maxParallelWorkers,
-      maxStageHandoffs: draft.resourceLimits.maxStageHandoffs,
-      maxRetriesPerStage: draft.resourceLimits.maxRetriesPerStage,
-      allowFullAccessWorkers: draft.resourceLimits.allowFullAccessWorkers,
+      maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
+      maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
+      maxStageHandoffs: normalizedGlobals.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS,
+      maxRetriesPerStage: normalizedGlobals.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
+      allowFullAccessWorkers: normalizedGlobals.allowFullAccessWorkers ?? false,
     },
   };
 }
@@ -295,9 +319,12 @@ export function orchestratorConfigDraftsEqual(
   return (
     left.enabled === right.enabled &&
     modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
-    OPTIONAL_ORCHESTRATOR_STAGES.every(
-      (stage) => left.optionalStages[stage] === right.optionalStages[stage],
-    ) &&
+    ((left.optionalStages === null && right.optionalStages === null) ||
+      (left.optionalStages !== null &&
+        right.optionalStages !== null &&
+        OPTIONAL_ORCHESTRATOR_STAGES.every(
+          (stage) => left.optionalStages?.[stage] === right.optionalStages?.[stage],
+        ))) &&
     EDITABLE_ORCHESTRATOR_GATES.every((gate) => left.gatePolicy[gate] === right.gatePolicy[gate]) &&
     left.resourceLimits.maxParallelTasks === right.resourceLimits.maxParallelTasks &&
     left.resourceLimits.maxParallelWorkers === right.resourceLimits.maxParallelWorkers &&
