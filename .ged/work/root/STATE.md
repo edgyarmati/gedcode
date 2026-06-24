@@ -30,14 +30,29 @@ S4 `df4160e17` · S5 `d32d8ad61` · docs `af135bd26`.
   A2 `a147d25d7` (project editor writes SPARSE overrides — null=inherit per setting; S2.2 seed removed;
   shows inherited/effective). A3 `850a197f6` (live-global E2E proof through the real engine; no defect).
 
-## ALL DONE — Phase 4 + post-review follow-up complete (2026-06-24)
+## Phase 4 + post-review follow-up COMPLETE (2026-06-24) — all committed, gate green
 
-Everything committed on `feat/orchestrator-mode`, full monorepo gate green. Nothing outstanding in
-Phase 4 or the review. **Next is the user's call:** Phase 5 (scale / OS sandbox / per-task clone /
-real `task.land → openPullRequest` + branch protection / board drag-drop / pagination), or merge to
-`main` (branch policy: only when the orchestrator is fully finished — Phase 5 still pending).
-Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate; the stale Phase-3 content
-still in `.ged/work/root/{SPEC,TASKS,TESTS}.md` (regenerate via ged-planning when Phase 5 starts).
+## Phase 5 STARTED — slice 1: Real PR Landing (grill 2026-06-24)
+
+Audit: `task.land` is a STUB — decider validates the approved land gate + emits `task.landed`;
+`TaskWorktreeReactor` only cleans up the worktree; NO PR opened. `SourceControlProvider.createChangeRequest`
+(`GitHubSourceControlProvider.ts:186`) EXISTS but is uncalled. Decisions: open a **gated PR, human
+merges (NO auto-merge)**; PR **ready by default** with a draft/ready setting (global default +
+per-project override → live-global config, like Change A); target = project default branch; title =
+task title, body = work summary + diff; push the task branch with the **server's** creds (human-gated
+land path, not the worker); use the project's `SourceControlProvider`; **fail-loud + retryable** (no
+remote / push / API failure never silently drops the task); surface the PR url on the task.
+
+WPs: **L1** contracts (`openPrAsDraft` config on global+project inheritable; `task.pr.opened` command
++ `task.pr-opened` event carrying `prUrl`; `OrchestrationTask.prUrl` field). **L2** land reactor (on
+`task.landed`: resolve draft setting + project SourceControlProvider; push task branch (idempotent) →
+`createChangeRequest` draft/ready → dispatch `task.pr.opened{prUrl}` → cleanup worktree; idempotent /
+retryable / fail-loud). **L3** web (draft/ready setting in global + project editors via A2 patterns;
+PR link on landed task). **L4** E2E (land opens PR via mocked provider; config toggles draft; no-remote
+fail-loud). Later Phase-5 slices (not started): isolation/sandbox, scale/perf, board UX.
+
+Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate; stale Phase-3 content in
+`.ged/work/root/{SPEC,TASKS,TESTS}.md`.
 
 ## Codex handoff mechanics (for resume)
 
