@@ -5,11 +5,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ApprovalRequestId,
   CodexSettings,
+  DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
+  type ServerSettings,
   type OrchestrationEvent,
   type OrchestrationThread,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -37,7 +40,7 @@ import { ProjectionPendingApprovalRepository } from "../src/persistence/Services
 import { makeAdapterRegistryMock } from "../src/provider/testUtils/providerAdapterRegistryMock.ts";
 import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapterRegistry.ts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
-import { ServerSettingsService } from "../src/serverSettings.ts";
+import { ServerSettingsService, type ServerSettingsShape } from "../src/serverSettings.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
 import { makeCodexAdapter } from "../src/provider/Layers/CodexAdapter.ts";
 import {
@@ -182,6 +185,10 @@ export interface OrchestrationIntegrationHarness {
   readonly workspaceDir: string;
   readonly dbPath: string;
   readonly adapterHarness: TestProviderAdapterHarness | null;
+  readonly serverSettings: ServerSettingsShape;
+  readonly unsafeUpdateServerSettingsForTest: (
+    update: (settings: ServerSettings) => ServerSettings,
+  ) => Effect.Effect<void, never>;
   readonly engine: OrchestrationEngineShape;
   readonly snapshotQuery: ProjectionSnapshotQuery["Service"];
   readonly providerService: ProviderService["Service"];
@@ -283,6 +290,20 @@ export const makeOrchestrationIntegrationHarness = (
       yield* initializeGitWorkspace(workspaceDir);
     }
 
+    const serverSettingsRef = yield* Ref.make<ServerSettings>(DEFAULT_SERVER_SETTINGS);
+    const serverSettings: ServerSettingsShape = {
+      start: Effect.void,
+      ready: Effect.void,
+      getSettings: Ref.get(serverSettingsRef),
+      updateSettings: (patch) =>
+        Ref.get(serverSettingsRef).pipe(
+          Effect.map((current) => applyServerSettingsPatch(current, patch)),
+          Effect.tap((nextSettings) => Ref.set(serverSettingsRef, nextSettings)),
+        ),
+      streamChanges: Stream.empty,
+    };
+    const serverSettingsLayer = Layer.succeed(ServerSettingsService, serverSettings);
+
     const persistenceLayer = makeSqlitePersistenceLive(dbPath);
     const orchestrationLayer = OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionPipelineLive),
@@ -330,7 +351,6 @@ export const makeOrchestrationIntegrationHarness = (
       providerLayer,
       RuntimeReceiptBusTest,
     );
-    const serverSettingsLayer = ServerSettingsService.layerTest();
     const workerStartAdmissionLayer = WorkerStartAdmissionLive.pipe(
       Layer.provide(serverSettingsLayer),
     );
@@ -417,7 +437,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(orchestrationReactorLayer),
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolverLive),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(serverSettingsLayer),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -603,6 +623,9 @@ export const makeOrchestrationIntegrationHarness = (
       workspaceDir,
       dbPath,
       adapterHarness,
+      serverSettings,
+      unsafeUpdateServerSettingsForTest: (update) =>
+        Ref.update(serverSettingsRef, update).pipe(Effect.orDie),
       engine,
       snapshotQuery,
       providerService,
