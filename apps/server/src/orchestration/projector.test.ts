@@ -1298,4 +1298,59 @@ describe("orchestration projector", () => {
     expect(thread?.checkpoints[0]?.turnId).toBe("turn-100");
     expect(thread?.checkpoints.at(-1)?.turnId).toBe("turn-599");
   });
+
+  it("records the opened PR URL on the task aggregate", async () => {
+    const createdAt = "2026-06-24T10:00:00.000Z";
+    const openedAt = "2026-06-24T10:05:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "task.created",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: createdAt,
+          commandId: "cmd-task-create",
+          payload: {
+            taskId: "task-pr",
+            projectId: "project-1",
+            taskType: "feature",
+            title: "Open a PR",
+            branch: "orchestrator/task-pr",
+            worktreePath: "/tmp/task-pr",
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+    const afterPrOpened = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "task.pr-opened",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: openedAt,
+          commandId: "cmd-pr-opened",
+          payload: {
+            taskId: "task-pr",
+            prUrl: "https://github.com/acme/repo/pull/42",
+            prNumber: 42,
+            updatedAt: openedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(afterCreate.tasks[0]?.prUrl).toBeNull();
+    expect(afterPrOpened.tasks[0]?.prUrl).toBe("https://github.com/acme/repo/pull/42");
+    expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
+  });
 });

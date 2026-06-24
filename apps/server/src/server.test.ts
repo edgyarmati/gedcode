@@ -3364,6 +3364,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         status: "plan-review" as const,
         branch: "orchestrator/task-orchestrator",
         worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        prUrl: null,
         pmMessageId: MessageId.make("pm-message-1"),
         stageThreadIds: [ThreadId.make("thread-plan")],
         currentStageThreadId: ThreadId.make("thread-plan"),

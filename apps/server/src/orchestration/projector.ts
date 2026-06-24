@@ -18,6 +18,7 @@ import {
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
+  TaskPrOpenedPayload,
   TaskRoleSelectionsUpdatedPayload,
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
@@ -757,6 +758,7 @@ export function projectEvent(
             status: "draft",
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            prUrl: null,
             pmMessageId: payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
@@ -1048,6 +1050,17 @@ export function projectEvent(
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
             status: "landed",
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.pr-opened":
+      return decodeForEvent(TaskPrOpenedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            prUrl: payload.prUrl,
             updatedAt: payload.updatedAt,
           }),
         })),

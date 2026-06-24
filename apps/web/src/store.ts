@@ -1991,6 +1991,7 @@ function applyEnvironmentOrchestrationEvent(
             status: "draft",
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            prUrl: null,
             pmMessageId: event.payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
@@ -2169,6 +2170,13 @@ function applyEnvironmentOrchestrationEvent(
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
         status: "landed",
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.pr-opened":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        prUrl: event.payload.prUrl,
         updatedAt: event.payload.updatedAt,
       }));
 

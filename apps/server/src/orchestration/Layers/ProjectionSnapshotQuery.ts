@@ -274,6 +274,7 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     status: row.status,
     branch: row.branch,
     worktreePath: row.worktreePath,
+    prUrl: null,
     pmMessageId: row.pmMessageId,
     stageThreadIds: row.stageThreadIds,
     currentStageThreadId: row.currentStageThreadId,

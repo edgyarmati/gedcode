@@ -57,6 +57,16 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
     expect(decoded.allowFullAccessWorkers).toBe(false);
   });
 
+  it("defaults PR landing to ready and accepts sparse project draft override", () => {
+    const globalDefaults = decodeGlobalDefaults({});
+    const projectDefaults = decodeProjectConfig({});
+    const projectOverride = decodeProjectConfig({ openPrAsDraft: true });
+
+    expect(globalDefaults.openPrAsDraft).toBe(false);
+    expect(projectDefaults.openPrAsDraft).toBe(false);
+    expect(projectOverride.openPrAsDraft).toBe(true);
+  });
+
   it("global defaults include durability and cleanup intervals", () => {
     const decoded = decodeGlobalDefaults({});
     expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
@@ -108,6 +118,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
         customInstructions: "Keep active task IDs and gate state.",
       },
       allowFullAccessWorkers: true,
+      openPrAsDraft: true,
     });
 
     const reDecoded = decodeGlobalDefaults(encodeGlobalDefaults(decoded));
@@ -122,6 +133,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       customInstructions: "Keep active task IDs and gate state.",
     });
     expect(reDecoded.allowFullAccessWorkers).toBe(true);
+    expect(reDecoded.openPrAsDraft).toBe(true);
   });
 });
 
@@ -203,6 +215,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
         maxRetriesPerStage: 3,
         allowFullAccessWorkers: true,
       },
+      openPrAsDraft: true,
     });
 
     const encoded = encodeProjectConfig(decoded);
@@ -218,5 +231,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.taskTypes[0]?.gatePolicy.review).toBe("require-approval");
     expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
     expect(reDecoded.resourceLimits.allowFullAccessWorkers).toBe(true);
+    expect(reDecoded.openPrAsDraft).toBe(true);
   });
 });

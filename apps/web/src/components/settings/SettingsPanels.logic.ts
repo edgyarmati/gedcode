@@ -225,6 +225,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       maxRetriesPerStage: draft.resourceDefaults.maxRetriesPerStage,
       pmReconciliationIntervalMs: draft.resourceDefaults.pmReconciliationIntervalMs,
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
+      openPrAsDraft: DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.openPrAsDraft,
       autoCompaction: {
         enabled: draft.autoCompaction.enabled,
         reserveTokens: draft.autoCompaction.reserveTokens,

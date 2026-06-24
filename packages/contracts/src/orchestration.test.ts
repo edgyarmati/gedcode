@@ -22,6 +22,7 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  OrchestrationTask,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   OrchestratorSetTaskRoleSelectionsInput,
@@ -57,6 +58,10 @@ function getOptionValue(
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
+const encodeOrchestrationCommand = Schema.encodeEffect(OrchestrationCommand);
+const encodeOrchestrationEvent = Schema.encodeEffect(OrchestrationEvent);
+const decodeOrchestrationTask = Schema.decodeUnknownEffect(OrchestrationTask);
+const encodeOrchestrationTask = Schema.encodeEffect(OrchestrationTask);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
 const decodeRoleModelSelections = Schema.decodeUnknownEffect(GedRoleModelSelections);
 const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixes);
@@ -713,6 +718,84 @@ it.effect("decodes task.stage-blocked events through the orchestration event uni
       assert.strictEqual(parsed.payload.providerInstanceId, "codex");
       assert.strictEqual(parsed.payload.reason, "quota");
     }
+  }),
+);
+
+it.effect("round-trips task.pr.opened commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.pr.opened",
+      commandId: "cmd-pr-opened",
+      taskId: "task-1",
+      prUrl: " https://github.com/acme/repo/pull/42 ",
+      prNumber: 42,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr.opened");
+    if (reDecoded.type === "task.pr.opened") {
+      assert.strictEqual(reDecoded.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.strictEqual(reDecoded.prNumber, 42);
+    }
+  }),
+);
+
+it.effect("round-trips task.pr-opened events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-pr-opened",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.pr-opened",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-pr-opened",
+      causationEventId: null,
+      correlationId: "cmd-pr-opened",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        prUrl: " https://github.com/acme/repo/pull/42 ",
+        prNumber: 42,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr-opened");
+    if (reDecoded.type === "task.pr-opened") {
+      assert.strictEqual(reDecoded.payload.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.strictEqual(reDecoded.payload.prNumber, 42);
+    }
+  }),
+);
+
+it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips opened URLs", () =>
+  Effect.gen(function* () {
+    const decodedDefault = yield* decodeOrchestrationTask({
+      id: "task-1",
+      projectId: "project-1",
+      type: "feature",
+      title: "Task",
+      status: "draft",
+      branch: "orchestrator/task-1",
+      worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-1",
+      pmMessageId: "pm-message-1",
+      stageThreadIds: [],
+      currentStageThreadId: null,
+      playbookVersion: "feature@v1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(decodedDefault.prUrl, null);
+
+    const decodedOpened = yield* decodeOrchestrationTask({
+      ...decodedDefault,
+      prUrl: " https://github.com/acme/repo/pull/42 ",
+    });
+    const reDecoded = yield* decodeOrchestrationTask(yield* encodeOrchestrationTask(decodedOpened));
+    assert.strictEqual(reDecoded.prUrl, "https://github.com/acme/repo/pull/42");
   }),
 );
 

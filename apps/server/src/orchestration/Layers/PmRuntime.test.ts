@@ -96,6 +96,7 @@ const task: OrchestrationTask = {
   status: "review",
   branch: "orchestrator/task-1",
   worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-1",
+  prUrl: null,
   pmMessageId: MessageId.make("pm-message-1"),
   stageThreadIds: [stageThreadId],
   currentStageThreadId: null,

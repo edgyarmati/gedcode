@@ -114,6 +114,7 @@ function makeReadModel(threads: ReadonlyArray<OrchestrationThread>): Orchestrati
         status: "working",
         branch: "orchestrator/task-1",
         worktreePath: "/tmp/project/.gedcode/tasks/task-1",
+        prUrl: null,
         pmMessageId: null,
         stageThreadIds: [asThreadId("stage-orphan"), asThreadId("stage-live")],
         currentStageThreadId: asThreadId("stage-orphan"),

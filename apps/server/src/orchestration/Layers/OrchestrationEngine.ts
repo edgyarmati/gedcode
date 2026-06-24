@@ -113,6 +113,7 @@ export function classifyOrchestrationCommand(
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land":
+    case "task.pr.opened":
     case "task.abandon":
       return "task";
     case "thread.message.user.append":
@@ -169,6 +170,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land":
+    case "task.pr.opened":
     case "task.abandon":
       return {
         aggregateKind: "task",

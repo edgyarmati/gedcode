@@ -36,6 +36,7 @@ const projectConfig = (
   taskTypes: ReadonlyArray<OrchestratorTaskType> = [featureTaskType],
 ): OrchestratorProjectConfig => ({
   enabled: true,
+  openPrAsDraft: false,
   pmModelSelection: null,
   taskTypes,
   resourceLimits: {

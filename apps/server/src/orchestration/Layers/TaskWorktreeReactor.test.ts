@@ -84,6 +84,7 @@ function makeReadModel(input: {
         status: input.taskStatus,
         branch: "orchestrator/task-1",
         worktreePath: input.worktreePath,
+        prUrl: null,
         pmMessageId: null,
         stageThreadIds: [],
         currentStageThreadId: null,

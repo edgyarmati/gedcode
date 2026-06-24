@@ -1472,6 +1472,33 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("records an opened PR through an internal task command", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "landed" });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.pr.opened",
+          commandId: asCommandId("cmd-pr-opened"),
+          taskId: asTaskId("task-1"),
+          prUrl: "https://github.com/acme/repo/pull/42",
+          prNumber: 42,
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.pr-opened");
+      expect(singleEvent?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        prUrl: "https://github.com/acme/repo/pull/42",
+        prNumber: 42,
+        updatedAt: now,
+      });
+    }),
+  );
+
   it.effect("abandons a non-terminal task", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "blocked" });

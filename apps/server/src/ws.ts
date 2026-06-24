@@ -136,6 +136,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.gate-requested"
       | "task.gate-resolved"
       | "task.landed"
+      | "task.pr-opened"
       | "task.abandoned";
   }
 > {
@@ -149,6 +150,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.gate-requested" ||
     event.type === "task.gate-resolved" ||
     event.type === "task.landed" ||
+    event.type === "task.pr-opened" ||
     event.type === "task.abandoned"
   );
 }

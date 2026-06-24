@@ -58,6 +58,7 @@ type DeciderSparseResourceLimits = Partial<{
 }>;
 
 type DeciderSparseProjectConfig = {
+  readonly openPrAsDraft?: boolean;
   readonly resourceLimits?: DeciderSparseResourceLimits | null;
   readonly taskTypes?: ReadonlyArray<DeciderSparseTaskTypeConfig>;
 };
@@ -132,6 +133,7 @@ function explicitlySetProjectConfig(rawConfig: OrchestratorConfigJson | undefine
     : undefined;
 
   return {
+    ...(typeof raw.openPrAsDraft === "boolean" ? { openPrAsDraft: raw.openPrAsDraft } : {}),
     ...(Object.keys(sparseResourceLimits).length > 0
       ? { resourceLimits: sparseResourceLimits }
       : {}),
@@ -1578,6 +1580,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "task.landed",
         payload: {
           taskId: command.taskId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.pr.opened": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorEnabled({ command, project });
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.pr-opened",
+        payload: {
+          taskId: command.taskId,
+          prUrl: command.prUrl,
+          ...(command.prNumber !== undefined ? { prNumber: command.prNumber } : {}),
           updatedAt: command.createdAt,
         },
       };

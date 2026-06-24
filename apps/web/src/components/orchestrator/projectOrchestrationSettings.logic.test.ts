@@ -398,6 +398,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
+        openPrAsDraft: false,
         autoCompaction: {
           enabled: true,
           reserveTokens: 8_000,

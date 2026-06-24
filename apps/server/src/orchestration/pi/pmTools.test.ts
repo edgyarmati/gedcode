@@ -36,6 +36,7 @@ const makeReadModel = () => ({
       status: "planning" as const,
       branch: "orchestrator/task-1",
       worktreePath: "/repo/.worktrees/task-1",
+      prUrl: null,
       pmMessageId: null,
       stageThreadIds: [stageThreadId],
       currentStageThreadId: stageThreadId,

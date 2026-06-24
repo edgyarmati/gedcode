@@ -224,6 +224,7 @@ describe("Orchestrator global defaults settings logic", () => {
         keepRecentTokens: 11_000,
       },
       allowFullAccessWorkers: false,
+      openPrAsDraft: false,
     });
   });
 });

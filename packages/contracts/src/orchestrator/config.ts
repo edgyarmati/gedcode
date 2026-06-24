@@ -153,6 +153,10 @@ export type OrchestratorResourceLimits = typeof OrchestratorResourceLimits.Type;
  */
 export const OrchestratorProjectConfig = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Inheritable project-level landing default. The raw sparse project config can
+  // omit this to inherit `OrchestratorGlobalDefaults.openPrAsDraft`; decode
+  // defaults it for typed canonical config consumers.
+  openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // The PM brain's provider + model. Reuses the existing `ModelSelection`
   // schema (orchestration.ts) so the PM routes through the same provider
   // registry as every other model selection. The PM **API key** is resolved
@@ -229,5 +233,9 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // Floor for the runtime-mode clamp. Defaults to `false` so the safe default
   // holds even before a project sets its own `resourceLimits`.
   allowFullAccessWorkers: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Landing opens ready PRs by default. Projects may explicitly override this
+  // field in their raw sparse config; omitted project values inherit this
+  // global floor before falling back to `false`.
+  openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type OrchestratorGlobalDefaults = typeof OrchestratorGlobalDefaults.Type;

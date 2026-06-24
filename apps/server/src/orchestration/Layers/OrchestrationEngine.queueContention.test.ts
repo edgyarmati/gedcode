@@ -78,6 +78,7 @@ describe("classifyOrchestrationCommand", () => {
     ["task.gate.request", "task"],
     ["task.gate.resolve", "task"],
     ["task.land", "task"],
+    ["task.pr.opened", "task"],
     ["task.abandon", "task"],
     ["thread.message.user.append", "streaming"],
     ["thread.message.assistant.delta", "streaming"],

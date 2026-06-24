@@ -15,6 +15,7 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  PositiveInt,
   ProjectId,
   ProviderItemId,
   TaskId,
@@ -477,6 +478,9 @@ export const OrchestrationTask = Schema.Struct({
   status: OrchestrationTaskStatus,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  prUrl: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
@@ -1012,6 +1016,15 @@ const TaskLandCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskPrOpenedCommand = Schema.Struct({
+  type: Schema.Literal("task.pr.opened"),
+  commandId: CommandId,
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
+  prNumber: Schema.optional(PositiveInt),
+  createdAt: IsoDateTime,
+});
+
 const TaskAbandonCommand = Schema.Struct({
   type: Schema.Literal("task.abandon"),
   commandId: CommandId,
@@ -1153,6 +1166,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadRevertCompleteCommand,
   TaskStageCompleteCommand,
   TaskStageBlockCommand,
+  TaskPrOpenedCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1194,6 +1208,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.gate-requested",
   "task.gate-resolved",
   "task.landed",
+  "task.pr-opened",
   "task.abandoned",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
@@ -1466,6 +1481,13 @@ export const TaskLandedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskPrOpenedPayload = Schema.Struct({
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
+  prNumber: Schema.optional(PositiveInt),
+  updatedAt: IsoDateTime,
+});
+
 export const TaskAbandonedPayload = Schema.Struct({
   taskId: TaskId,
   updatedAt: IsoDateTime,
@@ -1647,6 +1669,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.landed"),
     payload: TaskLandedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.pr-opened"),
+    payload: TaskPrOpenedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
