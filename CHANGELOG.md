@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Add additive pi provider and PM model-selection contracts, including sparse server settings storage for pi provider credentials/status.
 - Internal: Add real-engine Orchestrator landing integration coverage for the human-approved land gate opening a mocked PR, resolving draft/ready configuration, failing loud without a supported source-control provider, and avoiding duplicate PR opens for tasks that already recorded a PR URL.
 - UI: Surface the Orchestrator landing PR draft/ready setting in global defaults and per-project inherited overrides, and show a "View PR" link on landed task details when landing recorded a pull request URL.
 - Internal: Add Phase 5 Orchestrator landing contracts for real PR creation. Orchestrator config now carries inheritable `openPrAsDraft` defaults, tasks expose `prUrl`, and the internal `task.pr.opened` command records a `task.pr-opened` event without wiring the landing reactor yet.

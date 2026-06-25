@@ -7,6 +7,7 @@ import { GED_SUBAGENT_ROLES } from "./gedWorkflow.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { OrchestratorGlobalDefaults } from "./orchestrator/config.ts";
+import { PiProviderConfig, PiProviderId } from "./piProvider.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -521,6 +522,9 @@ export const ServerSettings = Schema.Struct({
   // (forks, downgrades, in-flight PR branches) round-trip without loss.
   // See providerInstance.ts for the forward/backward compatibility invariant.
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  piProviders: Schema.Record(PiProviderId, PiProviderConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),

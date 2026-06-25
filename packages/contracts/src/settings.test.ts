@@ -122,6 +122,57 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   });
 });
 
+describe("ServerSettings.piProviders", () => {
+  it("defaults to an empty record", () => {
+    expect(DEFAULT_SERVER_SETTINGS.piProviders).toEqual({});
+  });
+
+  it("decodes and encodes pi provider config maps", () => {
+    const decoded = decodeServerSettings({
+      piProviders: {
+        anthropic: {
+          enabled: true,
+          apiKey: {
+            value: "sk-ant",
+            valueRedacted: true,
+          },
+        },
+        "github-copilot": {
+          enabled: true,
+          oauth: {
+            connected: true,
+            expiresAt: 1_789_000_000,
+          },
+        },
+        "amazon-bedrock": {
+          enabled: true,
+        },
+      },
+    });
+
+    expect(decoded.piProviders).toEqual({
+      anthropic: {
+        enabled: true,
+        apiKey: {
+          value: "sk-ant",
+          valueRedacted: true,
+        },
+      },
+      "github-copilot": {
+        enabled: true,
+        oauth: {
+          connected: true,
+          expiresAt: 1_789_000_000,
+        },
+      },
+      "amazon-bedrock": {
+        enabled: true,
+      },
+    });
+    expect(encodeServerSettings(decoded).piProviders).toEqual(decoded.piProviders);
+  });
+});
+
 describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("defaults the nested orchestrator block with a safe-by-default floor", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual([
