@@ -28,7 +28,7 @@ elsewhere). One WP at a time, in-main-tree, commit by pathspec.
 - Extend `serverSettings.ts` materialize/redact to cover `piProviders` (secrets in `ServerSecretStore`
   `pi-cred-<provider>-{apikey,oauth}`, redact on wire, skip-write on `valueRedacted`). Independent of `pmModelSelection`.
 - WS method(s): list the pi provider catalog (`id`, displayName, `kind`, env-var hint, configured/enabled)
-  + `getModels(provider)` per provider (`id`, name, contextWindow) for the settings UI + picker.
+  - `getModels(provider)` per provider (`id`, name, contextWindow) for the settings UI + picker.
 - Verify: redaction round-trip + restart persistence; catalog/models method round-trip. Full gate green.
 
 ## WP-PI3 — Server: OAuth login brokering over WS [HIGH]
@@ -49,7 +49,7 @@ elsewhere). One WP at a time, in-main-tree, commit by pathspec.
 ## WP-PI5 — Reshape: pmModelSelection → pi + resolver/runtime + pi-only picker (ATOMIC) [HIGH]
 
 - **Contracts**: swap `pmModelSelection` field type → `PiModelSelection` in `OrchestratorGlobalDefaults`
-  + `OrchestratorProjectConfig`; **lenient legacy decode** (`{instanceId, model}` → null).
+  - `OrchestratorProjectConfig`; **lenient legacy decode** (`{instanceId, model}` → null).
 - **Server**: `PmModelResolver.ts` — `piProvider` is the pi provider id directly (drop worker-instance
   alias map); resolve credential from `piProviders` config (API key / OAuth access token w/ single-flight
   refresh via `getOAuthApiKey` + persist refreshed creds / ambient sentinel). `PmRuntime.ts` consumes it.

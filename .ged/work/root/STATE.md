@@ -2,7 +2,7 @@
 
 > **NOTE (2026-06-24):** This file is now COMMITTED (not left uncommitted) because a Codex `--write`
 > run's git op reverted the uncommitted `.ged/work/root/*` scratch during WP-A1. Keep it committed via
-> `chore(ged)` commits (still kept out of *feature* commits). The authoritative record is the git
+> `chore(ged)` commits (still kept out of _feature_ commits). The authoritative record is the git
 > commits + `CHANGELOG.md` + `docs/upstream-decisions.md`.
 
 - **Phase**: Orchestrator. Phase 4 (#59) + its post-review follow-up COMPLETE. Phase 5 in progress —
@@ -63,10 +63,11 @@ investigations grounded it: (1) pi-ai provider/auth model — ~30 API-key, 3 OAu
 github-copilot, openai-codex; pi-ai has `login*` flows → `{refresh,access,expires}` + `getOAuthApiKey`
 auto-refresh; app must drive login + persist), 2 ambient (Bedrock/Vertex); credential path is uniform
 `getApiKeyAndHeaders → {apiKey,headers?}`. (2) repo grounding — `ServerSecretStore` + `redactServerSettingsForClient`
-+ `valueRedacted` lifecycle to reuse for pi secrets; `pmModelSelection` reshape touches
-`contracts/orchestrator/config.ts:165-167`, `PmRuntime.ts`, `PmModelResolver.ts`, web
-`projectOrchestrationSettings.logic.ts` + `ProjectOrchestrationSettingsDialog.tsx` (PmModelSection
-reusable) + 3 test files; worker pickers (`RoleBackendPicker`/`RoleConfigRow`) must stay untouched.
+
+- `valueRedacted` lifecycle to reuse for pi secrets; `pmModelSelection` reshape touches
+  `contracts/orchestrator/config.ts:165-167`, `PmRuntime.ts`, `PmModelResolver.ts`, web
+  `projectOrchestrationSettings.logic.ts` + `ProjectOrchestrationSettingsDialog.tsx` (PmModelSection
+  reusable) + 3 test files; worker pickers (`RoleBackendPicker`/`RoleConfigRow`) must stay untouched.
 
 **Settled decisions**: both API-key+OAuth+ambient together before shipping; creds server-global
 (`ServerSettings.piProviders` via `ServerSecretStore`), selection per-project + global default;
@@ -80,12 +81,17 @@ PI5 **atomic reshape** pmModelSelection→pi + resolver/runtime + pi-only picker
 PI6 integration. PI5 is atomic because the clean field swap breaks all consumers at once; everything
 before it is additive. Dev server still up from the smoke attempt (web :5740) but PM can't start until this lands.
 
+**Progress**: PI1 DONE `55332e7cc` (contracts: `piProvider.ts` — PiProviderId branded, PiProviderConfig
+{enabled, apiKey?:{value,valueRedacted?}, oauth?:{connected,expiresAt?}}, PiProviderConfigMap,
+PiModelSelection; `ServerSettings.piProviders` defaulted {}; full monorepo gate green — Codex's
+`bun run test` EPERM was sandbox-only, passes here 1292 ✓). PI2 next.
+
 ## Codex handoff mechanics (for resume)
 
 - Hand off via the `codex:codex-rescue` subagent (Agent tool): it runs
   `node "/Users/edgy/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs" task
-  --background --write --fresh --cwd /Users/edgy/personal/gedcode --model gpt-5.5 --effort high
-  --prompt-file <spec>` (omit `--write` for read-only reviews). It returns a `task-...` handle;
+--background --write --fresh --cwd /Users/edgy/personal/gedcode --model gpt-5.5 --effort high
+--prompt-file <spec>` (omit `--write` for read-only reviews). It returns a `task-...` handle;
   poll with the same companion `status <handle>` until non-`running`, then `result <handle>`.
 - Specs live in `/Users/edgy/.claude/jobs/6da7233d/tmp/`. Per WP: review the diff, run the full gate
   (`bash /Users/edgy/.claude/jobs/6da7233d/tmp/gates.sh`), commit by pathspec (Codex never commits),
