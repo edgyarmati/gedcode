@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
@@ -128,6 +129,8 @@ describe("buildGedRoleSettingsPatch", () => {
 });
 
 describe("Orchestrator global defaults settings logic", () => {
+  const pmModelSelection = { piProvider: PiProviderId.make("openai"), model: "gpt-5" };
+
   it("seeds the settings-panel draft from global defaults", () => {
     const draft = seedOrchestratorGlobalDefaultsDraft({
       ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
@@ -145,6 +148,7 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
+      pmModelSelection,
       openPrAsDraft: true,
       autoCompaction: {
         enabled: false,
@@ -155,6 +159,7 @@ describe("Orchestrator global defaults settings logic", () => {
       allowFullAccessWorkers: true,
     });
 
+    expect(draft.pmModelSelection).toEqual(pmModelSelection);
     expect(draft.optionalStages).toEqual({ review: false, verify: false });
     expect(draft.gatePolicy).toEqual({
       classify: "auto",
@@ -182,6 +187,7 @@ describe("Orchestrator global defaults settings logic", () => {
 
   it("builds a server settings patch with canonical stage order and pinned land gate", () => {
     const patch = buildOrchestratorGlobalDefaultsPatch({
+      pmModelSelection,
       optionalStages: { review: false, verify: true },
       gatePolicy: {
         classify: "auto",
@@ -221,6 +227,7 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 6,
       pmReconciliationIntervalMs: 180_000,
       worktreeReaperIntervalMinutes: 9,
+      pmModelSelection,
       autoCompaction: {
         enabled: true,
         reserveTokens: 6_000,

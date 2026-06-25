@@ -1,15 +1,21 @@
 import {
   ORCHESTRATION_STAGE_ROLES,
+  PiProviderId,
   type EnvironmentId,
   type ModelSelection,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
   type OrchestrationStageRole,
+  type PiModelSelection,
+  type PiProviderCatalogEntry,
+  type PiProviderModel,
   type ProjectId,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { readEnvironmentConnection } from "../../environments/runtime";
 import { readEnvironmentApi } from "../../environmentApi";
 import { useSettings } from "../../hooks/useSettings";
 import { newCommandId } from "../../lib/utils";
@@ -35,6 +41,7 @@ import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   buildOrchestrationConfigUpdate,
+  buildEnabledPiProviderPickerEntries,
   orchestrationSettingsDraftsEqual,
   seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
@@ -43,6 +50,7 @@ import {
   type InheritableOrchestratorStages,
   type OptionalOrchestratorStage,
   type OrchestrationSettingsDraft,
+  type PiProviderPickerEntry,
 } from "./projectOrchestrationSettings.logic";
 import {
   OrchestratorGateAutonomyControl,
@@ -51,7 +59,7 @@ import {
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
 } from "./OrchestratorConfigControls";
-import { BackendModelPicker, RoleBackendPicker } from "./RoleBackendPicker";
+import { BackendModelPicker, RoleBackendPicker, backendLabel } from "./RoleBackendPicker";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 // The project context the editor needs: identity for dispatch plus the current
@@ -151,22 +159,56 @@ function EnabledSection({
 function PmModelSection({
   selection,
   instanceEntries,
+  defaultSelection,
   onSelectionChange,
 }: {
-  selection: ModelSelection | null;
-  instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
-  onSelectionChange: (next: ModelSelection | null) => void;
+  selection: PiModelSelection | null;
+  instanceEntries: ReadonlyArray<PiProviderPickerEntry>;
+  defaultSelection: PiModelSelection | null;
+  onSelectionChange: (next: PiModelSelection | null) => void;
 }) {
+  const pickerSelection: ModelSelection | null = selection
+    ? {
+        instanceId: ProviderInstanceId.make(String(selection.piProvider)),
+        model: selection.model,
+      }
+    : null;
+  const defaultPickerSelection: ModelSelection | null = defaultSelection
+    ? {
+        instanceId: ProviderInstanceId.make(String(defaultSelection.piProvider)),
+        model: defaultSelection.model,
+      }
+    : null;
+  const defaultEntry = defaultPickerSelection
+    ? instanceEntries.find((entry) => entry.instanceId === defaultPickerSelection.instanceId)
+    : undefined;
+  const unsetOptionLabel = defaultPickerSelection
+    ? `Use global (${backendLabel(defaultPickerSelection, defaultEntry as ProviderInstanceEntry)})`
+    : "Use global";
+  const handlePickerSelectionChange = useCallback(
+    (next: ModelSelection | null) => {
+      onSelectionChange(
+        next === null
+          ? null
+          : {
+              piProvider: PiProviderId.make(String(next.instanceId)),
+              model: next.model,
+            },
+      );
+    },
+    [onSelectionChange],
+  );
+
   return (
-    <SettingsSection title="PM model" description="Provider instance and model used by the PM.">
+    <SettingsSection title="PM model" description="Pi provider and model used by the PM.">
       <BackendModelPicker
-        selection={selection}
-        instanceEntries={instanceEntries}
-        unsetLabel="None"
-        unsetOptionLabel="None"
-        backendAriaLabel="PM backend"
+        selection={pickerSelection}
+        instanceEntries={instanceEntries as ReadonlyArray<ProviderInstanceEntry>}
+        unsetLabel="Use global"
+        unsetOptionLabel={unsetOptionLabel}
+        backendAriaLabel="PM pi provider"
         modelAriaLabel="PM model"
-        onSelectionChange={onSelectionChange}
+        onSelectionChange={handlePickerSelectionChange}
       />
     </SettingsSection>
   );
@@ -326,6 +368,71 @@ export function ProjectOrchestrationSettingsDialog({
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
     [serverProviders],
   );
+  const [piProviderCatalog, setPiProviderCatalog] = useState<ReadonlyArray<PiProviderCatalogEntry>>(
+    [],
+  );
+  const [piProviderModelsByProvider, setPiProviderModelsByProvider] = useState<
+    Readonly<Record<string, ReadonlyArray<PiProviderModel>>>
+  >({});
+  useEffect(() => {
+    let cancelled = false;
+    if (!target) {
+      setPiProviderCatalog([]);
+      setPiProviderModelsByProvider({});
+      return;
+    }
+    const connection = readEnvironmentConnection(target.environmentId);
+    if (!connection) {
+      setPiProviderCatalog([]);
+      setPiProviderModelsByProvider({});
+      return;
+    }
+
+    void (async () => {
+      try {
+        const catalog = await connection.client.server.listPiProviderCatalog();
+        const enabledProviders = catalog.providers.filter((provider) => provider.enabled);
+        const modelEntries = await Promise.all(
+          enabledProviders.map(async (provider) => {
+            const result = await connection.client.server.listPiProviderModels({
+              provider: provider.id,
+            });
+            return [String(provider.id), result.models] as const;
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
+        setPiProviderCatalog(catalog.providers);
+        setPiProviderModelsByProvider(Object.fromEntries(modelEntries));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setPiProviderCatalog([]);
+        setPiProviderModelsByProvider({});
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to load pi models",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
+  const piProviderEntries = useMemo(
+    () =>
+      buildEnabledPiProviderPickerEntries({
+        catalog: piProviderCatalog,
+        modelsByProvider: piProviderModelsByProvider,
+      }),
+    [piProviderCatalog, piProviderModelsByProvider],
+  );
 
   const seededDraft = useMemo<OrchestrationSettingsDraft>(
     () =>
@@ -365,7 +472,7 @@ export function ProjectOrchestrationSettingsDialog({
       orchestratorConfig: { ...current.orchestratorConfig, enabled },
     }));
   }, []);
-  const handlePmModelSelectionChange = useCallback((next: ModelSelection | null) => {
+  const handlePmModelSelectionChange = useCallback((next: PiModelSelection | null) => {
     setDraft((current) => ({
       ...current,
       orchestratorConfig: { ...current.orchestratorConfig, pmModelSelection: next },
@@ -502,7 +609,8 @@ export function ProjectOrchestrationSettingsDialog({
           />
           <PmModelSection
             selection={draft.orchestratorConfig.pmModelSelection}
-            instanceEntries={instanceEntries}
+            instanceEntries={piProviderEntries}
+            defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
           />
           <StagesSection

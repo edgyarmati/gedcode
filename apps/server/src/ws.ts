@@ -28,6 +28,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  ProviderInstanceId,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
   ProjectId,
@@ -637,7 +638,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 projectConfig.value.pmModelSelection !== null
                   ? yield* providerQuotaStatusRepository
                       .isInstanceQuotaBlocked({
-                        providerInstanceId: projectConfig.value.pmModelSelection.instanceId,
+                        providerInstanceId: ProviderInstanceId.make(
+                          String(projectConfig.value.pmModelSelection.piProvider),
+                        ),
                       })
                       .pipe(
                         Effect.map((quotaState) =>

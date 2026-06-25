@@ -1,12 +1,11 @@
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { PositiveInt } from "../baseSchemas.ts";
-import {
-  ModelSelection,
-  ORCHESTRATION_STAGE_ROLES,
-  OrchestrationStageRole,
-} from "../orchestration.ts";
+import { PiModelSelection } from "../piProvider.ts";
+import { ORCHESTRATION_STAGE_ROLES, OrchestrationStageRole } from "../orchestration.ts";
 
 /**
  * Minimal, **schema-only** HARD orchestrator config (Plan 018 WP-B; design
@@ -147,6 +146,39 @@ export const OrchestratorResourceLimits = Schema.Struct({
 });
 export type OrchestratorResourceLimits = typeof OrchestratorResourceLimits.Type;
 
+const decodePiModelSelectionOption = Schema.decodeUnknownOption(PiModelSelection);
+const NullablePiModelSelectionWire = Schema.NullOr(PiModelSelection);
+
+/**
+ * PM model selection is pi-native. Legacy persisted worker-shaped selections
+ * (`{ instanceId, model, ... }`) must stay replayable in the append-only event
+ * store, but they no longer identify a valid PM runtime credential source, so
+ * decode them as an unconfigured PM (`null`) instead of failing the event.
+ */
+export const NullablePiModelSelection = Schema.Unknown.pipe(
+  Schema.decodeTo(
+    NullablePiModelSelectionWire,
+    SchemaTransformation.transformOrFail({
+      decode: (raw) => {
+        if (raw === null) {
+          return Effect.succeed(null);
+        }
+        const decoded = decodePiModelSelectionOption(raw);
+        return Effect.succeed(
+          Option.isSome(decoded)
+            ? ({
+                piProvider: String(decoded.value.piProvider),
+                model: decoded.value.model,
+              } satisfies typeof NullablePiModelSelectionWire.Encoded)
+            : null,
+        );
+      },
+      encode: (value) => Effect.succeed(value),
+    }),
+  ),
+);
+export type NullablePiModelSelection = typeof NullablePiModelSelection.Type;
+
 /**
  * Per-project HARD orchestrator config (slice subset). Schema-only; persisted
  * on the project projection via `project.meta.update` (design §14).
@@ -157,14 +189,10 @@ export const OrchestratorProjectConfig = Schema.Struct({
   // omit this to inherit `OrchestratorGlobalDefaults.openPrAsDraft`; decode
   // defaults it for typed canonical config consumers.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // The PM brain's provider + model. Reuses the existing `ModelSelection`
-  // schema (orchestration.ts) so the PM routes through the same provider
-  // registry as every other model selection. The PM **API key** is resolved
-  // later (WP-G) — it is intentionally NOT part of this config (017 delta #3):
-  // no PM key → orchestrator mode is disabled for that project (fail-closed).
-  pmModelSelection: Schema.NullOr(ModelSelection).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
-  ),
+  // The PM brain's pi provider + model. The PM **credential** is resolved from
+  // `ServerSettings.piProviders` (or pi-ai's env lookup) by the server runtime;
+  // it is intentionally NOT part of this schema-only project config.
+  pmModelSelection: NullablePiModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   taskTypes: Schema.Array(OrchestratorTaskType).pipe(
     Schema.withDecodingDefault(
       Effect.succeed([
@@ -237,5 +265,6 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // field in their raw sparse config; omitted project values inherit this
   // global floor before falling back to `false`.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  pmModelSelection: NullablePiModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type OrchestratorGlobalDefaults = typeof OrchestratorGlobalDefaults.Type;

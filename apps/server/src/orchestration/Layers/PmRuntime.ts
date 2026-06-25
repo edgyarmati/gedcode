@@ -1,6 +1,8 @@
 import {
   OrchestratorProjectConfig,
+  ProviderInstanceId,
   type ModelSelection,
+  type PiModelSelection,
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
@@ -54,7 +56,7 @@ import {
   type PmConsumedSettlement,
   type PmConsumedSettlementKind,
 } from "../../persistence/Services/PmRuntimeState.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
+import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -76,11 +78,17 @@ import {
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import {
-  resolvePiApiKey,
+  resolvePiCredential,
   resolvePiModel,
   resolvePiProvider,
   type PiModel,
+  type ResolvedPiCredential,
 } from "../pi/PmModelResolver.ts";
+import {
+  PiOAuthCredentialStore,
+  PiOAuthCredentialStoreLive,
+  type PiOAuthCredentialStoreShape,
+} from "../pi/PiOAuthCredentialStore.ts";
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
 import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
@@ -215,19 +223,15 @@ const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =
   });
 
 type ResolvedPmHarnessConfig = {
-  readonly selection: ModelSelection;
-  readonly providerInstanceId: string;
+  readonly selection: PiModelSelection;
+  readonly providerInstanceId: ProviderInstanceId;
   readonly provider: string;
-  readonly apiKey: string;
+  readonly credential: ResolvedPiCredential;
   readonly model: PiModel;
 };
 
-type ResolvePmHarnessConfigResult =
-  | { readonly _tag: "ok"; readonly value: ResolvedPmHarnessConfig }
-  | { readonly _tag: "error"; readonly error: PmRuntimeError };
-
-const samePmModelSelection = (left: ModelSelection, right: ModelSelection): boolean =>
-  left.instanceId === right.instanceId && left.model === right.model;
+const samePmModelSelection = (left: PiModelSelection, right: PiModelSelection): boolean =>
+  left.piProvider === right.piProvider && left.model === right.model;
 
 const canApplyPmModelInPlace = (
   current: ResolvedPmHarnessConfig,
@@ -235,63 +239,71 @@ const canApplyPmModelInPlace = (
 ): boolean =>
   current.providerInstanceId === next.providerInstanceId &&
   current.provider === next.provider &&
-  current.apiKey === next.apiKey;
+  current.credential.apiKey === next.credential.apiKey;
 
-const resolvePmHarnessConfigResult = (
-  project: OrchestrationProject,
-): ResolvePmHarnessConfigResult => {
-  const config = resolveProjectConfig(project);
-  if (Option.isNone(config) || config.value.enabled !== true) {
-    return {
-      _tag: "error",
-      error: makeNoPmRuntimeError(`Orchestrator mode is not enabled for project '${project.id}'.`),
-    };
-  }
-  const pmModelSelection = config.value.pmModelSelection;
-  if (pmModelSelection === null) {
-    return {
-      _tag: "error",
-      error: makeNoPmRuntimeError(`Project '${project.id}' has no PM model selection configured.`),
-    };
-  }
-
-  const providerInstanceId = String(pmModelSelection.instanceId);
-  const provider = resolvePiProvider(providerInstanceId);
-  const model = resolvePiModel(provider, pmModelSelection.model);
-  if (model === undefined) {
-    return {
-      _tag: "error",
-      error: makeNoPmRuntimeError(
-        `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
-      ),
-    };
-  }
-  const apiKey = resolvePiApiKey(provider);
-  if (apiKey === undefined) {
-    return {
-      _tag: "error",
-      error: makeNoPmRuntimeError(`No PM API key is configured for provider '${provider}'.`),
-    };
-  }
-
-  return {
-    _tag: "ok",
-    value: {
-      selection: pmModelSelection,
-      providerInstanceId,
-      provider,
-      apiKey,
-      model,
-    },
-  };
-};
+const pmThreadModelSelection = (selection: PiModelSelection): ModelSelection => ({
+  instanceId: ProviderInstanceId.make(String(selection.piProvider)),
+  model: selection.model,
+});
 
 const resolvePmHarnessConfig = (
   project: OrchestrationProject,
-): Effect.Effect<ResolvedPmHarnessConfig, PmRuntimeError> => {
-  const result = resolvePmHarnessConfigResult(project);
-  return result._tag === "ok" ? Effect.succeed(result.value) : Effect.fail(result.error);
-};
+  services: {
+    readonly serverSettings: ServerSettingsShape;
+    readonly oauthStore: PiOAuthCredentialStoreShape;
+  },
+): Effect.Effect<ResolvedPmHarnessConfig, PmRuntimeError> =>
+  Effect.gen(function* () {
+    const config = resolveProjectConfig(project);
+    if (Option.isNone(config) || config.value.enabled !== true) {
+      return yield* makeNoPmRuntimeError(
+        `Orchestrator mode is not enabled for project '${project.id}'.`,
+      );
+    }
+    const pmModelSelection = config.value.pmModelSelection;
+    if (pmModelSelection === null) {
+      return yield* makeNoPmRuntimeError(
+        `Project '${project.id}' has no PM model selection configured.`,
+      );
+    }
+
+    const provider = resolvePiProvider(String(pmModelSelection.piProvider));
+    const providerInstanceId = ProviderInstanceId.make(provider);
+    const model = resolvePiModel(provider, pmModelSelection.model);
+    if (model === undefined) {
+      return yield* makeNoPmRuntimeError(
+        `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
+      );
+    }
+    const settings = yield* services.serverSettings.getSettings.pipe(
+      Effect.mapError((cause) =>
+        makeNoPmRuntimeError(
+          `Failed to read server settings for PM provider '${provider}'.`,
+          cause,
+        ),
+      ),
+    );
+    const credential = yield* resolvePiCredential({
+      provider,
+      settings,
+      oauthStore: services.oauthStore,
+    }).pipe(
+      Effect.mapError((cause) =>
+        makeNoPmRuntimeError(
+          `No PM credential is configured for provider '${provider}': ${cause.reason}.`,
+          cause,
+        ),
+      ),
+    );
+
+    return {
+      selection: pmModelSelection,
+      providerInstanceId,
+      provider,
+      credential,
+      model,
+    };
+  });
 
 export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
   Effect.gen(function* () {
@@ -478,7 +490,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       ) {
         return false;
       }
-      const providerInstanceId = config.value.pmModelSelection.instanceId;
+      const providerInstanceId = ProviderInstanceId.make(
+        String(config.value.pmModelSelection.piProvider),
+      );
       // Deliberately fail open on BOTH a typed read error and an unexpected
       // defect: a quota read must never wedge PM re-entry. Approved as the
       // explicit fallback for the PM quota gate; interrupts still propagate.
@@ -1040,6 +1054,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const serverSettings = yield* ServerSettingsService;
+    const oauthStore = yield* PiOAuthCredentialStore;
     const settings = yield* serverSettings.getSettings;
     const autoCompactionDefaults = resolveAutoCompaction({
       defaults: settings.orchestratorDefaults,
@@ -1062,10 +1077,13 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
             `Orchestrator mode is not enabled for project '${project.id}'.`,
           );
         }
-        const harnessConfig = yield* resolvePmHarnessConfig(project);
+        const harnessConfig = yield* resolvePmHarnessConfig(project, {
+          serverSettings,
+          oauthStore,
+        });
         const pmModelSelection = harnessConfig.selection;
         const model = harnessConfig.model;
-        const apiKey = harnessConfig.apiKey;
+        const credential = harnessConfig.credential;
 
         const sessionStorage = yield* makeSqliteSessionStorage({
           sessionId: `pm:${project.id}`,
@@ -1095,18 +1113,19 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
           tools,
           ...(resources !== undefined ? { resources } : {}),
           systemPrompt: PM_SYSTEM_PROMPT,
-          getApiKeyAndHeaders: async () => ({ apiKey }),
+          getApiKeyAndHeaders: async () =>
+            credential.apiKey === undefined ? undefined : { apiKey: credential.apiKey },
         });
         const eventProjection = yield* makePmEventProjectionRuntime({
           project,
-          pmModelSelection,
+          pmModelSelection: pmThreadModelSelection(pmModelSelection),
           events: adapter.events,
         }).pipe(
           Effect.provideService(OrchestrationEngineService, orchestrationEngine),
           Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
           Scope.provide(runtimeScope),
         );
-        const pmProviderInstanceId = pmModelSelection.instanceId;
+        const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const pmThreadId = pmThreadIdForProject(project);
         const autoCompactionForModel = (nextModel: PiModel) => ({
           ...autoCompactionDefaults,
@@ -1192,13 +1211,13 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
             }),
           );
 
-        const compactBeforeModelSwitch = (nextModelSelection: ModelSelection) =>
+        const compactBeforeModelSwitch = (nextModelSelection: PiModelSelection) =>
           adapter.compact(autoCompactionDefaults.customInstructions).pipe(
             Effect.timeout(PM_COMPACTION_TIMEOUT),
             Effect.catchCause((cause) =>
               Effect.logWarning("PM model-switch compaction failed or timed out", {
                 projectId: String(project.id),
-                nextProviderInstanceId: String(nextModelSelection.instanceId),
+                nextProviderInstanceId: String(nextModelSelection.piProvider),
                 nextModel: nextModelSelection.model,
                 timeoutMs: Duration.toMillis(PM_COMPACTION_TIMEOUT),
                 cause: Cause.pretty(cause),
@@ -1211,12 +1230,13 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
             const active = yield* Ref.get(runtimeActive);
             if (!active) return;
 
-            const nextHarnessConfigResult = resolvePmHarnessConfigResult(updatedProject);
-            if (nextHarnessConfigResult._tag === "error") {
-              yield* invalidateRuntime(nextHarnessConfigResult.error.detail);
+            const nextHarnessConfig = yield* resolvePmHarnessConfig(updatedProject, {
+              serverSettings,
+              oauthStore,
+            }).pipe(Effect.catch((error) => invalidateRuntime(error.detail).pipe(Effect.as(null))));
+            if (nextHarnessConfig === null) {
               return;
             }
-            const nextHarnessConfig = nextHarnessConfigResult.value;
 
             const current = yield* Ref.get(currentHarnessConfig);
             if (
@@ -1319,4 +1339,4 @@ export const makePiProjectRuntimeFactory = makePiProjectRuntimeFactoryWithOption
 export const PiProjectRuntimeFactoryLive = Layer.effect(
   PmProjectRuntimeFactory,
   makePiProjectRuntimeFactory,
-);
+).pipe(Layer.provide(PiOAuthCredentialStoreLive));

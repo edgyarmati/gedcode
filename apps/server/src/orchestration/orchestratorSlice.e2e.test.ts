@@ -3,6 +3,7 @@ import {
   EventId,
   GateId,
   MessageId,
+  PiProviderId,
   ProjectId,
   ProviderInstanceId,
   TaskId,
@@ -73,7 +74,7 @@ function makeProjectCreatedEvent(): OrchestrationEvent {
       orchestratorConfig: {
         enabled: true,
         pmModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
+          piProvider: PiProviderId.make("openai"),
           model: "gpt-5.5",
         },
       },

@@ -1,15 +1,20 @@
 import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
   type GedSubagentRole,
+  PiProviderId,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
+  ProviderInstanceId,
+  type ModelSelection,
+  type PiModelSelection,
+  type PiProviderCatalogEntry,
+  type PiProviderModel,
   type ProviderInstanceConfig,
-  type ProviderInstanceId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
@@ -46,8 +51,10 @@ import {
 import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
+  type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
+import { getPrimaryEnvironmentConnection } from "../../environments/runtime";
 import { useShallow } from "zustand/react/shallow";
 import { selectProjectsAcrossEnvironments, useStore } from "../../store";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -73,6 +80,8 @@ import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
 } from "../orchestrator/OrchestratorConfigControls";
+import { buildEnabledPiProviderPickerEntries } from "../orchestrator/projectOrchestrationSettings.logic";
+import { BackendModelPicker, backendLabel } from "../orchestrator/RoleBackendPicker";
 import {
   buildOrchestratorGlobalDefaultsPatch,
   buildGedRoleSettingsPatch,
@@ -1066,6 +1075,12 @@ export function GeneralSettingsPanel() {
 export function OrchestratorDefaultsSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
+  const [piProviderCatalog, setPiProviderCatalog] = useState<ReadonlyArray<PiProviderCatalogEntry>>(
+    [],
+  );
+  const [piProviderModelsByProvider, setPiProviderModelsByProvider] = useState<
+    Readonly<Record<string, ReadonlyArray<PiProviderModel>>>
+  >({});
   const draft = useMemo(
     () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
     [settings.orchestratorDefaults],
@@ -1077,6 +1092,52 @@ export function OrchestratorDefaultsSettingsPanel() {
   const numberKeys = Object.keys(
     GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS,
   ) as OrchestratorGlobalNumberDefaultKey[];
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const server = getPrimaryEnvironmentConnection().client.server;
+        const catalog = await server.listPiProviderCatalog();
+        const enabledProviders = catalog.providers.filter((provider) => provider.enabled);
+        const modelEntries = await Promise.all(
+          enabledProviders.map(async (provider) => {
+            const result = await server.listPiProviderModels({ provider: provider.id });
+            return [String(provider.id), result.models] as const;
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
+        setPiProviderCatalog(catalog.providers);
+        setPiProviderModelsByProvider(Object.fromEntries(modelEntries));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setPiProviderCatalog([]);
+        setPiProviderModelsByProvider({});
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to load pi models",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const piProviderEntries = useMemo(
+    () =>
+      buildEnabledPiProviderPickerEntries({
+        catalog: piProviderCatalog,
+        modelsByProvider: piProviderModelsByProvider,
+      }),
+    [piProviderCatalog, piProviderModelsByProvider],
+  );
 
   const updateDraft = useCallback(
     (nextDraft: typeof draft) => {
@@ -1087,15 +1148,72 @@ export function OrchestratorDefaultsSettingsPanel() {
 
   const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
   const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
+  const pmModelDirty = !Equal.equals(draft.pmModelSelection, defaultDraft.pmModelSelection);
   const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
   const resourceDefaultsDirty = !Equal.equals(
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
   );
+  const pmPickerSelection: ModelSelection | null =
+    draft.pmModelSelection === null
+      ? null
+      : {
+          instanceId: ProviderInstanceId.make(String(draft.pmModelSelection.piProvider)),
+          model: draft.pmModelSelection.model,
+        };
+  const defaultPmPickerSelection: ModelSelection | null =
+    defaultDraft.pmModelSelection === null
+      ? null
+      : {
+          instanceId: ProviderInstanceId.make(String(defaultDraft.pmModelSelection.piProvider)),
+          model: defaultDraft.pmModelSelection.model,
+        };
+  const defaultPmEntry = defaultPmPickerSelection
+    ? piProviderEntries.find((entry) => entry.instanceId === defaultPmPickerSelection.instanceId)
+    : undefined;
+  const defaultPmOptionLabel = defaultPmPickerSelection
+    ? `Default (${backendLabel(defaultPmPickerSelection, defaultPmEntry as ProviderInstanceEntry)})`
+    : "None";
+  const updatePmModelSelection = (next: ModelSelection | null) => {
+    const pmModelSelection: PiModelSelection | null =
+      next === null
+        ? null
+        : {
+            piProvider: PiProviderId.make(String(next.instanceId)),
+            model: next.model,
+          };
+    updateDraft({ ...draft, pmModelSelection });
+  };
 
   return (
     <SettingsPageContainer>
       <SettingsSection title="Orchestrator defaults">
+        <SettingsRow
+          title="PM model"
+          description="Default pi provider and model for project manager runtime."
+          resetAction={
+            pmModelDirty ? (
+              <SettingResetButton
+                label="Orchestrator PM model"
+                onClick={() =>
+                  updateDraft({ ...draft, pmModelSelection: defaultDraft.pmModelSelection })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <BackendModelPicker
+              selection={pmPickerSelection}
+              instanceEntries={piProviderEntries as never as ReadonlyArray<ProviderInstanceEntry>}
+              unsetLabel="None"
+              unsetOptionLabel={defaultPmOptionLabel}
+              backendAriaLabel="Default PM pi provider"
+              modelAriaLabel="Default PM model"
+              onSelectionChange={updatePmModelSelection}
+            />
+          </div>
+        </SettingsRow>
         <SettingsRow
           title="Stages"
           description="Default stage pipeline for projects that have not configured Orchestrator mode yet."

@@ -3,6 +3,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  PiProviderId,
   ProviderInstanceId,
   TaskId,
   TaskTypeId,
@@ -54,6 +55,7 @@ import {
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterOptions } from "../pi/PiAgentAdapter.ts";
+import { PiOAuthCredentialStore } from "../pi/PiOAuthCredentialStore.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
   makePiProjectRuntimeFactoryWithOptions,
@@ -80,7 +82,7 @@ const project: OrchestrationProject = {
   roleModelSelections: {},
   orchestratorConfig: {
     enabled: true,
-    pmModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+    pmModelSelection: { piProvider: PiProviderId.make("openai"), model: "gpt-5.5" },
   },
   scripts: [],
   createdAt: now,
@@ -505,6 +507,11 @@ const makeFactoryCaptureLayer = (input?: {
         }),
       listBlocked: () => Effect.succeed([]),
     }),
+    Layer.succeed(PiOAuthCredentialStore, {
+      save: () => Effect.void,
+      clear: () => Effect.void,
+      getAccessToken: () => Effect.succeed("test-oauth-token"),
+    }),
     ServerSettingsService.layerTest(),
   );
 
@@ -533,12 +540,12 @@ const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
     Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
   >["makePiAgentAdapterOverride"];
 
-const projectWithPmModel = (instanceId: string, model: string): OrchestrationProject => ({
+const projectWithPmModel = (piProvider: string, model: string): OrchestrationProject => ({
   ...project,
   orchestratorConfig: {
     enabled: true,
     pmModelSelection: {
-      instanceId: ProviderInstanceId.make(instanceId),
+      piProvider: PiProviderId.make(piProvider),
       model,
     },
   },
@@ -546,7 +553,7 @@ const projectWithPmModel = (instanceId: string, model: string): OrchestrationPro
 
 const projectMetaUpdatedEvent = (input: {
   readonly sequence: number;
-  readonly instanceId: string;
+  readonly piProvider: string;
   readonly model: string;
 }): OrchestrationEvent => ({
   sequence: input.sequence,
@@ -564,7 +571,7 @@ const projectMetaUpdatedEvent = (input: {
     orchestratorConfig: {
       enabled: true,
       pmModelSelection: {
-        instanceId: ProviderInstanceId.make(input.instanceId),
+        piProvider: PiProviderId.make(input.piProvider),
         model: input.model,
       },
     },
@@ -631,7 +638,7 @@ describe("PmRuntime", () => {
             orchestratorConfig: {
               enabled: true,
               pmModelSelection: {
-                instanceId: ProviderInstanceId.make("openai"),
+                piProvider: PiProviderId.make("openai"),
                 model: "gpt-5",
               },
             },
@@ -724,7 +731,7 @@ describe("PmRuntime", () => {
                 domainEvents,
                 projectMetaUpdatedEvent({
                   sequence: 101,
-                  instanceId: "openai",
+                  piProvider: "openai",
                   model: "gpt-5-mini",
                 }),
               );
@@ -809,7 +816,7 @@ describe("PmRuntime", () => {
               streamDomainEvents: Stream.fromIterable([
                 projectMetaUpdatedEvent({
                   sequence: 102,
-                  instanceId: "openai",
+                  piProvider: "openai",
                   model: "gpt-5-mini",
                 }),
               ]),
@@ -865,7 +872,7 @@ describe("PmRuntime", () => {
               domainEvents,
               projectMetaUpdatedEvent({
                 sequence: 103,
-                instanceId: "openai",
+                piProvider: "openai",
                 model: "gpt-5",
               }),
             );
@@ -944,7 +951,7 @@ describe("PmRuntime", () => {
               streamDomainEvents: Stream.fromIterable([
                 projectMetaUpdatedEvent({
                   sequence: 104,
-                  instanceId: "azure-openai-responses",
+                  piProvider: "azure-openai-responses",
                   model: "gpt-5",
                 }),
               ]),
@@ -1048,7 +1055,7 @@ describe("PmRuntime", () => {
   // WP-Q5: when the PM's own provider instance is quota-blocked, re-entry is held
   // BEFORE the settlement is consumed — nothing is delivered to the PM and nothing
   // is consumed, so the reconciliation sweep re-drives it once quota recovers
-  // (preserving exactly-once). The PM runs on the `codex` instance per the test
+  // (preserving exactly-once). The PM runs on the `openai` pi provider per the test
   // project config.
   it.effect("holds PM re-entry while the PM provider instance is quota-blocked", () =>
     Effect.gen(function* () {
@@ -1062,7 +1069,7 @@ describe("PmRuntime", () => {
         messages,
         consumeCalls,
         providerQuotaStatuses: new Map([
-          [String(ProviderInstanceId.make("codex")), "blocked-until"],
+          [String(ProviderInstanceId.make("openai")), "blocked-until"],
         ]),
       });
 

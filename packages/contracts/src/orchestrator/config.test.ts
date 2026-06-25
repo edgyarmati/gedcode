@@ -111,6 +111,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       maxRetriesPerStage: 5,
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
+      pmModelSelection: { piProvider: "openai", model: "gpt-5" },
       autoCompaction: {
         enabled: false,
         reserveTokens: 8_000,
@@ -132,6 +133,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       keepRecentTokens: 12_000,
       customInstructions: "Keep active task IDs and gate state.",
     });
+    expect(reDecoded.pmModelSelection).toEqual({ piProvider: "openai", model: "gpt-5" });
     expect(reDecoded.allowFullAccessWorkers).toBe(true);
     expect(reDecoded.openPrAsDraft).toBe(true);
   });
@@ -194,7 +196,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
   it("round-trips a fully-specified config without loss", () => {
     const decoded = decodeProjectConfig({
       enabled: true,
-      pmModelSelection: { instanceId: "codex", model: "gpt-5.5" },
+      pmModelSelection: { piProvider: "openai", model: "gpt-5.5" },
       taskTypes: [
         {
           id: "feature",
@@ -223,7 +225,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
 
     expect(reDecoded).toEqual(decoded);
     expect(reDecoded.enabled).toBe(true);
-    expect(reDecoded.pmModelSelection?.instanceId).toBe("codex");
+    expect(reDecoded.pmModelSelection?.piProvider).toBe("openai");
     expect(reDecoded.pmModelSelection?.model).toBe("gpt-5.5");
     expect(reDecoded.taskTypes[0]?.gatePolicy.classify).toBe("require-approval");
     expect(reDecoded.taskTypes[0]?.gatePolicy.plan).toBe("auto");
@@ -232,5 +234,14 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
     expect(reDecoded.resourceLimits.allowFullAccessWorkers).toBe(true);
     expect(reDecoded.openPrAsDraft).toBe(true);
+  });
+
+  it("decodes legacy worker-shaped PM model selections as unconfigured", () => {
+    const decoded = decodeProjectConfig({
+      enabled: true,
+      pmModelSelection: { instanceId: "codex", model: "gpt-5.5", options: [] },
+    });
+
+    expect(decoded.pmModelSelection).toBeNull();
   });
 });

@@ -1,8 +1,14 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import {
+  PiProviderId,
+  ProviderInstanceId,
+  type ModelSelection,
+  type PiModelSelection,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
   buildOrchestratorProjectConfig,
+  buildEnabledPiProviderPickerEntries,
   buildOrchestrationConfigUpdate,
   orchestratorConfigDraftsEqual,
   orchestrationSettingsDraftsEqual,
@@ -16,6 +22,11 @@ import {
 
 const selection = (instanceId: string, model: string): ModelSelection => ({
   instanceId: ProviderInstanceId.make(instanceId),
+  model,
+});
+
+const pmSelection = (piProvider: string, model: string): PiModelSelection => ({
+  piProvider: PiProviderId.make(piProvider),
   model,
 });
 
@@ -111,7 +122,7 @@ describe("buildOrchestrationConfigUpdate", () => {
       rolePromptPrefixes: { verify: "Verify behavior." },
       orchestratorConfig: {
         enabled: true,
-        pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+        pmModelSelection: pmSelection("openai", "gpt-5-pm"),
         openPrAsDraft: true,
         taskTypes: [
           {
@@ -158,7 +169,7 @@ describe("seedOrchestratorConfigDraft", () => {
   it("normalizes a project config into the editor draft", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
-      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
       taskTypes: [
         {
@@ -182,7 +193,7 @@ describe("seedOrchestratorConfigDraft", () => {
       },
     });
     expect(draft.enabled).toBe(true);
-    expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.pmModelSelection).toEqual(pmSelection("openai", "gpt-5-pm"));
     expect(draft.openPrAsDraft).toBe(true);
     expect(draft.optionalStages).toEqual({ review: true, verify: false });
     expect(draft.gatePolicy).toEqual({
@@ -225,7 +236,7 @@ describe("seedOrchestratorConfigDraft", () => {
   it("seeds only the current project's explicit sparse config", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
-      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: false,
       taskTypes: [
         {
@@ -241,7 +252,7 @@ describe("seedOrchestratorConfigDraft", () => {
     });
 
     expect(draft.enabled).toBe(true);
-    expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.pmModelSelection).toEqual(pmSelection("openai", "gpt-5-pm"));
     expect(draft.openPrAsDraft).toBe(false);
     expect(draft.optionalStages).toBeNull();
     expect(draft.gatePolicy).toEqual({
@@ -333,7 +344,7 @@ describe("buildOrchestratorProjectConfig", () => {
   it("builds sparse feature config from edited settings", () => {
     const draft: OrchestratorConfigDraft = {
       enabled: true,
-      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
       optionalStages: { review: false, verify: true },
       gatePolicy: {
@@ -352,7 +363,7 @@ describe("buildOrchestratorProjectConfig", () => {
     };
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
       enabled: true,
-      pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
       taskTypes: [
         {
@@ -422,6 +433,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
+        pmModelSelection: pmSelection("openai", "gpt-5-pm"),
         openPrAsDraft: true,
         autoCompaction: {
           enabled: true,
@@ -431,6 +443,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         allowFullAccessWorkers: true,
       }),
     ).toEqual({
+      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       optionalStages: { review: false, verify: true },
       gatePolicy: {
         classify: "auto",
@@ -447,6 +460,41 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         allowFullAccessWorkers: true,
       },
     });
+  });
+});
+
+describe("buildEnabledPiProviderPickerEntries", () => {
+  it("lists only enabled pi providers with their models", () => {
+    expect(
+      buildEnabledPiProviderPickerEntries({
+        catalog: [
+          {
+            id: PiProviderId.make("openai"),
+            displayName: "OpenAI",
+            kind: "apiKey",
+            configured: true,
+            enabled: true,
+          },
+          {
+            id: PiProviderId.make("anthropic"),
+            displayName: "Anthropic",
+            kind: "oauth",
+            configured: true,
+            enabled: false,
+          },
+        ],
+        modelsByProvider: {
+          openai: [{ id: "gpt-5", name: "GPT-5", contextWindow: 128_000 }],
+          anthropic: [{ id: "claude-opus-4-6", name: "Claude Opus", contextWindow: 200_000 }],
+        },
+      }),
+    ).toEqual([
+      {
+        instanceId: ProviderInstanceId.make("openai"),
+        displayName: "OpenAI",
+        models: [{ slug: "gpt-5", name: "GPT-5", shortName: "GPT-5" }],
+      },
+    ]);
   });
 });
 
@@ -513,7 +561,7 @@ describe("orchestrationSettingsDraftsEqual", () => {
 describe("orchestratorConfigDraftsEqual", () => {
   const base = seedOrchestratorConfigDraft({
     enabled: true,
-    pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+    pmModelSelection: pmSelection("openai", "gpt-5-pm"),
     openPrAsDraft: true,
     taskTypes: [
       {
@@ -543,7 +591,7 @@ describe("orchestratorConfigDraftsEqual", () => {
     expect(
       orchestratorConfigDraftsEqual(base, {
         ...base,
-        pmModelSelection: selection("codex_pm", "gpt-5-other"),
+        pmModelSelection: pmSelection("openai", "gpt-5-other"),
       }),
     ).toBe(false);
     expect(

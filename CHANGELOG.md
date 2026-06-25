@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Reshape Orchestrator PM model selection to choose a pi provider and model directly, resolve PM credentials from pi-provider config before environment variables, and source the PM picker from enabled pi providers instead of worker backends.
 - UI: Add a PM model providers (pi) settings section for configuring pi provider API keys, OAuth connections, ambient credentials, and picker availability without changing PM model selection.
 - Internal: Add server-brokered pi OAuth login RPCs with secret-store credential persistence, non-secret connection status in settings, and single-flight access-token refresh for OAuth providers.
 - Internal: Store pi provider API keys through the server secret store with client redaction, and add read-only websocket APIs for the pi provider catalog and per-provider model lists.

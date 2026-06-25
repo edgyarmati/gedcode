@@ -9,35 +9,99 @@
  *
  * @module pi/PmModelResolver
  */
-import { getEnvApiKey, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
+import { getEnvApiKey, getModel, type Model } from "@earendil-works/pi-ai";
+import type { PiProviderConfig, ServerSettings } from "@t3tools/contracts";
+import * as Data from "effect/Data";
+import * as Effect from "effect/Effect";
+
+import type { PiOAuthCredentialStoreShape } from "./PiOAuthCredentialStore.ts";
+import { getPiProviderKind } from "./PiProviderCatalog.ts";
 
 /** A resolved pi model handle, opaque to callers outside `pi/`. */
 export type PiModel = Model<any>;
 
-/**
- * Map the server's provider instance ids onto pi-ai provider ids. The PM routes
- * through the same provider registry as every other model selection, so the ids
- * usually match; these aliases cover the cases where they differ.
- */
-const PI_PROVIDER_ALIASES = new Map<string, string>([
-  ["codex", "openai-codex"],
-  ["claude", "anthropic"],
-  ["claudeAgent", "anthropic"],
-  ["openCode", "opencode"],
-]);
-
-/** Resolve a server provider instance id to a pi-ai provider id. */
-export const resolvePiProvider = (instanceId: string): string => {
-  const providers = new Set(getProviders() as ReadonlyArray<string>);
-  if (providers.has(instanceId)) {
-    return instanceId;
-  }
-  return PI_PROVIDER_ALIASES.get(instanceId) ?? instanceId;
+export type ResolvedPiCredential = {
+  readonly apiKey?: string | undefined;
 };
+
+export class PiCredentialResolutionError extends Data.TaggedError("PiCredentialResolutionError")<{
+  readonly provider: string;
+  readonly reason: string;
+  readonly cause?: unknown;
+}> {
+  override get message(): string {
+    return `Pi credential resolution failed for ${this.provider}: ${this.reason}`;
+  }
+}
+
+/** PM config stores the pi provider id directly. */
+export const resolvePiProvider = (piProvider: string): string => piProvider;
 
 /** Resolve a pi-ai model handle for a provider + model id, or `undefined`. */
 export const resolvePiModel = (provider: string, model: string): PiModel | undefined =>
   getModel(provider as never, model as never) as PiModel | undefined;
 
-/** Resolve the configured API key for a pi-ai provider from the environment. */
-export const resolvePiApiKey = (provider: string): string | undefined => getEnvApiKey(provider);
+const configuredPiProvider = (
+  settings: ServerSettings,
+  provider: string,
+): PiProviderConfig | undefined =>
+  (settings.piProviders as Record<string, PiProviderConfig | undefined>)[provider];
+
+const envCredential = (provider: string): ResolvedPiCredential | undefined => {
+  const apiKey = getEnvApiKey(provider);
+  if (apiKey === undefined) {
+    return undefined;
+  }
+  return apiKey === "<authenticated>" ? {} : { apiKey };
+};
+
+export const resolvePiCredential = (input: {
+  readonly provider: string;
+  readonly settings: ServerSettings;
+  readonly oauthStore: PiOAuthCredentialStoreShape;
+}): Effect.Effect<ResolvedPiCredential, PiCredentialResolutionError> =>
+  Effect.gen(function* () {
+    const config = configuredPiProvider(input.settings, input.provider);
+    const kind = getPiProviderKind(input.provider);
+
+    if (kind === "apiKey") {
+      const configuredApiKey = config?.apiKey?.value;
+      if (configuredApiKey !== undefined && configuredApiKey.length > 0) {
+        return { apiKey: configuredApiKey };
+      }
+      const env = envCredential(input.provider);
+      if (env !== undefined) {
+        return env;
+      }
+      return yield* new PiCredentialResolutionError({
+        provider: input.provider,
+        reason: "no API key configured in pi provider settings or environment",
+      });
+    }
+
+    if (kind === "oauth") {
+      if (config?.oauth?.connected === true) {
+        const apiKey = yield* input.oauthStore.getAccessToken(input.provider).pipe(
+          Effect.mapError(
+            (cause) =>
+              new PiCredentialResolutionError({
+                provider: input.provider,
+                reason: "failed to resolve OAuth access token",
+                cause,
+              }),
+          ),
+        );
+        return { apiKey };
+      }
+      const env = envCredential(input.provider);
+      if (env !== undefined) {
+        return env;
+      }
+      return yield* new PiCredentialResolutionError({
+        provider: input.provider,
+        reason: "no OAuth credential configured in pi provider settings or environment",
+      });
+    }
+
+    return envCredential(input.provider) ?? {};
+  });
