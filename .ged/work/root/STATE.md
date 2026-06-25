@@ -142,6 +142,15 @@ lists only pi models → pick one → enable orchestrator → confirm the PM run
 "failed to start PM runtime") → drive a task classify→…→land → confirm a real gated PR opens. NOT merged
 to `main` until the smoke test passes.
 
+**Smoke-test finding (2026-06-25) → follow-up WP-PI-OAUTHUX (web-only, in progress):** user tried the
+OAuth Connect for `openai-codex`; login SUCCEEDED (tokens saved to `pi-cred-…-oauth.bin`,
+`oauth.connected:true`, `expiresAt` confirmed ms-epoch → resolves the PI3 watch-item) but the modal sat
+waiting for a code that never appeared — pi-ai's localhost listener caught the redirect + auto-completed
+(no code to paste). The provider ROW already reflects connected (live `useSettings`, PiProviderRow ~:311);
+only `PiOAuthLoginDialog` doesn't notice. Fix (spec `/Users/edgy/.claude/jobs/6da7233d/tmp/PI-oauth-ux-spec.md`):
+the modal watches the live `oauth.connected` flip → success/auto-close, keeping the manual paste path for
+device-code. No server change (save→settings-broadcast already reactive).
+
 ## Codex handoff mechanics (for resume)
 
 - Hand off via the `codex:codex-rescue` subagent (Agent tool): it runs
