@@ -105,7 +105,19 @@ controls [API-key input, OAuth Connect/Disconnect modal via the WS broker, ambie
 toggle = available-in-picker; `PiProviderSettings.logic.ts` whole-map patch builders preserve untouched
 redacted secrets/oauth; worker UI/picker/pmModelSelection untouched. Low-pri: no explicit remove-key
 affordance, replace-or-disable only. tsgo flake on first typecheck — re-ran 13/13 green). PI5 next
-(ATOMIC reshape, HIGH; spec ready `/Users/edgy/.claude/jobs/6da7233d/tmp/PI5-spec.md`).
+(ATOMIC reshape, HIGH; spec ready `/Users/edgy/.claude/jobs/6da7233d/tmp/PI5-spec.md`). PI5 DONE
+`1d2328823` (atomic reshape: `pmModelSelection` → nullable `PiModelSelection` in project+global config
+with lenient legacy decode [`NullablePiModelSelection` transformOrFail: worker-shaped {instanceId,model}
+→ null, never throws → append-only replay safe]; `PmModelResolver.resolvePiCredential` config-first then
+env per kind [apiKey/oauth via getAccessToken/ambient `<authenticated>`], missing → typed
+`PiCredentialResolutionError`, kind via shared `getPiProviderKind`; PmRuntime builds getApiKeyAndHeaders
++ wires PiOAuthCredentialStore; web project+global PM pickers list only enabled pi providers, worker
+pickers untouched; gate green first pass). **5/6 done.** PI6 next (integration): PmRuntime has a
+`makePiAgentAdapterOverride` seam (line ~1109) → can start the real PM with a FAKE pi adapter (no live
+pi-ai); the big harness stubs PmRuntime wholesale (Layer.succeed ~580) so a focused PmRuntime-layer test
+is cleaner. Prove: (1) PM starts + resolves credential from configured `piProviders` not env; (2)
+lenient-decode replay of a legacy pmModelSelection. Then MANUAL smoke test (configure a pi key in UI →
+pick model → drive a task to a PR).
 
 ## Codex handoff mechanics (for resume)
 
