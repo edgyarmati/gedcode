@@ -6,7 +6,9 @@ import {
   ApprovalRequestId,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
   ProviderDriverKind,
+  SourceControlProviderError,
   type ServerSettings,
   type OrchestrationEvent,
   type OrchestrationThread,
@@ -25,6 +27,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { CheckpointStoreLive } from "../src/checkpointing/Layers/CheckpointStore.ts";
 import { CheckpointStore } from "../src/checkpointing/Services/CheckpointStore.ts";
@@ -70,6 +73,7 @@ import { OrchestrationReactor } from "../src/orchestration/Services/Orchestratio
 import { OrphanTurnReconciler } from "../src/orchestration/Services/OrphanTurnReconciler.ts";
 import { PmRuntime } from "../src/orchestration/Services/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "../src/orchestration/Layers/WorkerStartAdmission.ts";
+import { makeTaskWorktreeReactorLive } from "../src/orchestration/Layers/TaskWorktreeReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   RuntimeReceiptBus,
@@ -86,7 +90,13 @@ import { WorkspacePathsLive } from "../src/workspace/Layers/WorkspacePaths.ts";
 import * as VcsDriverRegistry from "../src/vcs/VcsDriverRegistry.ts";
 import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
+import type { GitWorkflowServiceShape } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
+import {
+  SourceControlProviderRegistry,
+  type SourceControlProviderRegistryShape,
+} from "../src/sourceControl/SourceControlProviderRegistry.ts";
+import * as SourceControlProvider from "../src/sourceControl/SourceControlProvider.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
@@ -96,6 +106,43 @@ function runGit(cwd: string, args: ReadonlyArray<string>) {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
   });
+}
+
+function unsupportedSourceControlProvider(
+  operation: string,
+): Effect.Effect<never, SourceControlProviderError> {
+  return Effect.fail(
+    new SourceControlProviderError({
+      provider: "unknown",
+      operation,
+      detail: "No integration source-control provider was configured.",
+    }),
+  );
+}
+
+function makeUnsupportedSourceControlRegistry(): SourceControlProviderRegistryShape {
+  const provider = SourceControlProvider.SourceControlProvider.of({
+    kind: "unknown",
+    listChangeRequests: () => unsupportedSourceControlProvider("listChangeRequests"),
+    getChangeRequest: () => unsupportedSourceControlProvider("getChangeRequest"),
+    createChangeRequest: () => unsupportedSourceControlProvider("createChangeRequest"),
+    getRepositoryCloneUrls: () => unsupportedSourceControlProvider("getRepositoryCloneUrls"),
+    createRepository: () => unsupportedSourceControlProvider("createRepository"),
+    getDefaultBranch: () => unsupportedSourceControlProvider("getDefaultBranch"),
+    checkoutChangeRequest: () => unsupportedSourceControlProvider("checkoutChangeRequest"),
+  });
+  const resolveHandle: SourceControlProviderRegistryShape["resolveHandle"] = () =>
+    Effect.succeed({
+      provider,
+      context: null,
+    });
+
+  return {
+    get: () => Effect.succeed(provider),
+    resolveHandle,
+    resolve: (input) => resolveHandle(input).pipe(Effect.map((handle) => handle.provider)),
+    discover: Effect.succeed([]),
+  };
 }
 
 const initializeGitWorkspace = Effect.fn(function* (cwd: string) {
@@ -195,6 +242,7 @@ export interface OrchestrationIntegrationHarness {
   readonly checkpointStore: CheckpointStore["Service"];
   readonly checkpointRepository: ProjectionCheckpointRepository["Service"];
   readonly pendingApprovalRepository: ProjectionPendingApprovalRepository["Service"];
+  readonly landingMocks: OrchestrationLandingHarnessMocks | null;
   readonly waitForThread: (
     threadId: string,
     predicate: (thread: OrchestrationThread) => boolean,
@@ -234,11 +282,27 @@ export interface OrchestrationIntegrationHarness {
   readonly dispose: Effect.Effect<void, never>;
 }
 
+export interface OrchestrationLandingHarnessMocks {
+  readonly pushCurrentBranchCalls: Array<
+    Parameters<GitWorkflowServiceShape["pushCurrentBranch"]>[0]
+  >;
+  readonly readRangeContextCalls: Array<Parameters<GitWorkflowServiceShape["readRangeContext"]>[0]>;
+  readonly removeWorktreeCalls: Array<Parameters<GitWorkflowServiceShape["removeWorktree"]>[0]>;
+  readonly vcsProcessRunCalls: Array<VcsProcess.VcsProcessInput>;
+}
+
 interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
   readonly rootDir?: string;
   readonly additionalProviderInstances?: ReadonlyArray<ProviderInstanceId>;
+  readonly taskWorktreeReactor?: {
+    readonly enabled: boolean;
+    readonly sourceControlProviderRegistry?: SourceControlProviderRegistryShape;
+    readonly pushCurrentBranch?: GitWorkflowServiceShape["pushCurrentBranch"];
+    readonly readRangeContext?: GitWorkflowServiceShape["readRangeContext"];
+    readonly removeWorktree?: GitWorkflowServiceShape["removeWorktree"];
+  };
 }
 
 export const makeOrchestrationIntegrationHarness = (
@@ -358,17 +422,92 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(serverSettingsLayer),
     );
+    const textGenerationLayer = Layer.succeed(TextGeneration, {
+      generateBranchName: () => Effect.succeed({ branch: "update" }),
+      generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
+    } as unknown as TextGenerationShape);
+    const landingMocks: OrchestrationLandingHarnessMocks | null =
+      options?.taskWorktreeReactor?.enabled === true
+        ? {
+            pushCurrentBranchCalls: [],
+            readRangeContextCalls: [],
+            removeWorktreeCalls: [],
+            vcsProcessRunCalls: [],
+          }
+        : null;
+    const pushCurrentBranch: GitWorkflowServiceShape["pushCurrentBranch"] =
+      options?.taskWorktreeReactor?.pushCurrentBranch ??
+      ((input) => {
+        landingMocks?.pushCurrentBranchCalls.push(input);
+        return Effect.succeed({
+          status: "pushed",
+          branch: input.fallbackBranch ?? "HEAD",
+          upstreamBranch:
+            input.remoteName === null || input.remoteName === undefined
+              ? undefined
+              : `${input.remoteName}/${input.fallbackBranch ?? "HEAD"}`,
+          setUpstream: true,
+        });
+      });
+    const readRangeContext: GitWorkflowServiceShape["readRangeContext"] =
+      options?.taskWorktreeReactor?.readRangeContext ??
+      ((input) => {
+        landingMocks?.readRangeContextCalls.push(input);
+        return Effect.succeed({
+          commitSummary: "- Implement landing integration fixture",
+          diffSummary: " 1 file changed, 1 insertion(+)",
+          diffPatch: "",
+        });
+      });
+    const removeWorktree: GitWorkflowServiceShape["removeWorktree"] =
+      options?.taskWorktreeReactor?.removeWorktree ??
+      ((input) => {
+        landingMocks?.removeWorktreeCalls.push(input);
+        return Effect.try({
+          try: () => {
+            runGit(input.cwd, [
+              "worktree",
+              "remove",
+              ...(input.force ? ["--force"] : []),
+              input.path,
+            ]);
+          },
+          catch: (cause) =>
+            new GitCommandError({
+              operation: "removeWorktree",
+              command: "git worktree remove",
+              cwd: input.cwd,
+              detail: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+      });
     const gitWorkflowLayer = Layer.mock(GitWorkflowService)({
       renameBranch: (input: {
         readonly cwd: string;
         readonly oldBranch: string;
         readonly newBranch: string;
       }) => Effect.succeed({ branch: input.newBranch }),
-    });
-    const textGenerationLayer = Layer.succeed(TextGeneration, {
-      generateBranchName: () => Effect.succeed({ branch: "update" }),
-      generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
-    } as unknown as TextGenerationShape);
+      pushCurrentBranch,
+      readRangeContext,
+      removeWorktree,
+    } satisfies Partial<GitWorkflowServiceShape>);
+    const sourceControlProviderRegistryLayer = Layer.succeed(
+      SourceControlProviderRegistry,
+      options?.taskWorktreeReactor?.sourceControlProviderRegistry ??
+        makeUnsupportedSourceControlRegistry(),
+    );
+    const vcsProcessLayer = Layer.succeed(VcsProcess.VcsProcess, {
+      run: (input) => {
+        landingMocks?.vcsProcessRunCalls.push(input);
+        return Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(0),
+          stdout: "",
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        });
+      },
+    } satisfies VcsProcess.VcsProcessShape);
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitWorkflowLayer),
@@ -404,6 +543,24 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(WorkspacePathsLive),
       Layer.provideMerge(VcsProcess.layer),
     );
+    const taskWorktreeReactorLayer =
+      options?.taskWorktreeReactor?.enabled === true
+        ? makeTaskWorktreeReactorLive({
+            reaperIntervalMsOverride: 60_000,
+            landingRetryDelayMsOverride: 1,
+            landingMaxAttemptsOverride: 1,
+          }).pipe(
+            Layer.provideMerge(runtimeServicesLayer),
+            Layer.provideMerge(gitWorkflowLayer),
+            Layer.provideMerge(sourceControlProviderRegistryLayer),
+            Layer.provideMerge(vcsProcessLayer),
+            Layer.provideMerge(serverSettingsLayer),
+            Layer.provideMerge(NodeServices.layer),
+          )
+        : Layer.succeed(TaskWorktreeReactor, {
+            start: () => Effect.void,
+            drain: Effect.void,
+          });
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
@@ -425,12 +582,7 @@ export const makeOrchestrationIntegrationHarness = (
           drain: Effect.void,
         }),
       ),
-      Layer.provideMerge(
-        Layer.succeed(TaskWorktreeReactor, {
-          start: () => Effect.void,
-          drain: Effect.void,
-        }),
-      ),
+      Layer.provideMerge(taskWorktreeReactorLayer),
     );
     const layer = Layer.empty.pipe(
       Layer.provideMerge(runtimeServicesLayer),
@@ -632,6 +784,7 @@ export const makeOrchestrationIntegrationHarness = (
       checkpointStore,
       checkpointRepository,
       pendingApprovalRepository,
+      landingMocks,
       waitForThread,
       waitForDomainEvent,
       waitForPendingApproval,
