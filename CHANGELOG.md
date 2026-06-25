@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Surface the Orchestrator landing PR draft/ready setting in global defaults and per-project inherited overrides, and show a "View PR" link on landed task details when landing recorded a pull request URL.
 - Internal: Add Phase 5 Orchestrator landing contracts for real PR creation. Orchestrator config now carries inheritable `openPrAsDraft` defaults, tasks expose `prUrl`, and the internal `task.pr.opened` command records a `task.pr-opened` event without wiring the landing reactor yet.
 - Internal: Wire Orchestrator task landing to push the task branch with server git credentials, open a gated GitHub/GitLab PR or merge request after the approved land gate, record the resulting `prUrl` durably, and leave failed landings surfaced with the worktree intact for retry.
 - Internal: Add real-engine Orchestrator integration coverage proving sparse projects inherit live `ServerSettings.orchestratorDefaults` for gate policy, enabled stages, and stage handoff limits, while explicit project overrides win and `land` never auto-resolves.

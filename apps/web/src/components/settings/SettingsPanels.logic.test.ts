@@ -145,6 +145,7 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
+      openPrAsDraft: true,
       autoCompaction: {
         enabled: false,
         reserveTokens: 7_000,
@@ -161,6 +162,7 @@ describe("Orchestrator global defaults settings logic", () => {
       work: "auto",
       review: "require-approval",
     });
+    expect(draft.openPrAsDraft).toBe(true);
     expect(draft.resourceDefaults).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
@@ -196,6 +198,7 @@ describe("Orchestrator global defaults settings logic", () => {
         worktreeReaperIntervalMinutes: 9,
         allowFullAccessWorkers: false,
       },
+      openPrAsDraft: true,
       autoCompaction: {
         enabled: true,
         reserveTokens: 6_000,
@@ -224,7 +227,7 @@ describe("Orchestrator global defaults settings logic", () => {
         keepRecentTokens: 11_000,
       },
       allowFullAccessWorkers: false,
-      openPrAsDraft: false,
+      openPrAsDraft: true,
     });
   });
 });

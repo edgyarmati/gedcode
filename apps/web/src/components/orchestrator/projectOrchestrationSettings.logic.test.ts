@@ -50,6 +50,7 @@ describe("seedOrchestrationSettingsDraft", () => {
     expect(draft.orchestratorConfig).toEqual({
       enabled: false,
       pmModelSelection: null,
+      openPrAsDraft: null,
       optionalStages: null,
       gatePolicy: {
         classify: null,
@@ -111,6 +112,7 @@ describe("buildOrchestrationConfigUpdate", () => {
       orchestratorConfig: {
         enabled: true,
         pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+        openPrAsDraft: true,
         taskTypes: [
           {
             id: "feature" as const,
@@ -135,6 +137,7 @@ describe("seedOrchestratorConfigDraft", () => {
     expect(draft).toEqual({
       enabled: false,
       pmModelSelection: null,
+      openPrAsDraft: null,
       optionalStages: null,
       gatePolicy: {
         classify: null,
@@ -156,6 +159,7 @@ describe("seedOrchestratorConfigDraft", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
       pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      openPrAsDraft: true,
       taskTypes: [
         {
           id: "feature",
@@ -179,6 +183,7 @@ describe("seedOrchestratorConfigDraft", () => {
     });
     expect(draft.enabled).toBe(true);
     expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.openPrAsDraft).toBe(true);
     expect(draft.optionalStages).toEqual({ review: true, verify: false });
     expect(draft.gatePolicy).toEqual({
       classify: "auto",
@@ -200,6 +205,7 @@ describe("seedOrchestratorConfigDraft", () => {
 
     expect(draft.enabled).toBe(false);
     expect(draft.pmModelSelection).toBeNull();
+    expect(draft.openPrAsDraft).toBeNull();
     expect(draft.optionalStages).toBeNull();
     expect(draft.gatePolicy).toEqual({
       classify: null,
@@ -220,6 +226,7 @@ describe("seedOrchestratorConfigDraft", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
       pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      openPrAsDraft: false,
       taskTypes: [
         {
           id: "feature",
@@ -235,6 +242,7 @@ describe("seedOrchestratorConfigDraft", () => {
 
     expect(draft.enabled).toBe(true);
     expect(draft.pmModelSelection).toEqual(selection("codex_pm", "gpt-5-pm"));
+    expect(draft.openPrAsDraft).toBe(false);
     expect(draft.optionalStages).toBeNull();
     expect(draft.gatePolicy).toEqual({
       classify: null,
@@ -308,10 +316,25 @@ describe("buildOrchestratorProjectConfig", () => {
     });
   });
 
+  it("writes only an explicit landing PR mode override", () => {
+    const draft: OrchestratorConfigDraft = {
+      ...seedOrchestratorConfigDraft({}),
+      openPrAsDraft: true,
+    };
+
+    expect(buildOrchestratorProjectConfig(draft)).toEqual({
+      enabled: false,
+      pmModelSelection: null,
+      openPrAsDraft: true,
+    });
+    expect(seedOrchestratorConfigDraft(buildOrchestratorProjectConfig(draft))).toEqual(draft);
+  });
+
   it("builds sparse feature config from edited settings", () => {
     const draft: OrchestratorConfigDraft = {
       enabled: true,
       pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      openPrAsDraft: true,
       optionalStages: { review: false, verify: true },
       gatePolicy: {
         classify: "auto",
@@ -330,6 +353,7 @@ describe("buildOrchestratorProjectConfig", () => {
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
       enabled: true,
       pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+      openPrAsDraft: true,
       taskTypes: [
         {
           id: "feature",
@@ -398,7 +422,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
-        openPrAsDraft: false,
+        openPrAsDraft: true,
         autoCompaction: {
           enabled: true,
           reserveTokens: 8_000,
@@ -414,6 +438,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         work: "auto",
         review: "require-approval",
       },
+      openPrAsDraft: true,
       resourceLimits: {
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
@@ -489,6 +514,7 @@ describe("orchestratorConfigDraftsEqual", () => {
   const base = seedOrchestratorConfigDraft({
     enabled: true,
     pmModelSelection: selection("codex_pm", "gpt-5-pm"),
+    openPrAsDraft: true,
     taskTypes: [
       {
         id: "feature",
@@ -511,13 +537,19 @@ describe("orchestratorConfigDraftsEqual", () => {
     },
   });
 
-  it("tracks edits across enabled, pm model, stages, gates, and limits", () => {
+  it("tracks edits across enabled, pm model, landing PR mode, stages, gates, and limits", () => {
     expect(orchestratorConfigDraftsEqual(base, { ...base })).toBe(true);
     expect(orchestratorConfigDraftsEqual(base, { ...base, enabled: false })).toBe(false);
     expect(
       orchestratorConfigDraftsEqual(base, {
         ...base,
         pmModelSelection: selection("codex_pm", "gpt-5-other"),
+      }),
+    ).toBe(false);
+    expect(
+      orchestratorConfigDraftsEqual(base, {
+        ...base,
+        openPrAsDraft: false,
       }),
     ).toBe(false);
     expect(

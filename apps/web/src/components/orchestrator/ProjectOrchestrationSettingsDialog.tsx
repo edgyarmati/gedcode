@@ -47,6 +47,7 @@ import {
 import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
+  ProjectOpenPrModeControl,
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
 } from "./OrchestratorConfigControls";
@@ -281,6 +282,29 @@ function ResourceLimitsSection({
   );
 }
 
+function LandingPrSection({
+  openPrAsDraft,
+  inheritedOpenPrAsDraft,
+  onOpenPrAsDraftChange,
+}: {
+  openPrAsDraft: boolean | null;
+  inheritedOpenPrAsDraft: boolean;
+  onOpenPrAsDraftChange: (openPrAsDraft: boolean | null) => void;
+}) {
+  return (
+    <SettingsSection
+      title="Landing PRs"
+      description="Choose whether landing opens a ready pull request or a draft pull request."
+    >
+      <ProjectOpenPrModeControl
+        openPrAsDraft={openPrAsDraft}
+        inheritedOpenPrAsDraft={inheritedOpenPrAsDraft}
+        onOpenPrAsDraftChange={onOpenPrAsDraftChange}
+      />
+    </SettingsSection>
+  );
+}
+
 // Project-level orchestration configuration. Mirrors the project-rename flow —
 // opened from the sidebar project context menu, seeded from the project's
 // current config, and saved via a single human-origin `project.meta.update` that
@@ -380,6 +404,12 @@ export function ProjectOrchestrationSettingsDialog({
     },
     [],
   );
+  const handleOpenPrAsDraftChange = useCallback((openPrAsDraft: boolean | null) => {
+    setDraft((current) => ({
+      ...current,
+      orchestratorConfig: { ...current.orchestratorConfig, openPrAsDraft },
+    }));
+  }, []);
   const handleNumberLimitChange = useCallback(
     (key: ProjectResourceLimitNumberKey, value: number | null) => {
       setDraft((current) => ({
@@ -485,6 +515,11 @@ export function ProjectOrchestrationSettingsDialog({
             gatePolicy={draft.orchestratorConfig.gatePolicy}
             inheritedGatePolicy={inheritedDefaults.gatePolicy}
             onGatePolicyChange={handleGatePolicyChange}
+          />
+          <LandingPrSection
+            openPrAsDraft={draft.orchestratorConfig.openPrAsDraft}
+            inheritedOpenPrAsDraft={inheritedDefaults.openPrAsDraft}
+            onOpenPrAsDraftChange={handleOpenPrAsDraftChange}
           />
           <ResourceLimitsSection
             resourceLimits={draft.orchestratorConfig.resourceLimits}

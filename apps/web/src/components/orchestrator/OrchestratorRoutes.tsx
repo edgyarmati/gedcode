@@ -88,6 +88,7 @@ import {
   getOrchestratorPmSectionClassName,
   OrchestratorBoardVisibilityButton,
 } from "./OrchestratorProjectLayout";
+import { TaskPrLink } from "./TaskPrLink";
 
 const LazyDiffPanel = lazy(() => import("../DiffPanel"));
 
@@ -822,19 +823,26 @@ export function OrchestratorTaskRoute(props: {
   );
 }
 
-function TaskHeader({ task }: { task: OrchestratorTask }) {
+export function TaskHeader({ task }: { task: OrchestratorTask }) {
   return (
     <div className="border-b border-border bg-card/70 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{TASK_STATUS_LABELS[task.status]}</Badge>
-        <Badge variant="outline">{task.type}</Badge>
-        {task.branch ? (
-          <Badge variant="outline">
-            <GitBranchIcon className="size-3" />
-            {task.branch}
-          </Badge>
-        ) : null}
-        <TaskQuotaBadge environmentId={task.environmentId} taskId={task.id} status={task.status} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{TASK_STATUS_LABELS[task.status]}</Badge>
+          <Badge variant="outline">{task.type}</Badge>
+          {task.branch ? (
+            <Badge variant="outline">
+              <GitBranchIcon className="size-3" />
+              {task.branch}
+            </Badge>
+          ) : null}
+          <TaskQuotaBadge
+            environmentId={task.environmentId}
+            taskId={task.id}
+            status={task.status}
+          />
+        </div>
+        {task.status === "landed" ? <TaskPrLink prUrl={task.prUrl} /> : null}
       </div>
       {task.worktreePath ? (
         <p className="mt-3 truncate text-xs text-muted-foreground">{task.worktreePath}</p>

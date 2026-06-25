@@ -1087,6 +1087,7 @@ export function OrchestratorDefaultsSettingsPanel() {
 
   const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
   const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
+  const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
   const resourceDefaultsDirty = !Equal.equals(
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
@@ -1149,6 +1150,28 @@ export function OrchestratorDefaultsSettingsPanel() {
             />
           </div>
         </SettingsRow>
+
+        <SettingsRow
+          title="Landing PRs"
+          description="Default state for pull requests opened after an approved Orchestrator land gate."
+          resetAction={
+            openPrAsDraftDirty ? (
+              <SettingResetButton
+                label="Orchestrator landing PR mode"
+                onClick={() => updateDraft({ ...draft, openPrAsDraft: defaultDraft.openPrAsDraft })}
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={draft.openPrAsDraft}
+              aria-label="Open landing PRs as draft by default"
+              onCheckedChange={(checked) =>
+                updateDraft({ ...draft, openPrAsDraft: Boolean(checked) })
+              }
+            />
+          }
+        />
 
         <SettingsRow
           title="Operational knobs"

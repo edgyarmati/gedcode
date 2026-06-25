@@ -25,6 +25,11 @@ const GATE_POLICY_LABELS: Record<OrchestratorGatePolicy, string> = {
   "require-approval": "Require approval",
 };
 
+const PR_OPEN_MODE_LABELS: Record<"ready" | "draft", string> = {
+  ready: "Ready",
+  draft: "Draft",
+};
+
 const PROJECT_RESOURCE_LIMIT_LABELS: Record<ProjectResourceLimitNumberKey, string> = {
   maxParallelTasks: "Max parallel tasks",
   maxParallelWorkers: "Max parallel workers",
@@ -256,6 +261,55 @@ export function ProjectOrchestratorResourceLimitsControl({
           onCheckedChange={(checked) => onAllowFullAccessWorkersChange(Boolean(checked))}
         />
       </div>
+    </div>
+  );
+}
+
+export function ProjectOpenPrModeControl({
+  openPrAsDraft,
+  inheritedOpenPrAsDraft,
+  onOpenPrAsDraftChange,
+}: {
+  openPrAsDraft: boolean | null;
+  inheritedOpenPrAsDraft: boolean;
+  onOpenPrAsDraftChange: (openPrAsDraft: boolean | null) => void;
+}) {
+  const inheritedMode = inheritedOpenPrAsDraft ? "draft" : "ready";
+  const explicitMode = openPrAsDraft === null ? null : openPrAsDraft ? "draft" : "ready";
+  return (
+    <div className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_12rem] sm:items-center">
+      <span>Landing PR state</span>
+      <Select
+        value={explicitMode ?? USE_GLOBAL_VALUE}
+        onValueChange={(value) => {
+          if (value === USE_GLOBAL_VALUE) {
+            onOpenPrAsDraftChange(null);
+            return;
+          }
+          if (value === "draft" || value === "ready") {
+            onOpenPrAsDraftChange(value === "draft");
+          }
+        }}
+      >
+        <SelectTrigger size="sm" aria-label="Landing PR state">
+          <SelectValue>
+            {explicitMode === null
+              ? `Use global (${PR_OPEN_MODE_LABELS[inheritedMode]})`
+              : PR_OPEN_MODE_LABELS[explicitMode]}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup align="start" alignItemWithTrigger={false}>
+          <SelectItem hideIndicator value={USE_GLOBAL_VALUE}>
+            Use global ({PR_OPEN_MODE_LABELS[inheritedMode]})
+          </SelectItem>
+          <SelectItem hideIndicator value="ready">
+            Ready
+          </SelectItem>
+          <SelectItem hideIndicator value="draft">
+            Draft
+          </SelectItem>
+        </SelectPopup>
+      </Select>
     </div>
   );
 }

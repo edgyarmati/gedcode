@@ -121,6 +121,7 @@ export function buildProviderInstanceUpdatePatch(input: {
 export interface OrchestratorGlobalDefaultsDraft {
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  readonly openPrAsDraft: boolean;
   readonly resourceDefaults: OrchestratorGlobalResourceDefaultsDraft;
   readonly autoCompaction: OrchestratorGlobalAutoCompactionDraft;
 }
@@ -164,6 +165,7 @@ export function seedOrchestratorGlobalDefaultsDraft(
       work: defaults.gatePolicy.work,
       review: defaults.gatePolicy.review,
     },
+    openPrAsDraft: defaults.openPrAsDraft ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.openPrAsDraft,
     resourceDefaults: {
       maxParallelTasks:
         defaults.maxParallelTasks ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelTasks,
@@ -225,7 +227,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       maxRetriesPerStage: draft.resourceDefaults.maxRetriesPerStage,
       pmReconciliationIntervalMs: draft.resourceDefaults.pmReconciliationIntervalMs,
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
-      openPrAsDraft: DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.openPrAsDraft,
+      openPrAsDraft: draft.openPrAsDraft,
       autoCompaction: {
         enabled: draft.autoCompaction.enabled,
         reserveTokens: draft.autoCompaction.reserveTokens,

@@ -60,6 +60,7 @@ export interface OrchestrationSettingsDraft {
 export interface OrchestratorConfigDraft {
   readonly enabled: boolean;
   readonly pmModelSelection: ModelSelection | null;
+  readonly openPrAsDraft: boolean | null;
   readonly optionalStages: InheritableOrchestratorStages;
   readonly gatePolicy: InheritableOrchestratorGatePolicy;
   readonly resourceLimits: InheritableOrchestratorResourceLimits;
@@ -171,6 +172,7 @@ export function seedOrchestratorConfigDraft(
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : false,
     pmModelSelection: (asRecord(raw.pmModelSelection) as ModelSelection | undefined) ?? null,
+    openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
     optionalStages:
       explicitStages === null
         ? null
@@ -241,6 +243,7 @@ export function buildOrchestratorProjectConfig(
   return {
     enabled: draft.enabled,
     pmModelSelection: draft.pmModelSelection,
+    ...(draft.openPrAsDraft === null ? {} : { openPrAsDraft: draft.openPrAsDraft }),
     ...(Object.keys(featureConfig).length > 1 ? { taskTypes: [featureConfig] } : {}),
     ...(Object.keys(resourceLimits).length > 0 ? { resourceLimits } : {}),
   };
@@ -251,6 +254,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
 ): {
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
+  readonly openPrAsDraft: boolean;
   readonly resourceLimits: OrchestratorResourceLimits;
 } {
   const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
@@ -266,6 +270,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
       work: normalizedGlobals.gatePolicy.work,
       review: normalizedGlobals.gatePolicy.review,
     },
+    openPrAsDraft: normalizedGlobals.openPrAsDraft,
     resourceLimits: {
       maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
       maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
@@ -319,6 +324,7 @@ export function orchestratorConfigDraftsEqual(
   return (
     left.enabled === right.enabled &&
     modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
+    left.openPrAsDraft === right.openPrAsDraft &&
     ((left.optionalStages === null && right.optionalStages === null) ||
       (left.optionalStages !== null &&
         right.optionalStages !== null &&
