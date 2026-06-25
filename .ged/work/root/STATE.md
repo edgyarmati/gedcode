@@ -84,7 +84,13 @@ before it is additive. Dev server still up from the smoke attempt (web :5740) bu
 **Progress**: PI1 DONE `55332e7cc` (contracts: `piProvider.ts` — PiProviderId branded, PiProviderConfig
 {enabled, apiKey?:{value,valueRedacted?}, oauth?:{connected,expiresAt?}}, PiProviderConfigMap,
 PiModelSelection; `ServerSettings.piProviders` defaulted {}; full monorepo gate green — Codex's
-`bun run test` EPERM was sandbox-only, passes here 1292 ✓). PI2 next.
+`bun run test` EPERM was sandbox-only, passes here 1292 ✓). PI2 DONE `67ba22933` (server: extended the
+SHARED settings secret path — `redactPiProviderConfig`/materialize/persist — to cover
+`piProviders[*].apiKey` via `ServerSecretStore` `pi-cred-<provider>-apikey`, skip-write on valueRedacted,
+stale-secret cleanup; `PiProviderCatalog.ts` + WS `server.listPiProviderCatalog`/`server.listPiProviderModels`;
+kind = oauth(getOAuthProviders)/ambient(bedrock,vertex)/apiKey; `findEnvKeys` returns env var NAMES not
+values — no leak. Low-pri: `listPiProviderModels` has no typed error/uses Effect.sync — defect on a bad
+provider id, but picker only sends real ids. Gate green here). PI3 next (OAuth brokering, HIGH).
 
 ## Codex handoff mechanics (for resume)
 
