@@ -51,6 +51,10 @@ import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { pmThreadIdForProject } from "./orchestration/pi/PmEventProjection.ts";
 import {
+  listPiProviderCatalog,
+  listPiProviderModels,
+} from "./orchestration/pi/PiProviderCatalog.ts";
+import {
   observeRpcEffect,
   observeRpcStream,
   observeRpcStreamEffect,
@@ -1166,6 +1170,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
             serverSettings.updateSettings(patch).pipe(Effect.map(redactServerSettingsForClient)),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverListPiProviderCatalog]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListPiProviderCatalog,
+            serverSettings.getSettings.pipe(Effect.map(listPiProviderCatalog)),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverListPiProviderModels]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListPiProviderModels,
+            Effect.sync(() => listPiProviderModels(input.provider)),
             {
               "rpc.aggregate": "server",
             },

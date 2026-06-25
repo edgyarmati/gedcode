@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Store pi provider API keys through the server secret store with client redaction, and add read-only websocket APIs for the pi provider catalog and per-provider model lists.
 - Internal: Add additive pi provider and PM model-selection contracts, including sparse server settings storage for pi provider credentials/status.
 - Internal: Add real-engine Orchestrator landing integration coverage for the human-approved land gate opening a mocked PR, resolving draft/ready configuration, failing loud without a supported source-control provider, and avoiding duplicate PR opens for tasks that already recorded a PR URL.
 - UI: Surface the Orchestrator landing PR draft/ready setting in global defaults and per-project inherited overrides, and show a "View PR" link on landed task details when landing recorded a pull request URL.

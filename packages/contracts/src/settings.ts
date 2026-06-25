@@ -632,6 +632,9 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Whole-map replacement so removing a pi provider entry can also remove its
+  // server-side secret.
+  piProviders: Schema.optionalKey(Schema.Record(PiProviderId, PiProviderConfig)),
   // Whole-object replacement for the global orchestrator defaults. The block is
   // small and human/client-only; the UI sends a fully-formed object when edited.
   orchestratorDefaults: Schema.optionalKey(OrchestratorGlobalDefaults),

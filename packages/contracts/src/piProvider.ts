@@ -38,3 +38,38 @@ export const PiModelSelection = Schema.Struct({
   model: TrimmedNonEmptyString,
 });
 export type PiModelSelection = typeof PiModelSelection.Type;
+
+export const PiProviderCatalogKind = Schema.Literals(["apiKey", "oauth", "ambient"]);
+export type PiProviderCatalogKind = typeof PiProviderCatalogKind.Type;
+
+export const PiProviderCatalogEntry = Schema.Struct({
+  id: PiProviderId,
+  displayName: TrimmedNonEmptyString,
+  kind: PiProviderCatalogKind,
+  envKeys: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  configured: Schema.Boolean,
+  enabled: Schema.Boolean,
+});
+export type PiProviderCatalogEntry = typeof PiProviderCatalogEntry.Type;
+
+export const PiProviderCatalogResult = Schema.Struct({
+  providers: Schema.Array(PiProviderCatalogEntry),
+});
+export type PiProviderCatalogResult = typeof PiProviderCatalogResult.Type;
+
+export const PiProviderModelsInput = Schema.Struct({
+  provider: PiProviderId,
+});
+export type PiProviderModelsInput = typeof PiProviderModelsInput.Type;
+
+export const PiProviderModel = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  contextWindow: Schema.Number,
+});
+export type PiProviderModel = typeof PiProviderModel.Type;
+
+export const PiProviderModelsResult = Schema.Struct({
+  models: Schema.Array(PiProviderModel),
+});
+export type PiProviderModelsResult = typeof PiProviderModelsResult.Type;

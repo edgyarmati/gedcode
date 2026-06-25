@@ -92,6 +92,11 @@ import {
 } from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  PiProviderCatalogResult,
+  PiProviderModelsInput,
+  PiProviderModelsResult,
+} from "./piProvider.ts";
+import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -148,6 +153,8 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverListPiProviderCatalog: "server.listPiProviderCatalog",
+  serverListPiProviderModels: "server.listPiProviderModels",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -217,6 +224,17 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: ServerSettingsError,
+});
+
+export const WsServerListPiProviderCatalogRpc = Rpc.make(WS_METHODS.serverListPiProviderCatalog, {
+  payload: Schema.Struct({}),
+  success: PiProviderCatalogResult,
+  error: ServerSettingsError,
+});
+
+export const WsServerListPiProviderModelsRpc = Rpc.make(WS_METHODS.serverListPiProviderModels, {
+  payload: PiProviderModelsInput,
+  success: PiProviderModelsResult,
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -530,6 +548,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsServerListPiProviderCatalogRpc,
+  WsServerListPiProviderModelsRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

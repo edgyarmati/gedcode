@@ -16,6 +16,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   isProviderDriverKind,
   type ModelSelection,
+  type PiProviderConfig,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   ProviderDriverKind,
@@ -79,6 +80,10 @@ function providerEnvironmentSecretName(input: {
   return `provider-env-${Buffer.from(input.instanceId, "utf8").toString("base64url")}-${Buffer.from(input.name, "utf8").toString("base64url")}`;
 }
 
+function piProviderApiKeySecretName(provider: string): string {
+  return `pi-cred-${Buffer.from(provider, "utf8").toString("base64url")}-apikey`;
+}
+
 function redactProviderEnvironmentVariable(
   variable: ProviderInstanceEnvironmentVariable,
 ): ProviderInstanceEnvironmentVariable {
@@ -90,6 +95,22 @@ function redactProviderEnvironmentVariable(
     ...variable,
     value: "",
     ...(variable.value.length > 0 || variable.valueRedacted ? { valueRedacted: true } : {}),
+  };
+}
+
+function redactPiProviderConfig(config: PiProviderConfig): PiProviderConfig {
+  if (!config.apiKey) {
+    return config;
+  }
+  return {
+    ...config,
+    apiKey: {
+      ...config.apiKey,
+      value: "",
+      ...(config.apiKey.value.length > 0 || config.apiKey.valueRedacted
+        ? { valueRedacted: true }
+        : {}),
+    },
   };
 }
 
@@ -105,7 +126,17 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  const piProviders = Object.fromEntries(
+    Object.entries(settings.piProviders).map(([provider, config]) => [
+      provider,
+      redactPiProviderConfig(config),
+    ]),
+  );
+  return {
+    ...settings,
+    providerInstances,
+    piProviders: piProviders as ServerSettings["piProviders"],
+  };
 }
 
 export interface ServerSettingsShape {
@@ -357,9 +388,30 @@ const makeServerSettings = Effect.gen(function* () {
           environment,
         } satisfies ProviderInstanceConfig;
       }
+      const piProviders: Record<string, PiProviderConfig> = {
+        ...settings.piProviders,
+      };
+      for (const [provider, config] of Object.entries(settings.piProviders)) {
+        if (!config.apiKey?.valueRedacted) continue;
+        const secret = yield* secretStore
+          .get(piProviderApiKeySecretName(provider))
+          .pipe(
+            Effect.mapError((cause) =>
+              toSettingsError(`failed to read pi provider API key ${provider}`, cause),
+            ),
+          );
+        piProviders[provider] = {
+          ...config,
+          apiKey: {
+            ...config.apiKey,
+            value: secret ? textDecoder.decode(secret) : "",
+          },
+        } satisfies PiProviderConfig;
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
+        piProviders: piProviders as ServerSettings["piProviders"],
       };
     });
 
@@ -423,6 +475,58 @@ const makeServerSettings = Effect.gen(function* () {
         } satisfies ProviderInstanceConfig;
       }
 
+      const piProviders: Record<string, PiProviderConfig> = {
+        ...next.piProviders,
+      };
+      const nextPiSecretKeys = new Set<string>();
+      for (const [provider, config] of Object.entries(next.piProviders)) {
+        const secretName = piProviderApiKeySecretName(provider);
+        if (!config.apiKey) {
+          yield* secretStore
+            .remove(secretName)
+            .pipe(
+              Effect.mapError((cause) =>
+                toSettingsError(`failed to remove pi provider API key ${provider}`, cause),
+              ),
+            );
+          piProviders[provider] = config;
+          continue;
+        }
+
+        nextPiSecretKeys.add(secretName);
+        if (!config.apiKey.valueRedacted) {
+          if (config.apiKey.value.length > 0) {
+            yield* secretStore
+              .set(secretName, textEncoder.encode(config.apiKey.value))
+              .pipe(
+                Effect.mapError((cause) =>
+                  toSettingsError(`failed to persist pi provider API key ${provider}`, cause),
+                ),
+              );
+            piProviders[provider] = {
+              ...config,
+              apiKey: { ...config.apiKey, value: "", valueRedacted: true },
+            } satisfies PiProviderConfig;
+          } else {
+            yield* secretStore
+              .remove(secretName)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toSettingsError(`failed to remove pi provider API key ${provider}`, cause),
+                ),
+              );
+            const { valueRedacted: _omit, ...apiKey } = config.apiKey;
+            piProviders[provider] = {
+              ...config,
+              apiKey,
+            } satisfies PiProviderConfig;
+          }
+          continue;
+        }
+
+        piProviders[provider] = redactPiProviderConfig(config);
+      }
+
       for (const [instanceId, instance] of Object.entries(current.providerInstances)) {
         for (const variable of instance.environment ?? []) {
           if (!variable.sensitive) continue;
@@ -441,9 +545,23 @@ const makeServerSettings = Effect.gen(function* () {
         }
       }
 
+      for (const [provider, config] of Object.entries(current.piProviders)) {
+        if (!config.apiKey?.valueRedacted) continue;
+        const secretName = piProviderApiKeySecretName(provider);
+        if (nextPiSecretKeys.has(secretName)) continue;
+        yield* secretStore
+          .remove(secretName)
+          .pipe(
+            Effect.mapError((cause) =>
+              toSettingsError(`failed to remove stale pi provider API key ${provider}`, cause),
+            ),
+          );
+      }
+
       return {
         ...next,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
+        piProviders: piProviders as ServerSettings["piProviders"],
       };
     });
 
