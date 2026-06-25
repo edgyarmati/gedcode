@@ -103,6 +103,53 @@ describe("orchestration projector", () => {
     ]);
   });
 
+  it("replays legacy worker-shaped PM model selections as unconfigured", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const model = createEmptyReadModel(now);
+
+    const next = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "project.created",
+          aggregateKind: "project",
+          aggregateId: "project-legacy-pm-selection",
+          occurredAt: now,
+          commandId: "cmd-project-create",
+          payload: {
+            projectId: "project-legacy-pm-selection",
+            title: "Legacy PM Selection",
+            workspaceRoot: "/tmp/legacy-pm-selection",
+            defaultModelSelection: {
+              instanceId: "codex",
+              model: "gpt-5-codex",
+            },
+            roleModelSelections: {},
+            orchestratorConfig: {
+              enabled: true,
+              pmModelSelection: {
+                instanceId: "codex",
+                model: "gpt-5-codex",
+              },
+              openPrAsDraft: true,
+            },
+            scripts: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(next.projects).toHaveLength(1);
+    expect(next.projects[0]?.orchestratorConfig).toEqual({
+      enabled: true,
+      pmModelSelection: null,
+      openPrAsDraft: true,
+    });
+  });
+
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);

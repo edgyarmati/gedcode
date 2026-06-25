@@ -444,6 +444,7 @@ const makeLayer = (input: {
 
 const makeFactoryCaptureLayer = (input?: {
   readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
+  readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
 }) =>
   Layer.mergeAll(
     SqlitePersistenceMemory,
@@ -512,7 +513,7 @@ const makeFactoryCaptureLayer = (input?: {
       clear: () => Effect.void,
       getAccessToken: () => Effect.succeed("test-oauth-token"),
     }),
-    ServerSettingsService.layerTest(),
+    ServerSettingsService.layerTest(input?.serverSettingsOverrides),
   );
 
 const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
@@ -622,6 +623,70 @@ const histogramCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: st
 };
 
 describe("PmRuntime", () => {
+  it.effect("starts the PM runtime with a configured pi provider credential", () =>
+    Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "env-openai-key" },
+        Effect.gen(function* () {
+          const captured: PiAgentAdapterOptions[] = [];
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+          });
+
+          yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+
+          assert.strictEqual(captured.length, 1);
+          assert.strictEqual(captured[0]?.model.provider, "openai");
+          assert.strictEqual(captured[0]?.model.id, "gpt-5");
+
+          const credential = yield* Effect.promise(
+            () =>
+              captured[0]?.getApiKeyAndHeaders?.(captured[0].model) ?? Promise.resolve(undefined),
+          );
+          assert.deepStrictEqual(credential, { apiKey: "test-key" });
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              serverSettingsOverrides: {
+                piProviders: {
+                  [PiProviderId.make("openai")]: {
+                    enabled: true,
+                    apiKey: { value: "test-key" },
+                  },
+                },
+              },
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("leaves a null PM model selection unconfigured without creating an adapter", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const captured: PiAgentAdapterOptions[] = [];
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+        });
+
+        const error = yield* factory
+          .getOrCreate({
+            ...project,
+            orchestratorConfig: {
+              enabled: true,
+              pmModelSelection: null,
+            },
+          })
+          .pipe(Effect.flip);
+
+        assert.instanceOf(error, PmRuntimeError);
+        assert.match(error.detail, /no PM model selection configured/);
+        assert.strictEqual(captured.length, 0);
+      }).pipe(Effect.provide(makeFactoryCaptureLayer())),
+    ),
+  );
+
   it.effect("constructs the PM adapter with the built-in feature playbook skill", () =>
     Effect.gen(function* () {
       const previousOpenAiApiKey = process.env.OPENAI_API_KEY;

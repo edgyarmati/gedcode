@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Preserve sparse Orchestrator project config during event replay while normalizing only legacy worker-shaped PM model selections to an unconfigured PM.
 - Internal: Reshape Orchestrator PM model selection to choose a pi provider and model directly, resolve PM credentials from pi-provider config before environment variables, and source the PM picker from enabled pi providers instead of worker backends.
 - UI: Add a PM model providers (pi) settings section for configuring pi provider API keys, OAuth connections, ambient credentials, and picker availability without changing PM model selection.
 - Internal: Add server-brokered pi OAuth login RPCs with secret-store credential persistence, non-secret connection status in settings, and single-flight access-token refresh for OAuth providers.

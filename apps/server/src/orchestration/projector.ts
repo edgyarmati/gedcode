@@ -1,6 +1,7 @@
 import type {
   OrchestrationEvent,
   OrchestrationPendingGate,
+  OrchestrationProject,
   OrchestrationReadModel,
   OrchestrationTask,
   OrchestrationStageHistory,
@@ -8,6 +9,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  NullablePiModelSelection,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
@@ -51,6 +53,7 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 type TaskPatch = Partial<Omit<OrchestrationTask, "id" | "projectId">>;
 type PendingGatePatch = Partial<Omit<OrchestrationPendingGate, "gateId" | "taskId">>;
+type ProjectOrchestratorConfig = NonNullable<OrchestrationProject["orchestratorConfig"]>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
 
@@ -112,6 +115,23 @@ function decodeForEvent<A>(
     Effect.mapError(toProjectorDecodeError(`${eventType}:${field}`)),
   );
 }
+
+const normalizeOrchestratorConfigForEvent = (
+  value: ProjectOrchestratorConfig,
+  eventType: OrchestrationEvent["type"],
+): Effect.Effect<ProjectOrchestratorConfig, OrchestrationProjectorDecodeError> => {
+  const next = { ...value };
+  if (!Object.hasOwn(next, "pmModelSelection")) {
+    return Effect.succeed(next);
+  }
+
+  return decodeForEvent(
+    NullablePiModelSelection,
+    next.pmModelSelection,
+    eventType,
+    "payload.orchestratorConfig.pmModelSelection",
+  ).pipe(Effect.map((pmModelSelection) => ({ ...next, pmModelSelection })));
+};
 
 function retainThreadMessagesAfterRevert(
   messages: ReadonlyArray<OrchestrationMessage>,
@@ -237,7 +257,15 @@ export function projectEvent(
   switch (event.type) {
     case "project.created":
       return decodeForEvent(ProjectCreatedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => {
+        Effect.flatMap((payload) =>
+          Effect.map(
+            payload.orchestratorConfig === undefined
+              ? Effect.succeed({} as ProjectOrchestratorConfig)
+              : normalizeOrchestratorConfigForEvent(payload.orchestratorConfig, event.type),
+            (orchestratorConfig) => ({ payload, orchestratorConfig }),
+          ),
+        ),
+        Effect.map(({ payload, orchestratorConfig }) => {
           const existing = nextBase.projects.find((entry) => entry.id === payload.projectId);
           const nextProject = {
             id: payload.projectId,
@@ -246,7 +274,7 @@ export function projectEvent(
             defaultModelSelection: payload.defaultModelSelection,
             roleModelSelections: payload.roleModelSelections ?? {},
             rolePromptPrefixes: payload.rolePromptPrefixes ?? {},
-            orchestratorConfig: payload.orchestratorConfig ?? {},
+            orchestratorConfig,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -266,7 +294,15 @@ export function projectEvent(
 
     case "project.meta-updated":
       return decodeForEvent(ProjectMetaUpdatedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
+        Effect.flatMap((payload) =>
+          Effect.map(
+            payload.orchestratorConfig === undefined
+              ? Effect.void
+              : normalizeOrchestratorConfigForEvent(payload.orchestratorConfig, event.type),
+            (orchestratorConfig) => ({ payload, orchestratorConfig }),
+          ),
+        ),
+        Effect.map(({ payload, orchestratorConfig }) => ({
           ...nextBase,
           projects: nextBase.projects.map((project) =>
             project.id === payload.projectId
@@ -285,9 +321,7 @@ export function projectEvent(
                   ...(payload.rolePromptPrefixes !== undefined
                     ? { rolePromptPrefixes: payload.rolePromptPrefixes }
                     : {}),
-                  ...(payload.orchestratorConfig !== undefined
-                    ? { orchestratorConfig: payload.orchestratorConfig }
-                    : {}),
+                  ...(orchestratorConfig !== undefined ? { orchestratorConfig } : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,
                 }
