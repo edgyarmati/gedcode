@@ -111,13 +111,36 @@ with lenient legacy decode [`NullablePiModelSelection` transformOrFail: worker-s
 → null, never throws → append-only replay safe]; `PmModelResolver.resolvePiCredential` config-first then
 env per kind [apiKey/oauth via getAccessToken/ambient `<authenticated>`], missing → typed
 `PiCredentialResolutionError`, kind via shared `getPiProviderKind`; PmRuntime builds getApiKeyAndHeaders
-+ wires PiOAuthCredentialStore; web project+global PM pickers list only enabled pi providers, worker
-pickers untouched; gate green first pass). **5/6 done.** PI6 next (integration): PmRuntime has a
-`makePiAgentAdapterOverride` seam (line ~1109) → can start the real PM with a FAKE pi adapter (no live
-pi-ai); the big harness stubs PmRuntime wholesale (Layer.succeed ~580) so a focused PmRuntime-layer test
-is cleaner. Prove: (1) PM starts + resolves credential from configured `piProviders` not env; (2)
-lenient-decode replay of a legacy pmModelSelection. Then MANUAL smoke test (configure a pi key in UI →
-pick model → drive a task to a PR).
+
+- wires PiOAuthCredentialStore; web project+global PM pickers list only enabled pi providers, worker
+  pickers untouched; gate green first pass). **5/6 done.** PI6 next (integration): PmRuntime has a
+  `makePiAgentAdapterOverride` seam (line ~1109) → can start the real PM with a FAKE pi adapter (no live
+  pi-ai); the big harness stubs PmRuntime wholesale (Layer.succeed ~580) so a focused PmRuntime-layer test
+  is cleaner. Prove: (1) PM starts + resolves credential from configured `piProviders` not env; (2)
+  lenient-decode replay of a legacy pmModelSelection. Then MANUAL smoke test (configure a pi key in UI →
+  pick model → drive a task to a PR).
+
+**PI6 DONE `6f7bd652b`** (integration via `makePiAgentAdapterOverride` seam, no live pi-ai: real PM
+runtime starts on a configured pi provider + resolves credential from config not env [config key beats
+OPENAI_API_KEY env in the test]; null selection → PmRuntimeError, no adapter; replay test: legacy
+worker-shaped pmModelSelection projects to null. **Surfaced + fixed a real defect**: the projector
+stored `orchestratorConfig` raw, bypassing the lenient decode — fixed with a NARROW
+`normalizeOrchestratorConfigForEvent` that coerces ONLY pmModelSelection [legacy→null] and leaves every
+other field raw-sparse, so Change-A live-global inheritance is preserved. First fix attempt over-decoded
+the whole config + broke 2 live-globals tests; narrowed + re-verified: orchestratorLiveGlobals 3/3,
+projector 15/15, PmRuntime 22/22, full `bun run test` 13/13; typecheck flake [desktop/shared] re-verified
+all-pass standalone). Low-pri carry-over: 2 non-fatal Effect-LSP suggestions (TS377074 runFork-in-Effect)
+in `PiOAuthLoginBroker.ts:230,233` — benign (publishInitialInfo uses only Deferred); + PI3 watch-item
+(OAuth `expires` ms-epoch assumption) + PI2 low-pri (`listPiProviderModels` Effect.sync on bad id).
+
+## ✅ FEATURE CODE-COMPLETE (2026-06-25): all 6 WPs committed, full monorepo gate green
+
+PI1 `55332e7cc` · PI2 `67ba22933` · PI3 `62162f6d3` · PI4 `03ac773ad` · PI5 `1d2328823` · PI6 `6f7bd652b`.
+**Next: MANUAL end-to-end smoke test** — `bun dev`, Settings → "PM model providers (pi)" → add an
+OpenAI/Anthropic API key + enable it → open a project's Orchestration settings → PM model picker now
+lists only pi models → pick one → enable orchestrator → confirm the PM runtime STARTS (the original
+"failed to start PM runtime") → drive a task classify→…→land → confirm a real gated PR opens. NOT merged
+to `main` until the smoke test passes.
 
 ## Codex handoff mechanics (for resume)
 
@@ -130,14 +153,6 @@ pick model → drive a task to a PR).
   (`bash /Users/edgy/.claude/jobs/6da7233d/tmp/gates.sh`), commit by pathspec (Codex never commits),
   watch the tsgo concurrency flake (re-run `bun typecheck` standalone). Codex out-of-credits fails in
   ~5s; ask user to refill.
-- **Blockers (2026-06-25)**: Codex OUT OF CREDITS — both the PI6-fix attempts failed ("Your workspace
-  is out of credits"). User must refill. (Earlier same day: a transient session-limit at 15:10 Berlin
-  reset fine; an auth "token could not be refreshed" on the first PI4 dispatch, user re-authed.)
-  **PI6 status**: changes are IN the working tree (uncommitted) — PmRuntime.test.ts (PM-start on
-  configured pi provider via makePiAgentAdapterOverride; config key beats env), projector.test.ts
-  (legacy pmModelSelection→null on replay), projector.ts, CHANGELOG. BUT projector.ts fix is BUGGY: it
-  decodes the WHOLE OrchestratorProjectConfig → inflates the sparse live-global override fields →
-  breaks 2 orchestratorLiveGlobals tests ("inherit gate policy", "inherit stages and resource limits").
-  FIX SPEC ready `/Users/edgy/.claude/jobs/6da7233d/tmp/PI6-fix-spec.md` (narrow to coerce ONLY
-  pmModelSelection, keep other fields raw-sparse). Re-dispatch FRESH (working tree has PI6 changes) once
-  credits refill, then gate + commit PI6.
+- **Blockers**: none. (2026-06-25 history: a transient Codex session-limit reset at 15:10 Berlin; an
+  auth "token could not be refreshed" on the first PI4 dispatch [user re-authed]; out-of-credits on the
+  PI6-fix [user refilled]. All resolved; PI6 committed `6f7bd652b`.)
