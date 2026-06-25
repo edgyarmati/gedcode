@@ -1,32 +1,67 @@
-# SPEC
+# SPEC — PM (pi) Provider Configuration + pi-only Model Picker
 
 ## Goal
 
-Implement WP-Q2, WP-Q3, and WP-Q4 from GitHub issues #45, #46, and #47:
+The orchestrator PM brain runs on **pi** (fixed harness). Today pi's API key is resolved
+**from environment variables only** (`getEnvApiKey`), there is **no UI to configure pi's
+providers**, and the PM model picker wrongly reuses the **worker** provider-instance picker
+(Codex/Claude/OpenCode harnesses). Result: "failed to start PM runtime", and no way to set pi up.
 
-- derive durable per-provider-instance quota status from WP-Q1 provider runtime signals;
-- block active worker stages on quota exhaustion without failing or abandoning the task;
-- skip new worker starts on quota-blocked instances;
-- resume blocked stages exactly once when quota returns or an operator re-drives the stage;
-- bound quota retry loops with `maxRetriesPerStage`.
+Build a first-class **pi provider configuration**: let users add/remove/configure **all**
+pi-supported providers (API-key, OAuth, ambient), choose which are available in the picker, and
+pick the PM's model from a **pi-only** model picker (no worker harness options). Resolve the PM's
+credential from this config instead of env-only.
 
-## Constraints
+## Background (grounded — see investigations)
 
-- WP-Q1 is present locally as commit `eef76fef`; use its structured `account.rate-limits.updated` payload and `runtime.error.payload.class === "rate_limit"`.
-- Do not invent additional fallback/degraded paths beyond the quota-blocked path approved in #43.
-- Keep `packages/contracts` schema-only.
-- Event store remains append-only. Migrations may add derived projection tables/columns only.
-- Preserve deterministic command id + persisted command receipt dedup for exactly-once resumption.
-- Do not call paid/networked LLMs in tests.
-- Do not run `bun test`; use `bun run test`.
+- PM authenticates via pi-agent-core `getApiKeyAndHeaders(model) => { apiKey, headers? }`.
+- pi-ai providers split three ways:
+  - **API-key (~30)**: openai, anthropic-via-key, groq, mistral, deepseek, xai, openrouter, … —
+    one env var each (`getEnvApiKey`/`findEnvKeys`). Store a key string; return `{ apiKey }`.
+  - **OAuth (3)**: `anthropic` (Pro/Max), `github-copilot`, `openai-codex`. pi-ai exposes
+    callback-driven logins (`loginAnthropic`/`loginGitHubCopilot`/codex) returning
+    `OAuthCredentials { refresh, access, expires }`; `getOAuthApiKey(provider, creds)`
+    auto-refreshes. pi-ai does NOT read Claude/Codex CLI creds — the app drives login + persists.
+  - **Ambient (2)**: `amazon-bedrock` (AWS chain), `google-vertex` (ADC). No stored secret;
+    `getEnvApiKey` returns the `<authenticated>` sentinel when ambient creds exist.
+- Secrets vault exists and is reused verbatim: `ServerSecretStore` (encrypted at rest, 0o600) +
+  `redactServerSettingsForClient()` + the `valueRedacted` lifecycle (web preserves the flag so
+  edits never clobber a stored secret; server skips the write when `valueRedacted` is set).
+- `getModels(provider)` lists a provider's models (`{ id, name, contextWindow, … }`).
+- `pmModelSelection` is currently `{ instanceId: ProviderInstanceId, model, options? }` (a worker
+  instance) in both `OrchestratorGlobalDefaults` and `OrchestratorProjectConfig`.
 
-## Acceptance Criteria
+## Decisions (settled with the user)
 
-- Q2: Provider instance quota status query returns `ok`, `blocked-until-T`, or `blocked-unknown` per `providerInstanceId`.
-- Q2: Rate-limit telemetry transitions `warning`/`exhausted` into blocked states and `ok` into clear/ok state; classified `rate_limit` runtime errors block unknown-reset instances.
-- Q3: `task.stage.block` command emits `task.stage-blocked` with `{ taskId, stageThreadId, role, reason: "quota", providerInstanceId, resetAt? }`.
-- Q3: Projector derives `blocked-on-quota`; the task remains resumable and non-terminal, and the blocked event is visible to PM/UI event consumers.
-- Q3: Worker start admission skips a worker whose target `providerInstanceId` is quota-blocked and dispatches the stage block exactly once.
-- Q4: A blocked stage is re-driven through `task.stage.start` with deterministic command ids so concurrent/manual/detected resumptions dedup.
-- Q4: `maxRetriesPerStage` defaults safely, is configurable in project/global orchestrator config, and prevents quota retry loops fail-closed.
-- CHANGELOG documents user/operator-visible unreleased behavior.
+1. **Scope**: API-key + OAuth + ambient, ALL built together before shipping/smoke-test.
+2. **Credentials are server-global** (`ServerSettings.piProviders`, secrets via `ServerSecretStore`).
+   **Which model the PM uses** stays per-project with a global default (existing Change-A live-global path).
+3. **"Available in the picker" is per-provider** (an enabled flag); enabling a provider exposes all its models.
+4. **OAuth login = server-brokered copy/paste over WS**: settings shows the auth URL (and Copilot's
+   device code); user authorizes in-browser and pastes the returned code; server completes via pi-ai
+   and stores `{ refresh, access, expires }`. No localhost redirect listener. Tokens auto-refresh with
+   concurrency safety.
+5. **`pmModelSelection` clean-reshaped** to a pi `{ piProvider, model }`; the decoder **leniently
+   drops** any legacy `{ instanceId, model }` value on replay (→ null = PM unconfigured, re-pick once).
+   Append-only-safe (no event rewrites).
+6. **Reuse `BackendModelPicker`** with pi-provider data; worker pickers (`RoleBackendPicker`/`RoleConfigRow`) untouched.
+
+## Acceptance criteria
+
+- In Settings → providers, a user can: add a pi provider; enter an API key (redaction-safe);
+  complete an OAuth login via paste-code; see ambient providers' status; enable/disable each;
+  and choose which are available in the picker.
+- The PM model picker lists ONLY models from enabled pi providers (provider → models) — no worker harnesses.
+- Setting a pi provider's credential + selecting a model + enabling orchestrator → **PM runtime starts**
+  (credential resolved from config, not env). "failed to start PM runtime" resolved.
+- OAuth tokens persist across restart and auto-refresh; concurrent refresh is safe (single-flight).
+- Secrets never leave the server unredacted; editing without re-entering preserves the stored secret.
+- Append-only replay safe: legacy `pmModelSelection` decodes to null; no event rewrites.
+- All gates green: `bun fmt`, `bun lint`, `bun typecheck`, `bun run test`, `bun run build`.
+
+## Non-goals (v1)
+
+- Per-model (vs per-provider) picker filtering.
+- Auto-importing Claude/Codex CLI OAuth creds (pi-ai can't read them).
+- Localhost OAuth redirect listener (copy/paste only).
+- Changing worker provider instances / worker pickers.

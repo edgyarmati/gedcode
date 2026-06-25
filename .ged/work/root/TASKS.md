@@ -1,101 +1,72 @@
-# TASKS
+# TASKS — PM (pi) Provider Configuration
 
-Dependency-ordered. Ownership: **[impl]** = implementation-heavy agent's lane,
-**[ux]** = decision/reasoning/UX lane. Each WP becomes a GitHub sub-issue of #51.
+Dependency-ordered work packages, **each leaving the full monorepo gate green**. Claude = PM
+(spec/review/gates/commit); Codex = implementation (gpt-5.5; **high** effort on PI3/PI5, medium
+elsewhere). One WP at a time, in-main-tree, commit by pathspec.
 
-## WP-P1 — Contracts (schema-only) [impl] — foundational, gates everything
+> Why the reshape is one atomic WP (PI5): the user chose a **clean reshape** of `pmModelSelection`
+> (not an additive field). Changing the field type breaks server + web consumers simultaneously, so
+> the contract swap + resolver/runtime + picker + lenient decode must land together to stay green.
+> Everything before PI5 is **additive** (new `piProviders`, new WS APIs, new settings UI) and green
+> on its own.
 
-- [x] P1.1 Add `review`, `verify` to `OrchestrationStageRole`; add `reviewing` to
-      `OrchestrationTaskStatus` (`verifying` already present). Verify: contracts typecheck.
-- [x] P1.2 Replace `GedRoleModelSelections` `Record<string,_>` with a stage-role-keyed struct
-      (keys ∈ the role union; unknown keys rejected at decode). Verify: decode test rejects a
-      typo'd key.
-- [x] P1.3 Add the per-task `roleModelSelections` override field to the Task aggregate; add the
-      `task.role-selections.set` command + `task.role-selections-updated` event schemas
-      (origin ∈ human|client). Verify: schema round-trip test.
-- [x] P1.4 Add the project per-role prompt-prefix config map (stage-role-keyed, optional).
-      Verify: decode test.
-- [x] P1.5 Define the durable stage-history snapshot/read-model shape keyed by `stageThreadId`
-      (role, providerInstanceId/model, status, startedAt/endedAt, taskId, projectId). Verify:
-      schema compiles; snapshot type includes it.
+## WP-PI1 — Contracts: additive pi-provider catalog + creds + selection TYPE (schema-only) [medium]
 
-## WP-P2 — Decider + projector + stageResolution + persistence [impl] — the core
+- `PiProviderId` (branded non-empty string; validity enforced server-side — no pi-ai import in contracts).
+  `PiProviderConfig`: `{ enabled, apiKey?: { value, valueRedacted? }, oauth?: { connected, expiresAt? } }`.
+  apiKey mirrors the `ProviderInstanceEnvironmentVariable` sensitive/redaction idiom; oauth carries
+  only non-secret status (raw tokens stay in `ServerSecretStore`). No `kind` field — the provider's
+  kind (apiKey/oauth/ambient) is derived server-side from pi-ai + surfaced via the PI2 catalog API.
+- `ServerSettings.piProviders: Record<PiProviderId, PiProviderConfig>` (sparse) + `DEFAULT_SERVER_SETTINGS` ({}).
+- Add the `PiModelSelection { piProvider, model }` schema/type. **Do NOT change `pmModelSelection`'s
+  field type yet** (additive only → green).
+- Schema-only (no runtime logic; obey `t3code/no-inline-schema-compile`). Verify: contracts typecheck;
+  `piProviders` + `PiModelSelection` round-trip tests; `bun run test`/`fmt`/`lint`/`build` green.
 
-- [x] P2.1 Role→status mapping (`review`→`reviewing`, `verify`→`verifying`) in decider
-      `stage.start`; extend `activeStageRoleForTaskStatus`. Verify: unit tests per role.
-- [x] P2.2 `review`/`verify` `stage.complete` behaves like `classify`/`plan` (hold status, clear
-      current, settlement re-prompts PM). Verify: decider + settlement test.
-- [x] P2.3 Model-selection resolution precedence `task ?? project ?? default` at `stage.start`.
-      Verify: resolution unit test across all three layers.
-- [x] P2.4 `task.role-selections.set` decider case + **origin=human/client invariant** (reject
-      pm-runtime/system); engine command-classification + aggregate routing. Verify: adversarial
-      test that a PM-origin set is rejected.
-- [x] P2.5 Projection persistence: migration (new derived table) + repository for task-level
-      overrides and the durable stage-history rows; projector writes a stage-history row on
-      `stage-started`/`-completed`/`-blocked`. Verify: projection test + restart replay.
-- [x] P2.6 Prepend the per-role prompt prefix at `stage.start` **exactly once**, including the
-      quota-resume path that reuses original stage instructions (persist/recover raw
-      instructions or mark prepared). Verify: regression test — quota-resumed stage is not
-      double-prefixed.
+## WP-PI2 — Server: pi credential store + redaction + catalog/models WS API [medium]
 
-## WP-P3 — PM tools + handoff [impl]
+- Extend `serverSettings.ts` materialize/redact to cover `piProviders` (secrets in `ServerSecretStore`
+  `pi-cred-<provider>-{apikey,oauth}`, redact on wire, skip-write on `valueRedacted`). Independent of `pmModelSelection`.
+- WS method(s): list the pi provider catalog (`id`, displayName, `kind`, env-var hint, configured/enabled)
+  + `getModels(provider)` per provider (`id`, name, contextWindow) for the settings UI + picker.
+- Verify: redaction round-trip + restart persistence; catalog/models method round-trip. Full gate green.
 
-- [x] P3.1 Extend `handoffWorker` role enum to `review`/`verify` with tool-description guidance.
-      Verify: tool schema test; PM can dispatch each role.
-- [x] P3.2 Confirm settlement + `StageResultBuilder` are role-agnostic for the new roles; minimal
-      PM system-prompt seed naming the new roles. Verify: settlement test for a `verify` result.
+## WP-PI3 — Server: OAuth login brokering over WS [HIGH]
 
-## WP-P4 — WS + read-model surfacing [ux]
+- WS `start` (server invokes pi-ai `login*` with `OAuthLoginCallbacks` → surfaces auth URL / device
+  code over WS) + `complete` (pasted code → server finishes → persists `{refresh,access,expires}` to
+  `ServerSecretStore`). Cancel/timeout handled. No localhost listener.
+- Verify: brokering unit test with stubbed pi-ai login (no network); persisted creds round-trip + redact. Green.
 
-- [x] P4.1 Project snapshot + streamed events carry the durable stage history (role+backend+
-      status+timestamps) + the project/task selection config. **Done** in the baseline
-      (`22c17fe69`); stage-started now also carries resolved backend/model (`0274474c9`).
-- [x] P4.2 WS mutation methods / typed client helpers for the project per-role editor, the
-      per-role prompt-prefix editor, and the per-task override. Verify: method round-trip test.
-      **Project editor: no new method needed** — `project.meta.update` is already in the
-      `ClientOrchestrationCommand` union, so P6.1/P6.2 dispatch through the generic
-      `api.orchestration.dispatchCommand`. **Per-task override done [impl]**:
-      `task.role-selections.set` is deliberately excluded from `ClientOrchestrationCommand`
-      (task-level human mutations use dedicated, server-validated RPCs — see
-      `orchestrator.resolveGate`), so `orchestrator.setTaskRoleSelections` now mirrors
-      `resolveGate`: the server stamps `origin: "human"` + `createdAt`, dispatches through the
-      decider, and the typed `wsRpcClient` + `environmentApi` helpers expose the method.
+## WP-PI4 — Web: pi-provider settings section [medium]
 
-## WP-P5 — Web: stage-timeline [ux]
+- New "PM model providers (pi)" section in the Settings provider page: catalog list; per provider —
+  enable toggle, API-key input (redaction-aware, reuse `ProviderInstanceCard` secret idiom), OAuth
+  login → modal (auth URL / device code → paste code → complete), ambient status + hint. "Available in
+  picker" = the enabled flag. Distinct from worker Connections; worker UI untouched.
+- Verify: logic unit tests (redaction-preserving edit; enable/disable patch) + render test. Green.
 
-- [x] P5.1 Store slice + selectors for durable stage history per task (apply snapshot + streamed
-      updates). **Done** (`0274474c9`): `stageHistoryByTaskId` slice + `selectTaskStageHistoryByRef`,
-      seeded from snapshots + live from stage events. Required the stage-started event to carry the
-      resolved backend/model (chosen design: "carry it on the event") since the web subscription is
-      snapshot-once-then-events; decider stamps it, both projectors prefer it with a re-derivation
-      fallback for older events.
-- [x] P5.2 Stage-timeline component rendering each stage's role + backend + live status. **Done**
-      (`2597c709b`): `StageTimeline` on the task rail; pure `buildStageTimelineRows` projection
-      unit-tested; thin renderer using the Badge + rail-panel conventions.
+## WP-PI5 — Reshape: pmModelSelection → pi + resolver/runtime + pi-only picker (ATOMIC) [HIGH]
 
-## WP-P6 — Web: configuration UI [ux]
+- **Contracts**: swap `pmModelSelection` field type → `PiModelSelection` in `OrchestratorGlobalDefaults`
+  + `OrchestratorProjectConfig`; **lenient legacy decode** (`{instanceId, model}` → null).
+- **Server**: `PmModelResolver.ts` — `piProvider` is the pi provider id directly (drop worker-instance
+  alias map); resolve credential from `piProviders` config (API key / OAuth access token w/ single-flight
+  refresh via `getOAuthApiKey` + persist refreshed creds / ambient sentinel). `PmRuntime.ts` consumes it.
+- **Web**: repoint `PmModelSection`/`BackendModelPicker` to enabled pi providers (catalog + models);
+  selection `{piProvider, model}`; update `projectOrchestrationSettings.logic.ts` + global-defaults
+  editor + the 3 test files. Worker pickers (`RoleBackendPicker`/`RoleConfigRow`) untouched.
+- Verify: resolver unit tests (key/oauth-refresh/ambient/missing); lenient-decode test; web logic
+  (seed/build/round-trip/dirty-check); picker shows only enabled pi providers. **Full gate green.**
 
-- [x] P6.1 Project-settings per-role backend editor (role → instance picker, "use default").
-      **Done**: `ProjectOrchestrationSettingsDialog` opened from the sidebar project context-menu
-      item "Orchestration settings…"; per-role instance+model Selects (or "use project default");
-      dispatches `project.meta.update` (origin client/human). Typo'd role impossible — the picker
-      iterates `ORCHESTRATION_STAGE_ROLES` and the contract's role-keyed struct rejects unknown keys.
-- [x] P6.2 Per-role prompt-prefix editor. **Done**: per-role Textarea in the same dialog; blank
-      prefixes omitted, the rest trimmed; round-trip covered by `projectOrchestrationSettings.logic.test.ts`.
-- [ ] P6.3 Per-task backend-override panel on task detail. Verify: override dispatches + reflects.
-      **Unblocked by P4.2** — dispatch through `api.orchestrator.setTaskRoleSelections`; UI reuses
-      the project editor's backend picker + the same draft logic, no prefixes.
+## WP-PI6 — Integration: PM starts on a configured pi provider [medium]
 
-## WP-P7 — E2E + restart-durability + gates [ux]
+- Extend the integration harness: configure a pi provider (stub key), set `pmModelSelection`, enable
+  orchestrator → PM runtime starts with the credential resolved from config (mock the pi adapter /
+  `getApiKeyAndHeaders`). Replay test: a legacy `pmModelSelection` event decodes to null without breaking replay.
+- Verify: integration green; full gates.
 
-- [x] P7.1 E2E: `classify→plan→review→work→verify→land` incl. per-task override resolution +
-      exactly-once prefixing. **Done**: `orchestratorPipeline.integration.test.ts` drives the full
-      flow, verifies backend precedence (`task` override → project role → project default), rejects
-      non-human role-selection updates in the live engine path, and proves prompt prefixes are
-      applied once across quota block → quota-ok auto-resume.
-- [x] P7.2 Restart-durability proof mid-stage (stage history + overrides survive). **Done**:
-      the integration harness reopens the same root/db after a blocked work stage and proves durable
-      stage history, per-task role overrides, task status, and quota-blocked rows replay before the
-      resumed stage starts.
-- [x] P7.3 Gates: CHANGELOG `## Unreleased`, `docs/upstream-decisions.md`, plan index. Verify:
-      `bun fmt/lint/typecheck/run test` all green.
+## Gates (every WP)
+
+`bun fmt` · `bun lint` · `bun typecheck` (re-run standalone once if tsgo flakes) · `bun run test`
+(never `bun test`) · `bun run build`. CHANGELOG `## Unreleased` updated when user/operator-visible.

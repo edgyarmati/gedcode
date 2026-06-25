@@ -52,8 +52,33 @@ gains `draft`, `prUrl` persisted via migration 042) · L3 `579d53ba1` (draft/rea
 project editors + "View PR" link) · L4 `31f39ab1c` (real-engine land→PR E2E + harness mock provider).
 **Remaining Phase-5 slices (NOT started):** isolation/sandbox, scale/perf, board UX.
 
-Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate; stale Phase-3 content in
-`.ged/work/root/{SPEC,TASKS,TESTS}.md`.
+Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate.
+
+## ACTIVE (2026-06-25): PM (pi) provider configuration + pi-only model picker
+
+Surfaced by the smoke test: "failed to start PM runtime" — pi's key is **env-only**
+(`getEnvApiKey`), there's **no UI to configure pi providers**, and the PM picker wrongly reuses the
+**worker** harness picker. New feature (SPEC.md/TASKS.md rewritten for it). Two read-only
+investigations grounded it: (1) pi-ai provider/auth model — ~30 API-key, 3 OAuth (anthropic Pro/Max,
+github-copilot, openai-codex; pi-ai has `login*` flows → `{refresh,access,expires}` + `getOAuthApiKey`
+auto-refresh; app must drive login + persist), 2 ambient (Bedrock/Vertex); credential path is uniform
+`getApiKeyAndHeaders → {apiKey,headers?}`. (2) repo grounding — `ServerSecretStore` + `redactServerSettingsForClient`
++ `valueRedacted` lifecycle to reuse for pi secrets; `pmModelSelection` reshape touches
+`contracts/orchestrator/config.ts:165-167`, `PmRuntime.ts`, `PmModelResolver.ts`, web
+`projectOrchestrationSettings.logic.ts` + `ProjectOrchestrationSettingsDialog.tsx` (PmModelSection
+reusable) + 3 test files; worker pickers (`RoleBackendPicker`/`RoleConfigRow`) must stay untouched.
+
+**Settled decisions**: both API-key+OAuth+ambient together before shipping; creds server-global
+(`ServerSettings.piProviders` via `ServerSecretStore`), selection per-project + global default;
+per-provider "available in picker"; OAuth = server-brokered copy/paste over WS (auth URL / device
+code → paste code → server completes + persists; single-flight refresh); clean reshape
+`pmModelSelection → {piProvider, model}` + lenient legacy decode (drop `{instanceId,model}` → null).
+
+**WPs (TASKS.md, green per WP)**: PI1 contracts (additive: piProviders + PiModelSelection type) · PI2
+server creds+redaction + catalog/models WS · PI3 OAuth brokering (HIGH) · PI4 web settings section ·
+PI5 **atomic reshape** pmModelSelection→pi + resolver/runtime + pi-only picker + lenient decode (HIGH) ·
+PI6 integration. PI5 is atomic because the clean field swap breaks all consumers at once; everything
+before it is additive. Dev server still up from the smoke attempt (web :5740) but PM can't start until this lands.
 
 ## Codex handoff mechanics (for resume)
 
