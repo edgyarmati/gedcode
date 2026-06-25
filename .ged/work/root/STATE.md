@@ -130,5 +130,14 @@ pick model → drive a task to a PR).
   (`bash /Users/edgy/.claude/jobs/6da7233d/tmp/gates.sh`), commit by pathspec (Codex never commits),
   watch the tsgo concurrency flake (re-run `bun typecheck` standalone). Codex out-of-credits fails in
   ~5s; ask user to refill.
-- **Blockers**: none (Codex auth hit a "token could not be refreshed / signed into another account"
-  failure on the first PI4 dispatch 2026-06-25; user re-authed, PI4 re-ran fine).
+- **Blockers (2026-06-25)**: Codex OUT OF CREDITS — both the PI6-fix attempts failed ("Your workspace
+  is out of credits"). User must refill. (Earlier same day: a transient session-limit at 15:10 Berlin
+  reset fine; an auth "token could not be refreshed" on the first PI4 dispatch, user re-authed.)
+  **PI6 status**: changes are IN the working tree (uncommitted) — PmRuntime.test.ts (PM-start on
+  configured pi provider via makePiAgentAdapterOverride; config key beats env), projector.test.ts
+  (legacy pmModelSelection→null on replay), projector.ts, CHANGELOG. BUT projector.ts fix is BUGGY: it
+  decodes the WHOLE OrchestratorProjectConfig → inflates the sparse live-global override fields →
+  breaks 2 orchestratorLiveGlobals tests ("inherit gate policy", "inherit stages and resource limits").
+  FIX SPEC ready `/Users/edgy/.claude/jobs/6da7233d/tmp/PI6-fix-spec.md` (narrow to coerce ONLY
+  pmModelSelection, keep other fields raw-sparse). Re-dispatch FRESH (working tree has PI6 changes) once
+  credits refill, then gate + commit PI6.
