@@ -90,7 +90,16 @@ SHARED settings secret path — `redactPiProviderConfig`/materialize/persist —
 stale-secret cleanup; `PiProviderCatalog.ts` + WS `server.listPiProviderCatalog`/`server.listPiProviderModels`;
 kind = oauth(getOAuthProviders)/ambient(bedrock,vertex)/apiKey; `findEnvKeys` returns env var NAMES not
 values — no leak. Low-pri: `listPiProviderModels` has no typed error/uses Effect.sync — defect on a bad
-provider id, but picker only sends real ids. Gate green here). PI3 next (OAuth brokering, HIGH).
+provider id, but picker only sends real ids. Gate green here). PI3 DONE `62162f6d3` (OAuth brokering:
+`PiOAuthLoginBroker` bounded pending sessions [Deferred-collected pasted code bridged to pi-ai login
+callbacks; 5-min timeout/abort/fiber-interrupt], `PiOAuthCredentialStore` tokens only in
+`ServerSecretStore` `pi-cred-<provider>-oauth` [settings carry {connected,expiresAt}], getAccessToken
+refresh-on-expiry+persist+single-flight per provider+clear-on-fail; `PiOAuthProviders` injectable
+wrapper; WS start/complete/cancel; gate green here). **Findings**: (a) pi-ai's anthropic/codex browser
+login starts an INTERNAL localhost callback server we can't prevent — copy/paste still works via
+onManualCodeInput, transient+harmless+auto-completes when browser is local. (b) low-pri: complete-with-
+bad-code session lingers until 5-min timeout. (c) WATCH: getAccessToken assumes pi-ai `expires` is ms
+epoch — verify in the OAuth smoke test (not on the API-key path). PI4 next (web settings section).
 
 ## Codex handoff mechanics (for resume)
 
