@@ -72,6 +72,7 @@ import {
 import { Textarea } from "../ui/textarea";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
 import { readHostedPairingRequest } from "../../hostedPairing";
+import { PiProviderSettingsSection } from "./PiProviderSettings";
 import {
   createServerPairingCredential,
   fetchSessionState,
@@ -2448,6 +2449,8 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
+      <PiProviderSettingsSection />
+
       {canManageLocalBackend ? (
         <>
           <SettingsSection title="Manage local backend">

@@ -10,6 +10,7 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateState,
   type LocalApi,
+  PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerConfig,
@@ -147,6 +148,13 @@ const authAccessHarness = vi.hoisted(() => {
 });
 
 const mockConnectDesktopSshEnvironment = vi.hoisted(() => vi.fn());
+const piProviderRpcMocks = vi.hoisted(() => ({
+  listPiProviderCatalog: vi.fn(),
+  startPiOAuthLogin: vi.fn(),
+  completePiOAuthLogin: vi.fn(),
+  cancelPiOAuthLogin: vi.fn(),
+  updateSettings: vi.fn(),
+}));
 
 vi.mock("../../environments/runtime", () => {
   const primaryConnection = {
@@ -166,6 +174,11 @@ vi.mock("../../environments/runtime", () => {
       server: {
         subscribeAuthAccess: (listener: Parameters<typeof authAccessHarness.subscribe>[0]) =>
           authAccessHarness.subscribe(listener),
+        updateSettings: piProviderRpcMocks.updateSettings,
+        listPiProviderCatalog: piProviderRpcMocks.listPiProviderCatalog,
+        startPiOAuthLogin: piProviderRpcMocks.startPiOAuthLogin,
+        completePiOAuthLogin: piProviderRpcMocks.completePiOAuthLogin,
+        cancelPiOAuthLogin: piProviderRpcMocks.cancelPiOAuthLogin,
       },
     },
     ensureBootstrapped: async () => undefined,
@@ -483,6 +496,16 @@ describe("GeneralSettingsPanel observability", () => {
     useUiStateStore.setState({ defaultAdvertisedEndpointKey: null });
     authAccessHarness.reset();
     mockConnectDesktopSshEnvironment.mockReset();
+    piProviderRpcMocks.listPiProviderCatalog.mockReset();
+    piProviderRpcMocks.startPiOAuthLogin.mockReset();
+    piProviderRpcMocks.completePiOAuthLogin.mockReset();
+    piProviderRpcMocks.cancelPiOAuthLogin.mockReset();
+    piProviderRpcMocks.updateSettings.mockReset();
+    piProviderRpcMocks.listPiProviderCatalog.mockResolvedValue({ providers: [] });
+    piProviderRpcMocks.updateSettings.mockImplementation(async (patch) => ({
+      ...DEFAULT_SERVER_SETTINGS,
+      ...patch,
+    }));
   });
 
   afterEach(async () => {
@@ -566,6 +589,92 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(page.getByRole("heading", { name: "Remote environments", exact: true }))
       .toBeInTheDocument();
+  });
+
+  it("renders pi provider settings and dispatches whole-map enable patches", async () => {
+    Reflect.deleteProperty(window, "desktopBridge");
+    const openrouter = PiProviderId.make("openrouter");
+    const anthropic = PiProviderId.make("anthropic");
+    const bedrock = PiProviderId.make("amazon-bedrock");
+    piProviderRpcMocks.listPiProviderCatalog.mockResolvedValue({
+      providers: [
+        {
+          id: openrouter,
+          displayName: "OpenRouter",
+          kind: "apiKey",
+          envKeys: ["OPENROUTER_API_KEY"],
+          configured: true,
+          enabled: true,
+        },
+        {
+          id: anthropic,
+          displayName: "Anthropic",
+          kind: "oauth",
+          configured: false,
+          enabled: false,
+        },
+        {
+          id: bedrock,
+          displayName: "Amazon Bedrock",
+          kind: "ambient",
+          configured: false,
+          enabled: false,
+        },
+      ],
+    });
+    setServerConfigSnapshot({
+      ...createBaseServerConfig(),
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        piProviders: {
+          [openrouter]: {
+            enabled: true,
+            apiKey: { value: "", valueRedacted: true },
+          },
+          [anthropic]: {
+            enabled: false,
+            oauth: { connected: true, expiresAt: 1_800_000_000_000 },
+          },
+        },
+      },
+    });
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect
+      .element(page.getByRole("heading", { name: "PM model providers (pi)", exact: true }))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("OpenRouter")).toBeInTheDocument();
+    await expect
+      .element(page.getByPlaceholder("Stored secret - enter a new value to replace"))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByText("Detected environment variable: OPENROUTER_API_KEY"))
+      .toBeInTheDocument();
+    await expect.element(page.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+
+    await page.getByLabelText("Enable Amazon Bedrock for PM picker").click();
+
+    await expect.poll(() => piProviderRpcMocks.updateSettings.mock.calls.length).toBeGreaterThan(0);
+    expect(piProviderRpcMocks.updateSettings).toHaveBeenCalledWith({
+      piProviders: {
+        [openrouter]: {
+          enabled: true,
+          apiKey: { value: "", valueRedacted: true },
+        },
+        [anthropic]: {
+          enabled: false,
+          oauth: { connected: true, expiresAt: 1_800_000_000_000 },
+        },
+        [bedrock]: {
+          enabled: true,
+        },
+      },
+    });
   });
 
   it("hides advertised endpoint rows when desktop network access is disabled", async () => {
