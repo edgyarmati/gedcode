@@ -151,6 +151,19 @@ only `PiOAuthLoginDialog` doesn't notice. Fix (spec `/Users/edgy/.claude/jobs/6d
 the modal watches the live `oauth.connected` flip → success/auto-close, keeping the manual paste path for
 device-code. No server change (save→settings-broadcast already reactive).
 
+**WP-PI-OAUTHUX DONE `888deb4c1`**: `PiOAuthLoginDialog` watches the live `oauth.connected` flip
+(useSettings) + `connectedNotifiedRef` guard → success without a paste; manual device-code path kept;
+copy updated. Codex STALLED ~50m in the verify phase (looping on web test-harness discovery) → I
+cancelled + finished: fixed an `expiresAt: undefined` exactOptionalPropertyTypes error (conditional
+spread) and **greened the `test:browser` suite** (which had NEVER run — sandbox blocks the browser, and
+it's separate from `bun run test`): disambiguated selectors (exact OpenRouter vs the OPENROUTER_API_KEY
+hint; footer Close via `getByText` vs the dialog's aria-label X) + mocked `getPrimaryKnownEnvironment`
+so the enable-toggle dispatches `updateSettings` via `ensureLocalApi` (this also fixed a PRE-EXISTING
+broken PI4 render test that mocked the wrong dispatch path). 20/20 browser tests pass; full standard
+gate green. **PI3 watch-item RESOLVED**: live `openai-codex` token `expiresAt` is a ms epoch → the
+getAccessToken refresh comparison is correct. Note: these mechanical/test fixes were done by me (PM),
+not Codex — Codex's sandbox cannot run `test:browser`, so only I can verify browser tests.
+
 ## Codex handoff mechanics (for resume)
 
 - Hand off via the `codex:codex-rescue` subagent (Agent tool): it runs
