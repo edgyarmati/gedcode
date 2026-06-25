@@ -112,4 +112,7 @@ epoch — verify in the OAuth smoke test (not on the API-key path). PI4 next (we
   (`bash /Users/edgy/.claude/jobs/6da7233d/tmp/gates.sh`), commit by pathspec (Codex never commits),
   watch the tsgo concurrency flake (re-run `bun typecheck` standalone). Codex out-of-credits fails in
   ~5s; ask user to refill.
-- **Blockers**: none (Codex credits OK as of 2026-06-24).
+- **Blockers (2026-06-25)**: Codex AUTH failure on the PI4 dispatch — "access token could not be
+  refreshed because you have since logged out or signed in to another account. Please sign in again"
+  (failed in ~4s, job task-mqtcju6q-bcuog5). User must re-auth Codex (`/codex:setup` or `codex login`).
+  PI4 spec ready at `/Users/edgy/.claude/jobs/6da7233d/tmp/PI4-spec.md`; re-dispatch once re-authed.
