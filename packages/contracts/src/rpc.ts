@@ -92,6 +92,13 @@ import {
 } from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  PiOAuthLoginCancelInput,
+  PiOAuthLoginCancelResult,
+  PiOAuthLoginCompleteInput,
+  PiOAuthLoginError,
+  PiOAuthLoginStartInput,
+  PiOAuthLoginStartResult,
+  PiOAuthLoginStatus,
   PiProviderCatalogResult,
   PiProviderModelsInput,
   PiProviderModelsResult,
@@ -155,6 +162,9 @@ export const WS_METHODS = {
   serverUpdateSettings: "server.updateSettings",
   serverListPiProviderCatalog: "server.listPiProviderCatalog",
   serverListPiProviderModels: "server.listPiProviderModels",
+  serverStartPiOAuthLogin: "server.startPiOAuthLogin",
+  serverCompletePiOAuthLogin: "server.completePiOAuthLogin",
+  serverCancelPiOAuthLogin: "server.cancelPiOAuthLogin",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -235,6 +245,24 @@ export const WsServerListPiProviderCatalogRpc = Rpc.make(WS_METHODS.serverListPi
 export const WsServerListPiProviderModelsRpc = Rpc.make(WS_METHODS.serverListPiProviderModels, {
   payload: PiProviderModelsInput,
   success: PiProviderModelsResult,
+});
+
+export const WsServerStartPiOAuthLoginRpc = Rpc.make(WS_METHODS.serverStartPiOAuthLogin, {
+  payload: PiOAuthLoginStartInput,
+  success: PiOAuthLoginStartResult,
+  error: PiOAuthLoginError,
+});
+
+export const WsServerCompletePiOAuthLoginRpc = Rpc.make(WS_METHODS.serverCompletePiOAuthLogin, {
+  payload: PiOAuthLoginCompleteInput,
+  success: PiOAuthLoginStatus,
+  error: PiOAuthLoginError,
+});
+
+export const WsServerCancelPiOAuthLoginRpc = Rpc.make(WS_METHODS.serverCancelPiOAuthLogin, {
+  payload: PiOAuthLoginCancelInput,
+  success: PiOAuthLoginCancelResult,
+  error: PiOAuthLoginError,
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -550,6 +578,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpdateSettingsRpc,
   WsServerListPiProviderCatalogRpc,
   WsServerListPiProviderModelsRpc,
+  WsServerStartPiOAuthLoginRpc,
+  WsServerCompletePiOAuthLoginRpc,
+  WsServerCancelPiOAuthLoginRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

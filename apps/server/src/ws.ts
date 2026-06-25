@@ -55,6 +55,10 @@ import {
   listPiProviderModels,
 } from "./orchestration/pi/PiProviderCatalog.ts";
 import {
+  PiOAuthLoginBroker,
+  PiOAuthLoginBrokerLive,
+} from "./orchestration/pi/PiOAuthLoginBroker.ts";
+import {
   observeRpcEffect,
   observeRpcStream,
   observeRpcStreamEffect,
@@ -228,6 +232,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
+      const piOAuthLoginBroker = yield* PiOAuthLoginBroker;
       const sourceControlDiscovery = yield* SourceControlDiscoveryLayer.SourceControlDiscovery;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.automaticGitFetchInterval),
@@ -1190,6 +1195,30 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverStartPiOAuthLogin]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverStartPiOAuthLogin,
+            piOAuthLoginBroker.start(input.provider),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverCompletePiOAuthLogin]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverCompletePiOAuthLogin,
+            piOAuthLoginBroker.complete(input),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
+        [WS_METHODS.serverCancelPiOAuthLogin]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverCancelPiOAuthLogin,
+            piOAuthLoginBroker.cancel(input.sessionId),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,
@@ -1563,6 +1592,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           Effect.provide(
             makeWsRpcLayer(session.sessionId).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provideMerge(PiOAuthLoginBrokerLive),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(
                 SourceControlDiscoveryLayer.layer.pipe(

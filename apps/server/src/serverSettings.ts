@@ -84,6 +84,10 @@ function piProviderApiKeySecretName(provider: string): string {
   return `pi-cred-${Buffer.from(provider, "utf8").toString("base64url")}-apikey`;
 }
 
+function piProviderOAuthSecretName(provider: string): string {
+  return `pi-cred-${Buffer.from(provider, "utf8").toString("base64url")}-oauth`;
+}
+
 function redactProviderEnvironmentVariable(
   variable: ProviderInstanceEnvironmentVariable,
 ): ProviderInstanceEnvironmentVariable {
@@ -479,7 +483,23 @@ const makeServerSettings = Effect.gen(function* () {
         ...next.piProviders,
       };
       const nextPiSecretKeys = new Set<string>();
+      const nextPiOAuthSecretKeys = new Set<string>();
       for (const [provider, config] of Object.entries(next.piProviders)) {
+        if (config.oauth?.connected === true) {
+          nextPiOAuthSecretKeys.add(piProviderOAuthSecretName(provider));
+        } else {
+          yield* secretStore
+            .remove(piProviderOAuthSecretName(provider))
+            .pipe(
+              Effect.mapError((cause) =>
+                toSettingsError(
+                  `failed to remove pi provider OAuth credentials ${provider}`,
+                  cause,
+                ),
+              ),
+            );
+        }
+
         const secretName = piProviderApiKeySecretName(provider);
         if (!config.apiKey) {
           yield* secretStore
@@ -554,6 +574,22 @@ const makeServerSettings = Effect.gen(function* () {
           .pipe(
             Effect.mapError((cause) =>
               toSettingsError(`failed to remove stale pi provider API key ${provider}`, cause),
+            ),
+          );
+      }
+
+      for (const [provider, config] of Object.entries(current.piProviders)) {
+        if (config.oauth?.connected !== true) continue;
+        const secretName = piProviderOAuthSecretName(provider);
+        if (nextPiOAuthSecretKeys.has(secretName)) continue;
+        yield* secretStore
+          .remove(secretName)
+          .pipe(
+            Effect.mapError((cause) =>
+              toSettingsError(
+                `failed to remove stale pi provider OAuth credentials ${provider}`,
+                cause,
+              ),
             ),
           );
       }
