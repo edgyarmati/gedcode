@@ -8,7 +8,7 @@ import {
   RefreshCwIcon,
   UnplugIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   PiOAuthLoginStartResult,
   PiOAuthLoginStatus,
@@ -119,17 +119,21 @@ function ApiKeyControls(props: {
   );
 }
 
-function PiOAuthLoginDialog(props: {
+export function PiOAuthLoginDialog(props: {
   readonly entry: PiProviderCatalogEntry | null;
   readonly onClose: () => void;
   readonly onConnected: () => void;
 }) {
+  const liveOAuth = useSettings((settings) =>
+    props.entry ? settings.piProviders[props.entry.id]?.oauth : undefined,
+  );
   const [startResult, setStartResult] = useState<PiOAuthLoginStartResult | null>(null);
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<PiOAuthLoginStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const connectedNotifiedRef = useRef(false);
   const open = props.entry !== null;
 
   useEffect(() => {
@@ -140,10 +144,12 @@ function PiOAuthLoginDialog(props: {
       setError(null);
       setIsStarting(false);
       setIsCompleting(false);
+      connectedNotifiedRef.current = false;
       return;
     }
 
     let cancelled = false;
+    connectedNotifiedRef.current = false;
     setStartResult(null);
     setCode("");
     setStatus(null);
@@ -165,6 +171,25 @@ function PiOAuthLoginDialog(props: {
       cancelled = true;
     };
   }, [props.entry]);
+
+  useEffect(() => {
+    if (!props.entry || !startResult || connectedNotifiedRef.current) {
+      return;
+    }
+    if (startResult.provider !== props.entry.id || liveOAuth?.connected !== true) {
+      return;
+    }
+
+    connectedNotifiedRef.current = true;
+    setStatus({
+      connected: true,
+      provider: props.entry.id,
+      ...(liveOAuth.expiresAt !== undefined ? { expiresAt: liveOAuth.expiresAt } : {}),
+    });
+    setIsCompleting(false);
+    setError(null);
+    props.onConnected();
+  }, [liveOAuth?.connected, liveOAuth?.expiresAt, props, startResult]);
 
   const cancelLogin = useCallback(async () => {
     const sessionId = startResult?.sessionId;
@@ -195,6 +220,7 @@ function PiOAuthLoginDialog(props: {
           code,
         },
       );
+      connectedNotifiedRef.current = true;
       setStatus(nextStatus);
       props.onConnected();
     } catch (caught) {
@@ -213,7 +239,8 @@ function PiOAuthLoginDialog(props: {
         <DialogHeader>
           <DialogTitle>Connect {props.entry?.displayName ?? "provider"}</DialogTitle>
           <DialogDescription>
-            Complete the provider authorization flow, then paste the code here.
+            Authorize in your browser. If a code is shown, paste it below - otherwise this connects
+            automatically once you approve.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">

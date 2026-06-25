@@ -10,6 +10,7 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateState,
   type LocalApi,
+  PiOAuthLoginSessionId,
   PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -38,6 +39,7 @@ import { resetServerStateForTests, setServerConfigSnapshot } from "../../rpc/ser
 import { useUiStateStore } from "../../uiStateStore";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { DiagnosticsSettingsPanel } from "./DiagnosticsSettings";
+import { PiOAuthLoginDialog } from "./PiProviderSettings";
 import { GeneralSettingsPanel, ProviderSettingsPanel } from "./SettingsPanels";
 import { SourceControlSettingsPanel } from "./SourceControlSettings";
 
@@ -217,6 +219,20 @@ vi.mock("../../environments/runtime", () => {
     ) => selector({ byId: {} }),
   };
 });
+
+vi.mock("../../environments/primary", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../environments/primary")>()),
+  getPrimaryKnownEnvironment: () => ({
+    id: "environment-local",
+    label: "Local environment",
+    source: "manual" as const,
+    environmentId: EnvironmentId.make("environment-local"),
+    target: {
+      httpBaseUrl: "http://localhost:3000",
+      wsBaseUrl: "ws://localhost:3000",
+    },
+  }),
+}));
 
 function createBaseServerConfig(): ServerConfig {
   return {
@@ -648,7 +664,7 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(page.getByRole("heading", { name: "PM model providers (pi)", exact: true }))
       .toBeInTheDocument();
-    await expect.element(page.getByText("OpenRouter")).toBeInTheDocument();
+    await expect.element(page.getByText("OpenRouter", { exact: true })).toBeInTheDocument();
     await expect
       .element(page.getByPlaceholder("Stored secret - enter a new value to replace"))
       .toBeInTheDocument();
@@ -675,6 +691,126 @@ describe("GeneralSettingsPanel observability", () => {
         },
       },
     });
+  });
+
+  it("marks pi OAuth login connected when live settings report listener completion", async () => {
+    const anthropic = PiProviderId.make("anthropic");
+    const onConnected = vi.fn();
+    const onClose = vi.fn();
+    piProviderRpcMocks.startPiOAuthLogin.mockResolvedValue({
+      sessionId: PiOAuthLoginSessionId.make("pi-oauth-session"),
+      provider: anthropic,
+      authUrl: "https://auth.example.test/anthropic",
+    });
+    setServerConfigSnapshot({
+      ...createBaseServerConfig(),
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        piProviders: {
+          [anthropic]: {
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <PiOAuthLoginDialog
+          entry={{
+            id: anthropic,
+            displayName: "Anthropic",
+            kind: "oauth",
+            configured: false,
+            enabled: true,
+          }}
+          onClose={onClose}
+          onConnected={onConnected}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect.element(page.getByText("https://auth.example.test/anthropic")).toBeInTheDocument();
+
+    setServerConfigSnapshot({
+      ...createBaseServerConfig(),
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        piProviders: {
+          [anthropic]: {
+            enabled: true,
+            oauth: { connected: true, expiresAt: 1_800_000_000_000 },
+          },
+        },
+      },
+    });
+
+    await expect.element(page.getByText("Close", { exact: true })).toBeInTheDocument();
+    await expect.element(page.getByText(/^Connected/)).toBeInTheDocument();
+    expect(onConnected).toHaveBeenCalledOnce();
+    expect(piProviderRpcMocks.completePiOAuthLogin).not.toHaveBeenCalled();
+
+    await page.getByText("Close", { exact: true }).click();
+
+    expect(piProviderRpcMocks.cancelPiOAuthLogin).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps manual pi OAuth code completion working", async () => {
+    const githubCopilot = PiProviderId.make("github-copilot");
+    const onConnected = vi.fn();
+    piProviderRpcMocks.startPiOAuthLogin.mockResolvedValue({
+      sessionId: PiOAuthLoginSessionId.make("pi-device-session"),
+      provider: githubCopilot,
+      authUrl: "https://github.com/login/device",
+      deviceCode: {
+        userCode: "ABCD-1234",
+        verificationUri: "https://github.com/login/device",
+      },
+    });
+    piProviderRpcMocks.completePiOAuthLogin.mockResolvedValue({
+      connected: true,
+      provider: githubCopilot,
+      expiresAt: 1_800_000_000_000,
+    });
+    setServerConfigSnapshot({
+      ...createBaseServerConfig(),
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        piProviders: {
+          [githubCopilot]: {
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <PiOAuthLoginDialog
+          entry={{
+            id: githubCopilot,
+            displayName: "GitHub Copilot",
+            kind: "oauth",
+            configured: false,
+            enabled: true,
+          }}
+          onClose={vi.fn()}
+          onConnected={onConnected}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect.element(page.getByText("ABCD-1234")).toBeInTheDocument();
+    await page.getByLabelText("Authorization code").fill("device-code-result");
+    await page.getByRole("button", { name: "Complete" }).click();
+
+    await expect.element(page.getByText("Close", { exact: true })).toBeInTheDocument();
+    expect(piProviderRpcMocks.completePiOAuthLogin).toHaveBeenCalledWith({
+      sessionId: PiOAuthLoginSessionId.make("pi-device-session"),
+      code: "device-code-result",
+    });
+    expect(onConnected).toHaveBeenCalledOnce();
   });
 
   it("hides advertised endpoint rows when desktop network access is disabled", async () => {
