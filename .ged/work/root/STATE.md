@@ -5,9 +5,11 @@
 > `chore(ged)` commits (still kept out of *feature* commits). The authoritative record is the git
 > commits + `CHANGELOG.md` + `docs/upstream-decisions.md`.
 
-- **Phase**: Orchestrator Phase 4 (Playbooks, Autonomy & Taxonomy, epic #59) — base implementation
-  COMPLETE; in the post-review follow-up (Change A in progress). Branch `feat/orchestrator-mode`,
-  not merged to `main` (Phase 5 — scale/sandbox/real PR landing — still remains).
+- **Phase**: Orchestrator. Phase 4 (#59) + its post-review follow-up COMPLETE. Phase 5 in progress —
+  **slice 1 (Real PR Landing) DONE**; remaining slices (isolation/sandbox, scale/perf, board UX) not
+  started. Branch `feat/orchestrator-mode`, not merged to `main`. Recommended next: a MANUAL end-to-end
+  smoke test (run the app, drive a task to an opened PR) — all validation so far is automated (incl.
+  integration tests with a fake provider); no human has driven it against real models/repo yet.
 - **Role model**: Claude = PM (decisions/spec/review/gates). Codex = implementation via the codex
   plugin (gpt-5.5 medium normal / high hard). See `[[pm-codex-handoff-workflow]]`.
 
@@ -43,13 +45,12 @@ task title, body = work summary + diff; push the task branch with the **server's
 land path, not the worker); use the project's `SourceControlProvider`; **fail-loud + retryable** (no
 remote / push / API failure never silently drops the task); surface the PR url on the task.
 
-WPs: **L1** contracts (`openPrAsDraft` config on global+project inheritable; `task.pr.opened` command
-+ `task.pr-opened` event carrying `prUrl`; `OrchestrationTask.prUrl` field). **L2** land reactor (on
-`task.landed`: resolve draft setting + project SourceControlProvider; push task branch (idempotent) →
-`createChangeRequest` draft/ready → dispatch `task.pr.opened{prUrl}` → cleanup worktree; idempotent /
-retryable / fail-loud). **L3** web (draft/ready setting in global + project editors via A2 patterns;
-PR link on landed task). **L4** E2E (land opens PR via mocked provider; config toggles draft; no-remote
-fail-loud). Later Phase-5 slices (not started): isolation/sandbox, scale/perf, board UX.
+**Landing slice DONE (gate green):** L1 `aa017bd1c` (contracts: `openPrAsDraft` inheritable +
+`task.pr.opened`/`task.pr-opened` + `OrchestrationTask.prUrl`) · L2 `415db5fba` (land reactor: push +
+open gated PR via the project's SourceControlProvider, idempotent/fail-loud/retryable, `createChangeRequest`
+gains `draft`, `prUrl` persisted via migration 042) · L3 `579d53ba1` (draft/ready setting in global +
+project editors + "View PR" link) · L4 `31f39ab1c` (real-engine land→PR E2E + harness mock provider).
+**Remaining Phase-5 slices (NOT started):** isolation/sandbox, scale/perf, board UX.
 
 Low-pri carry-overs: Change-B inert-watcher-fiber cleanup on invalidate; stale Phase-3 content in
 `.ged/work/root/{SPEC,TASKS,TESTS}.md`.
