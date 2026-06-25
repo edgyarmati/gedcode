@@ -99,7 +99,13 @@ wrapper; WS start/complete/cancel; gate green here). **Findings**: (a) pi-ai's a
 login starts an INTERNAL localhost callback server we can't prevent — copy/paste still works via
 onManualCodeInput, transient+harmless+auto-completes when browser is local. (b) low-pri: complete-with-
 bad-code session lingers until 5-min timeout. (c) WATCH: getAccessToken assumes pi-ai `expires` is ms
-epoch — verify in the OAuth smoke test (not on the API-key path). PI4 next (web settings section).
+epoch — verify in the OAuth smoke test (not on the API-key path). PI4 DONE `03ac773ad` (web:
+`PiProviderSettings.tsx` "PM model providers (pi)" section in Connections — catalog list, per-kind
+controls [API-key input, OAuth Connect/Disconnect modal via the WS broker, ambient status], enable
+toggle = available-in-picker; `PiProviderSettings.logic.ts` whole-map patch builders preserve untouched
+redacted secrets/oauth; worker UI/picker/pmModelSelection untouched. Low-pri: no explicit remove-key
+affordance, replace-or-disable only. tsgo flake on first typecheck — re-ran 13/13 green). PI5 next
+(ATOMIC reshape, HIGH; spec ready `/Users/edgy/.claude/jobs/6da7233d/tmp/PI5-spec.md`).
 
 ## Codex handoff mechanics (for resume)
 
@@ -112,7 +118,5 @@ epoch — verify in the OAuth smoke test (not on the API-key path). PI4 next (we
   (`bash /Users/edgy/.claude/jobs/6da7233d/tmp/gates.sh`), commit by pathspec (Codex never commits),
   watch the tsgo concurrency flake (re-run `bun typecheck` standalone). Codex out-of-credits fails in
   ~5s; ask user to refill.
-- **Blockers (2026-06-25)**: Codex AUTH failure on the PI4 dispatch — "access token could not be
-  refreshed because you have since logged out or signed in to another account. Please sign in again"
-  (failed in ~4s, job task-mqtcju6q-bcuog5). User must re-auth Codex (`/codex:setup` or `codex login`).
-  PI4 spec ready at `/Users/edgy/.claude/jobs/6da7233d/tmp/PI4-spec.md`; re-dispatch once re-authed.
+- **Blockers**: none (Codex auth hit a "token could not be refreshed / signed into another account"
+  failure on the first PI4 dispatch 2026-06-25; user re-authed, PI4 re-ran fine).
