@@ -164,6 +164,34 @@ gate green. **PI3 watch-item RESOLVED**: live `openai-codex` token `expiresAt` i
 getAccessToken refresh comparison is correct. Note: these mechanical/test fixes were done by me (PM),
 not Codex — Codex's sandbox cannot run `test:browser`, so only I can verify browser tests.
 
+## SMOKE TEST (2026-06-26): PM runs on pi end-to-end ✅ — found PM-UX/behavior gaps to harden
+
+Drove the live app. Diagnosed via a temp `ws.ts` `Effect.onError` log (reverted): the original "Failed
+to start PM runtime" was **"Orchestrator mode is not enabled for project"** (PmRuntime.ts:259 guard) —
+all projects had empty `orchestrator_config_json={}`; user had set only the GLOBAL `orchestratorDefaults.pmModelSelection`
+(`{openai-codex, gpt-5.4}`), not the per-project config. After enabling orchestrator on the project +
+setting the PM model there, **codex worked — the PM responded** (credential/model/adapter all fine;
+codex `expiresAt` confirmed ms-epoch). So the pi-provider feature is proven E2E.
+
+**Gaps found (fix queue, specs in `/Users/edgy/.claude/jobs/6da7233d/tmp/`):**
+- **X1 (server) PM project context** — `PM_SYSTEM_PROMPT` (PmRuntime.ts:129-133) is static, no project
+  identity; `pmTools.ts` tools take `projectId`/`taskId` as inputs → PM asked the human for a "project/repo
+  id". Fix: `buildPmSystemPrompt(project)` + scope tools to the injected project. Spec `X1-pm-context-spec.md`. **IN PROGRESS.**
+- **X2 (server) human input surfacing** — sent PM messages don't render; only PM output does.
+  `before_agent_start`→`dispatchUserMessage(event.prompt)` (PmEventProjection.ts:185) uses the drained
+  CONCATENATED payload per agent-turn (not per message / not on follow-ups). Fix: surface each human
+  message deterministically at send (`ws.ts` orchestrator.sendMessage ~:1020 / PmReEntryQueue), exactly once.
+- **X3 (server) PM model inheritance** — `resolvePmHarnessConfig` (PmRuntime.ts:256) reads project-only
+  `pmModelSelection`; must fall back to global `orchestratorDefaults.pmModelSelection` (user decided
+  inherit-global). `enabled` stays per-project (correct).
+- **X4 (web) pi-only PM picker** — `PmModelSection` shoehorns pi providers into the worker
+  `BackendModelPicker` (maps piProvider↔instanceId, shows ALL providers grayed-out). Build a dedicated
+  pi picker: only enabled/connected pi providers + resolvable models.
+
+Also: worker stages (planner/work/…) need a **provider instance** (Codex/Claude) in Connections — user
+has NONE (`providerInstances={}`); that's config, not code. Dev server (devserver2) restarts on each
+server edit (node --watch) during Codex runs — restart it clean after the fixes land.
+
 ## Codex handoff mechanics (for resume)
 
 - Hand off via the `codex:codex-rescue` subagent (Agent tool): it runs
