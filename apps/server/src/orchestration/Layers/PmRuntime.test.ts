@@ -58,6 +58,7 @@ import type { PiAgentAdapterOptions } from "../pi/PiAgentAdapter.ts";
 import { PiOAuthCredentialStore } from "../pi/PiOAuthCredentialStore.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
+  buildPmSystemPrompt,
   makePiProjectRuntimeFactoryWithOptions,
   makePmRuntimeLive,
   resolvePmHarnessResources,
@@ -1642,4 +1643,16 @@ diff --git a/.env b/.env
       assert.strictEqual(consumeCalls.length, 1);
     }),
   );
+});
+
+describe("buildPmSystemPrompt", () => {
+  it("scopes the prompt to the project and forbids asking for ids", () => {
+    const prompt = buildPmSystemPrompt(project);
+    assert.include(prompt, String(project.id));
+    assert.include(prompt, "Project");
+    assert.include(prompt, "/tmp/project");
+    assert.include(prompt, "never ask the human for a project id");
+    // Existing role guidance is preserved.
+    assert.include(prompt, "Use the stage roles precisely");
+  });
 });

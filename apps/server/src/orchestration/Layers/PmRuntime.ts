@@ -132,6 +132,23 @@ const PM_SYSTEM_PROMPT = [
   "Use tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
 ].join("\n");
 
+/**
+ * The PM system prompt scoped to a specific project: prepends the project
+ * identity + "operate on this project, never ask for ids" framing to the static
+ * role guidance, so the PM acts on the project it is attached to instead of
+ * asking the human for a project/repo id.
+ */
+export const buildPmSystemPrompt = (project: {
+  readonly id: string;
+  readonly title: string;
+  readonly workspaceRoot: string;
+}): string =>
+  [
+    `You are scoped to project "${project.title}" (project id: ${project.id}), workspace root ${project.workspaceRoot}.`,
+    `Operate on THIS project only — never ask the human for a project id or repo id; when a tool needs a projectId, use ${project.id}. Create tasks and hand off stages for this project directly.`,
+    PM_SYSTEM_PROMPT,
+  ].join("\n");
+
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" ||
   event.type === "task.stage-blocked" ||
@@ -1112,7 +1129,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
           model,
           tools,
           ...(resources !== undefined ? { resources } : {}),
-          systemPrompt: PM_SYSTEM_PROMPT,
+          systemPrompt: buildPmSystemPrompt(project),
           getApiKeyAndHeaders: async () =>
             credential.apiKey === undefined ? undefined : { apiKey: credential.apiKey },
         });
