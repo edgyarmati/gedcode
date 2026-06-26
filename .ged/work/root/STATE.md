@@ -193,6 +193,13 @@ codex `expiresAt` confirmed ms-epoch). So the pi-provider feature is proven E2E.
 - **X3 (server) PM model inheritance** — `resolvePmHarnessConfig` (PmRuntime.ts:256) reads project-only
   `pmModelSelection`; must fall back to global `orchestratorDefaults.pmModelSelection` (user decided
   inherit-global). `enabled` stays per-project (correct).
+  **DONE `7f0915227`** (run by user via Codex CLI; tests timed out in their env but pass here 25/25):
+  `resolvePmHarnessConfig` resolves `project ?? settings.orchestratorDefaults.pmModelSelection ?? null`,
+  settings read moved up, enabled guard unchanged. Gate green here.
+
+**Design decision (2026-06-26):** PM stays on **pi**. Driver-based read-only PM (Codex/Claude + MCP
+orchestration tools, enforced read-only) deferred as a V2 — captured in memory
+`orchestrator-pm-harness-decision.md`; `PiAgentAdapterShape` is the swap seam. X4 (pi-only picker) is the last X-fix.
 - **X4 (web) pi-only PM picker** — `PmModelSection` shoehorns pi providers into the worker
   `BackendModelPicker` (maps piProvider↔instanceId, shows ALL providers grayed-out). Build a dedicated
   pi picker: only enabled/connected pi providers + resolvable models.
