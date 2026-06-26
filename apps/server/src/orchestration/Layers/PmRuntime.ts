@@ -68,7 +68,7 @@ import {
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
-import { PmRuntimeError } from "../pi/Errors.ts";
+import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import {
   makePiAgentAdapter,
@@ -1336,6 +1336,21 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
           });
         });
         const runtime: PmProjectRuntime = {
+          surfaceUserMessage: (message) =>
+            ensureRuntimeActive.pipe(
+              Effect.andThen(
+                eventProjection
+                  .dispatchUserMessage(message)
+                  .pipe(
+                    Effect.mapError(
+                      toPmRuntimeError(
+                        "PmProjectRuntime.surfaceUserMessage",
+                        "Failed to surface PM user message.",
+                      ),
+                    ),
+                  ),
+              ),
+            ),
           enqueue: (message) => ensureRuntimeActive.pipe(Effect.andThen(queue.enqueue(message))),
           drain: ensureRuntimeActive.pipe(
             Effect.andThen(queue.drain),

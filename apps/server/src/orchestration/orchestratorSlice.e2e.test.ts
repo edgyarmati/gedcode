@@ -193,6 +193,10 @@ function makePmRuntimeLayer(input: {
 }) {
   const consumed = new Set<string>();
   const projectRuntime: PmProjectRuntime = {
+    surfaceUserMessage: (message) =>
+      Effect.sync(() => {
+        input.messages.push(`surface:${message}`);
+      }),
     enqueue: (message) =>
       Effect.sync(() => {
         input.messages.push(message);

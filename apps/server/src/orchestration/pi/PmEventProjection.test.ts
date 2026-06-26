@@ -95,7 +95,59 @@ const makeLayer = (commands: OrchestrationCommand[]) =>
   );
 
 describe("PmEventProjection", () => {
-  it.effect("projects the PM prompt as a user message before agent output", () => {
+  it.effect("surfaces explicit human PM messages in order before PM output", () => {
+    const commands: OrchestrationCommand[] = [];
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+      });
+
+      yield* runtime.dispatchUserMessage("First human message.");
+      yield* runtime.dispatchUserMessage("Second human message.");
+      yield* runtime.project({
+        type: "message_start",
+        message: assistantMessage("PM output"),
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "message_end",
+        message: assistantMessage("PM output"),
+      } satisfies AgentHarnessEvent);
+
+      assert.deepStrictEqual(
+        commands.map((command) => command.type),
+        [
+          "thread.create",
+          "thread.message.user.append",
+          "thread.message.user.append",
+          "thread.message.assistant.delta",
+          "thread.message.assistant.complete",
+        ],
+      );
+
+      const userMessageCommands = commands.filter(
+        (
+          command,
+        ): command is Extract<OrchestrationCommand, { type: "thread.message.user.append" }> =>
+          command.type === "thread.message.user.append",
+      );
+      assert.deepStrictEqual(
+        userMessageCommands.map((command) => command.text),
+        ["First human message.", "Second human message."],
+      );
+      assert.ok(userMessageCommands.every((command) => command.threadId === runtime.pmThreadId));
+
+      const assistantDeltaCommand = commands[3];
+      assert.strictEqual(assistantDeltaCommand?.type, "thread.message.assistant.delta");
+      if (assistantDeltaCommand?.type === "thread.message.assistant.delta") {
+        assert.strictEqual(assistantDeltaCommand.threadId, runtime.pmThreadId);
+        assert.strictEqual(assistantDeltaCommand.delta, "PM output");
+      }
+    }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
+  });
+
+  it.effect("does not surface pi before_agent_start prompts as user messages", () => {
     const commands: OrchestrationCommand[] = [];
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
@@ -106,20 +158,10 @@ describe("PmEventProjection", () => {
 
       yield* runtime.project({
         type: "before_agent_start",
-        prompt: "Please split this into tasks.",
+        prompt: "Settlement re-entry context should not render as a human message.",
       } as AgentHarnessEvent);
 
-      assert.deepStrictEqual(
-        commands.map((command) => command.type),
-        ["thread.create", "thread.message.user.append"],
-      );
-
-      const userMessageCommand = commands[1];
-      assert.strictEqual(userMessageCommand?.type, "thread.message.user.append");
-      if (userMessageCommand?.type === "thread.message.user.append") {
-        assert.strictEqual(userMessageCommand.threadId, runtime.pmThreadId);
-        assert.strictEqual(userMessageCommand.text, "Please split this into tasks.");
-      }
+      assert.deepStrictEqual(commands, []);
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 

@@ -689,6 +689,7 @@ const buildAppUnderTest = (options?: {
         Layer.mock(PmProjectRuntimeFactory)({
           getOrCreate: () =>
             Effect.succeed({
+              surfaceUserMessage: () => Effect.void,
               enqueue: () => Effect.void,
               drain: Effect.void,
             }),
@@ -3462,6 +3463,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
+      const surfacedMessages: string[] = [];
+      const runtimeCalls: string[] = [];
       const runtimeProjects: ProjectId[] = [];
       const drainStarted = yield* Deferred.make<void>();
 
@@ -3484,9 +3487,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               Effect.sync(() => {
                 runtimeProjects.push(loadedProject.id);
                 return {
+                  surfaceUserMessage: (message) =>
+                    Effect.sync(() => {
+                      surfacedMessages.push(message);
+                      runtimeCalls.push(`surface:${message}`);
+                    }),
                   enqueue: (message) =>
                     Effect.sync(() => {
                       enqueuedMessages.push(message);
+                      runtimeCalls.push(`enqueue:${message}`);
                     }),
                   drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
                 };
@@ -3506,7 +3515,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             assert.deepEqual(sendResult, { accepted: true });
             yield* Deferred.await(drainStarted).pipe(Effect.timeout("1 second"));
             assert.deepEqual(runtimeProjects, [projectId]);
+            assert.deepEqual(surfacedMessages, ["What is next?"]);
             assert.deepEqual(enqueuedMessages, ["What is next?"]);
+            assert.deepEqual(runtimeCalls, ["surface:What is next?", "enqueue:What is next?"]);
 
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(

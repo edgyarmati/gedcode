@@ -10,12 +10,14 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationCommand,
   type OrchestrationGetFullThreadDiffResult,
   type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
   type OrchestrationThread,
 } from "@t3tools/contracts";
+import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { assert, describe, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
@@ -246,6 +248,10 @@ const makeLayer = (input: {
   const readEventCursors = input.readEventCursors ?? [];
   const latestCheckpointTurnCount = input.latestCheckpointTurnCount ?? 0;
   const projectRuntime: PmProjectRuntime = {
+    surfaceUserMessage: (message) =>
+      Effect.sync(() => {
+        input.messages.push(`surface:${message}`);
+      }),
     enqueue: (message) =>
       Effect.sync(() => {
         input.messages.push(message);
@@ -446,13 +452,18 @@ const makeLayer = (input: {
 const makeFactoryCaptureLayer = (input?: {
   readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
+  readonly dispatchCalls?: OrchestrationCommand[];
 }) =>
   Layer.mergeAll(
     SqlitePersistenceMemory,
     NodeServices.layer,
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
-      dispatch: () => Effect.succeed({ sequence: 1 }),
+      dispatch: (command) =>
+        Effect.sync(() => {
+          input?.dispatchCalls?.push(command);
+          return { sequence: input?.dispatchCalls?.length ?? 1 };
+        }),
       streamDomainEvents: input?.streamDomainEvents ?? Stream.empty,
       streamShellEvents: Stream.empty,
     }),
@@ -732,6 +743,82 @@ describe("PmRuntime", () => {
 
   it("omits PM harness resources when no configured playbook resolves", () => {
     assert.strictEqual(resolvePmHarnessResources(["unknown"]), undefined);
+  });
+
+  it.effect("does not surface queued settlement prompts as human PM messages", () => {
+    const dispatchCalls: OrchestrationCommand[] = [];
+    return Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "test-openai-key" },
+        Effect.gen(function* () {
+          const events = yield* Queue.unbounded<AgentHarnessEvent>();
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: (() =>
+              Effect.succeed({
+                events: Stream.fromQueue(events),
+                isIdle: Effect.succeed(true),
+                latestAssistantUsage: Effect.sync(() => undefined),
+                waitForIdle: Effect.void,
+                prompt: (text) =>
+                  Effect.gen(function* () {
+                    const assistant = fauxAssistantMessage("PM handled settlement");
+                    yield* Queue.offer(events, {
+                      type: "before_agent_start",
+                      prompt: text,
+                    } as AgentHarnessEvent);
+                    yield* Queue.offer(events, {
+                      type: "message_start",
+                      message: assistant,
+                    } satisfies AgentHarnessEvent);
+                    yield* Queue.offer(events, {
+                      type: "message_end",
+                      message: assistant,
+                    } satisfies AgentHarnessEvent);
+                    return assistant;
+                  }),
+                followUp: () => Effect.void,
+                compact: () =>
+                  Effect.succeed({
+                    summary: "summary",
+                    firstKeptEntryId: "entry-1",
+                    tokensBefore: 1,
+                  }),
+                setModel: () => Effect.void,
+                setResources: () => Effect.void,
+                abort: Effect.void,
+              })) satisfies NonNullable<
+              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            >["makePiAgentAdapterOverride"],
+          });
+
+          const runtime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          yield* runtime.enqueue("settlement re-entry payload");
+          yield* runtime.drain;
+          for (
+            let index = 0;
+            index < 20 &&
+            !dispatchCalls.some((command) => command.type === "thread.message.assistant.complete");
+            index += 1
+          ) {
+            yield* Effect.yieldNow;
+          }
+
+          assert.deepStrictEqual(
+            dispatchCalls.map((command) => command.type),
+            [
+              "thread.create",
+              "thread.message.assistant.delta",
+              "thread.message.assistant.complete",
+            ],
+          );
+          assert.strictEqual(
+            dispatchCalls.some((command) => command.type === "thread.message.user.append"),
+            false,
+          );
+          yield* Queue.shutdown(events);
+        }).pipe(Effect.provide(makeFactoryCaptureLayer({ dispatchCalls }))),
+      ),
+    );
   });
 
   it.effect(

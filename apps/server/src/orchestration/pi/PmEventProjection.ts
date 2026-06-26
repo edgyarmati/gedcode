@@ -183,7 +183,6 @@ export const makePmEventProjectionRuntime = (input: {
     ) {
       switch (event.type) {
         case "before_agent_start": {
-          yield* dispatchUserMessage(event.prompt);
           return;
         }
 
@@ -286,6 +285,7 @@ export const makePmEventProjectionRuntime = (input: {
 
     return {
       pmThreadId,
+      dispatchUserMessage,
       project: processEvent,
       enqueue: worker.enqueue,
       drain: worker.drain,

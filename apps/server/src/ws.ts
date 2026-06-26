@@ -1014,6 +1014,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     }),
                 ),
               );
+              yield* runtime.surfaceUserMessage(input.message).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationDispatchCommandError({
+                      message: "Failed to surface PM user message",
+                      cause,
+                    }),
+                ),
+              );
               yield* runtime.enqueue(input.message).pipe(
                 Effect.mapError(
                   (cause) =>

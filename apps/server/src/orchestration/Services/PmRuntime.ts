@@ -15,6 +15,7 @@ import type * as Scope from "effect/Scope";
 import type { PmRuntimeError } from "../pi/Errors.ts";
 
 export interface PmProjectRuntime {
+  readonly surfaceUserMessage: (message: string) => Effect.Effect<void, PmRuntimeError>;
   readonly enqueue: (message: string) => Effect.Effect<void, PmRuntimeError>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
 }

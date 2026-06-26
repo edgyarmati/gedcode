@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Surface each human message sent to the Orchestrator PM immediately in the PM conversation while keeping settlement and quota re-entry prompts out of the visible user-message timeline.
 - Fix: Scope the Orchestrator PM system prompt to its project (project id, title, workspace root) and instruct the PM to operate on that project instead of asking the human for a project or repo id.
 - UI: Make the pi OAuth login modal auto-detect redirect-based listener completion from live settings, while keeping manual code paste completion for device-code flows.
 - Fix: Preserve sparse Orchestrator project config during event replay while normalizing only legacy worker-shaped PM model selections to an unconfigured PM.
