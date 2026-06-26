@@ -277,7 +277,13 @@ const resolvePmHarnessConfig = (
         `Orchestrator mode is not enabled for project '${project.id}'.`,
       );
     }
-    const pmModelSelection = config.value.pmModelSelection;
+    const settings = yield* services.serverSettings.getSettings.pipe(
+      Effect.mapError((cause) =>
+        makeNoPmRuntimeError("Failed to read server settings for PM model selection.", cause),
+      ),
+    );
+    const pmModelSelection =
+      config.value.pmModelSelection ?? settings.orchestratorDefaults.pmModelSelection ?? null;
     if (pmModelSelection === null) {
       return yield* makeNoPmRuntimeError(
         `Project '${project.id}' has no PM model selection configured.`,
@@ -292,14 +298,6 @@ const resolvePmHarnessConfig = (
         `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
       );
     }
-    const settings = yield* services.serverSettings.getSettings.pipe(
-      Effect.mapError((cause) =>
-        makeNoPmRuntimeError(
-          `Failed to read server settings for PM provider '${provider}'.`,
-          cause,
-        ),
-      ),
-    );
     const credential = yield* resolvePiCredential({
       provider,
       settings,

@@ -635,7 +635,7 @@ const histogramCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: st
 };
 
 describe("PmRuntime", () => {
-  it.effect("starts the PM runtime with a configured pi provider credential", () =>
+  it.effect("prefers an explicit project PM model selection over the global default", () =>
     Effect.scoped(
       withEnvVars(
         { OPENAI_API_KEY: "env-openai-key" },
@@ -660,6 +660,12 @@ describe("PmRuntime", () => {
           Effect.provide(
             makeFactoryCaptureLayer({
               serverSettingsOverrides: {
+                orchestratorDefaults: {
+                  pmModelSelection: {
+                    piProvider: PiProviderId.make("openai"),
+                    model: "gpt-5.5",
+                  },
+                },
                 piProviders: {
                   [PiProviderId.make("openai")]: {
                     enabled: true,
@@ -674,7 +680,49 @@ describe("PmRuntime", () => {
     ),
   );
 
-  it.effect("leaves a null PM model selection unconfigured without creating an adapter", () =>
+  it.effect("uses the global PM model selection when the project selection is null", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const captured: PiAgentAdapterOptions[] = [];
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+        });
+
+        yield* factory.getOrCreate({
+          ...project,
+          orchestratorConfig: {
+            enabled: true,
+            pmModelSelection: null,
+          },
+        });
+
+        assert.strictEqual(captured.length, 1);
+        assert.strictEqual(captured[0]?.model.provider, "openai");
+        assert.strictEqual(captured[0]?.model.id, "gpt-5");
+      }).pipe(
+        Effect.provide(
+          makeFactoryCaptureLayer({
+            serverSettingsOverrides: {
+              orchestratorDefaults: {
+                pmModelSelection: {
+                  piProvider: PiProviderId.make("openai"),
+                  model: "gpt-5",
+                },
+              },
+              piProviders: {
+                [PiProviderId.make("openai")]: {
+                  enabled: true,
+                  apiKey: { value: "test-key" },
+                },
+              },
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("leaves a missing PM model selection unconfigured without creating an adapter", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const captured: PiAgentAdapterOptions[] = [];
