@@ -187,6 +187,9 @@ codex `expiresAt` confirmed ms-epoch). So the pi-provider feature is proven E2E.
   `before_agent_start`→`dispatchUserMessage(event.prompt)` (PmEventProjection.ts:185) uses the drained
   CONCATENATED payload per agent-turn (not per message / not on follow-ups). Fix: surface each human
   message deterministically at send (`ws.ts` orchestrator.sendMessage ~:1020 / PmReEntryQueue), exactly once.
+  **DONE `690687d41`** (run by the user via Codex CLI — interactive Codex works; the background companion
+  was stalling 4×). Added `runtime.surfaceUserMessage` → projection `dispatchUserMessage`; ws.ts calls it
+  before enqueue; `before_agent_start` no longer dispatches a user message. Gate green here (typecheck flake re-verified).
 - **X3 (server) PM model inheritance** — `resolvePmHarnessConfig` (PmRuntime.ts:256) reads project-only
   `pmModelSelection`; must fall back to global `orchestratorDefaults.pmModelSelection` (user decided
   inherit-global). `enabled` stays per-project (correct).
