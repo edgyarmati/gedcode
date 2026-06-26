@@ -174,9 +174,15 @@ setting the PM model there, **codex worked — the PM responded** (credential/mo
 codex `expiresAt` confirmed ms-epoch). So the pi-provider feature is proven E2E.
 
 **Gaps found (fix queue, specs in `/Users/edgy/.claude/jobs/6da7233d/tmp/`):**
+
 - **X1 (server) PM project context** — `PM_SYSTEM_PROMPT` (PmRuntime.ts:129-133) is static, no project
   identity; `pmTools.ts` tools take `projectId`/`taskId` as inputs → PM asked the human for a "project/repo
-  id". Fix: `buildPmSystemPrompt(project)` + scope tools to the injected project. Spec `X1-pm-context-spec.md`. **IN PROGRESS.**
+  id". Fix: `buildPmSystemPrompt(project)` + scope tools to the injected project. Spec `X1-pm-context-spec.md`.
+  **DONE `598e8524a`** — system-prompt-only (dropped the tool-schema rework that stalled Codex);
+  `buildPmSystemPrompt(project)` prepends project id/title/workspaceRoot + "operate on THIS project,
+  never ask for ids, use this project id". **Implemented by me (PM), not Codex** — Codex (gpt-5.5)
+  STALLED 3× today (OAUTHUX verify; X1-original 35m no edits; X1-simplified 25m no edits — spinning in
+  rg/sed explore loops, working tree clean). X1 is a 1-function change → did it directly + gate-green.
 - **X2 (server) human input surfacing** — sent PM messages don't render; only PM output does.
   `before_agent_start`→`dispatchUserMessage(event.prompt)` (PmEventProjection.ts:185) uses the drained
   CONCATENATED payload per agent-turn (not per message / not on follow-ups). Fix: surface each human
