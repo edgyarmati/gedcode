@@ -251,7 +251,20 @@ instance in Connections — providerInstances was empty.)
 `readOnly`/`enableOrchestrationTools` session flags (contracts), extracted `makePmToolExecutors` (pmTools,
 shared by pi AgentTools + MCP), `orchestration/claude/pmMcpServer.ts`, ClaudeAdapter `buildClaudeReadOnlyToolPolicy`,
 proof test (orchestration MCP tool invocable + Write/Bash denied). NOT wired to PM runtime yet. Gate green
-here. **W2 next** (DriverPmAdapter on the read-only Claude session, PiAgentAdapterShape, into PmRuntime).
+here. **W2 DONE `fd19b82c6`** (additive): `orchestration/claude/DriverPmAdapter.ts` implements
+PiAgentAdapterShape over ClaudeAdapter — starts the PM thread as a read-only Claude session + orchestration
+MCP (W1), bridges Claude driver events → AgentHarnessEvent (validated against the REAL PmEventProjection in
+the test), persistent/resumable per project via ProviderSessionDirectory. compact()=no-op, setResources/
+setModel=future-turns, images unsupported. NOT wired to PmRuntime; pmModelSelection unchanged. Gate green
+(tsgo flake hit effect-codex-app-server — passes standalone; gedcode standalone clean). **WATCH (live):**
+the read-only/plan Claude session executing its orchestration MCP tools is test-validated only with a
+MOCKED session — confirm against the real Claude API in/after W3.
+
+**W3 next — ATOMIC SWAP (PM runs on Claude):** pmModelSelection `PiModelSelection`→worker `ModelSelection`
+{instanceId,model} (contracts, lenient-decode legacy pi→null); resolver returns the PM provider instance+model
+(project ?? global); PmRuntime builds DriverPmAdapter (W2) from the resolved CLAUDE instance + its ClaudeAdapter
+(replacing PiAgentAdapter/PmModelResolver pi-credential path); web PM picker → worker BackendModelPicker
+(replace PiPmModelPicker). PM model must be a CLAUDE instance for now (Codex parity = W5); non-Claude → clear error.
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
