@@ -15,21 +15,27 @@ export const TASK_WORKTREE_HOOKS_DIR = ".gedcode-hooks";
  */
 export const WORKER_RUNTIME_MODE_CEILING: RuntimeMode = "auto-accept-edits";
 
+export function resolveWorkerStageRuntimeMode(input: {
+  readonly allowFullAccessWorkers: boolean;
+}): RuntimeMode {
+  return input.allowFullAccessWorkers ? "full-access" : "approval-required";
+}
+
 /**
- * Runtime-mode clamp for orchestrator worker stages (design §7, §13 risk row 4).
+ * Runtime-mode policy for orchestrator worker stages (design §7, §13 risk row 4).
  *
- * A worker must never silently inherit `full-access`: when the requested mode is
- * `full-access` it is clamped down to {@link WORKER_RUNTIME_MODE_CEILING} unless a
- * human has explicitly opted in via `allowFullAccessWorkers` (resolved per
- * project, falling back to the global default — both default to `false`). Every
- * other mode is already at or below the worker ceiling and passes through
- * unchanged. The opt-in flag only rides the human/client write path, so a
- * prompt-injected PM cannot raise its own workers to `full-access`.
+ * A worker runs `full-access` only after a human has explicitly opted in via
+ * `allowFullAccessWorkers` (resolved per project, then global default — both
+ * default to `false`). With the opt-in off, a requested `full-access` mode is
+ * lowered to {@link WORKER_RUNTIME_MODE_CEILING}; other modes pass through.
  */
 export function clampWorkerRuntimeMode(input: {
   readonly requested: RuntimeMode;
   readonly allowFullAccessWorkers: boolean;
 }): RuntimeMode {
+  if (input.allowFullAccessWorkers) {
+    return "full-access";
+  }
   if (input.requested === "full-access" && !input.allowFullAccessWorkers) {
     return WORKER_RUNTIME_MODE_CEILING;
   }

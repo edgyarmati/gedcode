@@ -215,17 +215,23 @@ describe("resolveResourceLimit", () => {
     ).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
   });
 
-  it("preserves allowFullAccessWorkers OR semantics", () => {
+  it("prefers project allowFullAccessWorkers over global defaults", () => {
     expect(
       resolveAllowFullAccessWorkers({
         config: { resourceLimits: { allowFullAccessWorkers: false } },
         defaults: { allowFullAccessWorkers: true },
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       resolveAllowFullAccessWorkers({
         config: { resourceLimits: { allowFullAccessWorkers: true } },
         defaults: { allowFullAccessWorkers: false },
+      }),
+    ).toBe(true);
+    expect(
+      resolveAllowFullAccessWorkers({
+        config: { resourceLimits: {} },
+        defaults: { allowFullAccessWorkers: true },
       }),
     ).toBe(true);
     expect(

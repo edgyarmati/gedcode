@@ -367,7 +367,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("starts a stage with clamped worker runtime and an existing project model", () =>
+  it.effect("starts a stage with approval-required worker runtime by default", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
 
@@ -406,6 +406,108 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
         },
+      });
+    }),
+  );
+
+  it.effect("starts a stage with full-access runtime when the project opts in", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "review", currentStageThreadId: null },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            resourceLimits: { allowFullAccessWorkers: true },
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-full-access-project"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      const events = toEvents(result);
+      const threadCreated = events.find((event) => event.type === "thread.created");
+      const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
+      expect(threadCreated?.payload).toMatchObject({
+        runtimeMode: "full-access",
+      });
+      expect(turnRequested?.payload).toMatchObject({
+        runtimeMode: "full-access",
+      });
+    }),
+  );
+
+  it.effect("starts a stage with full-access runtime when the global default opts in", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-full-access-global"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      const events = toEvents(result);
+      const threadCreated = events.find((event) => event.type === "thread.created");
+      const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
+      expect(threadCreated?.payload).toMatchObject({
+        runtimeMode: "full-access",
+      });
+      expect(turnRequested?.payload).toMatchObject({
+        runtimeMode: "full-access",
+      });
+    }),
+  );
+
+  it.effect("keeps approval-required runtime when the project disables a global opt-in", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "review", currentStageThreadId: null },
+        {
+          orchestratorConfig: {
+            enabled: true,
+            resourceLimits: { allowFullAccessWorkers: false },
+          },
+        },
+      );
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-full-access-project-false"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      const events = toEvents(result);
+      const threadCreated = events.find((event) => event.type === "thread.created");
+      const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
+      expect(threadCreated?.payload).toMatchObject({
+        runtimeMode: "approval-required",
+      });
+      expect(turnRequested?.payload).toMatchObject({
+        runtimeMode: "approval-required",
       });
     }),
   );

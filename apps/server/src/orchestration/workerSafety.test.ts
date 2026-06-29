@@ -4,6 +4,7 @@ import {
   clampWorkerRuntimeMode,
   isSensitiveWorkerEnvironmentName,
   makeWorkerProviderEnvironment,
+  resolveWorkerStageRuntimeMode,
 } from "./workerSafety.ts";
 
 describe("worker safety environment", () => {
@@ -36,26 +37,36 @@ describe("worker safety environment", () => {
 });
 
 describe("worker runtime-mode clamp", () => {
+  it("resolves the stage-start mode from the full-access worker opt-in", () => {
+    expect(resolveWorkerStageRuntimeMode({ allowFullAccessWorkers: false })).toBe(
+      "approval-required",
+    );
+    expect(resolveWorkerStageRuntimeMode({ allowFullAccessWorkers: true })).toBe("full-access");
+  });
+
   it("lowers full-access to auto-accept-edits when the opt-in is off", () => {
     expect(
       clampWorkerRuntimeMode({ requested: "full-access", allowFullAccessWorkers: false }),
     ).toBe("auto-accept-edits");
   });
 
-  it("keeps full-access when a human opted in", () => {
-    expect(clampWorkerRuntimeMode({ requested: "full-access", allowFullAccessWorkers: true })).toBe(
-      "full-access",
-    );
+  it("promotes worker sessions to full-access when a human opted in", () => {
+    for (const requested of ["approval-required", "auto-accept-edits", "full-access"] as const) {
+      expect(
+        clampWorkerRuntimeMode({
+          requested,
+          allowFullAccessWorkers: true,
+        }),
+      ).toBe("full-access");
+    }
   });
 
-  it("passes modes at or below the ceiling through unchanged regardless of the opt-in", () => {
-    for (const allowFullAccessWorkers of [false, true]) {
-      expect(
-        clampWorkerRuntimeMode({ requested: "approval-required", allowFullAccessWorkers }),
-      ).toBe("approval-required");
-      expect(
-        clampWorkerRuntimeMode({ requested: "auto-accept-edits", allowFullAccessWorkers }),
-      ).toBe("auto-accept-edits");
-    }
+  it("passes modes below the ceiling through unchanged when the opt-in is off", () => {
+    expect(
+      clampWorkerRuntimeMode({ requested: "approval-required", allowFullAccessWorkers: false }),
+    ).toBe("approval-required");
+    expect(
+      clampWorkerRuntimeMode({ requested: "auto-accept-edits", allowFullAccessWorkers: false }),
+    ).toBe("auto-accept-edits");
   });
 });

@@ -156,6 +156,7 @@ describe("ProviderCommandReactor", () => {
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly orchestratorConfig?: Record<string, unknown>;
+    readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir = input?.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
@@ -366,7 +367,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
     );
-    const serverSettingsLayer = ServerSettingsService.layerTest();
+    const serverSettingsLayer = ServerSettingsService.layerTest(input?.serverSettingsOverrides);
     const workerStartAdmissionLayer = WorkerStartAdmissionLive.pipe(
       Layer.provide(serverSettingsLayer),
     );
@@ -509,6 +510,43 @@ describe("ProviderCommandReactor", () => {
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
+    expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("does not promote regular chat threads when full-access workers are globally enabled", async () => {
+    const harness = await createHarness({
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-regular-global-optin"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-regular-global-optin"),
+          role: "user",
+          text: "hello reactor",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.runtimeMode).toBe("approval-required");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
@@ -708,6 +746,10 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "full-access",
+    });
 
     const readModelAfterStageStart = await harness.readModel();
     const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
@@ -715,6 +757,11 @@ describe("ProviderCommandReactor", () => {
     if (!stageThreadId) {
       return;
     }
+    const stageThreadAfterStart = readModelAfterStageStart.threads.find(
+      (thread) => thread.id === stageThreadId,
+    );
+    expect(stageThreadAfterStart?.runtimeMode).toBe("full-access");
+    expect(stageThreadAfterStart?.session?.runtimeMode).toBe("full-access");
 
     harness.startSession.mockClear();
     harness.sendTurn.mockClear();
@@ -751,6 +798,100 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
+  });
+
+  it("starts a full-access worker when the global default opts in", async () => {
+    const harness = await createHarness({
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-global-optin"),
+        taskId: asTaskId("task-global-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Global Opt-in",
+        pmMessageId: null,
+        branch: "orchestrator/task-global-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-global-optin"),
+        taskId: asTaskId("task-global-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "full-access",
+    });
+
+    const readModel = await harness.readModel();
+    const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
+  });
+
+  it("keeps approval-required workers when the project disables a global opt-in", async () => {
+    const harness = await createHarness({
+      orchestratorConfig: {
+        enabled: true,
+        resourceLimits: { allowFullAccessWorkers: false },
+      },
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-project-disable-global-optin"),
+        taskId: asTaskId("task-project-disable-global-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Project Disable",
+        pmMessageId: null,
+        branch: "orchestrator/task-project-disable-global-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-project-disable-global-optin"),
+        taskId: asTaskId("task-project-disable-global-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModel = await harness.readModel();
+    const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("approval-required");
+    expect(stageThread?.session?.runtimeMode).toBe("approval-required");
   });
 
   it("starts task workers with a secret-stripped environment override", async () => {

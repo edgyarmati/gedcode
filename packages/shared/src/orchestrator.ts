@@ -177,9 +177,9 @@ export function resolveResourceLimit(input: ResolveResourceLimitInput): number {
 }
 
 export function resolveAllowFullAccessWorkers(input: ResolveAllowFullAccessWorkersInput): boolean {
-  return (
-    input.config.resourceLimits?.allowFullAccessWorkers === true ||
-    input.defaults.allowFullAccessWorkers === true
+  return resolveConfigValue(
+    [input.config.resourceLimits?.allowFullAccessWorkers, input.defaults.allowFullAccessWorkers],
+    false,
   );
 }
 

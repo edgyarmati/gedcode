@@ -122,7 +122,7 @@ export type OrchestratorAutoCompactionDefaults = typeof OrchestratorAutoCompacti
  * (design §7, §13 risk row 4): it **defaults to `false`**, so worker stages can
  * never inherit the confirmed `DEFAULT_RUNTIME_MODE = "full-access"` hole unless
  * a human explicitly opts in. The provider command reactor resolves this flag
- * (the per-project value OR the global default) and feeds it to
+ * (the per-project value, falling back to the global default) and feeds it to
  * `clampWorkerRuntimeMode` (`orchestration/workerSafety.ts`), which lowers a
  * `full-access` worker to `auto-accept-edits` whenever the flag is `false`; the
  * contracts invariant test pins the `false` default.

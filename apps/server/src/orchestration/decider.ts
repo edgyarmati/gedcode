@@ -6,20 +6,14 @@ import {
   ThreadId,
   type OrchestrationCommand,
   type OrchestrationEvent,
-  type OrchestrationGateKind,
   type OrchestrationProject,
   type OrchestrationReadModel,
-  type OrchestrationStageRole,
-  type OrchestratorConfigJson,
-  type OrchestratorGatePolicy,
-  type OrchestratorGlobalDefaults,
-  type OrchestratorResourceLimits,
 } from "@t3tools/contracts";
 import {
+  resolveAllowFullAccessWorkers,
   resolveGatePolicy,
   resolveResourceLimit,
   resolveStages,
-  type OrchestratorResourceLimitKey,
 } from "@t3tools/shared/orchestrator";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -43,103 +37,14 @@ import {
 import { projectEvent } from "./projector.ts";
 import { resolveStageModelSelection } from "./stageModelSelection.ts";
 import { activeStageRoleForTaskStatus, prepareStageInstructions } from "./stageResolution.ts";
+import {
+  explicitlySetProjectConfig,
+  type SparseOrchestratorDefaults,
+} from "./orchestratorConfigResolution.ts";
+import { resolveWorkerStageRuntimeMode } from "./workerSafety.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
-
-type DeciderSparseTaskTypeConfig = {
-  readonly id: string;
-  readonly stages?: ReadonlyArray<OrchestrationStageRole>;
-  readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>>;
-};
-
-type DeciderSparseResourceLimits = Partial<{
-  -readonly [Key in OrchestratorResourceLimitKey]: OrchestratorResourceLimits[Key];
-}>;
-
-type DeciderSparseProjectConfig = {
-  readonly openPrAsDraft?: boolean;
-  readonly resourceLimits?: DeciderSparseResourceLimits | null;
-  readonly taskTypes?: ReadonlyArray<DeciderSparseTaskTypeConfig>;
-};
-
-type DeciderOrchestratorDefaults = Partial<Omit<OrchestratorGlobalDefaults, "gatePolicy">> & {
-  readonly gatePolicy?: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>>;
-};
-
-const resourceLimitKeys = [
-  "maxParallelTasks",
-  "maxParallelWorkers",
-  "maxStageHandoffs",
-  "maxRetriesPerStage",
-] as const satisfies ReadonlyArray<keyof OrchestratorResourceLimits>;
-
-const gatePolicyKeys = [
-  "classify",
-  "plan",
-  "work",
-  "review",
-  "land",
-] as const satisfies ReadonlyArray<OrchestrationGateKind>;
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function explicitlySetProjectConfig(rawConfig: OrchestratorConfigJson | undefined) {
-  const raw: Record<string, unknown> = rawConfig ?? {};
-  const resourceLimits = asRecord(raw.resourceLimits);
-  const sparseResourceLimits: DeciderSparseResourceLimits = {};
-  if (resourceLimits !== undefined) {
-    for (const key of resourceLimitKeys) {
-      if (typeof resourceLimits[key] === "number") {
-        sparseResourceLimits[key] = resourceLimits[key];
-      }
-    }
-    if (typeof resourceLimits.allowFullAccessWorkers === "boolean") {
-      sparseResourceLimits.allowFullAccessWorkers = resourceLimits.allowFullAccessWorkers;
-    }
-  }
-
-  const taskTypes = Array.isArray(raw.taskTypes)
-    ? raw.taskTypes.flatMap((rawTaskType): ReadonlyArray<DeciderSparseTaskTypeConfig> => {
-        const taskType = asRecord(rawTaskType);
-        if (taskType === undefined || typeof taskType.id !== "string") {
-          return [];
-        }
-
-        const gatePolicy = asRecord(taskType.gatePolicy);
-        const sparseGatePolicy: Partial<Record<OrchestrationGateKind, OrchestratorGatePolicy>> = {};
-        if (gatePolicy !== undefined) {
-          for (const key of gatePolicyKeys) {
-            if (gatePolicy[key] === "auto" || gatePolicy[key] === "require-approval") {
-              sparseGatePolicy[key] = gatePolicy[key];
-            }
-          }
-        }
-
-        return [
-          {
-            id: taskType.id,
-            ...(Array.isArray(taskType.stages)
-              ? { stages: taskType.stages as ReadonlyArray<OrchestrationStageRole> }
-              : {}),
-            ...(Object.keys(sparseGatePolicy).length > 0 ? { gatePolicy: sparseGatePolicy } : {}),
-          },
-        ];
-      })
-    : undefined;
-
-  return {
-    ...(typeof raw.openPrAsDraft === "boolean" ? { openPrAsDraft: raw.openPrAsDraft } : {}),
-    ...(Object.keys(sparseResourceLimits).length > 0
-      ? { resourceLimits: sparseResourceLimits }
-      : {}),
-    ...(taskTypes !== undefined ? { taskTypes } : {}),
-  } satisfies DeciderSparseProjectConfig;
-}
 
 function taskWorktreePath(input: { readonly workspaceRoot: string; readonly taskId: string }) {
   return `${input.workspaceRoot.replace(/[\\/]+$/, "")}/.gedcode/orchestrator/tasks/${input.taskId}`;
@@ -226,7 +131,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   readModel,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
-  readonly orchestratorDefaults?: DeciderOrchestratorDefaults;
+  readonly orchestratorDefaults?: SparseOrchestratorDefaults;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   ReadonlyArray<PlannedOrchestrationEvent>,
@@ -263,7 +168,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   readModel,
 }: {
   readonly command: OrchestrationCommand;
-  readonly orchestratorDefaults?: DeciderOrchestratorDefaults;
+  readonly orchestratorDefaults?: SparseOrchestratorDefaults;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
@@ -1185,6 +1090,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         role: command.role,
         rolePromptPrefixes: project.rolePromptPrefixes,
       });
+      const workerRuntimeMode = resolveWorkerStageRuntimeMode({
+        allowFullAccessWorkers: resolveAllowFullAccessWorkers({
+          config: projectConfig,
+          defaults: orchestratorDefaults,
+        }),
+      });
 
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
@@ -1219,7 +1130,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           title: `${task.title} (${command.role})`,
           modelSelection,
           gedWorkflowEnabled: false,
-          runtimeMode: "approval-required",
+          runtimeMode: workerRuntimeMode,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: task.branch,
           worktreePath: task.worktreePath,
@@ -1262,7 +1173,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId,
           modelSelection,
           gedWorkflowEnabled: false,
-          runtimeMode: "approval-required",
+          runtimeMode: workerRuntimeMode,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           createdAt: command.createdAt,
         },
