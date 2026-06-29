@@ -220,6 +220,12 @@ Run via the user's Codex CLI (background companion stalls; interactive Codex wor
   `workerSafety.ts:29-37 clampWorkerRuntimeMode`) only CLAMPS DOWN → toggling it does nothing. Fix:
   orchestrator worker stage-start runtimeMode = full-access when allowFullAccessWorkers (project ?? global)
   true, else approval-required; keep thread stored mode + reactor-applied mode consistent. **Decision B: full-access.**
+  **DONE `828ff62e9`** (user ran via Codex CLI; background companion stalled 5/5 — done): decider resolves
+  `resolveAllowFullAccessWorkers(project ?? global)` → `resolveWorkerStageRuntimeMode` → writes mode into
+  thread.created + turn-start; reactor uses same shared resolver (consistent stored/applied); extracted shared
+  `orchestratorConfigResolution.ts` + `@t3tools/shared resolveAllowFullAccessWorkers`; **also added `.ged/` to
+  `.oxfmtrc.json` ignore (fmt no longer mutates planning scratch)**. Gate green here. **Going forward: skip the
+  background companion (5/5 stalled today) — user runs prompts in their Codex CLI; I review+gate+commit.**
 - **Y2 (web) orch-only sidebar + PM thread filter + nav**: `/_orch` sets mode true (`routes/_orch.tsx:10`),
   `/_chat` never sets false → clicking a chat strands you; sidebar always lists chats. PM thread (`pm:` prefix,
   `pmThreadIdForProject`) shows in sidebar — filter at `store.ts selectSidebarThreadsForProjectRef ~2914-2926`
