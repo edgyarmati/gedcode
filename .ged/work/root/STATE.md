@@ -204,6 +204,19 @@ orchestration tools, enforced read-only) deferred as a V2 — captured in memory
 - **X4 (web) pi-only PM picker** — `PmModelSection` shoehorns pi providers into the worker
   `BackendModelPicker` (maps piProvider↔instanceId, shows ALL providers grayed-out). Build a dedicated
   pi picker: only enabled/connected pi providers + resolvable models.
+  **DONE `82dad7941`** (run by user via Codex CLI): new `PiPmModelPicker.tsx` (enabled pi providers only,
+  PiModelSelection direct, null=inherit, empty-state hint) wired into BOTH the project dialog + the global
+  defaults panel; worker pickers untouched. Gate green here incl. test:browser 24/24. (STATE.md slipped
+  into the X4 feature commit via `git add -u` — harmless; use explicit pathspecs.)
+
+## ✅ X-SERIES COMPLETE (2026-06-29): PM-UX hardening done — X1 `598e8524a` · X2 `690687d41` · X3 `7f0915227` · X4 `82dad7941`
+
+All four gate-green. Full pi-provider feature (PI1-PI6 + OAUTHUX) + the PM-UX fixes are in on
+`feat/orchestrator-mode` (NOT merged to main). Dev server restarted clean (devserver3). **Next: user
+re-tests the full flow** — PM acts on its project (no id-asking), human messages show, pi-only picker,
+PM model inherits global. To drive a task to a worker stage, user still needs a **provider instance
+(Codex/Claude) in Connections** (providerInstances was empty). Remaining Phase-5 (not started):
+worker isolation/sandbox, scale/perf, board UX. Driver-PM is a deferred V2 ([[orchestrator-pm-harness-decision]]).
 
 Also: worker stages (planner/work/…) need a **provider instance** (Codex/Claude) in Connections — user
 has NONE (`providerInstances={}`); that's config, not code. Dev server (devserver2) restarts on each
