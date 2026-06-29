@@ -241,8 +241,17 @@ tool-injection + enforced read-only (FOUNDATION/risk — prove it before buildin
 (PiAgentAdapterShape) on the Claude session, wired into PmRuntime · W3 PM model = worker ModelSelection
 (picker/resolver) · W4 surface PM turn errors (G) + composer cleanup (F) · W5 Codex parity · W6 remove pi.
 Reuse: pmTools/PmEventProjection/PmReEntryQueue/orchestration core/worker provider system. Implement via
-user's Codex CLI. **W1 starting.** (Pre-pivot: pi PM works but is being replaced; needs a worker provider
+user's Codex CLI. (Pre-pivot: pi PM works but is being replaced; needs a worker provider
 instance in Connections — providerInstances was empty.)
+
+**W1 DONE `6ebba93c6` (LINCHPIN PROVEN):** Claude Agent SDK 0.3.159 takes in-process MCP per session
+(`createSdkMcpServer`+`tool()`, zod schemas) via query `mcpServers`; enforced read-only =
+`permissionMode:"plan"` + allowedTools(Read/Grep/Glob + mcp__t3_orchestrator__*) + disallowedTools
+(Write/Edit/MultiEdit/Bash/…) + strictMcpConfig + canUseTool denial (defense-in-depth). Added
+`readOnly`/`enableOrchestrationTools` session flags (contracts), extracted `makePmToolExecutors` (pmTools,
+shared by pi AgentTools + MCP), `orchestration/claude/pmMcpServer.ts`, ClaudeAdapter `buildClaudeReadOnlyToolPolicy`,
+proof test (orchestration MCP tool invocable + Write/Bash denied). NOT wired to PM runtime yet. Gate green
+here. **W2 next** (DriverPmAdapter on the read-only Claude session, PiAgentAdapterShape, into PmRuntime).
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
