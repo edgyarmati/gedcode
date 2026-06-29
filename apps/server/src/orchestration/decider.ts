@@ -1071,6 +1071,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       }
 
       const modelSelection = resolveStageModelSelection({
+        orchestratorDefaults,
         project,
         task,
         role: command.role,

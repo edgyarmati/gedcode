@@ -41,6 +41,7 @@ import {
   buildOrchestrationConfigUpdate,
   buildEnabledPiProviderPickerEntries,
   orchestrationSettingsDraftsEqual,
+  resolveRoleDefaultSelection,
   seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
   type EditableOrchestratorGate,
@@ -620,7 +621,14 @@ export function ProjectOrchestrationSettingsDialog({
                   selection={draft.roleSelections[role]}
                   prefix={draft.rolePrefixes[role]}
                   instanceEntries={instanceEntries}
-                  defaultSelection={target?.defaultModelSelection ?? null}
+                  defaultSelection={
+                    target
+                      ? resolveRoleDefaultSelection(target, {
+                          defaultWorkerModelSelection:
+                            inheritedDefaults.defaultWorkerModelSelection,
+                        })
+                      : inheritedDefaults.defaultWorkerModelSelection
+                  }
                   onSelectionChange={handleSelectionChange}
                   onPrefixChange={handlePrefixChange}
                 />

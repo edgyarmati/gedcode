@@ -3,6 +3,7 @@ import {
   PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ModelSelection,
   type ProviderInstanceConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
@@ -130,6 +131,10 @@ describe("buildGedRoleSettingsPatch", () => {
 
 describe("Orchestrator global defaults settings logic", () => {
   const pmModelSelection = { piProvider: PiProviderId.make("openai"), model: "gpt-5" };
+  const workerModelSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("codex_worker"),
+    model: "gpt-5-worker",
+  };
 
   it("seeds the settings-panel draft from global defaults", () => {
     const draft = seedOrchestratorGlobalDefaultsDraft({
@@ -149,6 +154,7 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
       pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
       openPrAsDraft: true,
       autoCompaction: {
         enabled: false,
@@ -160,6 +166,7 @@ describe("Orchestrator global defaults settings logic", () => {
     });
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
+    expect(draft.defaultWorkerModelSelection).toEqual(workerModelSelection);
     expect(draft.optionalStages).toEqual({ review: false, verify: false });
     expect(draft.gatePolicy).toEqual({
       classify: "auto",
@@ -188,6 +195,7 @@ describe("Orchestrator global defaults settings logic", () => {
   it("builds a server settings patch with canonical stage order and pinned land gate", () => {
     const patch = buildOrchestratorGlobalDefaultsPatch({
       pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
       optionalStages: { review: false, verify: true },
       gatePolicy: {
         classify: "auto",
@@ -228,6 +236,7 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 180_000,
       worktreeReaperIntervalMinutes: 9,
       pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
       autoCompaction: {
         enabled: true,
         reserveTokens: 6_000,

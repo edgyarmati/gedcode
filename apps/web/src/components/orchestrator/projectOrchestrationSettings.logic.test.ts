@@ -434,6 +434,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
         pmModelSelection: pmSelection("openai", "gpt-5-pm"),
+        defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
         openPrAsDraft: true,
         autoCompaction: {
           enabled: true,
@@ -444,6 +445,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
       }),
     ).toEqual({
       pmModelSelection: pmSelection("openai", "gpt-5-pm"),
+      defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
       optionalStages: { review: false, verify: true },
       gatePolicy: {
         classify: "auto",
@@ -501,23 +503,30 @@ describe("buildEnabledPiProviderPickerEntries", () => {
 describe("resolveRoleDefaultSelection", () => {
   const project = {
     defaultModelSelection: selection("codex", "gpt-5-default"),
-    roleModelSelections: { review: selection("codex_project", "gpt-5-project") },
+  };
+  const globalDefaults = {
+    defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
   };
 
-  it("prefers the project per-role selection over the project default", () => {
-    expect(resolveRoleDefaultSelection("review", project)).toEqual(
-      selection("codex_project", "gpt-5-project"),
+  it("uses the global worker default before the project default", () => {
+    expect(resolveRoleDefaultSelection(project, globalDefaults)).toEqual(
+      selection("codex_global", "gpt-5-global"),
     );
   });
 
-  it("falls back to the project default when the role is unset", () => {
-    expect(resolveRoleDefaultSelection("work", project)).toEqual(
+  it("falls back to the project default when the global default is unset", () => {
+    expect(resolveRoleDefaultSelection(project, { defaultWorkerModelSelection: null })).toEqual(
       selection("codex", "gpt-5-default"),
     );
   });
 
-  it("is null when neither a role selection nor a project default exists", () => {
-    expect(resolveRoleDefaultSelection("work", { defaultModelSelection: null })).toBeNull();
+  it("is null when neither the global worker default nor project default exists", () => {
+    expect(
+      resolveRoleDefaultSelection(
+        { defaultModelSelection: null },
+        { defaultWorkerModelSelection: null },
+      ),
+    ).toBeNull();
   });
 });
 

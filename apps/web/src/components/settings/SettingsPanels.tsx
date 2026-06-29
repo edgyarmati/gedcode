@@ -9,6 +9,7 @@ import {
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ModelSelection,
   type PiModelSelection,
   type PiProviderCatalogEntry,
   type PiProviderModel,
@@ -78,6 +79,7 @@ import {
   OrchestratorStagesControl,
 } from "../orchestrator/OrchestratorConfigControls";
 import { PiPmModelPicker, piPmModelLabel } from "../orchestrator/PiPmModelPicker";
+import { BackendModelPicker } from "../orchestrator/RoleBackendPicker";
 import { buildEnabledPiProviderPickerEntries } from "../orchestrator/projectOrchestrationSettings.logic";
 import {
   buildOrchestratorGlobalDefaultsPatch,
@@ -1072,6 +1074,7 @@ export function GeneralSettingsPanel() {
 export function OrchestratorDefaultsSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
+  const serverProviders = useServerProviders();
   const [piProviderCatalog, setPiProviderCatalog] = useState<ReadonlyArray<PiProviderCatalogEntry>>(
     [],
   );
@@ -1135,6 +1138,10 @@ export function OrchestratorDefaultsSettingsPanel() {
       }),
     [piProviderCatalog, piProviderModelsByProvider],
   );
+  const workerInstanceEntries = useMemo(
+    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
+    [serverProviders],
+  );
 
   const updateDraft = useCallback(
     (nextDraft: typeof draft) => {
@@ -1146,6 +1153,10 @@ export function OrchestratorDefaultsSettingsPanel() {
   const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
   const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
   const pmModelDirty = !Equal.equals(draft.pmModelSelection, defaultDraft.pmModelSelection);
+  const workerModelDirty = !Equal.equals(
+    draft.defaultWorkerModelSelection,
+    defaultDraft.defaultWorkerModelSelection,
+  );
   const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
   const resourceDefaultsDirty = !Equal.equals(
     draft.resourceDefaults,
@@ -1155,6 +1166,9 @@ export function OrchestratorDefaultsSettingsPanel() {
   const defaultPmOptionLabel = defaultPmLabel ? `Default (${defaultPmLabel})` : "None";
   const updatePmModelSelection = (pmModelSelection: PiModelSelection | null) => {
     updateDraft({ ...draft, pmModelSelection });
+  };
+  const updateWorkerModelSelection = (defaultWorkerModelSelection: ModelSelection | null) => {
+    updateDraft({ ...draft, defaultWorkerModelSelection });
   };
 
   return (
@@ -1184,6 +1198,35 @@ export function OrchestratorDefaultsSettingsPanel() {
               modelAriaLabel="Default PM model"
               emptyHint="No pi providers enabled - add one in Settings -> PM model providers"
               onSelectionChange={updatePmModelSelection}
+            />
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          title="Default worker backend"
+          description="Default provider instance and model for Orchestrator worker stages."
+          resetAction={
+            workerModelDirty ? (
+              <SettingResetButton
+                label="Orchestrator worker backend"
+                onClick={() =>
+                  updateDraft({
+                    ...draft,
+                    defaultWorkerModelSelection: defaultDraft.defaultWorkerModelSelection,
+                  })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <BackendModelPicker
+              selection={draft.defaultWorkerModelSelection}
+              instanceEntries={workerInstanceEntries}
+              unsetLabel="None"
+              unsetOptionLabel="None"
+              backendAriaLabel="Default worker backend"
+              modelAriaLabel="Default worker model"
+              onSelectionChange={updateWorkerModelSelection}
             />
           </div>
         </SettingsRow>

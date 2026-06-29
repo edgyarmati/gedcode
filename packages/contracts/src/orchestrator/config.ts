@@ -5,7 +5,11 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { PositiveInt } from "../baseSchemas.ts";
 import { PiModelSelection } from "../piProvider.ts";
-import { ORCHESTRATION_STAGE_ROLES, OrchestrationStageRole } from "../orchestration.ts";
+import {
+  ModelSelection,
+  ORCHESTRATION_STAGE_ROLES,
+  OrchestrationStageRole,
+} from "../orchestration.ts";
 
 /**
  * Minimal, **schema-only** HARD orchestrator config (Plan 018 WP-B; design
@@ -266,5 +270,8 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // global floor before falling back to `false`.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   pmModelSelection: NullablePiModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  defaultWorkerModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type OrchestratorGlobalDefaults = typeof OrchestratorGlobalDefaults.Type;

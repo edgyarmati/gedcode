@@ -22,6 +22,15 @@ export function backendLabel(
   return `${instanceLabel} · ${selection.model}`;
 }
 
+export function formatDefaultBackendLabel(input: {
+  readonly selection: ModelSelection | null;
+  readonly entry: ProviderInstanceEntry | undefined;
+}): string {
+  return input.selection
+    ? `Use default - ${backendLabel(input.selection, input.entry)}`
+    : "Use default";
+}
+
 export function BackendModelPicker({
   selection,
   instanceEntries,
@@ -149,9 +158,10 @@ export function RoleBackendPicker({
   const defaultEntry = defaultSelection
     ? instanceEntries.find((entry) => entry.instanceId === defaultSelection.instanceId)
     : undefined;
-  const defaultOptionLabel = defaultSelection
-    ? `Use default (${backendLabel(defaultSelection, defaultEntry)})`
-    : "Use default";
+  const defaultOptionLabel = formatDefaultBackendLabel({
+    selection: defaultSelection,
+    entry: defaultEntry,
+  });
   const handleSelectionChange = useCallback(
     (next: ModelSelection | null) => onSelectionChange(role, next),
     [onSelectionChange, role],
@@ -161,7 +171,7 @@ export function RoleBackendPicker({
     <BackendModelPicker
       selection={selection}
       instanceEntries={instanceEntries}
-      unsetLabel="Use default"
+      unsetLabel={defaultOptionLabel}
       unsetOptionLabel={defaultOptionLabel}
       backendAriaLabel={`${STAGE_ROLE_LABELS[role]} backend`}
       modelAriaLabel={`${STAGE_ROLE_LABELS[role]} model`}

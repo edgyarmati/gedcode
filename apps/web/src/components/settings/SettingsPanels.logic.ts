@@ -1,5 +1,6 @@
 import type {
   GedSubagentRole,
+  ModelSelection,
   OrchestratorGatePolicy,
   OrchestratorGlobalDefaults,
   OrchestrationStageRole,
@@ -121,6 +122,7 @@ export function buildProviderInstanceUpdatePatch(input: {
 
 export interface OrchestratorGlobalDefaultsDraft {
   readonly pmModelSelection: PiModelSelection | null;
+  readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
@@ -158,6 +160,7 @@ export function seedOrchestratorGlobalDefaultsDraft(
   const stageSet = new Set(defaults.stages);
   return {
     pmModelSelection: defaults.pmModelSelection ?? null,
+    defaultWorkerModelSelection: defaults.defaultWorkerModelSelection ?? null,
     optionalStages: {
       review: stageSet.has("review"),
       verify: stageSet.has("verify"),
@@ -232,6 +235,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
       openPrAsDraft: draft.openPrAsDraft,
       pmModelSelection: draft.pmModelSelection,
+      defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
       autoCompaction: {
         enabled: draft.autoCompaction.enabled,
         reserveTokens: draft.autoCompaction.reserveTokens,

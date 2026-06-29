@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Add a global Orchestrator default worker backend and show each stage picker's resolved default backend so inherited worker routing is visible.
 - Fix: Keep Orchestrator mode sidebars focused on projects and Orchestrator navigation by hiding regular chat thread lists, and exclude PM threads from regular sidebar chat lists.
 - Fix: Run Orchestrator worker stages in `full-access` mode when the project or inherited global `allowFullAccessWorkers` setting is enabled; otherwise they continue to start approval-required, with regular chat threads unchanged.
 - UI: Make Orchestrator PM model pickers list only enabled pi providers and their resolvable models, with a clear empty state when no PM model providers are enabled.

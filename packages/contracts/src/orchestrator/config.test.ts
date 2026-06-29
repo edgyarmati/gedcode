@@ -69,6 +69,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
 
   it("global defaults include durability and cleanup intervals", () => {
     const decoded = decodeGlobalDefaults({});
+    expect(decoded.defaultWorkerModelSelection).toBeNull();
     expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
     expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
@@ -112,6 +113,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
       pmModelSelection: { piProvider: "openai", model: "gpt-5" },
+      defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
       autoCompaction: {
         enabled: false,
         reserveTokens: 8_000,
@@ -134,6 +136,10 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       customInstructions: "Keep active task IDs and gate state.",
     });
     expect(reDecoded.pmModelSelection).toEqual({ piProvider: "openai", model: "gpt-5" });
+    expect(reDecoded.defaultWorkerModelSelection).toEqual({
+      instanceId: "codex_worker",
+      model: "gpt-5-worker",
+    });
     expect(reDecoded.allowFullAccessWorkers).toBe(true);
     expect(reDecoded.openPrAsDraft).toBe(true);
   });

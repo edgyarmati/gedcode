@@ -186,6 +186,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(
       5 * 60 * 1000,
     );
@@ -216,6 +217,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       land: "require-approval",
     });
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
@@ -240,6 +242,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
           land: "require-approval",
         },
         allowFullAccessWorkers: true,
+        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
         maxStageHandoffs: 20,
         maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
@@ -257,6 +260,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.gatePolicy.work).toBe("auto");
     expect(decoded.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
+    expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toEqual({
+      instanceId: "codex_worker",
+      model: "gpt-5-worker",
+    });
     expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
@@ -282,6 +289,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         },
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
+        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
@@ -297,6 +305,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(patch.orchestratorDefaults?.gatePolicy.land).toBe("require-approval");
     expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
     expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
+    expect(patch.orchestratorDefaults?.defaultWorkerModelSelection).toEqual({
+      instanceId: "codex_worker",
+      model: "gpt-5-worker",
+    });
     expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);
     expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
     expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);

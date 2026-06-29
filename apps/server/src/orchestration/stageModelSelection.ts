@@ -6,6 +6,9 @@ import type {
 } from "@t3tools/contracts";
 
 export function resolveStageModelSelection(input: {
+  readonly orchestratorDefaults?: {
+    readonly defaultWorkerModelSelection?: ModelSelection | null | undefined;
+  };
   readonly project: Pick<OrchestrationProject, "defaultModelSelection" | "roleModelSelections">;
   readonly role: OrchestrationStageRole;
   readonly task: Pick<OrchestrationTask, "roleModelSelections">;
@@ -13,6 +16,7 @@ export function resolveStageModelSelection(input: {
   return (
     input.task.roleModelSelections?.[input.role] ??
     input.project.roleModelSelections?.[input.role] ??
+    input.orchestratorDefaults?.defaultWorkerModelSelection ??
     input.project.defaultModelSelection
   );
 }

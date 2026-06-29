@@ -279,6 +279,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
   globalDefaults: OrchestratorGlobalDefaults | undefined,
 ): {
   readonly pmModelSelection: PiModelSelection | null;
+  readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
@@ -288,6 +289,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
   const stageSet = new Set(normalizedGlobals.stages);
   return {
     pmModelSelection: normalizedGlobals.pmModelSelection,
+    defaultWorkerModelSelection: normalizedGlobals.defaultWorkerModelSelection,
     optionalStages: {
       review: stageSet.has("review"),
       verify: stageSet.has("verify"),
@@ -342,18 +344,20 @@ export function buildEnabledPiProviderPickerEntries(input: {
     }));
 }
 
-// The backend a per-task override would inherit for a role when left on
-// "use default": the project's per-role selection, else the project default.
-// Shown in the task override editor's "use default" option so the inherited
-// backend is visible.
+// The backend a project role inherits when left on "use default": the global
+// worker default, else the project default. Shown in the picker so the inherited
+// backend is visible before clearing a per-role override.
 export function resolveRoleDefaultSelection(
-  role: OrchestrationStageRole,
   project: {
     readonly defaultModelSelection?: ModelSelection | null;
-    readonly roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
   },
+  globalDefaults?:
+    | {
+        readonly defaultWorkerModelSelection?: ModelSelection | null | undefined;
+      }
+    | undefined,
 ): ModelSelection | null {
-  return project.roleModelSelections?.[role] ?? project.defaultModelSelection ?? null;
+  return globalDefaults?.defaultWorkerModelSelection ?? project.defaultModelSelection ?? null;
 }
 
 // True when two drafts would produce the same persisted config — used to keep
