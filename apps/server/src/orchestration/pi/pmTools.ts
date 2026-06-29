@@ -82,7 +82,20 @@ const GetTaskLedgerParameters = Type.Object({
 });
 type GetTaskLedgerParameters = Static<typeof GetTaskLedgerParameters>;
 
-const textResult = <TDetails>(summary: string, details: TDetails): AgentToolResult<TDetails> => ({
+export interface PmToolResult<TDetails> {
+  readonly content: AgentToolResult<TDetails>["content"];
+  readonly details: TDetails;
+}
+
+export interface PmToolExecutor<TParams = unknown, TDetails = unknown> {
+  readonly name: string;
+  readonly label: string;
+  readonly description: string;
+  readonly parameters: unknown;
+  readonly execute: (toolCallId: string, params: TParams) => Promise<PmToolResult<TDetails>>;
+}
+
+const textResult = <TDetails>(summary: string, details: TDetails): PmToolResult<TDetails> => ({
   content: [{ type: "text", text: summary }],
   details,
 });
@@ -92,7 +105,7 @@ const latestStageThreadId = (task: OrchestrationTask | undefined): ThreadId | nu
 
 const pmMessageId = (toolCallId: string) => MessageId.make(`pm-tool:${toolCallId}`);
 
-export const makePmTools = Effect.gen(function* () {
+export const makePmToolExecutors = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const snapshotQuery = yield* ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
@@ -108,7 +121,7 @@ export const makePmTools = Effect.gen(function* () {
   const dispatch = (command: Parameters<typeof engine.dispatch>[0]) =>
     engine.dispatch(command).pipe(Effect.map((result) => result.sequence));
 
-  const createTask: AgentTool<typeof CreateTaskParameters, { taskId: string; sequence: number }> = {
+  const createTask: PmToolExecutor<CreateTaskParameters, { taskId: string; sequence: number }> = {
     name: "createTask",
     label: "Create task",
     description: "Create a new orchestrator task for a project.",
@@ -133,8 +146,8 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
-  const classifyRequest: AgentTool<
-    typeof ClassifyRequestParameters,
+  const classifyRequest: PmToolExecutor<
+    ClassifyRequestParameters,
     { taskId: string; sequence: number }
   > = {
     name: "classifyRequest",
@@ -160,8 +173,8 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
-  const handoffWorker: AgentTool<
-    typeof HandoffWorkerParameters,
+  const handoffWorker: PmToolExecutor<
+    HandoffWorkerParameters,
     { taskId: string; sequence: number; stageThreadId: string | null; awaitedTurnId: null }
   > = {
     name: "handoffWorker",
@@ -194,8 +207,8 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
-  const requestApproval: AgentTool<
-    typeof RequestApprovalParameters,
+  const requestApproval: PmToolExecutor<
+    RequestApprovalParameters,
     { taskId: string; gateId: string; sequence: number }
   > = {
     name: "requestApproval",
@@ -227,8 +240,8 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
-  const setTaskBackend: AgentTool<
-    typeof SetTaskBackendParameters,
+  const setTaskBackend: PmToolExecutor<
+    SetTaskBackendParameters,
     { taskId: string; role: OrchestrationStageRole; sequence: number }
   > = {
     name: "setTaskBackend",
@@ -263,30 +276,29 @@ export const makePmTools = Effect.gen(function* () {
       ),
   };
 
-  const inspectStage: AgentTool<typeof InspectStageParameters, { task: OrchestrationTask | null }> =
-    {
-      name: "inspectStage",
-      label: "Inspect stage",
-      description: "Inspect the current projected task/stage state.",
-      parameters: InspectStageParameters,
-      execute: (_toolCallId, params) =>
-        runPromise(
-          Effect.gen(function* () {
-            const taskId = TaskId.make(params.taskId);
-            const readModel = yield* snapshotQuery.getCommandReadModel();
-            const task = readModel.tasks.find((entry) => entry.id === taskId) ?? null;
-            return textResult(
-              task ? `Task ${taskId} is ${task.status}.` : `Task ${taskId} not found.`,
-              {
-                task,
-              },
-            );
-          }),
-        ),
-    };
+  const inspectStage: PmToolExecutor<InspectStageParameters, { task: OrchestrationTask | null }> = {
+    name: "inspectStage",
+    label: "Inspect stage",
+    description: "Inspect the current projected task/stage state.",
+    parameters: InspectStageParameters,
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId) ?? null;
+          return textResult(
+            task ? `Task ${taskId} is ${task.status}.` : `Task ${taskId} not found.`,
+            {
+              task,
+            },
+          );
+        }),
+      ),
+  };
 
-  const getTaskLedger: AgentTool<
-    typeof GetTaskLedgerParameters,
+  const getTaskLedger: PmToolExecutor<
+    GetTaskLedgerParameters,
     { projectId: string; tasks: ReadonlyArray<OrchestrationTask> }
   > = {
     name: "getTaskLedger",
@@ -312,5 +324,18 @@ export const makePmTools = Effect.gen(function* () {
     setTaskBackend,
     inspectStage,
     getTaskLedger,
-  ] as const satisfies ReadonlyArray<AgentTool>;
+  ] as const;
 });
+
+export const makePmTools = makePmToolExecutors.pipe(
+  Effect.map(
+    (tools) =>
+      tools.map((executor) => ({
+        name: executor.name,
+        label: executor.label,
+        description: executor.description,
+        parameters: executor.parameters,
+        execute: executor.execute,
+      })) as ReadonlyArray<AgentTool>,
+  ),
+);

@@ -14,12 +14,15 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  ProjectId,
   ProviderDriverKind,
+  type OrchestrationCommand,
   ProviderItemId,
+  ProviderInstanceId,
   ProviderRuntimeEvent,
   type RuntimeMode,
+  TaskTypeId,
   ThreadId,
-  ProviderInstanceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
@@ -27,6 +30,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -34,10 +38,22 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import {
+  makeOrchestrationMcpServer,
+  ORCHESTRATION_MCP_SERVER_NAME,
+  orchestrationMcpToolId,
+} from "../../orchestration/claude/pmMcpServer.ts";
+import { createEmptyReadModel } from "../../orchestration/projector.ts";
+import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  buildClaudeReadOnlyToolPolicy,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
@@ -156,6 +172,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly makeOrchestrationMcpServer?: ClaudeAdapterLiveOptions["makeOrchestrationMcpServer"];
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -181,6 +198,11 @@ function makeHarness(config?: {
           nativeEventLogPath: config.nativeEventLogPath,
         }
       : {}),
+    ...(config?.makeOrchestrationMcpServer
+      ? {
+          makeOrchestrationMcpServer: config.makeOrchestrationMcpServer,
+        }
+      : {}),
   };
 
   return {
@@ -204,6 +226,49 @@ function makeHarness(config?: {
     getLastCreateQueryInput: () => createInput,
   };
 }
+
+const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
+  const readModel = createEmptyReadModel("2026-06-29T00:00:00.000Z");
+  return Layer.mergeAll(
+    Layer.mock(OrchestrationEngineService)({
+      readEvents: () => Stream.empty,
+      dispatch: (command) =>
+        Effect.sync(() => {
+          dispatched.push(command);
+          return { sequence: dispatched.length };
+        }),
+      streamDomainEvents: Stream.empty,
+      streamShellEvents: Stream.empty,
+    }),
+    Layer.mock(ProjectionSnapshotQuery)({
+      getCommandReadModel: () => Effect.succeed(readModel),
+      getSnapshot: () => Effect.succeed(readModel),
+      getShellSnapshot: () =>
+        Effect.succeed({
+          snapshotSequence: 0,
+          projects: [],
+          threads: [],
+          updatedAt: "2026-06-29T00:00:00.000Z",
+        }),
+      getArchivedShellSnapshot: () =>
+        Effect.succeed({
+          snapshotSequence: 0,
+          projects: [],
+          threads: [],
+          updatedAt: "2026-06-29T00:00:00.000Z",
+        }),
+      getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+      getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+      getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+      getProjectShellById: () => Effect.succeed(Option.none()),
+      getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+      getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+      getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+      getThreadShellById: () => Effect.succeed(Option.none()),
+      getThreadDetailById: () => Effect.succeed(Option.none()),
+    }),
+  );
+};
 
 function makeDeterministicRandomService(seed = 0x1234_5678): {
   nextIntUnsafe: () => number;
@@ -351,6 +416,139 @@ describe("ClaudeAdapterLive", () => {
       const createInput = harness.getLastCreateQueryInput();
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it("builds a read-only Claude policy that only exposes read tools and orchestration MCP tools", () => {
+    const policy = buildClaudeReadOnlyToolPolicy({ enableOrchestrationTools: true });
+
+    assert.equal(policy.permissionMode, "plan");
+    assert.deepEqual(policy.tools, ["Read", "Grep", "Glob"]);
+    assert.ok(policy.allowedTools?.includes("Read"));
+    assert.ok(policy.allowedTools?.includes(orchestrationMcpToolId("createTask")));
+    assert.ok(policy.disallowedTools?.includes("Write"));
+    assert.ok(policy.disallowedTools?.includes("Edit"));
+    assert.ok(policy.disallowedTools?.includes("MultiEdit"));
+    assert.ok(policy.disallowedTools?.includes("Bash"));
+    assert.equal(policy.strictMcpConfig, true);
+  });
+
+  it.effect("starts read-only Claude with orchestration MCP and denies mutating built-ins", () => {
+    const dispatched: OrchestrationCommand[] = [];
+    const orchestrationLayer = Layer.merge(makeOrchestrationLayer(dispatched), NodeServices.layer);
+    const harness = makeHarness({
+      makeOrchestrationMcpServer: () =>
+        Effect.runPromise(makeOrchestrationMcpServer.pipe(Effect.provide(orchestrationLayer))),
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+        readOnly: true,
+        enableOrchestrationTools: true,
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.ok(createInput);
+      assert.equal(createInput.options.permissionMode, "plan");
+      assert.equal(createInput.options.allowDangerouslySkipPermissions, undefined);
+      assert.deepEqual(createInput.options.tools, ["Read", "Grep", "Glob"]);
+      assert.ok(createInput.options.allowedTools?.includes(orchestrationMcpToolId("createTask")));
+      assert.ok(createInput.options.disallowedTools?.includes("Write"));
+      assert.ok(createInput.options.disallowedTools?.includes("Edit"));
+      assert.ok(createInput.options.disallowedTools?.includes("MultiEdit"));
+      assert.ok(createInput.options.disallowedTools?.includes("Bash"));
+      assert.equal(createInput.options.strictMcpConfig, true);
+
+      const mcpServer = createInput.options.mcpServers?.[ORCHESTRATION_MCP_SERVER_NAME];
+      assert.ok(mcpServer);
+      assert.equal(mcpServer.type, "sdk");
+
+      const registeredTools = (
+        mcpServer as unknown as {
+          readonly instance: {
+            readonly _registeredTools?: Record<
+              string,
+              {
+                readonly handler: (
+                  args: Record<string, unknown>,
+                  extra: unknown,
+                ) => Promise<{
+                  readonly content: ReadonlyArray<{ readonly type: string; readonly text: string }>;
+                  readonly structuredContent?: unknown;
+                }>;
+              }
+            >;
+          };
+        }
+      ).instance._registeredTools;
+      const createTaskTool = registeredTools?.createTask;
+      assert.ok(createTaskTool);
+
+      const mcpResult = yield* Effect.promise(() =>
+        createTaskTool.handler(
+          {
+            projectId: "project-1",
+            title: "MCP proof task",
+            taskType: "feature",
+          },
+          {},
+        ),
+      );
+      assert.match(mcpResult.content[0]?.text ?? "", /^Created task /);
+      assert.deepEqual(mcpResult.structuredContent, {
+        taskId: dispatched[0]?.type === "task.create" ? dispatched[0].taskId : undefined,
+        sequence: 1,
+      });
+      assert.strictEqual(dispatched.length, 1);
+      assert.strictEqual(dispatched[0]?.type, "task.create");
+      if (dispatched[0]?.type === "task.create") {
+        assert.strictEqual(dispatched[0].projectId, ProjectId.make("project-1"));
+        assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("feature"));
+      }
+
+      const canUseTool = createInput.options.canUseTool;
+      assert.ok(canUseTool);
+      const readDecision = yield* Effect.promise(() =>
+        canUseTool(
+          "Read",
+          { file_path: "/tmp/example.ts" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-read",
+          },
+        ),
+      );
+      assert.equal(readDecision.behavior, "allow");
+
+      const writeDecision = yield* Effect.promise(() =>
+        canUseTool(
+          "Write",
+          { file_path: "/tmp/example.ts", content: "mutate" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-write",
+          },
+        ),
+      );
+      assert.equal(writeDecision.behavior, "deny");
+
+      const bashDecision = yield* Effect.promise(() =>
+        canUseTool(
+          "Bash",
+          { command: "touch /tmp/nope" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-bash",
+          },
+        ),
+      );
+      assert.equal(bashDecision.behavior, "deny");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

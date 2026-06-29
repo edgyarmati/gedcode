@@ -62,6 +62,8 @@ export const ProviderSessionStartInput = Schema.Struct({
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  readOnly: Schema.optional(Schema.Boolean),
+  enableOrchestrationTools: Schema.optional(Schema.Boolean),
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 

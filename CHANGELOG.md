@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Add the Claude-driver foundation for a read-only Orchestrator PM. Claude sessions can now opt into an injected in-process MCP server for Orchestrator PM tools, and an enforced read-only policy uses Claude Agent SDK plan mode plus explicit built-in tool allow/deny lists so mutating tools such as Write/Edit/MultiEdit/Bash are unavailable.
 - UI: Add a Clear PM chat action to Orchestrator project PM chat. The human-origin `orchestrator.clearPmChat` RPC appends an append-only `thread.cleared` event for the project PM thread, clears the PM pi session rows, and invalidates the in-memory PM runtime so the next PM turn starts with fresh visible messages, session memory, and runtime state.
 - UI: Add a global Orchestrator default worker backend and show each stage picker's resolved default backend so inherited worker routing is visible.
 - Fix: Keep Orchestrator mode sidebars focused on projects and Orchestrator navigation by hiding regular chat thread lists, and exclude PM threads from regular sidebar chat lists.
