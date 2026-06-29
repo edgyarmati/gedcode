@@ -226,9 +226,23 @@ permission-mode) + prompt, not prompt-only; (2) PM **reuses the worker provider-
 Codex/Claude/OpenCode instance + model, per-project + global default — replaces pi pmModelSelection + the
 pi picker; the bottom-of-chat worker picker becomes correct); (3) **persistent resumable driver session**
 per project (resume on human message + worker settlement; mirrors pi continuity). Rewrite must also fix
-the silent-failure (surface PM turn errors) + the inert composer. **Feasibility investigation RUNNING**
-(driver tool-injection/MCP, enforced read-only per driver, session resume, the new PM adapter, removal
-list) → then SPEC + TASKS + implement via Codex CLI. Pre-pivot state: pi PM works but is being replaced.
+the silent-failure (surface PM turn errors) + the inert composer.
+
+**FEASIBILITY (done):** session start/resume + PM session persistence + model switching WORK; but the two
+things the driver-PM needs are NOT wired: (GAP1) custom-tool injection — Claude SDK manages tools
+internally / Codex ACP hardcodes `mcpServers:[]`; both CAN take MCP servers → must build orchestration-tool
+injection as an in-process MCP server; (GAP2) enforced read-only — Claude runtimeMode→acceptEdits/bypass
+only, Codex no permission model → must build a read-only mode per driver. pi was chosen BECAUSE it gives
+these for free (DenyingExecutionEnv + in-process tools); the rewrite rebuilds them in the driver layer.
+I surfaced this + recommended fixing pi instead; **user chose FULL REWRITE anyway (informed).**
+
+**PLAN (SPEC.md + TASKS.md rewritten, phase=implement):** de-risk-ordered WPs — **W1** Claude MCP
+tool-injection + enforced read-only (FOUNDATION/risk — prove it before building on top) · W2 DriverPmAdapter
+(PiAgentAdapterShape) on the Claude session, wired into PmRuntime · W3 PM model = worker ModelSelection
+(picker/resolver) · W4 surface PM turn errors (G) + composer cleanup (F) · W5 Codex parity · W6 remove pi.
+Reuse: pmTools/PmEventProjection/PmReEntryQueue/orchestration core/worker provider system. Implement via
+user's Codex CLI. **W1 starting.** (Pre-pivot: pi PM works but is being replaced; needs a worker provider
+instance in Connections — providerInstances was empty.)
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 

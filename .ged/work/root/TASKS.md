@@ -1,72 +1,63 @@
-# TASKS — PM (pi) Provider Configuration
+# TASKS — Driver-based Orchestrator PM (replace pi)
 
-Dependency-ordered work packages, **each leaving the full monorepo gate green**. Claude = PM
-(spec/review/gates/commit); Codex = implementation (gpt-5.5; **high** effort on PI3/PI5, medium
-elsewhere). One WP at a time, in-main-tree, commit by pathspec.
+De-risk-ordered WPs, **each leaving the full monorepo gate green**. Implementation via the user's Codex
+CLI (the background companion stalls); Claude (me) = spec/review/gate/commit. One WP at a time, in-main-tree.
 
-> Why the reshape is one atomic WP (PI5): the user chose a **clean reshape** of `pmModelSelection`
-> (not an additive field). Changing the field type breaks server + web consumers simultaneously, so
-> the contract swap + resolver/runtime + picker + lenient decode must land together to stay green.
-> Everything before PI5 is **additive** (new `piProviders`, new WS APIs, new settings UI) and green
-> on its own.
+> **W1 first on purpose:** it proves the two unwired driver capabilities (MCP tool-injection + enforced
+> read-only) before anything is built on top. Claude driver first (most flexible permission + in-process
+> MCP via the Agent SDK), Codex parity in W5.
 
-## WP-PI1 — Contracts: additive pi-provider catalog + creds + selection TYPE (schema-only) [medium]
+## WP-W1 — Claude driver: inject orchestration tools as in-process MCP + enforced read-only [HIGH, foundation]
 
-- `PiProviderId` (branded non-empty string; validity enforced server-side — no pi-ai import in contracts).
-  `PiProviderConfig`: `{ enabled, apiKey?: { value, valueRedacted? }, oauth?: { connected, expiresAt? } }`.
-  apiKey mirrors the `ProviderInstanceEnvironmentVariable` sensitive/redaction idiom; oauth carries
-  only non-secret status (raw tokens stay in `ServerSecretStore`). No `kind` field — the provider's
-  kind (apiKey/oauth/ambient) is derived server-side from pi-ai + surfaced via the PI2 catalog API.
-- `ServerSettings.piProviders: Record<PiProviderId, PiProviderConfig>` (sparse) + `DEFAULT_SERVER_SETTINGS` ({}).
-- Add the `PiModelSelection { piProvider, model }` schema/type. **Do NOT change `pmModelSelection`'s
-  field type yet** (additive only → green).
-- Schema-only (no runtime logic; obey `t3code/no-inline-schema-compile`). Verify: contracts typecheck;
-  `piProviders` + `PiModelSelection` round-trip tests; `bun run test`/`fmt`/`lint`/`build` green.
+- Add the ability to start a Claude driver session that (a) exposes the orchestration tools
+  (`pi/pmTools.ts` set) to the model as an **in-process MCP server** (Claude Agent SDK
+  `mcpServers`/`createSdkMcpServer`), and (b) runs **enforced read-only**: a new read-only `runtimeMode`
+  mapping (plan-mode and/or disallow Write·Edit·Bash·write-MCP), while ALLOWING read/grep/find + the
+  orchestration MCP tools. The model must be unable to edit/exec even if prompted to.
+- Prove it with a focused test/harness: a read-only Claude session can call an orchestration tool and
+  CANNOT write a file. Don't wire it into the PM runtime yet — just the driver capability + a test.
+- Verify: full gate green. **This is the make-or-break; if the SDK can't do per-session MCP + read-only cleanly, STOP and report.**
 
-## WP-PI2 — Server: pi credential store + redaction + catalog/models WS API [medium]
+## WP-W2 — DriverPmAdapter on the Claude session, wired into PmRuntime [HIGH]
 
-- Extend `serverSettings.ts` materialize/redact to cover `piProviders` (secrets in `ServerSecretStore`
-  `pi-cred-<provider>-{apikey,oauth}`, redact on wire, skip-write on `valueRedacted`). Independent of `pmModelSelection`.
-- WS method(s): list the pi provider catalog (`id`, displayName, `kind`, env-var hint, configured/enabled)
-  - `getModels(provider)` per provider (`id`, name, contextWindow) for the settings UI + picker.
-- Verify: redaction round-trip + restart persistence; catalog/models method round-trip. Full gate green.
+- Implement `DriverPmAdapter` satisfying `PiAgentAdapterShape` (events, prompt, followUp, compact,
+  setModel, setResources, waitForIdle, isIdle, abort) by driving the read-only Claude session from W1,
+  bridging driver events → `AgentHarnessEvent` for `PmEventProjection`, routing the orchestration tool
+  calls, and resuming the session (resumeCursor) per project. Reuse `PmReEntryQueue` + `PmEventProjection`.
+- Wire it into `PmRuntime` behind the seam (replace `makePiAgentAdapter`), keeping the settlement re-entry
+  + persistent-session behavior. Session store: reuse/adapt for the driver session id.
+- Verify: integration — PM starts on a Claude instance, processes a message, drives a tool call; gate green.
 
-## WP-PI3 — Server: OAuth login brokering over WS [HIGH]
+## WP-W3 — PM provider/model selection = worker ModelSelection [medium]
 
-- WS `start` (server invokes pi-ai `login*` with `OAuthLoginCallbacks` → surfaces auth URL / device
-  code over WS) + `complete` (pasted code → server finishes → persists `{refresh,access,expires}` to
-  `ServerSecretStore`). Cancel/timeout handled. No localhost listener.
-- Verify: brokering unit test with stubbed pi-ai login (no network); persisted creds round-trip + redact. Green.
+- Replace `pmModelSelection` (pi `PiModelSelection`) with the worker `ModelSelection` ({instanceId, model})
+  in project config + global defaults; resolver picks the PM's provider instance + model (project ?? global).
+- Web: the PM model picker becomes the worker-style picker (the correct one); update the project + global editors.
+- Lenient decode of any legacy pi `pmModelSelection` → null. Verify: gate green.
 
-## WP-PI4 — Web: pi-provider settings section [medium]
+## WP-W4 — Surface PM turn failures + PM composer cleanup [medium]
 
-- New "PM model providers (pi)" section in the Settings provider page: catalog list; per provider —
-  enable toggle, API-key input (redaction-aware, reuse `ProviderInstanceCard` secret idiom), OAuth
-  login → modal (auth URL / device code → paste code → complete), ambient status + hint. "Available in
-  picker" = the enabled flag. Distinct from worker Connections; worker UI untouched.
-- Verify: logic unit tests (redaction-preserving edit; enable/disable patch) + render test. Green.
+- The DriverPmAdapter/PmEventProjection surfaces turn failures (quota/rate-limit/auth/error) as an error
+  message/activity in the PM conversation (fixes the silent freeze, issue G).
+- PM chat composer (`OrchestratorRoutes`) drops the inert chat controls; show the config-driven PM model
+  (read-only) or nothing. Verify: gate (+ test:browser) green.
 
-## WP-PI5 — Reshape: pmModelSelection → pi + resolver/runtime + pi-only picker (ATOMIC) [HIGH]
+## WP-W5 — Codex driver parity [medium-HIGH]
 
-- **Contracts**: swap `pmModelSelection` field type → `PiModelSelection` in `OrchestratorGlobalDefaults`
-  - `OrchestratorProjectConfig`; **lenient legacy decode** (`{instanceId, model}` → null).
-- **Server**: `PmModelResolver.ts` — `piProvider` is the pi provider id directly (drop worker-instance
-  alias map); resolve credential from `piProviders` config (API key / OAuth access token w/ single-flight
-  refresh via `getOAuthApiKey` + persist refreshed creds / ambient sentinel). `PmRuntime.ts` consumes it.
-- **Web**: repoint `PmModelSection`/`BackendModelPicker` to enabled pi providers (catalog + models);
-  selection `{piProvider, model}`; update `projectOrchestrationSettings.logic.ts` + global-defaults
-  editor + the 3 test files. Worker pickers (`RoleBackendPicker`/`RoleConfigRow`) untouched.
-- Verify: resolver unit tests (key/oauth-refresh/ambient/missing); lenient-decode test; web logic
-  (seed/build/round-trip/dirty-check); picker shows only enabled pi providers. **Full gate green.**
+- Same as W1/W2 for the Codex driver (ACP/CodexSessionRuntime): inject orchestration tools via MCP +
+  enforced read-only sandbox, so the PM can run on a Codex instance too. Verify: gate green.
 
-## WP-PI6 — Integration: PM starts on a configured pi provider [medium]
+## WP-W6 — Remove pi [medium]
 
-- Extend the integration harness: configure a pi provider (stub key), set `pmModelSelection`, enable
-  orchestrator → PM runtime starts with the credential resolved from config (mock the pi adapter /
-  `getApiKeyAndHeaders`). Replay test: a legacy `pmModelSelection` event decodes to null without breaking replay.
-- Verify: integration green; full gates.
+- Delete the pi PM runtime + pi-provider config: `PiAgentAdapter`, `PmModelResolver`, `PiProviderCatalog`,
+  `PiOAuthLoginBroker`/`PiOAuthCredentialStore`/`PiOAuthProviders`, the pi `DenyingExecutionEnv` +
+  `SqliteSessionStorage` (if fully superseded), `piProviders` settings + the pi settings section + pi
+  picker + the catalog/models WS + the pi OAuth RPCs, and the `@earendil-works/pi-ai` + `pi-agent-core`
+  deps (if nothing else uses them — check `pmTools` AgentTool type first). Keep `pmTools`/`PmEventProjection`/
+  `PmReEntryQueue`. Verify: full gate green; no dangling pi references.
 
 ## Gates (every WP)
 
-`bun fmt` · `bun lint` · `bun typecheck` (re-run standalone once if tsgo flakes) · `bun run test`
-(never `bun test`) · `bun run build`. CHANGELOG `## Unreleased` updated when user/operator-visible.
+`bun fmt` · `bun lint` · `bun typecheck` (re-run standalone once if tsgo flakes — different package each run)
+· `bun run test` (never `bun test`) · `bun run build`. `test:browser` for web-touching WPs (I run it).
+CHANGELOG `## Unreleased` updated.
