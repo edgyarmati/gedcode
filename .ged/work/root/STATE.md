@@ -245,8 +245,22 @@ Run via the user's Codex CLI (background companion stalls; interactive Codex wor
 - **Y4 (server+web) clear PM chat**: new `pm.clear` command → clear PM thread messages + invalidate runtime
   (reuse `invalidateRuntime()` PmRuntime.ts:1215-1227) + wipe pi session storage (pm_sessions/pm_session_entries
   SqliteSessionStorage) + UI button in PM chat header (OrchestratorRoutes PmConversation). **Decision E: full reset.**
+  **DONE `fb329bf5a`** (user via Codex CLI): append-only `thread.clear` command + `thread.cleared` event
+  (contracts/decider/projector/ProjectionPipeline/web store — projector resets messages/activities/plans/
+  checkpoints/turn/session, replay-safe); `clearSqliteSessionStorage`; factory per-project
+  waitForIdle/clearSessionStorage/invalidateRuntime; `orchestrator.clearPmChat` RPC orders
+  waitForIdle→thread.cleared→clear session→invalidate; confirming Clear button in PM chat header.
+  Gate green here (typecheck 13/13, test 13/13, build, fmt).
 
-Sequence: Y1 (unblock) → Y2 (nav) → Y3 (backend default) → Y4 (clear). Dev server devserver3 running.
+## ✅ Y-SERIES COMPLETE (2026-06-29): Y1 `828ff62e9` · Y2 `83a964490` · Y3 `ba528ba38` · Y4 `fb329bf5a`
+
+All gate-green, on `feat/orchestrator-mode` (NOT merged to main). Dev server restarted clean for re-test.
+**Finding (separate, pre-existing — NOT Y-series):** running the FULL `test:browser` suite (never in the
+standard gate) surfaced 2 consistently-failing browser tests UNRELATED to this work — confirmed by
+stashing Y4 + re-running on the prior commit (still fail): `ChatView.browser.tsx` "toggles plan mode with
+Shift+Tab only while the composer is focused" + `chat/MessagesTimeline.browser.tsx` "uses the file path
+without line suffix for markdown file tag icons". Flag to user as a separate cleanup (chat-UI area, not
+orchestrator). Remaining Phase-5 (not started): worker isolation/sandbox, scale/perf, board UX.
 
 ## ✅ X-SERIES COMPLETE (2026-06-29): PM-UX hardening done — X1 `598e8524a` · X2 `690687d41` · X3 `7f0915227` · X4 `82dad7941`
 
