@@ -262,6 +262,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GedWorkflowGuardLive),
   Layer.provideMerge(GedWorkflowServiceLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
+  Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
@@ -288,9 +289,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),
-  Layer.provideMerge(ServerEnvironmentLive),
-  Layer.provideMerge(AuthLayerLive),
-);
+).pipe(Layer.provideMerge(ServerEnvironmentLive), Layer.provideMerge(AuthLayerLive));
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   // Misc.

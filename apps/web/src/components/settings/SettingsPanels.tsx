@@ -1,7 +1,7 @@
 import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
@@ -10,9 +10,6 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
-  type PiModelSelection,
-  type PiProviderCatalogEntry,
-  type PiProviderModel,
   type ProviderInstanceConfig,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -52,7 +49,6 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
-import { getPrimaryEnvironmentConnection } from "../../environments/runtime";
 import { useShallow } from "zustand/react/shallow";
 import { selectProjectsAcrossEnvironments, useStore } from "../../store";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -78,9 +74,7 @@ import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
 } from "../orchestrator/OrchestratorConfigControls";
-import { PiPmModelPicker, piPmModelLabel } from "../orchestrator/PiPmModelPicker";
-import { BackendModelPicker } from "../orchestrator/RoleBackendPicker";
-import { buildEnabledPiProviderPickerEntries } from "../orchestrator/projectOrchestrationSettings.logic";
+import { BackendModelPicker, backendLabel } from "../orchestrator/RoleBackendPicker";
 import {
   buildOrchestratorGlobalDefaultsPatch,
   buildGedRoleSettingsPatch,
@@ -1075,12 +1069,6 @@ export function OrchestratorDefaultsSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const serverProviders = useServerProviders();
-  const [piProviderCatalog, setPiProviderCatalog] = useState<ReadonlyArray<PiProviderCatalogEntry>>(
-    [],
-  );
-  const [piProviderModelsByProvider, setPiProviderModelsByProvider] = useState<
-    Readonly<Record<string, ReadonlyArray<PiProviderModel>>>
-  >({});
   const draft = useMemo(
     () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
     [settings.orchestratorDefaults],
@@ -1092,52 +1080,6 @@ export function OrchestratorDefaultsSettingsPanel() {
   const numberKeys = Object.keys(
     GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS,
   ) as OrchestratorGlobalNumberDefaultKey[];
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const server = getPrimaryEnvironmentConnection().client.server;
-        const catalog = await server.listPiProviderCatalog();
-        const enabledProviders = catalog.providers.filter((provider) => provider.enabled);
-        const modelEntries = await Promise.all(
-          enabledProviders.map(async (provider) => {
-            const result = await server.listPiProviderModels({ provider: provider.id });
-            return [String(provider.id), result.models] as const;
-          }),
-        );
-        if (cancelled) {
-          return;
-        }
-        setPiProviderCatalog(catalog.providers);
-        setPiProviderModelsByProvider(Object.fromEntries(modelEntries));
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        setPiProviderCatalog([]);
-        setPiProviderModelsByProvider({});
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to load pi models",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const piProviderEntries = useMemo(
-    () =>
-      buildEnabledPiProviderPickerEntries({
-        catalog: piProviderCatalog,
-        modelsByProvider: piProviderModelsByProvider,
-      }),
-    [piProviderCatalog, piProviderModelsByProvider],
-  );
   const workerInstanceEntries = useMemo(
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
     [serverProviders],
@@ -1162,9 +1104,16 @@ export function OrchestratorDefaultsSettingsPanel() {
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
   );
-  const defaultPmLabel = piPmModelLabel(defaultDraft.pmModelSelection, piProviderEntries);
+  const defaultPmEntry = defaultDraft.pmModelSelection
+    ? workerInstanceEntries.find(
+        (entry) => entry.instanceId === defaultDraft.pmModelSelection?.instanceId,
+      )
+    : undefined;
+  const defaultPmLabel = defaultDraft.pmModelSelection
+    ? backendLabel(defaultDraft.pmModelSelection, defaultPmEntry)
+    : null;
   const defaultPmOptionLabel = defaultPmLabel ? `Default (${defaultPmLabel})` : "None";
-  const updatePmModelSelection = (pmModelSelection: PiModelSelection | null) => {
+  const updatePmModelSelection = (pmModelSelection: ModelSelection | null) => {
     updateDraft({ ...draft, pmModelSelection });
   };
   const updateWorkerModelSelection = (defaultWorkerModelSelection: ModelSelection | null) => {
@@ -1176,7 +1125,7 @@ export function OrchestratorDefaultsSettingsPanel() {
       <SettingsSection title="Orchestrator defaults">
         <SettingsRow
           title="PM model"
-          description="Default pi provider and model for project manager runtime."
+          description="Default provider instance and model for project manager runtime."
           resetAction={
             pmModelDirty ? (
               <SettingResetButton
@@ -1189,14 +1138,13 @@ export function OrchestratorDefaultsSettingsPanel() {
           }
         >
           <div className="pb-4 pt-3">
-            <PiPmModelPicker
+            <BackendModelPicker
               selection={draft.pmModelSelection}
-              providerEntries={piProviderEntries}
+              instanceEntries={workerInstanceEntries}
               unsetLabel="None"
               unsetOptionLabel={defaultPmOptionLabel}
-              providerAriaLabel="Default PM pi provider"
+              backendAriaLabel="Default PM backend"
               modelAriaLabel="Default PM model"
-              emptyHint="No pi providers enabled - add one in Settings -> PM model providers"
               onSelectionChange={updatePmModelSelection}
             />
           </div>

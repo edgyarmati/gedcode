@@ -3,18 +3,15 @@ import {
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
+  ModelSelection,
   ORCHESTRATION_STAGE_ROLES,
   OrchestratorGlobalDefaults,
-  PiProviderId,
-  type PiModelSelection,
-  type PiProviderCatalogEntry,
-  type PiProviderModel,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
   type OrchestratorResourceLimits,
-  type ModelSelection,
   type OrchestrationStageRole,
 } from "@t3tools/contracts";
+import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -63,7 +60,7 @@ export interface OrchestrationSettingsDraft {
 
 export interface OrchestratorConfigDraft {
   readonly enabled: boolean;
-  readonly pmModelSelection: PiModelSelection | null;
+  readonly pmModelSelection: ModelSelection | null;
   readonly openPrAsDraft: boolean | null;
   readonly optionalStages: InheritableOrchestratorStages;
   readonly gatePolicy: InheritableOrchestratorGatePolicy;
@@ -86,15 +83,6 @@ export interface OrchestrationConfigUpdate {
   readonly roleModelSelections: Record<string, ModelSelection>;
   readonly rolePromptPrefixes: Record<string, string>;
   readonly orchestratorConfig: OrchestratorConfigJson;
-}
-
-export interface PiProviderPickerEntry {
-  readonly piProvider: PiProviderId;
-  readonly displayName: string;
-  readonly models: ReadonlyArray<{
-    readonly id: string;
-    readonly name: string;
-  }>;
 }
 
 // Seed editor state from a project's current config. Roles without a configured
@@ -165,17 +153,10 @@ function asGatePolicy(value: unknown): OrchestratorGatePolicy | null {
   return value === "auto" || value === "require-approval" ? value : null;
 }
 
-function asPiModelSelection(value: unknown): PiModelSelection | null {
-  const record = asRecord(value);
-  if (record === undefined) {
-    return null;
-  }
-  return typeof record.piProvider === "string" &&
-    record.piProvider.trim().length > 0 &&
-    typeof record.model === "string" &&
-    record.model.trim().length > 0
-    ? { piProvider: PiProviderId.make(record.piProvider), model: record.model.trim() }
-    : null;
+const decodeModelSelectionOption = Schema.decodeUnknownOption(ModelSelection);
+
+function asModelSelection(value: unknown): ModelSelection | null {
+  return Option.getOrNull(decodeModelSelectionOption(value));
 }
 
 function findFeatureTaskType(config: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -197,7 +178,7 @@ export function seedOrchestratorConfigDraft(
   const resourceLimits = asRecord(raw.resourceLimits);
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : false,
-    pmModelSelection: asPiModelSelection(raw.pmModelSelection),
+    pmModelSelection: asModelSelection(raw.pmModelSelection),
     openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
     optionalStages:
       explicitStages === null
@@ -278,7 +259,7 @@ export function buildOrchestratorProjectConfig(
 export function seedOrchestratorInheritedDefaultsDraft(
   globalDefaults: OrchestratorGlobalDefaults | undefined,
 ): {
-  readonly pmModelSelection: PiModelSelection | null;
+  readonly pmModelSelection: ModelSelection | null;
   readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
@@ -312,36 +293,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
 }
 
 function modelSelectionsEqual(left: ModelSelection | null, right: ModelSelection | null): boolean {
-  if (left === null || right === null) {
-    return left === right;
-  }
-  return left.instanceId === right.instanceId && left.model === right.model;
-}
-
-function piModelSelectionsEqual(
-  left: PiModelSelection | null,
-  right: PiModelSelection | null,
-): boolean {
-  if (left === null || right === null) {
-    return left === right;
-  }
-  return left.piProvider === right.piProvider && left.model === right.model;
-}
-
-export function buildEnabledPiProviderPickerEntries(input: {
-  readonly catalog: ReadonlyArray<PiProviderCatalogEntry>;
-  readonly modelsByProvider: Readonly<Record<string, ReadonlyArray<PiProviderModel>>>;
-}): PiProviderPickerEntry[] {
-  return input.catalog
-    .filter((provider) => provider.enabled)
-    .map((provider) => ({
-      piProvider: provider.id,
-      displayName: provider.displayName,
-      models: (input.modelsByProvider[String(provider.id)] ?? []).map((model) => ({
-        id: model.id,
-        name: model.name,
-      })),
-    }));
+  return Equal.equals(left, right);
 }
 
 // The backend a project role inherits when left on "use default": the global
@@ -381,7 +333,7 @@ export function orchestratorConfigDraftsEqual(
 ): boolean {
   return (
     left.enabled === right.enabled &&
-    piModelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
+    modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
     left.openPrAsDraft === right.openPrAsDraft &&
     ((left.optionalStages === null && right.optionalStages === null) ||
       (left.optionalStages !== null &&

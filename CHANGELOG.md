@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal/UI: Swap the Orchestrator PM brain from pi model selection to worker provider-instance model selection. The PM now resolves a Claude provider instance and runs through the Claude DriverPmAdapter, with legacy pi-shaped PM selections replaying as unconfigured and non-Claude PM instances failing clearly until Codex support lands.
 - Internal: Add an additive Claude-driver Orchestrator PM adapter that starts read-only Claude sessions with the in-process orchestration MCP server, bridges Claude runtime events into the existing PI PM event shape, and persists Claude resume cursors for future PM runtime wiring without changing PM model selection yet.
 - Internal: Add the Claude-driver foundation for a read-only Orchestrator PM. Claude sessions can now opt into an injected in-process MCP server for Orchestrator PM tools, and an enforced read-only policy uses Claude Agent SDK plan mode plus explicit built-in tool allow/deny lists so mutating tools such as Write/Edit/MultiEdit/Bash are unavailable.
 - UI: Add a Clear PM chat action to Orchestrator project PM chat. The human-origin `orchestrator.clearPmChat` RPC appends an append-only `thread.cleared` event for the project PM thread, clears the PM pi session rows, and invalidates the in-memory PM runtime so the next PM turn starts with fresh visible messages, session memory, and runtime state.

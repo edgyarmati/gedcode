@@ -4,7 +4,6 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { PositiveInt } from "../baseSchemas.ts";
-import { PiModelSelection } from "../piProvider.ts";
 import {
   ModelSelection,
   ORCHESTRATION_STAGE_ROLES,
@@ -150,38 +149,48 @@ export const OrchestratorResourceLimits = Schema.Struct({
 });
 export type OrchestratorResourceLimits = typeof OrchestratorResourceLimits.Type;
 
-const decodePiModelSelectionOption = Schema.decodeUnknownOption(PiModelSelection);
-const NullablePiModelSelectionWire = Schema.NullOr(PiModelSelection);
+const decodeModelSelectionOption = Schema.decodeUnknownOption(ModelSelection);
+const NullablePmModelSelectionWire = Schema.NullOr(ModelSelection);
 
 /**
- * PM model selection is pi-native. Legacy persisted worker-shaped selections
- * (`{ instanceId, model, ... }`) must stay replayable in the append-only event
- * store, but they no longer identify a valid PM runtime credential source, so
+ * PM model selection is worker-native. Legacy persisted pi-shaped selections
+ * (`{ piProvider, model }`) must stay replayable in the append-only event store,
+ * but they no longer identify a valid provider-instance runtime source, so
  * decode them as an unconfigured PM (`null`) instead of failing the event.
  */
-export const NullablePiModelSelection = Schema.Unknown.pipe(
+export const NullablePmModelSelection = Schema.Unknown.pipe(
   Schema.decodeTo(
-    NullablePiModelSelectionWire,
+    NullablePmModelSelectionWire,
     SchemaTransformation.transformOrFail({
       decode: (raw) => {
         if (raw === null) {
           return Effect.succeed(null);
         }
-        const decoded = decodePiModelSelectionOption(raw);
+        const decoded = decodeModelSelectionOption(raw);
         return Effect.succeed(
           Option.isSome(decoded)
             ? ({
-                piProvider: String(decoded.value.piProvider),
+                instanceId: decoded.value.instanceId,
                 model: decoded.value.model,
-              } satisfies typeof NullablePiModelSelectionWire.Encoded)
+                ...(decoded.value.options !== undefined ? { options: decoded.value.options } : {}),
+              } as typeof NullablePmModelSelectionWire.Encoded)
             : null,
         );
       },
-      encode: (value) => Effect.succeed(value),
+      encode: (value) =>
+        Effect.succeed(
+          value === null
+            ? null
+            : ({
+                instanceId: value.instanceId,
+                model: value.model,
+                ...(value.options !== undefined ? { options: value.options } : {}),
+              } as typeof NullablePmModelSelectionWire.Encoded),
+        ),
     }),
   ),
 );
-export type NullablePiModelSelection = typeof NullablePiModelSelection.Type;
+export type NullablePmModelSelection = typeof NullablePmModelSelection.Type;
 
 /**
  * Per-project HARD orchestrator config (slice subset). Schema-only; persisted
@@ -193,10 +202,10 @@ export const OrchestratorProjectConfig = Schema.Struct({
   // omit this to inherit `OrchestratorGlobalDefaults.openPrAsDraft`; decode
   // defaults it for typed canonical config consumers.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // The PM brain's pi provider + model. The PM **credential** is resolved from
-  // `ServerSettings.piProviders` (or pi-ai's env lookup) by the server runtime;
-  // it is intentionally NOT part of this schema-only project config.
-  pmModelSelection: NullablePiModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  // The PM brain's provider instance + model. The provider instance owns
+  // credentials/auth; this schema-only project config stores only the routing
+  // selection the server resolves at runtime.
+  pmModelSelection: NullablePmModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   taskTypes: Schema.Array(OrchestratorTaskType).pipe(
     Schema.withDecodingDefault(
       Effect.succeed([
@@ -269,7 +278,7 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // field in their raw sparse config; omitted project values inherit this
   // global floor before falling back to `false`.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  pmModelSelection: NullablePiModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  pmModelSelection: NullablePmModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   defaultWorkerModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

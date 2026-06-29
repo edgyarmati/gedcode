@@ -4,7 +4,6 @@ import type {
   OrchestratorGatePolicy,
   OrchestratorGlobalDefaults,
   OrchestrationStageRole,
-  PiModelSelection,
   ProviderDriverKind,
   ProviderInstanceConfig,
   ProviderInstanceId,
@@ -121,7 +120,7 @@ export function buildProviderInstanceUpdatePatch(input: {
 }
 
 export interface OrchestratorGlobalDefaultsDraft {
-  readonly pmModelSelection: PiModelSelection | null;
+  readonly pmModelSelection: ModelSelection | null;
   readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;

@@ -3,12 +3,14 @@ import {
   EventId,
   MessageId,
   ProjectId,
-  PiProviderId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeItemId,
   TaskId,
   TaskTypeId,
   ThreadId,
   TurnId,
+  type ModelSelection,
   type OrchestrationEvent,
   type OrchestrationCommand,
   type OrchestrationGetFullThreadDiffResult,
@@ -16,8 +18,11 @@ import {
   type OrchestrationReadModel,
   type OrchestrationTask,
   type OrchestrationThread,
+  type ProviderRuntimeEvent,
+  type ProviderSession,
+  type ProviderSessionStartInput,
 } from "@t3tools/contracts";
-import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
+import type { AgentHarnessEvent, AgentHarnessResources } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { assert, describe, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
@@ -27,6 +32,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
@@ -47,6 +53,16 @@ import {
 } from "../../persistence/Services/PmRuntimeState.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { ProviderUnsupportedError } from "../../provider/Errors.ts";
+import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
+import {
+  ProviderAdapterRegistry,
+  type ProviderAdapterRegistryShape,
+} from "../../provider/Services/ProviderAdapterRegistry.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderRuntimeBinding,
+} from "../../provider/Services/ProviderSessionDirectory.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
@@ -55,9 +71,10 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
-import type { PiAgentAdapterOptions } from "../pi/PiAgentAdapter.ts";
-import { PiOAuthCredentialStore } from "../pi/PiOAuthCredentialStore.ts";
+import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
+import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
   buildPmSystemPrompt,
@@ -72,6 +89,19 @@ const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("thread-stage-1");
 const turnId = TurnId.make("turn-1");
 const quotaBlockedSettlementKey = `${stageThreadId}::quota-blocked`;
+const claudeDriver = ProviderDriverKind.make("claudeAgent");
+const codexDriver = ProviderDriverKind.make("codex");
+const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+const claudeWorkInstanceId = ProviderInstanceId.make("claude_work");
+const codexInstanceId = ProviderInstanceId.make("codex");
+
+const pmSelection = (
+  instanceId: ProviderInstanceId = claudeInstanceId,
+  model = "claude-sonnet-4-6",
+): ModelSelection => ({
+  instanceId,
+  model,
+});
 
 const project: OrchestrationProject = {
   id: projectId,
@@ -85,7 +115,7 @@ const project: OrchestrationProject = {
   roleModelSelections: {},
   orchestratorConfig: {
     enabled: true,
-    pmModelSelection: { piProvider: PiProviderId.make("openai"), model: "gpt-5.5" },
+    pmModelSelection: pmSelection(),
   },
   scripts: [],
   createdAt: now,
@@ -214,6 +244,131 @@ const stageBlockedEvent: OrchestrationEvent = {
     resetAt: "2026-06-14T12:00:00.000Z",
     updatedAt: now,
   },
+};
+
+const makeProviderSession = (
+  threadId: ThreadId,
+  instanceId: ProviderInstanceId = claudeInstanceId,
+): ProviderSession => ({
+  provider: claudeDriver,
+  providerInstanceId: instanceId,
+  status: "ready",
+  runtimeMode: "approval-required",
+  cwd: project.workspaceRoot,
+  model: "claude-sonnet-4-6",
+  threadId,
+  createdAt: now,
+  updatedAt: now,
+});
+
+const makeFakeClaudeAdapter = (
+  input: {
+    readonly runtimeEvents?: Stream.Stream<ProviderRuntimeEvent>;
+    readonly startInputs?: ProviderSessionStartInput[];
+    readonly sendTurn?: ClaudeAdapterShape["sendTurn"];
+  } = {},
+): ClaudeAdapterShape => ({
+  provider: claudeDriver,
+  capabilities: { sessionModelSwitch: "in-session" },
+  streamEvents: input.runtimeEvents ?? Stream.empty,
+  startSession: (sessionInput) =>
+    Effect.sync(() => {
+      input.startInputs?.push(sessionInput);
+      return makeProviderSession(sessionInput.threadId, sessionInput.providerInstanceId);
+    }),
+  sendTurn:
+    input.sendTurn ??
+    ((turnInput) =>
+      Effect.succeed({
+        threadId: turnInput.threadId,
+        turnId,
+      })),
+  interruptTurn: () => Effect.void,
+  respondToRequest: () => Effect.void,
+  respondToUserInput: () => Effect.void,
+  stopSession: () => Effect.void,
+  listSessions: () => Effect.succeed([]),
+  hasSession: () => Effect.succeed(false),
+  readThread: (threadId) => Effect.succeed({ threadId, turns: [] }),
+  rollbackThread: (threadId) => Effect.succeed({ threadId, turns: [] }),
+  stopAll: () => Effect.void,
+});
+
+const makeProviderAdapterRegistryLayer = (
+  instances: ReadonlyMap<
+    string,
+    {
+      readonly driverKind: ProviderDriverKind;
+      readonly adapter: ClaudeAdapterShape;
+      readonly enabled?: boolean;
+    }
+  > = new Map([
+    [String(claudeInstanceId), { driverKind: claudeDriver, adapter: makeFakeClaudeAdapter() }],
+    [String(claudeWorkInstanceId), { driverKind: claudeDriver, adapter: makeFakeClaudeAdapter() }],
+    [String(codexInstanceId), { driverKind: codexDriver, adapter: makeFakeClaudeAdapter() }],
+  ]),
+) =>
+  Layer.succeed(ProviderAdapterRegistry, {
+    getByInstance: (instanceId) => {
+      const entry = instances.get(String(instanceId));
+      return entry
+        ? Effect.succeed(entry.adapter)
+        : Effect.fail(new ProviderUnsupportedError({ provider: instanceId }));
+    },
+    getInstanceInfo: (instanceId) => {
+      const entry = instances.get(String(instanceId));
+      return entry
+        ? Effect.succeed({
+            instanceId,
+            driverKind: entry.driverKind,
+            displayName: undefined,
+            accentColor: undefined,
+            enabled: entry.enabled ?? true,
+            continuationIdentity: {
+              driverKind: entry.driverKind,
+              continuationKey: `${entry.driverKind}:instance:${instanceId}`,
+            },
+          })
+        : Effect.fail(new ProviderUnsupportedError({ provider: instanceId }));
+    },
+    listInstances: () =>
+      Effect.succeed(
+        Array.from(instances.keys()).map((instanceId) => ProviderInstanceId.make(instanceId)),
+      ),
+    listProviders: () =>
+      Effect.succeed(
+        Array.from(new Set(Array.from(instances.values()).map((entry) => entry.driverKind))),
+      ),
+    streamChanges: Stream.empty,
+    subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
+      PubSub.subscribe(pubsub),
+    ),
+  } satisfies ProviderAdapterRegistryShape);
+
+const makeProviderSessionDirectoryLayer = () => {
+  const bindings = new Map<string, ProviderRuntimeBinding>();
+  return Layer.succeed(ProviderSessionDirectory, {
+    upsert: (binding) =>
+      Effect.sync(() => {
+        bindings.set(String(binding.threadId), binding);
+      }),
+    getProvider: (threadId) =>
+      Effect.succeed(bindings.get(String(threadId))?.provider ?? claudeDriver),
+    getBinding: (threadId) => {
+      const binding = bindings.get(String(threadId));
+      return Effect.succeed(binding === undefined ? Option.none() : Option.some(binding));
+    },
+    listThreadIds: () =>
+      Effect.succeed(Array.from(bindings.values()).map((binding) => binding.threadId)),
+    listBindings: () =>
+      Effect.succeed(
+        Array.from(bindings.values()).map((binding) =>
+          Object.assign({}, binding, {
+            lastSeenAt: now,
+          }),
+        ),
+      ),
+  });
 };
 
 const makeLayer = (input: {
@@ -456,10 +611,20 @@ const makeFactoryCaptureLayer = (input?: {
   readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly dispatchCalls?: OrchestrationCommand[];
+  readonly providerInstances?: ReadonlyMap<
+    string,
+    {
+      readonly driverKind: ProviderDriverKind;
+      readonly adapter: ClaudeAdapterShape;
+      readonly enabled?: boolean;
+    }
+  >;
 }) =>
   Layer.mergeAll(
     SqlitePersistenceMemory,
     NodeServices.layer,
+    makeProviderAdapterRegistryLayer(input?.providerInstances),
+    makeProviderSessionDirectoryLayer(),
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
       dispatch: (command) =>
@@ -500,7 +665,7 @@ const makeFactoryCaptureLayer = (input?: {
     Layer.succeed(ProviderQuotaStatusRepository, {
       upsert: () =>
         Effect.succeed({
-          providerInstanceId: ProviderInstanceId.make("openai"),
+          providerInstanceId: claudeInstanceId,
           previousStatus: null,
           nextStatus: "ok" as const,
           resetAt: null,
@@ -523,53 +688,80 @@ const makeFactoryCaptureLayer = (input?: {
         }),
       listBlocked: () => Effect.succeed([]),
     }),
-    Layer.succeed(PiOAuthCredentialStore, {
-      save: () => Effect.void,
-      clear: () => Effect.void,
-      getAccessToken: () => Effect.succeed("test-oauth-token"),
-    }),
     ServerSettingsService.layerTest(input?.serverSettingsOverrides),
   );
 
-const makeCapturingAdapter = (captured: PiAgentAdapterOptions[]) =>
-  ((options: PiAgentAdapterOptions) =>
-    Effect.sync(() => {
-      captured.push(options);
-      return {
-        events: Stream.empty,
-        isIdle: Effect.succeed(true),
-        latestAssistantUsage: Effect.sync(() => undefined),
-        waitForIdle: Effect.void,
-        prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
-        followUp: () => Effect.void,
-        compact: () =>
-          Effect.succeed({
+const makeTestPmAdapter = (input?: {
+  readonly resourceCalls?: AgentHarnessResources[];
+  readonly calls?: string[];
+  readonly prompt?: PiAgentAdapterShape["prompt"];
+  readonly waitForIdle?: PiAgentAdapterShape["waitForIdle"];
+  readonly compact?: PiAgentAdapterShape["compact"];
+  readonly setModel?: PiAgentAdapterShape["setModel"];
+}) =>
+  ({
+    events: Stream.empty,
+    isIdle: Effect.succeed(true),
+    latestAssistantUsage: Effect.sync(() => undefined),
+    waitForIdle:
+      input?.waitForIdle ??
+      Effect.sync(() => {
+        input?.calls?.push("waitForIdle");
+      }),
+    prompt:
+      input?.prompt ??
+      (() => {
+        input?.calls?.push("prompt");
+        return Effect.succeed(fauxAssistantMessage("ok"));
+      }),
+    followUp: () => Effect.void,
+    compact:
+      input?.compact ??
+      (() =>
+        Effect.sync(() => {
+          input?.calls?.push("compact");
+          return {
             summary: "summary",
             firstKeptEntryId: "entry-1",
             tokensBefore: 1,
-          }),
-        setModel: () => Effect.void,
-        setResources: () => Effect.void,
-        abort: Effect.void,
-      };
+          };
+        })),
+    setModel:
+      input?.setModel ??
+      ((model) =>
+        Effect.sync(() => {
+          input?.calls?.push(`setModel:${model.id}`);
+        })),
+    setResources: (resources) =>
+      Effect.sync(() => {
+        input?.resourceCalls?.push(resources);
+      }),
+    abort: Effect.void,
+  }) satisfies PiAgentAdapterShape;
+
+const makeCapturingAdapter = (
+  captured: DriverPmAdapterOptions[],
+  resourceCalls?: AgentHarnessResources[],
+) =>
+  ((options: DriverPmAdapterOptions) =>
+    Effect.sync(() => {
+      captured.push(options);
+      return makeTestPmAdapter(resourceCalls === undefined ? undefined : { resourceCalls });
     })) satisfies NonNullable<
     Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-  >["makePiAgentAdapterOverride"];
+  >["makeDriverPmAdapterOverride"];
 
-const projectWithPmModel = (piProvider: string, model: string): OrchestrationProject => ({
+const projectWithPmModel = (instanceId: string, model: string): OrchestrationProject => ({
   ...project,
   orchestratorConfig: {
     enabled: true,
-    pmModelSelection: {
-      piProvider: PiProviderId.make(piProvider),
-      model,
-    },
+    pmModelSelection: pmSelection(ProviderInstanceId.make(instanceId), model),
   },
 });
 
 const projectMetaUpdatedEvent = (input: {
   readonly sequence: number;
-  readonly piProvider: string;
+  readonly instanceId: string;
   readonly model: string;
 }): OrchestrationEvent => ({
   sequence: input.sequence,
@@ -586,14 +778,25 @@ const projectMetaUpdatedEvent = (input: {
     projectId,
     orchestratorConfig: {
       enabled: true,
-      pmModelSelection: {
-        piProvider: PiProviderId.make(input.piProvider),
-        model: input.model,
-      },
+      pmModelSelection: pmSelection(ProviderInstanceId.make(input.instanceId), input.model),
     },
     updatedAt: now,
   },
 });
+
+const makeProviderRuntimeEvent = (
+  input: Omit<ProviderRuntimeEvent, "eventId" | "provider" | "createdAt" | "threadId"> & {
+    readonly eventId?: string;
+    readonly threadId?: ThreadId;
+  },
+): ProviderRuntimeEvent =>
+  ({
+    eventId: EventId.make(input.eventId ?? `event-${input.type}`),
+    provider: claudeDriver,
+    createdAt: now,
+    threadId: input.threadId ?? pmThreadIdForProject(project),
+    ...input,
+  }) as ProviderRuntimeEvent;
 
 const withEnvVars = <A, E, R>(
   vars: Record<string, string>,
@@ -640,44 +843,29 @@ const histogramCount = (snapshots: ReadonlyArray<Metric.Metric.Snapshot>, id: st
 describe("PmRuntime", () => {
   it.effect("prefers an explicit project PM model selection over the global default", () =>
     Effect.scoped(
-      withEnvVars(
-        { OPENAI_API_KEY: "env-openai-key" },
-        Effect.gen(function* () {
-          const captured: PiAgentAdapterOptions[] = [];
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: makeCapturingAdapter(captured),
-          });
+      Effect.gen(function* () {
+        const captured: DriverPmAdapterOptions[] = [];
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
+        });
 
-          yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+        yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-opus-4-8"));
 
-          assert.strictEqual(captured.length, 1);
-          assert.strictEqual(captured[0]?.model.provider, "openai");
-          assert.strictEqual(captured[0]?.model.id, "gpt-5");
-
-          const credential = yield* Effect.promise(
-            () =>
-              captured[0]?.getApiKeyAndHeaders?.(captured[0].model) ?? Promise.resolve(undefined),
-          );
-          assert.deepStrictEqual(credential, { apiKey: "test-key" });
-        }).pipe(
-          Effect.provide(
-            makeFactoryCaptureLayer({
-              serverSettingsOverrides: {
-                orchestratorDefaults: {
-                  pmModelSelection: {
-                    piProvider: PiProviderId.make("openai"),
-                    model: "gpt-5.5",
-                  },
-                },
-                piProviders: {
-                  [PiProviderId.make("openai")]: {
-                    enabled: true,
-                    apiKey: { value: "test-key" },
-                  },
-                },
+        assert.strictEqual(captured.length, 1);
+        assert.deepStrictEqual(captured[0]?.modelSelection, {
+          instanceId: claudeInstanceId,
+          model: "claude-opus-4-8",
+        });
+        assert.strictEqual(captured[0]?.claudeAdapter.provider, claudeDriver);
+      }).pipe(
+        Effect.provide(
+          makeFactoryCaptureLayer({
+            serverSettingsOverrides: {
+              orchestratorDefaults: {
+                pmModelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
               },
-            }),
-          ),
+            },
+          }),
         ),
       ),
     ),
@@ -686,9 +874,9 @@ describe("PmRuntime", () => {
   it.effect("uses the global PM model selection when the project selection is null", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const captured: PiAgentAdapterOptions[] = [];
+        const captured: DriverPmAdapterOptions[] = [];
         const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-          makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
         yield* factory.getOrCreate({
@@ -700,23 +888,16 @@ describe("PmRuntime", () => {
         });
 
         assert.strictEqual(captured.length, 1);
-        assert.strictEqual(captured[0]?.model.provider, "openai");
-        assert.strictEqual(captured[0]?.model.id, "gpt-5");
+        assert.deepStrictEqual(captured[0]?.modelSelection, {
+          instanceId: claudeInstanceId,
+          model: "claude-sonnet-4-6",
+        });
       }).pipe(
         Effect.provide(
           makeFactoryCaptureLayer({
             serverSettingsOverrides: {
               orchestratorDefaults: {
-                pmModelSelection: {
-                  piProvider: PiProviderId.make("openai"),
-                  model: "gpt-5",
-                },
-              },
-              piProviders: {
-                [PiProviderId.make("openai")]: {
-                  enabled: true,
-                  apiKey: { value: "test-key" },
-                },
+                pmModelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
               },
             },
           }),
@@ -728,9 +909,9 @@ describe("PmRuntime", () => {
   it.effect("leaves a missing PM model selection unconfigured without creating an adapter", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const captured: PiAgentAdapterOptions[] = [];
+        const captured: DriverPmAdapterOptions[] = [];
         const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-          makePiAgentAdapterOverride: makeCapturingAdapter(captured),
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
         const error = yield* factory
@@ -752,44 +933,157 @@ describe("PmRuntime", () => {
 
   it.effect("constructs the PM adapter with the built-in feature playbook skill", () =>
     Effect.gen(function* () {
-      const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
-      process.env.OPENAI_API_KEY = "test-openai-key";
-      const captured: PiAgentAdapterOptions[] = [];
+      const captured: DriverPmAdapterOptions[] = [];
+      const resourceCalls: AgentHarnessResources[] = [];
 
-      try {
-        yield* Effect.gen(function* () {
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: makeCapturingAdapter(captured),
-          });
-          yield* factory.getOrCreate({
-            ...project,
-            orchestratorConfig: {
-              enabled: true,
-              pmModelSelection: {
-                piProvider: PiProviderId.make("openai"),
-                model: "gpt-5",
-              },
-            },
-          });
-        }).pipe(Effect.scoped, Effect.provide(makeFactoryCaptureLayer()));
-      } finally {
-        if (previousOpenAiApiKey === undefined) {
-          delete process.env.OPENAI_API_KEY;
-        } else {
-          process.env.OPENAI_API_KEY = previousOpenAiApiKey;
-        }
-      }
+      yield* Effect.gen(function* () {
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured, resourceCalls),
+        });
+        yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-sonnet-4-6"));
+      }).pipe(Effect.scoped, Effect.provide(makeFactoryCaptureLayer()));
 
       const resolved = defaultPlaybookLoader.resolve("feature");
       assert.ok(resolved);
       assert.strictEqual(captured.length, 1);
-      assert.deepStrictEqual(captured[0]?.resources?.skills, [resolved.skill]);
-      assert.strictEqual(captured[0]?.resources?.skills?.[0]?.name, resolved.skill.name);
-      assert.strictEqual(
-        captured[0]?.resources?.skills?.[0]?.description,
-        resolved.skill.description,
-      );
+      assert.strictEqual(resourceCalls.length, 1);
+      assert.deepStrictEqual(resourceCalls[0]?.skills, [resolved.skill]);
+      assert.strictEqual(resourceCalls[0]?.skills?.[0]?.name, resolved.skill.name);
+      assert.strictEqual(resourceCalls[0]?.skills?.[0]?.description, resolved.skill.description);
     }),
+  );
+
+  it.effect("builds the DriverPmAdapter for a Claude PM instance and processes a message", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+        const sendTurnCalled = yield* Deferred.make<void>();
+        const dispatchCalls: OrchestrationCommand[] = [];
+        const startInputs: ProviderSessionStartInput[] = [];
+        const threadId = pmThreadIdForProject(project);
+        const claudeAdapter = makeFakeClaudeAdapter({
+          runtimeEvents: Stream.fromQueue(runtimeEvents),
+          startInputs,
+          sendTurn: (turnInput) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(sendTurnCalled, undefined);
+              return { threadId: turnInput.threadId, turnId };
+            }),
+        });
+
+        yield* Effect.gen(function* () {
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions();
+          const runtime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
+
+          yield* runtime.enqueue("Create a task.");
+          const drain = yield* runtime.drain.pipe(Effect.forkScoped);
+          yield* Deferred.await(sendTurnCalled);
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "turn.started",
+              turnId,
+              payload: { model: "claude-sonnet-4-6" },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "content.delta",
+              turnId,
+              itemId: RuntimeItemId.make("assistant-1"),
+              payload: { streamKind: "assistant_text", delta: "Handled." },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "item.completed",
+              turnId,
+              itemId: RuntimeItemId.make("assistant-1"),
+              payload: {
+                itemType: "assistant_message",
+                status: "completed",
+                title: "Assistant message",
+              },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "turn.completed",
+              turnId,
+              payload: {
+                state: "completed",
+                stopReason: "stop",
+              },
+            }),
+          );
+
+          yield* Fiber.join(drain);
+
+          assert.deepStrictEqual(startInputs, [
+            {
+              threadId,
+              provider: claudeDriver,
+              providerInstanceId: claudeInstanceId,
+              cwd: project.workspaceRoot,
+              modelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
+              runtimeMode: "approval-required",
+              readOnly: true,
+              enableOrchestrationTools: true,
+            },
+          ]);
+          assert.deepStrictEqual(
+            dispatchCalls.map((command) => command.type),
+            [
+              "thread.create",
+              "thread.message.assistant.delta",
+              "thread.message.assistant.complete",
+            ],
+          );
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              dispatchCalls,
+              providerInstances: new Map([
+                [String(claudeInstanceId), { driverKind: claudeDriver, adapter: claudeAdapter }],
+              ]),
+            }),
+          ),
+        );
+
+        yield* Queue.shutdown(runtimeEvents);
+      }),
+    ),
+  );
+
+  it.effect("rejects non-Claude PM provider instances with a clear typed error", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const captured: DriverPmAdapterOptions[] = [];
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
+        });
+
+        const error = yield* factory
+          .getOrCreate(projectWithPmModel("codex", "gpt-5-codex"))
+          .pipe(Effect.flip);
+
+        assert.instanceOf(error, PmRuntimeError);
+        assert.match(
+          error.detail,
+          /The orchestrator PM currently requires a Claude provider instance; Codex support is coming/,
+        );
+        assert.strictEqual(captured.length, 0);
+      }).pipe(Effect.provide(makeFactoryCaptureLayer())),
+    ),
   );
 
   it("omits PM harness resources when no configured playbook resolves", () => {
@@ -803,7 +1097,7 @@ describe("PmRuntime", () => {
         Effect.gen(function* () {
           const calls: string[] = [];
           const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: (() =>
+            makeDriverPmAdapterOverride: (() =>
               Effect.sync(() => {
                 calls.push("create");
                 return {
@@ -827,16 +1121,22 @@ describe("PmRuntime", () => {
                 };
               })) satisfies NonNullable<
               Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-            >["makePiAgentAdapterOverride"],
+            >["makeDriverPmAdapterOverride"],
           });
 
-          const firstRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
-          const cachedRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          const firstRuntime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
+          const cachedRuntime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
           assert.strictEqual(cachedRuntime, firstRuntime);
 
           yield* factory.waitForIdle(projectId);
           yield* factory.invalidateRuntime(projectId, "test clear");
-          const rebuiltRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          const rebuiltRuntime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
 
           assert.notStrictEqual(rebuiltRuntime, firstRuntime);
           assert.deepStrictEqual(calls, ["create", "waitForIdle", "waitForIdle", "create"]);
@@ -853,7 +1153,7 @@ describe("PmRuntime", () => {
         Effect.gen(function* () {
           const events = yield* Queue.unbounded<AgentHarnessEvent>();
           const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: (() =>
+            makeDriverPmAdapterOverride: (() =>
               Effect.succeed({
                 events: Stream.fromQueue(events),
                 isIdle: Effect.succeed(true),
@@ -888,10 +1188,12 @@ describe("PmRuntime", () => {
                 abort: Effect.void,
               })) satisfies NonNullable<
               Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-            >["makePiAgentAdapterOverride"],
+            >["makeDriverPmAdapterOverride"],
           });
 
-          const runtime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          const runtime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
           yield* runtime.enqueue("settlement re-entry payload");
           yield* runtime.drain;
           for (
@@ -937,7 +1239,7 @@ describe("PmRuntime", () => {
 
             yield* Effect.gen(function* () {
               const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-                makePiAgentAdapterOverride: ((_options: PiAgentAdapterOptions) =>
+                makeDriverPmAdapterOverride: ((_options: DriverPmAdapterOptions) =>
                   Effect.succeed({
                     events: Stream.empty,
                     isIdle: Effect.succeed(true),
@@ -972,10 +1274,12 @@ describe("PmRuntime", () => {
                     abort: Effect.void,
                   })) satisfies NonNullable<
                   Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-                >["makePiAgentAdapterOverride"],
+                >["makeDriverPmAdapterOverride"],
               });
 
-              const runtime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+              const runtime = yield* factory.getOrCreate(
+                projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+              );
               yield* runtime.enqueue("stage result");
               const drain = yield* runtime.drain.pipe(Effect.forkScoped);
               yield* Deferred.await(promptEntered);
@@ -984,8 +1288,8 @@ describe("PmRuntime", () => {
                 domainEvents,
                 projectMetaUpdatedEvent({
                   sequence: 101,
-                  piProvider: "openai",
-                  model: "gpt-5-mini",
+                  instanceId: "claudeAgent",
+                  model: "claude-opus-4-8",
                 }),
               );
               yield* Deferred.await(eventSeen);
@@ -1003,7 +1307,7 @@ describe("PmRuntime", () => {
                 "prompt:end",
                 "waitForIdle",
                 "compact",
-                "setModel:gpt-5-mini",
+                "setModel:claude-opus-4-8",
               ]);
               yield* Queue.shutdown(domainEvents);
             }).pipe(
@@ -1028,7 +1332,7 @@ describe("PmRuntime", () => {
           const calls: string[] = [];
           const modelSwitched = yield* Deferred.make<void>();
           const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: (() =>
+            makeDriverPmAdapterOverride: (() =>
               Effect.succeed({
                 events: Stream.empty,
                 isIdle: Effect.succeed(true),
@@ -1056,21 +1360,21 @@ describe("PmRuntime", () => {
                 abort: Effect.void,
               })) satisfies NonNullable<
               Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-            >["makePiAgentAdapterOverride"],
+            >["makeDriverPmAdapterOverride"],
           });
 
-          yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-sonnet-4-6"));
           yield* Deferred.await(modelSwitched);
 
-          assert.deepStrictEqual(calls, ["waitForIdle", "compact", "setModel:gpt-5-mini"]);
+          assert.deepStrictEqual(calls, ["waitForIdle", "compact", "setModel:claude-opus-4-8"]);
         }).pipe(
           Effect.provide(
             makeFactoryCaptureLayer({
               streamDomainEvents: Stream.fromIterable([
                 projectMetaUpdatedEvent({
                   sequence: 102,
-                  piProvider: "openai",
-                  model: "gpt-5-mini",
+                  instanceId: "claudeAgent",
+                  model: "claude-opus-4-8",
                 }),
               ]),
             }),
@@ -1090,7 +1394,7 @@ describe("PmRuntime", () => {
           const eventSeen = yield* Deferred.make<void>();
           yield* Effect.gen(function* () {
             const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-              makePiAgentAdapterOverride: (() =>
+              makeDriverPmAdapterOverride: (() =>
                 Effect.succeed({
                   events: Stream.empty,
                   isIdle: Effect.succeed(true),
@@ -1117,16 +1421,16 @@ describe("PmRuntime", () => {
                   abort: Effect.void,
                 })) satisfies NonNullable<
                 Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-              >["makePiAgentAdapterOverride"],
+              >["makeDriverPmAdapterOverride"],
             });
 
-            yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+            yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-sonnet-4-6"));
             yield* Queue.offer(
               domainEvents,
               projectMetaUpdatedEvent({
                 sequence: 103,
-                piProvider: "openai",
-                model: "gpt-5",
+                instanceId: "claudeAgent",
+                model: "claude-sonnet-4-6",
               }),
             );
             yield* Deferred.await(eventSeen);
@@ -1151,65 +1455,64 @@ describe("PmRuntime", () => {
 
   it.effect("invalidates the cached PM runtime when the provider instance changes", () =>
     Effect.scoped(
-      withEnvVars(
-        {
-          OPENAI_API_KEY: "test-openai-key",
-          AZURE_OPENAI_API_KEY: "test-azure-key",
-        },
-        Effect.gen(function* () {
-          const captured: string[] = [];
-          const invalidated = yield* Deferred.make<void>();
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-            makePiAgentAdapterOverride: ((options: PiAgentAdapterOptions) =>
-              Effect.sync(() => {
-                captured.push(`${options.model.provider}:${options.model.id}`);
-                return {
-                  events: Stream.empty,
-                  isIdle: Effect.succeed(true),
-                  latestAssistantUsage: Effect.sync(() => undefined),
-                  waitForIdle: Deferred.succeed(invalidated, void 0).pipe(Effect.asVoid),
-                  prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
-                  followUp: () => Effect.void,
-                  compact: () =>
-                    Effect.succeed({
-                      summary: "summary",
-                      firstKeptEntryId: "entry-1",
-                      tokensBefore: 1,
-                    }),
-                  setModel: () => Effect.void,
-                  setResources: () => Effect.void,
-                  abort: Effect.void,
-                };
-              })) satisfies NonNullable<
-              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-            >["makePiAgentAdapterOverride"],
-          });
+      Effect.gen(function* () {
+        const captured: string[] = [];
+        const invalidated = yield* Deferred.make<void>();
+        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: ((options: DriverPmAdapterOptions) =>
+            Effect.sync(() => {
+              captured.push(`${options.modelSelection.instanceId}:${options.modelSelection.model}`);
+              return {
+                events: Stream.empty,
+                isIdle: Effect.succeed(true),
+                latestAssistantUsage: Effect.sync(() => undefined),
+                waitForIdle: Deferred.succeed(invalidated, void 0).pipe(Effect.asVoid),
+                prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+                followUp: () => Effect.void,
+                compact: () =>
+                  Effect.succeed({
+                    summary: "summary",
+                    firstKeptEntryId: "entry-1",
+                    tokensBefore: 1,
+                  }),
+                setModel: () => Effect.void,
+                setResources: () => Effect.void,
+                abort: Effect.void,
+              };
+            })) satisfies NonNullable<
+            Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+          >["makeDriverPmAdapterOverride"],
+        });
 
-          const first = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
-          yield* Deferred.await(invalidated);
+        const first = yield* factory.getOrCreate(
+          projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+        );
+        yield* Deferred.await(invalidated);
 
-          let second = first;
-          for (let index = 0; index < 20 && second === first; index += 1) {
-            yield* Effect.yieldNow;
-            second = yield* factory.getOrCreate(
-              projectWithPmModel("azure-openai-responses", "gpt-5"),
-            );
-          }
+        let second = first;
+        for (let index = 0; index < 20 && second === first; index += 1) {
+          yield* Effect.yieldNow;
+          second = yield* factory.getOrCreate(
+            projectWithPmModel("claude_work", "claude-sonnet-4-6"),
+          );
+        }
 
-          assert.notStrictEqual(second, first);
-          assert.deepStrictEqual(captured, ["openai:gpt-5", "azure-openai-responses:gpt-5"]);
-        }).pipe(
-          Effect.provide(
-            makeFactoryCaptureLayer({
-              streamDomainEvents: Stream.fromIterable([
-                projectMetaUpdatedEvent({
-                  sequence: 104,
-                  piProvider: "azure-openai-responses",
-                  model: "gpt-5",
-                }),
-              ]),
-            }),
-          ),
+        assert.notStrictEqual(second, first);
+        assert.deepStrictEqual(captured, [
+          "claudeAgent:claude-sonnet-4-6",
+          "claude_work:claude-sonnet-4-6",
+        ]);
+      }).pipe(
+        Effect.provide(
+          makeFactoryCaptureLayer({
+            streamDomainEvents: Stream.fromIterable([
+              projectMetaUpdatedEvent({
+                sequence: 104,
+                instanceId: "claude_work",
+                model: "claude-sonnet-4-6",
+              }),
+            ]),
+          }),
         ),
       ),
     ),
@@ -1308,8 +1611,8 @@ describe("PmRuntime", () => {
   // WP-Q5: when the PM's own provider instance is quota-blocked, re-entry is held
   // BEFORE the settlement is consumed — nothing is delivered to the PM and nothing
   // is consumed, so the reconciliation sweep re-drives it once quota recovers
-  // (preserving exactly-once). The PM runs on the `openai` pi provider per the test
-  // project config.
+  // (preserving exactly-once). The PM runs on the configured Claude provider
+  // instance in the test project config.
   it.effect("holds PM re-entry while the PM provider instance is quota-blocked", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
@@ -1321,9 +1624,7 @@ describe("PmRuntime", () => {
         consumed,
         messages,
         consumeCalls,
-        providerQuotaStatuses: new Map([
-          [String(ProviderInstanceId.make("openai")), "blocked-until"],
-        ]),
+        providerQuotaStatuses: new Map([[String(claudeInstanceId), "blocked-until"]]),
       });
 
       yield* Effect.gen(function* () {

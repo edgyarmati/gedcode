@@ -1,14 +1,8 @@
-import {
-  PiProviderId,
-  ProviderInstanceId,
-  type ModelSelection,
-  type PiModelSelection,
-} from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
   buildOrchestratorProjectConfig,
-  buildEnabledPiProviderPickerEntries,
   buildOrchestrationConfigUpdate,
   orchestratorConfigDraftsEqual,
   orchestrationSettingsDraftsEqual,
@@ -25,8 +19,8 @@ const selection = (instanceId: string, model: string): ModelSelection => ({
   model,
 });
 
-const pmSelection = (piProvider: string, model: string): PiModelSelection => ({
-  piProvider: PiProviderId.make(piProvider),
+const pmSelection = (instanceId: string, model: string): ModelSelection => ({
+  instanceId: ProviderInstanceId.make(instanceId),
   model,
 });
 
@@ -169,7 +163,10 @@ describe("seedOrchestratorConfigDraft", () => {
   it("normalizes a project config into the editor draft", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
-      pmModelSelection: pmSelection("openai", "gpt-5-pm"),
+      pmModelSelection: {
+        ...pmSelection("claudeAgent", "claude-sonnet-4-6"),
+        options: [{ id: "effort", value: "high" }],
+      },
       openPrAsDraft: true,
       taskTypes: [
         {
@@ -193,7 +190,10 @@ describe("seedOrchestratorConfigDraft", () => {
       },
     });
     expect(draft.enabled).toBe(true);
-    expect(draft.pmModelSelection).toEqual(pmSelection("openai", "gpt-5-pm"));
+    expect(draft.pmModelSelection).toEqual({
+      ...pmSelection("claudeAgent", "claude-sonnet-4-6"),
+      options: [{ id: "effort", value: "high" }],
+    });
     expect(draft.openPrAsDraft).toBe(true);
     expect(draft.optionalStages).toEqual({ review: true, verify: false });
     expect(draft.gatePolicy).toEqual({
@@ -268,6 +268,15 @@ describe("seedOrchestratorConfigDraft", () => {
       maxRetriesPerStage: 5,
       allowFullAccessWorkers: null,
     });
+  });
+
+  it("treats legacy pi-shaped PM selections as unconfigured", () => {
+    const draft = seedOrchestratorConfigDraft({
+      enabled: true,
+      pmModelSelection: { piProvider: "openai", model: "gpt-5-pm" },
+    });
+
+    expect(draft.pmModelSelection).toBeNull();
   });
 });
 
@@ -462,41 +471,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         allowFullAccessWorkers: true,
       },
     });
-  });
-});
-
-describe("buildEnabledPiProviderPickerEntries", () => {
-  it("lists only enabled pi providers with their models", () => {
-    expect(
-      buildEnabledPiProviderPickerEntries({
-        catalog: [
-          {
-            id: PiProviderId.make("openai"),
-            displayName: "OpenAI",
-            kind: "apiKey",
-            configured: true,
-            enabled: true,
-          },
-          {
-            id: PiProviderId.make("anthropic"),
-            displayName: "Anthropic",
-            kind: "oauth",
-            configured: true,
-            enabled: false,
-          },
-        ],
-        modelsByProvider: {
-          openai: [{ id: "gpt-5", name: "GPT-5", contextWindow: 128_000 }],
-          anthropic: [{ id: "claude-opus-4-6", name: "Claude Opus", contextWindow: 200_000 }],
-        },
-      }),
-    ).toEqual([
-      {
-        piProvider: PiProviderId.make("openai"),
-        displayName: "OpenAI",
-        models: [{ id: "gpt-5", name: "GPT-5" }],
-      },
-    ]);
   });
 });
 

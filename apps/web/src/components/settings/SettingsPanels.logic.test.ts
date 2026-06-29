@@ -1,6 +1,5 @@
 import {
   DEFAULT_SERVER_SETTINGS,
-  PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
@@ -130,7 +129,10 @@ describe("buildGedRoleSettingsPatch", () => {
 });
 
 describe("Orchestrator global defaults settings logic", () => {
-  const pmModelSelection = { piProvider: PiProviderId.make("openai"), model: "gpt-5" };
+  const pmModelSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-sonnet-4-6",
+  };
   const workerModelSelection: ModelSelection = {
     instanceId: ProviderInstanceId.make("codex_worker"),
     model: "gpt-5-worker",

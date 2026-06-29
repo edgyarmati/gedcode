@@ -112,7 +112,7 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       maxRetriesPerStage: 5,
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
-      pmModelSelection: { piProvider: "openai", model: "gpt-5" },
+      pmModelSelection: { instanceId: "claudeAgent", model: "claude-sonnet-4-6" },
       defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
       autoCompaction: {
         enabled: false,
@@ -135,7 +135,10 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       keepRecentTokens: 12_000,
       customInstructions: "Keep active task IDs and gate state.",
     });
-    expect(reDecoded.pmModelSelection).toEqual({ piProvider: "openai", model: "gpt-5" });
+    expect(reDecoded.pmModelSelection).toEqual({
+      instanceId: "claudeAgent",
+      model: "claude-sonnet-4-6",
+    });
     expect(reDecoded.defaultWorkerModelSelection).toEqual({
       instanceId: "codex_worker",
       model: "gpt-5-worker",
@@ -202,7 +205,11 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
   it("round-trips a fully-specified config without loss", () => {
     const decoded = decodeProjectConfig({
       enabled: true,
-      pmModelSelection: { piProvider: "openai", model: "gpt-5.5" },
+      pmModelSelection: {
+        instanceId: "claudeAgent",
+        model: "claude-opus-4-8",
+        options: [{ id: "contextWindow", value: "1m" }],
+      },
       taskTypes: [
         {
           id: "feature",
@@ -231,8 +238,9 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
 
     expect(reDecoded).toEqual(decoded);
     expect(reDecoded.enabled).toBe(true);
-    expect(reDecoded.pmModelSelection?.piProvider).toBe("openai");
-    expect(reDecoded.pmModelSelection?.model).toBe("gpt-5.5");
+    expect(reDecoded.pmModelSelection?.instanceId).toBe("claudeAgent");
+    expect(reDecoded.pmModelSelection?.model).toBe("claude-opus-4-8");
+    expect(reDecoded.pmModelSelection?.options).toEqual([{ id: "contextWindow", value: "1m" }]);
     expect(reDecoded.taskTypes[0]?.gatePolicy.classify).toBe("require-approval");
     expect(reDecoded.taskTypes[0]?.gatePolicy.plan).toBe("auto");
     expect(reDecoded.taskTypes[0]?.gatePolicy.work).toBe("auto");
@@ -242,12 +250,29 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.openPrAsDraft).toBe(true);
   });
 
-  it("decodes legacy worker-shaped PM model selections as unconfigured", () => {
+  it("decodes legacy pi-shaped PM model selections as unconfigured", () => {
     const decoded = decodeProjectConfig({
       enabled: true,
-      pmModelSelection: { instanceId: "codex", model: "gpt-5.5", options: [] },
+      pmModelSelection: { piProvider: "openai", model: "gpt-5.5" },
     });
 
     expect(decoded.pmModelSelection).toBeNull();
+  });
+
+  it("round-trips worker-shaped PM model selections", () => {
+    const decoded = decodeProjectConfig({
+      enabled: true,
+      pmModelSelection: {
+        instanceId: "claudeAgent",
+        model: "claude-sonnet-4-6",
+        options: [{ id: "effort", value: "high" }],
+      },
+    });
+
+    expect(decodeProjectConfig(encodeProjectConfig(decoded)).pmModelSelection).toEqual({
+      instanceId: "claudeAgent",
+      model: "claude-sonnet-4-6",
+      options: [{ id: "effort", value: "high" }],
+    });
   });
 });

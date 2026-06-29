@@ -192,7 +192,7 @@ describe("orchestration projector", () => {
     expect(readModel.threads[0]?.messages[0]?.text).toBe("after clear");
   });
 
-  it("replays legacy worker-shaped PM model selections as unconfigured", async () => {
+  it("replays legacy pi-shaped PM model selections as unconfigured", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);
 
@@ -218,8 +218,8 @@ describe("orchestration projector", () => {
             orchestratorConfig: {
               enabled: true,
               pmModelSelection: {
-                instanceId: "codex",
-                model: "gpt-5-codex",
+                piProvider: "openai",
+                model: "gpt-5.5",
               },
               openPrAsDraft: true,
             },

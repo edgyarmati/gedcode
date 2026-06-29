@@ -1,8 +1,8 @@
 import {
   OrchestratorProjectConfig,
+  ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
-  type PiModelSelection,
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
@@ -10,11 +10,15 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAutoCompaction } from "@t3tools/shared/orchestrator";
+import type { AgentHarnessResources } from "@earendil-works/pi-agent-core";
+import type { Model } from "@earendil-works/pi-ai";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -57,6 +61,12 @@ import {
   type PmConsumedSettlementKind,
 } from "../../persistence/Services/PmRuntimeState.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
+import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
+import {
+  ProviderAdapterRegistry,
+  type ProviderAdapterRegistryShape,
+} from "../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -67,32 +77,14 @@ import {
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
-import { makeDenyingExecutionEnv } from "../pi/DenyingExecutionEnv.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
-import {
-  makePiAgentAdapter,
-  type PiAgentAdapterOptions,
-  type PiAgentAdapterShape,
-} from "../pi/PiAgentAdapter.ts";
+import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
-import {
-  resolvePiCredential,
-  resolvePiModel,
-  resolvePiProvider,
-  type PiModel,
-  type ResolvedPiCredential,
-} from "../pi/PmModelResolver.ts";
-import {
-  PiOAuthCredentialStore,
-  PiOAuthCredentialStoreLive,
-  type PiOAuthCredentialStoreShape,
-} from "../pi/PiOAuthCredentialStore.ts";
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
-import { makePmTools } from "../pi/pmTools.ts";
-import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
-import { clearSqliteSessionStorage, makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
+import { clearSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
+import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
   buildStageResult,
@@ -125,9 +117,9 @@ export interface PmRuntimeLiveOptions {
   readonly reconciliationIntervalMsOverride?: number;
 }
 
-export interface PiProjectRuntimeFactoryOptions {
-  readonly makePiAgentAdapterOverride?: (
-    options: PiAgentAdapterOptions,
+export interface PmProjectRuntimeFactoryOptions {
+  readonly makeDriverPmAdapterOverride?: (
+    options: DriverPmAdapterOptions,
   ) => Effect.Effect<PiAgentAdapterShape, never, never>;
 }
 
@@ -191,7 +183,7 @@ const resolveProjectConfig = (project: OrchestrationProject) =>
 
 export const resolvePmHarnessResources = (
   taskTypeIds: ReadonlyArray<string>,
-): PiAgentAdapterOptions["resources"] | undefined => {
+): AgentHarnessResources | undefined => {
   const skills = taskTypeIds
     .map((taskTypeId) => defaultPlaybookLoader.resolve(taskTypeId)?.skill)
     .filter((skill) => skill !== undefined);
@@ -246,34 +238,53 @@ const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =
   });
 
 type ResolvedPmHarnessConfig = {
-  readonly selection: PiModelSelection;
+  readonly selection: ModelSelection;
   readonly providerInstanceId: ProviderInstanceId;
-  readonly provider: string;
-  readonly credential: ResolvedPiCredential;
-  readonly model: PiModel;
+  readonly provider: ProviderDriverKind;
 };
 
-const samePmModelSelection = (left: PiModelSelection, right: PiModelSelection): boolean =>
-  left.piProvider === right.piProvider && left.model === right.model;
+const CLAUDE_PM_DRIVER = ProviderDriverKind.make("claudeAgent");
+const DEFAULT_CLAUDE_PM_CONTEXT_WINDOW = 200_000;
+const EXTENDED_CLAUDE_PM_CONTEXT_WINDOW = 1_000_000;
+
+const samePmModelSelection = (left: ModelSelection, right: ModelSelection): boolean =>
+  Equal.equals(left, right);
 
 const canApplyPmModelInPlace = (
   current: ResolvedPmHarnessConfig,
   next: ResolvedPmHarnessConfig,
 ): boolean =>
-  current.providerInstanceId === next.providerInstanceId &&
-  current.provider === next.provider &&
-  current.credential.apiKey === next.credential.apiKey;
+  current.providerInstanceId === next.providerInstanceId && current.provider === next.provider;
 
-const pmThreadModelSelection = (selection: PiModelSelection): ModelSelection => ({
-  instanceId: ProviderInstanceId.make(String(selection.piProvider)),
-  model: selection.model,
-});
+const resolveClaudePmContextWindow = (selection: ModelSelection): number =>
+  getModelSelectionStringOptionValue(selection, "contextWindow") === "1m"
+    ? EXTENDED_CLAUDE_PM_CONTEXT_WINDOW
+    : DEFAULT_CLAUDE_PM_CONTEXT_WINDOW;
+
+const pmAdapterModelDescriptor = (selection: ModelSelection): Model<any> =>
+  ({
+    id: selection.model,
+    name: selection.model,
+    api: "anthropic-messages",
+    provider: "anthropic",
+    baseUrl: "",
+    reasoning: true,
+    input: ["text"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: resolveClaudePmContextWindow(selection),
+    maxTokens: 0,
+  }) satisfies Model<any>;
 
 const resolvePmHarnessConfig = (
   project: OrchestrationProject,
   services: {
     readonly serverSettings: ServerSettingsShape;
-    readonly oauthStore: PiOAuthCredentialStoreShape;
+    readonly providerAdapterRegistry: ProviderAdapterRegistryShape;
   },
 ): Effect.Effect<ResolvedPmHarnessConfig, PmRuntimeError> =>
   Effect.gen(function* () {
@@ -296,34 +307,56 @@ const resolvePmHarnessConfig = (
       );
     }
 
-    const provider = resolvePiProvider(String(pmModelSelection.piProvider));
-    const providerInstanceId = ProviderInstanceId.make(provider);
-    const model = resolvePiModel(provider, pmModelSelection.model);
-    if (model === undefined) {
+    const providerInfo = yield* services.providerAdapterRegistry
+      .getInstanceInfo(pmModelSelection.instanceId)
+      .pipe(
+        Effect.mapError((cause) =>
+          makeNoPmRuntimeError(
+            `PM provider instance '${pmModelSelection.instanceId}' is not configured.`,
+            cause,
+          ),
+        ),
+      );
+    if (!providerInfo.enabled) {
       return yield* makeNoPmRuntimeError(
-        `PM model '${pmModelSelection.model}' was not found for provider '${provider}'.`,
+        `PM provider instance '${pmModelSelection.instanceId}' is disabled.`,
       );
     }
-    const credential = yield* resolvePiCredential({
-      provider,
-      settings,
-      oauthStore: services.oauthStore,
-    }).pipe(
-      Effect.mapError((cause) =>
-        makeNoPmRuntimeError(
-          `No PM credential is configured for provider '${provider}': ${cause.reason}.`,
-          cause,
-        ),
-      ),
-    );
 
     return {
       selection: pmModelSelection,
-      providerInstanceId,
-      provider,
-      credential,
-      model,
+      providerInstanceId: pmModelSelection.instanceId,
+      provider: providerInfo.driverKind,
     };
+  });
+
+const resolveClaudePmAdapter = (
+  config: ResolvedPmHarnessConfig,
+  providerAdapterRegistry: ProviderAdapterRegistryShape,
+): Effect.Effect<ClaudeAdapterShape, PmRuntimeError> =>
+  Effect.gen(function* () {
+    if (config.provider !== CLAUDE_PM_DRIVER) {
+      return yield* makeNoPmRuntimeError(
+        `The orchestrator PM currently requires a Claude provider instance; Codex support is coming. Provider instance '${config.providerInstanceId}' uses '${config.provider}'.`,
+      );
+    }
+
+    const adapter = yield* providerAdapterRegistry
+      .getByInstance(config.providerInstanceId)
+      .pipe(
+        Effect.mapError((cause) =>
+          makeNoPmRuntimeError(
+            `Failed to resolve Claude adapter for PM provider instance '${config.providerInstanceId}'.`,
+            cause,
+          ),
+        ),
+      );
+    if (adapter.provider !== CLAUDE_PM_DRIVER) {
+      return yield* makeNoPmRuntimeError(
+        `The orchestrator PM currently requires a Claude provider instance; Codex support is coming. Provider instance '${config.providerInstanceId}' resolved adapter '${adapter.provider}'.`,
+      );
+    }
+    return adapter as ClaudeAdapterShape;
   });
 
 export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
@@ -511,9 +544,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       ) {
         return false;
       }
-      const providerInstanceId = ProviderInstanceId.make(
-        String(config.value.pmModelSelection.piProvider),
-      );
+      const providerInstanceId = config.value.pmModelSelection.instanceId;
       // Deliberately fail open on BOTH a typed read error and an unexpected
       // defect: a quota read must never wedge PM re-entry. Approved as the
       // explicit fallback for the PM quota gate; interrupts still propagate.
@@ -1067,15 +1098,15 @@ export const makePmRuntimeLive = (options?: PmRuntimeLiveOptions) =>
 
 export const PmRuntimeLive = makePmRuntimeLive();
 
-export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntimeFactoryOptions) =>
+export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntimeFactoryOptions) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const tools = yield* makePmTools;
     const orchestrationEngine = yield* OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const serverSettings = yield* ServerSettingsService;
-    const oauthStore = yield* PiOAuthCredentialStore;
+    const providerAdapterRegistry = yield* ProviderAdapterRegistry;
+    const providerSessionDirectory = yield* ProviderSessionDirectory;
     const settings = yield* serverSettings.getSettings;
     const autoCompactionDefaults = resolveAutoCompaction({
       defaults: settings.orchestratorDefaults,
@@ -1100,46 +1131,31 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
         }
         const harnessConfig = yield* resolvePmHarnessConfig(project, {
           serverSettings,
-          oauthStore,
+          providerAdapterRegistry,
         });
         const pmModelSelection = harnessConfig.selection;
-        const model = harnessConfig.model;
-        const credential = harnessConfig.credential;
-
-        const sessionStorage = yield* makeSqliteSessionStorage({
-          sessionId: `pm:${project.id}`,
-          metadata: {
-            projectId: String(project.id),
-            workspaceRoot: project.workspaceRoot,
-          },
-          createdAt: project.createdAt,
-        }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-        const repairedToolCallCount = yield* repairDanglingToolCalls({
-          storage: sessionStorage,
-          reason: "pm-runtime-startup",
-        });
-        if (repairedToolCallCount > 0) {
-          yield* Effect.logInfo("PM session dangling tool calls repaired", {
-            projectId: String(project.id),
-            repairedToolCallCount,
-          });
-        }
+        const claudeAdapter = yield* resolveClaudePmAdapter(harnessConfig, providerAdapterRegistry);
         const resources = resolvePmHarnessResources(
           config.value.taskTypes.map((taskType) => taskType.id),
         );
-        const adapter = yield* (options?.makePiAgentAdapterOverride ?? makePiAgentAdapter)({
-          env: makeDenyingExecutionEnv(project.workspaceRoot),
-          sessionStorage,
-          model,
-          tools,
-          ...(resources !== undefined ? { resources } : {}),
+        const driverPmAdapterOptions = {
+          project,
+          claudeAdapter,
+          modelSelection: pmModelSelection,
           systemPrompt: buildPmSystemPrompt(project),
-          getApiKeyAndHeaders: async () =>
-            credential.apiKey === undefined ? undefined : { apiKey: credential.apiKey },
-        });
+        } satisfies DriverPmAdapterOptions;
+        const adapter =
+          options?.makeDriverPmAdapterOverride !== undefined
+            ? yield* options.makeDriverPmAdapterOverride(driverPmAdapterOptions)
+            : yield* makeDriverPmAdapter(driverPmAdapterOptions).pipe(
+                Effect.provideService(ProviderSessionDirectory, providerSessionDirectory),
+              );
+        if (resources !== undefined) {
+          yield* adapter.setResources(resources);
+        }
         const eventProjection = yield* makePmEventProjectionRuntime({
           project,
-          pmModelSelection: pmThreadModelSelection(pmModelSelection),
+          pmModelSelection,
           events: adapter.events,
         }).pipe(
           Effect.provideService(OrchestrationEngineService, orchestrationEngine),
@@ -1148,18 +1164,17 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const pmThreadId = pmThreadIdForProject(project);
-        const autoCompactionForModel = (nextModel: PiModel) => ({
+        const autoCompactionForSelection = (selection: ModelSelection) => ({
           ...autoCompactionDefaults,
-          contextWindow: nextModel.contextWindow,
+          contextWindow: resolveClaudePmContextWindow(selection),
         });
         const queue = yield* makePmReEntryQueue(adapter, {
-          autoCompaction: autoCompactionForModel(model),
+          autoCompaction: autoCompactionForSelection(pmModelSelection),
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
-          // pi turn failure surfaces as a PmRuntimeError (not a `runtime.error`
+          // adapter failure surfaces as a PmRuntimeError (not a `runtime.error`
           // provider event), so it bypasses the ingestion-path detection that marks
-          // worker instances blocked — we classify it here and mark the PM instance
-          // blocked so the re-entry gate holds subsequent turns rather than hammering
-          // a dry PM.
+          // worker instances blocked. Classify it here and mark the PM instance
+          // blocked so the re-entry gate holds subsequent turns.
           onTurnError: (error) =>
             Effect.gen(function* () {
               const causeText =
@@ -1233,13 +1248,13 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
           );
         const waitForIdle = queue.runExclusive(adapter.waitForIdle);
 
-        const compactBeforeModelSwitch = (nextModelSelection: PiModelSelection) =>
+        const compactBeforeModelSwitch = (nextModelSelection: ModelSelection) =>
           adapter.compact(autoCompactionDefaults.customInstructions).pipe(
             Effect.timeout(PM_COMPACTION_TIMEOUT),
             Effect.catchCause((cause) =>
               Effect.logWarning("PM model-switch compaction failed or timed out", {
                 projectId: String(project.id),
-                nextProviderInstanceId: String(nextModelSelection.piProvider),
+                nextProviderInstanceId: String(nextModelSelection.instanceId),
                 nextModel: nextModelSelection.model,
                 timeoutMs: Duration.toMillis(PM_COMPACTION_TIMEOUT),
                 cause: Cause.pretty(cause),
@@ -1254,7 +1269,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
 
             const nextHarnessConfig = yield* resolvePmHarnessConfig(updatedProject, {
               serverSettings,
-              oauthStore,
+              providerAdapterRegistry,
             }).pipe(Effect.catch((error) => invalidateRuntime(error.detail).pipe(Effect.as(null))));
             if (nextHarnessConfig === null) {
               return;
@@ -1281,8 +1296,10 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
 
                 yield* adapter.waitForIdle;
                 yield* compactBeforeModelSwitch(nextHarnessConfig.selection);
-                yield* adapter.setModel(nextHarnessConfig.model);
-                yield* queue.setAutoCompaction(autoCompactionForModel(nextHarnessConfig.model));
+                yield* adapter.setModel(pmAdapterModelDescriptor(nextHarnessConfig.selection));
+                yield* queue.setAutoCompaction(
+                  autoCompactionForSelection(nextHarnessConfig.selection),
+                );
                 yield* Ref.set(currentHarnessConfig, nextHarnessConfig);
                 yield* Effect.logInfo("PM model changed in place", {
                   projectId: String(project.id),
@@ -1407,4 +1424,4 @@ export const makePiProjectRuntimeFactory = makePiProjectRuntimeFactoryWithOption
 export const PiProjectRuntimeFactoryLive = Layer.effect(
   PmProjectRuntimeFactory,
   makePiProjectRuntimeFactory,
-).pipe(Layer.provide(PiOAuthCredentialStoreLive));
+);

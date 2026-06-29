@@ -9,7 +9,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  NullablePiModelSelection,
+  NullablePmModelSelection,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
@@ -127,7 +127,7 @@ const normalizeOrchestratorConfigForEvent = (
   }
 
   return decodeForEvent(
-    NullablePiModelSelection,
+    NullablePmModelSelection,
     next.pmModelSelection,
     eventType,
     "payload.orchestratorConfig.pmModelSelection",

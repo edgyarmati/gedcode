@@ -5,15 +5,11 @@ import {
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
   type OrchestrationStageRole,
-  type PiModelSelection,
-  type PiProviderCatalogEntry,
-  type PiProviderModel,
   type ProjectId,
 } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import { readEnvironmentConnection } from "../../environments/runtime";
 import { readEnvironmentApi } from "../../environmentApi";
 import { useSettings } from "../../hooks/useSettings";
 import { newCommandId } from "../../lib/utils";
@@ -39,7 +35,6 @@ import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   buildOrchestrationConfigUpdate,
-  buildEnabledPiProviderPickerEntries,
   orchestrationSettingsDraftsEqual,
   resolveRoleDefaultSelection,
   seedOrchestratorInheritedDefaultsDraft,
@@ -49,9 +44,7 @@ import {
   type InheritableOrchestratorStages,
   type OptionalOrchestratorStage,
   type OrchestrationSettingsDraft,
-  type PiProviderPickerEntry,
 } from "./projectOrchestrationSettings.logic";
-import { PiPmModelPicker, piPmModelLabel } from "./PiPmModelPicker";
 import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
@@ -59,7 +52,7 @@ import {
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
 } from "./OrchestratorConfigControls";
-import { RoleBackendPicker } from "./RoleBackendPicker";
+import { BackendModelPicker, backendLabel, RoleBackendPicker } from "./RoleBackendPicker";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 // The project context the editor needs: identity for dispatch plus the current
@@ -158,30 +151,32 @@ function EnabledSection({
 
 function PmModelSection({
   selection,
-  providerEntries,
+  instanceEntries,
   defaultSelection,
   onSelectionChange,
 }: {
-  selection: PiModelSelection | null;
-  providerEntries: ReadonlyArray<PiProviderPickerEntry>;
-  defaultSelection: PiModelSelection | null;
-  onSelectionChange: (next: PiModelSelection | null) => void;
+  selection: ModelSelection | null;
+  instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+  defaultSelection: ModelSelection | null;
+  onSelectionChange: (next: ModelSelection | null) => void;
 }) {
-  const defaultLabel = piPmModelLabel(defaultSelection, providerEntries);
+  const defaultEntry = defaultSelection
+    ? instanceEntries.find((entry) => entry.instanceId === defaultSelection.instanceId)
+    : undefined;
+  const defaultLabel = defaultSelection ? backendLabel(defaultSelection, defaultEntry) : null;
   const unsetOptionLabel = defaultLabel
     ? `Use global default (${defaultLabel})`
     : "Use global default";
 
   return (
-    <SettingsSection title="PM model" description="Pi provider and model used by the PM.">
-      <PiPmModelPicker
+    <SettingsSection title="PM model" description="Provider instance and model used by the PM.">
+      <BackendModelPicker
         selection={selection}
-        providerEntries={providerEntries}
+        instanceEntries={instanceEntries}
         unsetLabel="Use global default"
         unsetOptionLabel={unsetOptionLabel}
-        providerAriaLabel="PM pi provider"
+        backendAriaLabel="PM backend"
         modelAriaLabel="PM model"
-        emptyHint="No pi providers enabled - add one in Settings -> PM model providers"
         onSelectionChange={onSelectionChange}
       />
     </SettingsSection>
@@ -342,71 +337,6 @@ export function ProjectOrchestrationSettingsDialog({
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
     [serverProviders],
   );
-  const [piProviderCatalog, setPiProviderCatalog] = useState<ReadonlyArray<PiProviderCatalogEntry>>(
-    [],
-  );
-  const [piProviderModelsByProvider, setPiProviderModelsByProvider] = useState<
-    Readonly<Record<string, ReadonlyArray<PiProviderModel>>>
-  >({});
-  useEffect(() => {
-    let cancelled = false;
-    if (!target) {
-      setPiProviderCatalog([]);
-      setPiProviderModelsByProvider({});
-      return;
-    }
-    const connection = readEnvironmentConnection(target.environmentId);
-    if (!connection) {
-      setPiProviderCatalog([]);
-      setPiProviderModelsByProvider({});
-      return;
-    }
-
-    void (async () => {
-      try {
-        const catalog = await connection.client.server.listPiProviderCatalog();
-        const enabledProviders = catalog.providers.filter((provider) => provider.enabled);
-        const modelEntries = await Promise.all(
-          enabledProviders.map(async (provider) => {
-            const result = await connection.client.server.listPiProviderModels({
-              provider: provider.id,
-            });
-            return [String(provider.id), result.models] as const;
-          }),
-        );
-        if (cancelled) {
-          return;
-        }
-        setPiProviderCatalog(catalog.providers);
-        setPiProviderModelsByProvider(Object.fromEntries(modelEntries));
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        setPiProviderCatalog([]);
-        setPiProviderModelsByProvider({});
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Failed to load pi models",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [target]);
-  const piProviderEntries = useMemo(
-    () =>
-      buildEnabledPiProviderPickerEntries({
-        catalog: piProviderCatalog,
-        modelsByProvider: piProviderModelsByProvider,
-      }),
-    [piProviderCatalog, piProviderModelsByProvider],
-  );
 
   const seededDraft = useMemo<OrchestrationSettingsDraft>(
     () =>
@@ -446,7 +376,7 @@ export function ProjectOrchestrationSettingsDialog({
       orchestratorConfig: { ...current.orchestratorConfig, enabled },
     }));
   }, []);
-  const handlePmModelSelectionChange = useCallback((next: PiModelSelection | null) => {
+  const handlePmModelSelectionChange = useCallback((next: ModelSelection | null) => {
     setDraft((current) => ({
       ...current,
       orchestratorConfig: { ...current.orchestratorConfig, pmModelSelection: next },
@@ -583,7 +513,7 @@ export function ProjectOrchestrationSettingsDialog({
           />
           <PmModelSection
             selection={draft.orchestratorConfig.pmModelSelection}
-            providerEntries={piProviderEntries}
+            instanceEntries={instanceEntries}
             defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
           />
