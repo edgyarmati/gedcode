@@ -11,6 +11,7 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
+import { useUiStateStore } from "../uiStateStore";
 import { resolveSidebarNewThreadEnvMode } from "~/components/Sidebar.logic";
 import { useSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "~/rpc/serverState";
@@ -98,6 +99,12 @@ function ChatRouteGlobalShortcuts() {
 }
 
 function ChatRouteLayout() {
+  const setOrchestratorMode = useUiStateStore((state) => state.setOrchestratorMode);
+
+  useEffect(() => {
+    setOrchestratorMode(false);
+  }, [setOrchestratorMode]);
+
   return (
     <>
       <ChatRouteGlobalShortcuts />

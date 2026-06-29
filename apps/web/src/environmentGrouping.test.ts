@@ -34,6 +34,7 @@ const threadP2 = ThreadId.make("thread-shared-primary-2");
 const threadR1 = ThreadId.make("thread-shared-remote-1");
 const threadL1 = ThreadId.make("thread-local-only-1");
 const threadRO1 = ThreadId.make("thread-remote-only-1");
+const pmThreadP1 = ThreadId.make(`pm:${sharedProjectPrimaryId}`);
 
 const SHARED_REPO_CANONICAL_KEY = "github.com/example/shared-repo";
 const DEFAULT_GROUPING_SETTINGS = {
@@ -487,6 +488,33 @@ describe("environment grouping", () => {
       const ref = scopeProjectRef(primaryEnvId, sharedProjectPrimaryId);
       const threads = selectSidebarThreadsForProjectRef(state, ref);
       expect(threads).toHaveLength(2);
+      expect(threads.map((t) => t.id)).toEqual([threadP1, threadP2]);
+    });
+
+    it("excludes project manager threads from regular sidebar thread lists", () => {
+      const state = makeFixtureState();
+      const primaryEnvironmentState = state.environmentStateById[primaryEnvId]!;
+      primaryEnvironmentState.threadIds = [...primaryEnvironmentState.threadIds, pmThreadP1];
+      primaryEnvironmentState.threadIdsByProjectId = {
+        ...primaryEnvironmentState.threadIdsByProjectId,
+        [sharedProjectPrimaryId]: [
+          ...(primaryEnvironmentState.threadIdsByProjectId[sharedProjectPrimaryId] ?? []),
+          pmThreadP1,
+        ],
+      };
+      primaryEnvironmentState.sidebarThreadSummaryById = {
+        ...primaryEnvironmentState.sidebarThreadSummaryById,
+        [pmThreadP1]: makeSidebarThreadSummary({
+          id: pmThreadP1,
+          environmentId: primaryEnvId,
+          projectId: sharedProjectPrimaryId,
+          title: "shared-repo PM",
+        }),
+      };
+
+      const ref = scopeProjectRef(primaryEnvId, sharedProjectPrimaryId);
+      const threads = selectSidebarThreadsForProjectRef(state, ref);
+
       expect(threads.map((t) => t.id)).toEqual([threadP1, threadP2]);
     });
 

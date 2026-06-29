@@ -5,6 +5,7 @@ import {
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
+  shouldShowSidebarProjectThreadPanel,
   resolveAdjacentThreadId,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
@@ -437,6 +438,38 @@ describe("getVisibleSidebarThreadIds", () => {
         },
       ]),
     ).toEqual([ThreadId.make("thread-12"), ThreadId.make("thread-11")]);
+  });
+});
+
+describe("shouldShowSidebarProjectThreadPanel", () => {
+  it("hides project thread panels in orchestrator mode", () => {
+    expect(
+      shouldShowSidebarProjectThreadPanel({
+        hideThreadLists: true,
+        projectExpanded: true,
+        pinnedCollapsedThreadPresent: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("hides active pinned collapsed threads when thread lists are hidden", () => {
+    expect(
+      shouldShowSidebarProjectThreadPanel({
+        hideThreadLists: true,
+        projectExpanded: false,
+        pinnedCollapsedThreadPresent: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("shows expanded chat-mode project thread panels", () => {
+    expect(
+      shouldShowSidebarProjectThreadPanel({
+        hideThreadLists: false,
+        projectExpanded: true,
+        pinnedCollapsedThreadPresent: false,
+      }),
+    ).toBe(true);
   });
 });
 

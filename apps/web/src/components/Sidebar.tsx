@@ -169,6 +169,7 @@ import {
   resolveThreadStatusPill,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
+  shouldShowSidebarProjectThreadPanel,
   sortProjectsForSidebar,
   useThreadJumpHintVisibility,
   ThreadStatusPill,
@@ -922,6 +923,7 @@ interface SidebarProjectItemProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   isManualProjectSorting: boolean;
   dragHandleProps: SortableProjectHandleProps | null;
+  hideThreadLists: boolean;
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
@@ -942,6 +944,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     suppressProjectClickForContextMenuRef,
     isManualProjectSorting,
     dragHandleProps,
+    hideThreadLists,
   } = props;
   const threadSortOrder = useSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
@@ -1209,10 +1212,16 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         hiddenThreads.map((thread) => resolveProjectThreadStatus(thread)),
       ),
       renderedThreads,
-      showEmptyThreadState: projectExpanded && visibleProjectThreads.length === 0,
-      shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
+      showEmptyThreadState:
+        !hideThreadLists && projectExpanded && visibleProjectThreads.length === 0,
+      shouldShowThreadPanel: shouldShowSidebarProjectThreadPanel({
+        hideThreadLists,
+        projectExpanded,
+        pinnedCollapsedThreadPresent: pinnedCollapsedThread !== null,
+      }),
     };
   }, [
+    hideThreadLists,
     isThreadListExpanded,
     pinnedCollapsedThread,
     projectExpanded,
@@ -2617,6 +2626,7 @@ interface SidebarProjectsContentProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   attachProjectListAutoAnimateRef: (node: HTMLElement | null) => void;
   projectsLength: number;
+  hideThreadLists: boolean;
 }
 
 const SidebarProjectsContent = memo(function SidebarProjectsContent(
@@ -2659,6 +2669,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     suppressProjectClickForContextMenuRef,
     attachProjectListAutoAnimateRef,
     projectsLength,
+    hideThreadLists,
   } = props;
 
   const handleProjectSortOrderChange = useCallback(
@@ -2826,6 +2837,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         }
                         isManualProjectSorting={isManualProjectSorting}
                         dragHandleProps={dragHandleProps}
+                        hideThreadLists={hideThreadLists}
                       />
                     )}
                   </SortableProjectItem>
@@ -2856,6 +2868,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
                 isManualProjectSorting={isManualProjectSorting}
                 dragHandleProps={null}
+                hideThreadLists={hideThreadLists}
               />
             ))}
           </SidebarMenu>
@@ -2880,6 +2893,8 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
   const isOnSettings = pathname.startsWith("/settings");
+  const orchestratorMode = useUiStateStore((store) => store.orchestratorMode);
+  const hideThreadLists = orchestratorMode || pathname.startsWith("/orch");
   const sidebarThreadSortOrder = useSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useSettings((s) => s.sidebarProjectSortOrder);
   const sidebarProjectGroupingMode = useSettings((s) => s.sidebarProjectGroupingMode);
@@ -3174,7 +3189,11 @@ export default function Sidebar() {
                   activeThreadKey,
               ) ?? null)
             : null;
-        const shouldShowThreadPanel = projectExpanded || pinnedCollapsedThread !== null;
+        const shouldShowThreadPanel = shouldShowSidebarProjectThreadPanel({
+          hideThreadLists,
+          projectExpanded,
+          pinnedCollapsedThreadPresent: pinnedCollapsedThread !== null,
+        });
         if (!shouldShowThreadPanel) {
           return [];
         }
@@ -3193,6 +3212,7 @@ export default function Sidebar() {
       sidebarThreadSortOrder,
       sidebarThreadPreviewCount,
       expandedThreadListsByProject,
+      hideThreadLists,
       projectExpandedById,
       routeThreadKey,
       sortedProjects,
@@ -3491,6 +3511,7 @@ export default function Sidebar() {
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
             attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
             projectsLength={projects.length}
+            hideThreadLists={hideThreadLists}
           />
 
           <SidebarSeparator />
