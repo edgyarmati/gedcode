@@ -238,6 +238,10 @@ Run via the user's Codex CLI (background companion stalls; interactive Codex wor
   project roleModelSelections → project defaultModelSelection → error (`stageModelSelection.ts:8-18`,
   `decider.ts:1173-1177`); NO global worker default. RoleBackendPicker shows "Use default" without saying
   what. **Decision A: ADD a global worker-backend default (orchestratorDefaults) + show the resolved default in the picker.**
+  **DONE `ba528ba38`** (user via Codex CLI): additive nullable `orchestratorDefaults.defaultWorkerModelSelection`;
+  precedence task role → project role → global worker default → project default → error
+  (`stageModelSelection.ts`); Settings→Orchestrator worker BackendModelPicker; per-stage "Use default" shows
+  the resolved instance+model. Gate green here (tsgo flake hit @t3tools/web in the full run — passes standalone; test:browser 24/24).
 - **Y4 (server+web) clear PM chat**: new `pm.clear` command → clear PM thread messages + invalidate runtime
   (reuse `invalidateRuntime()` PmRuntime.ts:1215-1227) + wipe pi session storage (pm_sessions/pm_session_entries
   SqliteSessionStorage) + UI button in PM chat header (OrchestratorRoutes PmConversation). **Decision E: full reset.**
