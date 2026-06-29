@@ -230,6 +230,10 @@ Run via the user's Codex CLI (background companion stalls; interactive Codex wor
   `/_chat` never sets false → clicking a chat strands you; sidebar always lists chats. PM thread (`pm:` prefix,
   `pmThreadIdForProject`) shows in sidebar — filter at `store.ts selectSidebarThreadsForProjectRef ~2914-2926`
   (`!id.startsWith("pm:")`). **Decision C: orch mode shows ONLY orchestrator content (hide regular chats); reset mode on /_chat.** D folded in.
+  **DONE `83a964490`** (user via Codex CLI): Sidebar hides regular chat panels when orchestratorMode/`/orch`;
+  `/_chat` resets orchestratorMode(false) on mount; `store.ts selectSidebarThreadsForProjectRef` filters
+  `!id.startsWith("pm:")`; logic extracted to Sidebar.logic.ts + tests. Gate green here (tsgo flake hit
+  tailscale/effect-acp — both pass standalone, @t3tools/web clean).
 - **Y3 (server+web) global worker-backend default + surface resolved default**: resolution is task role →
   project roleModelSelections → project defaultModelSelection → error (`stageModelSelection.ts:8-18`,
   `decider.ts:1173-1177`); NO global worker default. RoleBackendPicker shows "Use default" without saying
