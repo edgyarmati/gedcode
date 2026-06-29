@@ -490,9 +490,9 @@ describe("buildEnabledPiProviderPickerEntries", () => {
       }),
     ).toEqual([
       {
-        instanceId: ProviderInstanceId.make("openai"),
+        piProvider: PiProviderId.make("openai"),
         displayName: "OpenAI",
-        models: [{ slug: "gpt-5", name: "GPT-5", shortName: "GPT-5" }],
+        models: [{ id: "gpt-5", name: "GPT-5" }],
       },
     ]);
   });

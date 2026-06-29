@@ -1,6 +1,5 @@
 import {
   ORCHESTRATION_STAGE_ROLES,
-  PiProviderId,
   type EnvironmentId,
   type ModelSelection,
   type OrchestratorConfigJson,
@@ -10,7 +9,6 @@ import {
   type PiProviderCatalogEntry,
   type PiProviderModel,
   type ProjectId,
-  ProviderInstanceId,
 } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -52,6 +50,7 @@ import {
   type OrchestrationSettingsDraft,
   type PiProviderPickerEntry,
 } from "./projectOrchestrationSettings.logic";
+import { PiPmModelPicker, piPmModelLabel } from "./PiPmModelPicker";
 import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
@@ -59,7 +58,7 @@ import {
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
 } from "./OrchestratorConfigControls";
-import { BackendModelPicker, RoleBackendPicker, backendLabel } from "./RoleBackendPicker";
+import { RoleBackendPicker } from "./RoleBackendPicker";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 // The project context the editor needs: identity for dispatch plus the current
@@ -158,57 +157,31 @@ function EnabledSection({
 
 function PmModelSection({
   selection,
-  instanceEntries,
+  providerEntries,
   defaultSelection,
   onSelectionChange,
 }: {
   selection: PiModelSelection | null;
-  instanceEntries: ReadonlyArray<PiProviderPickerEntry>;
+  providerEntries: ReadonlyArray<PiProviderPickerEntry>;
   defaultSelection: PiModelSelection | null;
   onSelectionChange: (next: PiModelSelection | null) => void;
 }) {
-  const pickerSelection: ModelSelection | null = selection
-    ? {
-        instanceId: ProviderInstanceId.make(String(selection.piProvider)),
-        model: selection.model,
-      }
-    : null;
-  const defaultPickerSelection: ModelSelection | null = defaultSelection
-    ? {
-        instanceId: ProviderInstanceId.make(String(defaultSelection.piProvider)),
-        model: defaultSelection.model,
-      }
-    : null;
-  const defaultEntry = defaultPickerSelection
-    ? instanceEntries.find((entry) => entry.instanceId === defaultPickerSelection.instanceId)
-    : undefined;
-  const unsetOptionLabel = defaultPickerSelection
-    ? `Use global (${backendLabel(defaultPickerSelection, defaultEntry as ProviderInstanceEntry)})`
-    : "Use global";
-  const handlePickerSelectionChange = useCallback(
-    (next: ModelSelection | null) => {
-      onSelectionChange(
-        next === null
-          ? null
-          : {
-              piProvider: PiProviderId.make(String(next.instanceId)),
-              model: next.model,
-            },
-      );
-    },
-    [onSelectionChange],
-  );
+  const defaultLabel = piPmModelLabel(defaultSelection, providerEntries);
+  const unsetOptionLabel = defaultLabel
+    ? `Use global default (${defaultLabel})`
+    : "Use global default";
 
   return (
     <SettingsSection title="PM model" description="Pi provider and model used by the PM.">
-      <BackendModelPicker
-        selection={pickerSelection}
-        instanceEntries={instanceEntries as ReadonlyArray<ProviderInstanceEntry>}
-        unsetLabel="Use global"
+      <PiPmModelPicker
+        selection={selection}
+        providerEntries={providerEntries}
+        unsetLabel="Use global default"
         unsetOptionLabel={unsetOptionLabel}
-        backendAriaLabel="PM pi provider"
+        providerAriaLabel="PM pi provider"
         modelAriaLabel="PM model"
-        onSelectionChange={handlePickerSelectionChange}
+        emptyHint="No pi providers enabled - add one in Settings -> PM model providers"
+        onSelectionChange={onSelectionChange}
       />
     </SettingsSection>
   );
@@ -609,7 +582,7 @@ export function ProjectOrchestrationSettingsDialog({
           />
           <PmModelSection
             selection={draft.orchestratorConfig.pmModelSelection}
-            instanceEntries={piProviderEntries}
+            providerEntries={piProviderEntries}
             defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
           />

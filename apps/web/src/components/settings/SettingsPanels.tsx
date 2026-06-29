@@ -6,11 +6,9 @@ import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
   type GedSubagentRole,
-  PiProviderId,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   ProviderInstanceId,
-  type ModelSelection,
   type PiModelSelection,
   type PiProviderCatalogEntry,
   type PiProviderModel,
@@ -51,7 +49,6 @@ import {
 import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
-  type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { getPrimaryEnvironmentConnection } from "../../environments/runtime";
@@ -80,8 +77,8 @@ import {
   OrchestratorGateAutonomyControl,
   OrchestratorStagesControl,
 } from "../orchestrator/OrchestratorConfigControls";
+import { PiPmModelPicker, piPmModelLabel } from "../orchestrator/PiPmModelPicker";
 import { buildEnabledPiProviderPickerEntries } from "../orchestrator/projectOrchestrationSettings.logic";
-import { BackendModelPicker, backendLabel } from "../orchestrator/RoleBackendPicker";
 import {
   buildOrchestratorGlobalDefaultsPatch,
   buildGedRoleSettingsPatch,
@@ -1154,34 +1151,9 @@ export function OrchestratorDefaultsSettingsPanel() {
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
   );
-  const pmPickerSelection: ModelSelection | null =
-    draft.pmModelSelection === null
-      ? null
-      : {
-          instanceId: ProviderInstanceId.make(String(draft.pmModelSelection.piProvider)),
-          model: draft.pmModelSelection.model,
-        };
-  const defaultPmPickerSelection: ModelSelection | null =
-    defaultDraft.pmModelSelection === null
-      ? null
-      : {
-          instanceId: ProviderInstanceId.make(String(defaultDraft.pmModelSelection.piProvider)),
-          model: defaultDraft.pmModelSelection.model,
-        };
-  const defaultPmEntry = defaultPmPickerSelection
-    ? piProviderEntries.find((entry) => entry.instanceId === defaultPmPickerSelection.instanceId)
-    : undefined;
-  const defaultPmOptionLabel = defaultPmPickerSelection
-    ? `Default (${backendLabel(defaultPmPickerSelection, defaultPmEntry as ProviderInstanceEntry)})`
-    : "None";
-  const updatePmModelSelection = (next: ModelSelection | null) => {
-    const pmModelSelection: PiModelSelection | null =
-      next === null
-        ? null
-        : {
-            piProvider: PiProviderId.make(String(next.instanceId)),
-            model: next.model,
-          };
+  const defaultPmLabel = piPmModelLabel(defaultDraft.pmModelSelection, piProviderEntries);
+  const defaultPmOptionLabel = defaultPmLabel ? `Default (${defaultPmLabel})` : "None";
+  const updatePmModelSelection = (pmModelSelection: PiModelSelection | null) => {
     updateDraft({ ...draft, pmModelSelection });
   };
 
@@ -1203,13 +1175,14 @@ export function OrchestratorDefaultsSettingsPanel() {
           }
         >
           <div className="pb-4 pt-3">
-            <BackendModelPicker
-              selection={pmPickerSelection}
-              instanceEntries={piProviderEntries as never as ReadonlyArray<ProviderInstanceEntry>}
+            <PiPmModelPicker
+              selection={draft.pmModelSelection}
+              providerEntries={piProviderEntries}
               unsetLabel="None"
               unsetOptionLabel={defaultPmOptionLabel}
-              backendAriaLabel="Default PM pi provider"
+              providerAriaLabel="Default PM pi provider"
               modelAriaLabel="Default PM model"
+              emptyHint="No pi providers enabled - add one in Settings -> PM model providers"
               onSelectionChange={updatePmModelSelection}
             />
           </div>

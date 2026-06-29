@@ -6,7 +6,6 @@ import {
   ORCHESTRATION_STAGE_ROLES,
   OrchestratorGlobalDefaults,
   PiProviderId,
-  ProviderInstanceId,
   type PiModelSelection,
   type PiProviderCatalogEntry,
   type PiProviderModel,
@@ -90,12 +89,11 @@ export interface OrchestrationConfigUpdate {
 }
 
 export interface PiProviderPickerEntry {
-  readonly instanceId: ProviderInstanceId;
+  readonly piProvider: PiProviderId;
   readonly displayName: string;
   readonly models: ReadonlyArray<{
-    readonly slug: string;
+    readonly id: string;
     readonly name: string;
-    readonly shortName?: string | undefined;
   }>;
 }
 
@@ -335,12 +333,11 @@ export function buildEnabledPiProviderPickerEntries(input: {
   return input.catalog
     .filter((provider) => provider.enabled)
     .map((provider) => ({
-      instanceId: ProviderInstanceId.make(String(provider.id)),
+      piProvider: provider.id,
       displayName: provider.displayName,
       models: (input.modelsByProvider[String(provider.id)] ?? []).map((model) => ({
-        slug: model.id,
+        id: model.id,
         name: model.name,
-        shortName: model.name,
       })),
     }));
 }

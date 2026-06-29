@@ -200,6 +200,7 @@ codex `expiresAt` confirmed ms-epoch). So the pi-provider feature is proven E2E.
 **Design decision (2026-06-26):** PM stays on **pi**. Driver-based read-only PM (Codex/Claude + MCP
 orchestration tools, enforced read-only) deferred as a V2 — captured in memory
 `orchestrator-pm-harness-decision.md`; `PiAgentAdapterShape` is the swap seam. X4 (pi-only picker) is the last X-fix.
+
 - **X4 (web) pi-only PM picker** — `PmModelSection` shoehorns pi providers into the worker
   `BackendModelPicker` (maps piProvider↔instanceId, shows ALL providers grayed-out). Build a dedicated
   pi picker: only enabled/connected pi providers + resolvable models.

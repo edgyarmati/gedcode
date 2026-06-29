@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Make Orchestrator PM model pickers list only enabled pi providers and their resolvable models, with a clear empty state when no PM model providers are enabled.
 - Fix: Let the Orchestrator PM runtime inherit the global PM model default when a project leaves its PM model selection unset, while keeping the orchestrator enabled flag project-only.
 - Fix: Surface each human message sent to the Orchestrator PM immediately in the PM conversation while keeping settlement and quota re-entry prompts out of the visible user-message timeline.
 - Fix: Scope the Orchestrator PM system prompt to its project (project id, title, workspace root) and instruct the PM to operate on that project instead of asking the human for a project or repo id.
