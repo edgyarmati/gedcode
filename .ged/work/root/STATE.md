@@ -266,6 +266,16 @@ MOCKED session — confirm against the real Claude API in/after W3.
 (replacing PiAgentAdapter/PmModelResolver pi-credential path); web PM picker → worker BackendModelPicker
 (replace PiPmModelPicker). PM model must be a CLAUDE instance for now (Codex parity = W5); non-Claude → clear error.
 
+**W3 DONE `ef05191c4` — PM RUNS ON CLAUDE (driver), not pi.** pmModelSelection→worker ModelSelection (lenient
+pi→null); PmRuntime resolves the PM instance, looks up via `ProviderAdapterRegistry`, Claude-only guard
+(`claudeAgent` driver, PmRuntime.ts:333), builds DriverPmAdapter from the resolved ClaudeAdapter +
+ProviderSessionDirectory; seam=`makeDriverPmAdapterOverride`; web PM picker→worker BackendModelPicker;
+PiPmModelPicker deleted. Standalone pi modules remain (W6). Gate green here (tsgo flake hit @t3tools/web —
+passes standalone; test:browser pickers 22/22). **LIVE-TESTABLE NOW** (config a Claude provider instance in
+Connections as the PM model). Remaining: **W4** surface PM turn errors (G) + composer cleanup (F) · **W5**
+Codex PM parity · **W6** delete pi. WATCH: confirm the read-only/plan Claude PM actually executes its
+orchestration MCP tools against the REAL API (test was mocked) — the live test confirms it.
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
