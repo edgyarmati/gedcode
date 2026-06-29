@@ -209,6 +209,27 @@ orchestration tools, enforced read-only) deferred as a V2 — captured in memory
   defaults panel; worker pickers untouched. Gate green here incl. test:browser 24/24. (STATE.md slipped
   into the X4 feature commit via `git add -u` — harmless; use explicit pathspecs.)
 
+## 🔄 PIVOT (2026-06-29): DRIVER-BASED PM REWRITE — drop pi (phase: clarification → plan)
+
+User decided to **throw out the pi PM + pi-provider config** and run the PM on the existing **Codex/Claude
+drivers** (read-only). Trigger: cascading pi-PM friction (the provider-config/OAuth/picker saga; PM froze
+SILENTLY when its model `openai-codex/gpt-5.4` ran out of quota — `PmEventProjection` surfaces tool
+activity + assistant output but NOT turn failures, so quota/rate-limit/auth errors are invisible; the
+PM-chat bottom model picker is the reused `ChatComposer` picker and is INERT — `onSend` posts only
+`{projectId,message}`, PM uses config `pmModelSelection`). This is the driver-PM V2 from
+`[[orchestrator-pm-harness-decision]]`. **Reframe: it's a PM-brain swap + pi removal, NOT a full
+orchestrator rewrite** — the event-sourced core (decider, projector, tasks/stages/gates, real-PR landing)
++ worker execution STAY; the `PiAgentAdapterShape` seam is the swap point.
+
+**Decisions (grill-me):** (1) read-only is **HARNESS-ENFORCED** (Codex read-only sandbox / Claude
+permission-mode) + prompt, not prompt-only; (2) PM **reuses the worker provider-instance system** (a
+Codex/Claude/OpenCode instance + model, per-project + global default — replaces pi pmModelSelection + the
+pi picker; the bottom-of-chat worker picker becomes correct); (3) **persistent resumable driver session**
+per project (resume on human message + worker settlement; mirrors pi continuity). Rewrite must also fix
+the silent-failure (surface PM turn errors) + the inert composer. **Feasibility investigation RUNNING**
+(driver tool-injection/MCP, enforced read-only per driver, session resume, the new PM adapter, removal
+list) → then SPEC + TASKS + implement via Codex CLI. Pre-pivot state: pi PM works but is being replaced.
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
