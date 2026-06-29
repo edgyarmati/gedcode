@@ -209,6 +209,31 @@ orchestration tools, enforced read-only) deferred as a V2 — captured in memory
   defaults panel; worker pickers untouched. Gate green here incl. test:browser 24/24. (STATE.md slipped
   into the X4 feature commit via `git add -u` — harmless; use explicit pathspecs.)
 
+## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
+
+Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
+worker on built-in `codex`/gpt-5.4, approval-required). Investigated (2 read-only agents) + decisions taken.
+Run via the user's Codex CLI (background companion stalls; interactive Codex works), one at a time, review+gate+commit each:
+- **Y1 (server) worker full-access**: stage-start HARDCODES `runtimeMode:"approval-required"`
+  (`decider.ts:1222,1265`); `allowFullAccessWorkers` (resourceLimits, UI checkbox at
+  ProjectOrchestrationSettingsDialog ~505-516, resolved in `ProviderCommandReactor.ts:336-373` +
+  `workerSafety.ts:29-37 clampWorkerRuntimeMode`) only CLAMPS DOWN → toggling it does nothing. Fix:
+  orchestrator worker stage-start runtimeMode = full-access when allowFullAccessWorkers (project ?? global)
+  true, else approval-required; keep thread stored mode + reactor-applied mode consistent. **Decision B: full-access.**
+- **Y2 (web) orch-only sidebar + PM thread filter + nav**: `/_orch` sets mode true (`routes/_orch.tsx:10`),
+  `/_chat` never sets false → clicking a chat strands you; sidebar always lists chats. PM thread (`pm:` prefix,
+  `pmThreadIdForProject`) shows in sidebar — filter at `store.ts selectSidebarThreadsForProjectRef ~2914-2926`
+  (`!id.startsWith("pm:")`). **Decision C: orch mode shows ONLY orchestrator content (hide regular chats); reset mode on /_chat.** D folded in.
+- **Y3 (server+web) global worker-backend default + surface resolved default**: resolution is task role →
+  project roleModelSelections → project defaultModelSelection → error (`stageModelSelection.ts:8-18`,
+  `decider.ts:1173-1177`); NO global worker default. RoleBackendPicker shows "Use default" without saying
+  what. **Decision A: ADD a global worker-backend default (orchestratorDefaults) + show the resolved default in the picker.**
+- **Y4 (server+web) clear PM chat**: new `pm.clear` command → clear PM thread messages + invalidate runtime
+  (reuse `invalidateRuntime()` PmRuntime.ts:1215-1227) + wipe pi session storage (pm_sessions/pm_session_entries
+  SqliteSessionStorage) + UI button in PM chat header (OrchestratorRoutes PmConversation). **Decision E: full reset.**
+
+Sequence: Y1 (unblock) → Y2 (nav) → Y3 (backend default) → Y4 (clear). Dev server devserver3 running.
+
 ## ✅ X-SERIES COMPLETE (2026-06-29): PM-UX hardening done — X1 `598e8524a` · X2 `690687d41` · X3 `7f0915227` · X4 `82dad7941`
 
 All four gate-green. Full pi-provider feature (PI1-PI6 + OAUTHUX) + the PM-UX fixes are in on
