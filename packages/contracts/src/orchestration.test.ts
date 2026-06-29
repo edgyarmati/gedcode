@@ -25,6 +25,7 @@ import {
   OrchestrationTask,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
+  OrchestratorClearPmChatInput,
   OrchestratorSetTaskRoleSelectionsInput,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
@@ -73,6 +74,7 @@ const decodePlaybookFrontmatter = Schema.decodeUnknownEffect(OrchestratorPlayboo
 const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
   OrchestratorSetTaskRoleSelectionsInput,
 );
+const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(OrchestratorClearPmChatInput);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -741,6 +743,50 @@ it.effect("round-trips task.pr.opened commands through the orchestration command
   }),
 );
 
+it.effect("round-trips thread.clear commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "thread.clear",
+      commandId: "cmd-thread-clear",
+      threadId: "pm:project-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "thread.clear");
+    if (reDecoded.type === "thread.clear") {
+      assert.strictEqual(reDecoded.threadId, "pm:project-1");
+    }
+  }),
+);
+
+it.effect("round-trips thread.cleared events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-thread-cleared",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.cleared",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-thread-clear",
+      causationEventId: null,
+      correlationId: "cmd-thread-clear",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        clearedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "thread.cleared");
+    if (reDecoded.type === "thread.cleared") {
+      assert.strictEqual(reDecoded.payload.threadId, "pm:project-1");
+    }
+  }),
+);
+
 it.effect("round-trips task.pr-opened events through the orchestration event union", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationEvent({
@@ -955,6 +1001,15 @@ it.effect("decodes task role-selection websocket input with role-keyed selection
       }),
     );
     assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes clear PM chat websocket input", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorClearPmChatInput({
+      projectId: "project-1",
+    });
+    assert.strictEqual(input.projectId, "project-1");
   }),
 );
 

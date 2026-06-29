@@ -103,6 +103,95 @@ describe("orchestration projector", () => {
     ]);
   });
 
+  it("replays thread.cleared as dropping prior thread messages", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const threadId = "pm:project-1";
+    const events: OrchestrationEvent[] = [
+      makeEvent({
+        sequence: 1,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-create",
+        payload: {
+          threadId,
+          projectId: "project-1",
+          title: "Project PM",
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/project",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "thread.message-sent",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-message-before-clear",
+        payload: {
+          threadId,
+          messageId: "message-before-clear",
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "thread.cleared",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-clear",
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "thread.message-sent",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-message-after-clear",
+        payload: {
+          threadId,
+          messageId: "message-after-clear",
+          role: "assistant",
+          text: "after clear",
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    ];
+
+    let readModel = createEmptyReadModel(now);
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+
+    expect(readModel.threads[0]?.messages.map((message) => message.id)).toEqual([
+      "message-after-clear",
+    ]);
+    expect(readModel.threads[0]?.messages[0]?.text).toBe("after clear");
+  });
+
   it("replays legacy worker-shaped PM model selections as unconfigured", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);

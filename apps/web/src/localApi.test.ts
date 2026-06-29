@@ -121,6 +121,7 @@ const rpcClientMock = {
     ),
     resolveGate: vi.fn(),
     setTaskRoleSelections: vi.fn(),
+    clearPmChat: vi.fn(),
   },
   gedWorkflow: {
     getState: vi.fn(),
@@ -473,6 +474,7 @@ describe("wsApi", () => {
     rpcClientMock.orchestrator.sendMessage.mockResolvedValue({ accepted: true });
     rpcClientMock.orchestrator.resolveGate.mockResolvedValue({ sequence: 42 });
     rpcClientMock.orchestrator.setTaskRoleSelections.mockResolvedValue({ sequence: 43 });
+    rpcClientMock.orchestrator.clearPmChat.mockResolvedValue({ sequence: 44 });
     const { createEnvironmentApi } = await import("./environmentApi");
 
     const api = createEnvironmentApi(rpcClientMock as never);
@@ -510,6 +512,7 @@ describe("wsApi", () => {
         },
       }),
     ).resolves.toEqual({ sequence: 43 });
+    await expect(api.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 44 });
 
     expect(rpcClientMock.orchestrator.sendMessage).toHaveBeenCalledWith({
       projectId,
@@ -541,6 +544,7 @@ describe("wsApi", () => {
         },
       },
     });
+    expect(rpcClientMock.orchestrator.clearPmChat).toHaveBeenCalledWith({ projectId });
 
     unsubscribeProject();
     unsubscribeTask();

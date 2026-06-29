@@ -7,7 +7,7 @@
  *
  * @module PmRuntime
  */
-import type { OrchestrationProject } from "@t3tools/contracts";
+import type { OrchestrationProject, ProjectId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
@@ -24,6 +24,12 @@ export interface PmProjectRuntimeFactoryShape {
   readonly getOrCreate: (
     project: OrchestrationProject,
   ) => Effect.Effect<PmProjectRuntime, PmRuntimeError>;
+  readonly waitForIdle: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
+  readonly invalidateRuntime: (
+    projectId: ProjectId,
+    reason: string,
+  ) => Effect.Effect<void, PmRuntimeError>;
+  readonly clearSessionStorage: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
 }
 
 export class PmProjectRuntimeFactory extends Context.Service<

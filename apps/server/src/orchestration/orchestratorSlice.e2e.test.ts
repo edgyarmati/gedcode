@@ -288,6 +288,9 @@ function makePmRuntimeLayer(input: {
     Layer.provide(
       Layer.succeed(PmProjectRuntimeFactory, {
         getOrCreate: () => Effect.succeed(projectRuntime),
+        waitForIdle: () => Effect.void,
+        invalidateRuntime: () => Effect.void,
+        clearSessionStorage: () => Effect.void,
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),

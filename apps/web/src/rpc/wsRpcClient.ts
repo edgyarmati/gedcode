@@ -171,6 +171,7 @@ export interface WsRpcClient {
     readonly setTaskRoleSelections: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
     >;
+    readonly clearPmChat: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.clearPmChat>;
   };
   readonly gedWorkflow: {
     readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
@@ -371,6 +372,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       // Dialog caller was removed; per-task model selection is now PM-driven, but this remains a human-origin RPC.
       setTaskRoleSelections: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections](input)),
+      clearPmChat: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.clearPmChat](input)),
     },
     gedWorkflow: {
       getState: (input) =>

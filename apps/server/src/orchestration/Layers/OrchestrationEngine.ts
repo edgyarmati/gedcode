@@ -119,6 +119,7 @@ export function classifyOrchestrationCommand(
     case "thread.message.user.append":
     case "thread.message.assistant.delta":
     case "thread.message.assistant.complete":
+    case "thread.clear":
     case "thread.proposed-plan.upsert":
     case "thread.activity.append":
       return "streaming";

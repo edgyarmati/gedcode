@@ -693,6 +693,9 @@ const buildAppUnderTest = (options?: {
               enqueue: () => Effect.void,
               drain: Effect.void,
             }),
+          waitForIdle: () => Effect.void,
+          invalidateRuntime: () => Effect.void,
+          clearSessionStorage: () => Effect.void,
           ...options?.layers?.pmProjectRuntimeFactory,
         }),
       ),
@@ -3478,6 +3481,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             dispatch: (command) =>
               Effect.sync(() => {
                 dispatched.push(command);
+                if (command.type === "thread.clear") {
+                  runtimeCalls.push("dispatch:thread.clear");
+                }
                 return { sequence: 41 };
               }),
             streamDomainEvents: Stream.make(taskCreatedEvent, gateRequestedEvent),
@@ -3499,6 +3505,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     }),
                   drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
                 };
+              }),
+            waitForIdle: (loadedProjectId) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                runtimeCalls.push("waitForIdle");
+              }),
+            clearSessionStorage: (loadedProjectId) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                runtimeCalls.push("clearSessionStorage");
+              }),
+            invalidateRuntime: (loadedProjectId, reason) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                assert.equal(reason, "PM chat cleared");
+                runtimeCalls.push("invalidateRuntime");
               }),
           },
         },
@@ -3591,6 +3613,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               },
             });
             assert.equal(setTaskRoleSelectionsResult.sequence, 41);
+
+            const clearPmChatResult = yield* client[ORCHESTRATOR_WS_METHODS.clearPmChat]({
+              projectId,
+            });
+            assert.equal(clearPmChatResult.sequence, 41);
           }),
         ),
       );
@@ -3616,6 +3643,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.model, "gpt-5-task");
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setRoleSelectionsCommand.createdAt));
       }
+
+      const clearThreadCommand = dispatched.find((command) => command.type === "thread.clear");
+      assert.isDefined(clearThreadCommand);
+      if (clearThreadCommand?.type === "thread.clear") {
+        assert.equal(clearThreadCommand.threadId, pmThreadId);
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(clearThreadCommand.createdAt));
+      }
+      assert.deepEqual(runtimeCalls.slice(-4), [
+        "waitForIdle",
+        "dispatch:thread.clear",
+        "clearSessionStorage",
+        "invalidateRuntime",
+      ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

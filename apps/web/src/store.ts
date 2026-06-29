@@ -2438,6 +2438,19 @@ function applyEnvironmentOrchestrationEvent(
         : nextState;
     }
 
+    case "thread.cleared":
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        messages: [],
+        activities: [],
+        proposedPlans: [],
+        turnDiffSummaries: [],
+        latestTurn: null,
+        session: null,
+        pendingSourceProposedPlan: undefined,
+        updatedAt: event.payload.clearedAt,
+      }));
+
     case "thread.session-set":
       return updateThreadState(state, event.payload.threadId, (thread) => {
         const settledTurnState = settledTurnStateForSessionStatus(event.payload.session.status);

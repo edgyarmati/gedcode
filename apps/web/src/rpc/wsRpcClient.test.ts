@@ -120,6 +120,7 @@ describe("wsRpcClient", () => {
       [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
       [ORCHESTRATOR_WS_METHODS.resolveGate]: vi.fn(() => ({ sequence: 7 })),
       [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: vi.fn(() => ({ sequence: 8 })),
+      [ORCHESTRATOR_WS_METHODS.clearPmChat]: vi.fn(() => ({ sequence: 9 })),
     };
     const request = vi.fn((execute: (client: typeof protocolClient) => unknown) =>
       Promise.resolve(execute(protocolClient)),
@@ -175,6 +176,7 @@ describe("wsRpcClient", () => {
         },
       }),
     ).resolves.toEqual({ sequence: 8 });
+    await expect(client.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 9 });
 
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
       projectId,
@@ -199,6 +201,9 @@ describe("wsRpcClient", () => {
           model: "gpt-5-task",
         },
       },
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.clearPmChat]).toHaveBeenCalledWith({
+      projectId,
     });
     expect(subscribe.mock.calls[0]?.[2]).toEqual({
       onResubscribe,

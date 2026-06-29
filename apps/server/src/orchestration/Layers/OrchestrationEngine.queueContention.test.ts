@@ -83,6 +83,7 @@ describe("classifyOrchestrationCommand", () => {
     ["thread.message.user.append", "streaming"],
     ["thread.message.assistant.delta", "streaming"],
     ["thread.message.assistant.complete", "streaming"],
+    ["thread.clear", "streaming"],
     ["thread.proposed-plan.upsert", "streaming"],
     ["thread.activity.append", "streaming"],
     ["thread.turn.start", "turn"],

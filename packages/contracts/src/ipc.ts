@@ -61,6 +61,7 @@ import type {
   OrchestrationShellStreamItem,
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
+  OrchestratorClearPmChatInput,
   OrchestratorProjectStreamItem,
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
@@ -594,6 +595,7 @@ export interface EnvironmentApi {
     setTaskRoleSelections: (
       input: OrchestratorSetTaskRoleSelectionsInput,
     ) => Promise<{ sequence: number }>;
+    clearPmChat: (input: OrchestratorClearPmChatInput) => Promise<{ sequence: number }>;
   };
   gedWorkflow: {
     getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;

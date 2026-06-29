@@ -41,6 +41,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   subscribeTask: "orchestrator.subscribeTask",
   resolveGate: "orchestrator.resolveGate",
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
+  clearPmChat: "orchestrator.clearPmChat",
 } as const;
 
 export const OrchestratorPlaybookFrontmatter = Schema.Struct({
@@ -1117,6 +1118,13 @@ const ThreadMessageUserAppendCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadClearCommand = Schema.Struct({
+  type: Schema.Literal("thread.clear"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
 const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
@@ -1160,6 +1168,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadMessageUserAppendCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
+  ThreadClearCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
@@ -1188,6 +1197,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
   "thread.message-sent",
+  "thread.cleared",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1315,6 +1325,11 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+export const ThreadClearedPayload = Schema.Struct({
+  threadId: ThreadId,
+  clearedAt: IsoDateTime,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1572,6 +1587,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.cleared"),
+    payload: ThreadClearedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.turn-start-requested"),
     payload: ThreadTurnStartRequestedPayload,
   }),
@@ -1787,6 +1807,11 @@ export const OrchestratorSetTaskRoleSelectionsInput = Schema.Struct({
 export type OrchestratorSetTaskRoleSelectionsInput =
   typeof OrchestratorSetTaskRoleSelectionsInput.Type;
 
+export const OrchestratorClearPmChatInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorClearPmChatInput = typeof OrchestratorClearPmChatInput.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1931,6 +1956,10 @@ export const OrchestratorRpcSchemas = {
   },
   setTaskRoleSelections: {
     input: OrchestratorSetTaskRoleSelectionsInput,
+    output: DispatchResult,
+  },
+  clearPmChat: {
+    input: OrchestratorClearPmChatInput,
     output: DispatchResult,
   },
 } as const;

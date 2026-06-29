@@ -443,6 +443,9 @@ const makeLayer = (input: {
     Layer.provide(
       Layer.succeed(PmProjectRuntimeFactory, {
         getOrCreate: () => Effect.succeed(projectRuntime),
+        waitForIdle: () => Effect.void,
+        invalidateRuntime: () => Effect.void,
+        clearSessionStorage: () => Effect.void,
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),
@@ -792,6 +795,55 @@ describe("PmRuntime", () => {
   it("omits PM harness resources when no configured playbook resolves", () => {
     assert.strictEqual(resolvePmHarnessResources(["unknown"]), undefined);
   });
+
+  it.effect("waits for idle and invalidates the cached project runtime", () =>
+    Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "test-openai-key" },
+        Effect.gen(function* () {
+          const calls: string[] = [];
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makePiAgentAdapterOverride: (() =>
+              Effect.sync(() => {
+                calls.push("create");
+                return {
+                  events: Stream.empty,
+                  isIdle: Effect.succeed(true),
+                  latestAssistantUsage: Effect.sync(() => undefined),
+                  waitForIdle: Effect.sync(() => {
+                    calls.push("waitForIdle");
+                  }),
+                  prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
+                  followUp: () => Effect.void,
+                  compact: () =>
+                    Effect.succeed({
+                      summary: "summary",
+                      firstKeptEntryId: "entry-1",
+                      tokensBefore: 1,
+                    }),
+                  setModel: () => Effect.void,
+                  setResources: () => Effect.void,
+                  abort: Effect.void,
+                };
+              })) satisfies NonNullable<
+              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            >["makePiAgentAdapterOverride"],
+          });
+
+          const firstRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          const cachedRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+          assert.strictEqual(cachedRuntime, firstRuntime);
+
+          yield* factory.waitForIdle(projectId);
+          yield* factory.invalidateRuntime(projectId, "test clear");
+          const rebuiltRuntime = yield* factory.getOrCreate(projectWithPmModel("openai", "gpt-5"));
+
+          assert.notStrictEqual(rebuiltRuntime, firstRuntime);
+          assert.deepStrictEqual(calls, ["create", "waitForIdle", "waitForIdle", "create"]);
+        }).pipe(Effect.provide(makeFactoryCaptureLayer())),
+      ),
+    ),
+  );
 
   it.effect("does not surface queued settlement prompts as human PM messages", () => {
     const dispatchCalls: OrchestrationCommand[] = [];

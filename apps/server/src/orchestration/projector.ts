@@ -38,6 +38,7 @@ import {
   ProjectMetaUpdatedPayload,
   ThreadActivityAppendedPayload,
   ThreadArchivedPayload,
+  ThreadClearedPayload,
   ThreadCreatedPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
@@ -527,6 +528,29 @@ export function projectEvent(
           }),
         };
       });
+
+    case "thread.cleared":
+      return decodeForEvent(ThreadClearedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) {
+            return nextBase;
+          }
+
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              messages: [],
+              activities: [],
+              proposedPlans: [],
+              checkpoints: [],
+              latestTurn: null,
+              session: null,
+              updatedAt: payload.clearedAt,
+            }),
+          };
+        }),
+      );
 
     case "thread.session-set":
       return Effect.gen(function* () {

@@ -25,6 +25,7 @@ import {
   CircleAlertIcon,
   ClockIcon,
   GitBranchIcon,
+  Trash2Icon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
@@ -80,6 +81,7 @@ import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "../../types";
 import { useSettings } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useTurnDiffSummaries } from "../../hooks/useTurnDiffSummaries";
+import { ensureLocalApi } from "../../localApi";
 import type { TerminalContextDraft } from "../../lib/terminalContext";
 import { useServerConfig, useServerKeybindings } from "../../rpc/serverState";
 import { useUiStateStore } from "../../uiStateStore";
@@ -88,6 +90,7 @@ import {
   getOrchestratorPmSectionClassName,
   OrchestratorBoardVisibilityButton,
 } from "./OrchestratorProjectLayout";
+import { confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import { TaskPrLink } from "./TaskPrLink";
 
 const LazyDiffPanel = lazy(() => import("../DiffPanel"));
@@ -307,8 +310,42 @@ function PmConversation({
   thread: Thread | undefined;
   threadRef: ScopedThreadRef;
 }) {
+  const [isClearing, setIsClearing] = useState(false);
+  const clearPmChat = useCallback(async () => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api || isClearing) {
+      return;
+    }
+    setIsClearing(true);
+    try {
+      await confirmAndClearPmChat({
+        projectId,
+        confirm: (message) => ensureLocalApi().dialogs.confirm(message),
+        clearPmChat: api.orchestrator.clearPmChat,
+      });
+    } finally {
+      setIsClearing(false);
+    }
+  }, [environmentId, isClearing, projectId]);
+
   return (
     <>
+      <div className="flex min-h-11 items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold">PM chat</h2>
+        </div>
+        <Button
+          aria-label="Clear PM chat"
+          disabled={isClearing}
+          onClick={() => void clearPmChat()}
+          size="sm"
+          title="Clear PM chat"
+          variant="outline"
+        >
+          <Trash2Icon className="size-4" />
+          Clear
+        </Button>
+      </div>
       <SharedThreadTimeline
         cwd={project?.cwd}
         emptyMessage="PM conversation will appear here."

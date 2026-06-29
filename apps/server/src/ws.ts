@@ -115,6 +115,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   {
     type:
       | "thread.message-sent"
+      | "thread.cleared"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -124,6 +125,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 > {
   return (
     event.type === "thread.message-sent" ||
+    event.type === "thread.cleared" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
@@ -1134,6 +1136,48 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 }),
               ),
             ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.clearPmChat]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.clearPmChat,
+            Effect.gen(function* () {
+              const project = yield* loadProjectForPmRuntime(input.projectId);
+              const pmThreadId = pmThreadIdForProject(project);
+              const { commandId, createdAt } = yield* Effect.all({
+                commandId: serverCommandId("orchestrator-clear-pm-chat"),
+                createdAt: nowIso,
+              });
+
+              yield* pmProjectRuntimeFactory
+                .waitForIdle(project.id)
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to wait for PM runtime to become idle."),
+                  ),
+                );
+              const result = yield* dispatchNormalizedCommand({
+                type: "thread.clear",
+                commandId,
+                threadId: pmThreadId,
+                createdAt,
+              });
+              yield* pmProjectRuntimeFactory
+                .clearSessionStorage(project.id)
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to clear PM session storage."),
+                  ),
+                );
+              yield* pmProjectRuntimeFactory
+                .invalidateRuntime(project.id, "PM chat cleared")
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to invalidate PM runtime."),
+                  ),
+                );
+              return result;
+            }),
             { "rpc.aggregate": "orchestrator" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>

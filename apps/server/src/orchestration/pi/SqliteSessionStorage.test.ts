@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import { makeSqliteSessionStorage } from "./SqliteSessionStorage.ts";
+import { clearSqliteSessionStorage, makeSqliteSessionStorage } from "./SqliteSessionStorage.ts";
 
 const layer = it.layer(Layer.fresh(SqlitePersistenceMemory));
 
@@ -85,6 +85,32 @@ layer("SqliteSessionStorage", (it) => {
       assert.strictEqual(reopened.getLeafId.length, 0);
       assert.strictEqual(entry?.type, "message");
       assert.strictEqual(yield* Effect.promise(() => reopened.getLeafId()), "entry-1");
+    }),
+  );
+
+  it.effect("clears the stored session and entries for a PM session id", () =>
+    Effect.gen(function* () {
+      const storage = yield* makeSqliteSessionStorage({ sessionId: "pm:project-clear" });
+      yield* Effect.promise(() =>
+        storage.appendEntry({
+          type: "message",
+          id: "clear-entry-1",
+          parentId: null,
+          timestamp: "2026-06-14T00:00:00.000Z",
+          message: { role: "user", content: "clear me", timestamp: 0 },
+        }),
+      );
+      assert.strictEqual(yield* Effect.promise(() => storage.getLeafId()), "clear-entry-1");
+
+      yield* clearSqliteSessionStorage({ sessionId: "pm:project-clear" });
+
+      const reopened = yield* makeSqliteSessionStorage({ sessionId: "pm:project-clear" });
+      const entries = yield* Effect.promise(() => reopened.getEntries());
+      const metadata = yield* Effect.promise(() => reopened.getMetadata());
+
+      assert.deepStrictEqual(entries, []);
+      assert.strictEqual(yield* Effect.promise(() => reopened.getLeafId()), null);
+      assert.strictEqual(metadata.id, "pm:project-clear");
     }),
   );
 });

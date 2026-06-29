@@ -514,6 +514,39 @@ describe("incremental orchestration updates", () => {
     expect(nextAfterThreadDelete).toBe(state);
   });
 
+  it("clears visible thread messages and indexes for thread.cleared", () => {
+    const threadId = ThreadId.make("pm:project-1");
+    const messageId = MessageId.make("pm-message-before-clear");
+    const thread = makeThread({
+      id: threadId,
+      messages: [
+        {
+          id: messageId,
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-02-27T00:00:00.000Z",
+        },
+      ],
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.cleared", {
+        threadId,
+        clearedAt: "2026-02-27T00:01:00.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    const nextEnvironment = localEnvironmentStateOf(next);
+    expect(nextEnvironment.messageIdsByThreadId[threadId]).toEqual([]);
+    expect(nextEnvironment.messageByThreadId[threadId]).toEqual({});
+  });
+
   it("reuses an existing project row when project.created arrives with a new id for the same cwd", () => {
     const originalProjectId = ProjectId.make("project-1");
     const recreatedProjectId = ProjectId.make("project-2");

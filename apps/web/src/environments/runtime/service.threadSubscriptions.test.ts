@@ -193,6 +193,7 @@ describe("retainThreadDetailSubscription", () => {
         subscribeProject: mockSubscribeProject,
         subscribeTask: mockSubscribeTask,
         setTaskRoleSelections: vi.fn(),
+        clearPmChat: vi.fn(),
       },
     });
     mockCreateEnvironmentConnection.mockImplementation((input) => {

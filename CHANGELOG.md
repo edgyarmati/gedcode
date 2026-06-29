@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Add a Clear PM chat action to Orchestrator project PM chat. The human-origin `orchestrator.clearPmChat` RPC appends an append-only `thread.cleared` event for the project PM thread, clears the PM pi session rows, and invalidates the in-memory PM runtime so the next PM turn starts with fresh visible messages, session memory, and runtime state.
 - UI: Add a global Orchestrator default worker backend and show each stage picker's resolved default backend so inherited worker routing is visible.
 - Fix: Keep Orchestrator mode sidebars focused on projects and Orchestrator navigation by hiding regular chat thread lists, and exclude PM threads from regular sidebar chat lists.
 - Fix: Run Orchestrator worker stages in `full-access` mode when the project or inherited global `allowFullAccessWorkers` setting is enabled; otherwise they continue to start approval-required, with regular chat threads unchanged.

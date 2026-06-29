@@ -19,9 +19,9 @@ const asCommandId = (value: string): CommandId => CommandId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
+const now = "2026-01-01T00:00:00.000Z";
 
 const seedReadModel = Effect.gen(function* () {
-  const now = "2026-01-01T00:00:00.000Z";
   const initial = createEmptyReadModel(now);
   const withProject = yield* projectEvent(initial, {
     sequence: 1,
@@ -137,6 +137,30 @@ function normalizeDeleteEvent(event: PlannedEvent | ReadonlyArray<PlannedEvent>)
 }
 
 it.layer(NodeServices.layer)("decider deletion flows", (it) => {
+  it.effect("emits a thread.cleared event for thread.clear", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedReadModel;
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "thread.clear",
+          commandId: asCommandId("cmd-thread-clear"),
+          threadId: asThreadId("thread-delete-1"),
+          createdAt: now,
+        },
+      });
+
+      const events = Array.isArray(event) ? event : [event];
+      expect(events).toHaveLength(1);
+      const clearedEvent = events[0];
+      expect(clearedEvent?.type).toBe("thread.cleared");
+      if (clearedEvent?.type === "thread.cleared") {
+        expect(clearedEvent.payload.threadId).toBe(asThreadId("thread-delete-1"));
+        expect(clearedEvent.payload.clearedAt).toBe(now);
+      }
+    }),
+  );
+
   it.effect("rejects deleting a non-empty project without force", () =>
     Effect.gen(function* () {
       const readModel = yield* seedReadModel;

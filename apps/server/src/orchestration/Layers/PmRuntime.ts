@@ -92,7 +92,7 @@ import {
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
 import { makePmTools } from "../pi/pmTools.ts";
 import { repairDanglingToolCalls } from "../pi/SessionRepair.ts";
-import { makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
+import { clearSqliteSessionStorage, makeSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
   buildStageResult,
@@ -113,6 +113,12 @@ type SettlementEnvelope = {
   readonly kind: "stage" | "gate";
   readonly settlementKey: string;
   readonly message: string;
+};
+
+type RuntimeCacheEntry = {
+  readonly runtime: PmProjectRuntime;
+  readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
+  readonly invalidateRuntime: (reason: string) => Effect.Effect<void, PmRuntimeError>;
 };
 
 export interface PmRuntimeLiveOptions {
@@ -1076,14 +1082,14 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
     });
     const runtimeScope = yield* Scope.make("sequential");
     yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
-    const runtimes = new Map<string, PmProjectRuntime>();
+    const runtimes = new Map<string, RuntimeCacheEntry>();
 
     const getOrCreate: PmProjectRuntimeFactoryShape["getOrCreate"] = (project) =>
       Effect.gen(function* () {
         const key = String(project.id);
         const existing = runtimes.get(key);
         if (existing !== undefined) {
-          return existing;
+          return existing.runtime;
         }
 
         const config = resolveProjectConfig(project);
@@ -1225,6 +1231,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
               });
             }),
           );
+        const waitForIdle = queue.runExclusive(adapter.waitForIdle);
 
         const compactBeforeModelSwitch = (nextModelSelection: PiModelSelection) =>
           adapter.compact(autoCompactionDefaults.customInstructions).pipe(
@@ -1355,12 +1362,43 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PiProjectRuntim
             Effect.andThen(eventProjection.drain),
           ),
         };
-        runtimes.set(key, runtime);
+        runtimes.set(key, {
+          runtime,
+          waitForIdle,
+          invalidateRuntime,
+        });
         return runtime;
       });
 
+    const waitForIdle: PmProjectRuntimeFactoryShape["waitForIdle"] = (projectId) => {
+      const existing = runtimes.get(String(projectId));
+      return existing?.waitForIdle ?? Effect.void;
+    };
+
+    const invalidateRuntimeByProjectId: PmProjectRuntimeFactoryShape["invalidateRuntime"] = (
+      projectId,
+      reason,
+    ) => {
+      const existing = runtimes.get(String(projectId));
+      return existing?.invalidateRuntime(reason) ?? Effect.void;
+    };
+
+    const clearSessionStorage: PmProjectRuntimeFactoryShape["clearSessionStorage"] = (projectId) =>
+      clearSqliteSessionStorage({ sessionId: `pm:${projectId}` }).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.mapError(
+          toPmRuntimeError(
+            "PmProjectRuntimeFactory.clearSessionStorage",
+            "Failed to clear PM session storage.",
+          ),
+        ),
+      );
+
     return {
       getOrCreate,
+      waitForIdle,
+      invalidateRuntime: invalidateRuntimeByProjectId,
+      clearSessionStorage,
     } satisfies PmProjectRuntimeFactoryShape;
   });
 

@@ -31,6 +31,10 @@ type PmSessionStorageOptions<TMetadata extends SessionMetadata> = {
   readonly createdAt?: string;
 };
 
+type ClearPmSessionStorageOptions = {
+  readonly sessionId: string;
+};
+
 const leafIdAfterEntry = (entry: SessionTreeEntry): string | null =>
   entry.type === "leaf" ? entry.targetId : entry.id;
 
@@ -68,6 +72,25 @@ const generateEntryId = (exists: (id: string) => Promise<boolean>): Promise<stri
       return uuidv7();
     }),
   );
+
+export const clearSqliteSessionStorage = ({ sessionId }: ClearPmSessionStorageOptions) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* withBusyRetry(
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`
+            DELETE FROM pm_session_entries
+            WHERE session_id = ${sessionId}
+          `;
+          yield* sql`
+            DELETE FROM pm_sessions
+            WHERE session_id = ${sessionId}
+          `;
+        }),
+      ),
+    );
+  });
 
 export const makeSqliteSessionStorage = <TMetadata extends SessionMetadata = SessionMetadata>({
   sessionId,
