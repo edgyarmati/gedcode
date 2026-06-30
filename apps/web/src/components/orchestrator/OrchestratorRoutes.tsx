@@ -9,12 +9,9 @@ import {
   GateId,
   MessageId,
   ProjectId,
-  ProviderInstanceId,
-  type ProviderInteractionMode,
   TaskId,
   ThreadId,
   type OrchestrationGateDecision,
-  type RuntimeMode,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
@@ -44,15 +41,12 @@ import { useShallow } from "zustand/react/shallow";
 import { DiffPanelLoadingState, DiffPanelShell } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { ChatComposer, type ChatComposerHandle } from "../chat/ChatComposer";
-import { type ExpandedImagePreview } from "../chat/ExpandedImagePreview";
 import { MessagesTimeline } from "../chat/MessagesTimeline";
 import { ProposedPlanCard } from "../chat/ProposedPlanCard";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
-import { type ComposerImageAttachment, useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import {
   retainOrchestratorProjectSubscription,
@@ -71,19 +65,12 @@ import {
   useStore,
   type ScopedTaskRef,
 } from "../../store";
-import {
-  deriveTimelineEntries,
-  deriveWorkLogEntries,
-  type PendingApproval,
-} from "../../session-logic";
+import { deriveTimelineEntries, deriveWorkLogEntries } from "../../session-logic";
 import type { OrchestratorPendingGate, OrchestratorTask, Project, Thread } from "../../types";
-import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "../../types";
 import { useSettings } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useTurnDiffSummaries } from "../../hooks/useTurnDiffSummaries";
 import { ensureLocalApi } from "../../localApi";
-import type { TerminalContextDraft } from "../../lib/terminalContext";
-import { useServerConfig, useServerKeybindings } from "../../rpc/serverState";
 import { useUiStateStore } from "../../uiStateStore";
 import {
   getOrchestratorProjectGridClassName,
@@ -91,6 +78,7 @@ import {
   OrchestratorBoardVisibilityButton,
 } from "./OrchestratorProjectLayout";
 import { confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import { PmChatComposer } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
 const LazyDiffPanel = lazy(() => import("../DiffPanel"));
@@ -358,7 +346,6 @@ function PmConversation({
         project={project}
         projectId={projectId}
         thread={thread}
-        threadRef={threadRef}
       />
     </>
   );
@@ -461,188 +448,6 @@ function SharedThreadTimeline({
           {emptyMessage}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function PmChatComposer({
-  environmentId,
-  project,
-  projectId,
-  thread,
-  threadRef,
-}: {
-  environmentId: EnvironmentId;
-  project: Project | undefined;
-  projectId: ProjectId;
-  thread: Thread | undefined;
-  threadRef: ScopedThreadRef;
-}) {
-  const settings = useSettings();
-  const { resolvedTheme } = useTheme();
-  const serverConfig = useServerConfig();
-  const keybindings = useServerKeybindings();
-  const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
-  const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
-  const setComposerDraftInteractionMode = useComposerDraftStore(
-    (store) => store.setInteractionMode,
-  );
-  const setComposerDraftGedWorkflowEnabled = useComposerDraftStore(
-    (store) => store.setGedWorkflowEnabled,
-  );
-  const promptRef = useRef("");
-  const composerRef = useRef<ChatComposerHandle | null>(null);
-  const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
-  const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
-  const shouldAutoScrollRef = useRef(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const setThreadError = useCallback((_threadId: ThreadId | null, nextError: string | null) => {
-    setError(nextError);
-  }, []);
-  const onSend = useCallback(
-    (event?: { preventDefault: () => void }) => {
-      event?.preventDefault();
-      const trimmed = promptRef.current.trim();
-      if (submitting || trimmed.length === 0) {
-        return;
-      }
-      if (composerImagesRef.current.length > 0) {
-        setError("PM messages in this slice support text only.");
-        return;
-      }
-      const api = readEnvironmentApi(environmentId);
-      if (!api) {
-        setError("Environment API unavailable.");
-        return;
-      }
-      setSubmitting(true);
-      setError(null);
-      void api.orchestrator
-        .sendMessage({ projectId, message: trimmed })
-        .then(() => {
-          promptRef.current = "";
-          clearComposerDraftContent(threadRef);
-          composerRef.current?.resetCursorState();
-        })
-        .catch((sendError) => {
-          setError(sendError instanceof Error ? sendError.message : String(sendError));
-        })
-        .then(() => {
-          setSubmitting(false);
-        });
-    },
-    [clearComposerDraftContent, environmentId, projectId, submitting, threadRef],
-  );
-  const handleRuntimeModeChange = useCallback(
-    (mode: RuntimeMode) => {
-      setComposerDraftRuntimeMode(threadRef, mode);
-    },
-    [setComposerDraftRuntimeMode, threadRef],
-  );
-  const handleInteractionModeChange = useCallback(
-    (mode: ProviderInteractionMode) => {
-      setComposerDraftInteractionMode(threadRef, mode);
-    },
-    [setComposerDraftInteractionMode, threadRef],
-  );
-  const handleModelSelect = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
-      setComposerDraftModelSelection(threadRef, { instanceId, model });
-    },
-    [setComposerDraftModelSelection, threadRef],
-  );
-  const handleWorkflowToggle = useCallback(
-    (enabled: boolean) => {
-      setComposerDraftGedWorkflowEnabled(threadRef, enabled);
-    },
-    [setComposerDraftGedWorkflowEnabled, threadRef],
-  );
-  const focusComposer = useCallback(() => {
-    composerRef.current?.focusAtEnd();
-  }, []);
-  const noop = useCallback(() => {}, []);
-  const noopAsync = useCallback(async () => {}, []);
-  const noopImage = useCallback((_preview: ExpandedImagePreview) => {}, []);
-
-  return (
-    <div className="border-t border-border px-3 pb-3 pt-2 sm:px-4">
-      {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
-      <ChatComposer
-        activePendingApproval={null}
-        activePendingDraftAnswers={{}}
-        activePendingIsResponding={false}
-        activePendingProgress={null}
-        activePendingQuestionIndex={0}
-        activePendingResolvedAnswers={null}
-        activePlan={null}
-        activeProjectDefaultModelSelection={project?.defaultModelSelection}
-        activeProposedPlan={null}
-        activeThread={thread}
-        activeThreadActivities={thread?.activities}
-        activeThreadEnvironmentId={environmentId}
-        activeThreadId={thread?.id ?? null}
-        activeThreadModelSelection={thread?.modelSelection}
-        composerImagesRef={composerImagesRef}
-        composerRef={composerRef}
-        composerDraftTarget={threadRef}
-        composerTerminalContextsRef={composerTerminalContextsRef}
-        draftId={null}
-        environmentId={environmentId}
-        environmentUnavailable={
-          readEnvironmentApi(environmentId)
-            ? null
-            : { label: "Environment", connectionState: "disconnected" }
-        }
-        focusComposer={focusComposer}
-        getModelDisabledReason={() => null}
-        gitCwd={project?.cwd ?? null}
-        handleInteractionModeChange={handleInteractionModeChange}
-        handleRuntimeModeChange={handleRuntimeModeChange}
-        isConnecting={false}
-        isLocalDraftThread={false}
-        isPreparingWorktree={false}
-        isSendBusy={submitting}
-        isServerThread
-        keybindings={keybindings}
-        lockedProvider={null}
-        onAdvanceActivePendingUserInput={noop}
-        onChangeActivePendingUserInputCustomAnswer={noop}
-        onExpandImage={noopImage}
-        onImplementPlanInNewThread={noop}
-        onInterrupt={noop}
-        onPreviousActivePendingUserInputQuestion={noop}
-        onProviderModelSelect={handleModelSelect}
-        onRespondToApproval={noopAsync}
-        onSelectActivePendingUserInputOption={noop}
-        onSend={onSend}
-        onToggleWorkflow={handleWorkflowToggle}
-        pendingApprovals={[] as PendingApproval[]}
-        pendingUserInputs={[]}
-        phase={thread?.latestTurn?.state === "running" ? "running" : "ready"}
-        planSidebarLabel="Plan"
-        planSidebarOpen={false}
-        promptRef={promptRef}
-        providerStatuses={[...(serverConfig?.providers ?? [])]}
-        resolvedTheme={resolvedTheme}
-        respondingRequestIds={[]}
-        routeKind="server"
-        routeThreadRef={threadRef}
-        runtimeMode={thread?.runtimeMode ?? DEFAULT_RUNTIME_MODE}
-        scheduleComposerFocus={focusComposer}
-        scheduleStickToBottom={noop}
-        setThreadError={setThreadError}
-        settings={settings}
-        shouldAutoScrollRef={shouldAutoScrollRef}
-        showPlanFollowUpPrompt={false}
-        sidebarProposedPlan={null}
-        terminalOpen={false}
-        toggleInteractionMode={() => handleInteractionModeChange(DEFAULT_INTERACTION_MODE)}
-        togglePlanSidebar={noop}
-        workflowEnabled={thread?.gedWorkflowEnabled ?? false}
-      />
     </div>
   );
 }

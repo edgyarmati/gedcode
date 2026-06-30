@@ -1,4 +1,5 @@
 import {
+  EventId,
   OrchestratorProjectConfig,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -91,7 +92,7 @@ import {
   serializeStageResultToMessage,
   type StageResult,
 } from "../StageResultBuilder.ts";
-import { boundUntrustedContent } from "../untrustedContent.ts";
+import { boundUntrustedContent, scrubSecrets } from "../untrustedContent.ts";
 
 type SettlementEvent = Extract<
   OrchestrationEvent,
@@ -129,6 +130,121 @@ const PM_SYSTEM_PROMPT = [
   "Use the stage roles precisely: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
   "Use tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
 ].join("\n");
+
+const PM_TURN_FAILURE_REASON_MAX_CHARS = 480;
+const PM_TURN_FAILURE_SUMMARY_MAX_CHARS = 640;
+
+const AUTH_ERROR_MESSAGE_PATTERNS: readonly RegExp[] = [
+  /\bauth(?:entication|orization)?\b/i,
+  /\bunauth(?:enticated|orized)\b/i,
+  /\blogin required\b/i,
+  /\bnot logged in\b/i,
+  /\binvalid api[_ -]?key\b/i,
+  /\bapi[_ -]?key\b/i,
+  /\boauth\b/i,
+  /\bcredentials?\b/i,
+  /\btoken\b/i,
+  /\b401\b/,
+];
+
+const ABORT_ERROR_MESSAGE_PATTERNS: readonly RegExp[] = [
+  /\babort(?:ed)?\b/i,
+  /\binterrupted\b/i,
+  /\bcancel(?:led|ed)\b/i,
+];
+
+function compactOneLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function truncateOneLine(value: string, maxChars: number): string {
+  const compacted = compactOneLine(value);
+  if (compacted.length <= maxChars) {
+    return compacted;
+  }
+  return `${compacted.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+function causeMessage(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  if (typeof cause === "string") {
+    return cause;
+  }
+  if (
+    cause !== null &&
+    typeof cause === "object" &&
+    "message" in cause &&
+    typeof (cause as { readonly message?: unknown }).message === "string"
+  ) {
+    return (cause as { readonly message: string }).message;
+  }
+  return "";
+}
+
+function pmRuntimeErrorText(error: PmRuntimeError): string {
+  const detail = compactOneLine(error.detail);
+  const causeText = compactOneLine(causeMessage(error.cause));
+  if (causeText.length === 0 || causeText === detail) {
+    return detail;
+  }
+  return `${detail} ${causeText}`.trim();
+}
+
+function stableHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function pmTurnFailedActivityId(projectId: OrchestrationProject["id"], message: string): EventId {
+  return EventId.make(`server:pm-turn-failed:${projectId}:${stableHash(message)}`);
+}
+
+type PmTurnFailureCategory = "rate_limit" | "auth" | "aborted" | "provider_error";
+
+function classifyPmTurnFailure(message: string): PmTurnFailureCategory {
+  if (classifyRuntimeErrorClass({ message, fallback: "provider_error" }) === "rate_limit") {
+    return "rate_limit";
+  }
+  if (AUTH_ERROR_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+    return "auth";
+  }
+  if (ABORT_ERROR_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+    return "aborted";
+  }
+  return "provider_error";
+}
+
+function formatPmTurnFailure(error: PmRuntimeError): {
+  readonly category: PmTurnFailureCategory;
+  readonly reason: string;
+  readonly summary: string;
+} {
+  const rawMessage = pmRuntimeErrorText(error);
+  const reason = truncateOneLine(
+    scrubSecrets(rawMessage.length > 0 ? rawMessage : "Unknown error."),
+    PM_TURN_FAILURE_REASON_MAX_CHARS,
+  );
+  const category = classifyPmTurnFailure(rawMessage);
+  const prefix =
+    category === "rate_limit"
+      ? "PM turn failed: PM provider quota or rate limit reached."
+      : category === "auth"
+        ? "PM turn failed: PM provider authentication failed."
+        : category === "aborted"
+          ? "PM turn failed: PM turn was aborted."
+          : "PM turn failed:";
+  return {
+    category,
+    reason,
+    summary: truncateOneLine(`${prefix} ${reason}`, PM_TURN_FAILURE_SUMMARY_MAX_CHARS),
+  };
+}
 
 /**
  * The PM system prompt scoped to a specific project: prepends the project
@@ -1177,19 +1293,36 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           // blocked so the re-entry gate holds subsequent turns.
           onTurnError: (error) =>
             Effect.gen(function* () {
-              const causeText =
-                error.cause instanceof Error
-                  ? error.cause.message
-                  : typeof error.cause === "string"
-                    ? error.cause
-                    : "";
-              const message = `${error.detail} ${causeText}`.trim();
-              if (
-                classifyRuntimeErrorClass({ message, fallback: "provider_error" }) !== "rate_limit"
-              ) {
+              const updatedAt = DateTime.formatIso(yield* DateTime.now);
+              const failure = formatPmTurnFailure(error);
+              yield* eventProjection
+                .dispatchActivity({
+                  id: pmTurnFailedActivityId(project.id, failure.summary),
+                  tone: "error",
+                  kind: "pm.turn.failed",
+                  summary: failure.summary,
+                  payload: {
+                    itemType: "error",
+                    category: failure.category,
+                    reason: failure.reason,
+                    operation: error.operation,
+                    providerInstanceId: pmProviderInstanceId,
+                  },
+                  turnId: null,
+                  createdAt: updatedAt,
+                })
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("failed to append PM turn-failed activity", {
+                      projectId: String(project.id),
+                      providerInstanceId: String(pmProviderInstanceId),
+                      cause: Cause.pretty(cause),
+                    }),
+                  ),
+                );
+              if (failure.category !== "rate_limit") {
                 return;
               }
-              const updatedAt = DateTime.formatIso(yield* DateTime.now);
               yield* providerQuotaStatusRepository
                 .markBlocked({ providerInstanceId: pmProviderInstanceId, resetAt: null, updatedAt })
                 .pipe(Effect.ignore);

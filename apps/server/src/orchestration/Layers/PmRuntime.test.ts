@@ -38,6 +38,7 @@ import * as Stream from "effect/Stream";
 
 import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
 import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
+import { ServerConfig } from "../../config.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
 import {
@@ -52,6 +53,8 @@ import {
   type PmConsumedSettlement,
 } from "../../persistence/Services/PmRuntimeState.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
+import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderUnsupportedError } from "../../provider/Errors.ts";
 import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
@@ -71,6 +74,7 @@ import {
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
 import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
@@ -82,6 +86,9 @@ import {
   makePmRuntimeLive,
   resolvePmHarnessResources,
 } from "./PmRuntime.ts";
+import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
+import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
+import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 
 const now = "2026-06-14T10:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -611,6 +618,7 @@ const makeFactoryCaptureLayer = (input?: {
   readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly dispatchCalls?: OrchestrationCommand[];
+  readonly liveProjection?: boolean;
   readonly providerInstances?: ReadonlyMap<
     string,
     {
@@ -619,49 +627,80 @@ const makeFactoryCaptureLayer = (input?: {
       readonly enabled?: boolean;
     }
   >;
-}) =>
-  Layer.mergeAll(
+}) => {
+  const repositoryIdentityResolverLayer = Layer.succeed(RepositoryIdentityResolver, {
+    resolve: () => Effect.succeed(null),
+  });
+  const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provide(repositoryIdentityResolverLayer),
+    Layer.provide(SqlitePersistenceMemory),
+  );
+  const projectionPipelineLayer = OrchestrationProjectionPipelineLive.pipe(
+    Layer.provide(ServerSettingsService.layerTest(input?.serverSettingsOverrides)),
+    Layer.provide(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provide(NodeServices.layer),
+  );
+  const orchestrationServices =
+    input?.liveProjection === true
+      ? Layer.merge(
+          OrchestrationEngineLive.pipe(
+            Layer.provide(OrchestrationProjectionSnapshotQueryLive),
+            Layer.provide(projectionPipelineLayer),
+            Layer.provide(OrchestrationEventStoreLive),
+            Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+            Layer.provide(ServerSettingsService.layerTest(input?.serverSettingsOverrides)),
+            Layer.provide(repositoryIdentityResolverLayer),
+            Layer.provide(SqlitePersistenceMemory),
+            Layer.provide(NodeServices.layer),
+          ),
+          projectionSnapshotLayer,
+        )
+      : Layer.merge(
+          Layer.mock(OrchestrationEngineService)({
+            readEvents: () => Stream.empty,
+            dispatch: (command) =>
+              Effect.sync(() => {
+                input?.dispatchCalls?.push(command);
+                return { sequence: input?.dispatchCalls?.length ?? 1 };
+              }),
+            streamDomainEvents: input?.streamDomainEvents ?? Stream.empty,
+            streamShellEvents: Stream.empty,
+          }),
+          Layer.mock(ProjectionSnapshotQuery)({
+            getCommandReadModel: () => Effect.succeed(readModel),
+            getSnapshot: () => Effect.succeed(readModel),
+            getShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                projects: [],
+                threads: [],
+                updatedAt: now,
+              }),
+            getArchivedShellSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                projects: [],
+                threads: [],
+                updatedAt: now,
+              }),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+            getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+            getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
+            getProjectShellById: () => Effect.succeed(Option.none()),
+            getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
+            getThreadCheckpointContext: () => Effect.succeed(Option.none()),
+            getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeed(Option.none()),
+            getThreadDetailById: () => Effect.succeed(Option.none()),
+          }),
+        );
+
+  return Layer.mergeAll(
     SqlitePersistenceMemory,
     NodeServices.layer,
     makeProviderAdapterRegistryLayer(input?.providerInstances),
     makeProviderSessionDirectoryLayer(),
-    Layer.mock(OrchestrationEngineService)({
-      readEvents: () => Stream.empty,
-      dispatch: (command) =>
-        Effect.sync(() => {
-          input?.dispatchCalls?.push(command);
-          return { sequence: input?.dispatchCalls?.length ?? 1 };
-        }),
-      streamDomainEvents: input?.streamDomainEvents ?? Stream.empty,
-      streamShellEvents: Stream.empty,
-    }),
-    Layer.mock(ProjectionSnapshotQuery)({
-      getCommandReadModel: () => Effect.succeed(readModel),
-      getSnapshot: () => Effect.succeed(readModel),
-      getShellSnapshot: () =>
-        Effect.succeed({
-          snapshotSequence: 0,
-          projects: [],
-          threads: [],
-          updatedAt: now,
-        }),
-      getArchivedShellSnapshot: () =>
-        Effect.succeed({
-          snapshotSequence: 0,
-          projects: [],
-          threads: [],
-          updatedAt: now,
-        }),
-      getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
-      getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
-      getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
-      getProjectShellById: () => Effect.succeed(Option.none()),
-      getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
-      getThreadCheckpointContext: () => Effect.succeed(Option.none()),
-      getFullThreadDiffContext: () => Effect.succeed(Option.none()),
-      getThreadShellById: () => Effect.succeed(Option.none()),
-      getThreadDetailById: () => Effect.succeed(Option.none()),
-    }),
+    orchestrationServices,
     Layer.succeed(ProviderQuotaStatusRepository, {
       upsert: () =>
         Effect.succeed({
@@ -690,6 +729,7 @@ const makeFactoryCaptureLayer = (input?: {
     }),
     ServerSettingsService.layerTest(input?.serverSettingsOverrides),
   );
+};
 
 const makeTestPmAdapter = (input?: {
   readonly resourceCalls?: AgentHarnessResources[];
@@ -1060,6 +1100,84 @@ describe("PmRuntime", () => {
         );
 
         yield* Queue.shutdown(runtimeEvents);
+      }),
+    ),
+  );
+
+  it.effect("surfaces failed PM driver turns as PM-thread error activities", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const failure = new PmRuntimeError({
+          operation: "DriverPmAdapter.prompt",
+          detail: "Claude PM turn failed.",
+          cause: new Error("429 quota exceeded for OPENAI_API_KEY=sk-live-secret"),
+        });
+
+        yield* Effect.gen(function* () {
+          const engine = yield* OrchestrationEngineService;
+          const snapshotQuery = yield* ProjectionSnapshotQuery;
+          yield* engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make("cmd-project-create"),
+            projectId,
+            title: project.title,
+            workspaceRoot: project.workspaceRoot,
+            defaultModelSelection: project.defaultModelSelection,
+            createdAt: now,
+          });
+
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            makeDriverPmAdapterOverride: (() =>
+              Effect.succeed(
+                makeTestPmAdapter({
+                  prompt: () => Effect.fail(failure),
+                }),
+              )) satisfies NonNullable<
+              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            >["makeDriverPmAdapterOverride"],
+          });
+          const runtime = yield* factory.getOrCreate(
+            projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          );
+
+          yield* runtime.enqueue("Create a task.");
+          const firstError = yield* runtime.drain.pipe(Effect.flip);
+          yield* runtime.enqueue("Create a task.");
+          const secondError = yield* runtime.drain.pipe(Effect.flip);
+
+          assert.strictEqual(firstError, failure);
+          assert.strictEqual(secondError, failure);
+
+          const pmThreadId = pmThreadIdForProject(project);
+          const threadDetail = yield* snapshotQuery.getThreadDetailById(pmThreadId);
+          if (Option.isNone(threadDetail)) {
+            assert.fail("expected the PM thread to be projected");
+          }
+          const pmThread = threadDetail.value;
+          const failureActivities = pmThread.activities.filter(
+            (activity) => activity.kind === "pm.turn.failed",
+          );
+
+          assert.strictEqual(failureActivities.length, 1);
+          assert.strictEqual(pmThread.id, pmThreadId);
+          assert.strictEqual(failureActivities[0]?.tone, "error");
+          assert.match(
+            failureActivities[0]?.summary ?? "",
+            /PM turn failed: PM provider quota or rate limit reached/,
+          );
+          assert.match(failureActivities[0]?.summary ?? "", /429 quota exceeded/);
+          assert.notMatch(failureActivities[0]?.summary ?? "", /sk-live-secret/);
+          assert.match(failureActivities[0]?.summary ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
+
+          const payload = failureActivities[0]?.payload as Record<string, unknown>;
+          assert.strictEqual(payload.category, "rate_limit");
+          assert.strictEqual(payload.operation, "DriverPmAdapter.prompt");
+          assert.strictEqual(payload.providerInstanceId, claudeInstanceId);
+          assert.match(String(payload.reason), /429 quota exceeded/);
+          assert.notMatch(String(payload.reason), /sk-live-secret/);
+
+          assert.ok(pmThread.activities.some((activity) => activity.kind === "quota.paused"));
+        }).pipe(Effect.provide(makeFactoryCaptureLayer({ liveProjection: true })));
       }),
     ),
   );

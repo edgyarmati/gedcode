@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: Surface Orchestrator PM driver-turn failures directly in the PM conversation as error activities with classified quota/rate-limit/auth/abort wording where detectable, and replace the PM chat composer with a focused text input plus read-only PM model label instead of inert chat model/runtime/workflow controls.
 - Internal/UI: Swap the Orchestrator PM brain from pi model selection to worker provider-instance model selection. The PM now resolves a Claude provider instance and runs through the Claude DriverPmAdapter, with legacy pi-shaped PM selections replaying as unconfigured and non-Claude PM instances failing clearly until Codex support lands.
 - Internal: Add an additive Claude-driver Orchestrator PM adapter that starts read-only Claude sessions with the in-process orchestration MCP server, bridges Claude runtime events into the existing PI PM event shape, and persists Claude resume cursors for future PM runtime wiring without changing PM model selection yet.
 - Internal: Add the Claude-driver foundation for a read-only Orchestrator PM. Claude sessions can now opt into an injected in-process MCP server for Orchestrator PM tools, and an enforced read-only policy uses Claude Agent SDK plan mode plus explicit built-in tool allow/deny lists so mutating tools such as Write/Edit/MultiEdit/Bash are unavailable.

@@ -165,7 +165,7 @@ export const makePmEventProjectionRuntime = (input: {
       },
     );
 
-    const dispatchToolActivity = Effect.fn("PmEventProjection.dispatchToolActivity")(function* (
+    const dispatchActivity = Effect.fn("PmEventProjection.dispatchActivity")(function* (
       activity: OrchestrationThreadActivity,
     ) {
       yield* ensurePmThread();
@@ -222,7 +222,7 @@ export const makePmEventProjectionRuntime = (input: {
 
         case "tool_call": {
           const createdAt = yield* nowIso;
-          yield* dispatchToolActivity({
+          yield* dispatchActivity({
             id: activityId("tool-started", event.toolCallId),
             tone: "tool",
             kind: "tool.started",
@@ -241,7 +241,7 @@ export const makePmEventProjectionRuntime = (input: {
 
         case "tool_result": {
           const createdAt = yield* nowIso;
-          yield* dispatchToolActivity({
+          yield* dispatchActivity({
             id: activityId("tool-completed", event.toolCallId),
             tone: event.isError ? "error" : "tool",
             kind: "tool.completed",
@@ -286,6 +286,7 @@ export const makePmEventProjectionRuntime = (input: {
     return {
       pmThreadId,
       dispatchUserMessage,
+      dispatchActivity,
       project: processEvent,
       enqueue: worker.enqueue,
       drain: worker.drain,
