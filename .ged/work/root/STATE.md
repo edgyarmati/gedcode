@@ -276,6 +276,20 @@ Connections as the PM model). Remaining: **W4** surface PM turn errors (G) + com
 Codex PM parity · **W6** delete pi. WATCH: confirm the read-only/plan Claude PM actually executes its
 orchestration MCP tools against the REAL API (test was mocked) — the live test confirms it.
 
+**W4 DONE `9b9662126` — PM turn failures surface (no more silent freeze) + focused composer.** (G)
+`onTurnError` (PmRuntime.ts) now ALWAYS appends a `pm.turn.failed` error activity onto the PM thread via
+`PmEventProjection.dispatchActivity` (renamed from dispatchToolActivity; now exported), classified
+rate_limit/auth/aborted/provider_error (`classifyPmTurnFailure` reuses `classifyRuntimeErrorClass` +
+auth/abort regex); message is `scrubSecrets`'d + truncated (no credential leak); activity id is
+content-hashed → idempotent (repeated identical failures de-dupe); rate_limit STILL keeps the existing
+quota-pause (`markBlocked`); dispatch is best-effort (self-catches). (F) PM chat composer is now a
+focused `PmChatComposer.tsx` (textarea + send, read-only "PM model: <label>" + Running indicator),
+replacing the full ChatComposer whose model/runtime/workflow controls were inert for the config-driven PM.
+Gate green here: fmt ✓ · lint ✓ (pre-existing warnings) · typecheck 13/13 ✓ (no flake this run) · build ✓ ·
+server PmRuntime 29/29 · web OrchestratorRoutes 4/4 · test:browser orchestrator 3/3. Remaining: **W5**
+Codex PM parity · **W6** delete pi. **LIVE TEST READY** — config a Claude provider instance in Connections
+as the PM model; failures will now show in-chat (confirms the WATCH item too).
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
