@@ -76,6 +76,7 @@ import {
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
 import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
+import { OrchestrationMcpServerProviderLive } from "../claude/OrchestrationMcpServerProvider.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
 import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
@@ -611,6 +612,8 @@ const makeLayer = (input: {
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),
+    Layer.provide(OrchestrationMcpServerProviderLive),
+    Layer.provide(NodeServices.layer),
   );
 };
 
@@ -698,6 +701,7 @@ const makeFactoryCaptureLayer = (input?: {
   return Layer.mergeAll(
     SqlitePersistenceMemory,
     NodeServices.layer,
+    OrchestrationMcpServerProviderLive,
     makeProviderAdapterRegistryLayer(input?.providerInstances),
     makeProviderSessionDirectoryLayer(),
     orchestrationServices,

@@ -35,6 +35,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { PmProjectRuntimeFactory, PmRuntime, type PmProjectRuntime } from "./Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { OrchestrationMcpServerProviderLive } from "./claude/OrchestrationMcpServerProvider.ts";
 import { PmRuntimeLive } from "./Layers/PmRuntime.ts";
 import { decideOrchestrationCommand } from "./decider.ts";
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
@@ -293,6 +294,7 @@ function makePmRuntimeLayer(input: {
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),
+    Layer.provide(OrchestrationMcpServerProviderLive),
   );
 }
 

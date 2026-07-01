@@ -86,6 +86,8 @@ import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stag
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
 import { clearSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
 import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
+import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
+import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
   buildStageResult,
@@ -479,6 +481,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
   Effect.gen(function* () {
     const orchestrationEngine = yield* OrchestrationEngineService;
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+    const orchestrationMcpServerProvider = yield* OrchestrationMcpServerProvider;
     const checkpointDiffQuery = yield* CheckpointDiffQuery;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
     const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
@@ -493,6 +496,8 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         settings.orchestratorDefaults.pmReconciliationIntervalMs,
     );
     const reconciliationSemaphore = yield* Semaphore.make(1);
+    const orchestrationMcpServer = yield* makeOrchestrationMcpServer;
+    yield* orchestrationMcpServerProvider.register(() => Promise.resolve(orchestrationMcpServer));
 
     const resolveTaskProject = Effect.fn("PmRuntime.resolveTaskProject")(function* (
       taskId: OrchestrationTask["id"],

@@ -30,6 +30,7 @@ import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
+import { OrchestrationMcpServerProviderLive } from "../../orchestration/claude/OrchestrationMcpServerProvider.ts";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
@@ -1098,6 +1099,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             ),
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+            Layer.provideMerge(OrchestrationMcpServerProviderLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             // NO spawner mock — `ChildProcessSpawner` is supplied by the
             // outer `NodeServices.layer` on `it.layer(...)` and will
@@ -1180,6 +1182,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             ),
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+            Layer.provideMerge(OrchestrationMcpServerProviderLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             // `it.live` does not inherit layers from the outer `it.layer`
             // wrapper, so provide `NodeServices.layer` inline. This is the
@@ -1302,6 +1305,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             ),
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+            Layer.provideMerge(OrchestrationMcpServerProviderLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             Layer.provideMerge(NodeServices.layer),
           );
