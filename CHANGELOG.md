@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Strengthen the Orchestrator PM system prompt so the PM delegates instead of answering directly. It now states the PM orchestrates and never does the work itself, is read-only by design, and that workers have full tool access (shell/network/edits) — so any request needing execution/inspection/changes becomes a task handed to a worker rather than a read-only guess or a request for the human to run commands.
 - Fix: Run the read-only Claude Orchestrator PM in `default` permission mode instead of `plan` mode. Plan mode made the PM research-and-propose (presenting a plan via ExitPlanMode and stopping) rather than invoking its orchestration tools, so the workflow never started and turns surfaced as "(empty response)". Read-only is still enforced by the tool allow/deny lists plus the `canUseTool` default-deny.
 - Fix: Wire read-only Claude Orchestrator PM sessions to the in-process orchestration MCP server through a root late-bound provider, so PM turns can start with orchestration tools after the engine-side runtime registers the shared MCP config.
 - Fix/UI: Surface Orchestrator PM driver-turn failures directly in the PM conversation as error activities with classified quota/rate-limit/auth/abort wording where detectable, and replace the PM chat composer with a focused text input plus read-only PM model label instead of inert chat model/runtime/workflow controls.

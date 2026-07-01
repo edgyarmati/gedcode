@@ -2262,7 +2262,10 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Project");
     assert.include(prompt, "/tmp/project");
     assert.include(prompt, "never ask the human for a project id");
-    // Existing role guidance is preserved.
-    assert.include(prompt, "Use the stage roles precisely");
+    // Delegation framing: the PM orchestrates and never does the work itself.
+    assert.include(prompt, "DELEGATE");
+    assert.include(prompt, "READ-ONLY");
+    // Role guidance is preserved.
+    assert.include(prompt, "classify");
   });
 });
