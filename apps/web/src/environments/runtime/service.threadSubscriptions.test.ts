@@ -1,12 +1,18 @@
 import { QueryClient } from "@tanstack/react-query";
 import {
   EnvironmentId,
+  EventId,
+  MessageId,
+  type OrchestrationEvent,
   ProjectId,
   ProviderInstanceId,
   TaskId,
   ThreadId,
   TurnId,
+  type OrchestrationThread,
+  type OrchestrationThreadActivity,
   type OrchestrationShellSnapshot,
+  type OrchestratorProjectDetailSnapshot,
 } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -151,6 +157,123 @@ function makeThreadShellSnapshot(params: {
   };
 }
 
+function makeThreadDetail(params: {
+  readonly threadId: ThreadId;
+  readonly projectId?: ProjectId;
+  readonly messages?: OrchestrationThread["messages"];
+  readonly activities?: OrchestrationThreadActivity[];
+}): OrchestrationThread {
+  return {
+    id: params.threadId,
+    projectId: params.projectId ?? ProjectId.make("project-1"),
+    title: "PM Thread",
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claude"),
+      model: "claude-sonnet-4",
+    },
+    gedWorkflowEnabled: false,
+    runtimeMode: "approval-required",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: "/tmp/project",
+    latestTurn: null,
+    createdAt: "2026-04-13T00:00:00.000Z",
+    updatedAt: "2026-04-13T00:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
+    messages: params.messages ?? [],
+    proposedPlans: [],
+    activities: params.activities ?? [],
+    checkpoints: [],
+    session: null,
+  };
+}
+
+function makeProjectDetailSnapshot(params: {
+  readonly projectId: ProjectId;
+  readonly pmThread: OrchestrationThread | null;
+  readonly snapshotSequence: number;
+}): OrchestratorProjectDetailSnapshot {
+  return {
+    snapshotSequence: params.snapshotSequence,
+    project: {
+      id: params.projectId,
+      title: "Project",
+      workspaceRoot: "/tmp/project",
+      repositoryIdentity: null,
+      defaultModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      roleModelSelections: {},
+      rolePromptPrefixes: {},
+      orchestratorConfig: {
+        enabled: true,
+        pmModelSelection: {
+          instanceId: ProviderInstanceId.make("claude"),
+          model: "claude-sonnet-4",
+        },
+      },
+      scripts: [],
+      createdAt: "2026-04-13T00:00:00.000Z",
+      updatedAt: "2026-04-13T00:00:00.000Z",
+      deletedAt: null,
+    },
+    pmThreadId: ThreadId.make(`pm:${params.projectId}`),
+    pmThread: params.pmThread,
+    pmQuotaBlock: null,
+    tasks: [],
+    pendingGates: [],
+    quotaBlockedStages: [],
+    stageHistory: {},
+  };
+}
+
+function makeThreadEvent<T extends OrchestrationEvent["type"]>(
+  type: T,
+  payload: Extract<OrchestrationEvent, { type: T }>["payload"],
+  sequence: number,
+): Extract<OrchestrationEvent, { type: T }> {
+  const threadId = "threadId" in payload ? payload.threadId : ThreadId.make("thread-unknown");
+  return {
+    sequence,
+    eventId: EventId.make(`event-${sequence}`),
+    aggregateKind: "thread",
+    aggregateId: threadId,
+    occurredAt: `2026-04-13T00:00:0${sequence}.000Z`,
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    type,
+    payload,
+  } as Extract<OrchestrationEvent, { type: T }>;
+}
+
+function makeToolActivity(params: {
+  readonly id: string;
+  readonly kind: "tool.updated" | "tool.completed";
+  readonly status?: "inProgress" | "completed";
+  readonly createdAt: string;
+}): OrchestrationThreadActivity {
+  return {
+    id: EventId.make(params.id),
+    tone: "tool",
+    kind: params.kind,
+    summary: params.kind === "tool.completed" ? "Worker for task completed" : "Worker for task",
+    payload: {
+      itemType: "dynamic_tool_call",
+      title: "Worker for task",
+      status: params.status,
+      data: {
+        toolCallId: "worker-call-1",
+      },
+    },
+    turnId: null,
+    createdAt: params.createdAt,
+  };
+}
+
 describe("retainThreadDetailSubscription", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -263,6 +386,152 @@ describe("retainThreadDetailSubscription", () => {
     await vi.advanceTimersByTimeAsync(28 * 60 * 1000);
     expect(mockThreadUnsubscribe).toHaveBeenCalledTimes(1);
 
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("retains a live PM user message when a stale thread snapshot arrives later", async () => {
+    const {
+      retainOrchestratorProjectSubscription,
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const projectId = ProjectId.make("project-live-user");
+    const threadId = ThreadId.make(`pm:${projectId}`);
+    const releaseProject = retainOrchestratorProjectSubscription(environmentId, projectId);
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    const onProjectItem = mockSubscribeProject.mock.calls[0]?.[1];
+    expect(onThreadItem).toBeTypeOf("function");
+    expect(onProjectItem).toBeTypeOf("function");
+
+    const emptyThread = makeThreadDetail({ threadId, projectId });
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: { snapshotSequence: 1, thread: emptyThread },
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("pm-user-1"),
+          role: "user",
+          text: "Start the worker.",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-13T00:00:02.000Z",
+          updatedAt: "2026-04-13T00:00:02.000Z",
+        },
+        2,
+      ),
+    });
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: { snapshotSequence: 1, thread: emptyThread },
+    });
+    onProjectItem({
+      kind: "snapshot",
+      snapshot: makeProjectDetailSnapshot({
+        projectId,
+        pmThread: emptyThread,
+        snapshotSequence: 1,
+      }),
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("pm-assistant-1"),
+          role: "assistant",
+          text: "Worker started.",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-13T00:00:03.000Z",
+          updatedAt: "2026-04-13T00:00:03.000Z",
+        },
+        3,
+      ),
+    });
+
+    const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
+    expect(thread?.messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "Start the worker."],
+      ["assistant", "Worker started."],
+    ]);
+
+    release();
+    releaseProject();
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("retains a live completed worker activity when a stale in-progress snapshot arrives later", async () => {
+    const {
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+    const { deriveWorkLogEntries } = await import("../../session-logic");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const threadId = ThreadId.make("pm:project-live-activity");
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    expect(onThreadItem).toBeTypeOf("function");
+
+    const inProgressActivity = makeToolActivity({
+      id: "activity-worker-progress",
+      kind: "tool.updated",
+      status: "inProgress",
+      createdAt: "2026-04-13T00:00:01.000Z",
+    });
+    const staleThread = makeThreadDetail({ threadId, activities: [inProgressActivity] });
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: { snapshotSequence: 1, thread: staleThread },
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.activity-appended",
+        {
+          threadId,
+          activity: makeToolActivity({
+            id: "activity-worker-complete",
+            kind: "tool.completed",
+            status: "completed",
+            createdAt: "2026-04-13T00:00:02.000Z",
+          }),
+        },
+        2,
+      ),
+    });
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: { snapshotSequence: 1, thread: staleThread },
+    });
+
+    const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
+    const workEntries = deriveWorkLogEntries(thread?.activities ?? []);
+    expect(workEntries).toHaveLength(1);
+    expect(workEntries[0]?.toolLifecycleStatus).toBe("completed");
+    expect(workEntries[0]?.sourceActivityKind).toBe("tool.completed");
+
+    release();
     stop();
     await resetEnvironmentServiceForTests();
   });

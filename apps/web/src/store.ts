@@ -938,16 +938,20 @@ function retainProjectSnapshotTaskState(params: {
   readonly projectId: ProjectId;
   readonly snapshotTaskIds: ReadonlySet<string>;
   readonly snapshotGateIds: ReadonlySet<string>;
+  readonly skipTaskIds?: ReadonlySet<string>;
 }): EnvironmentState {
   let nextState = params.state;
 
   for (const taskKey of params.state.taskIdsByProjectId[params.projectId] ?? EMPTY_TASK_IDS) {
-    if (!params.snapshotTaskIds.has(taskKey)) {
+    if (!params.snapshotTaskIds.has(taskKey) && !params.skipTaskIds?.has(taskKey)) {
       nextState = removeTaskState(nextState, taskKey);
     }
   }
 
   for (const taskKey of params.snapshotTaskIds) {
+    if (params.skipTaskIds?.has(taskKey)) {
+      continue;
+    }
     nextState = retainTaskSnapshotGateState(nextState, taskKey, params.snapshotGateIds);
   }
 
@@ -1732,25 +1736,39 @@ export function syncServerThreadDetail(
   );
 }
 
+interface SyncOrchestratorProjectSnapshotOptions {
+  readonly skipPmThread?: boolean;
+  readonly skipTaskIds?: ReadonlySet<string>;
+}
+
 export function syncOrchestratorProjectSnapshot(
   state: AppState,
   snapshot: OrchestratorProjectDetailSnapshot,
   environmentId: EnvironmentId,
+  options: SyncOrchestratorProjectSnapshotOptions = {},
 ): AppState {
+  const skipTaskIds = options.skipTaskIds ?? new Set<string>();
   const snapshotTaskIds = new Set(snapshot.tasks.map((task) => String(task.id)));
+  const taskIdsToReset = new Set(
+    snapshot.tasks.map((task) => String(task.id)).filter((taskId) => !skipTaskIds.has(taskId)),
+  );
   const snapshotGateIds = new Set(
-    snapshot.pendingGates.map((pendingGate) => String(pendingGate.gateId)),
+    snapshot.pendingGates
+      .filter((pendingGate) => !skipTaskIds.has(String(pendingGate.taskId)))
+      .map((pendingGate) => String(pendingGate.gateId)),
   );
   let nextEnvironmentState = writeProjectState(
     getStoredEnvironmentState(state, environmentId),
     mapProject(snapshot.project, environmentId),
   );
-  nextEnvironmentState =
-    snapshot.pmQuotaBlock === null
-      ? clearProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id)
-      : setProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id, snapshot.pmQuotaBlock);
+  if (!options.skipPmThread) {
+    nextEnvironmentState =
+      snapshot.pmQuotaBlock === null
+        ? clearProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id)
+        : setProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id, snapshot.pmQuotaBlock);
+  }
 
-  if (snapshot.pmThread !== null) {
+  if (!options.skipPmThread && snapshot.pmThread !== null) {
     const previousThread = getThreadFromEnvironmentState(
       nextEnvironmentState,
       snapshot.pmThread.id,
@@ -1763,6 +1781,9 @@ export function syncOrchestratorProjectSnapshot(
   }
 
   for (const task of snapshot.tasks) {
+    if (skipTaskIds.has(String(task.id))) {
+      continue;
+    }
     nextEnvironmentState = writeTaskState(
       nextEnvironmentState,
       mapOrchestratorTask(task, environmentId),
@@ -1770,6 +1791,9 @@ export function syncOrchestratorProjectSnapshot(
   }
 
   for (const pendingGate of snapshot.pendingGates) {
+    if (skipTaskIds.has(String(pendingGate.taskId))) {
+      continue;
+    }
     nextEnvironmentState = writePendingGateState(
       nextEnvironmentState,
       mapOrchestratorPendingGate(pendingGate, environmentId),
@@ -1778,10 +1802,13 @@ export function syncOrchestratorProjectSnapshot(
 
   // Reset this project's quota-block index to match the snapshot (authoritative
   // at subscribe time), then re-seed the actively blocked stages.
-  for (const taskId of snapshotTaskIds) {
+  for (const taskId of taskIdsToReset) {
     nextEnvironmentState = clearTaskQuotaBlock(nextEnvironmentState, taskId);
   }
   for (const stage of snapshot.quotaBlockedStages) {
+    if (skipTaskIds.has(String(stage.taskId))) {
+      continue;
+    }
     if (stage.status !== "blocked") {
       continue;
     }
@@ -1794,10 +1821,10 @@ export function syncOrchestratorProjectSnapshot(
 
   // Stage history is authoritative at subscribe time: reset this project's tasks,
   // then seed from the snapshot (scoped server-side to this project's tasks).
-  nextEnvironmentState = resetTaskStageHistory(nextEnvironmentState, snapshotTaskIds);
+  nextEnvironmentState = resetTaskStageHistory(nextEnvironmentState, taskIdsToReset);
   nextEnvironmentState = seedStageHistory(
     nextEnvironmentState,
-    Object.values(snapshot.stageHistory),
+    Object.values(snapshot.stageHistory).filter((stage) => !skipTaskIds.has(String(stage.taskId))),
   );
 
   nextEnvironmentState = retainProjectSnapshotTaskState({
@@ -1805,6 +1832,7 @@ export function syncOrchestratorProjectSnapshot(
     projectId: snapshot.project.id,
     snapshotTaskIds,
     snapshotGateIds,
+    skipTaskIds,
   });
 
   return commitEnvironmentState(state, environmentId, nextEnvironmentState);
@@ -3106,6 +3134,7 @@ interface AppStore extends AppState {
   syncOrchestratorProjectSnapshot: (
     snapshot: OrchestratorProjectDetailSnapshot,
     environmentId: EnvironmentId,
+    options?: SyncOrchestratorProjectSnapshotOptions,
   ) => void;
   syncOrchestratorTaskSnapshot: (
     snapshot: OrchestratorTaskDetailSnapshot,
@@ -3143,8 +3172,8 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => syncServerShellSnapshot(state, snapshot, environmentId)),
   syncServerThreadDetail: (thread, environmentId) =>
     set((state) => syncServerThreadDetail(state, thread, environmentId)),
-  syncOrchestratorProjectSnapshot: (snapshot, environmentId) =>
-    set((state) => syncOrchestratorProjectSnapshot(state, snapshot, environmentId)),
+  syncOrchestratorProjectSnapshot: (snapshot, environmentId, options) =>
+    set((state) => syncOrchestratorProjectSnapshot(state, snapshot, environmentId, options)),
   syncOrchestratorTaskSnapshot: (snapshot, environmentId) =>
     set((state) => syncOrchestratorTaskSnapshot(state, snapshot, environmentId)),
   applyOrchestratorProjectStreamItem: (item, environmentId) =>

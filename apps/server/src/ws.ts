@@ -985,6 +985,25 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   event,
                 })),
               );
+              const replayStream = orchestrationEngine.readEvents(snapshotSequence).pipe(
+                Stream.filter(
+                  (event) =>
+                    event.aggregateKind === "thread" &&
+                    event.aggregateId === input.threadId &&
+                    isThreadDetailEvent(event),
+                ),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay thread ${input.threadId} events`,
+                      cause,
+                    }),
+                ),
+              );
 
               return Stream.concat(
                 Stream.make({
@@ -994,7 +1013,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     thread: threadDetail.value,
                   },
                 }),
-                liveStream,
+                Stream.concat(replayStream, liveStream),
               );
             }),
             { "rpc.aggregate": "orchestration" },
@@ -1056,13 +1075,27 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   event,
                 })),
               );
+              const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
+                Stream.filterEffect((event) => isProjectOrchestratorEvent(input.projectId, event)),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay project ${input.projectId} events`,
+                      cause,
+                    }),
+                ),
+              );
 
               return Stream.concat(
                 Stream.make({
                   kind: "snapshot" as const,
                   snapshot,
                 }),
-                liveStream,
+                Stream.concat(replayStream, liveStream),
               );
             }),
             { "rpc.aggregate": "orchestrator" },
@@ -1081,13 +1114,29 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   event,
                 })),
               );
+              const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
+                Stream.filter(
+                  (event) => event.aggregateKind === "task" && event.aggregateId === input.taskId,
+                ),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay task ${input.taskId} events`,
+                      cause,
+                    }),
+                ),
+              );
 
               return Stream.concat(
                 Stream.make({
                   kind: "snapshot" as const,
                   snapshot,
                 }),
-                liveStream,
+                Stream.concat(replayStream, liveStream),
               );
             }),
             { "rpc.aggregate": "orchestrator" },

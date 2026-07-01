@@ -1,8 +1,11 @@
 import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   type OrchestrationCommand,
+  type OrchestrationEvent,
   type OrchestrationProject,
+  type OrchestrationReadModel,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -15,6 +18,8 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { decideOrchestrationCommand } from "../decider.ts";
+import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "./PmEventProjection.ts";
 
 const now = 1_797_209_000_000;
@@ -70,24 +75,49 @@ const assistantMessage = (text: string): AssistantMessage => ({
   timestamp: now,
 });
 
-const makeLayer = (commands: OrchestrationCommand[]) =>
+type PlannedEvent = Omit<OrchestrationEvent, "sequence">;
+
+const toEvents = (result: PlannedEvent | ReadonlyArray<PlannedEvent>): PlannedEvent[] =>
+  Array.isArray(result) ? [...(result as ReadonlyArray<PlannedEvent>)] : [result as PlannedEvent];
+
+const makeReadModelRef = () => ({
+  current: {
+    ...createEmptyReadModel("2026-06-14T10:00:00.000Z"),
+    projects: [project],
+  },
+});
+
+const makeLayer = (
+  commands: OrchestrationCommand[],
+  readModelRef: { current: OrchestrationReadModel } = makeReadModelRef(),
+) =>
   Layer.mergeAll(
     Layer.succeed(OrchestrationEngineService, {
       readEvents: () => Stream.empty,
       dispatch: (command: OrchestrationCommand) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           commands.push(command);
-          return { sequence: commands.length };
-        }),
+          const result = yield* decideOrchestrationCommand({
+            readModel: readModelRef.current,
+            command,
+          });
+          let sequence = readModelRef.current.snapshotSequence;
+          for (const plannedEvent of toEvents(result)) {
+            sequence += 1;
+            readModelRef.current = yield* projectEvent(readModelRef.current, {
+              ...plannedEvent,
+              sequence,
+            } as OrchestrationEvent);
+          }
+          return { sequence: readModelRef.current.snapshotSequence };
+        }).pipe(Effect.provide(NodeServices.layer), Effect.orDie),
       streamDomainEvents: Stream.empty,
       streamShellEvents: Stream.empty,
     }),
     Layer.succeed(ProjectionSnapshotQuery, {
       getThreadShellById: (threadId: ThreadId) =>
         Effect.succeed(
-          commands.some(
-            (command) => command.type === "thread.create" && command.threadId === threadId,
-          )
+          readModelRef.current.threads.some((thread) => thread.id === threadId)
             ? Option.some({ id: threadId } as never)
             : Option.none(),
         ),
@@ -239,6 +269,116 @@ describe("PmEventProjection", () => {
         assert.strictEqual(completeCommand.threadId, runtime.pmThreadId);
       }
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
+  });
+
+  it.effect("does not complete an assistant message for a tool-only PM turn", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+      });
+
+      yield* runtime.project({
+        type: "message_start",
+        message: assistantMessage(""),
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "tool_call",
+        toolCallId: "tool-call-1",
+        toolName: "handoffWorker",
+        input: { taskId: "task-1", role: "work" },
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "tool_result",
+        toolCallId: "tool-call-1",
+        toolName: "handoffWorker",
+        input: { taskId: "task-1", role: "work" },
+        content: [{ type: "text", text: "Started worker." }],
+        details: { stageThreadId: "stage-1" },
+        isError: false,
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "message_end",
+        message: assistantMessage(""),
+      } satisfies AgentHarnessEvent);
+
+      assert.deepStrictEqual(
+        commands.map((command) => command.type),
+        ["thread.create", "thread.activity.append", "thread.activity.append"],
+      );
+      assert.ok(!commands.some((command) => command.type === "thread.message.assistant.delta"));
+      assert.ok(!commands.some((command) => command.type === "thread.message.assistant.complete"));
+
+      const pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === runtime.pmThreadId,
+      );
+      assert.ok(pmThread);
+      assert.deepStrictEqual(pmThread.messages, []);
+      assert.deepStrictEqual(pmThread.activities.map((activity) => activity.kind).toSorted(), [
+        "tool.completed",
+        "tool.started",
+      ]);
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
+  });
+
+  it.effect("still emits one assistant message when final PM text arrives at message end", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+      });
+
+      yield* runtime.project({
+        type: "message_start",
+        message: assistantMessage(""),
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "message_end",
+        message: assistantMessage("Final answer."),
+      } satisfies AgentHarnessEvent);
+
+      const assistantCommands = commands.filter(
+        (command) =>
+          command.type === "thread.message.assistant.delta" ||
+          command.type === "thread.message.assistant.complete",
+      );
+      assert.deepStrictEqual(
+        assistantCommands.map((command) => command.type),
+        ["thread.message.assistant.delta", "thread.message.assistant.complete"],
+      );
+      const deltaCommand = assistantCommands[0];
+      const completeCommand = assistantCommands[1];
+      assert.strictEqual(deltaCommand?.type, "thread.message.assistant.delta");
+      assert.strictEqual(completeCommand?.type, "thread.message.assistant.complete");
+      if (
+        deltaCommand?.type === "thread.message.assistant.delta" &&
+        completeCommand?.type === "thread.message.assistant.complete"
+      ) {
+        assert.strictEqual(deltaCommand.delta, "Final answer.");
+        assert.strictEqual(deltaCommand.messageId, completeCommand.messageId);
+      }
+
+      const pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === runtime.pmThreadId,
+      );
+      assert.ok(pmThread);
+      assert.strictEqual(pmThread.messages.length, 1);
+      const message = pmThread.messages[0];
+      assert.ok(message);
+      if (deltaCommand?.type === "thread.message.assistant.delta") {
+        assert.strictEqual(message.id, deltaCommand.messageId);
+      }
+      assert.strictEqual(message.role, "assistant");
+      assert.strictEqual(message.text, "Final answer.");
+      assert.strictEqual(message.turnId, null);
+      assert.strictEqual(message.streaming, false);
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
   });
 
   it.effect("projects pi tool calls onto PM thread activities", () => {

@@ -210,11 +210,13 @@ export const makePmEventProjectionRuntime = (input: {
           if (event.message.role !== "assistant") {
             return;
           }
-          if (activeAssistantMessageId === null) {
-            activeAssistantMessageId = nextMessageId();
-          }
           if (activeAssistantTextLength === 0) {
-            yield* dispatchAssistantDelta(textContent(event.message));
+            const finalText = textContent(event.message);
+            if (finalText.length === 0) {
+              activeAssistantMessageId = null;
+              return;
+            }
+            yield* dispatchAssistantDelta(finalText);
           }
           yield* dispatchAssistantComplete();
           return;

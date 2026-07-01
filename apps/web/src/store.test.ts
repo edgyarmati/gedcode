@@ -923,6 +923,11 @@ describe("incremental orchestration updates", () => {
   it("syncs PM quota block state from project snapshots", () => {
     const projectId = ProjectId.make("project-1");
     const projectRef = scopeProjectRef(localEnvironmentId, projectId);
+    const quotaBlock = {
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      status: "blocked-until",
+      resetAt: "2026-02-27T01:00:00.000Z",
+    } as const;
     const baseState = makeEmptyState({ activeEnvironmentId: localEnvironmentId });
     const blockedState = syncOrchestratorProjectSnapshot(
       baseState,
@@ -943,11 +948,7 @@ describe("incremental orchestration updates", () => {
         },
         pmThreadId: ThreadId.make("pm:project-1"),
         pmThread: null,
-        pmQuotaBlock: {
-          providerInstanceId: ProviderInstanceId.make("codex"),
-          status: "blocked-until",
-          resetAt: "2026-02-27T01:00:00.000Z",
-        },
+        pmQuotaBlock: quotaBlock,
         tasks: [],
         pendingGates: [],
         quotaBlockedStages: [],
@@ -991,6 +992,68 @@ describe("incremental orchestration updates", () => {
     );
 
     expect(selectProjectPmQuotaBlockByRef(clearedState, projectRef)).toBeUndefined();
+
+    const skippedState = syncOrchestratorProjectSnapshot(
+      clearedState,
+      {
+        snapshotSequence: 3,
+        project: {
+          id: projectId,
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          scripts: [],
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          deletedAt: null,
+        },
+        pmThreadId: ThreadId.make("pm:project-1"),
+        pmThread: null,
+        pmQuotaBlock: quotaBlock,
+        tasks: [],
+        pendingGates: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
+      },
+      localEnvironmentId,
+      { skipPmThread: true },
+    );
+
+    expect(selectProjectPmQuotaBlockByRef(skippedState, projectRef)).toBeUndefined();
+
+    const appliedState = syncOrchestratorProjectSnapshot(
+      clearedState,
+      {
+        snapshotSequence: 4,
+        project: {
+          id: projectId,
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          scripts: [],
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+          deletedAt: null,
+        },
+        pmThreadId: ThreadId.make("pm:project-1"),
+        pmThread: null,
+        pmQuotaBlock: quotaBlock,
+        tasks: [],
+        pendingGates: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
+      },
+      localEnvironmentId,
+      { skipPmThread: false },
+    );
+
+    expect(selectProjectPmQuotaBlockByRef(appliedState, projectRef)).toEqual(quotaBlock);
   });
 
   it("updates PM quota block state from PM thread activity and clears it on PM messages", () => {

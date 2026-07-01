@@ -1082,6 +1082,7 @@ describe("PmRuntime", () => {
               runtimeMode: "approval-required",
               readOnly: true,
               enableOrchestrationTools: true,
+              systemPromptAppend: buildPmSystemPrompt(project),
             },
           ]);
           assert.deepStrictEqual(

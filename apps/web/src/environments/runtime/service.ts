@@ -6,6 +6,8 @@ import {
   type OrchestrationEvent,
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
+  type OrchestratorProjectDetailSnapshot,
+  type OrchestratorTaskDetailSnapshot,
   ProjectId,
   type ServerConfig,
   TaskId,
@@ -144,6 +146,9 @@ const lastAppliedProjectionVersionByEnvironment = new Map<
     readonly updatedAt: string | null;
   }
 >();
+const appliedOrchestrationEventIdsByEnvironment = new Map<EnvironmentId, Set<string>>();
+const aggregateAppliedSequenceByKey = new Map<string, number>();
+const aggregateSnapshotSequenceByKey = new Map<string, number>();
 
 let activeService: EnvironmentServiceState | null = null;
 let needsProviderInvalidation = false;
@@ -319,6 +324,233 @@ function getThreadDetailSubscriptionKey(environmentId: EnvironmentId, threadId: 
   return scopedThreadKey(scopeThreadRef(environmentId, threadId));
 }
 
+type OrchestrationAggregateKind = OrchestrationEvent["aggregateKind"];
+
+function getAggregateSequenceKey(
+  environmentId: EnvironmentId,
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: string,
+): string {
+  return `${environmentId}:${aggregateKind}:${aggregateId}`;
+}
+
+function readAggregateAppliedSequence(
+  environmentId: EnvironmentId,
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: string,
+): number | null {
+  return (
+    aggregateAppliedSequenceByKey.get(
+      getAggregateSequenceKey(environmentId, aggregateKind, aggregateId),
+    ) ?? null
+  );
+}
+
+function readAggregateSnapshotSequence(
+  environmentId: EnvironmentId,
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: string,
+): number | null {
+  return (
+    aggregateSnapshotSequenceByKey.get(
+      getAggregateSequenceKey(environmentId, aggregateKind, aggregateId),
+    ) ?? null
+  );
+}
+
+function markAggregateAppliedSequence(
+  environmentId: EnvironmentId,
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: string,
+  sequence: number,
+): void {
+  const key = getAggregateSequenceKey(environmentId, aggregateKind, aggregateId);
+  const current = aggregateAppliedSequenceByKey.get(key);
+  if (current === undefined || sequence > current) {
+    aggregateAppliedSequenceByKey.set(key, sequence);
+  }
+}
+
+function markAggregateSnapshotSequence(
+  environmentId: EnvironmentId,
+  aggregateKind: OrchestrationAggregateKind,
+  aggregateId: string,
+  sequence: number,
+): void {
+  const key = getAggregateSequenceKey(environmentId, aggregateKind, aggregateId);
+  const current = aggregateSnapshotSequenceByKey.get(key);
+  if (current === undefined || sequence > current) {
+    aggregateSnapshotSequenceByKey.set(key, sequence);
+  }
+  markAggregateAppliedSequence(environmentId, aggregateKind, aggregateId, sequence);
+}
+
+function aggregateHasNewerAppliedEvent(input: {
+  readonly environmentId: EnvironmentId;
+  readonly aggregateKind: OrchestrationAggregateKind;
+  readonly aggregateId: string;
+  readonly snapshotSequence: number;
+}): boolean {
+  const appliedSequence = readAggregateAppliedSequence(
+    input.environmentId,
+    input.aggregateKind,
+    input.aggregateId,
+  );
+  return appliedSequence !== null && appliedSequence > input.snapshotSequence;
+}
+
+function eventIsCoveredBySnapshot(
+  event: OrchestrationEvent,
+  environmentId: EnvironmentId,
+): boolean {
+  const snapshotSequence = readAggregateSnapshotSequence(
+    environmentId,
+    event.aggregateKind,
+    String(event.aggregateId),
+  );
+  return snapshotSequence !== null && event.sequence <= snapshotSequence;
+}
+
+function appliedEventIdsForEnvironment(environmentId: EnvironmentId): Set<string> {
+  let ids = appliedOrchestrationEventIdsByEnvironment.get(environmentId);
+  if (!ids) {
+    ids = new Set();
+    appliedOrchestrationEventIdsByEnvironment.set(environmentId, ids);
+  }
+  return ids;
+}
+
+function filterNewOrchestrationEvents(
+  events: ReadonlyArray<OrchestrationEvent>,
+  environmentId: EnvironmentId,
+): OrchestrationEvent[] {
+  const appliedEventIds = appliedEventIdsForEnvironment(environmentId);
+  const batchEventIds = new Set<string>();
+  const nextEvents: OrchestrationEvent[] = [];
+  for (const event of events) {
+    const eventId = String(event.eventId);
+    if (appliedEventIds.has(eventId) || batchEventIds.has(eventId)) {
+      continue;
+    }
+    if (eventIsCoveredBySnapshot(event, environmentId)) {
+      continue;
+    }
+    batchEventIds.add(eventId);
+    nextEvents.push(event);
+  }
+  return nextEvents;
+}
+
+function markOrchestrationEventsApplied(
+  events: ReadonlyArray<OrchestrationEvent>,
+  environmentId: EnvironmentId,
+): void {
+  if (events.length === 0) {
+    return;
+  }
+  const appliedEventIds = appliedEventIdsForEnvironment(environmentId);
+  for (const event of events) {
+    appliedEventIds.add(String(event.eventId));
+    markAggregateAppliedSequence(
+      environmentId,
+      event.aggregateKind,
+      String(event.aggregateId),
+      event.sequence,
+    );
+  }
+}
+
+function shouldSkipThreadSnapshot(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly snapshotSequence: number;
+}): boolean {
+  return aggregateHasNewerAppliedEvent({
+    environmentId: input.environmentId,
+    aggregateKind: "thread",
+    aggregateId: String(input.threadId),
+    snapshotSequence: input.snapshotSequence,
+  });
+}
+
+function skippedProjectSnapshotTaskIds(
+  snapshot: OrchestratorProjectDetailSnapshot,
+  environmentId: EnvironmentId,
+): Set<string> {
+  const skipped = new Set<string>();
+  for (const task of snapshot.tasks) {
+    const taskId = String(task.id);
+    if (
+      aggregateHasNewerAppliedEvent({
+        environmentId,
+        aggregateKind: "task",
+        aggregateId: taskId,
+        snapshotSequence: snapshot.snapshotSequence,
+      })
+    ) {
+      skipped.add(taskId);
+    }
+  }
+  return skipped;
+}
+
+function markThreadSnapshotApplied(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly snapshotSequence: number;
+}): void {
+  markAggregateSnapshotSequence(
+    input.environmentId,
+    "thread",
+    String(input.threadId),
+    input.snapshotSequence,
+  );
+}
+
+function markProjectSnapshotApplied(input: {
+  readonly environmentId: EnvironmentId;
+  readonly snapshot: OrchestratorProjectDetailSnapshot;
+  readonly skipPmThread: boolean;
+  readonly skipTaskIds: ReadonlySet<string>;
+}): void {
+  markAggregateSnapshotSequence(
+    input.environmentId,
+    "project",
+    String(input.snapshot.project.id),
+    input.snapshot.snapshotSequence,
+  );
+  if (!input.skipPmThread && input.snapshot.pmThread !== null) {
+    markThreadSnapshotApplied({
+      environmentId: input.environmentId,
+      threadId: input.snapshot.pmThread.id,
+      snapshotSequence: input.snapshot.snapshotSequence,
+    });
+  }
+  for (const task of input.snapshot.tasks) {
+    const taskId = String(task.id);
+    if (!input.skipTaskIds.has(taskId)) {
+      markAggregateSnapshotSequence(
+        input.environmentId,
+        "task",
+        taskId,
+        input.snapshot.snapshotSequence,
+      );
+    }
+  }
+}
+
+function markTaskSnapshotApplied(input: {
+  readonly environmentId: EnvironmentId;
+  readonly snapshot: OrchestratorTaskDetailSnapshot;
+}): void {
+  markAggregateSnapshotSequence(
+    input.environmentId,
+    "task",
+    String(input.snapshot.task.id),
+    input.snapshot.snapshotSequence,
+  );
+}
+
 function getOrchestratorProjectSubscriptionKey(
   environmentId: EnvironmentId,
   projectId: ProjectId,
@@ -350,7 +582,24 @@ function attachOrchestratorProjectSubscription(
     { projectId: entry.projectId },
     (item) => {
       if (item.kind === "snapshot") {
-        useStore.getState().syncOrchestratorProjectSnapshot(item.snapshot, entry.environmentId);
+        const skipPmThread =
+          item.snapshot.pmThread !== null &&
+          shouldSkipThreadSnapshot({
+            environmentId: entry.environmentId,
+            threadId: item.snapshot.pmThread.id,
+            snapshotSequence: item.snapshot.snapshotSequence,
+          });
+        const skipTaskIds = skippedProjectSnapshotTaskIds(item.snapshot, entry.environmentId);
+        useStore.getState().syncOrchestratorProjectSnapshot(item.snapshot, entry.environmentId, {
+          skipPmThread,
+          skipTaskIds,
+        });
+        markProjectSnapshotApplied({
+          environmentId: entry.environmentId,
+          snapshot: item.snapshot,
+          skipPmThread,
+          skipTaskIds,
+        });
         syncProjectUiFromStore();
         return;
       }
@@ -378,7 +627,17 @@ function attachOrchestratorTaskSubscription(entry: OrchestratorTaskSubscriptionE
     { taskId: entry.taskId },
     (item) => {
       if (item.kind === "snapshot") {
-        useStore.getState().syncOrchestratorTaskSnapshot(item.snapshot, entry.environmentId);
+        if (
+          !aggregateHasNewerAppliedEvent({
+            environmentId: entry.environmentId,
+            aggregateKind: "task",
+            aggregateId: String(item.snapshot.task.id),
+            snapshotSequence: item.snapshot.snapshotSequence,
+          })
+        ) {
+          useStore.getState().syncOrchestratorTaskSnapshot(item.snapshot, entry.environmentId);
+          markTaskSnapshotApplied({ environmentId: entry.environmentId, snapshot: item.snapshot });
+        }
         return;
       }
       applyRecoveredEventBatch([item.event], entry.environmentId);
@@ -563,7 +822,20 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
     { threadId: entry.threadId },
     (item) => {
       if (item.kind === "snapshot") {
-        useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
+        if (
+          !shouldSkipThreadSnapshot({
+            environmentId: entry.environmentId,
+            threadId: item.snapshot.thread.id,
+            snapshotSequence: item.snapshot.snapshotSequence,
+          })
+        ) {
+          useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
+          markThreadSnapshotApplied({
+            environmentId: entry.environmentId,
+            threadId: item.snapshot.thread.id,
+            snapshotSequence: item.snapshot.snapshotSequence,
+          });
+        }
         return;
       }
       applyEnvironmentThreadDetailEvent(item.event, entry.environmentId);
@@ -1244,13 +1516,14 @@ function applyRecoveredEventBatch(
   events: ReadonlyArray<OrchestrationEvent>,
   environmentId: EnvironmentId,
 ) {
-  if (events.length === 0) {
+  const newEvents = filterNewOrchestrationEvents(events, environmentId);
+  if (newEvents.length === 0) {
     return;
   }
 
-  const batchEffects = deriveOrchestrationBatchEffects(events);
-  const uiEvents = coalesceOrchestrationUiEvents(events);
-  const needsProjectUiSync = events.some(
+  const batchEffects = deriveOrchestrationBatchEffects(newEvents);
+  const uiEvents = coalesceOrchestrationUiEvents(newEvents);
+  const needsProjectUiSync = newEvents.some(
     (event) =>
       event.type === "project.created" ||
       event.type === "project.meta-updated" ||
@@ -1263,6 +1536,7 @@ function applyRecoveredEventBatch(
   }
 
   useStore.getState().applyOrchestrationEvents(uiEvents, environmentId);
+  markOrchestrationEventsApplied(newEvents, environmentId);
   if (needsProjectUiSync) {
     const projects = selectProjectsAcrossEnvironments(useStore.getState());
     const clientSettings = getClientSettings();
@@ -1275,7 +1549,7 @@ function applyRecoveredEventBatch(
     );
   }
 
-  const needsThreadUiSync = events.some(
+  const needsThreadUiSync = newEvents.some(
     (event) => event.type === "thread.created" || event.type === "thread.deleted",
   );
   if (needsThreadUiSync) {
@@ -1298,7 +1572,7 @@ function applyRecoveredEventBatch(
       .getState()
       .clearThreadUi(scopedThreadKey(scopeThreadRef(environmentId, threadId)));
   }
-  for (const event of events) {
+  for (const event of newEvents) {
     if (event.type === "project.deleted") {
       draftStore.clearProjectDraftThreadId(scopeProjectRef(environmentId, event.payload.projectId));
     }
@@ -1548,6 +1822,17 @@ async function removeConnection(environmentId: EnvironmentId): Promise<boolean> 
   }
 
   lastAppliedProjectionVersionByEnvironment.delete(environmentId);
+  appliedOrchestrationEventIdsByEnvironment.delete(environmentId);
+  for (const key of Array.from(aggregateAppliedSequenceByKey.keys())) {
+    if (key.startsWith(`${environmentId}:`)) {
+      aggregateAppliedSequenceByKey.delete(key);
+    }
+  }
+  for (const key of Array.from(aggregateSnapshotSequenceByKey.keys())) {
+    if (key.startsWith(`${environmentId}:`)) {
+      aggregateSnapshotSequenceByKey.delete(key);
+    }
+  }
   environmentConnections.delete(environmentId);
   emitEnvironmentConnectionRegistryChange();
   detachThreadDetailSubscriptionsForEnvironment(environmentId);
@@ -2105,6 +2390,9 @@ export async function resetEnvironmentServiceForTests(): Promise<void> {
   lastBrowserHiddenAt = null;
   lastBrowserResumeReconnectAt = Number.NEGATIVE_INFINITY;
   lastAppliedProjectionVersionByEnvironment.clear();
+  appliedOrchestrationEventIdsByEnvironment.clear();
+  aggregateAppliedSequenceByKey.clear();
+  aggregateSnapshotSequenceByKey.clear();
   pendingSavedEnvironmentConnections.clear();
   for (const key of Array.from(threadDetailSubscriptions.keys())) {
     disposeThreadDetailSubscriptionByKey(key);
