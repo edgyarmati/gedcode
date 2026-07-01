@@ -425,7 +425,7 @@ describe("ClaudeAdapterLive", () => {
   it("builds a read-only Claude policy that only exposes read tools and orchestration MCP tools", () => {
     const policy = buildClaudeReadOnlyToolPolicy({ enableOrchestrationTools: true });
 
-    assert.equal(policy.permissionMode, "plan");
+    assert.equal(policy.permissionMode, "default");
     assert.deepEqual(policy.tools, ["Read", "Grep", "Glob"]);
     assert.ok(policy.allowedTools?.includes("Read"));
     assert.ok(policy.allowedTools?.includes(orchestrationMcpToolId("createTask")));
@@ -455,7 +455,7 @@ describe("ClaudeAdapterLive", () => {
 
       const createInput = harness.getLastCreateQueryInput();
       assert.ok(createInput);
-      assert.equal(createInput.options.permissionMode, "plan");
+      assert.equal(createInput.options.permissionMode, "default");
       assert.equal(createInput.options.allowDangerouslySkipPermissions, undefined);
       assert.deepEqual(createInput.options.tools, ["Read", "Grep", "Glob"]);
       assert.ok(createInput.options.allowedTools?.includes(orchestrationMcpToolId("createTask")));

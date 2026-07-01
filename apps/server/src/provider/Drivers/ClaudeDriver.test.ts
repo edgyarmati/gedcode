@@ -105,7 +105,7 @@ describe("ClaudeDriver", () => {
       const queryInput = sdkMockState.lastCreateInput as QueryCreateInput | undefined;
       assert.notStrictEqual(queryInput, undefined);
       const options = queryInput!.options;
-      assert.strictEqual(options.permissionMode, "plan");
+      assert.strictEqual(options.permissionMode, "default");
       assert.strictEqual(options.strictMcpConfig, true);
       assert.ok(options.allowedTools?.includes(orchestrationMcpToolId("createTask")));
       assert.strictEqual(options.mcpServers?.[ORCHESTRATION_MCP_SERVER_NAME], mcpServer);

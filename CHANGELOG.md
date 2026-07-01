@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Run the read-only Claude Orchestrator PM in `default` permission mode instead of `plan` mode. Plan mode made the PM research-and-propose (presenting a plan via ExitPlanMode and stopping) rather than invoking its orchestration tools, so the workflow never started and turns surfaced as "(empty response)". Read-only is still enforced by the tool allow/deny lists plus the `canUseTool` default-deny.
 - Fix: Wire read-only Claude Orchestrator PM sessions to the in-process orchestration MCP server through a root late-bound provider, so PM turns can start with orchestration tools after the engine-side runtime registers the shared MCP config.
 - Fix/UI: Surface Orchestrator PM driver-turn failures directly in the PM conversation as error activities with classified quota/rate-limit/auth/abort wording where detectable, and replace the PM chat composer with a focused text input plus read-only PM model label instead of inert chat model/runtime/workflow controls.
 - Internal/UI: Swap the Orchestrator PM brain from pi model selection to worker provider-instance model selection. The PM now resolves a Claude provider instance and runs through the Claude DriverPmAdapter, with legacy pi-shaped PM selections replaying as unconfigured and non-Claude PM instances failing clearly until Codex support lands.

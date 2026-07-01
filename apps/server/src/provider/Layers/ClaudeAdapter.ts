@@ -133,7 +133,13 @@ export function buildClaudeReadOnlyToolPolicy(input?: {
 > {
   const mcpToolIds = input?.enableOrchestrationTools === true ? orchestrationMcpToolIds() : [];
   return {
-    permissionMode: "plan",
+    // Read-only is enforced by the allow/deny lists + `canUseTool` default-deny
+    // below — NOT by plan mode. Plan mode ("research and propose, don't act")
+    // stops the PM from actually invoking its orchestration MCP tools (create
+    // task, hand off a worker), so the workflow never starts and turns surface
+    // as "(empty response)". `default` lets the PM act while mutating built-ins
+    // (Write/Edit/Bash/…) stay blocked by `disallowedTools`/`canUseTool`.
+    permissionMode: "default",
     tools: [...CLAUDE_READ_ONLY_BUILTIN_TOOLS],
     allowedTools: [...CLAUDE_READ_ONLY_BUILTIN_TOOLS, ...mcpToolIds],
     disallowedTools: [...CLAUDE_READ_ONLY_DISALLOWED_TOOLS],
