@@ -315,7 +315,29 @@ orchestration MCP tools; plan turns carry no bridged assistant text → Messages
 (Read/Grep/Glob + orchestration MCP) + disallowedTools (Write/Edit/MultiEdit/Bash/…) + `canUseTool`'s
 `readOnly` branch (:2933) which denies any non-read/non-orchestration tool. Updated the 3 read-only policy
 asserts (plan→default); worker interaction-mode "plan" path untouched. Gate green: typecheck 13/13 · affected
-tests 62/62 · fmt · lint(0) · build 3/3. **RE-TESTING.** Remaining: **W5** Codex PM parity · **W6** delete pi.
+tests 62/62 · fmt · lint(0) · build 3/3.
+
+**W4c DONE `122be543b` — PM system prompt forces delegation.** 3rd live test: PM still answered directly
+("I have no shell, can't run bun outdated, enable a Bash tool for me") instead of orchestrating. Rewrote
+`PM_SYSTEM_PROMPT`: PM DELEGATES/never executes; read-only by design (never apologize/work around it);
+workers have FULL access (shell/network/edits, `bun outdated`, tests); any execution/inspection/change MUST
+become a task handed to a worker; never answer from read-only view or ask the human to run commands. Updated
+buildPmSystemPrompt test. Gate green. **BUT still didn't work → W4d.**
+
+**W4d DONE `39c94a209` — the PM system prompt was never actually SENT to the Claude session (THE fix).**
+Diagnostic (temp `DIAG claude.init` log, since reverted) proved the read-only PM had ALL 7 orchestration MCP
+tools connected (`t3_orchestrator` "connected"; tools list included `mcp__t3_orchestrator__{classifyRequest,
+createTask,getTaskLedger,handoffWorker,inspectStage,requestApproval,setTaskBackend}`) — so tools were never
+the problem. Root cause: `buildPmSystemPrompt` was built + handed to DriverPmAdapter but ONLY emitted to the
+projection (cosmetic); it was NEVER sent to the Claude session. `ClaudeAdapter` hardcoded
+`systemPrompt:{type:"preset",preset:"claude_code"}`, so the PM ran as generic read-only Claude Code (hence
+"enable Bash for me"). Fix: added serializable `systemPromptAppend` to `ProviderSessionStartInput` (contract);
+ClaudeAdapter appends it to the preset (`{type:"preset",preset:"claude_code",append}`); DriverPmAdapter passes
+`options.systemPrompt` through at startSession. Tests assert it reaches startSession + becomes the preset
+append. Gate green: typecheck 13/13 · affected tests 63/63 · fmt · lint(0) · build 3/3. **RE-TESTING (4th).**
+Open secondary bugs (deferred, not blocking orchestration): (#2) human message surfacing is INTERMITTENT
+(DIAG confirmed server-side `dispatchUserMessage` fires; web sometimes doesn't render — projection/web race);
+(#3) trailing "(empty response)" turn. Remaining WPs: **W5** Codex PM parity · **W6** delete pi.
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
