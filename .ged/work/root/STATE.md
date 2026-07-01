@@ -303,8 +303,19 @@ orchestration MCP config ONCE (it has the engine, `makePmRuntime` ~ln 499) + reg
 (:145) sets `makeOrchestrationMcpServer` to a thunk that reads the holder LAZILY at session-start via
 `runPromiseWith(capturedContext)` (inert for worker sessions — they never set enableOrchestrationTools).
 Gate green here: typecheck 13/13 (no flake) · affected server tests 71/71 (holder + ClaudeDriver + PmRuntime
-+ e2e + 2 registry) · fmt · lint(0) · build 3/3. **LIVE TEST UNBLOCKED — re-testing now.** Remaining: **W5**
-Codex PM parity · **W6** delete pi.
++ e2e + 2 registry) · fmt · lint(0) · build 3/3. **LIVE TEST UNBLOCKED.**
+
+**W4b DONE `6df51f465` — read-only PM runs in `default` permission mode, not `plan`.** 2nd live test: PM
+"just responded in the chat", the workflow never started, and turns showed "(empty response)". Root cause:
+`buildClaudeReadOnlyToolPolicy` used `permissionMode:"plan"` — plan mode makes Claude RESEARCH-AND-PROPOSE
+(it calls `ExitPlanMode`, which the ClaudeAdapter canUseTool handler at :2910 captures as a proposed-plan +
+DENIES with "wait for the user's feedback", ending the turn) instead of ACTING, so it never invoked its
+orchestration MCP tools; plan turns carry no bridged assistant text → MessagesTimeline.tsx:540 renders
+"(empty response)". Fix: `permissionMode:"default"`. Read-only is UNCHANGED — enforced by allowedTools
+(Read/Grep/Glob + orchestration MCP) + disallowedTools (Write/Edit/MultiEdit/Bash/…) + `canUseTool`'s
+`readOnly` branch (:2933) which denies any non-read/non-orchestration tool. Updated the 3 read-only policy
+asserts (plan→default); worker interaction-mode "plan" path untouched. Gate green: typecheck 13/13 · affected
+tests 62/62 · fmt · lint(0) · build 3/3. **RE-TESTING.** Remaining: **W5** Codex PM parity · **W6** delete pi.
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
