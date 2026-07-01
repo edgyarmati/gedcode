@@ -451,11 +451,18 @@ describe("ClaudeAdapterLive", () => {
         runtimeMode: "approval-required",
         readOnly: true,
         enableOrchestrationTools: true,
+        systemPromptAppend: "You are the orchestrator PM.",
       });
 
       const createInput = harness.getLastCreateQueryInput();
       assert.ok(createInput);
       assert.equal(createInput.options.permissionMode, "default");
+      // The PM role instructions ride on top of the claude_code preset.
+      assert.deepEqual(createInput.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+        append: "You are the orchestrator PM.",
+      });
       assert.equal(createInput.options.allowDangerouslySkipPermissions, undefined);
       assert.deepEqual(createInput.options.tools, ["Read", "Grep", "Glob"]);
       assert.ok(createInput.options.allowedTools?.includes(orchestrationMcpToolId("createTask")));

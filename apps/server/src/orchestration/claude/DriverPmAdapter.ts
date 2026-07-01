@@ -484,6 +484,9 @@ export const makeDriverPmAdapter = (
         runtimeMode: "approval-required",
         readOnly: true,
         enableOrchestrationTools: true,
+        ...(options.systemPrompt !== undefined && options.systemPrompt.length > 0
+          ? { systemPromptAppend: options.systemPrompt }
+          : {}),
         ...(persistedResumeCursor !== null && persistedResumeCursor !== undefined
           ? { resumeCursor: persistedResumeCursor }
           : {}),

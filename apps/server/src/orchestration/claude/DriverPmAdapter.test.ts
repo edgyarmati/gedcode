@@ -320,6 +320,7 @@ describe("DriverPmAdapter", () => {
           runtimeMode: "approval-required",
           readOnly: true,
           enableOrchestrationTools: true,
+          systemPromptAppend: "PM system prompt",
           resumeCursor: persistedResumeCursor,
         },
       ]);

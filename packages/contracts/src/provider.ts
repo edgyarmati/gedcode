@@ -64,6 +64,10 @@ export const ProviderSessionStartInput = Schema.Struct({
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   readOnly: Schema.optional(Schema.Boolean),
   enableOrchestrationTools: Schema.optional(Schema.Boolean),
+  // Extra instructions appended to the provider's base system prompt for this
+  // session (e.g. the orchestrator PM role/delegation rules). Drivers that use a
+  // preset base prompt append this to it rather than replacing the base.
+  systemPromptAppend: Schema.optional(TrimmedNonEmptyString),
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
