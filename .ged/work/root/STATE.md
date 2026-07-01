@@ -339,6 +339,41 @@ Open secondary bugs (deferred, not blocking orchestration): (#2) human message s
 (DIAG confirmed server-side `dispatchUserMessage` fires; web sometimes doesn't render — projection/web race);
 (#3) trailing "(empty response)" turn. Remaining WPs: **W5** Codex PM parity · **W6** delete pi.
 
+**MILESTONE (2026-07-01): the driver-PM on Claude ORCHESTRATES live** — after W4d it classified a request,
+checked the ledger, inspected a stage, reasoned about maxParallelTasks, and offered to create/hand off a
+worker. The W-series rewrite is validated end-to-end.
+
+**W4e DONE `405c809e8` — PM chat live-render fixes (impl by Codex, reviewed+gated by me).** Live testing found
+3 render bugs, all where a REFRESH showed correct state (read-model right; live push/apply diverged): (A)
+tool-only PM turns completed a text-less assistant message → "(empty response)" — PmEventProjection now skips
+completing a textless turn; (B) human messages intermittently didn't surface — events committed between the
+snapshot read and live-subscription attach were lost + stale snapshots overwrote newer live state → ws.ts
+prepends a snapshot-sequence REPLAY stream before the live stream (thread/project/task subs) + the web client
+dedups by eventId & per-aggregate applied/snapshot sequence and SKIPS stale snapshots; (C) stuck "worker"
+indicator = stale snapshot replacing a live tool.completed activity → same skip fix. Also gates the pmQuotaBlock
+snapshot write behind skipPmThread (review Finding-2, folded in). Reviewed via code-reviewer subagent (0 crit;
+confirmed eventId dedup prevents replay/live double-apply incl. streaming deltas; Finding-2 fixed). Gate green:
+typecheck 13/13, full suite 1347 pass, web 41, server 35, fmt/lint/build, test:browser orch 3/3. **Codex process
+note:** the narrow Finding-2 follow-up only applied after running it in a FRESH Codex thread — resuming the W4e
+thread made Codex replay the whole W4e diff+summary (byte-identical) instead of the one-line guard.
+
+**Deferred (non-blocking):** client `appliedOrchestrationEventIdsByEnvironment` Set grows for the connection
+lifetime (~50KB/session, cleared on disconnect) — bounded-eviction follow-up only if PM turn volume grows.
+
+**REAL GAP found in live test → next WP candidate: task cancel/abort.** There is NO task cancel/abort/close
+command anywhere (decider/contracts). A task stuck in `planning` (leftover 2026-06-29 smoke task) permanently
+occupies the single `maxParallelTasks` worktree slot; neither the PM nor the human can clear it. Immediate
+unblock = raise maxParallelTasks in project Orchestration settings; proper fix = a cancel command (+ PM tool).
+
+**jean (coollabsio/jean) evaluation (2026-07-01, `/fork`):** user asked whether to rebuild GedCode on jean
+(jean.build, Apache-2.0). Verdict: NO — jean is a human-driven multi-session COCKPIT (Rust/Tauri, CLI-wrapping),
+not an orchestration engine; it lacks the PM agent + event-sourced ledger + gates + autonomous landing (our
+whole differentiator). Architecture mismatch (Effect-TS/event-sourcing + structured SDK/JSON-RPC vs Rust/Tauri
++ CLI-shelling). Keep the orchestrator on t3code; MINE jean for harness/plumbing patterns (worktree automation,
+normalized multi-backend event stream, plan/build/yolo+approval UX, magic commands, MCP-with-recursion-limits,
+headless/remote). Only switch if deliberately pivoting product from "orchestrator" → "cockpit". De-risk: keep
+the engine headless + backend-agnostic so the UI/harness is swappable.
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
