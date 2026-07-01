@@ -290,6 +290,22 @@ server PmRuntime 29/29 · web OrchestratorRoutes 4/4 · test:browser orchestrato
 Codex PM parity · **W6** delete pi. **LIVE TEST READY** — config a Claude provider instance in Connections
 as the PM model; failures will now show in-chat (confirms the WATCH item too).
 
+**W4a DONE `29172bb40` — PM↔orchestration-MCP wiring fix (live-test blocker).** First live test of the
+driver-PM failed EVERY turn: `Claude orchestration MCP tools require makeOrchestrationMcpServer`
+(ClaudeAdapter.ts:3098) — and W4's surfacing WORKED (user saw "PM turn failed" in-chat, no silent freeze).
+Root cause: the PM resolves the WORKER-registry Claude adapter, which `ClaudeDriver` builds WITHOUT the MCP
+factory; ClaudeDriver can't build it (needs the orchestration ENGINE, but providers are constructed before
+the engine) and it can't ride the schema-only `ProviderSessionStartInput` contract (`provider.ts:65-66`).
+Fix: dependency-free late-bound holder `OrchestrationMcpServerProvider` (Ref-backed; register + build;
+build-before-register keeps the exact prior error), provided as a ROOT singleton (`server.ts:427`
+`Layer.provideMerge`) so the provider layer + orchestration layer share ONE instance. PmRuntime builds the
+orchestration MCP config ONCE (it has the engine, `makePmRuntime` ~ln 499) + registers it; `ClaudeDriver`
+(:145) sets `makeOrchestrationMcpServer` to a thunk that reads the holder LAZILY at session-start via
+`runPromiseWith(capturedContext)` (inert for worker sessions — they never set enableOrchestrationTools).
+Gate green here: typecheck 13/13 (no flake) · affected server tests 71/71 (holder + ClaudeDriver + PmRuntime
++ e2e + 2 registry) · fmt · lint(0) · build 3/3. **LIVE TEST UNBLOCKED — re-testing now.** Remaining: **W5**
+Codex PM parity · **W6** delete pi.
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
