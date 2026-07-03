@@ -374,6 +374,105 @@ describe("orchestration projector", () => {
     expect(next.threads).toEqual([]);
   });
 
+  it("clears a task's pending gates when the task is abandoned", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const abandonedAt = "2026-01-01T00:05:00.000Z";
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-create-cancelled",
+        payload: {
+          taskId: "task-cancelled",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Cancelled task",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-other",
+        occurredAt: now,
+        commandId: "cmd-create-other",
+        payload: {
+          taskId: "task-other",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Other task",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-gate-cancelled",
+        payload: {
+          taskId: "task-cancelled",
+          gateId: "gate-cancelled",
+          gate: "plan",
+          contentHash: "sha256:cancelled",
+          stageThreadId: null,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-other",
+        occurredAt: now,
+        commandId: "cmd-gate-other",
+        payload: {
+          taskId: "task-other",
+          gateId: "gate-other",
+          gate: "plan",
+          contentHash: "sha256:other",
+          stageThreadId: null,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 5,
+        type: "task.abandoned",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: abandonedAt,
+        commandId: "cmd-abandon",
+        payload: {
+          taskId: "task-cancelled",
+          updatedAt: abandonedAt,
+        },
+      }),
+    ];
+
+    let readModel = createEmptyReadModel(now);
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+
+    expect(readModel.tasks.find((task) => task.id === "task-cancelled")?.status).toBe("abandoned");
+    expect((readModel.pendingGates ?? []).map((gate) => gate.gateId)).toEqual(["gate-other"]);
+  });
+
   it("derives task status purely from task events", async () => {
     const createdAt = "2026-06-14T10:00:00.000Z";
     const classifiedAt = "2026-06-14T10:01:00.000Z";

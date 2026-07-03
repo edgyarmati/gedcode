@@ -1,4 +1,4 @@
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId, TaskId } from "@t3tools/contracts";
 
 export async function confirmAndClearPmChat(input: {
   readonly projectId: ProjectId;
@@ -12,5 +12,20 @@ export async function confirmAndClearPmChat(input: {
     return false;
   }
   await input.clearPmChat({ projectId: input.projectId });
+  return true;
+}
+
+export async function confirmAndCancelTask(input: {
+  readonly taskId: TaskId;
+  readonly confirm: (message: string) => Promise<boolean>;
+  readonly cancelTask: (input: { readonly taskId: TaskId }) => Promise<unknown>;
+}): Promise<boolean> {
+  const confirmed = await input.confirm(
+    "Cancel this task? This marks it abandoned and frees its worktree slot.",
+  );
+  if (!confirmed) {
+    return false;
+  }
+  await input.cancelTask({ taskId: input.taskId });
   return true;
 }

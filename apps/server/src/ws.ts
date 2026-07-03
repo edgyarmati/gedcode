@@ -1184,6 +1184,24 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestrator" },
           ),
+        [ORCHESTRATOR_WS_METHODS.cancelTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.cancelTask,
+            Effect.all({
+              commandId: serverCommandId("orchestrator-cancel-task"),
+              createdAt: nowIso,
+            }).pipe(
+              Effect.flatMap(({ commandId, createdAt }) =>
+                dispatchNormalizedCommand({
+                  type: "task.abandon",
+                  commandId,
+                  taskId: input.taskId,
+                  createdAt,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
         [ORCHESTRATOR_WS_METHODS.clearPmChat]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.clearPmChat,

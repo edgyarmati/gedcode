@@ -1133,6 +1133,9 @@ export function projectEvent(
             status: "abandoned",
             updatedAt: payload.updatedAt,
           }),
+          pendingGates: (nextBase.pendingGates ?? []).filter(
+            (gate) => gate.taskId !== payload.taskId,
+          ),
         })),
       );
 

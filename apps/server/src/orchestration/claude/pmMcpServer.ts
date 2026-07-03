@@ -20,6 +20,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "requestApproval",
   "setTaskBackend",
   "inspectStage",
+  "cancelTask",
   "getTaskLedger",
 ] as const;
 
@@ -57,6 +58,9 @@ const mcpInputSchemas = {
     model: z.string(),
   },
   inspectStage: {
+    taskId: z.string(),
+  },
+  cancelTask: {
     taskId: z.string(),
   },
   getTaskLedger: {

@@ -147,6 +147,27 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
   }),
 );
 
+it.effect("cancelTask dispatches a task.abandon command", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const cancelTask = findTool(tools, "cancelTask");
+
+    const result = yield* Effect.promise(() =>
+      cancelTask.execute("tool-cancel", {
+        taskId,
+      }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.abandon");
+    if (dispatched[0]?.type === "task.abandon") {
+      assert.strictEqual(dispatched[0].taskId, taskId);
+    }
+    assert.deepStrictEqual(result.details, { taskId, sequence: 1 });
+  }),
+);
+
 it.effect("requestApproval dispatches a task.gate.request command", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

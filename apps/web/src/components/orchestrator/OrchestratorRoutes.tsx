@@ -77,7 +77,7 @@ import {
   getOrchestratorPmSectionClassName,
   OrchestratorBoardVisibilityButton,
 } from "./OrchestratorProjectLayout";
-import { confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import { PmChatComposer } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
@@ -666,6 +666,25 @@ export function OrchestratorTaskRoute(props: {
 }
 
 export function TaskHeader({ task }: { task: OrchestratorTask }) {
+  const [isCancelling, setIsCancelling] = useState(false);
+  const canCancel = task.status !== "landed" && task.status !== "abandoned";
+  const cancelTask = useCallback(async () => {
+    const api = readEnvironmentApi(task.environmentId);
+    if (!api || isCancelling || !canCancel) {
+      return;
+    }
+    setIsCancelling(true);
+    try {
+      await confirmAndCancelTask({
+        taskId: task.id,
+        confirm: (message) => ensureLocalApi().dialogs.confirm(message),
+        cancelTask: api.orchestrator.cancelTask,
+      });
+    } finally {
+      setIsCancelling(false);
+    }
+  }, [canCancel, isCancelling, task.environmentId, task.id]);
+
   return (
     <div className="border-b border-border bg-card/70 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -684,7 +703,22 @@ export function TaskHeader({ task }: { task: OrchestratorTask }) {
             status={task.status}
           />
         </div>
-        {task.status === "landed" ? <TaskPrLink prUrl={task.prUrl} /> : null}
+        <div className="flex items-center gap-2">
+          {canCancel ? (
+            <Button
+              aria-label="Cancel task"
+              disabled={isCancelling}
+              onClick={() => void cancelTask()}
+              size="sm"
+              title="Cancel task"
+              variant="destructive"
+            >
+              <XIcon className="size-4" />
+              Cancel task
+            </Button>
+          ) : null}
+          {task.status === "landed" ? <TaskPrLink prUrl={task.prUrl} /> : null}
+        </div>
       </div>
       {task.worktreePath ? (
         <p className="mt-3 truncate text-xs text-muted-foreground">{task.worktreePath}</p>

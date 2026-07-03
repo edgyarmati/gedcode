@@ -41,6 +41,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   subscribeTask: "orchestrator.subscribeTask",
   resolveGate: "orchestrator.resolveGate",
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
+  cancelTask: "orchestrator.cancelTask",
   clearPmChat: "orchestrator.clearPmChat",
 } as const;
 
@@ -1807,6 +1808,11 @@ export const OrchestratorSetTaskRoleSelectionsInput = Schema.Struct({
 export type OrchestratorSetTaskRoleSelectionsInput =
   typeof OrchestratorSetTaskRoleSelectionsInput.Type;
 
+export const OrchestratorCancelTaskInput = Schema.Struct({
+  taskId: TaskId,
+});
+export type OrchestratorCancelTaskInput = typeof OrchestratorCancelTaskInput.Type;
+
 export const OrchestratorClearPmChatInput = Schema.Struct({
   projectId: ProjectId,
 });
@@ -1956,6 +1962,10 @@ export const OrchestratorRpcSchemas = {
   },
   setTaskRoleSelections: {
     input: OrchestratorSetTaskRoleSelectionsInput,
+    output: DispatchResult,
+  },
+  cancelTask: {
+    input: OrchestratorCancelTaskInput,
     output: DispatchResult,
   },
   clearPmChat: {

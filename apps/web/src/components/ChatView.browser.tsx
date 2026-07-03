@@ -241,6 +241,9 @@ function createMockEnvironmentApi(input: {
       setTaskRoleSelections: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["setTaskRoleSelections"],
+      cancelTask: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["cancelTask"],
       clearPmChat: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["clearPmChat"],

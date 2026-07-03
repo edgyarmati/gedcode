@@ -77,6 +77,11 @@ const InspectStageParameters = Type.Object({
 });
 type InspectStageParameters = Static<typeof InspectStageParameters>;
 
+const CancelTaskParameters = Type.Object({
+  taskId: Type.String(),
+});
+type CancelTaskParameters = Static<typeof CancelTaskParameters>;
+
 const GetTaskLedgerParameters = Type.Object({
   projectId: Type.String(),
 });
@@ -297,6 +302,27 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const cancelTask: PmToolExecutor<CancelTaskParameters, { taskId: string; sequence: number }> = {
+    name: "cancelTask",
+    label: "Cancel task",
+    description:
+      "Cancel/abandon a task and free its worktree slot — use to clear a stuck or stale task. Works on any non-terminal task.",
+    parameters: CancelTaskParameters,
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const sequence = yield* dispatch({
+            type: "task.abandon",
+            commandId: yield* commandId("cancel-task"),
+            taskId,
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Cancelled task ${taskId}.`, { taskId, sequence });
+        }),
+      ),
+  };
+
   const getTaskLedger: PmToolExecutor<
     GetTaskLedgerParameters,
     { projectId: string; tasks: ReadonlyArray<OrchestrationTask> }
@@ -323,6 +349,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     requestApproval,
     setTaskBackend,
     inspectStage,
+    cancelTask,
     getTaskLedger,
   ] as const;
 });

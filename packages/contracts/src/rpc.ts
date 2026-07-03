@@ -543,6 +543,12 @@ export const WsOrchestratorSetTaskRoleSelectionsRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorCancelTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.cancelTask, {
+  payload: OrchestratorRpcSchemas.cancelTask.input,
+  success: OrchestratorRpcSchemas.cancelTask.output,
+  error: OrchestrationDispatchCommandError,
+});
+
 export const WsOrchestratorClearPmChatRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.clearPmChat, {
   payload: OrchestratorRpcSchemas.clearPmChat.input,
   success: OrchestratorRpcSchemas.clearPmChat.output,
@@ -634,5 +640,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorSubscribeTaskRpc,
   WsOrchestratorResolveGateRpc,
   WsOrchestratorSetTaskRoleSelectionsRpc,
+  WsOrchestratorCancelTaskRpc,
   WsOrchestratorClearPmChatRpc,
 );

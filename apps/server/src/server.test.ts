@@ -3614,6 +3614,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             assert.equal(setTaskRoleSelectionsResult.sequence, 41);
 
+            const cancelTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.cancelTask]({
+              taskId,
+            });
+            assert.equal(cancelTaskResult.sequence, 41);
+
             const clearPmChatResult = yield* client[ORCHESTRATOR_WS_METHODS.clearPmChat]({
               projectId,
             });
@@ -3642,6 +3647,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.instanceId, "codex_task");
         assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.model, "gpt-5-task");
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setRoleSelectionsCommand.createdAt));
+      }
+
+      const cancelTaskCommand = dispatched.find((command) => command.type === "task.abandon");
+      assert.isDefined(cancelTaskCommand);
+      if (cancelTaskCommand?.type === "task.abandon") {
+        assert.equal(cancelTaskCommand.taskId, taskId);
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(cancelTaskCommand.createdAt));
       }
 
       const clearThreadCommand = dispatched.find((command) => command.type === "thread.clear");

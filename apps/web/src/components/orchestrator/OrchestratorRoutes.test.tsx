@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { EnvironmentId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, TaskId } from "@t3tools/contracts";
 
 import type { Project } from "../../types";
-import { confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import { PmChatComposer } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
@@ -50,6 +50,28 @@ describe("TaskPrLink", () => {
 
     expect(confirm).toHaveBeenCalledOnce();
     expect(clearPmChat).not.toHaveBeenCalled();
+  });
+
+  it("confirms before dispatching Cancel task", async () => {
+    const taskId = TaskId.make("task-1");
+    const confirm = vi.fn(async () => true);
+    const cancelTask = vi.fn(async () => ({ sequence: 1 }));
+
+    await expect(confirmAndCancelTask({ taskId, confirm, cancelTask })).resolves.toBe(true);
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(cancelTask).toHaveBeenCalledWith({ taskId });
+  });
+
+  it("does not dispatch Cancel task when confirmation is cancelled", async () => {
+    const taskId = TaskId.make("task-1");
+    const confirm = vi.fn(async () => false);
+    const cancelTask = vi.fn(async () => ({ sequence: 1 }));
+
+    await expect(confirmAndCancelTask({ taskId, confirm, cancelTask })).resolves.toBe(false);
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(cancelTask).not.toHaveBeenCalled();
   });
 });
 

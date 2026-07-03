@@ -316,6 +316,7 @@ describe("retainThreadDetailSubscription", () => {
         subscribeProject: mockSubscribeProject,
         subscribeTask: mockSubscribeTask,
         setTaskRoleSelections: vi.fn(),
+        cancelTask: vi.fn(),
         clearPmChat: vi.fn(),
       },
     });
