@@ -365,14 +365,17 @@ command anywhere (decider/contracts). A task stuck in `planning` (leftover 2026-
 occupies the single `maxParallelTasks` worktree slot; neither the PM nor the human can clear it. Immediate
 unblock = raise maxParallelTasks in project Orchestration settings; proper fix = a cancel command (+ PM tool).
 
-**jean (coollabsio/jean) evaluation (2026-07-01, `/fork`):** user asked whether to rebuild GedCode on jean
-(jean.build, Apache-2.0). Verdict: NO — jean is a human-driven multi-session COCKPIT (Rust/Tauri, CLI-wrapping),
-not an orchestration engine; it lacks the PM agent + event-sourced ledger + gates + autonomous landing (our
-whole differentiator). Architecture mismatch (Effect-TS/event-sourcing + structured SDK/JSON-RPC vs Rust/Tauri
-+ CLI-shelling). Keep the orchestrator on t3code; MINE jean for harness/plumbing patterns (worktree automation,
-normalized multi-backend event stream, plan/build/yolo+approval UX, magic commands, MCP-with-recursion-limits,
-headless/remote). Only switch if deliberately pivoting product from "orchestrator" → "cockpit". De-risk: keep
-the engine headless + backend-agnostic so the UI/harness is swappable.
+**WP-CANCEL DONE `434c68c1e` — task cancel exposed (human RPC + PM tool), impl by Codex, reviewed+gated by me.**
+Decision: REUSE the existing `task.abandon` terminal transition (already frees the maxParallelTasks slot via
+isTerminalTaskStatus + cleans the worktree via TaskWorktreeReactor) rather than build a parallel cancel
+command/event/status — it was just UNEXPOSED. Added: human WS RPC `orchestrator.cancelTask({taskId})` (ws.ts,
+wired through ipc/rpc/wsRpcClient/environmentApi) + PM MCP tool `cancelTask` (pmTools + pmMcpServer, auto-
+allowlisted) — BOTH dispatch `task.abandon`; a destructive "Cancel task" header action for non-terminal tasks
+(OrchestratorRoutes); projector `task.abandoned` now also drops that task's pendingGates (no ghost gate; other
+tasks' gates untouched). Cancelled tasks display as "abandoned" (accepted tradeoff). Out of scope: interrupting
+an in-flight worker session. Gate green: typecheck 13/13, full suite 1349 pass, server 91, web 26, fmt/lint/
+build, new cancel browser test 2/2. (The lone browser failure — ChatView "plan mode Shift+Tab" — is the KNOWN
+PRE-EXISTING failure, unrelated; WP-CANCEL only added a mock line to that file.)
 
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
