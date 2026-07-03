@@ -65,6 +65,7 @@ import {
 import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
+  type ProviderSessionDirectoryShape,
 } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -274,6 +275,7 @@ const makeFakeClaudeAdapter = (
     readonly runtimeEvents?: Stream.Stream<ProviderRuntimeEvent>;
     readonly startInputs?: ProviderSessionStartInput[];
     readonly sendTurn?: ClaudeAdapterShape["sendTurn"];
+    readonly stopSession?: ClaudeAdapterShape["stopSession"];
   } = {},
 ): ClaudeAdapterShape => ({
   provider: claudeDriver,
@@ -294,7 +296,7 @@ const makeFakeClaudeAdapter = (
   interruptTurn: () => Effect.void,
   respondToRequest: () => Effect.void,
   respondToUserInput: () => Effect.void,
-  stopSession: () => Effect.void,
+  stopSession: input.stopSession ?? (() => Effect.void),
   listSessions: () => Effect.succeed([]),
   hasSession: () => Effect.succeed(false),
   readThread: (threadId) => Effect.succeed({ threadId, turns: [] }),
@@ -353,12 +355,19 @@ const makeProviderAdapterRegistryLayer = (
     ),
   } satisfies ProviderAdapterRegistryShape);
 
-const makeProviderSessionDirectoryLayer = () => {
+const makeMemoryProviderSessionDirectory = (): {
+  readonly service: ProviderSessionDirectoryShape;
+  readonly bindings: Map<string, ProviderRuntimeBinding>;
+} => {
   const bindings = new Map<string, ProviderRuntimeBinding>();
-  return Layer.succeed(ProviderSessionDirectory, {
+  const service = {
     upsert: (binding) =>
       Effect.sync(() => {
-        bindings.set(String(binding.threadId), binding);
+        const existing = bindings.get(String(binding.threadId));
+        bindings.set(
+          String(binding.threadId),
+          existing === undefined ? binding : { ...existing, ...binding },
+        );
       }),
     getProvider: (threadId) =>
       Effect.succeed(bindings.get(String(threadId))?.provider ?? claudeDriver),
@@ -376,8 +385,12 @@ const makeProviderSessionDirectoryLayer = () => {
           }),
         ),
       ),
-  });
+  } satisfies ProviderSessionDirectoryShape;
+  return { service, bindings };
 };
+
+const makeProviderSessionDirectoryLayer = (service?: ProviderSessionDirectoryShape) =>
+  Layer.succeed(ProviderSessionDirectory, service ?? makeMemoryProviderSessionDirectory().service);
 
 const makeLayer = (input: {
   readonly liveEvents: ReadonlyArray<OrchestrationEvent>;
@@ -630,6 +643,7 @@ const makeFactoryCaptureLayer = (input?: {
       readonly enabled?: boolean;
     }
   >;
+  readonly providerSessionDirectory?: ProviderSessionDirectoryShape;
 }) => {
   const repositoryIdentityResolverLayer = Layer.succeed(RepositoryIdentityResolver, {
     resolve: () => Effect.succeed(null),
@@ -703,7 +717,7 @@ const makeFactoryCaptureLayer = (input?: {
     NodeServices.layer,
     OrchestrationMcpServerProviderLive,
     makeProviderAdapterRegistryLayer(input?.providerInstances),
-    makeProviderSessionDirectoryLayer(),
+    makeProviderSessionDirectoryLayer(input?.providerSessionDirectory),
     orchestrationServices,
     Layer.succeed(ProviderQuotaStatusRepository, {
       upsert: () =>
@@ -1086,7 +1100,9 @@ describe("PmRuntime", () => {
             },
           ]);
           assert.deepStrictEqual(
-            dispatchCalls.map((command) => command.type),
+            dispatchCalls
+              .map((command) => command.type)
+              .filter((type) => type !== "thread.session.set"),
             [
               "thread.create",
               "thread.message.assistant.delta",
@@ -1097,6 +1113,122 @@ describe("PmRuntime", () => {
           Effect.provide(
             makeFactoryCaptureLayer({
               dispatchCalls,
+              providerInstances: new Map([
+                [String(claudeInstanceId), { driverKind: claudeDriver, adapter: claudeAdapter }],
+              ]),
+            }),
+          ),
+        );
+
+        yield* Queue.shutdown(runtimeEvents);
+      }),
+    ),
+  );
+
+  it.effect("clears Claude PM driver session state before the next PM start", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+        const sendTurnCalled = yield* Deferred.make<void>();
+        const startInputs: ProviderSessionStartInput[] = [];
+        const stopSessionCalls: ThreadId[] = [];
+        const directory = makeMemoryProviderSessionDirectory();
+        const threadId = pmThreadIdForProject(project);
+        const claudeAdapter = makeFakeClaudeAdapter({
+          runtimeEvents: Stream.fromQueue(runtimeEvents),
+          startInputs,
+          stopSession: (stoppedThreadId) =>
+            Effect.sync(() => {
+              stopSessionCalls.push(stoppedThreadId);
+            }),
+          sendTurn: (turnInput) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(sendTurnCalled, undefined);
+              return { threadId: turnInput.threadId, turnId };
+            }),
+        });
+
+        yield* Effect.gen(function* () {
+          const providerSessionDirectory = yield* ProviderSessionDirectory;
+          yield* providerSessionDirectory.upsert({
+            threadId,
+            provider: claudeDriver,
+            providerInstanceId: claudeInstanceId,
+            status: "running",
+            runtimeMode: "approval-required",
+            resumeCursor: { resume: "previous-claude-session" },
+          });
+
+          const factory = yield* makePiProjectRuntimeFactoryWithOptions();
+          const pmProject = projectWithPmModel("claudeAgent", "claude-sonnet-4-6");
+          yield* factory.clearSessionStorage(pmProject);
+
+          const clearedBindingOption = yield* providerSessionDirectory.getBinding(threadId);
+          assert.isTrue(Option.isSome(clearedBindingOption));
+          if (Option.isNone(clearedBindingOption)) {
+            return;
+          }
+          const clearedBinding = clearedBindingOption.value;
+          assert.deepStrictEqual(stopSessionCalls, [threadId]);
+          assert.strictEqual(clearedBinding.resumeCursor, null);
+
+          const runtime = yield* factory.getOrCreate(pmProject);
+          yield* runtime.enqueue("Create a task.");
+          const drain = yield* runtime.drain.pipe(Effect.forkScoped);
+          yield* Deferred.await(sendTurnCalled);
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "turn.started",
+              turnId,
+              payload: { model: "claude-sonnet-4-6" },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "content.delta",
+              turnId,
+              itemId: RuntimeItemId.make("assistant-after-clear"),
+              payload: { streamKind: "assistant_text", delta: "Fresh." },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "item.completed",
+              turnId,
+              itemId: RuntimeItemId.make("assistant-after-clear"),
+              payload: {
+                itemType: "assistant_message",
+                status: "completed",
+                title: "Assistant message",
+              },
+            }),
+          );
+          yield* Queue.offer(
+            runtimeEvents,
+            makeProviderRuntimeEvent({
+              threadId,
+              type: "turn.completed",
+              turnId,
+              payload: {
+                state: "completed",
+                stopReason: "stop",
+              },
+            }),
+          );
+          yield* Fiber.join(drain);
+
+          assert.strictEqual(startInputs.length, 1);
+          assert.strictEqual("resumeCursor" in (startInputs[0] ?? {}), false);
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              providerSessionDirectory: directory.service,
               providerInstances: new Map([
                 [String(claudeInstanceId), { driverKind: claudeDriver, adapter: claudeAdapter }],
               ]),
@@ -1329,7 +1461,9 @@ describe("PmRuntime", () => {
           }
 
           assert.deepStrictEqual(
-            dispatchCalls.map((command) => command.type),
+            dispatchCalls
+              .map((command) => command.type)
+              .filter((type) => type !== "thread.session.set"),
             [
               "thread.create",
               "thread.message.assistant.delta",

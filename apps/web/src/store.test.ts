@@ -1318,6 +1318,43 @@ describe("incremental orchestration updates", () => {
     expect(threadsOf(settled)[0]?.latestTurn?.completedAt).toBe("2026-02-27T00:00:04.000Z");
   });
 
+  it("clears a PM running indicator when a tool-only turn settles without assistant text", () => {
+    const thread = makeThread({
+      id: ThreadId.make("pm:project-1"),
+      latestTurn: {
+        turnId: TurnId.make("pm-turn-1"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const settled = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.session-set", {
+        threadId: thread.id,
+        session: {
+          threadId: thread.id,
+          status: "ready",
+          providerName: "claudeAgent",
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-02-27T00:00:04.000Z",
+        },
+      }),
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(settled)[0]?.latestTurn?.state).toBe("completed");
+    expect(threadsOf(settled)[0]?.latestTurn?.completedAt).toBe("2026-02-27T00:00:04.000Z");
+    expect(threadsOf(settled)[0]?.latestTurn?.assistantMessageId).toBeNull();
+  });
+
   it("does not regress latestTurn when an older turn diff completes late", () => {
     const state = makeState(
       makeThread({

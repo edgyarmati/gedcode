@@ -67,7 +67,10 @@ import {
   ProviderAdapterRegistry,
   type ProviderAdapterRegistryShape,
 } from "../../provider/Services/ProviderAdapterRegistry.ts";
-import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderSessionDirectoryShape,
+} from "../../provider/Services/ProviderSessionDirectory.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   PmProjectRuntimeFactory,
@@ -366,6 +369,59 @@ type ResolvedPmHarnessConfig = {
 };
 
 const CLAUDE_PM_DRIVER = ProviderDriverKind.make("claudeAgent");
+
+const resetClaudePmSession = (input: {
+  readonly project: OrchestrationProject;
+  readonly providerAdapterRegistry: ProviderAdapterRegistryShape;
+  readonly providerSessionDirectory: ProviderSessionDirectoryShape;
+}): Effect.Effect<void, PmRuntimeError> =>
+  Effect.gen(function* () {
+    const pmThreadId = pmThreadIdForProject(input.project);
+    const binding = yield* input.providerSessionDirectory
+      .getBinding(pmThreadId)
+      .pipe(
+        Effect.map(Option.getOrUndefined),
+        Effect.mapError(
+          toPmRuntimeError(
+            "PmProjectRuntimeFactory.resetClaudePmSession",
+            "Failed to read PM provider session binding.",
+          ),
+        ),
+      );
+
+    if (binding?.provider !== CLAUDE_PM_DRIVER || binding.providerInstanceId === undefined) {
+      return;
+    }
+
+    const claudeAdapter = yield* input.providerAdapterRegistry
+      .getByInstance(binding.providerInstanceId)
+      .pipe(
+        Effect.orElseSucceed(() => undefined),
+        Effect.map((adapter) =>
+          adapter !== undefined && adapter.provider === CLAUDE_PM_DRIVER ? adapter : undefined,
+        ),
+      );
+
+    if (claudeAdapter !== undefined) {
+      yield* claudeAdapter.stopSession(pmThreadId).pipe(Effect.catchCause(() => Effect.void));
+    }
+
+    yield* input.providerSessionDirectory
+      .upsert({
+        threadId: pmThreadId,
+        provider: CLAUDE_PM_DRIVER,
+        providerInstanceId: binding.providerInstanceId,
+        resumeCursor: null,
+      })
+      .pipe(
+        Effect.mapError(
+          toPmRuntimeError(
+            "PmProjectRuntimeFactory.resetClaudePmSession",
+            "Failed to reset PM Claude resume cursor.",
+          ),
+        ),
+      );
+  });
 const DEFAULT_CLAUDE_PM_CONTEXT_WINDOW = 200_000;
 const EXTENDED_CLAUDE_PM_CONTEXT_WINDOW = 1_000_000;
 
@@ -1542,16 +1598,23 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
       return existing?.invalidateRuntime(reason) ?? Effect.void;
     };
 
-    const clearSessionStorage: PmProjectRuntimeFactoryShape["clearSessionStorage"] = (projectId) =>
-      clearSqliteSessionStorage({ sessionId: `pm:${projectId}` }).pipe(
-        Effect.provideService(SqlClient.SqlClient, sql),
-        Effect.mapError(
-          toPmRuntimeError(
-            "PmProjectRuntimeFactory.clearSessionStorage",
-            "Failed to clear PM session storage.",
+    const clearSessionStorage: PmProjectRuntimeFactoryShape["clearSessionStorage"] = (project) =>
+      Effect.gen(function* () {
+        yield* clearSqliteSessionStorage({ sessionId: `pm:${project.id}` }).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.mapError(
+            toPmRuntimeError(
+              "PmProjectRuntimeFactory.clearSessionStorage",
+              "Failed to clear PM session storage.",
+            ),
           ),
-        ),
-      );
+        );
+        yield* resetClaudePmSession({
+          project,
+          providerAdapterRegistry,
+          providerSessionDirectory,
+        });
+      });
 
     return {
       getOrCreate,

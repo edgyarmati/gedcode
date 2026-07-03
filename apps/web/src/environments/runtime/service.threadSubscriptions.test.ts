@@ -477,6 +477,182 @@ describe("retainThreadDetailSubscription", () => {
     await resetEnvironmentServiceForTests();
   });
 
+  it("applies the first PM message after an empty placeholder snapshot", async () => {
+    const {
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const projectId = ProjectId.make("project-first-message");
+    const threadId = ThreadId.make(`pm:${projectId}`);
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    expect(onThreadItem).toBeTypeOf("function");
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 1,
+        thread: makeThreadDetail({ threadId, projectId }),
+      },
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.created",
+        {
+          threadId,
+          projectId,
+          title: "Project PM",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-sonnet-4",
+          },
+          gedWorkflowEnabled: false,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/project",
+          createdAt: "2026-04-13T00:00:02.000Z",
+          updatedAt: "2026-04-13T00:00:02.000Z",
+        },
+        2,
+      ),
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("pm-user-first"),
+          role: "user",
+          text: "Start.",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-13T00:00:03.000Z",
+          updatedAt: "2026-04-13T00:00:03.000Z",
+        },
+        3,
+      ),
+    });
+
+    const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
+    expect(thread?.messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "Start."],
+    ]);
+
+    release();
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("does not drop PM streaming deltas when a snapshot watermark is ahead of message freshness", async () => {
+    const {
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const projectId = ProjectId.make("project-streaming");
+    const threadId = ThreadId.make(`pm:${projectId}`);
+    const messageId = MessageId.make("pm-assistant-stream");
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    expect(onThreadItem).toBeTypeOf("function");
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 10,
+        thread: makeThreadDetail({
+          threadId,
+          projectId,
+          messages: [
+            {
+              id: messageId,
+              role: "assistant",
+              text: "Hello ",
+              turnId: TurnId.make("pm-turn-1"),
+              streaming: true,
+              createdAt: "2026-04-13T00:00:02.000Z",
+              updatedAt: "2026-04-13T00:00:02.000Z",
+            },
+          ],
+        }),
+      },
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId,
+          role: "assistant",
+          text: "world",
+          turnId: TurnId.make("pm-turn-1"),
+          streaming: true,
+          createdAt: "2026-04-13T00:00:02.000Z",
+          updatedAt: "2026-04-13T00:00:03.000Z",
+        },
+        8,
+      ),
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId,
+          role: "assistant",
+          text: "Hello ",
+          turnId: TurnId.make("pm-turn-1"),
+          streaming: true,
+          createdAt: "2026-04-13T00:00:02.000Z",
+          updatedAt: "2026-04-13T00:00:02.000Z",
+        },
+        7,
+      ),
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId,
+          role: "assistant",
+          text: "",
+          turnId: TurnId.make("pm-turn-1"),
+          streaming: false,
+          createdAt: "2026-04-13T00:00:02.000Z",
+          updatedAt: "2026-04-13T00:00:04.000Z",
+        },
+        11,
+      ),
+    });
+
+    const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
+    expect(thread?.messages[0]?.text).toBe("Hello world");
+    expect(thread?.messages[0]?.streaming).toBe(false);
+
+    release();
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
   it("retains a live completed worker activity when a stale in-progress snapshot arrives later", async () => {
     const {
       retainThreadDetailSubscription,

@@ -408,7 +408,25 @@ function eventIsCoveredBySnapshot(
     event.aggregateKind,
     String(event.aggregateId),
   );
-  return snapshotSequence !== null && event.sequence <= snapshotSequence;
+  if (snapshotSequence === null || event.sequence > snapshotSequence) {
+    return false;
+  }
+
+  if (event.type === "thread.message-sent") {
+    const thread = selectThreadByRef(
+      useStore.getState(),
+      scopeThreadRef(environmentId, event.payload.threadId),
+    );
+    const message = thread?.messages.find((entry) => entry.id === event.payload.messageId);
+    if (message?.updatedAt === undefined) {
+      return false;
+    }
+    return event.payload.streaming
+      ? message.updatedAt > event.payload.updatedAt
+      : message.updatedAt >= event.payload.updatedAt;
+  }
+
+  return true;
 }
 
 function appliedEventIdsForEnvironment(environmentId: EnvironmentId): Set<string> {

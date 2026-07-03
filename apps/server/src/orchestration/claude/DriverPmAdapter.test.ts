@@ -329,7 +329,9 @@ describe("DriverPmAdapter", () => {
         [{ resume: "resume-active" }, { resume: "resume-after-turn" }],
       );
 
-      const commandTypes = commands.map((command) => command.type);
+      const commandTypes = commands
+        .map((command) => command.type)
+        .filter((type) => type !== "thread.session.set");
       assert.deepStrictEqual(commandTypes, [
         "thread.create",
         "thread.message.assistant.delta",

@@ -29,7 +29,9 @@ export interface PmProjectRuntimeFactoryShape {
     projectId: ProjectId,
     reason: string,
   ) => Effect.Effect<void, PmRuntimeError>;
-  readonly clearSessionStorage: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
+  readonly clearSessionStorage: (
+    project: OrchestrationProject,
+  ) => Effect.Effect<void, PmRuntimeError>;
 }
 
 export class PmProjectRuntimeFactory extends Context.Service<

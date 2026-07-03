@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep fresh Orchestrator PM chats and live PM turns in sync. Subscribing to a not-yet-created PM thread now stays live for the first message, PM turn lifecycle events now clear the Running indicator even for tool-only turns, and streaming message replay no longer drops deltas when a snapshot watermark is ahead of the message content.
+- Fix: Make Clear PM chat reset the Claude driver PM session as well as visible PM messages, clearing the persisted resume cursor so the next PM turn starts fresh instead of resuming prior Claude history.
 - UI: Expose Orchestrator task cancellation through `orchestrator.cancelTask`, the PM `cancelTask` MCP tool, and a destructive task-header action. Cancellation reuses the existing `task.abandon` terminal transition and clears any pending gates for the abandoned task.
 - Fix: Keep Orchestrator PM chat live rendering in sync with refresh state. Tool-only PM turns no longer append an empty assistant bubble, stale thread/project snapshots can no longer erase newer live PM messages or completed worker activities, and subscription streams replay events committed between the snapshot read and live subscription attachment.
 - Fix: Actually apply the Orchestrator PM system prompt to the Claude session. The PM's role/delegation instructions were built but never sent — the Claude adapter always used the bare `claude_code` preset — so the PM behaved like a generic read-only assistant (asking the human to enable Bash) even though its orchestration tools were connected. Session start now carries an optional `systemPromptAppend` that the Claude driver appends to the preset, and the driver-PM passes the PM prompt through it.

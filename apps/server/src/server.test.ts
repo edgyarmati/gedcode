@@ -3511,9 +3511,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 assert.equal(loadedProjectId, projectId);
                 runtimeCalls.push("waitForIdle");
               }),
-            clearSessionStorage: (loadedProjectId) =>
+            clearSessionStorage: (loadedProject) =>
               Effect.sync(() => {
-                assert.equal(loadedProjectId, projectId);
+                assert.equal(loadedProject.id, projectId);
                 runtimeCalls.push("clearSessionStorage");
               }),
             invalidateRuntime: (loadedProjectId, reason) =>
@@ -3696,6 +3696,109 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
       assertTrue(result.failure.cause instanceof Error);
       assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeThread returns an empty PM snapshot before the PM thread exists", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-pm-placeholder");
+      const threadId = ThreadId.make(`pm:${projectId}`);
+      const project = {
+        id: projectId,
+        title: "PM Placeholder Project",
+        workspaceRoot: "/tmp/pm-placeholder",
+        repositoryIdentity: null,
+        defaultModelSelection,
+        roleModelSelections: {},
+        orchestratorConfig: {
+          enabled: true,
+          pmModelSelection: defaultModelSelection,
+        },
+        scripts: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      const threadCreatedEvent: OrchestrationEvent = {
+        sequence: 1,
+        eventId: EventId.make("event-pm-created"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-created"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.created",
+        payload: {
+          threadId,
+          projectId,
+          title: "PM Placeholder Project PM",
+          modelSelection: defaultModelSelection,
+          gedWorkflowEnabled: false,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/pm-placeholder",
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const firstMessageEvent: OrchestrationEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-pm-message"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-message"),
+        causationEventId: threadCreatedEvent.eventId,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-pm-first"),
+          role: "user",
+          text: "First PM message.",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.none()),
+            getProjectShellById: () => Effect.succeed(Option.some(project)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+          },
+          orchestrationEngine: {
+            readEvents: () => Stream.make(threadCreatedEvent, firstMessageEvent),
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(Stream.runCollect),
+        ),
+      );
+
+      const [snapshot, created, message] = Array.from(items);
+      assert.equal(snapshot?.kind, "snapshot");
+      if (snapshot?.kind === "snapshot") {
+        assert.equal(snapshot.snapshot.thread.id, threadId);
+        assert.deepEqual(snapshot.snapshot.thread.messages, []);
+      }
+      assert.equal(created?.kind, "event");
+      assert.equal(created?.kind === "event" ? created.event.type : null, "thread.created");
+      assert.equal(message?.kind, "event");
+      assert.equal(message?.kind === "event" ? message.event.type : null, "thread.message-sent");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

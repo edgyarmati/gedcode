@@ -235,6 +235,7 @@ function mapMessage(environmentId: EnvironmentId, message: OrchestrationMessage)
     text: message.text,
     turnId: message.turnId,
     createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
     streaming: message.streaming,
     ...(message.streaming ? {} : { completedAt: message.updatedAt }),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
@@ -2386,6 +2387,7 @@ function applyEnvironmentOrchestrationEvent(
                       : entry.text,
                   streaming: message.streaming,
                   ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                  updatedAt: message.updatedAt,
                   ...(message.streaming
                     ? entry.completedAt !== undefined
                       ? { completedAt: entry.completedAt }

@@ -6,6 +6,7 @@ import {
   EventId,
   MessageId,
   ThreadId,
+  TurnId,
   type ModelSelection,
   type OrchestrationProject,
   type OrchestrationThreadActivity,
@@ -56,6 +57,7 @@ export const makePmEventProjectionRuntime = (input: {
     const pmThreadId = pmThreadIdForProject(input.project);
     let pmThreadEnsured = false;
     let nextLocalId = 0;
+    let activePmTurnId: TurnId | null = null;
     let activeAssistantMessageId: MessageId | null = null;
     let activeAssistantTextLength = 0;
 
@@ -71,6 +73,10 @@ export const makePmEventProjectionRuntime = (input: {
     const nextUserMessageId = (): MessageId => {
       nextLocalId += 1;
       return MessageId.make(`pm:${input.project.id}:user:${nextLocalId}`);
+    };
+    const nextTurnId = (): TurnId => {
+      nextLocalId += 1;
+      return TurnId.make(`pm:${input.project.id}:turn:${nextLocalId}`);
     };
     const activityId = (tag: string, toolCallId: string): EventId =>
       EventId.make(`pm:${input.project.id}:${tag}:${toolCallId}`);
@@ -141,6 +147,7 @@ export const makePmEventProjectionRuntime = (input: {
         threadId: pmThreadId,
         messageId: ensureAssistantMessage(),
         delta,
+        ...(activePmTurnId !== null ? { turnId: activePmTurnId } : {}),
         createdAt,
       });
       activeAssistantTextLength += delta.length;
@@ -158,6 +165,7 @@ export const makePmEventProjectionRuntime = (input: {
           commandId: nextCommandId("assistant-complete"),
           threadId: pmThreadId,
           messageId: activeAssistantMessageId,
+          ...(activePmTurnId !== null ? { turnId: activePmTurnId } : {}),
           createdAt,
         });
         activeAssistantMessageId = null;
@@ -178,11 +186,53 @@ export const makePmEventProjectionRuntime = (input: {
       });
     });
 
+    const dispatchSession = Effect.fn("PmEventProjection.dispatchSession")(function* (
+      status: "running" | "ready",
+      turnId: TurnId | null,
+    ) {
+      yield* ensurePmThread();
+      const createdAt = yield* nowIso;
+      yield* engine.dispatch({
+        type: "thread.session.set",
+        commandId: nextCommandId(`session-${status}`),
+        threadId: pmThreadId,
+        session: {
+          threadId: pmThreadId,
+          status,
+          providerName: String(input.pmModelSelection.instanceId),
+          providerInstanceId: input.pmModelSelection.instanceId,
+          runtimeMode: "approval-required",
+          activeTurnId: status === "running" ? turnId : null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      });
+    });
+
+    const startTurn = Effect.fn("PmEventProjection.startTurn")(function* () {
+      if (activePmTurnId !== null) {
+        return activePmTurnId;
+      }
+      activePmTurnId = nextTurnId();
+      yield* dispatchSession("running", activePmTurnId);
+      return activePmTurnId;
+    });
+
+    const completeTurn = Effect.fn("PmEventProjection.completeTurn")(function* () {
+      if (activePmTurnId === null) {
+        return;
+      }
+      yield* dispatchSession("ready", null);
+      activePmTurnId = null;
+    });
+
     const processEvent = Effect.fn("PmEventProjection.processEvent")(function* (
       event: AgentHarnessEvent,
     ) {
       switch (event.type) {
         case "before_agent_start": {
+          yield* startTurn();
           return;
         }
 
@@ -190,6 +240,7 @@ export const makePmEventProjectionRuntime = (input: {
           if (event.message.role !== "assistant") {
             return;
           }
+          yield* startTurn();
           activeAssistantMessageId = nextMessageId();
           activeAssistantTextLength = 0;
           yield* dispatchAssistantDelta(textContent(event.message));
@@ -223,6 +274,7 @@ export const makePmEventProjectionRuntime = (input: {
         }
 
         case "tool_call": {
+          yield* startTurn();
           const createdAt = yield* nowIso;
           yield* dispatchActivity({
             id: activityId("tool-started", event.toolCallId),
@@ -235,13 +287,14 @@ export const makePmEventProjectionRuntime = (input: {
               input: event.input,
               status: "running",
             }),
-            turnId: null,
+            turnId: activePmTurnId,
             createdAt,
           });
           return;
         }
 
         case "tool_result": {
+          yield* startTurn();
           const createdAt = yield* nowIso;
           yield* dispatchActivity({
             id: activityId("tool-completed", event.toolCallId),
@@ -257,9 +310,15 @@ export const makePmEventProjectionRuntime = (input: {
               status: event.isError ? "failed" : "completed",
               details: event.details,
             }),
-            turnId: null,
+            turnId: activePmTurnId,
             createdAt,
           });
+          return;
+        }
+
+        case "turn_end":
+        case "settled": {
+          yield* completeTurn();
           return;
         }
 

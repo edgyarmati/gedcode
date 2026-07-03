@@ -18,6 +18,7 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  type OrchestrationThread,
   ORCHESTRATOR_WS_METHODS,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
@@ -114,6 +115,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   {
     type:
       | "thread.message-sent"
+      | "thread.created"
       | "thread.cleared"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
@@ -124,6 +126,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 > {
   return (
     event.type === "thread.message-sent" ||
+    event.type === "thread.created" ||
     event.type === "thread.cleared" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
@@ -131,6 +134,14 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
     event.type === "thread.reverted" ||
     event.type === "thread.session-set"
   );
+}
+
+function projectIdFromPmThreadId(threadId: ThreadId): ProjectId | null {
+  const rawThreadId = String(threadId);
+  if (!rawThreadId.startsWith("pm:") || rawThreadId.length <= "pm:".length) {
+    return null;
+  }
+  return ProjectId.make(rawThreadId.slice("pm:".length));
 }
 
 function isTaskEvent(event: OrchestrationEvent): event is Extract<
@@ -710,6 +721,60 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           ),
         );
 
+      const loadMissingPmThreadPlaceholder = (
+        threadId: ThreadId,
+      ): Effect.Effect<Option.Option<OrchestrationThread>, OrchestrationGetSnapshotError> =>
+        Effect.gen(function* () {
+          const projectId = projectIdFromPmThreadId(threadId);
+          if (projectId === null) {
+            return Option.none<OrchestrationThread>();
+          }
+          const project = yield* projectionSnapshotQuery.getProjectShellById(projectId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetSnapshotError({
+                  message: `Failed to load project ${projectId} for PM thread ${threadId}`,
+                  cause,
+                }),
+            ),
+          );
+          if (Option.isNone(project)) {
+            return Option.none<OrchestrationThread>();
+          }
+          const projectConfig = decodeOrchestratorConfig(project.value.orchestratorConfig ?? {});
+          const modelSelection =
+            Option.isSome(projectConfig) && projectConfig.value.pmModelSelection !== null
+              ? projectConfig.value.pmModelSelection
+              : project.value.defaultModelSelection;
+          if (modelSelection === null) {
+            return yield* new OrchestrationGetSnapshotError({
+              message: `PM thread ${threadId} cannot be subscribed before creation because project ${projectId} has no PM model selection`,
+              cause: projectId,
+            });
+          }
+          return Option.some({
+            id: threadId,
+            projectId,
+            title: `${project.value.title} PM`,
+            modelSelection,
+            gedWorkflowEnabled: false,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: project.value.workspaceRoot,
+            latestTurn: null,
+            createdAt: project.value.updatedAt,
+            updatedAt: project.value.updatedAt,
+            archivedAt: null,
+            deletedAt: null,
+            messages: [],
+            proposedPlans: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          });
+        });
+
       const isProjectOrchestratorEvent = (projectId: ProjectId, event: OrchestrationEvent) => {
         const pmThreadId = pmThreadIdForProject({ id: projectId });
         if (
@@ -944,7 +1009,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
-              const [threadDetail, snapshotSequence] = yield* Effect.all([
+              const [loadedThreadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(
                     (cause) =>
@@ -966,11 +1031,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ),
               ]);
 
+              let threadDetail = loadedThreadDetail;
               if (Option.isNone(threadDetail)) {
-                return yield* new OrchestrationGetSnapshotError({
-                  message: `Thread ${input.threadId} was not found`,
-                  cause: input.threadId,
-                });
+                threadDetail = yield* loadMissingPmThreadPlaceholder(input.threadId);
+                if (Option.isNone(threadDetail)) {
+                  return yield* new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  });
+                }
               }
 
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
@@ -1227,7 +1296,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 createdAt,
               });
               yield* pmProjectRuntimeFactory
-                .clearSessionStorage(project.id)
+                .clearSessionStorage(project)
                 .pipe(
                   Effect.mapError((cause) =>
                     toDispatchCommandError(cause, "Failed to clear PM session storage."),

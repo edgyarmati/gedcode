@@ -151,6 +151,7 @@ describe("PmEventProjection", () => {
           "thread.create",
           "thread.message.user.append",
           "thread.message.user.append",
+          "thread.session.set",
           "thread.message.assistant.delta",
           "thread.message.assistant.complete",
         ],
@@ -168,7 +169,9 @@ describe("PmEventProjection", () => {
       );
       assert.ok(userMessageCommands.every((command) => command.threadId === runtime.pmThreadId));
 
-      const assistantDeltaCommand = commands[3];
+      const assistantDeltaCommand = commands.find(
+        (command) => command.type === "thread.message.assistant.delta",
+      );
       assert.strictEqual(assistantDeltaCommand?.type, "thread.message.assistant.delta");
       if (assistantDeltaCommand?.type === "thread.message.assistant.delta") {
         assert.strictEqual(assistantDeltaCommand.threadId, runtime.pmThreadId);
@@ -191,7 +194,10 @@ describe("PmEventProjection", () => {
         prompt: "Settlement re-entry context should not render as a human message.",
       } as AgentHarnessEvent);
 
-      assert.deepStrictEqual(commands, []);
+      assert.deepStrictEqual(
+        commands.filter((command) => command.type === "thread.message.user.append"),
+        [],
+      );
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
@@ -238,6 +244,7 @@ describe("PmEventProjection", () => {
         commands.map((command) => command.type),
         [
           "thread.create",
+          "thread.session.set",
           "thread.message.assistant.delta",
           "thread.message.assistant.delta",
           "thread.message.assistant.complete",
@@ -304,10 +311,21 @@ describe("PmEventProjection", () => {
         type: "message_end",
         message: assistantMessage(""),
       } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "turn_end",
+        message: assistantMessage(""),
+        toolResults: [],
+      } satisfies AgentHarnessEvent);
 
       assert.deepStrictEqual(
         commands.map((command) => command.type),
-        ["thread.create", "thread.activity.append", "thread.activity.append"],
+        [
+          "thread.create",
+          "thread.session.set",
+          "thread.activity.append",
+          "thread.activity.append",
+          "thread.session.set",
+        ],
       );
       assert.ok(!commands.some((command) => command.type === "thread.message.assistant.delta"));
       assert.ok(!commands.some((command) => command.type === "thread.message.assistant.complete"));
@@ -321,6 +339,7 @@ describe("PmEventProjection", () => {
         "tool.completed",
         "tool.started",
       ]);
+      assert.strictEqual(pmThread.latestTurn?.state, "completed");
     }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
   });
 
@@ -341,6 +360,11 @@ describe("PmEventProjection", () => {
       yield* runtime.project({
         type: "message_end",
         message: assistantMessage("Final answer."),
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "turn_end",
+        message: assistantMessage("Final answer."),
+        toolResults: [],
       } satisfies AgentHarnessEvent);
 
       const assistantCommands = commands.filter(
@@ -376,8 +400,9 @@ describe("PmEventProjection", () => {
       }
       assert.strictEqual(message.role, "assistant");
       assert.strictEqual(message.text, "Final answer.");
-      assert.strictEqual(message.turnId, null);
+      assert.strictEqual(message.turnId, pmThread.latestTurn?.turnId);
       assert.strictEqual(message.streaming, false);
+      assert.strictEqual(pmThread.latestTurn?.state, "completed");
     }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
   });
 
@@ -408,7 +433,7 @@ describe("PmEventProjection", () => {
 
       assert.deepStrictEqual(
         commands.map((command) => command.type),
-        ["thread.create", "thread.activity.append", "thread.activity.append"],
+        ["thread.create", "thread.session.set", "thread.activity.append", "thread.activity.append"],
       );
 
       const activityCommands = commands.filter(
