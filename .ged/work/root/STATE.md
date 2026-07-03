@@ -377,6 +377,26 @@ an in-flight worker session. Gate green: typecheck 13/13, full suite 1349 pass, 
 build, new cancel browser test 2/2. (The lone browser failure — ChatView "plan mode Shift+Tab" — is the KNOWN
 PRE-EXISTING failure, unrelated; WP-CANCEL only added a mock line to that file.)
 
+**3rd live test (2026-07-03) found 4 PM-chat issues → WP-CLEAR-RESET + WP-PMUX DONE `58b3b00c6` (impl Codex,
+reviewed via code-reviewer subagent + gated by me).** (1) CLEAR didn't reset PM memory — clear only wiped the
+visible chat + legacy pi storage, leaving the driver-PM's Claude resume cursor, so the PM resumed with full
+history. Fix: `resetClaudePmSession` (PmRuntime.ts) best-effort stopSession + nulls the ProviderSessionDirectory
+resume cursor for the PM thread → next turn starts fresh. (2/D) "Running" indicator never stopped — PM projection
+had NO turn lifecycle. Fix: PmEventProjection now dispatches thread.session.set running (+ PM-local turnId) on
+first turn activity and ready on turn_end/settled → store's session-set handler settles latestTurn
+running→completed (verified: works for normal AND tool-only turns via store.ts:2484). (3/B) first PM message
+didn't surface — subscribeThread errored for a not-yet-created pm: thread. Fix: ws.ts returns a PM placeholder
+snapshot + keeps the sub alive (thread.created added to isThreadDetailEvent). (4/C) garbled streaming text —
+W4e's snapshot-coverage dropped deltas by pure sequence watermark. Fix: coverage now compares message freshness
+(updatedAt); streaming delta covered only if the stored message is STRICTLY newer. Gate green: typecheck 13/13
+(shared flake standalone-cleared), full suite 1349, server 105, web 44, fmt/lint/build, browser 3/3.
+**Review findings → FOLLOW-UP WP-PMUX-FIX (pending):** (HIGH robustness) the Running indicator is settled ONLY
+by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
+that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
+→ store's toLegacyProvider falls back to "codex"; use the driver kind "claudeAgent". (MED) resetClaudePmSession
+upsert omits `status` → cursor-null + stale status; pass status explicitly. Accepted/moot: C per-event find()
+(capped lists) + equal-ts double-apply (mitigated by eventId dedup); placeholder auth (single-user paired local app).
+
 ## Y-SERIES (2026-06-29): orchestrator worker/nav/PM-chat fixes (from 2nd smoke test)
 
 Smoke test found 5 more issues (PM created a task "Audit outdated dependencies", handed off a plan
