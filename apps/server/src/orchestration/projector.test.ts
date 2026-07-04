@@ -190,6 +190,7 @@ describe("orchestration projector", () => {
       "message-after-clear",
     ]);
     expect(readModel.threads[0]?.messages[0]?.text).toBe("after clear");
+    expect(readModel.threads[0]?.lastClearedSequence).toBe(3);
   });
 
   it("replays legacy pi-shaped PM model selections as unconfigured", async () => {

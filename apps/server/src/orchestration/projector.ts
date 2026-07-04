@@ -546,6 +546,7 @@ export function projectEvent(
               checkpoints: [],
               latestTurn: null,
               session: null,
+              lastClearedSequence: event.sequence,
               updatedAt: payload.clearedAt,
             }),
           };

@@ -344,6 +344,9 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     latestTurn: thread.latestTurn,
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
@@ -378,6 +381,9 @@ function mapThreadShell(
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     branch: thread.branch,
     worktreePath: thread.worktreePath,
   };
@@ -396,6 +402,9 @@ function mapThreadShell(
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     latestTurn: thread.latestTurn,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -429,6 +438,9 @@ function toThreadShell(thread: Thread): ThreadShell {
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     branch: thread.branch,
     worktreePath: thread.worktreePath,
   };
@@ -500,6 +512,7 @@ function sidebarThreadSummariesEqual(
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
+    left.lastClearedSequence === right.lastClearedSequence &&
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
@@ -526,6 +539,7 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
+    left.lastClearedSequence === right.lastClearedSequence &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath
   );
@@ -2478,6 +2492,7 @@ function applyEnvironmentOrchestrationEvent(
         latestTurn: null,
         session: null,
         pendingSourceProposedPlan: undefined,
+        lastClearedSequence: event.sequence,
         updatedAt: event.payload.clearedAt,
       }));
 

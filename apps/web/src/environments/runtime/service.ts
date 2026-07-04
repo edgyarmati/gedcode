@@ -417,6 +417,9 @@ function eventIsCoveredBySnapshot(
       useStore.getState(),
       scopeThreadRef(environmentId, event.payload.threadId),
     );
+    if (thread?.lastClearedSequence !== undefined && thread.lastClearedSequence >= event.sequence) {
+      return true;
+    }
     const message = thread?.messages.find((entry) => entry.id === event.payload.messageId);
     if (message?.updatedAt === undefined) {
       return false;

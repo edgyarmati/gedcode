@@ -393,6 +393,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          last_cleared_sequence AS "lastClearedSequence",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -422,6 +423,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          last_cleared_sequence AS "lastClearedSequence",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -453,6 +455,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          last_cleared_sequence AS "lastClearedSequence",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -910,6 +913,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          last_cleared_sequence AS "lastClearedSequence",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -1391,6 +1395,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 updatedAt: row.updatedAt,
                 archivedAt: row.archivedAt,
                 deletedAt: row.deletedAt,
+                ...(row.lastClearedSequence !== null
+                  ? { lastClearedSequence: row.lastClearedSequence }
+                  : {}),
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: activitiesByThread.get(row.threadId) ?? [],
@@ -1677,6 +1684,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
                   deletedAt: row.deletedAt,
+                  ...(row.lastClearedSequence !== null
+                    ? { lastClearedSequence: row.lastClearedSequence }
+                    : {}),
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                   activities: [],
@@ -1810,6 +1820,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
                       archivedAt: row.archivedAt,
+                      ...(row.lastClearedSequence !== null
+                        ? { lastClearedSequence: row.lastClearedSequence }
+                        : {}),
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
                       hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -1945,6 +1958,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
+                  ...(row.lastClearedSequence !== null
+                    ? { lastClearedSequence: row.lastClearedSequence }
+                    : {}),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
                   hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -2188,6 +2204,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
+        ...(threadRow.value.lastClearedSequence !== null
+          ? { lastClearedSequence: threadRow.value.lastClearedSequence }
+          : {}),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
@@ -2284,6 +2303,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
         deletedAt: null,
+        ...(threadRow.value.lastClearedSequence !== null
+          ? { lastClearedSequence: threadRow.value.lastClearedSequence }
+          : {}),
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,

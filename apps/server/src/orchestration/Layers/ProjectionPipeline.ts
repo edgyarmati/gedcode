@@ -601,6 +601,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
+            lastClearedSequence: null,
             deletedAt: null,
           });
           return;
@@ -729,6 +730,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               event.type === "thread.cleared" ? 0 : existingRow.value.pendingUserInputCount,
             hasActionableProposedPlan:
               event.type === "thread.cleared" ? 0 : existingRow.value.hasActionableProposedPlan,
+            lastClearedSequence:
+              event.type === "thread.cleared"
+                ? event.sequence
+                : existingRow.value.lastClearedSequence,
             updatedAt: event.type === "thread.cleared" ? event.payload.clearedAt : event.occurredAt,
           });
           if (event.type === "thread.cleared") {

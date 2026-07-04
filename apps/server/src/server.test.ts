@@ -12,6 +12,7 @@ import {
   KeybindingRule,
   MessageId,
   ExternalLauncherError,
+  type OrchestrationThread,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
   type OrchestrationCommand,
@@ -3799,6 +3800,132 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(created?.kind === "event" ? created.event.type : null, "thread.created");
       assert.equal(message?.kind, "event");
       assert.equal(message?.kind === "event" ? message.event.type : null, "thread.message-sent");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeThread replay skips thread events at or before the last clear boundary", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("pm:project-replay-clear");
+      const projectId = ProjectId.make("project-replay-clear");
+      const beforeClearEvent: OrchestrationEvent = {
+        sequence: 1,
+        eventId: EventId.make("event-message-a"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-a"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-a"),
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const clearEvent: OrchestrationEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-clear"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.cleared",
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      };
+      const afterClearEvent: OrchestrationEvent = {
+        sequence: 3,
+        eventId: EventId.make("event-message-b"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-b"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-b"),
+          role: "assistant",
+          text: "after clear",
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const thread: OrchestrationThread = {
+        id: threadId,
+        projectId,
+        title: "Replay Clear PM",
+        modelSelection: defaultModelSelection,
+        gedWorkflowEnabled: false,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: "/tmp/replay-clear",
+        latestTurn: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
+        lastClearedSequence: 2,
+        messages: [
+          {
+            id: MessageId.make("message-b"),
+            role: "assistant",
+            text: "after clear",
+            turnId: null,
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        proposedPlans: [],
+        activities: [],
+        checkpoints: [],
+        session: null,
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.some(thread)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+          },
+          orchestrationEngine: {
+            readEvents: () => Stream.make(beforeClearEvent, clearEvent, afterClearEvent),
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(Stream.runCollect),
+        ),
+      );
+
+      const eventTypes = Array.from(items).flatMap((item) =>
+        item.kind === "event" ? [`${item.event.type}:${item.event.sequence}`] : [],
+      );
+      assert.deepEqual(eventTypes, ["thread.message-sent:3"]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

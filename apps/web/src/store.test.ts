@@ -7,6 +7,7 @@ import {
   GateId,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   TaskId,
   TaskTypeId,
@@ -146,6 +147,9 @@ function makeState(thread: Thread): AppState {
         createdAt: thread.createdAt,
         archivedAt: thread.archivedAt,
         updatedAt: thread.updatedAt,
+        ...(thread.lastClearedSequence !== undefined
+          ? { lastClearedSequence: thread.lastClearedSequence }
+          : {}),
         branch: thread.branch,
         worktreePath: thread.worktreePath,
       },
@@ -519,6 +523,24 @@ describe("incremental orchestration updates", () => {
     const messageId = MessageId.make("pm-message-before-clear");
     const thread = makeThread({
       id: threadId,
+      session: {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        status: "running",
+        activeTurnId: TurnId.make("turn-before-clear"),
+        createdAt: "2026-02-27T00:00:10.000Z",
+        updatedAt: "2026-02-27T00:00:30.000Z",
+        lastError: "stale error",
+        orchestrationStatus: "running",
+      },
+      latestTurn: {
+        turnId: TurnId.make("turn-before-clear"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:10.000Z",
+        startedAt: "2026-02-27T00:00:20.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
       messages: [
         {
           id: messageId,
@@ -528,6 +550,24 @@ describe("incremental orchestration updates", () => {
           turnId: null,
           streaming: false,
           createdAt: "2026-02-27T00:00:00.000Z",
+        },
+      ],
+      activities: [
+        {
+          id: EventId.make("activity-before-clear"),
+          tone: "info",
+          kind: "turn.started",
+          summary: "stale activity",
+          payload: {},
+          turnId: TurnId.make("turn-before-clear"),
+          createdAt: "2026-02-27T00:00:20.000Z",
+        },
+      ],
+      turnDiffSummaries: [
+        {
+          turnId: TurnId.make("turn-before-clear"),
+          completedAt: "2026-02-27T00:00:40.000Z",
+          files: [],
         },
       ],
     });
@@ -545,6 +585,13 @@ describe("incremental orchestration updates", () => {
     const nextEnvironment = localEnvironmentStateOf(next);
     expect(nextEnvironment.messageIdsByThreadId[threadId]).toEqual([]);
     expect(nextEnvironment.messageByThreadId[threadId]).toEqual({});
+    expect(nextEnvironment.activityIdsByThreadId[threadId]).toEqual([]);
+    expect(nextEnvironment.turnDiffIdsByThreadId[threadId]).toEqual([]);
+
+    const clearedThread = selectThreadByRef(next, scopeThreadRef(localEnvironmentId, threadId));
+    expect(clearedThread?.session).toBeNull();
+    expect(clearedThread?.latestTurn).toBeNull();
+    expect(clearedThread?.lastClearedSequence).toBe(1);
   });
 
   it("reuses an existing project row when project.created arrives with a new id for the same cwd", () => {

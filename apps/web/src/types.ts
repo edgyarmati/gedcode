@@ -125,6 +125,7 @@ export interface Thread {
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   latestTurn: OrchestrationLatestTurn | null;
   pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
   branch: string | null;
@@ -147,6 +148,7 @@ export interface ThreadShell {
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   branch: string | null;
   worktreePath: string | null;
 }
@@ -166,6 +168,7 @@ export interface SidebarThreadSummary {
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   latestTurn: OrchestrationLatestTurn | null;
   branch: string | null;
   worktreePath: string | null;

@@ -136,6 +136,13 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   );
 }
 
+function isAfterLastThreadClear(
+  event: OrchestrationEvent,
+  lastClearedSequence: number | undefined,
+) {
+  return lastClearedSequence === undefined || event.sequence > lastClearedSequence;
+}
+
 function projectIdFromPmThreadId(threadId: ThreadId): ProjectId | null {
   const rawThreadId = String(threadId);
   if (!isPmThreadId(threadId)) {
@@ -1059,7 +1066,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   (event) =>
                     event.aggregateKind === "thread" &&
                     event.aggregateId === input.threadId &&
-                    isThreadDetailEvent(event),
+                    isThreadDetailEvent(event) &&
+                    isAfterLastThreadClear(event, threadDetail.value.lastClearedSequence),
                 ),
                 Stream.map((event) => ({
                   kind: "event" as const,
@@ -1137,6 +1145,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ORCHESTRATOR_WS_METHODS.subscribeProject,
             Effect.gen(function* () {
               const snapshot = yield* loadOrchestratorProjectSnapshot(input.projectId);
+              const pmThreadLastClearedSequence = snapshot.pmThread?.lastClearedSequence;
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
                 Stream.filterEffect((event) => isProjectOrchestratorEvent(input.projectId, event)),
                 Stream.map((event) => ({
@@ -1146,6 +1155,16 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
               const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
                 Stream.filterEffect((event) => isProjectOrchestratorEvent(input.projectId, event)),
+                Stream.filter((event) => {
+                  if (
+                    event.aggregateKind !== "thread" ||
+                    event.aggregateId !== snapshot.pmThreadId ||
+                    !isThreadDetailEvent(event)
+                  ) {
+                    return true;
+                  }
+                  return isAfterLastThreadClear(event, pmThreadLastClearedSequence);
+                }),
                 Stream.map((event) => ({
                   kind: "event" as const,
                   event,

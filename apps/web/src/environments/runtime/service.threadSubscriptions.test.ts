@@ -162,6 +162,7 @@ function makeThreadDetail(params: {
   readonly projectId?: ProjectId;
   readonly messages?: OrchestrationThread["messages"];
   readonly activities?: OrchestrationThreadActivity[];
+  readonly lastClearedSequence?: number;
 }): OrchestrationThread {
   return {
     id: params.threadId,
@@ -181,6 +182,9 @@ function makeThreadDetail(params: {
     updatedAt: "2026-04-13T00:00:00.000Z",
     archivedAt: null,
     deletedAt: null,
+    ...(params.lastClearedSequence !== undefined
+      ? { lastClearedSequence: params.lastClearedSequence }
+      : {}),
     messages: params.messages ?? [],
     proposedPlans: [],
     activities: params.activities ?? [],
@@ -547,6 +551,75 @@ describe("retainThreadDetailSubscription", () => {
     expect(thread?.messages.map((message) => [message.role, message.text])).toEqual([
       ["user", "Start."],
     ]);
+
+    release();
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("skips replayed pre-clear messages while still applying the first post-clear message", async () => {
+    const {
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const projectId = ProjectId.make("project-clear-boundary");
+    const threadId = ThreadId.make(`pm:${projectId}`);
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    expect(onThreadItem).toBeTypeOf("function");
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 10,
+        thread: makeThreadDetail({ threadId, projectId, lastClearedSequence: 5 }),
+      },
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("pm-user-before-clear"),
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-13T00:00:04.000Z",
+          updatedAt: "2026-04-13T00:00:04.000Z",
+        },
+        4,
+      ),
+    });
+    onThreadItem({
+      kind: "event",
+      event: makeThreadEvent(
+        "thread.message-sent",
+        {
+          threadId,
+          messageId: MessageId.make("pm-user-after-clear"),
+          role: "user",
+          text: "after clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-13T00:00:06.000Z",
+          updatedAt: "2026-04-13T00:00:06.000Z",
+        },
+        6,
+      ),
+    });
+
+    const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
+    expect(thread?.messages.map((message) => message.text)).toEqual(["after clear"]);
 
     release();
     stop();
