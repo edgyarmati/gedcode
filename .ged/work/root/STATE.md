@@ -400,6 +400,22 @@ resetClaudePmSession upserts status:"stopped". Gate green: typecheck 13/13 (oxli
 cleared), affected server tests 41, fmt/lint/build. Reviewed the per-project-scope lifecycle (correct ordering
 waitForIdle→close scope→delete; parent-scope finalizer for factory teardown).
 
+**WP-PMID DONE `66583b419`** — live test (2026-07-04) re-hit "first message doesn't surface" + a trailing
+"(empty response)" bubble. Root-caused from the event log (`~/.gedcode/dev/state.sqlite`): PmEventProjection
+commandIds/messageIds/turnIds embed a counter that RESETS per runtime rebuild → collide with
+orchestration_command_receipts from prior incarnations → engine silently dedupes them (first user message
+`user-message:1/2` had receipts from 6-29/7-01; deltas 5,6,8,9 had receipts from 6-26 while complete:7 was
+fresh → orphan empty complete → "(empty response)"). PROVEN by receipt timestamps. Fixing it would have
+unmasked bug 2: ProviderRuntimeIngestion double-projects pm: threads since W3 (the visible text was its
+`provider:*` deltas; the collision was masking the duplication). Fix (Codex, fresh thread): per-incarnation
+uuid nonce in all PM projection ids (injectable in tests; Crypto via NodeServices.layer at the PmRuntime build
+site); ingestion skips pm: threads via shared `isPmThreadId` (exported from PmEventProjection, reused in ws.ts);
+DriverPmAdapter bridges ALL tool lifecycle items (raw name for built-ins, details omitted for non-orchestration
+tools) so the PM activity feed survives losing ingestion's generic activities. Gate green: fmt/lint/typecheck
+13/13, affected server tests 90/90, Codex full suite 1358 (two known load-sensitive integration timeouts passed
+on rerun/standalone). Next live test should show: first message surfaces, no empty bubble, single replies,
+tool activity while PM works.
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
