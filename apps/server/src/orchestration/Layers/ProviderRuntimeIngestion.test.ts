@@ -449,6 +449,59 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("does not dispatch orchestration commands for PM thread runtime events", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const pmThreadId = asThreadId("pm:project-1");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-pm-thread-create"),
+        threadId: pmThreadId,
+        projectId: asProjectId("project-1"),
+        title: "Project PM",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      }),
+    );
+    const eventCountBeforePmRuntimeEvent = (
+      await Effect.runPromise(
+        Stream.runCollect(harness.engine.readEvents(0)).pipe(
+          Effect.map((chunk) => Array.from(chunk)),
+        ),
+      )
+    ).length;
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-pm-turn-started"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      threadId: pmThreadId,
+      createdAt: now,
+      turnId: asTurnId("pm-turn-1"),
+    });
+    await harness.drain();
+
+    const eventsAfterPmRuntimeEvent = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const snapshot = await harness.readModel();
+    const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId);
+
+    expect(eventsAfterPmRuntimeEvent).toHaveLength(eventCountBeforePmRuntimeEvent);
+    expect(pmThread?.session ?? null).toBeNull();
+  });
+
   it("completes an active stage via the fail-loud diff-wait timeout when no diff is captured", async () => {
     // The immediate task.stage.complete dispatch on turn.completed was replaced
     // (WP-2) by a CheckpointReactor diff-gate plus this fail-loud timeout

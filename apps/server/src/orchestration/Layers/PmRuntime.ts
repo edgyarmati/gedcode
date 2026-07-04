@@ -15,6 +15,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAutoCompaction } from "@t3tools/shared/orchestrator";
 import type { AgentHarnessResources } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -1347,6 +1348,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           Effect.provideService(OrchestrationEngineService, orchestrationEngine),
           Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
           Scope.provide(projectRuntimeScope),
+          Effect.provide(NodeServices.layer),
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const pmThreadId = pmThreadIdForProject(project);

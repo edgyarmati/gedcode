@@ -125,6 +125,99 @@ const makeLayer = (
   );
 
 describe("PmEventProjection", () => {
+  it.effect("uses per-incarnation nonces for command, message, and turn ids", () => {
+    const runIncarnation = (incarnationNonce: string, commands: OrchestrationCommand[]) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const runtime = yield* makePmEventProjectionRuntime({
+            project,
+            pmModelSelection,
+            events: Stream.empty,
+            incarnationNonce,
+          });
+
+          yield* runtime.dispatchUserMessage("Human message.");
+          yield* runtime.project({
+            type: "before_agent_start",
+            prompt: "Create a task.",
+          } as AgentHarnessEvent);
+          yield* runtime.project({
+            type: "message_start",
+            message: assistantMessage("Assistant message."),
+          } satisfies AgentHarnessEvent);
+        }),
+      ).pipe(Effect.provide(makeLayer(commands)));
+
+    const projectionIds = (commands: ReadonlyArray<OrchestrationCommand>) => {
+      const threadCreateCommand = commands.find((command) => command.type === "thread.create");
+      const userCommand = commands.find(
+        (
+          command,
+        ): command is Extract<OrchestrationCommand, { type: "thread.message.user.append" }> =>
+          command.type === "thread.message.user.append",
+      );
+      const sessionCommand = commands.find(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      const assistantCommand = commands.find(
+        (
+          command,
+        ): command is Extract<OrchestrationCommand, { type: "thread.message.assistant.delta" }> =>
+          command.type === "thread.message.assistant.delta",
+      );
+
+      assert.ok(threadCreateCommand);
+      assert.ok(userCommand);
+      assert.ok(sessionCommand);
+      assert.ok(assistantCommand);
+
+      return {
+        threadCreateCommandId: String(threadCreateCommand.commandId),
+        userCommandId: String(userCommand.commandId),
+        userMessageId: String(userCommand.messageId),
+        sessionCommandId: String(sessionCommand.commandId),
+        turnId: String(sessionCommand.session.activeTurnId),
+        assistantCommandId: String(assistantCommand.commandId),
+        assistantMessageId: String(assistantCommand.messageId),
+      };
+    };
+
+    const firstCommands: OrchestrationCommand[] = [];
+    const secondCommands: OrchestrationCommand[] = [];
+
+    return Effect.gen(function* () {
+      yield* runIncarnation("incarnation-a", firstCommands);
+      yield* runIncarnation("incarnation-b", secondCommands);
+
+      const firstIds = projectionIds(firstCommands);
+      const secondIds = projectionIds(secondCommands);
+
+      assert.deepStrictEqual(firstIds, {
+        threadCreateCommandId: "pm-projection:project-1:incarnation-a:thread-create:1",
+        userCommandId: "pm-projection:project-1:incarnation-a:user-message:2",
+        userMessageId: "pm:project-1:incarnation-a:user:3",
+        sessionCommandId: "pm-projection:project-1:incarnation-a:session-running:5",
+        turnId: "pm:project-1:incarnation-a:turn:4",
+        assistantCommandId: "pm-projection:project-1:incarnation-a:assistant-delta:7",
+        assistantMessageId: "pm:project-1:incarnation-a:assistant:6",
+      });
+      assert.deepStrictEqual(secondIds, {
+        threadCreateCommandId: "pm-projection:project-1:incarnation-b:thread-create:1",
+        userCommandId: "pm-projection:project-1:incarnation-b:user-message:2",
+        userMessageId: "pm:project-1:incarnation-b:user:3",
+        sessionCommandId: "pm-projection:project-1:incarnation-b:session-running:5",
+        turnId: "pm:project-1:incarnation-b:turn:4",
+        assistantCommandId: "pm-projection:project-1:incarnation-b:assistant-delta:7",
+        assistantMessageId: "pm:project-1:incarnation-b:assistant:6",
+      });
+      assert.deepStrictEqual(
+        Object.values(firstIds).filter((id) => Object.values(secondIds).includes(id)),
+        [],
+      );
+    });
+  });
+
   it.effect("surfaces explicit human PM messages in order before PM output", () => {
     const commands: OrchestrationCommand[] = [];
     return Effect.gen(function* () {
@@ -132,6 +225,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.dispatchUserMessage("First human message.");
@@ -187,6 +281,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -209,6 +304,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -249,6 +345,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection: claudeWorkSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -276,6 +373,7 @@ describe("PmEventProjection", () => {
             project,
             pmModelSelection,
             events: Stream.empty,
+            incarnationNonce: "test-nonce",
           });
 
           yield* runtime.project({
@@ -310,6 +408,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -388,6 +487,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -453,6 +553,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({
@@ -515,6 +616,7 @@ describe("PmEventProjection", () => {
         project,
         pmModelSelection,
         events: Stream.empty,
+        incarnationNonce: "test-nonce",
       });
 
       yield* runtime.project({

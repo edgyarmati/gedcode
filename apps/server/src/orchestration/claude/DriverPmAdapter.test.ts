@@ -195,6 +195,7 @@ describe("DriverPmAdapter", () => {
         project,
         pmModelSelection: modelSelection,
         events: adapter.events,
+        incarnationNonce: "test-nonce",
       }).pipe(Effect.provide(makeProjectionLayer(commands)));
 
       const promptFiber = yield* adapter.prompt("Create the task.").pipe(Effect.forkChild);
@@ -376,6 +377,114 @@ describe("DriverPmAdapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("bridges non-orchestration PM tool lifecycle items without result details", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-built-in-tool");
+      const toolItemId = RuntimeItemId.make("read-tool-call");
+
+      const claudeAdapter: ClaudeAdapterShape = {
+        provider,
+        capabilities: { sessionModelSwitch: "in-session" },
+        streamEvents: Stream.fromQueue(runtimeEvents),
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () => Effect.succeed({ threadId, turnId }),
+        interruptTurn: () => Effect.void,
+        respondToRequest: () => Effect.void,
+        respondToUserInput: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+        readThread: () => Effect.succeed({ threadId, turns: [] }),
+        rollbackThread: () => Effect.succeed({ threadId, turns: [] }),
+        stopAll: () => Effect.void,
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        claudeAdapter,
+        modelSelection,
+      }).pipe(
+        Effect.provide(
+          Layer.succeed(ProviderSessionDirectory, {
+            upsert: () => Effect.void,
+            getProvider: () => Effect.succeed(provider),
+            getBinding: () => Effect.succeed(Option.none()),
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
+          }),
+        ),
+      );
+
+      const bridgedEventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, 2)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "item.started",
+          turnId,
+          itemId: toolItemId,
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "inProgress",
+            title: "Read",
+            data: {
+              toolName: "Read",
+              input: { file_path: "/tmp/project/src/index.ts" },
+            },
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "item.completed",
+          turnId,
+          itemId: toolItemId,
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "completed",
+            title: "Read",
+            data: {
+              toolName: "Read",
+              input: { file_path: "/tmp/project/src/index.ts" },
+              result: {
+                content: [{ type: "text", text: "large file contents" }],
+              },
+            },
+          },
+        }),
+      );
+
+      const bridgedEvents = yield* Fiber.join(bridgedEventsFiber);
+      const toolCall = bridgedEvents[0];
+      const toolResult = bridgedEvents[1];
+
+      assert.strictEqual(toolCall?.type, "tool_call");
+      if (toolCall?.type === "tool_call") {
+        assert.strictEqual(toolCall.toolCallId, "read-tool-call");
+        assert.strictEqual(toolCall.toolName, "Read");
+        assert.deepStrictEqual(toolCall.input, { file_path: "/tmp/project/src/index.ts" });
+      }
+
+      assert.strictEqual(toolResult?.type, "tool_result");
+      if (toolResult?.type === "tool_result") {
+        assert.strictEqual(toolResult.toolCallId, "read-tool-call");
+        assert.strictEqual(toolResult.toolName, "Read");
+        assert.deepStrictEqual(toolResult.input, { file_path: "/tmp/project/src/index.ts" });
+        assert.deepStrictEqual(toolResult.content, []);
+        assert.strictEqual(toolResult.details, undefined);
+        assert.strictEqual(toolResult.isError, false);
+      }
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("settles the projected PM turn when Claude aborts without turn.completed", () =>
     Effect.gen(function* () {
       const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -425,6 +534,7 @@ describe("DriverPmAdapter", () => {
         project,
         pmModelSelection: modelSelection,
         events: adapter.events,
+        incarnationNonce: "test-nonce",
       }).pipe(Effect.provide(makeProjectionLayer(commands)));
 
       const promptFiber = yield* adapter.prompt("Create the task.").pipe(Effect.forkChild);

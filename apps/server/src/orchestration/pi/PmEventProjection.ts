@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -24,6 +25,14 @@ import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
   ThreadId.make(`pm:${project.id}`);
+
+export const isPmThreadId = (threadId: ThreadId): boolean => {
+  const rawThreadId = String(threadId);
+  if (!rawThreadId.startsWith("pm:") || rawThreadId.length <= "pm:".length) {
+    return false;
+  }
+  return !rawThreadId.slice("pm:".length).includes(":");
+};
 
 const textContent = (message: AssistantMessage): string =>
   message.content
@@ -47,15 +56,26 @@ const toolActivityPayload = (input: {
   ...(input.details !== undefined ? { details: input.details } : {}),
 });
 
-export const makePmEventProjectionRuntime = (input: {
+type PmEventProjectionRuntimeInputBase = {
   readonly project: OrchestrationProject;
   readonly pmModelSelection: ModelSelection;
   readonly events: Stream.Stream<AgentHarnessEvent>;
-}) =>
+};
+
+type PmEventProjectionRuntimeInputWithNonce = PmEventProjectionRuntimeInputBase & {
+  readonly incarnationNonce: string;
+};
+
+type PmEventProjectionRuntimeInputWithoutNonce = PmEventProjectionRuntimeInputBase & {
+  readonly incarnationNonce?: string;
+};
+
+const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeInputWithNonce) =>
   Effect.gen(function* () {
     const engine = yield* OrchestrationEngineService;
     const snapshotQuery = yield* ProjectionSnapshotQuery;
     const pmThreadId = pmThreadIdForProject(input.project);
+    const incarnationNonce = input.incarnationNonce;
     let pmThreadEnsured = false;
     let nextLocalId = 0;
     let activePmTurnId: TurnId | null = null;
@@ -65,19 +85,21 @@ export const makePmEventProjectionRuntime = (input: {
     const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
     const nextCommandId = (tag: string): CommandId => {
       nextLocalId += 1;
-      return CommandId.make(`pm-projection:${input.project.id}:${tag}:${nextLocalId}`);
+      return CommandId.make(
+        `pm-projection:${input.project.id}:${incarnationNonce}:${tag}:${nextLocalId}`,
+      );
     };
     const nextMessageId = (): MessageId => {
       nextLocalId += 1;
-      return MessageId.make(`pm:${input.project.id}:assistant:${nextLocalId}`);
+      return MessageId.make(`pm:${input.project.id}:${incarnationNonce}:assistant:${nextLocalId}`);
     };
     const nextUserMessageId = (): MessageId => {
       nextLocalId += 1;
-      return MessageId.make(`pm:${input.project.id}:user:${nextLocalId}`);
+      return MessageId.make(`pm:${input.project.id}:${incarnationNonce}:user:${nextLocalId}`);
     };
     const nextTurnId = (): TurnId => {
       nextLocalId += 1;
-      return TurnId.make(`pm:${input.project.id}:turn:${nextLocalId}`);
+      return TurnId.make(`pm:${input.project.id}:${incarnationNonce}:turn:${nextLocalId}`);
     };
     const activityId = (tag: string, toolCallId: string): EventId =>
       EventId.make(`pm:${input.project.id}:${tag}:${toolCallId}`);
@@ -366,3 +388,32 @@ export const makePmEventProjectionRuntime = (input: {
       drain: worker.drain,
     };
   });
+
+type PmEventProjectionRuntimeEffect = ReturnType<typeof makePmEventProjectionRuntimeWithNonce>;
+
+export function makePmEventProjectionRuntime(
+  input: PmEventProjectionRuntimeInputWithNonce,
+): PmEventProjectionRuntimeEffect;
+export function makePmEventProjectionRuntime(
+  input: PmEventProjectionRuntimeInputWithoutNonce,
+): Effect.Effect<
+  Effect.Success<PmEventProjectionRuntimeEffect>,
+  Effect.Error<PmEventProjectionRuntimeEffect>,
+  Effect.Services<PmEventProjectionRuntimeEffect> | Crypto.Crypto
+>;
+export function makePmEventProjectionRuntime(
+  input: PmEventProjectionRuntimeInputWithNonce | PmEventProjectionRuntimeInputWithoutNonce,
+) {
+  if (input.incarnationNonce !== undefined) {
+    return makePmEventProjectionRuntimeWithNonce(input as PmEventProjectionRuntimeInputWithNonce);
+  }
+
+  return Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const incarnationNonce = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+    return yield* makePmEventProjectionRuntimeWithNonce({
+      ...input,
+      incarnationNonce,
+    });
+  });
+}

@@ -154,6 +154,7 @@ type ActiveTool = {
   readonly toolCallId: string;
   readonly toolName: string;
   readonly input: Record<string, unknown>;
+  readonly includeResultDetails: boolean;
 };
 
 export interface DriverPmAdapterOptions {
@@ -311,17 +312,15 @@ export const makeDriverPmAdapter = (
 
           case "item.started": {
             const data = lifecycleToolData(event.payload);
-            if (!data) {
+            if (!data || !event.itemId) {
               return;
             }
-            const toolName = orchestrationToolName(data.toolName);
-            if (!toolName || !event.itemId) {
-              return;
-            }
+            const strippedToolName = orchestrationToolName(data.toolName);
             const tool: ActiveTool = {
               toolCallId: String(event.itemId),
-              toolName,
+              toolName: strippedToolName ?? data.toolName,
               input: data.input,
+              includeResultDetails: strippedToolName !== undefined,
             };
             activeTools.set(String(event.itemId), tool);
             yield* offer({
@@ -364,14 +363,17 @@ export const makeDriverPmAdapter = (
             }
             activeTools.delete(String(event.itemId));
             const isError = event.payload.status === "failed";
-            const text = resultText(data.result, event.payload.detail ?? "");
             yield* offer({
               type: "tool_result",
               toolCallId: existing.toolCallId,
               toolName: existing.toolName,
               input: existing.input,
-              content: [textContent(text)],
-              details: data.result ?? event.payload.data,
+              content: existing.includeResultDetails
+                ? [textContent(resultText(data.result, event.payload.detail ?? ""))]
+                : [],
+              details: existing.includeResultDetails
+                ? (data.result ?? event.payload.data)
+                : undefined,
               isError,
             } satisfies AgentHarnessEvent);
             return;

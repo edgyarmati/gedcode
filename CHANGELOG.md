@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep Orchestrator PM chat projection stable across PM runtime rebuilds. PM projection command/message/turn ids now include a per-runtime nonce so the first PM message after a clear or restart no longer disappears, assistant completion cannot create new "(empty response)" bubbles from dropped deltas, and PM provider runtime events are no longer double-projected by the generic ingestion path.
 - Fix: Prevent Orchestrator PM turns from staying Running after abnormal Claude-driver endings or PM runtime teardown. Aborted Claude PM turns now emit a terminal settle signal, PM projection teardown best-effort marks active turns ready, PM session projection records the Claude driver kind instead of the provider instance id, and Clear PM chat resets the persisted Claude PM binding to a stopped status with its resume cursor cleared.
 - Fix: Keep fresh Orchestrator PM chats and live PM turns in sync. Subscribing to a not-yet-created PM thread now stays live for the first message, PM turn lifecycle events now clear the Running indicator even for tool-only turns, and streaming message replay no longer drops deltas when a snapshot watermark is ahead of the message content.
 - Fix: Make Clear PM chat reset the Claude driver PM session as well as visible PM messages, clearing the persisted resume cursor so the next PM turn starts fresh instead of resuming prior Claude history.

@@ -50,7 +50,7 @@ import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import { pmThreadIdForProject } from "./orchestration/pi/PmEventProjection.ts";
+import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pi/PmEventProjection.ts";
 import {
   listPiProviderCatalog,
   listPiProviderModels,
@@ -138,7 +138,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 
 function projectIdFromPmThreadId(threadId: ThreadId): ProjectId | null {
   const rawThreadId = String(threadId);
-  if (!rawThreadId.startsWith("pm:") || rawThreadId.length <= "pm:".length) {
+  if (!isPmThreadId(threadId)) {
     return null;
   }
   return ProjectId.make(rawThreadId.slice("pm:".length));
