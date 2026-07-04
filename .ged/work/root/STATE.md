@@ -449,6 +449,17 @@ protocol.ts import + ProviderModelPicker annotation) — typecheck 13/13 green w
 typecheck 13/13, server 88/88 + web 45/45 affected, test:browser 175 passed w/ only the 2 KNOWN pre-existing
 failures (ChatView Shift+Tab, MessagesTimeline file-tag icons).
 
+**WP-CLRACT DONE `d14331934`** — user still saw the June-30 fossil + old tool activities after WP-CLRB and a
+NEW clear (5606 recorded, so new build confirmed running). DB check: pm thread had 0 messages but 61 stale
+ACTIVITY rows — the snapshot itself served them. Root cause: in ProjectionPipeline.ts every per-table
+sub-projector wipes on thread.cleared (threads 713 / messages 862 / plans 924 / sessions 1019 / turns 1343 /
+approvals 1475) EXCEPT applyThreadActivitiesProjection (~964) — no thread.cleared case. Fix (Codex, fresh
+thread): added the case (deleteByThreadId, mirrors messages) + DB projection test (cleared thread's activities
+deleted, other threads untouched). No migration — stale rows self-heal on next clear. "Can't send" diagnosed
+as stale tab (composer canSend = environmentAvailable && !submitting; server had session/turns clean; tab
+predated 2 restarts → dead ws). Gate: fmt/lint/typecheck 13/13, ProjectionPipeline tests 24/24. USER STEPS
+after this: restart server → HARD-refresh browser → clear PM chat once → genuinely blank slate expected.
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
