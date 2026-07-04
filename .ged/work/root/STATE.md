@@ -390,7 +390,17 @@ snapshot + keeps the sub alive (thread.created added to isThreadDetailEvent). (4
 W4e's snapshot-coverage dropped deltas by pure sequence watermark. Fix: coverage now compares message freshness
 (updatedAt); streaming delta covered only if the stored message is STRICTLY newer. Gate green: typecheck 13/13
 (shared flake standalone-cleared), full suite 1349, server 105, web 44, fmt/lint/build, browser 3/3.
-**Review findings → FOLLOW-UP WP-PMUX-FIX (pending):** (HIGH robustness) the Running indicator is settled ONLY
+**WP-PMUX-FIX DONE `d0148cd2c`** — addressed the review findings: PM turns settle on turn_end/agent_end/settled
++ turn.aborted emits `settled` + an Effect finalizer backstop settles an active turn on projection teardown
+(so the Running indicator can't stick on abnormal ends); cached PM runtimes now use a PER-PROJECT Scope closed
+by invalidateRuntime so the finalizer + projection fibers actually run on invalidate/clear/shutdown (also fixes
+a latent projection-fiber leak); providerName → shared `CLAUDE_PM_DRIVER` "claudeAgent" (new
+orchestration/claude/constants.ts) so the session provider no longer falls back to "codex";
+resetClaudePmSession upserts status:"stopped". Gate green: typecheck 13/13 (oxlint-plugin flake standalone-
+cleared), affected server tests 41, fmt/lint/build. Reviewed the per-project-scope lifecycle (correct ordering
+waitForIdle→close scope→delete; parent-scope finalizer for factory teardown).
+
+**Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
 → store's toLegacyProvider falls back to "codex"; use the driver kind "claudeAgent". (MED) resetClaudePmSession
