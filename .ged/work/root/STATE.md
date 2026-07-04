@@ -432,6 +432,23 @@ delivery. Codex/OpenCode adapter queues untouched (ProviderService stays their s
 fmt/lint/typecheck 13/13, affected tests 34/34, Codex full suite 1359 w/ --maxWorkers=1 (known load-sensitive
 integration timeouts under parallel load; passed isolated). Next live test: text should stream clean+complete.
 
+**WP-CLRB DONE `a2e269689`** — user's post-EVBUS live test showed "PM turn failed … makeOrchestrationMcpServer"
++ old tool activities inside a freshly cleared chat + composer blocked. NOT a session-start regression: the
+error on screen was event seq 2242 from 2026-06-30 (W4a era) REPLAYED into the cleared chat; all the "new"
+content was resurrected July 3-4 history (proven via event log). Root cause pair: (1) ws.ts replay has no
+clear boundary — resubscribe with a behind watermark (browser reconnect around server restart) streams
+pre-clear history; (2) client eventIsCoveredBySnapshot's message-freshness exception (WP-PMUX-C) applies any
+old thread.message-sent whose message is absent from the (cleared) store, while replayed thread.cleared is
+skipped as snapshot-covered → resurrection guaranteed; stale replayed session state blocked the composer.
+Fix (Codex, fresh thread): read model records `lastClearedSequence` per thread (contracts + projector +
+ProjectionPipeline + migration 043 + snapshot queries); ws thread-subscription replay AND project-orchestrator
+pm-thread replay drop events ≤ boundary; client coverage treats pre-clear message events as covered (fresh
+first messages still apply); client thread.cleared handler resets messages/activities/plans/turnDiff/
+latestTurn/session + records boundary. Reverted Codex's out-of-scope tsgo-flake "fixes" (effect-acp
+protocol.ts import + ProviderModelPicker annotation) — typecheck 13/13 green without them. Gate: fmt/lint/
+typecheck 13/13, server 88/88 + web 45/45 affected, test:browser 175 passed w/ only the 2 KNOWN pre-existing
+failures (ChatView Shift+Tab, MessagesTimeline file-tag icons).
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
