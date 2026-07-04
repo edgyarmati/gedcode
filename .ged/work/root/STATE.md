@@ -416,6 +416,22 @@ tools) so the PM activity feed survives losing ingestion's generic activities. G
 on rerun/standalone). Next live test should show: first message surfaces, no empty bubble, single replies,
 tool activity while PM works.
 
+**WP-EVBUS DONE `9c090bb49`** — post-PMID live test (2026-07-04 15:37): messages surface, no empty bubble,
+single replies, PM orchestrates (dispatched audit worker) — but assistant text STILL garbled with missing
+spans. Event log proved the deltas were already discontinuous AS STORED (mid-word joins), i.e. lost upstream
+of the projection. Root cause: `ClaudeAdapter.streamEvents` = `Stream.fromQueue(runtimeEventQueue)` —
+single-delivery queue whose sole intended consumer is ProviderService (which fans out on a broadcast PubSub,
+fresh subscription per `.streamEvents` access). DriverPmAdapter (since W2) consumed the same queue directly →
+every Claude runtime event went to exactly ONE of the two consumers at random. Explains ALL garbled text since
+driver-PM went live (pre-PMID it was double-masked: ingestion rendered its incomplete half, projection's half
+was receipt-collided). Also: DriverPmAdapter silently stole+discarded Claude WORKER thread events while the PM
+runtime was alive. Fix (Codex, fresh thread): DriverPmAdapterOptions gains `runtimeEvents: Stream<ProviderRuntimeEvent>`;
+PmRuntime passes `providerService.streamEvents`; claudeAdapter option narrowed to a Pick WITHOUT streamEvents
+(type-level regression guard); regression test with a concurrent second bus consumer asserting full delta
+delivery. Codex/OpenCode adapter queues untouched (ProviderService stays their single consumer). Gate green:
+fmt/lint/typecheck 13/13, affected tests 34/34, Codex full suite 1359 w/ --maxWorkers=1 (known load-sensitive
+integration timeouts under parallel load; passed isolated). Next live test: text should stream clean+complete.
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
