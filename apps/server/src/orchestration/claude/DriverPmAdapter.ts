@@ -157,9 +157,21 @@ type ActiveTool = {
   readonly includeResultDetails: boolean;
 };
 
+export type DriverPmClaudeAdapter = Pick<
+  ClaudeAdapterShape,
+  | "provider"
+  | "startSession"
+  | "sendTurn"
+  | "interruptTurn"
+  | "stopSession"
+  | "listSessions"
+  | "hasSession"
+>;
+
 export interface DriverPmAdapterOptions {
   readonly project: OrchestrationProject;
-  readonly claudeAdapter: ClaudeAdapterShape;
+  readonly claudeAdapter: DriverPmClaudeAdapter;
+  readonly runtimeEvents: Stream.Stream<ProviderRuntimeEvent>;
   readonly modelSelection: ModelSelection;
   readonly systemPrompt?: string;
 }
@@ -468,7 +480,7 @@ export const makeDriverPmAdapter = (
 
     const runtimeContext = yield* Effect.context<never>();
     const bridgeFiber = Effect.runForkWith(runtimeContext)(
-      options.claudeAdapter.streamEvents.pipe(Stream.runForEach(handleRuntimeEvent)),
+      options.runtimeEvents.pipe(Stream.runForEach(handleRuntimeEvent)),
     );
 
     const startSession = Effect.gen(function* () {

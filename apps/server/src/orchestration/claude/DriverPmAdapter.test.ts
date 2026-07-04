@@ -19,10 +19,10 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
-import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
 import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
@@ -30,7 +30,7 @@ import {
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
-import { makeDriverPmAdapter } from "./DriverPmAdapter.ts";
+import { makeDriverPmAdapter, type DriverPmClaudeAdapter } from "./DriverPmAdapter.ts";
 import { orchestrationMcpToolId } from "./pmMcpServer.ts";
 
 const provider = ProviderDriverKind.make("claudeAgent");
@@ -131,10 +131,8 @@ describe("DriverPmAdapter", () => {
       const upserts: ProviderRuntimeBinding[] = [];
       let started = false;
 
-      const claudeAdapter: ClaudeAdapterShape = {
+      const claudeAdapter: DriverPmClaudeAdapter = {
         provider,
-        capabilities: { sessionModelSwitch: "in-session" },
-        streamEvents: Stream.fromQueue(runtimeEvents),
         startSession: (input) =>
           Effect.sync(() => {
             started = true;
@@ -147,8 +145,6 @@ describe("DriverPmAdapter", () => {
             return { threadId, turnId, resumeCursor: { resume: "resume-active" } };
           }),
         interruptTurn: () => Effect.void,
-        respondToRequest: () => Effect.void,
-        respondToUserInput: () => Effect.void,
         stopSession: () =>
           Effect.sync(() => {
             started = false;
@@ -158,9 +154,6 @@ describe("DriverPmAdapter", () => {
             started ? [providerSession(threadId, { resume: "resume-after-turn" })] : [],
           ),
         hasSession: () => Effect.succeed(started),
-        readThread: () => Effect.succeed({ threadId, turns: [] }),
-        rollbackThread: () => Effect.succeed({ threadId, turns: [] }),
-        stopAll: () => Effect.void,
       };
 
       const directoryLayer = Layer.succeed(ProviderSessionDirectory, {
@@ -186,6 +179,7 @@ describe("DriverPmAdapter", () => {
       const adapter = yield* makeDriverPmAdapter({
         project,
         claudeAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
         systemPrompt: "PM system prompt",
       }).pipe(Effect.provide(directoryLayer));
@@ -377,6 +371,146 @@ describe("DriverPmAdapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("preserves every PM text delta when another consumer reads the runtime bus", () =>
+    Effect.gen(function* () {
+      const runtimeEventBus = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+      const runtimeEvents = Stream.fromPubSub(runtimeEventBus);
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-delta-integrity");
+      const assistantItemId = RuntimeItemId.make("assistant-delta-integrity");
+      const deltaTexts = ["Plan ", "the ", "work ", "without ", "gaps."];
+      const sendTurnCalled = yield* Deferred.make<void>();
+
+      const claudeAdapter: DriverPmClaudeAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        claudeAdapter,
+        runtimeEvents,
+        modelSelection,
+      }).pipe(
+        Effect.provide(
+          Layer.succeed(ProviderSessionDirectory, {
+            upsert: () => Effect.void,
+            getProvider: () => Effect.succeed(provider),
+            getBinding: () => Effect.succeed(Option.none()),
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
+          }),
+        ),
+      );
+
+      const commands: OrchestrationCommand[] = [];
+      const projection = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection: modelSelection,
+        events: adapter.events,
+        incarnationNonce: "delta-integrity",
+      }).pipe(Effect.provide(makeProjectionLayer(commands)));
+
+      const independentConsumer = yield* runtimeEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId && event.type === "content.delta"),
+        Stream.take(deltaTexts.length),
+        Stream.runCollect,
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+
+      const promptFiber = yield* adapter.prompt("Create the task.").pipe(Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Effect.yieldNow;
+
+      yield* PubSub.publish(
+        runtimeEventBus,
+        makeEvent({
+          type: "turn.started",
+          turnId,
+          payload: { model: modelSelection.model },
+        }),
+      );
+      for (let index = 0; index < deltaTexts.length; index += 1) {
+        yield* PubSub.publish(
+          runtimeEventBus,
+          makeEvent({
+            eventId: `event-delta-integrity-${index}`,
+            type: "content.delta",
+            turnId,
+            itemId: assistantItemId,
+            payload: { streamKind: "assistant_text", delta: deltaTexts[index] ?? "" },
+          }),
+        );
+      }
+      yield* PubSub.publish(
+        runtimeEventBus,
+        makeEvent({
+          type: "item.completed",
+          turnId,
+          itemId: assistantItemId,
+          payload: {
+            itemType: "assistant_message",
+            status: "completed",
+            title: "Assistant message",
+          },
+        }),
+      );
+      yield* PubSub.publish(
+        runtimeEventBus,
+        makeEvent({
+          type: "turn.completed",
+          turnId,
+          payload: {
+            state: "completed",
+            stopReason: "stop",
+          },
+        }),
+      );
+
+      const independentlySeen = yield* Fiber.join(independentConsumer);
+      const assistant = yield* Fiber.join(promptFiber);
+      yield* projection.drain;
+
+      assert.deepStrictEqual(
+        independentlySeen.map((event) =>
+          event.type === "content.delta" ? event.payload.delta : "",
+        ),
+        deltaTexts,
+      );
+      assert.deepStrictEqual(
+        assistant.content
+          .filter((entry): entry is { type: "text"; text: string } => entry.type === "text")
+          .map((entry) => entry.text),
+        [deltaTexts.join("")],
+      );
+      assert.deepStrictEqual(
+        commands
+          .filter(
+            (
+              command,
+            ): command is Extract<
+              OrchestrationCommand,
+              { type: "thread.message.assistant.delta" }
+            > => command.type === "thread.message.assistant.delta",
+          )
+          .map((command) => command.delta),
+        deltaTexts,
+      );
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("bridges non-orchestration PM tool lifecycle items without result details", () =>
     Effect.gen(function* () {
       const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -384,26 +518,20 @@ describe("DriverPmAdapter", () => {
       const turnId = TurnId.make("turn-built-in-tool");
       const toolItemId = RuntimeItemId.make("read-tool-call");
 
-      const claudeAdapter: ClaudeAdapterShape = {
+      const claudeAdapter: DriverPmClaudeAdapter = {
         provider,
-        capabilities: { sessionModelSwitch: "in-session" },
-        streamEvents: Stream.fromQueue(runtimeEvents),
         startSession: () => Effect.succeed(providerSession(threadId)),
         sendTurn: () => Effect.succeed({ threadId, turnId }),
         interruptTurn: () => Effect.void,
-        respondToRequest: () => Effect.void,
-        respondToUserInput: () => Effect.void,
         stopSession: () => Effect.void,
         listSessions: () => Effect.succeed([]),
         hasSession: () => Effect.succeed(true),
-        readThread: () => Effect.succeed({ threadId, turns: [] }),
-        rollbackThread: () => Effect.succeed({ threadId, turns: [] }),
-        stopAll: () => Effect.void,
       };
 
       const adapter = yield* makeDriverPmAdapter({
         project,
         claudeAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
       }).pipe(
         Effect.provide(
@@ -492,10 +620,8 @@ describe("DriverPmAdapter", () => {
       const threadId = pmThreadIdForProject(project);
       const turnId = TurnId.make("turn-aborted");
 
-      const claudeAdapter: ClaudeAdapterShape = {
+      const claudeAdapter: DriverPmClaudeAdapter = {
         provider,
-        capabilities: { sessionModelSwitch: "in-session" },
-        streamEvents: Stream.fromQueue(runtimeEvents),
         startSession: () => Effect.succeed(providerSession(threadId)),
         sendTurn: () =>
           Effect.gen(function* () {
@@ -503,19 +629,15 @@ describe("DriverPmAdapter", () => {
             return { threadId, turnId };
           }),
         interruptTurn: () => Effect.void,
-        respondToRequest: () => Effect.void,
-        respondToUserInput: () => Effect.void,
         stopSession: () => Effect.void,
         listSessions: () => Effect.succeed([]),
         hasSession: () => Effect.succeed(false),
-        readThread: () => Effect.succeed({ threadId, turns: [] }),
-        rollbackThread: () => Effect.succeed({ threadId, turns: [] }),
-        stopAll: () => Effect.void,
       };
 
       const adapter = yield* makeDriverPmAdapter({
         project,
         claudeAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
       }).pipe(
         Effect.provide(

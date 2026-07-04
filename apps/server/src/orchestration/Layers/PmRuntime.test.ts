@@ -63,6 +63,10 @@ import {
   type ProviderAdapterRegistryShape,
 } from "../../provider/Services/ProviderAdapterRegistry.ts";
 import {
+  ProviderService,
+  type ProviderServiceShape,
+} from "../../provider/Services/ProviderService.ts";
+import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
   type ProviderSessionDirectoryShape,
@@ -272,7 +276,6 @@ const makeProviderSession = (
 
 const makeFakeClaudeAdapter = (
   input: {
-    readonly runtimeEvents?: Stream.Stream<ProviderRuntimeEvent>;
     readonly startInputs?: ProviderSessionStartInput[];
     readonly sendTurn?: ClaudeAdapterShape["sendTurn"];
     readonly stopSession?: ClaudeAdapterShape["stopSession"];
@@ -280,7 +283,7 @@ const makeFakeClaudeAdapter = (
 ): ClaudeAdapterShape => ({
   provider: claudeDriver,
   capabilities: { sessionModelSwitch: "in-session" },
-  streamEvents: input.runtimeEvents ?? Stream.empty,
+  streamEvents: Stream.empty,
   startSession: (sessionInput) =>
     Effect.sync(() => {
       input.startInputs?.push(sessionInput);
@@ -635,6 +638,7 @@ const makeFactoryCaptureLayer = (input?: {
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly dispatchCalls?: OrchestrationCommand[];
   readonly liveProjection?: boolean;
+  readonly runtimeEvents?: Stream.Stream<ProviderRuntimeEvent>;
   readonly providerInstances?: ReadonlyMap<
     string,
     {
@@ -717,6 +721,23 @@ const makeFactoryCaptureLayer = (input?: {
     NodeServices.layer,
     OrchestrationMcpServerProviderLive,
     makeProviderAdapterRegistryLayer(input?.providerInstances),
+    Layer.succeed(ProviderService, {
+      startSession: () => Effect.die("ProviderService.startSession should not be called"),
+      sendTurn: () => Effect.die("ProviderService.sendTurn should not be called"),
+      interruptTurn: () => Effect.die("ProviderService.interruptTurn should not be called"),
+      respondToRequest: () => Effect.die("ProviderService.respondToRequest should not be called"),
+      respondToUserInput: () =>
+        Effect.die("ProviderService.respondToUserInput should not be called"),
+      stopSession: () => Effect.die("ProviderService.stopSession should not be called"),
+      listSessions: () => Effect.die("ProviderService.listSessions should not be called"),
+      getCapabilities: () => Effect.die("ProviderService.getCapabilities should not be called"),
+      getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
+      rollbackConversation: () =>
+        Effect.die("ProviderService.rollbackConversation should not be called"),
+      get streamEvents() {
+        return input?.runtimeEvents ?? Stream.empty;
+      },
+    } satisfies ProviderServiceShape),
     makeProviderSessionDirectoryLayer(input?.providerSessionDirectory),
     orchestrationServices,
     Layer.succeed(ProviderQuotaStatusRepository, {
@@ -1020,7 +1041,6 @@ describe("PmRuntime", () => {
         const startInputs: ProviderSessionStartInput[] = [];
         const threadId = pmThreadIdForProject(project);
         const claudeAdapter = makeFakeClaudeAdapter({
-          runtimeEvents: Stream.fromQueue(runtimeEvents),
           startInputs,
           sendTurn: (turnInput) =>
             Effect.gen(function* () {
@@ -1116,6 +1136,7 @@ describe("PmRuntime", () => {
               providerInstances: new Map([
                 [String(claudeInstanceId), { driverKind: claudeDriver, adapter: claudeAdapter }],
               ]),
+              runtimeEvents: Stream.fromQueue(runtimeEvents),
             }),
           ),
         );
@@ -1135,7 +1156,6 @@ describe("PmRuntime", () => {
         const directory = makeMemoryProviderSessionDirectory();
         const threadId = pmThreadIdForProject(project);
         const claudeAdapter = makeFakeClaudeAdapter({
-          runtimeEvents: Stream.fromQueue(runtimeEvents),
           startInputs,
           stopSession: (stoppedThreadId) =>
             Effect.sync(() => {
@@ -1233,6 +1253,7 @@ describe("PmRuntime", () => {
               providerInstances: new Map([
                 [String(claudeInstanceId), { driverKind: claudeDriver, adapter: claudeAdapter }],
               ]),
+              runtimeEvents: Stream.fromQueue(runtimeEvents),
             }),
           ),
         );

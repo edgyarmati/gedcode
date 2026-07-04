@@ -68,6 +68,7 @@ import {
   ProviderAdapterRegistry,
   type ProviderAdapterRegistryShape,
 } from "../../provider/Services/ProviderAdapterRegistry.ts";
+import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import {
   ProviderSessionDirectory,
   type ProviderSessionDirectoryShape,
@@ -1288,6 +1289,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const serverSettings = yield* ServerSettingsService;
     const providerAdapterRegistry = yield* ProviderAdapterRegistry;
+    const providerService = yield* ProviderService;
     const providerSessionDirectory = yield* ProviderSessionDirectory;
     const settings = yield* serverSettings.getSettings;
     const autoCompactionDefaults = resolveAutoCompaction({
@@ -1323,6 +1325,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         const driverPmAdapterOptions = {
           project,
           claudeAdapter,
+          runtimeEvents: providerService.streamEvents,
           modelSelection: pmModelSelection,
           systemPrompt: buildPmSystemPrompt(project),
         } satisfies DriverPmAdapterOptions;
