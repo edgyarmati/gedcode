@@ -201,6 +201,108 @@ describe("PmEventProjection", () => {
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
+  it.effect("marks the PM turn ready when a terminal agent_end arrives without turn_end", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+      });
+
+      yield* runtime.project({
+        type: "before_agent_start",
+        prompt: "Create a task.",
+      } as AgentHarnessEvent);
+      yield* runtime.project({
+        type: "agent_end",
+        messages: [],
+      } satisfies AgentHarnessEvent);
+
+      const sessionCommands = commands.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      assert.deepStrictEqual(
+        sessionCommands.map((command) => command.session.status),
+        ["running", "ready"],
+      );
+
+      const pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === runtime.pmThreadId,
+      );
+      assert.ok(pmThread);
+      assert.strictEqual(pmThread.session?.status, "ready");
+      assert.strictEqual(pmThread.latestTurn?.state, "completed");
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
+  });
+
+  it.effect("dispatches Claude driver kind as providerName for PM sessions", () => {
+    const commands: OrchestrationCommand[] = [];
+    const claudeWorkSelection = {
+      instanceId: ProviderInstanceId.make("claude_work"),
+      model: "claude-sonnet-4-6",
+    };
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection: claudeWorkSelection,
+        events: Stream.empty,
+      });
+
+      yield* runtime.project({
+        type: "before_agent_start",
+        prompt: "Create a task.",
+      } as AgentHarnessEvent);
+
+      const sessionCommand = commands.find(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      assert.ok(sessionCommand);
+      assert.strictEqual(sessionCommand.session.providerName, "claudeAgent");
+      assert.strictEqual(sessionCommand.session.providerInstanceId, claudeWorkSelection.instanceId);
+    }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
+  });
+
+  it.effect("settles an active PM turn when the projection scope is torn down", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const runtime = yield* makePmEventProjectionRuntime({
+            project,
+            pmModelSelection,
+            events: Stream.empty,
+          });
+
+          yield* runtime.project({
+            type: "before_agent_start",
+            prompt: "Create a task.",
+          } as AgentHarnessEvent);
+        }),
+      ).pipe(Effect.provide(makeLayer(commands, readModelRef)));
+
+      const sessionCommands = commands.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      assert.deepStrictEqual(
+        sessionCommands.map((command) => command.session.status),
+        ["running", "ready"],
+      );
+
+      const pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === pmThreadIdForProject(project),
+      );
+      assert.ok(pmThread);
+      assert.strictEqual(pmThread.session?.status, "ready");
+      assert.strictEqual(pmThread.latestTurn?.state, "completed");
+    });
+  });
+
   it.effect("projects pi assistant deltas onto the deterministic PM thread", () => {
     const commands: OrchestrationCommand[] = [];
     return Effect.gen(function* () {

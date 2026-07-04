@@ -20,6 +20,7 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
   ThreadId.make(`pm:${project.id}`);
@@ -199,7 +200,7 @@ export const makePmEventProjectionRuntime = (input: {
         session: {
           threadId: pmThreadId,
           status,
-          providerName: String(input.pmModelSelection.instanceId),
+          providerName: CLAUDE_PM_DRIVER,
           providerInstanceId: input.pmModelSelection.instanceId,
           runtimeMode: "approval-required",
           activeTurnId: status === "running" ? turnId : null,
@@ -226,6 +227,17 @@ export const makePmEventProjectionRuntime = (input: {
       yield* dispatchSession("ready", null);
       activePmTurnId = null;
     });
+
+    yield* Effect.addFinalizer(() =>
+      completeTurn().pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("PM event projection teardown failed to complete active turn", {
+            projectId: String(input.project.id),
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      ),
+    );
 
     const processEvent = Effect.fn("PmEventProjection.processEvent")(function* (
       event: AgentHarnessEvent,
@@ -317,6 +329,7 @@ export const makePmEventProjectionRuntime = (input: {
         }
 
         case "turn_end":
+        case "agent_end":
         case "settled": {
           yield* completeTurn();
           return;

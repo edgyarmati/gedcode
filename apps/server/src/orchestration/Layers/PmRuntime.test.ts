@@ -1170,6 +1170,7 @@ describe("PmRuntime", () => {
           }
           const clearedBinding = clearedBindingOption.value;
           assert.deepStrictEqual(stopSessionCalls, [threadId]);
+          assert.strictEqual(clearedBinding.status, "stopped");
           assert.strictEqual(clearedBinding.resumeCursor, null);
 
           const runtime = yield* factory.getOrCreate(pmProject);

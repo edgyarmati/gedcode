@@ -11,7 +11,6 @@ import type {
   Usage,
 } from "@earendil-works/pi-ai";
 import {
-  ProviderDriverKind,
   type ModelSelection,
   type OrchestrationProject,
   type ProviderRuntimeEvent,
@@ -31,9 +30,10 @@ import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessio
 import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
 import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { CLAUDE_PM_DRIVER } from "./constants.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME } from "./pmMcpServer.ts";
 
-const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
+const CLAUDE_PROVIDER = CLAUDE_PM_DRIVER;
 
 const zeroUsage = (): Usage => ({
   input: 0,
@@ -433,6 +433,10 @@ export const makeDriverPmAdapter = (
 
           case "turn.aborted": {
             yield* Ref.set(idle, true);
+            yield* offer({
+              type: "settled",
+              nextTurnCount: 0,
+            } satisfies AgentHarnessEvent);
             const promptState = yield* Ref.get(activePrompt);
             if (promptState && promptState.turnId === event.turnId) {
               yield* Ref.set(activePrompt, undefined);

@@ -375,4 +375,90 @@ describe("DriverPmAdapter", () => {
       yield* adapter.abort;
     }).pipe(Effect.scoped),
   );
+
+  it.effect("settles the projected PM turn when Claude aborts without turn.completed", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-aborted");
+
+      const claudeAdapter: ClaudeAdapterShape = {
+        provider,
+        capabilities: { sessionModelSwitch: "in-session" },
+        streamEvents: Stream.fromQueue(runtimeEvents),
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        respondToRequest: () => Effect.void,
+        respondToUserInput: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(false),
+        readThread: () => Effect.succeed({ threadId, turns: [] }),
+        rollbackThread: () => Effect.succeed({ threadId, turns: [] }),
+        stopAll: () => Effect.void,
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        claudeAdapter,
+        modelSelection,
+      }).pipe(
+        Effect.provide(
+          Layer.succeed(ProviderSessionDirectory, {
+            upsert: () => Effect.void,
+            getProvider: () => Effect.succeed(provider),
+            getBinding: () => Effect.succeed(Option.none()),
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
+          }),
+        ),
+      );
+
+      const commands: OrchestrationCommand[] = [];
+      const projection = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection: modelSelection,
+        events: adapter.events,
+      }).pipe(Effect.provide(makeProjectionLayer(commands)));
+
+      const promptFiber = yield* adapter.prompt("Create the task.").pipe(Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.started",
+          turnId,
+          payload: { model: modelSelection.model },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.aborted",
+          turnId,
+          payload: { reason: "operator interrupted the PM turn" },
+        }),
+      );
+
+      const error = yield* Fiber.join(promptFiber).pipe(Effect.flip);
+      yield* projection.drain;
+
+      assert.match(error.detail, /operator interrupted/);
+      const sessionCommands = commands.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      assert.deepStrictEqual(
+        sessionCommands.map((command) => command.session.status),
+        ["running", "ready"],
+      );
+    }).pipe(Effect.scoped),
+  );
 });

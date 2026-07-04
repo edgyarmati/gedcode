@@ -89,6 +89,7 @@ import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stag
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
 import { clearSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
 import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
+import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
 import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
@@ -368,8 +369,6 @@ type ResolvedPmHarnessConfig = {
   readonly provider: ProviderDriverKind;
 };
 
-const CLAUDE_PM_DRIVER = ProviderDriverKind.make("claudeAgent");
-
 const resetClaudePmSession = (input: {
   readonly project: OrchestrationProject;
   readonly providerAdapterRegistry: ProviderAdapterRegistryShape;
@@ -411,6 +410,7 @@ const resetClaudePmSession = (input: {
         threadId: pmThreadId,
         provider: CLAUDE_PM_DRIVER,
         providerInstanceId: binding.providerInstanceId,
+        status: "stopped",
         resumeCursor: null,
       })
       .pipe(
@@ -1334,6 +1334,11 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         if (resources !== undefined) {
           yield* adapter.setResources(resources);
         }
+        const projectRuntimeScope = yield* Scope.make("sequential");
+        yield* Scope.addFinalizer(
+          runtimeScope,
+          Scope.close(projectRuntimeScope, Exit.void).pipe(Effect.ignore),
+        );
         const eventProjection = yield* makePmEventProjectionRuntime({
           project,
           pmModelSelection,
@@ -1341,7 +1346,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         }).pipe(
           Effect.provideService(OrchestrationEngineService, orchestrationEngine),
           Effect.provideService(ProjectionSnapshotQuery, projectionSnapshotQuery),
-          Scope.provide(runtimeScope),
+          Scope.provide(projectRuntimeScope),
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const pmThreadId = pmThreadIdForProject(project);
@@ -1437,6 +1442,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
               if (!(yield* Ref.get(runtimeActive))) return;
               yield* adapter.waitForIdle;
               yield* Ref.set(runtimeActive, false);
+              yield* Scope.close(projectRuntimeScope, Exit.void);
               runtimes.delete(key);
               yield* Effect.logInfo("PM runtime cache entry invalidated", {
                 projectId: String(project.id),
@@ -1545,7 +1551,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
               cause: Cause.pretty(cause),
             });
           }),
-          Effect.forkIn(runtimeScope),
+          Effect.forkIn(projectRuntimeScope),
         );
         yield* watchPmConfigChanges;
         const ensureRuntimeActive = Effect.gen(function* () {
