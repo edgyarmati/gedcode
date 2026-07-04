@@ -355,6 +355,127 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.strictEqual(taskRows[0]?.prUrl, "https://github.com/acme/repo/pull/42");
     }),
   );
+
+  it.effect("clears projected thread activities only for the cleared thread", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-07-04T00:00:00.000Z";
+      const projectId = ProjectId.make("project-clear-activities");
+      const clearedThreadId = ThreadId.make("thread-clear-activities");
+      const otherThreadId = ThreadId.make("thread-clear-activities-other");
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-clear-activities-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear-activities-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-clear-activities-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Clear activities project",
+          workspaceRoot: "/tmp/clear-activities-project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      for (const [threadId, label] of [
+        [clearedThreadId, "cleared"],
+        [otherThreadId, "other"],
+      ] as const) {
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make(`evt-clear-activities-thread-${label}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-clear-activities-thread-${label}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-clear-activities-thread-${label}`),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId,
+            title: `Thread ${label}`,
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "approval-required",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make(`evt-clear-activities-activity-${label}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-clear-activities-activity-${label}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-clear-activities-activity-${label}`),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make(`activity-clear-activities-${label}`),
+              tone: "info",
+              kind: "provider.turn.start.failed",
+              summary: `Activity ${label}`,
+              payload: { label },
+              turnId: null,
+              createdAt: now,
+            },
+          },
+        });
+      }
+
+      yield* eventStore.append({
+        type: "thread.cleared",
+        eventId: EventId.make("evt-clear-activities-clear"),
+        aggregateKind: "thread",
+        aggregateId: clearedThreadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear-activities-clear"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-clear-activities-clear"),
+        metadata: {},
+        payload: {
+          threadId: clearedThreadId,
+          clearedAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const clearedRows = yield* sql<{ readonly activityId: string }>`
+        SELECT activity_id AS "activityId"
+        FROM projection_thread_activities
+        WHERE thread_id = ${clearedThreadId}
+      `;
+      assert.deepEqual(clearedRows, []);
+
+      const otherRows = yield* sql<{ readonly activityId: string }>`
+        SELECT activity_id AS "activityId"
+        FROM projection_thread_activities
+        WHERE thread_id = ${otherThreadId}
+        ORDER BY activity_id ASC
+      `;
+      assert.deepEqual(otherRows, [{ activityId: "activity-clear-activities-other" }]);
+    }),
+  );
 });
 
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
