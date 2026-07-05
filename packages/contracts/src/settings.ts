@@ -6,7 +6,6 @@ import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_GIT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { OrchestratorGlobalDefaults } from "./orchestrator/config.ts";
-import { PiProviderConfig, PiProviderId } from "./piProvider.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
@@ -345,9 +344,6 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  piProviders: Schema.Record(PiProviderId, PiProviderConfig).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // Global orchestrator defaults — the resolution-order floor (design §7,
   // Plan 018 WP-B). Defaulted so legacy `ServerSettings` without this key
@@ -440,9 +436,6 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
-  // Whole-map replacement so removing a pi provider entry can also remove its
-  // server-side secret.
-  piProviders: Schema.optionalKey(Schema.Record(PiProviderId, PiProviderConfig)),
   // Whole-object replacement for the global orchestrator defaults. The block is
   // small and human/client-only; the UI sends a fully-formed object when edited.
   orchestratorDefaults: Schema.optionalKey(OrchestratorGlobalDefaults),

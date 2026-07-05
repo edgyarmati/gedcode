@@ -9,7 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
-import { makePmToolExecutors, type PmToolExecutor } from "../pi/pmTools.ts";
+import { makePmToolExecutors, type PmToolExecutor } from "../pm/pmTools.ts";
 
 export const ORCHESTRATION_MCP_SERVER_NAME = "t3_orchestrator";
 

@@ -1,5 +1,9 @@
 # Decision Spike: `pi-agent-core` / `pi-ai` API verification (Plan 017)
 
+> Superseded: GedCode no longer uses the legacy pi agent stack. The
+> Orchestrator PM now runs on the Claude driver/native harness; this spike is
+> retained only as historical context for the removed pi-era implementation.
+
 - Status: accepted (verification spike — pins the dependency; no PM runtime built)
 - Date: 2026-06-14
 - Tracking: part of #32 (Epic: Orchestrator mode); gates plan 018

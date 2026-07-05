@@ -193,7 +193,7 @@ describe("orchestration projector", () => {
     expect(readModel.threads[0]?.lastClearedSequence).toBe(3);
   });
 
-  it("replays legacy pi-shaped PM model selections as unconfigured", async () => {
+  it("replays legacy pi-era PM model selections as unconfigured", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);
 

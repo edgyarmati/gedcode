@@ -15,14 +15,13 @@ import * as Stream from "effect/Stream";
 
 import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
-import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
-import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pi/PmEventProjection.ts";
+import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
+import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pm/PmEventProjection.ts";
 import { CLAUDE_PM_DRIVER } from "./constants.ts";
 import type {
   AgentHarnessEvent,
   AgentHarnessResources,
   AssistantMessage,
-  CompactResult,
   ImageContent,
   ModelDescriptor,
   PmAdapterShape,
@@ -645,16 +644,6 @@ export const makeDriverPmAdapter = (
                 ),
               ),
             );
-        }),
-      compact: (_customInstructions?: string) =>
-        Effect.gen(function* () {
-          const usage = yield* Ref.get(latestUsage);
-          return {
-            summary:
-              "Claude driver PM adapter does not maintain a pi session tree; compaction is a no-op.",
-            firstKeptEntryId: `driver-pm:${options.project.id}:latest`,
-            tokensBefore: usage?.totalTokens ?? 0,
-          } satisfies CompactResult;
         }),
       setModel: (model: ModelDescriptor) =>
         Ref.update(currentModelSelection, (selection) => ({

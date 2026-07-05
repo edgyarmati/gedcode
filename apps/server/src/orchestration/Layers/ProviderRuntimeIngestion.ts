@@ -53,7 +53,7 @@ import {
   stageQuotaPausedActivityId,
 } from "../stageResolution.ts";
 import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
-import { isPmThreadId } from "../pi/PmEventProjection.ts";
+import { isPmThreadId } from "../pm/PmEventProjection.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 

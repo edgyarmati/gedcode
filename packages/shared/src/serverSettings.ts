@@ -83,7 +83,6 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
-    ...(patch.piProviders !== undefined ? { piProviders: patch.piProviders } : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(orchestratorDefaults !== undefined ? { orchestratorDefaults } : {}),
   };

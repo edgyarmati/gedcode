@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
-  PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
@@ -15,11 +14,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { ServerConfig } from "./config.ts";
-import {
-  redactServerSettingsForClient,
-  ServerSettingsLive,
-  ServerSettingsService,
-} from "./serverSettings.ts";
+import { ServerSettingsLive, ServerSettingsService } from "./serverSettings.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
@@ -533,96 +528,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         roundTripped.providerInstances[instanceId]?.environment?.[0]?.value,
         "sk-or-secret",
       );
-    }).pipe(Effect.provide(makeServerSettingsLayer())),
-  );
-
-  it.effect("stores pi provider API keys outside settings.json and redacts client payloads", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsService;
-      const serverConfig = yield* ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const provider = PiProviderId.make("openrouter");
-
-      const next = yield* serverSettings.updateSettings({
-        piProviders: {
-          [provider]: {
-            enabled: true,
-            apiKey: { value: "sk-pi-secret" },
-          },
-        },
-      });
-
-      assert.deepEqual(next.piProviders[provider], {
-        enabled: true,
-        apiKey: { value: "sk-pi-secret", valueRedacted: true },
-      });
-      assert.deepEqual(redactServerSettingsForClient(next).piProviders[provider], {
-        enabled: true,
-        apiKey: { value: "", valueRedacted: true },
-      });
-
-      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
-      assert.notInclude(raw, "sk-pi-secret");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
-      assert.deepEqual(JSON.parse(raw).piProviders.openrouter, {
-        enabled: true,
-        apiKey: { value: "", valueRedacted: true },
-      });
-
-      const roundTripped = yield* serverSettings.updateSettings({
-        piProviders: {
-          [provider]: {
-            enabled: false,
-            apiKey: { value: "", valueRedacted: true },
-          },
-        },
-      });
-      assert.deepEqual(roundTripped.piProviders[provider], {
-        enabled: false,
-        apiKey: { value: "sk-pi-secret", valueRedacted: true },
-      });
-
-      const reloaded = yield* Effect.gen(function* () {
-        const reloadedServerSettings = yield* ServerSettingsService;
-        return yield* reloadedServerSettings.getSettings;
-      }).pipe(
-        Effect.provide(
-          ServerSettingsLive.pipe(
-            Layer.provideMerge(ServerConfig.layerTest(process.cwd(), serverConfig.baseDir)),
-          ),
-        ),
-      );
-      assert.deepEqual(reloaded.piProviders[provider], {
-        enabled: false,
-        apiKey: { value: "sk-pi-secret", valueRedacted: true },
-      });
-
-      const deleted = yield* serverSettings.updateSettings({
-        piProviders: {},
-      });
-      assert.isUndefined(deleted.piProviders[provider]);
-
-      const removedReload = yield* Effect.gen(function* () {
-        const reloadedServerSettings = yield* ServerSettingsService;
-        return yield* reloadedServerSettings.updateSettings({
-          piProviders: {
-            [provider]: {
-              enabled: true,
-              apiKey: { value: "", valueRedacted: true },
-            },
-          },
-        });
-      }).pipe(
-        Effect.provide(
-          ServerSettingsLive.pipe(
-            Layer.provideMerge(ServerConfig.layerTest(process.cwd(), serverConfig.baseDir)),
-          ),
-        ),
-      );
-      assert.deepEqual(removedReload.piProviders[provider], {
-        enabled: true,
-        apiKey: { value: "", valueRedacted: true },
-      });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });

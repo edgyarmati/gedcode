@@ -1,14 +1,10 @@
 import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
-  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED,
-  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
-  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   DEFAULT_MAX_STAGE_HANDOFFS,
   ORCHESTRATION_STAGE_ROLES,
   type OrchestrationStageRole,
-  type OrchestratorAutoCompactionDefaults,
   type OrchestrationGateKind,
   type OrchestratorGatePolicy,
   type OrchestratorGlobalDefaults,
@@ -87,19 +83,6 @@ export interface ResolveAllowFullAccessWorkersInput {
 export interface ResolveResourceLimitsInput {
   readonly config: OrchestratorResourceLimitProjectConfig;
   readonly defaults: OrchestratorResourceLimitGlobalDefaults;
-}
-
-export type OrchestratorAutoCompactionProjectConfig = {
-  readonly autoCompaction?: Partial<OrchestratorAutoCompactionDefaults> | null;
-};
-
-export type OrchestratorAutoCompactionGlobalDefaults = {
-  readonly autoCompaction?: Partial<OrchestratorGlobalDefaults["autoCompaction"]> | null;
-};
-
-export interface ResolveAutoCompactionInput {
-  readonly config?: OrchestratorAutoCompactionProjectConfig;
-  readonly defaults: OrchestratorAutoCompactionGlobalDefaults;
 }
 
 export type OrchestratorOpenPrAsDraftProjectConfig = {
@@ -192,37 +175,6 @@ export function resolveResourceLimits(
     maxStageHandoffs: resolveResourceLimit({ ...input, key: "maxStageHandoffs" }),
     maxRetriesPerStage: resolveResourceLimit({ ...input, key: "maxRetriesPerStage" }),
     allowFullAccessWorkers: resolveAllowFullAccessWorkers(input),
-  };
-}
-
-export function resolveAutoCompaction(
-  input: ResolveAutoCompactionInput,
-): OrchestratorAutoCompactionDefaults {
-  const customInstructions = resolveConfigValue(
-    [
-      input.config?.autoCompaction?.customInstructions,
-      input.defaults.autoCompaction?.customInstructions,
-    ],
-    undefined,
-  );
-
-  return {
-    enabled: resolveConfigValue(
-      [input.config?.autoCompaction?.enabled, input.defaults.autoCompaction?.enabled],
-      DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_ENABLED,
-    ),
-    reserveTokens: resolveConfigValue(
-      [input.config?.autoCompaction?.reserveTokens, input.defaults.autoCompaction?.reserveTokens],
-      DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
-    ),
-    keepRecentTokens: resolveConfigValue(
-      [
-        input.config?.autoCompaction?.keepRecentTokens,
-        input.defaults.autoCompaction?.keepRecentTokens,
-      ],
-      DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
-    ),
-    ...(customInstructions !== undefined ? { customInstructions } : {}),
   };
 }
 

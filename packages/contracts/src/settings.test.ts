@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import {
-  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
-  DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
-} from "./orchestrator/config.ts";
 import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
@@ -68,57 +64,6 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   });
 });
 
-describe("ServerSettings.piProviders", () => {
-  it("defaults to an empty record", () => {
-    expect(DEFAULT_SERVER_SETTINGS.piProviders).toEqual({});
-  });
-
-  it("decodes and encodes pi provider config maps", () => {
-    const decoded = decodeServerSettings({
-      piProviders: {
-        anthropic: {
-          enabled: true,
-          apiKey: {
-            value: "sk-ant",
-            valueRedacted: true,
-          },
-        },
-        "github-copilot": {
-          enabled: true,
-          oauth: {
-            connected: true,
-            expiresAt: 1_789_000_000,
-          },
-        },
-        "amazon-bedrock": {
-          enabled: true,
-        },
-      },
-    });
-
-    expect(decoded.piProviders).toEqual({
-      anthropic: {
-        enabled: true,
-        apiKey: {
-          value: "sk-ant",
-          valueRedacted: true,
-        },
-      },
-      "github-copilot": {
-        enabled: true,
-        oauth: {
-          connected: true,
-          expiresAt: 1_789_000_000,
-        },
-      },
-      "amazon-bedrock": {
-        enabled: true,
-      },
-    });
-    expect(encodeServerSettings(decoded).piProviders).toEqual(decoded.piProviders);
-  });
-});
-
 describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("defaults the nested orchestrator block with a safe-by-default floor", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual([
@@ -137,11 +82,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       5 * 60 * 1000,
     );
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.autoCompaction).toEqual({
-      enabled: true,
-      reserveTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_RESERVE_TOKENS,
-      keepRecentTokens: DEFAULT_ORCHESTRATOR_AUTO_COMPACTION_KEEP_RECENT_TOKENS,
-    });
   });
 
   it("decodes a legacy config (no orchestrator key) without complaint", () => {
@@ -167,7 +107,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
-    expect(decoded.orchestratorDefaults.autoCompaction.enabled).toBe(true);
   });
 
   it("round-trips a fully empty config without dropping the orchestrator block", () => {
@@ -193,12 +132,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
         worktreeReaperIntervalMinutes: 2,
-        autoCompaction: {
-          enabled: false,
-          reserveTokens: 7_000,
-          keepRecentTokens: 9_000,
-          customInstructions: "Keep unresolved gate decisions.",
-        },
       },
     });
     expect(decoded.orchestratorDefaults.stages).toEqual(["classify", "plan", "work"]);
@@ -214,12 +147,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);
-    expect(decoded.orchestratorDefaults.autoCompaction).toEqual({
-      enabled: false,
-      reserveTokens: 7_000,
-      keepRecentTokens: 9_000,
-      customInstructions: "Keep unresolved gate decisions.",
-    });
   });
 
   it("accepts orchestratorDefaults via the settings patch", () => {
@@ -239,11 +166,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
-        autoCompaction: {
-          enabled: true,
-          reserveTokens: 6_000,
-          keepRecentTokens: 8_000,
-        },
       },
     });
     expect(patch.orchestratorDefaults?.stages).toEqual(["classify", "plan", "review", "work"]);
@@ -258,8 +180,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);
     expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
     expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);
-    expect(patch.orchestratorDefaults?.autoCompaction.reserveTokens).toBe(6_000);
-    expect(patch.orchestratorDefaults?.autoCompaction.keepRecentTokens).toBe(8_000);
   });
 });
 

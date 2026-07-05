@@ -30,7 +30,7 @@ import {
 } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
-import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { makeDriverPmAdapter, type DriverPmClaudeAdapter } from "./DriverPmAdapter.ts";
 import { orchestrationMcpToolId } from "./pmMcpServer.ts";
 

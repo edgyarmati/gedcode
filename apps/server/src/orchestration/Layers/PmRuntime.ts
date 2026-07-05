@@ -12,7 +12,6 @@ import {
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { resolveAutoCompaction } from "@t3tools/shared/orchestrator";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -81,12 +80,12 @@ import {
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
-import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
+import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
-import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
-import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
-import { clearSqliteSessionStorage } from "../pi/SqliteSessionStorage.ts";
+import { makePmReEntryQueue } from "../pm/PmReEntryQueue.ts";
+import { clearSqliteSessionStorage } from "../pm/LegacySessionStorage.ts";
 import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
@@ -1289,7 +1288,7 @@ export const makePmRuntimeLive = (options?: PmRuntimeLiveOptions) =>
 
 export const PmRuntimeLive = makePmRuntimeLive();
 
-export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntimeFactoryOptions) =>
+export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntimeFactoryOptions) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const orchestrationEngine = yield* OrchestrationEngineService;
@@ -1299,10 +1298,6 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
     const providerAdapterRegistry = yield* ProviderAdapterRegistry;
     const providerService = yield* ProviderService;
     const providerSessionDirectory = yield* ProviderSessionDirectory;
-    const settings = yield* serverSettings.getSettings;
-    const autoCompactionDefaults = resolveAutoCompaction({
-      defaults: settings.orchestratorDefaults,
-    });
     const runtimeScope = yield* Scope.make("sequential");
     yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
     const runtimes = new Map<string, RuntimeCacheEntry>();
@@ -1363,12 +1358,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const pmThreadId = pmThreadIdForProject(project);
-        const autoCompactionForSelection = (selection: ModelSelection) => ({
-          ...autoCompactionDefaults,
-          contextWindow: resolveClaudePmContextWindow(selection),
-        });
         const queue = yield* makePmReEntryQueue(adapter, {
-          autoCompaction: autoCompactionForSelection(pmModelSelection),
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
           // adapter failure surfaces as a PmRuntimeError (not a `runtime.error`
           // provider event), so it bypasses the ingestion-path detection that marks
@@ -1465,20 +1455,6 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           );
         const waitForIdle = queue.runExclusive(adapter.waitForIdle);
 
-        const compactBeforeModelSwitch = (nextModelSelection: ModelSelection) =>
-          adapter.compact(autoCompactionDefaults.customInstructions).pipe(
-            Effect.timeout(PM_COMPACTION_TIMEOUT),
-            Effect.catchCause((cause) =>
-              Effect.logWarning("PM model-switch compaction failed or timed out", {
-                projectId: String(project.id),
-                nextProviderInstanceId: String(nextModelSelection.instanceId),
-                nextModel: nextModelSelection.model,
-                timeoutMs: Duration.toMillis(PM_COMPACTION_TIMEOUT),
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-
         const applyUpdatedPmHarnessConfig = (updatedProject: OrchestrationProject) =>
           Effect.gen(function* () {
             const active = yield* Ref.get(runtimeActive);
@@ -1512,11 +1488,7 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
                 if (samePmModelSelection(latest.selection, nextHarnessConfig.selection)) return;
 
                 yield* adapter.waitForIdle;
-                yield* compactBeforeModelSwitch(nextHarnessConfig.selection);
                 yield* adapter.setModel(pmAdapterModelDescriptor(nextHarnessConfig.selection));
-                yield* queue.setAutoCompaction(
-                  autoCompactionForSelection(nextHarnessConfig.selection),
-                );
                 yield* Ref.set(currentHarnessConfig, nextHarnessConfig);
                 yield* Effect.logInfo("PM model changed in place", {
                   projectId: String(project.id),
@@ -1643,9 +1615,9 @@ export const makePiProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
     } satisfies PmProjectRuntimeFactoryShape;
   });
 
-export const makePiProjectRuntimeFactory = makePiProjectRuntimeFactoryWithOptions();
+export const makePmProjectRuntimeFactory = makePmProjectRuntimeFactoryWithOptions();
 
-export const PiProjectRuntimeFactoryLive = Layer.effect(
+export const PmProjectRuntimeFactoryLive = Layer.effect(
   PmProjectRuntimeFactory,
-  makePiProjectRuntimeFactory,
+  makePmProjectRuntimeFactory,
 );

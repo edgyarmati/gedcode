@@ -2,7 +2,6 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-import { ThreadId } from "./baseSchemas.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import { AuthAccessStreamEvent } from "./auth.ts";
 import {
@@ -91,18 +90,6 @@ import {
 } from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
-  PiOAuthLoginCancelInput,
-  PiOAuthLoginCancelResult,
-  PiOAuthLoginCompleteInput,
-  PiOAuthLoginError,
-  PiOAuthLoginStartInput,
-  PiOAuthLoginStartResult,
-  PiOAuthLoginStatus,
-  PiProviderCatalogResult,
-  PiProviderModelsInput,
-  PiProviderModelsResult,
-} from "./piProvider.ts";
-import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -159,11 +146,6 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
-  serverListPiProviderCatalog: "server.listPiProviderCatalog",
-  serverListPiProviderModels: "server.listPiProviderModels",
-  serverStartPiOAuthLogin: "server.startPiOAuthLogin",
-  serverCompletePiOAuthLogin: "server.completePiOAuthLogin",
-  serverCancelPiOAuthLogin: "server.cancelPiOAuthLogin",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -230,35 +212,6 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: ServerSettingsError,
-});
-
-export const WsServerListPiProviderCatalogRpc = Rpc.make(WS_METHODS.serverListPiProviderCatalog, {
-  payload: Schema.Struct({}),
-  success: PiProviderCatalogResult,
-  error: ServerSettingsError,
-});
-
-export const WsServerListPiProviderModelsRpc = Rpc.make(WS_METHODS.serverListPiProviderModels, {
-  payload: PiProviderModelsInput,
-  success: PiProviderModelsResult,
-});
-
-export const WsServerStartPiOAuthLoginRpc = Rpc.make(WS_METHODS.serverStartPiOAuthLogin, {
-  payload: PiOAuthLoginStartInput,
-  success: PiOAuthLoginStartResult,
-  error: PiOAuthLoginError,
-});
-
-export const WsServerCompletePiOAuthLoginRpc = Rpc.make(WS_METHODS.serverCompletePiOAuthLogin, {
-  payload: PiOAuthLoginCompleteInput,
-  success: PiOAuthLoginStatus,
-  error: PiOAuthLoginError,
-});
-
-export const WsServerCancelPiOAuthLoginRpc = Rpc.make(WS_METHODS.serverCancelPiOAuthLogin, {
-  payload: PiOAuthLoginCancelInput,
-  success: PiOAuthLoginCancelResult,
-  error: PiOAuthLoginError,
 });
 
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -579,11 +532,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
-  WsServerListPiProviderCatalogRpc,
-  WsServerListPiProviderModelsRpc,
-  WsServerStartPiOAuthLoginRpc,
-  WsServerCompletePiOAuthLoginRpc,
-  WsServerCancelPiOAuthLoginRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

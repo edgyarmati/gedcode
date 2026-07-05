@@ -136,12 +136,6 @@ describe("Orchestrator global defaults settings logic", () => {
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
       openPrAsDraft: true,
-      autoCompaction: {
-        enabled: false,
-        reserveTokens: 7_000,
-        keepRecentTokens: 8_000,
-        customInstructions: "Keep live task IDs.",
-      },
       allowFullAccessWorkers: true,
     });
 
@@ -163,12 +157,6 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
       allowFullAccessWorkers: true,
-    });
-    expect(draft.autoCompaction).toEqual({
-      enabled: false,
-      reserveTokens: 7_000,
-      keepRecentTokens: 8_000,
-      customInstructions: "Keep live task IDs.",
     });
   });
 
@@ -193,11 +181,6 @@ describe("Orchestrator global defaults settings logic", () => {
         allowFullAccessWorkers: false,
       },
       openPrAsDraft: true,
-      autoCompaction: {
-        enabled: true,
-        reserveTokens: 6_000,
-        keepRecentTokens: 11_000,
-      },
     });
 
     expect(patch.orchestratorDefaults).toEqual({
@@ -217,11 +200,6 @@ describe("Orchestrator global defaults settings logic", () => {
       worktreeReaperIntervalMinutes: 9,
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
-      autoCompaction: {
-        enabled: true,
-        reserveTokens: 6_000,
-        keepRecentTokens: 11_000,
-      },
       allowFullAccessWorkers: false,
       openPrAsDraft: true,
     });

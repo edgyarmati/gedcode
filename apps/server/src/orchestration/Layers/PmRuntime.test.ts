@@ -80,18 +80,18 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
 import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { OrchestrationMcpServerProviderLive } from "../claude/OrchestrationMcpServerProvider.ts";
-import { PmRuntimeError } from "../pi/Errors.ts";
+import { PmRuntimeError } from "../pm/Errors.ts";
 import type {
   AgentHarnessEvent,
   AgentHarnessResources,
   PmAdapterShape,
 } from "../claude/pmHarness.ts";
 import { fauxAssistantMessage } from "../claude/pmHarness.ts";
-import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
   buildPmSystemPrompt,
-  makePiProjectRuntimeFactoryWithOptions,
+  makePmProjectRuntimeFactoryWithOptions,
   makePmRuntimeLive,
   resolvePmHarnessResources,
 } from "./PmRuntime.ts";
@@ -778,7 +778,6 @@ const makeTestPmAdapter = (input?: {
   readonly calls?: string[];
   readonly prompt?: PmAdapterShape["prompt"];
   readonly waitForIdle?: PmAdapterShape["waitForIdle"];
-  readonly compact?: PmAdapterShape["compact"];
   readonly setModel?: PmAdapterShape["setModel"];
 }) =>
   ({
@@ -797,17 +796,6 @@ const makeTestPmAdapter = (input?: {
         return Effect.succeed(fauxAssistantMessage("ok"));
       }),
     followUp: () => Effect.void,
-    compact:
-      input?.compact ??
-      (() =>
-        Effect.sync(() => {
-          input?.calls?.push("compact");
-          return {
-            summary: "summary",
-            firstKeptEntryId: "entry-1",
-            tokensBefore: 1,
-          };
-        })),
     setModel:
       input?.setModel ??
       ((model) =>
@@ -830,7 +818,7 @@ const makeCapturingAdapter = (
       captured.push(options);
       return makeTestPmAdapter(resourceCalls === undefined ? undefined : { resourceCalls });
     })) satisfies NonNullable<
-    Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+    Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
   >["makeDriverPmAdapterOverride"];
 
 const projectWithPmModel = (instanceId: string, model: string): OrchestrationProject => ({
@@ -927,7 +915,7 @@ describe("PmRuntime", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const captured: DriverPmAdapterOptions[] = [];
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
@@ -957,7 +945,7 @@ describe("PmRuntime", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const captured: DriverPmAdapterOptions[] = [];
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
@@ -992,7 +980,7 @@ describe("PmRuntime", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const captured: DriverPmAdapterOptions[] = [];
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
@@ -1019,7 +1007,7 @@ describe("PmRuntime", () => {
       const resourceCalls: AgentHarnessResources[] = [];
 
       yield* Effect.gen(function* () {
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: makeCapturingAdapter(captured, resourceCalls),
         });
         yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-sonnet-4-6"));
@@ -1053,7 +1041,7 @@ describe("PmRuntime", () => {
         });
 
         yield* Effect.gen(function* () {
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions();
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions();
           const runtime = yield* factory.getOrCreate(
             projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
           );
@@ -1182,7 +1170,7 @@ describe("PmRuntime", () => {
             resumeCursor: { resume: "previous-claude-session" },
           });
 
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions();
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions();
           const pmProject = projectWithPmModel("claudeAgent", "claude-sonnet-4-6");
           yield* factory.clearSessionStorage(pmProject);
 
@@ -1288,14 +1276,14 @@ describe("PmRuntime", () => {
             createdAt: now,
           });
 
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions({
             makeDriverPmAdapterOverride: (() =>
               Effect.succeed(
                 makeTestPmAdapter({
                   prompt: () => Effect.fail(failure),
                 }),
               )) satisfies NonNullable<
-              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+              Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
             >["makeDriverPmAdapterOverride"],
           });
           const runtime = yield* factory.getOrCreate(
@@ -1348,7 +1336,7 @@ describe("PmRuntime", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const captured: DriverPmAdapterOptions[] = [];
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
         });
 
@@ -1376,7 +1364,7 @@ describe("PmRuntime", () => {
         { OPENAI_API_KEY: "test-openai-key" },
         Effect.gen(function* () {
           const calls: string[] = [];
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions({
             makeDriverPmAdapterOverride: (() =>
               Effect.sync(() => {
                 calls.push("create");
@@ -1389,18 +1377,12 @@ describe("PmRuntime", () => {
                   }),
                   prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
                   followUp: () => Effect.void,
-                  compact: () =>
-                    Effect.succeed({
-                      summary: "summary",
-                      firstKeptEntryId: "entry-1",
-                      tokensBefore: 1,
-                    }),
                   setModel: () => Effect.void,
                   setResources: () => Effect.void,
                   abort: Effect.void,
                 };
               })) satisfies NonNullable<
-              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+              Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
             >["makeDriverPmAdapterOverride"],
           });
 
@@ -1432,7 +1414,7 @@ describe("PmRuntime", () => {
         { OPENAI_API_KEY: "test-openai-key" },
         Effect.gen(function* () {
           const events = yield* Queue.unbounded<AgentHarnessEvent>();
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions({
             makeDriverPmAdapterOverride: (() =>
               Effect.succeed({
                 events: Stream.fromQueue(events),
@@ -1457,17 +1439,11 @@ describe("PmRuntime", () => {
                     return assistant;
                   }),
                 followUp: () => Effect.void,
-                compact: () =>
-                  Effect.succeed({
-                    summary: "summary",
-                    firstKeptEntryId: "entry-1",
-                    tokensBefore: 1,
-                  }),
                 setModel: () => Effect.void,
                 setResources: () => Effect.void,
                 abort: Effect.void,
               })) satisfies NonNullable<
-              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+              Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
             >["makeDriverPmAdapterOverride"],
           });
 
@@ -1505,115 +1481,103 @@ describe("PmRuntime", () => {
     );
   });
 
-  it.effect(
-    "applies same-provider PM model changes in place after the current turn and compaction",
-    () =>
-      Effect.scoped(
-        withEnvVars(
-          { OPENAI_API_KEY: "test-openai-key" },
-          Effect.gen(function* () {
-            const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
-            const calls: string[] = [];
-            const promptEntered = yield* Deferred.make<void>();
-            const releasePrompt = yield* Deferred.make<void>();
-            const eventSeen = yield* Deferred.make<void>();
-            const modelSwitched = yield* Deferred.make<void>();
+  it.effect("applies same-provider PM model changes in place after the current turn", () =>
+    Effect.scoped(
+      withEnvVars(
+        { OPENAI_API_KEY: "test-openai-key" },
+        Effect.gen(function* () {
+          const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+          const calls: string[] = [];
+          const promptEntered = yield* Deferred.make<void>();
+          const releasePrompt = yield* Deferred.make<void>();
+          const eventSeen = yield* Deferred.make<void>();
+          const modelSwitched = yield* Deferred.make<void>();
 
-            yield* Effect.gen(function* () {
-              const factory = yield* makePiProjectRuntimeFactoryWithOptions({
-                makeDriverPmAdapterOverride: ((_options: DriverPmAdapterOptions) =>
-                  Effect.succeed({
-                    events: Stream.empty,
-                    isIdle: Effect.succeed(true),
-                    latestAssistantUsage: Effect.sync(() => undefined),
-                    waitForIdle: Effect.sync(() => {
-                      calls.push("waitForIdle");
+          yield* Effect.gen(function* () {
+            const factory = yield* makePmProjectRuntimeFactoryWithOptions({
+              makeDriverPmAdapterOverride: ((_options: DriverPmAdapterOptions) =>
+                Effect.succeed({
+                  events: Stream.empty,
+                  isIdle: Effect.succeed(true),
+                  latestAssistantUsage: Effect.sync(() => undefined),
+                  waitForIdle: Effect.sync(() => {
+                    calls.push("waitForIdle");
+                  }),
+                  prompt: () =>
+                    Effect.gen(function* () {
+                      calls.push("prompt:start");
+                      yield* Deferred.succeed(promptEntered, void 0);
+                      yield* Deferred.await(releasePrompt);
+                      calls.push("prompt:end");
+                      return fauxAssistantMessage("ok");
                     }),
-                    prompt: () =>
-                      Effect.gen(function* () {
-                        calls.push("prompt:start");
-                        yield* Deferred.succeed(promptEntered, void 0);
-                        yield* Deferred.await(releasePrompt);
-                        calls.push("prompt:end");
-                        return fauxAssistantMessage("ok");
-                      }),
-                    followUp: () => Effect.void,
-                    compact: () =>
-                      Effect.sync(() => {
-                        calls.push("compact");
-                        return {
-                          summary: "summary",
-                          firstKeptEntryId: "entry-1",
-                          tokensBefore: 1,
-                        };
-                      }),
-                    setModel: (model) =>
-                      Effect.gen(function* () {
-                        calls.push(`setModel:${model.id}`);
-                        yield* Deferred.succeed(modelSwitched, void 0);
-                      }),
-                    setResources: () => Effect.void,
-                    abort: Effect.void,
-                  })) satisfies NonNullable<
-                  Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
-                >["makeDriverPmAdapterOverride"],
-              });
+                  followUp: () => Effect.void,
+                  setModel: (model) =>
+                    Effect.gen(function* () {
+                      calls.push(`setModel:${model.id}`);
+                      yield* Deferred.succeed(modelSwitched, void 0);
+                    }),
+                  setResources: () => Effect.void,
+                  abort: Effect.void,
+                })) satisfies NonNullable<
+                Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
+              >["makeDriverPmAdapterOverride"],
+            });
 
-              const runtime = yield* factory.getOrCreate(
-                projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
-              );
-              yield* runtime.enqueue("stage result");
-              const drain = yield* runtime.drain.pipe(Effect.forkScoped);
-              yield* Deferred.await(promptEntered);
-
-              yield* Queue.offer(
-                domainEvents,
-                projectMetaUpdatedEvent({
-                  sequence: 101,
-                  instanceId: "claudeAgent",
-                  model: "claude-opus-4-8",
-                }),
-              );
-              yield* Deferred.await(eventSeen);
-              yield* Effect.yieldNow;
-              yield* Effect.yieldNow;
-
-              assert.deepStrictEqual(calls, ["prompt:start"]);
-
-              yield* Deferred.succeed(releasePrompt, void 0);
-              yield* Fiber.join(drain);
-              yield* Deferred.await(modelSwitched);
-
-              assert.deepStrictEqual(calls, [
-                "prompt:start",
-                "prompt:end",
-                "waitForIdle",
-                "compact",
-                "setModel:claude-opus-4-8",
-              ]);
-              yield* Queue.shutdown(domainEvents);
-            }).pipe(
-              Effect.provide(
-                makeFactoryCaptureLayer({
-                  streamDomainEvents: Stream.fromQueue(domainEvents).pipe(
-                    Stream.tap(() => Deferred.succeed(eventSeen, void 0)),
-                  ),
-                }),
-              ),
+            const runtime = yield* factory.getOrCreate(
+              projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
             );
-          }),
-        ),
+            yield* runtime.enqueue("stage result");
+            const drain = yield* runtime.drain.pipe(Effect.forkScoped);
+            yield* Deferred.await(promptEntered);
+
+            yield* Queue.offer(
+              domainEvents,
+              projectMetaUpdatedEvent({
+                sequence: 101,
+                instanceId: "claudeAgent",
+                model: "claude-opus-4-8",
+              }),
+            );
+            yield* Deferred.await(eventSeen);
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+
+            assert.deepStrictEqual(calls, ["prompt:start"]);
+
+            yield* Deferred.succeed(releasePrompt, void 0);
+            yield* Fiber.join(drain);
+            yield* Deferred.await(modelSwitched);
+
+            assert.deepStrictEqual(calls, [
+              "prompt:start",
+              "prompt:end",
+              "waitForIdle",
+              "setModel:claude-opus-4-8",
+            ]);
+            yield* Queue.shutdown(domainEvents);
+          }).pipe(
+            Effect.provide(
+              makeFactoryCaptureLayer({
+                streamDomainEvents: Stream.fromQueue(domainEvents).pipe(
+                  Stream.tap(() => Deferred.succeed(eventSeen, void 0)),
+                ),
+              }),
+            ),
+          );
+        }),
       ),
+    ),
   );
 
-  it.effect("still switches the PM model when compact-first fails", () =>
+  it.effect("switches the PM model in place after the adapter is idle", () =>
     Effect.scoped(
       withEnvVars(
         { OPENAI_API_KEY: "test-openai-key" },
         Effect.gen(function* () {
           const calls: string[] = [];
           const modelSwitched = yield* Deferred.make<void>();
-          const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions({
             makeDriverPmAdapterOverride: (() =>
               Effect.succeed({
                 events: Stream.empty,
@@ -1624,15 +1588,6 @@ describe("PmRuntime", () => {
                 }),
                 prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
                 followUp: () => Effect.void,
-                compact: () =>
-                  Effect.gen(function* () {
-                    calls.push("compact");
-                    return yield* new PmRuntimeError({
-                      operation: "PiAgentAdapter.compact",
-                      detail: "PM compaction failed.",
-                      cause: new Error("compact failed"),
-                    });
-                  }),
                 setModel: (model) =>
                   Effect.gen(function* () {
                     calls.push(`setModel:${model.id}`);
@@ -1641,14 +1596,14 @@ describe("PmRuntime", () => {
                 setResources: () => Effect.void,
                 abort: Effect.void,
               })) satisfies NonNullable<
-              Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+              Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
             >["makeDriverPmAdapterOverride"],
           });
 
           yield* factory.getOrCreate(projectWithPmModel("claudeAgent", "claude-sonnet-4-6"));
           yield* Deferred.await(modelSwitched);
 
-          assert.deepStrictEqual(calls, ["waitForIdle", "compact", "setModel:claude-opus-4-8"]);
+          assert.deepStrictEqual(calls, ["waitForIdle", "setModel:claude-opus-4-8"]);
         }).pipe(
           Effect.provide(
             makeFactoryCaptureLayer({
@@ -1675,7 +1630,7 @@ describe("PmRuntime", () => {
           const calls: string[] = [];
           const eventSeen = yield* Deferred.make<void>();
           yield* Effect.gen(function* () {
-            const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+            const factory = yield* makePmProjectRuntimeFactoryWithOptions({
               makeDriverPmAdapterOverride: (() =>
                 Effect.succeed({
                   events: Stream.empty,
@@ -1686,15 +1641,6 @@ describe("PmRuntime", () => {
                   }),
                   prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
                   followUp: () => Effect.void,
-                  compact: () =>
-                    Effect.sync(() => {
-                      calls.push("compact");
-                      return {
-                        summary: "summary",
-                        firstKeptEntryId: "entry-1",
-                        tokensBefore: 1,
-                      };
-                    }),
                   setModel: (model) =>
                     Effect.sync(() => {
                       calls.push(`setModel:${model.id}`);
@@ -1702,7 +1648,7 @@ describe("PmRuntime", () => {
                   setResources: () => Effect.void,
                   abort: Effect.void,
                 })) satisfies NonNullable<
-                Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+                Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
               >["makeDriverPmAdapterOverride"],
             });
 
@@ -1740,7 +1686,7 @@ describe("PmRuntime", () => {
       Effect.gen(function* () {
         const captured: string[] = [];
         const invalidated = yield* Deferred.make<void>();
-        const factory = yield* makePiProjectRuntimeFactoryWithOptions({
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
           makeDriverPmAdapterOverride: ((options: DriverPmAdapterOptions) =>
             Effect.sync(() => {
               captured.push(`${options.modelSelection.instanceId}:${options.modelSelection.model}`);
@@ -1751,18 +1697,12 @@ describe("PmRuntime", () => {
                 waitForIdle: Deferred.succeed(invalidated, void 0).pipe(Effect.asVoid),
                 prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
                 followUp: () => Effect.void,
-                compact: () =>
-                  Effect.succeed({
-                    summary: "summary",
-                    firstKeptEntryId: "entry-1",
-                    tokensBefore: 1,
-                  }),
                 setModel: () => Effect.void,
                 setResources: () => Effect.void,
                 abort: Effect.void,
               };
             })) satisfies NonNullable<
-            Parameters<typeof makePiProjectRuntimeFactoryWithOptions>[0]
+            Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
           >["makeDriverPmAdapterOverride"],
         });
 

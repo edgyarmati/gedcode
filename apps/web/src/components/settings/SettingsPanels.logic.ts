@@ -108,7 +108,6 @@ export interface OrchestratorGlobalDefaultsDraft {
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
   readonly resourceDefaults: OrchestratorGlobalResourceDefaultsDraft;
-  readonly autoCompaction: OrchestratorGlobalAutoCompactionDraft;
 }
 
 export interface OrchestratorGlobalResourceDefaultsDraft {
@@ -125,13 +124,6 @@ export type OrchestratorGlobalNumberDefaultKey = Exclude<
   keyof OrchestratorGlobalResourceDefaultsDraft,
   "allowFullAccessWorkers"
 >;
-
-export interface OrchestratorGlobalAutoCompactionDraft {
-  readonly enabled: boolean;
-  readonly reserveTokens: number;
-  readonly keepRecentTokens: number;
-  readonly customInstructions?: string;
-}
 
 const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults;
 
@@ -172,20 +164,6 @@ export function seedOrchestratorGlobalDefaultsDraft(
         defaults.allowFullAccessWorkers ??
         DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.allowFullAccessWorkers,
     },
-    autoCompaction: {
-      enabled:
-        defaults.autoCompaction?.enabled ??
-        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.autoCompaction.enabled,
-      reserveTokens:
-        defaults.autoCompaction?.reserveTokens ??
-        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.autoCompaction.reserveTokens,
-      keepRecentTokens:
-        defaults.autoCompaction?.keepRecentTokens ??
-        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.autoCompaction.keepRecentTokens,
-      ...(defaults.autoCompaction?.customInstructions !== undefined
-        ? { customInstructions: defaults.autoCompaction.customInstructions }
-        : {}),
-    },
   };
 }
 
@@ -217,14 +195,6 @@ export function buildOrchestratorGlobalDefaultsPatch(
       openPrAsDraft: draft.openPrAsDraft,
       pmModelSelection: draft.pmModelSelection,
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
-      autoCompaction: {
-        enabled: draft.autoCompaction.enabled,
-        reserveTokens: draft.autoCompaction.reserveTokens,
-        keepRecentTokens: draft.autoCompaction.keepRecentTokens,
-        ...(draft.autoCompaction.customInstructions !== undefined
-          ? { customInstructions: draft.autoCompaction.customInstructions }
-          : {}),
-      },
       allowFullAccessWorkers: draft.resourceDefaults.allowFullAccessWorkers,
     },
   };

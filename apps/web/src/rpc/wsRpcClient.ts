@@ -129,13 +129,6 @@ export interface WsRpcClient {
     readonly updateSettings: (
       patch: ServerSettingsPatch,
     ) => ReturnType<RpcUnaryMethod<typeof WS_METHODS.serverUpdateSettings>>;
-    readonly listPiProviderCatalog: RpcUnaryNoArgMethod<
-      typeof WS_METHODS.serverListPiProviderCatalog
-    >;
-    readonly listPiProviderModels: RpcUnaryMethod<typeof WS_METHODS.serverListPiProviderModels>;
-    readonly startPiOAuthLogin: RpcUnaryMethod<typeof WS_METHODS.serverStartPiOAuthLogin>;
-    readonly completePiOAuthLogin: RpcUnaryMethod<typeof WS_METHODS.serverCompletePiOAuthLogin>;
-    readonly cancelPiOAuthLogin: RpcUnaryMethod<typeof WS_METHODS.serverCancelPiOAuthLogin>;
     readonly discoverSourceControl: RpcUnaryNoArgMethod<
       typeof WS_METHODS.serverDiscoverSourceControl
     >;
@@ -280,16 +273,6 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       getSettings: () => transport.request((client) => client[WS_METHODS.serverGetSettings]({})),
       updateSettings: (patch) =>
         transport.request((client) => client[WS_METHODS.serverUpdateSettings]({ patch })),
-      listPiProviderCatalog: () =>
-        transport.request((client) => client[WS_METHODS.serverListPiProviderCatalog]({})),
-      listPiProviderModels: (input) =>
-        transport.request((client) => client[WS_METHODS.serverListPiProviderModels](input)),
-      startPiOAuthLogin: (input) =>
-        transport.request((client) => client[WS_METHODS.serverStartPiOAuthLogin](input)),
-      completePiOAuthLogin: (input) =>
-        transport.request((client) => client[WS_METHODS.serverCompletePiOAuthLogin](input)),
-      cancelPiOAuthLogin: (input) =>
-        transport.request((client) => client[WS_METHODS.serverCancelPiOAuthLogin](input)),
       discoverSourceControl: () =>
         transport.request((client) => client[WS_METHODS.serverDiscoverSourceControl]({})),
       getTraceDiagnostics: () =>

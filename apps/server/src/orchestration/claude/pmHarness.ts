@@ -5,7 +5,7 @@ import type {
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
-import type { PmRuntimeError } from "../pi/Errors.ts";
+import type { PmRuntimeError } from "../pm/Errors.ts";
 
 export interface TextContent {
   readonly type: "text";
@@ -163,13 +163,6 @@ export interface AgentHarnessResources<
   readonly skills?: ReadonlyArray<TSkill>;
 }
 
-export interface CompactResult<TDetails = unknown> {
-  readonly summary: string;
-  readonly firstKeptEntryId: string;
-  readonly tokensBefore: number;
-  readonly details?: TDetails;
-}
-
 export interface ModelDescriptor<TApi extends string = string> {
   readonly id: string;
   readonly name?: string;
@@ -271,7 +264,6 @@ export type PmAdapterShape = {
     text: string,
     options?: { readonly images?: ReadonlyArray<ImageContent> },
   ) => Effect.Effect<void, PmRuntimeError>;
-  readonly compact: (customInstructions?: string) => Effect.Effect<CompactResult, PmRuntimeError>;
   readonly setModel: (model: ModelDescriptor) => Effect.Effect<void, PmRuntimeError>;
   readonly setResources: (resources: AgentHarnessResources) => Effect.Effect<void, PmRuntimeError>;
   readonly abort: Effect.Effect<void, PmRuntimeError>;

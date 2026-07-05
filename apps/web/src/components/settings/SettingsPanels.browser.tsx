@@ -10,8 +10,6 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateState,
   type LocalApi,
-  PiOAuthLoginSessionId,
-  PiProviderId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerConfig,
@@ -39,7 +37,6 @@ import { resetServerStateForTests, setServerConfigSnapshot } from "../../rpc/ser
 import { useUiStateStore } from "../../uiStateStore";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { DiagnosticsSettingsPanel } from "./DiagnosticsSettings";
-import { PiOAuthLoginDialog } from "./PiProviderSettings";
 import { GeneralSettingsPanel, ProviderSettingsPanel } from "./SettingsPanels";
 import { SourceControlSettingsPanel } from "./SourceControlSettings";
 
@@ -150,13 +147,6 @@ const authAccessHarness = vi.hoisted(() => {
 });
 
 const mockConnectDesktopSshEnvironment = vi.hoisted(() => vi.fn());
-const piProviderRpcMocks = vi.hoisted(() => ({
-  listPiProviderCatalog: vi.fn(),
-  startPiOAuthLogin: vi.fn(),
-  completePiOAuthLogin: vi.fn(),
-  cancelPiOAuthLogin: vi.fn(),
-  updateSettings: vi.fn(),
-}));
 
 vi.mock("../../environments/runtime", () => {
   const primaryConnection = {
@@ -176,11 +166,6 @@ vi.mock("../../environments/runtime", () => {
       server: {
         subscribeAuthAccess: (listener: Parameters<typeof authAccessHarness.subscribe>[0]) =>
           authAccessHarness.subscribe(listener),
-        updateSettings: piProviderRpcMocks.updateSettings,
-        listPiProviderCatalog: piProviderRpcMocks.listPiProviderCatalog,
-        startPiOAuthLogin: piProviderRpcMocks.startPiOAuthLogin,
-        completePiOAuthLogin: piProviderRpcMocks.completePiOAuthLogin,
-        cancelPiOAuthLogin: piProviderRpcMocks.cancelPiOAuthLogin,
       },
     },
     ensureBootstrapped: async () => undefined,
@@ -512,16 +497,6 @@ describe("GeneralSettingsPanel observability", () => {
     useUiStateStore.setState({ defaultAdvertisedEndpointKey: null });
     authAccessHarness.reset();
     mockConnectDesktopSshEnvironment.mockReset();
-    piProviderRpcMocks.listPiProviderCatalog.mockReset();
-    piProviderRpcMocks.startPiOAuthLogin.mockReset();
-    piProviderRpcMocks.completePiOAuthLogin.mockReset();
-    piProviderRpcMocks.cancelPiOAuthLogin.mockReset();
-    piProviderRpcMocks.updateSettings.mockReset();
-    piProviderRpcMocks.listPiProviderCatalog.mockResolvedValue({ providers: [] });
-    piProviderRpcMocks.updateSettings.mockImplementation(async (patch) => ({
-      ...DEFAULT_SERVER_SETTINGS,
-      ...patch,
-    }));
   });
 
   afterEach(async () => {
@@ -605,212 +580,6 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(page.getByRole("heading", { name: "Remote environments", exact: true }))
       .toBeInTheDocument();
-  });
-
-  it("renders pi provider settings and dispatches whole-map enable patches", async () => {
-    Reflect.deleteProperty(window, "desktopBridge");
-    const openrouter = PiProviderId.make("openrouter");
-    const anthropic = PiProviderId.make("anthropic");
-    const bedrock = PiProviderId.make("amazon-bedrock");
-    piProviderRpcMocks.listPiProviderCatalog.mockResolvedValue({
-      providers: [
-        {
-          id: openrouter,
-          displayName: "OpenRouter",
-          kind: "apiKey",
-          envKeys: ["OPENROUTER_API_KEY"],
-          configured: true,
-          enabled: true,
-        },
-        {
-          id: anthropic,
-          displayName: "Anthropic",
-          kind: "oauth",
-          configured: false,
-          enabled: false,
-        },
-        {
-          id: bedrock,
-          displayName: "Amazon Bedrock",
-          kind: "ambient",
-          configured: false,
-          enabled: false,
-        },
-      ],
-    });
-    setServerConfigSnapshot({
-      ...createBaseServerConfig(),
-      settings: {
-        ...DEFAULT_SERVER_SETTINGS,
-        piProviders: {
-          [openrouter]: {
-            enabled: true,
-            apiKey: { value: "", valueRedacted: true },
-          },
-          [anthropic]: {
-            enabled: false,
-            oauth: { connected: true, expiresAt: 1_800_000_000_000 },
-          },
-        },
-      },
-    });
-
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <ConnectionsSettings />
-      </AppAtomRegistryProvider>,
-    );
-
-    await expect
-      .element(page.getByRole("heading", { name: "PM model providers (pi)", exact: true }))
-      .toBeInTheDocument();
-    await expect.element(page.getByText("OpenRouter", { exact: true })).toBeInTheDocument();
-    await expect
-      .element(page.getByPlaceholder("Stored secret - enter a new value to replace"))
-      .toBeInTheDocument();
-    await expect
-      .element(page.getByText("Detected environment variable: OPENROUTER_API_KEY"))
-      .toBeInTheDocument();
-    await expect.element(page.getByRole("button", { name: "Connect" })).toBeInTheDocument();
-
-    await page.getByLabelText("Enable Amazon Bedrock for PM picker").click();
-
-    await expect.poll(() => piProviderRpcMocks.updateSettings.mock.calls.length).toBeGreaterThan(0);
-    expect(piProviderRpcMocks.updateSettings).toHaveBeenCalledWith({
-      piProviders: {
-        [openrouter]: {
-          enabled: true,
-          apiKey: { value: "", valueRedacted: true },
-        },
-        [anthropic]: {
-          enabled: false,
-          oauth: { connected: true, expiresAt: 1_800_000_000_000 },
-        },
-        [bedrock]: {
-          enabled: true,
-        },
-      },
-    });
-  });
-
-  it("marks pi OAuth login connected when live settings report listener completion", async () => {
-    const anthropic = PiProviderId.make("anthropic");
-    const onConnected = vi.fn();
-    const onClose = vi.fn();
-    piProviderRpcMocks.startPiOAuthLogin.mockResolvedValue({
-      sessionId: PiOAuthLoginSessionId.make("pi-oauth-session"),
-      provider: anthropic,
-      authUrl: "https://auth.example.test/anthropic",
-    });
-    setServerConfigSnapshot({
-      ...createBaseServerConfig(),
-      settings: {
-        ...DEFAULT_SERVER_SETTINGS,
-        piProviders: {
-          [anthropic]: {
-            enabled: true,
-          },
-        },
-      },
-    });
-
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <PiOAuthLoginDialog
-          entry={{
-            id: anthropic,
-            displayName: "Anthropic",
-            kind: "oauth",
-            configured: false,
-            enabled: true,
-          }}
-          onClose={onClose}
-          onConnected={onConnected}
-        />
-      </AppAtomRegistryProvider>,
-    );
-
-    await expect.element(page.getByText("https://auth.example.test/anthropic")).toBeInTheDocument();
-
-    setServerConfigSnapshot({
-      ...createBaseServerConfig(),
-      settings: {
-        ...DEFAULT_SERVER_SETTINGS,
-        piProviders: {
-          [anthropic]: {
-            enabled: true,
-            oauth: { connected: true, expiresAt: 1_800_000_000_000 },
-          },
-        },
-      },
-    });
-
-    await expect.element(page.getByText("Close", { exact: true })).toBeInTheDocument();
-    await expect.element(page.getByText(/^Connected/)).toBeInTheDocument();
-    expect(onConnected).toHaveBeenCalledOnce();
-    expect(piProviderRpcMocks.completePiOAuthLogin).not.toHaveBeenCalled();
-
-    await page.getByText("Close", { exact: true }).click();
-
-    expect(piProviderRpcMocks.cancelPiOAuthLogin).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("keeps manual pi OAuth code completion working", async () => {
-    const githubCopilot = PiProviderId.make("github-copilot");
-    const onConnected = vi.fn();
-    piProviderRpcMocks.startPiOAuthLogin.mockResolvedValue({
-      sessionId: PiOAuthLoginSessionId.make("pi-device-session"),
-      provider: githubCopilot,
-      authUrl: "https://github.com/login/device",
-      deviceCode: {
-        userCode: "ABCD-1234",
-        verificationUri: "https://github.com/login/device",
-      },
-    });
-    piProviderRpcMocks.completePiOAuthLogin.mockResolvedValue({
-      connected: true,
-      provider: githubCopilot,
-      expiresAt: 1_800_000_000_000,
-    });
-    setServerConfigSnapshot({
-      ...createBaseServerConfig(),
-      settings: {
-        ...DEFAULT_SERVER_SETTINGS,
-        piProviders: {
-          [githubCopilot]: {
-            enabled: true,
-          },
-        },
-      },
-    });
-
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <PiOAuthLoginDialog
-          entry={{
-            id: githubCopilot,
-            displayName: "GitHub Copilot",
-            kind: "oauth",
-            configured: false,
-            enabled: true,
-          }}
-          onClose={vi.fn()}
-          onConnected={onConnected}
-        />
-      </AppAtomRegistryProvider>,
-    );
-
-    await expect.element(page.getByText("ABCD-1234")).toBeInTheDocument();
-    await page.getByLabelText("Authorization code").fill("device-code-result");
-    await page.getByRole("button", { name: "Complete" }).click();
-
-    await expect.element(page.getByText("Close", { exact: true })).toBeInTheDocument();
-    expect(piProviderRpcMocks.completePiOAuthLogin).toHaveBeenCalledWith({
-      sessionId: PiOAuthLoginSessionId.make("pi-device-session"),
-      code: "device-code-result",
-    });
-    expect(onConnected).toHaveBeenCalledOnce();
   });
 
   it("hides advertised endpoint rows when desktop network access is disabled", async () => {

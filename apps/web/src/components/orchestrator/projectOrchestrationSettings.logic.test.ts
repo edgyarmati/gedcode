@@ -270,7 +270,7 @@ describe("seedOrchestratorConfigDraft", () => {
     });
   });
 
-  it("treats legacy pi-shaped PM selections as unconfigured", () => {
+  it("treats legacy pi-era PM selections as unconfigured", () => {
     const draft = seedOrchestratorConfigDraft({
       enabled: true,
       pmModelSelection: { piProvider: "openai", model: "gpt-5-pm" },
@@ -445,11 +445,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         pmModelSelection: pmSelection("openai", "gpt-5-pm"),
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
         openPrAsDraft: true,
-        autoCompaction: {
-          enabled: true,
-          reserveTokens: 8_000,
-          keepRecentTokens: 12_000,
-        },
         allowFullAccessWorkers: true,
       }),
     ).toEqual({

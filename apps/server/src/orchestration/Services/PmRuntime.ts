@@ -12,7 +12,7 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 
-import type { PmRuntimeError } from "../pi/Errors.ts";
+import type { PmRuntimeError } from "../pm/Errors.ts";
 
 export interface PmProjectRuntime {
   readonly surfaceUserMessage: (message: string) => Effect.Effect<void, PmRuntimeError>;

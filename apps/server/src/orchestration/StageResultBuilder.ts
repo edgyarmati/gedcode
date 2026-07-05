@@ -39,7 +39,7 @@ const NO_ASSISTANT_TEXT_MARKER = "(no assistant message was projected for this s
 /**
  * Section delimiters for the serialized stage-result envelope. These strings
  * are deliberately distinct from any marker used in PM tool instructions
- * (`apps/server/src/orchestration/pi/pmTools.ts`) so a structured section
+ * (`apps/server/src/orchestration/pm/pmTools.ts`) so a structured section
  * boundary can never be confused with a tool/instruction directive.
  */
 const DIFF_SECTION_OPEN = "----- BEGIN WORKER DIFF (untrusted) -----";
