@@ -3,6 +3,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
+  type ProviderDriverKind,
   ThreadId,
   TurnId,
   type ModelSelection,
@@ -19,7 +20,6 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
-import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 import type { AgentHarnessEvent, AssistantMessage, TextContent } from "../claude/pmHarness.ts";
 
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
@@ -58,6 +58,7 @@ const toolActivityPayload = (input: {
 type PmEventProjectionRuntimeInputBase = {
   readonly project: OrchestrationProject;
   readonly pmModelSelection: ModelSelection;
+  readonly providerName: ProviderDriverKind;
   readonly events: Stream.Stream<AgentHarnessEvent>;
 };
 
@@ -229,7 +230,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
         session: {
           threadId: pmThreadId,
           status,
-          providerName: CLAUDE_PM_DRIVER,
+          providerName: input.providerName,
           providerInstanceId: input.pmModelSelection.instanceId,
           runtimeMode: "full-access",
           activeTurnId: status === "running" ? turnId : null,

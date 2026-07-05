@@ -265,8 +265,9 @@ const stageBlockedEvent: OrchestrationEvent = {
 const makeProviderSession = (
   threadId: ThreadId,
   instanceId: ProviderInstanceId = claudeInstanceId,
+  provider: ProviderDriverKind = claudeDriver,
 ): ProviderSession => ({
-  provider: claudeDriver,
+  provider,
   providerInstanceId: instanceId,
   status: "ready",
   runtimeMode: "approval-required",
@@ -279,18 +280,23 @@ const makeProviderSession = (
 
 const makeFakeClaudeAdapter = (
   input: {
+    readonly provider?: ProviderDriverKind;
     readonly startInputs?: ProviderSessionStartInput[];
     readonly sendTurn?: ClaudeAdapterShape["sendTurn"];
     readonly stopSession?: ClaudeAdapterShape["stopSession"];
   } = {},
 ): ClaudeAdapterShape => ({
-  provider: claudeDriver,
+  provider: input.provider ?? claudeDriver,
   capabilities: { sessionModelSwitch: "in-session" },
   streamEvents: Stream.empty,
   startSession: (sessionInput) =>
     Effect.sync(() => {
       input.startInputs?.push(sessionInput);
-      return makeProviderSession(sessionInput.threadId, sessionInput.providerInstanceId);
+      return makeProviderSession(
+        sessionInput.threadId,
+        sessionInput.providerInstanceId,
+        sessionInput.provider,
+      );
     }),
   sendTurn:
     input.sendTurn ??
@@ -321,7 +327,10 @@ const makeProviderAdapterRegistryLayer = (
   > = new Map([
     [String(claudeInstanceId), { driverKind: claudeDriver, adapter: makeFakeClaudeAdapter() }],
     [String(claudeWorkInstanceId), { driverKind: claudeDriver, adapter: makeFakeClaudeAdapter() }],
-    [String(codexInstanceId), { driverKind: codexDriver, adapter: makeFakeClaudeAdapter() }],
+    [
+      String(codexInstanceId),
+      { driverKind: codexDriver, adapter: makeFakeClaudeAdapter({ provider: codexDriver }) },
+    ],
   ]),
 ) =>
   Layer.succeed(ProviderAdapterRegistry, {
@@ -936,7 +945,7 @@ describe("PmRuntime", () => {
           instanceId: claudeInstanceId,
           model: "claude-opus-4-8",
         });
-        assert.strictEqual(captured[0]?.claudeAdapter.provider, claudeDriver);
+        assert.strictEqual(captured[0]?.providerAdapter.provider, claudeDriver);
       }).pipe(
         Effect.provide(
           makeFactoryCaptureLayer({
@@ -1074,6 +1083,32 @@ describe("PmRuntime", () => {
           }),
         ),
       ),
+    ),
+  );
+
+  it.effect("constructs the PM adapter for a Codex PM instance", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const captured: DriverPmAdapterOptions[] = [];
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
+        });
+
+        yield* factory.getOrCreate(projectWithPmModel("codex", "gpt-5-codex"));
+
+        assert.strictEqual(captured.length, 1);
+        assert.strictEqual(captured[0]?.driverKind, codexDriver);
+        assert.strictEqual(captured[0]?.providerAdapter.provider, codexDriver);
+        assert.deepStrictEqual(captured[0]?.modelSelection, {
+          instanceId: codexInstanceId,
+          model: "gpt-5-codex",
+        });
+        assert.include(
+          captured[0]?.systemPrompt ?? "",
+          "For decisions, ask in plain text and end your turn.",
+        );
+        assert.notInclude(captured[0]?.systemPrompt ?? "", "interactive question tool");
+      }).pipe(Effect.provide(makeFactoryCaptureLayer())),
     ),
   );
 
@@ -1355,6 +1390,59 @@ describe("PmRuntime", () => {
     ),
   );
 
+  it.effect("clears Codex PM driver session state", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stopSessionCalls: ThreadId[] = [];
+        const directory = makeMemoryProviderSessionDirectory();
+        const threadId = pmThreadIdForProject(project);
+        const codexAdapter = makeFakeClaudeAdapter({
+          provider: codexDriver,
+          stopSession: (stoppedThreadId) =>
+            Effect.sync(() => {
+              stopSessionCalls.push(stoppedThreadId);
+            }),
+        });
+
+        yield* Effect.gen(function* () {
+          const providerSessionDirectory = yield* ProviderSessionDirectory;
+          yield* providerSessionDirectory.upsert({
+            threadId,
+            provider: codexDriver,
+            providerInstanceId: codexInstanceId,
+            status: "running",
+            runtimeMode: "full-access",
+            resumeCursor: { threadId: "previous-codex-thread" },
+          });
+
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions();
+          yield* factory.clearSessionStorage(projectWithPmModel("codex", "gpt-5-codex"));
+
+          const clearedBindingOption = yield* providerSessionDirectory.getBinding(threadId);
+          assert.isTrue(Option.isSome(clearedBindingOption));
+          if (Option.isNone(clearedBindingOption)) {
+            return;
+          }
+          const clearedBinding = clearedBindingOption.value;
+          assert.deepStrictEqual(stopSessionCalls, [threadId]);
+          assert.strictEqual(clearedBinding.provider, codexDriver);
+          assert.strictEqual(clearedBinding.providerInstanceId, codexInstanceId);
+          assert.strictEqual(clearedBinding.status, "stopped");
+          assert.strictEqual(clearedBinding.resumeCursor, null);
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              providerSessionDirectory: directory.service,
+              providerInstances: new Map([
+                [String(codexInstanceId), { driverKind: codexDriver, adapter: codexAdapter }],
+              ]),
+            }),
+          ),
+        );
+      }),
+    ),
+  );
+
   it.effect("surfaces failed PM driver turns as PM-thread error activities", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1433,8 +1521,10 @@ describe("PmRuntime", () => {
     ),
   );
 
-  it.effect("rejects non-Claude PM provider instances with a clear typed error", () =>
-    Effect.scoped(
+  it.effect("rejects unsupported PM provider instances with a clear typed error", () => {
+    const opencodeDriver = ProviderDriverKind.make("opencode");
+    const opencodeInstanceId = ProviderInstanceId.make("opencode");
+    return Effect.scoped(
       Effect.gen(function* () {
         const captured: DriverPmAdapterOptions[] = [];
         const factory = yield* makePmProjectRuntimeFactoryWithOptions({
@@ -1442,18 +1532,32 @@ describe("PmRuntime", () => {
         });
 
         const error = yield* factory
-          .getOrCreate(projectWithPmModel("codex", "gpt-5-codex"))
+          .getOrCreate(projectWithPmModel("opencode", "opencode-model"))
           .pipe(Effect.flip);
 
         assert.instanceOf(error, PmRuntimeError);
         assert.match(
           error.detail,
-          /The orchestrator PM currently requires a Claude provider instance; Codex support is coming/,
+          /The orchestrator PM requires a Claude or Codex provider instance/,
         );
         assert.strictEqual(captured.length, 0);
-      }).pipe(Effect.provide(makeFactoryCaptureLayer())),
-    ),
-  );
+      }).pipe(
+        Effect.provide(
+          makeFactoryCaptureLayer({
+            providerInstances: new Map([
+              [
+                String(opencodeInstanceId),
+                {
+                  driverKind: opencodeDriver,
+                  adapter: makeFakeClaudeAdapter({ provider: opencodeDriver }),
+                },
+              ],
+            ]),
+          }),
+        ),
+      ),
+    );
+  });
 
   it("omits PM harness resources when no configured playbook resolves", () => {
     assert.strictEqual(resolvePmHarnessResources(["unknown"]), undefined);
@@ -2463,8 +2567,8 @@ diff --git a/.env b/.env
 });
 
 describe("buildPmSystemPrompt", () => {
-  it("scopes the prompt to the project and forbids asking for ids", () => {
-    const prompt = buildPmSystemPrompt(project);
+  it("scopes the Claude prompt to the project and keeps the interactive question guidance", () => {
+    const prompt = buildPmSystemPrompt(project, claudeDriver);
     assert.include(prompt, String(project.id));
     assert.include(prompt, "Project");
     assert.include(prompt, "/tmp/project");
@@ -2479,5 +2583,15 @@ describe("buildPmSystemPrompt", () => {
     assert.notInclude(prompt, "NO shell");
     // Role guidance is preserved.
     assert.include(prompt, "classify");
+    assert.include(prompt, "Use the interactive question tool");
+    assert.notInclude(prompt, "For decisions, ask in plain text and end your turn.");
+  });
+
+  it("uses plain-text decision guidance for Codex PM prompts", () => {
+    const prompt = buildPmSystemPrompt(project, codexDriver);
+
+    assert.include(prompt, String(project.id));
+    assert.include(prompt, "For decisions, ask in plain text and end your turn.");
+    assert.notInclude(prompt, "Use the interactive question tool");
   });
 });

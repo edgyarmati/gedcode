@@ -1,6 +1,7 @@
 import {
   type ModelSelection,
   type OrchestrationProject,
+  type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ThreadTokenUsageSnapshot,
   type TurnId,
@@ -13,11 +14,11 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
+import type { ProviderAdapterError } from "../../provider/Errors.ts";
+import type { ProviderAdapterShape } from "../../provider/Services/ProviderAdapter.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pm/PmEventProjection.ts";
-import { CLAUDE_PM_DRIVER } from "./constants.ts";
 import type {
   AgentHarnessEvent,
   AgentHarnessResources,
@@ -29,8 +30,6 @@ import type {
   Usage,
 } from "./pmHarness.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME } from "./pmMcpServer.ts";
-
-const CLAUDE_PROVIDER = CLAUDE_PM_DRIVER;
 
 const zeroUsage = (): Usage => ({
   input: 0,
@@ -47,7 +46,15 @@ const zeroUsage = (): Usage => ({
   },
 });
 
+const assistantMessageProviderFields = (
+  driverKind: ProviderDriverKind,
+): Pick<AssistantMessage, "api" | "provider"> =>
+  driverKind === "codex"
+    ? { api: "codex-app-server", provider: "openai" }
+    : { api: "anthropic-messages", provider: "anthropic" };
+
 const assistantMessage = (input: {
+  readonly driverKind: ProviderDriverKind;
   readonly text: string;
   readonly model: string;
   readonly usage?: Usage | undefined;
@@ -56,8 +63,7 @@ const assistantMessage = (input: {
 }): AssistantMessage => ({
   role: "assistant",
   content: input.text.length > 0 ? [{ type: "text", text: input.text }] : [],
-  api: "anthropic-messages",
-  provider: "anthropic",
+  ...assistantMessageProviderFields(input.driverKind),
   model: input.model,
   usage: input.usage ?? zeroUsage(),
   stopReason: input.stopReason ?? "stop",
@@ -203,8 +209,8 @@ type ActiveTool = {
   readonly includeResultDetails: boolean;
 };
 
-export type DriverPmClaudeAdapter = Pick<
-  ClaudeAdapterShape,
+export type DriverPmProviderAdapter = Pick<
+  ProviderAdapterShape<ProviderAdapterError>,
   | "provider"
   | "startSession"
   | "sendTurn"
@@ -216,7 +222,8 @@ export type DriverPmClaudeAdapter = Pick<
 
 export interface DriverPmAdapterOptions {
   readonly project: OrchestrationProject;
-  readonly claudeAdapter: DriverPmClaudeAdapter;
+  readonly driverKind: ProviderDriverKind;
+  readonly providerAdapter: DriverPmProviderAdapter;
   readonly runtimeEvents: Stream.Stream<ProviderRuntimeEvent>;
   readonly modelSelection: ModelSelection;
   readonly systemPrompt?: string;
@@ -247,14 +254,14 @@ export const makeDriverPmAdapter = (
       Queue.offer(eventQueue, event).pipe(Effect.asVoid);
 
     const persistSession = Effect.gen(function* () {
-      const sessions = yield* options.claudeAdapter.listSessions();
+      const sessions = yield* options.providerAdapter.listSessions();
       const session = sessions.find((candidate) => candidate.threadId === threadId);
       if (!session) {
         return;
       }
       yield* directory.upsert({
         threadId,
-        provider: CLAUDE_PROVIDER,
+        provider: options.driverKind,
         providerInstanceId: options.modelSelection.instanceId,
         status: session.status === "closed" ? "stopped" : "running",
         runtimeMode: "full-access",
@@ -262,7 +269,7 @@ export const makeDriverPmAdapter = (
       });
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.logWarning("Driver PM adapter failed to persist Claude resume cursor", {
+        Effect.logWarning("Driver PM adapter failed to persist provider resume cursor", {
           projectId: String(options.project.id),
           cause,
         }),
@@ -287,6 +294,7 @@ export const makeDriverPmAdapter = (
         yield* offer({
           type: "message_start",
           message: assistantMessage({
+            driverKind: options.driverKind,
             text: "",
             model: selection.model,
             usage: yield* Ref.get(latestUsage),
@@ -308,6 +316,7 @@ export const makeDriverPmAdapter = (
         const selection = yield* Ref.get(currentModelSelection);
         const usage = yield* Ref.get(latestUsage);
         const message = assistantMessage({
+          driverKind: options.driverKind,
           text: active.text,
           model: selection.model,
           usage,
@@ -352,6 +361,7 @@ export const makeDriverPmAdapter = (
             yield* Ref.set(activeAssistant, next);
             const selection = yield* Ref.get(currentModelSelection);
             const message = assistantMessage({
+              driverKind: options.driverKind,
               text: next.text,
               model: selection.model,
               usage: yield* Ref.get(latestUsage),
@@ -468,7 +478,7 @@ export const makeDriverPmAdapter = (
                 createdAt: event.createdAt,
                 reason:
                   event.payload.errorMessage ??
-                  (interrupted ? "Claude PM turn was interrupted." : "Claude PM turn failed."),
+                  (interrupted ? "Driver PM turn was interrupted." : "Driver PM turn failed."),
               });
             }
             const completedMessage =
@@ -478,6 +488,7 @@ export const makeDriverPmAdapter = (
                 errorMessage: event.payload.errorMessage,
               })) ??
               assistantMessage({
+                driverKind: options.driverKind,
                 text: "",
                 model: (yield* Ref.get(currentModelSelection)).model,
                 usage: yield* Ref.get(latestUsage),
@@ -507,7 +518,7 @@ export const makeDriverPmAdapter = (
                   promptState.deferred,
                   new PmRuntimeError({
                     operation: "DriverPmAdapter.prompt",
-                    detail: event.payload.errorMessage ?? "Claude PM turn failed.",
+                    detail: event.payload.errorMessage ?? "Driver PM turn failed.",
                   }),
                 );
               } else {
@@ -547,7 +558,7 @@ export const makeDriverPmAdapter = (
         }
       }).pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("Driver PM adapter failed to bridge Claude event", {
+          Effect.logWarning("Driver PM adapter failed to bridge provider event", {
             projectId: String(options.project.id),
             eventType: event.type,
             cause,
@@ -565,14 +576,14 @@ export const makeDriverPmAdapter = (
         .getBinding(threadId)
         .pipe(Effect.map(Option.getOrUndefined));
       const persistedResumeCursor =
-        existing?.provider === CLAUDE_PROVIDER &&
+        existing?.provider === options.driverKind &&
         existing.providerInstanceId === options.modelSelection.instanceId
           ? existing.resumeCursor
           : undefined;
       const selection = yield* Ref.get(currentModelSelection);
-      const session = yield* options.claudeAdapter.startSession({
+      const session = yield* options.providerAdapter.startSession({
         threadId,
-        provider: CLAUDE_PROVIDER,
+        provider: options.driverKind,
         providerInstanceId: selection.instanceId,
         cwd: options.project.workspaceRoot,
         modelSelection: selection,
@@ -587,7 +598,7 @@ export const makeDriverPmAdapter = (
       });
       yield* directory.upsert({
         threadId,
-        provider: CLAUDE_PROVIDER,
+        provider: options.driverKind,
         providerInstanceId: selection.instanceId,
         status: "running",
         runtimeMode: "full-access",
@@ -596,16 +607,16 @@ export const makeDriverPmAdapter = (
       return session;
     }).pipe(
       Effect.mapError(
-        toPmRuntimeError("DriverPmAdapter.startSession", "Failed to start Claude PM session."),
+        toPmRuntimeError("DriverPmAdapter.startSession", "Failed to start driver PM session."),
       ),
     );
 
     const ensureSession = Effect.gen(function* () {
-      const hasSession = yield* options.claudeAdapter
+      const hasSession = yield* options.providerAdapter
         .hasSession(threadId)
         .pipe(
           Effect.mapError(
-            toPmRuntimeError("DriverPmAdapter.hasSession", "Failed to inspect Claude PM session."),
+            toPmRuntimeError("DriverPmAdapter.hasSession", "Failed to inspect driver PM session."),
           ),
         );
       if (!hasSession) {
@@ -621,13 +632,13 @@ export const makeDriverPmAdapter = (
         if (promptOptions?.images !== undefined && promptOptions.images.length > 0) {
           return yield* new PmRuntimeError({
             operation: "DriverPmAdapter.prompt",
-            detail: "Claude driver PM adapter does not support image prompts.",
+            detail: "Driver PM adapter does not support image prompts.",
           });
         }
         if (!(yield* Ref.get(idle))) {
           return yield* new PmRuntimeError({
             operation: "DriverPmAdapter.prompt",
-            detail: "Claude driver PM adapter is already running a turn.",
+            detail: "Driver PM adapter is already running a turn.",
           });
         }
         yield* ensureSession;
@@ -641,7 +652,7 @@ export const makeDriverPmAdapter = (
         } satisfies AgentHarnessEvent);
         const deferred = yield* Deferred.make<AssistantMessage, PmRuntimeError>();
         const selection = yield* Ref.get(currentModelSelection);
-        const turn = yield* options.claudeAdapter
+        const turn = yield* options.providerAdapter
           .sendTurn({
             threadId,
             input: text,
@@ -650,7 +661,7 @@ export const makeDriverPmAdapter = (
           })
           .pipe(
             Effect.mapError(
-              toPmRuntimeError("DriverPmAdapter.prompt", "Failed to send Claude PM turn."),
+              toPmRuntimeError("DriverPmAdapter.prompt", "Failed to send driver PM turn."),
             ),
           );
         yield* Ref.set(activePrompt, { turnId: turn.turnId, deferred });
@@ -674,12 +685,12 @@ export const makeDriverPmAdapter = (
           if (promptOptions?.images !== undefined && promptOptions.images.length > 0) {
             return yield* new PmRuntimeError({
               operation: "DriverPmAdapter.followUp",
-              detail: "Claude driver PM adapter does not support image follow-up prompts.",
+              detail: "Driver PM adapter does not support image follow-up prompts.",
             });
           }
           yield* ensureSession;
           const selection = yield* Ref.get(currentModelSelection);
-          yield* options.claudeAdapter
+          yield* options.providerAdapter
             .sendTurn({
               threadId,
               input: text,
@@ -690,7 +701,7 @@ export const makeDriverPmAdapter = (
               Effect.mapError(
                 toPmRuntimeError(
                   "DriverPmAdapter.followUp",
-                  "Failed to enqueue Claude PM follow-up.",
+                  "Failed to enqueue driver PM follow-up.",
                 ),
               ),
             );
@@ -701,7 +712,7 @@ export const makeDriverPmAdapter = (
           model: model.id,
         })).pipe(
           Effect.mapError(
-            toPmRuntimeError("DriverPmAdapter.setModel", "Failed to update Claude PM model."),
+            toPmRuntimeError("DriverPmAdapter.setModel", "Failed to update driver PM model."),
           ),
         ),
       setResources: (nextResources: AgentHarnessResources) =>
@@ -709,21 +720,21 @@ export const makeDriverPmAdapter = (
           Effect.mapError(
             toPmRuntimeError(
               "DriverPmAdapter.setResources",
-              "Failed to update Claude PM resources.",
+              "Failed to update driver PM resources.",
             ),
           ),
         ),
       abort: Effect.gen(function* () {
         const promptState = yield* Ref.get(activePrompt);
-        yield* options.claudeAdapter
+        yield* options.providerAdapter
           .interruptTurn(threadId, promptState?.turnId)
           .pipe(Effect.catch(() => Effect.void));
-        yield* options.claudeAdapter.stopSession(threadId).pipe(Effect.catch(() => Effect.void));
+        yield* options.providerAdapter.stopSession(threadId).pipe(Effect.catch(() => Effect.void));
         yield* Fiber.interrupt(bridgeFiber);
         yield* Ref.set(idle, true);
       }).pipe(
         Effect.mapError(
-          toPmRuntimeError("DriverPmAdapter.abort", "Failed to abort Claude PM adapter."),
+          toPmRuntimeError("DriverPmAdapter.abort", "Failed to abort driver PM adapter."),
         ),
       ),
     } satisfies PmAdapterShape;

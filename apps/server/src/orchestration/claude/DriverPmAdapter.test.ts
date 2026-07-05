@@ -33,13 +33,15 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import type { PmRuntimeError } from "../pm/Errors.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
-import { makeDriverPmAdapter, type DriverPmClaudeAdapter } from "./DriverPmAdapter.ts";
+import { makeDriverPmAdapter, type DriverPmProviderAdapter } from "./DriverPmAdapter.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME, orchestrationMcpToolId } from "./pmMcpServer.ts";
 import type { AgentHarnessEvent } from "./pmHarness.ts";
 
 const provider = ProviderDriverKind.make("claudeAgent");
+const codexProvider = ProviderDriverKind.make("codex");
 const projectId = ProjectId.make("project-1");
 const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
+const codexInstanceId = ProviderInstanceId.make("codex");
 const modelSelection: ModelSelection = {
   instanceId: claudeInstanceId,
   model: "claude-sonnet-4-6",
@@ -80,13 +82,18 @@ const makeEvent = (
 const providerSession = (
   threadId: ThreadId,
   resumeCursor: unknown = { resume: "resume-started" },
+  input: {
+    readonly provider?: ProviderDriverKind;
+    readonly providerInstanceId?: ProviderInstanceId;
+    readonly model?: string;
+  } = {},
 ): ProviderSession => ({
-  provider,
-  providerInstanceId: claudeInstanceId,
+  provider: input.provider ?? provider,
+  providerInstanceId: input.providerInstanceId ?? claudeInstanceId,
   status: "ready",
   runtimeMode: "full-access",
   cwd: project.workspaceRoot,
-  model: modelSelection.model,
+  model: input.model ?? modelSelection.model,
   threadId,
   resumeCursor,
   createdAt: now,
@@ -155,7 +162,7 @@ const collectBridgedEvents = (
   Effect.gen(function* () {
     const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
     const threadId = pmThreadIdForProject(project);
-    const claudeAdapter: DriverPmClaudeAdapter = {
+    const providerAdapter: DriverPmProviderAdapter = {
       provider,
       startSession: () => Effect.succeed(providerSession(threadId)),
       sendTurn: () => Effect.succeed({ threadId, turnId: TurnId.make("turn-bridged") }),
@@ -167,7 +174,8 @@ const collectBridgedEvents = (
 
     const adapter = yield* makeDriverPmAdapter({
       project,
-      claudeAdapter,
+      driverKind: provider,
+      providerAdapter,
       runtimeEvents: Stream.fromQueue(runtimeEvents),
       modelSelection,
     }).pipe(Effect.provide(emptyDirectoryLayer));
@@ -202,7 +210,7 @@ describe("DriverPmAdapter", () => {
       const upserts: ProviderRuntimeBinding[] = [];
       let started = false;
 
-      const claudeAdapter: DriverPmClaudeAdapter = {
+      const providerAdapter: DriverPmProviderAdapter = {
         provider,
         startSession: (input) =>
           Effect.sync(() => {
@@ -249,7 +257,8 @@ describe("DriverPmAdapter", () => {
 
       const adapter = yield* makeDriverPmAdapter({
         project,
-        claudeAdapter,
+        driverKind: provider,
+        providerAdapter,
         runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
         systemPrompt: "PM system prompt",
@@ -258,6 +267,7 @@ describe("DriverPmAdapter", () => {
       const commands: OrchestrationCommand[] = [];
       const projection = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection: modelSelection,
         events: adapter.events,
         incarnationNonce: "test-nonce",
@@ -485,6 +495,160 @@ describe("DriverPmAdapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("stamps Codex provider bindings and assistant envelopes from driverKind", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-codex-pm");
+      const assistantItemId = RuntimeItemId.make("assistant-codex-pm");
+      const codexSelection: ModelSelection = {
+        instanceId: codexInstanceId,
+        model: "gpt-5-codex",
+      };
+      const startInputs: ProviderSessionStartInput[] = [];
+      const upserts: ProviderRuntimeBinding[] = [];
+      let started = false;
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider: codexProvider,
+        startSession: (input) =>
+          Effect.sync(() => {
+            started = true;
+            startInputs.push(input);
+            return providerSession(
+              threadId,
+              { resume: "codex-started" },
+              {
+                provider: codexProvider,
+                providerInstanceId: codexInstanceId,
+                model: codexSelection.model,
+              },
+            );
+          }),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId, resumeCursor: { threadId: "codex-thread" } };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () =>
+          Effect.sync(() => {
+            started = false;
+          }),
+        listSessions: () =>
+          Effect.succeed(
+            started
+              ? [
+                  providerSession(
+                    threadId,
+                    { threadId: "codex-thread-after-turn" },
+                    {
+                      provider: codexProvider,
+                      providerInstanceId: codexInstanceId,
+                      model: codexSelection.model,
+                    },
+                  ),
+                ]
+              : [],
+          ),
+        hasSession: () => Effect.succeed(started),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: codexProvider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection: codexSelection,
+      }).pipe(
+        Effect.provide(
+          Layer.succeed(ProviderSessionDirectory, {
+            upsert: (binding: ProviderRuntimeBinding) =>
+              Effect.sync(() => {
+                upserts.push(binding);
+              }),
+            getProvider: () => Effect.succeed(codexProvider),
+            getBinding: () => Effect.succeed(Option.none()),
+            listThreadIds: () => Effect.succeed([]),
+            listBindings: () => Effect.succeed([]),
+          }),
+        ),
+      );
+
+      const promptFiber = yield* adapter.prompt("Plan the task.").pipe(Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.started",
+          turnId,
+          payload: { model: codexSelection.model },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "content.delta",
+          turnId,
+          itemId: assistantItemId,
+          payload: { streamKind: "assistant_text", delta: "Codex PM response." },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "item.completed",
+          turnId,
+          itemId: assistantItemId,
+          payload: {
+            itemType: "assistant_message",
+            status: "completed",
+            title: "Assistant message",
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.completed",
+          turnId,
+          payload: {
+            state: "completed",
+            stopReason: "stop",
+          },
+        }),
+      );
+
+      const assistant = yield* Fiber.join(promptFiber);
+
+      assert.strictEqual(assistant.api, "codex-app-server");
+      assert.strictEqual(assistant.provider, "openai");
+      assert.deepStrictEqual(startInputs, [
+        {
+          threadId,
+          provider: codexProvider,
+          providerInstanceId: codexInstanceId,
+          cwd: project.workspaceRoot,
+          modelSelection: codexSelection,
+          runtimeMode: "full-access",
+          enableOrchestrationTools: true,
+        },
+      ]);
+      assert.deepStrictEqual(
+        upserts.map((binding) => binding.provider),
+        [codexProvider, codexProvider],
+      );
+      assert.deepStrictEqual(
+        upserts.map((binding) => binding.resumeCursor),
+        [{ resume: "codex-started" }, { threadId: "codex-thread-after-turn" }],
+      );
+
+      yield* adapter.abort;
+      yield* Queue.shutdown(runtimeEvents);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("preserves every PM text delta when another consumer reads the runtime bus", () =>
     Effect.gen(function* () {
       const runtimeEventBus = yield* PubSub.unbounded<ProviderRuntimeEvent>();
@@ -495,7 +659,7 @@ describe("DriverPmAdapter", () => {
       const deltaTexts = ["Plan ", "the ", "work ", "without ", "gaps."];
       const sendTurnCalled = yield* Deferred.make<void>();
 
-      const claudeAdapter: DriverPmClaudeAdapter = {
+      const providerAdapter: DriverPmProviderAdapter = {
         provider,
         startSession: () => Effect.succeed(providerSession(threadId)),
         sendTurn: () =>
@@ -511,7 +675,8 @@ describe("DriverPmAdapter", () => {
 
       const adapter = yield* makeDriverPmAdapter({
         project,
-        claudeAdapter,
+        driverKind: provider,
+        providerAdapter,
         runtimeEvents,
         modelSelection,
       }).pipe(
@@ -529,6 +694,7 @@ describe("DriverPmAdapter", () => {
       const commands: OrchestrationCommand[] = [];
       const projection = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection: modelSelection,
         events: adapter.events,
         incarnationNonce: "delta-integrity",
@@ -881,7 +1047,7 @@ describe("DriverPmAdapter", () => {
       const turnId = TurnId.make("turn-built-in-tool");
       const toolItemId = RuntimeItemId.make("read-tool-call");
 
-      const claudeAdapter: DriverPmClaudeAdapter = {
+      const providerAdapter: DriverPmProviderAdapter = {
         provider,
         startSession: () => Effect.succeed(providerSession(threadId)),
         sendTurn: () => Effect.succeed({ threadId, turnId }),
@@ -893,7 +1059,8 @@ describe("DriverPmAdapter", () => {
 
       const adapter = yield* makeDriverPmAdapter({
         project,
-        claudeAdapter,
+        driverKind: provider,
+        providerAdapter,
         runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
       }).pipe(
@@ -983,7 +1150,7 @@ describe("DriverPmAdapter", () => {
       const threadId = pmThreadIdForProject(project);
       const turnId = TurnId.make("turn-aborted");
 
-      const claudeAdapter: DriverPmClaudeAdapter = {
+      const providerAdapter: DriverPmProviderAdapter = {
         provider,
         startSession: () => Effect.succeed(providerSession(threadId)),
         sendTurn: () =>
@@ -999,7 +1166,8 @@ describe("DriverPmAdapter", () => {
 
       const adapter = yield* makeDriverPmAdapter({
         project,
-        claudeAdapter,
+        driverKind: provider,
+        providerAdapter,
         runtimeEvents: Stream.fromQueue(runtimeEvents),
         modelSelection,
       }).pipe(
@@ -1017,6 +1185,7 @@ describe("DriverPmAdapter", () => {
       const commands: OrchestrationCommand[] = [];
       const projection = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection: modelSelection,
         events: adapter.events,
         incarnationNonce: "test-nonce",

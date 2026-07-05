@@ -212,6 +212,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -253,6 +254,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -291,6 +293,7 @@ describe("PmEventProjection", () => {
         Effect.gen(function* () {
           const runtime = yield* makePmEventProjectionRuntime({
             project,
+            providerName: provider,
             pmModelSelection,
             events: Stream.empty,
             incarnationNonce,
@@ -383,6 +386,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -439,6 +443,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -462,6 +467,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -507,6 +513,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection: claudeWorkSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -528,6 +535,34 @@ describe("PmEventProjection", () => {
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
+  it.effect("dispatches Codex driver kind as providerName for PM sessions", () => {
+    const commands: OrchestrationCommand[] = [];
+    const codexProvider = ProviderDriverKind.make("codex");
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        providerName: codexProvider,
+        pmModelSelection,
+        events: Stream.empty,
+        incarnationNonce: "test-nonce",
+      });
+
+      yield* runtime.project({
+        type: "before_agent_start",
+        prompt: "Create a task.",
+      } as AgentHarnessEvent);
+
+      const sessionCommand = commands.find(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.session.set" }> =>
+          command.type === "thread.session.set",
+      );
+      assert.ok(sessionCommand);
+      assert.strictEqual(sessionCommand.session.providerName, "codex");
+      assert.strictEqual(sessionCommand.session.providerInstanceId, pmModelSelection.instanceId);
+      assert.strictEqual(sessionCommand.session.runtimeMode, "full-access");
+    }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
+  });
+
   it.effect("settles an active PM turn when the projection scope is torn down", () => {
     const commands: OrchestrationCommand[] = [];
     const readModelRef = makeReadModelRef();
@@ -536,6 +571,7 @@ describe("PmEventProjection", () => {
         Effect.gen(function* () {
           const runtime = yield* makePmEventProjectionRuntime({
             project,
+            providerName: provider,
             pmModelSelection,
             events: Stream.empty,
             incarnationNonce: "test-nonce",
@@ -571,6 +607,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -650,6 +687,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -716,6 +754,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",
@@ -779,6 +818,7 @@ describe("PmEventProjection", () => {
     return Effect.gen(function* () {
       const runtime = yield* makePmEventProjectionRuntime({
         project,
+        providerName: provider,
         pmModelSelection,
         events: Stream.empty,
         incarnationNonce: "test-nonce",

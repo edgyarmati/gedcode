@@ -61,7 +61,6 @@ import {
   type PmConsumedSettlementKind,
 } from "../../persistence/Services/PmRuntimeState.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
-import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
 import {
   ProviderAdapterRegistry,
   type ProviderAdapterRegistryShape,
@@ -91,8 +90,12 @@ import {
   DEFAULT_PM_HANDOFF_TRANSCRIPT_BUDGET_CHARS,
 } from "../pm/pmHandoff.ts";
 import { clearSqliteSessionStorage } from "../pm/LegacySessionStorage.ts";
-import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
-import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
+import {
+  makeDriverPmAdapter,
+  type DriverPmAdapterOptions,
+  type DriverPmProviderAdapter,
+} from "../claude/DriverPmAdapter.ts";
+import { CLAUDE_PM_DRIVER, CODEX_PM_DRIVER } from "../claude/constants.ts";
 import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
 import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
 import type {
@@ -141,20 +144,26 @@ export interface PmProjectRuntimeFactoryOptions {
 }
 
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
-const PM_SYSTEM_PROMPT = [
-  "You are the orchestrator project manager (PM). You have full tool access, but your job is PM work only: feature design, task classification, skill checks, research, planning, and verifying results.",
-  "Do trivial exploration yourself when it is faster than delegating: read files, run quick searches, and use short read-only commands to gather context for good task specs and plans.",
-  "Never implement product changes yourself — no features, fixes, refactors, migrations, or edits — even though you technically can. Implementation always goes to a work agent through the orchestration tools: createTask, then handoffWorker with the `work` role.",
-  "For heavier exploration or research that would bog you down, spin up your own native subagents using your built-in agent/Task tool instead of doing it inline. Run several in parallel when useful, and keep only their conclusions in your context.",
-  "When a plan is doubtful or a second opinion would help, dispatch a plan-review agent with handoffWorker using the `review` role before committing to the plan.",
-  "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
-  "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; prefer steering over cancelling and re-handing-off when the same stage can continue.",
-  "Poll inspectStage to monitor running workers' live stage tail before deciding whether to steer, wait, or cancel.",
-  "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
-  "Use the interactive question tool for concrete decisions with a small set of options; for open-ended discussion, just end the turn with the question in plain text.",
-  "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
-  "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
-].join("\n");
+const pmDecisionPromptLine = (driverKind: ProviderDriverKind): string =>
+  driverKind === CODEX_PM_DRIVER
+    ? "For decisions, ask in plain text and end your turn."
+    : "Use the interactive question tool for concrete decisions with a small set of options; for open-ended discussion, just end the turn with the question in plain text.";
+
+const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
+  [
+    "You are the orchestrator project manager (PM). You have full tool access, but your job is PM work only: feature design, task classification, skill checks, research, planning, and verifying results.",
+    "Do trivial exploration yourself when it is faster than delegating: read files, run quick searches, and use short read-only commands to gather context for good task specs and plans.",
+    "Never implement product changes yourself — no features, fixes, refactors, migrations, or edits — even though you technically can. Implementation always goes to a work agent through the orchestration tools: createTask, then handoffWorker with the `work` role.",
+    "For heavier exploration or research that would bog you down, spin up your own native subagents using your built-in agent/Task tool instead of doing it inline. Run several in parallel when useful, and keep only their conclusions in your context.",
+    "When a plan is doubtful or a second opinion would help, dispatch a plan-review agent with handoffWorker using the `review` role before committing to the plan.",
+    "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
+    "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; prefer steering over cancelling and re-handing-off when the same stage can continue.",
+    "Poll inspectStage to monitor running workers' live stage tail before deciding whether to steer, wait, or cancel.",
+    "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
+    pmDecisionPromptLine(driverKind),
+    "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
+    "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
+  ].join("\n");
 
 const PM_HANDOFF_BRIEF_PROMPT =
   "Write a concise handoff brief for your successor PM: project state, active tasks and their stages, open questions, decisions in flight.";
@@ -308,15 +317,18 @@ function formatPmTurnFailure(error: PmRuntimeError): {
  * role guidance, so the PM acts on the project it is attached to instead of
  * asking the human for a project/repo id.
  */
-export const buildPmSystemPrompt = (project: {
-  readonly id: string;
-  readonly title: string;
-  readonly workspaceRoot: string;
-}): string =>
+export const buildPmSystemPrompt = (
+  project: {
+    readonly id: string;
+    readonly title: string;
+    readonly workspaceRoot: string;
+  },
+  driverKind: ProviderDriverKind = CLAUDE_PM_DRIVER,
+): string =>
   [
     `You are scoped to project "${project.title}" (project id: ${project.id}), workspace root ${project.workspaceRoot}.`,
     `Operate on THIS project only — never ask the human for a project id or repo id; when a tool needs a projectId, use ${project.id}. Create tasks and hand off stages for this project directly.`,
-    PM_SYSTEM_PROMPT,
+    pmSystemPrompt(driverKind),
   ].join("\n");
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
@@ -415,8 +427,9 @@ type ResolvedPmHarnessConfig = {
   readonly provider: ProviderDriverKind;
 };
 
-const resetClaudePmSession = (input: {
+const resetDriverPmSession = (input: {
   readonly project: OrchestrationProject;
+  readonly driverKind: ProviderDriverKind;
   readonly providerAdapterRegistry: ProviderAdapterRegistryShape;
   readonly providerSessionDirectory: ProviderSessionDirectoryShape;
 }): Effect.Effect<void, PmRuntimeError> =>
@@ -428,33 +441,33 @@ const resetClaudePmSession = (input: {
         Effect.map(Option.getOrUndefined),
         Effect.mapError(
           toPmRuntimeError(
-            "PmProjectRuntimeFactory.resetClaudePmSession",
+            "PmProjectRuntimeFactory.resetDriverPmSession",
             "Failed to read PM provider session binding.",
           ),
         ),
       );
 
-    if (binding?.provider !== CLAUDE_PM_DRIVER || binding.providerInstanceId === undefined) {
+    if (binding?.provider !== input.driverKind || binding.providerInstanceId === undefined) {
       return;
     }
 
-    const claudeAdapter = yield* input.providerAdapterRegistry
+    const providerAdapter = yield* input.providerAdapterRegistry
       .getByInstance(binding.providerInstanceId)
       .pipe(
         Effect.orElseSucceed(() => undefined),
         Effect.map((adapter) =>
-          adapter !== undefined && adapter.provider === CLAUDE_PM_DRIVER ? adapter : undefined,
+          adapter !== undefined && adapter.provider === input.driverKind ? adapter : undefined,
         ),
       );
 
-    if (claudeAdapter !== undefined) {
-      yield* claudeAdapter.stopSession(pmThreadId).pipe(Effect.catchCause(() => Effect.void));
+    if (providerAdapter !== undefined) {
+      yield* providerAdapter.stopSession(pmThreadId).pipe(Effect.catchCause(() => Effect.void));
     }
 
     yield* input.providerSessionDirectory
       .upsert({
         threadId: pmThreadId,
-        provider: CLAUDE_PM_DRIVER,
+        provider: input.driverKind,
         providerInstanceId: binding.providerInstanceId,
         status: "stopped",
         runtimeMode: "full-access",
@@ -463,14 +476,17 @@ const resetClaudePmSession = (input: {
       .pipe(
         Effect.mapError(
           toPmRuntimeError(
-            "PmProjectRuntimeFactory.resetClaudePmSession",
-            "Failed to reset PM Claude resume cursor.",
+            "PmProjectRuntimeFactory.resetDriverPmSession",
+            "Failed to reset PM driver resume cursor.",
           ),
         ),
       );
   });
 const DEFAULT_CLAUDE_PM_CONTEXT_WINDOW = 200_000;
 const EXTENDED_CLAUDE_PM_CONTEXT_WINDOW = 1_000_000;
+// Codex model metadata does not expose a stable PM context-window field here.
+// Match the current GPT-5 Codex app-server context size used by the provider catalog.
+const DEFAULT_CODEX_PM_CONTEXT_WINDOW = 272_000;
 
 const samePmModelSelection = (left: ModelSelection, right: ModelSelection): boolean =>
   Equal.equals(left, right);
@@ -486,12 +502,16 @@ const resolveClaudePmContextWindow = (selection: ModelSelection): number =>
     ? EXTENDED_CLAUDE_PM_CONTEXT_WINDOW
     : DEFAULT_CLAUDE_PM_CONTEXT_WINDOW;
 
-const pmAdapterModelDescriptor = (selection: ModelSelection): ModelDescriptor =>
-  ({
+const pmAdapterModelDescriptor = (
+  selection: ModelSelection,
+  driverKind: ProviderDriverKind,
+): ModelDescriptor => {
+  const isCodex = driverKind === CODEX_PM_DRIVER;
+  return {
     id: selection.model,
     name: selection.model,
-    api: "anthropic-messages",
-    provider: "anthropic",
+    api: isCodex ? "codex-app-server" : "anthropic-messages",
+    provider: isCodex ? "openai" : "anthropic",
     baseUrl: "",
     reasoning: true,
     input: ["text"],
@@ -501,9 +521,12 @@ const pmAdapterModelDescriptor = (selection: ModelSelection): ModelDescriptor =>
       cacheRead: 0,
       cacheWrite: 0,
     },
-    contextWindow: resolveClaudePmContextWindow(selection),
+    contextWindow: isCodex
+      ? DEFAULT_CODEX_PM_CONTEXT_WINDOW
+      : resolveClaudePmContextWindow(selection),
     maxTokens: 0,
-  }) satisfies ModelDescriptor;
+  } satisfies ModelDescriptor;
+};
 
 const resolvePmHarnessConfig = (
   project: OrchestrationProject,
@@ -555,14 +578,17 @@ const resolvePmHarnessConfig = (
     };
   });
 
-const resolveClaudePmAdapter = (
+const isSupportedPmDriver = (driverKind: ProviderDriverKind): boolean =>
+  driverKind === CLAUDE_PM_DRIVER || driverKind === CODEX_PM_DRIVER;
+
+const resolveDriverPmAdapter = (
   config: ResolvedPmHarnessConfig,
   providerAdapterRegistry: ProviderAdapterRegistryShape,
-): Effect.Effect<ClaudeAdapterShape, PmRuntimeError> =>
+): Effect.Effect<DriverPmProviderAdapter, PmRuntimeError> =>
   Effect.gen(function* () {
-    if (config.provider !== CLAUDE_PM_DRIVER) {
+    if (!isSupportedPmDriver(config.provider)) {
       return yield* makeNoPmRuntimeError(
-        `The orchestrator PM currently requires a Claude provider instance; Codex support is coming. Provider instance '${config.providerInstanceId}' uses '${config.provider}'.`,
+        `The orchestrator PM requires a Claude or Codex provider instance. Provider instance '${config.providerInstanceId}' uses '${config.provider}'.`,
       );
     }
 
@@ -571,17 +597,17 @@ const resolveClaudePmAdapter = (
       .pipe(
         Effect.mapError((cause) =>
           makeNoPmRuntimeError(
-            `Failed to resolve Claude adapter for PM provider instance '${config.providerInstanceId}'.`,
+            `Failed to resolve provider adapter for PM provider instance '${config.providerInstanceId}'.`,
             cause,
           ),
         ),
       );
-    if (adapter.provider !== CLAUDE_PM_DRIVER) {
+    if (adapter.provider !== config.provider) {
       return yield* makeNoPmRuntimeError(
-        `The orchestrator PM currently requires a Claude provider instance; Codex support is coming. Provider instance '${config.providerInstanceId}' resolved adapter '${adapter.provider}'.`,
+        `The orchestrator PM provider instance '${config.providerInstanceId}' is configured as '${config.provider}' but resolved adapter '${adapter.provider}'.`,
       );
     }
-    return adapter as ClaudeAdapterShape;
+    return adapter;
   });
 
 export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
@@ -1359,7 +1385,10 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           providerAdapterRegistry,
         });
         const pmModelSelection = harnessConfig.selection;
-        const claudeAdapter = yield* resolveClaudePmAdapter(harnessConfig, providerAdapterRegistry);
+        const providerAdapter = yield* resolveDriverPmAdapter(
+          harnessConfig,
+          providerAdapterRegistry,
+        );
         const resources = resolvePmHarnessResources(
           config.value.taskTypes.map((taskType) => taskType.id),
         );
@@ -1387,11 +1416,15 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             : null;
         const systemPrompt =
           handoffContext === null
-            ? buildPmSystemPrompt(project)
-            : appendPmHandoffContext(buildPmSystemPrompt(project), handoffContext);
+            ? buildPmSystemPrompt(project, harnessConfig.provider)
+            : appendPmHandoffContext(
+                buildPmSystemPrompt(project, harnessConfig.provider),
+                handoffContext,
+              );
         const driverPmAdapterOptions = {
           project,
-          claudeAdapter,
+          driverKind: harnessConfig.provider,
+          providerAdapter,
           runtimeEvents: providerService.streamEvents,
           modelSelection: pmModelSelection,
           systemPrompt,
@@ -1413,6 +1446,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         const eventProjection = yield* makePmEventProjectionRuntime({
           project,
           pmModelSelection,
+          providerName: harnessConfig.provider,
           events: adapter.events,
         }).pipe(
           Effect.provideService(OrchestrationEngineService, orchestrationEngine),
@@ -1599,7 +1633,9 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
                 if (samePmModelSelection(latest.selection, nextHarnessConfig.selection)) return;
 
                 yield* adapter.waitForIdle;
-                yield* adapter.setModel(pmAdapterModelDescriptor(nextHarnessConfig.selection));
+                yield* adapter.setModel(
+                  pmAdapterModelDescriptor(nextHarnessConfig.selection, nextHarnessConfig.provider),
+                );
                 yield* Ref.set(currentHarnessConfig, nextHarnessConfig);
                 yield* Effect.logInfo("PM model changed in place", {
                   projectId: String(project.id),
@@ -1726,6 +1762,23 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
       return existing?.invalidateRuntime(reason) ?? Effect.void;
     };
 
+    const resetConfiguredDriverPmSession = (project: OrchestrationProject) =>
+      Effect.gen(function* () {
+        const harnessConfig = yield* resolvePmHarnessConfig(project, {
+          serverSettings,
+          providerAdapterRegistry,
+        }).pipe(Effect.catch(() => Effect.succeed(null)));
+        if (harnessConfig === null || !isSupportedPmDriver(harnessConfig.provider)) {
+          return;
+        }
+        yield* resetDriverPmSession({
+          project,
+          driverKind: harnessConfig.provider,
+          providerAdapterRegistry,
+          providerSessionDirectory,
+        });
+      });
+
     const clearSessionStorage: PmProjectRuntimeFactoryShape["clearSessionStorage"] = (project) =>
       Effect.gen(function* () {
         yield* clearSqliteSessionStorage({ sessionId: `pm:${project.id}` }).pipe(
@@ -1737,19 +1790,11 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             ),
           ),
         );
-        yield* resetClaudePmSession({
-          project,
-          providerAdapterRegistry,
-          providerSessionDirectory,
-        });
+        yield* resetConfiguredDriverPmSession(project);
       });
 
     const resetSessionBinding: PmProjectRuntimeFactoryShape["resetSessionBinding"] = (project) =>
-      resetClaudePmSession({
-        project,
-        providerAdapterRegistry,
-        providerSessionDirectory,
-      });
+      resetConfiguredDriverPmSession(project);
 
     const createHandoffBrief: PmProjectRuntimeFactoryShape["createHandoffBrief"] = (projectId) => {
       const existing = runtimes.get(String(projectId));
