@@ -166,6 +166,7 @@ export interface WsRpcClient {
     >;
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
     readonly clearPmChat: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.clearPmChat>;
+    readonly requestPmHandoff: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.requestPmHandoff>;
   };
 }
 
@@ -357,6 +358,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
       clearPmChat: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.clearPmChat](input)),
+      requestPmHandoff: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.requestPmHandoff](input)),
     },
   };
 }

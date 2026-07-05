@@ -14,11 +14,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection } from "@t3tools/contracts";
+import { ModelSelection, PendingPmHandoff } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -48,6 +49,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count,
           has_actionable_proposed_plan,
           last_cleared_sequence,
+          pending_pm_handoff_json,
           deleted_at
         )
         VALUES (
@@ -68,6 +70,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pendingUserInputCount},
           ${row.hasActionableProposedPlan},
           ${row.lastClearedSequence},
+          ${row.pendingPmHandoff === null ? null : JSON.stringify(row.pendingPmHandoff)},
           ${row.deletedAt}
         )
         ON CONFLICT (thread_id)
@@ -88,6 +91,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count = excluded.pending_user_input_count,
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
           last_cleared_sequence = excluded.last_cleared_sequence,
+          pending_pm_handoff_json = excluded.pending_pm_handoff_json,
           deleted_at = excluded.deleted_at
       `,
   });
@@ -115,6 +119,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -144,6 +149,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}

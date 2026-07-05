@@ -120,6 +120,8 @@ export function classifyOrchestrationCommand(
     case "thread.message.assistant.delta":
     case "thread.message.assistant.complete":
     case "thread.clear":
+    case "thread.pm-handoff.request":
+    case "thread.pm-handoff.complete":
     case "thread.proposed-plan.upsert":
     case "thread.activity.append":
       return "streaming";

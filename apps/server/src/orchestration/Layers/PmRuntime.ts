@@ -1,14 +1,15 @@
 import {
   EventId,
+  CommandId,
   OrchestratorProjectConfig,
   ProviderDriverKind,
   ProviderInstanceId,
+  ThreadId,
   type ModelSelection,
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -85,6 +86,10 @@ import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { makePmReEntryQueue } from "../pm/PmReEntryQueue.ts";
+import {
+  buildPmHandoffTranscript,
+  DEFAULT_PM_HANDOFF_TRANSCRIPT_BUDGET_CHARS,
+} from "../pm/pmHandoff.ts";
 import { clearSqliteSessionStorage } from "../pm/LegacySessionStorage.ts";
 import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
@@ -92,8 +97,10 @@ import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
 import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
 import type {
   AgentHarnessResources,
+  AssistantMessage,
   ModelDescriptor,
   PmAdapterShape,
+  TextContent,
 } from "../claude/pmHarness.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
@@ -148,6 +155,37 @@ const PM_SYSTEM_PROMPT = [
   "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
   "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
 ].join("\n");
+
+const PM_HANDOFF_BRIEF_PROMPT =
+  "Write a concise handoff brief for your successor PM: project state, active tasks and their stages, open questions, decisions in flight.";
+const PM_HANDOFF_BRIEF_TIMEOUT = Duration.seconds(90);
+
+const textContent = (message: AssistantMessage): string =>
+  message.content
+    .filter((content): content is TextContent => content.type === "text")
+    .map((content) => content.text)
+    .join("")
+    .trim();
+
+const wrapSummaryHandoffContext = (brief: string): string =>
+  [
+    "--- BEGIN PM HANDOFF CONTEXT ---",
+    "You are taking over as the project PM mid-conversation; the prior PM prepared this handoff brief.",
+    brief.trim(),
+    "--- END PM HANDOFF CONTEXT ---",
+  ].join("\n");
+
+const appendPmHandoffContext = (systemPrompt: string, context: string): string =>
+  [systemPrompt, context].filter((part) => part.trim().length > 0).join("\n\n");
+
+const pmHandoffCompletedCommandId = (threadId: ThreadId, createdAt: string): CommandId =>
+  CommandId.make(`pm-handoff-completed:${threadId}:${createdAt}`);
+
+const pmHandoffActivityCommandId = (threadId: ThreadId, createdAt: string): CommandId =>
+  CommandId.make(`pm-handoff-activity:${threadId}:${createdAt}`);
+
+const pmHandoffActivityId = (threadId: ThreadId, createdAt: string): EventId =>
+  EventId.make(`pm-handoff:${threadId}:${createdAt}`);
 
 const PM_TURN_FAILURE_REASON_MAX_CHARS = 480;
 const PM_TURN_FAILURE_SUMMARY_MAX_CHARS = 640;
@@ -1325,12 +1363,38 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         const resources = resolvePmHarnessResources(
           config.value.taskTypes.map((taskType) => taskType.id),
         );
+        const pmThreadId = pmThreadIdForProject(project);
+        const pendingPmThread = yield* projectionSnapshotQuery
+          .getThreadDetailById(pmThreadId)
+          .pipe(
+            Effect.map(Option.getOrNull),
+            Effect.mapError(
+              toPmRuntimeError(
+                "PmProjectRuntimeFactory.getOrCreate.pendingPmHandoff",
+                "Failed to load pending PM handoff state.",
+              ),
+            ),
+          );
+        const pendingPmHandoff = pendingPmThread?.pendingPmHandoff ?? null;
+        const handoffContext =
+          pendingPmThread !== null && pendingPmHandoff !== null
+            ? pendingPmHandoff.mode === "summary"
+              ? wrapSummaryHandoffContext(pendingPmHandoff.brief ?? "")
+              : buildPmHandoffTranscript(
+                  pendingPmThread,
+                  DEFAULT_PM_HANDOFF_TRANSCRIPT_BUDGET_CHARS,
+                )
+            : null;
+        const systemPrompt =
+          handoffContext === null
+            ? buildPmSystemPrompt(project)
+            : appendPmHandoffContext(buildPmSystemPrompt(project), handoffContext);
         const driverPmAdapterOptions = {
           project,
           claudeAdapter,
           runtimeEvents: providerService.streamEvents,
           modelSelection: pmModelSelection,
-          systemPrompt: buildPmSystemPrompt(project),
+          systemPrompt,
         } satisfies DriverPmAdapterOptions;
         const adapter =
           options?.makeDriverPmAdapterOverride !== undefined
@@ -1357,7 +1421,6 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           Effect.provide(NodeServices.layer),
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
-        const pmThreadId = pmThreadIdForProject(project);
         const queue = yield* makePmReEntryQueue(adapter, {
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
           // adapter failure surfaces as a PmRuntimeError (not a `runtime.error`
@@ -1454,6 +1517,54 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             }),
           );
         const waitForIdle = queue.runExclusive(adapter.waitForIdle);
+
+        if (pendingPmHandoff !== null) {
+          yield* adapter.start;
+          const completedAt = DateTime.formatIso(yield* DateTime.now);
+          yield* orchestrationEngine
+            .dispatch({
+              type: "thread.pm-handoff.complete",
+              commandId: pmHandoffCompletedCommandId(pmThreadId, completedAt),
+              threadId: pmThreadId,
+              mode: pendingPmHandoff.mode,
+              createdAt: completedAt,
+            })
+            .pipe(
+              Effect.mapError(
+                toPmRuntimeError(
+                  "PmProjectRuntimeFactory.completePmHandoff",
+                  "Failed to complete pending PM handoff.",
+                ),
+              ),
+            );
+          yield* orchestrationEngine
+            .dispatch({
+              type: "thread.activity.append",
+              commandId: pmHandoffActivityCommandId(pmThreadId, completedAt),
+              threadId: pmThreadId,
+              activity: {
+                id: pmHandoffActivityId(pmThreadId, completedAt),
+                tone: "info",
+                kind: "pm.handoff",
+                summary: `PM handed off (${pendingPmHandoff.mode})`,
+                payload: {
+                  mode: pendingPmHandoff.mode,
+                  providerInstanceId: pmProviderInstanceId,
+                },
+                turnId: null,
+                createdAt: completedAt,
+              },
+              createdAt: completedAt,
+            })
+            .pipe(
+              Effect.mapError(
+                toPmRuntimeError(
+                  "PmProjectRuntimeFactory.appendPmHandoffMarker",
+                  "Failed to append PM handoff activity.",
+                ),
+              ),
+            );
+        }
 
         const applyUpdatedPmHarnessConfig = (updatedProject: OrchestrationProject) =>
           Effect.gen(function* () {
@@ -1562,6 +1673,32 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
                   ),
               ),
             ),
+          createHandoffBrief: ensureRuntimeActive.pipe(
+            Effect.flatMap(() =>
+              queue.runExclusive(
+                adapter.prompt(PM_HANDOFF_BRIEF_PROMPT).pipe(
+                  Effect.map(textContent),
+                  Effect.flatMap((brief) =>
+                    brief.length > 0
+                      ? Effect.succeed(brief)
+                      : Effect.fail(
+                          new PmRuntimeError({
+                            operation: "PmProjectRuntime.createHandoffBrief",
+                            detail: "PM returned an empty handoff brief.",
+                          }),
+                        ),
+                  ),
+                  Effect.timeout(PM_HANDOFF_BRIEF_TIMEOUT),
+                  Effect.mapError(
+                    toPmRuntimeError(
+                      "PmProjectRuntime.createHandoffBrief",
+                      "Failed to create PM handoff brief.",
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           enqueue: (message) => ensureRuntimeActive.pipe(Effect.andThen(queue.enqueue(message))),
           drain: ensureRuntimeActive.pipe(
             Effect.andThen(queue.drain),
@@ -1607,11 +1744,27 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         });
       });
 
+    const resetSessionBinding: PmProjectRuntimeFactoryShape["resetSessionBinding"] = (project) =>
+      resetClaudePmSession({
+        project,
+        providerAdapterRegistry,
+        providerSessionDirectory,
+      });
+
+    const createHandoffBrief: PmProjectRuntimeFactoryShape["createHandoffBrief"] = (projectId) => {
+      const existing = runtimes.get(String(projectId));
+      return existing === undefined
+        ? Effect.succeed(Option.none())
+        : existing.runtime.createHandoffBrief.pipe(Effect.map(Option.some));
+    };
+
     return {
       getOrCreate,
       waitForIdle,
       invalidateRuntime: invalidateRuntimeByProjectId,
       clearSessionStorage,
+      resetSessionBinding,
+      createHandoffBrief,
     } satisfies PmProjectRuntimeFactoryShape;
   });
 

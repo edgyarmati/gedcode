@@ -137,6 +137,7 @@ function makeThreadShellSnapshot(params: {
         createdAt: "2026-04-13T00:00:00.000Z",
         updatedAt: "2026-04-13T00:00:00.000Z",
         archivedAt: null,
+        pendingPmHandoff: null,
         session: params.sessionStatus
           ? {
               threadId: params.threadId,
@@ -181,6 +182,7 @@ function makeThreadDetail(params: {
     updatedAt: "2026-04-13T00:00:00.000Z",
     archivedAt: null,
     deletedAt: null,
+    pendingPmHandoff: null,
     ...(params.lastClearedSequence !== undefined
       ? { lastClearedSequence: params.lastClearedSequence }
       : {}),

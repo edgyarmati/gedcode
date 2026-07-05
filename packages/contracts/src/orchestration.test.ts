@@ -760,6 +760,43 @@ it.effect("round-trips thread.clear commands through the orchestration command u
   }),
 );
 
+it.effect("round-trips PM handoff commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const request = yield* decodeOrchestrationCommand({
+      type: "thread.pm-handoff.request",
+      commandId: "cmd-pm-handoff-request",
+      threadId: "pm:project-1",
+      mode: "summary",
+      brief: "Brief",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const complete = yield* decodeOrchestrationCommand({
+      type: "thread.pm-handoff.complete",
+      commandId: "cmd-pm-handoff-complete",
+      threadId: "pm:project-1",
+      mode: "summary",
+      createdAt: "2026-01-01T00:00:01.000Z",
+    });
+
+    const reDecodedRequest = yield* decodeOrchestrationCommand(
+      yield* encodeOrchestrationCommand(request),
+    );
+    const reDecodedComplete = yield* decodeOrchestrationCommand(
+      yield* encodeOrchestrationCommand(complete),
+    );
+
+    assert.strictEqual(reDecodedRequest.type, "thread.pm-handoff.request");
+    if (reDecodedRequest.type === "thread.pm-handoff.request") {
+      assert.strictEqual(reDecodedRequest.mode, "summary");
+      assert.strictEqual(reDecodedRequest.brief, "Brief");
+    }
+    assert.strictEqual(reDecodedComplete.type, "thread.pm-handoff.complete");
+    if (reDecodedComplete.type === "thread.pm-handoff.complete") {
+      assert.strictEqual(reDecodedComplete.mode, "summary");
+    }
+  }),
+);
+
 it.effect("round-trips thread.cleared events through the orchestration event union", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationEvent({
@@ -783,6 +820,62 @@ it.effect("round-trips thread.cleared events through the orchestration event uni
     assert.strictEqual(reDecoded.type, "thread.cleared");
     if (reDecoded.type === "thread.cleared") {
       assert.strictEqual(reDecoded.payload.threadId, "pm:project-1");
+    }
+  }),
+);
+
+it.effect("round-trips PM handoff events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const requested = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-pm-handoff-requested",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.pm-handoff-requested",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-pm-handoff-request",
+      causationEventId: null,
+      correlationId: "cmd-pm-handoff-request",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        mode: "summary",
+        brief: "Brief",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const completed = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "evt-pm-handoff-completed",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.pm-handoff-completed",
+      occurredAt: "2026-01-01T00:00:01.000Z",
+      commandId: "cmd-pm-handoff-complete",
+      causationEventId: null,
+      correlationId: "cmd-pm-handoff-complete",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        mode: "summary",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+
+    const reDecodedRequested = yield* decodeOrchestrationEvent(
+      yield* encodeOrchestrationEvent(requested),
+    );
+    const reDecodedCompleted = yield* decodeOrchestrationEvent(
+      yield* encodeOrchestrationEvent(completed),
+    );
+
+    assert.strictEqual(reDecodedRequested.type, "thread.pm-handoff-requested");
+    if (reDecodedRequested.type === "thread.pm-handoff-requested") {
+      assert.strictEqual(reDecodedRequested.payload.brief, "Brief");
+    }
+    assert.strictEqual(reDecodedCompleted.type, "thread.pm-handoff-completed");
+    if (reDecodedCompleted.type === "thread.pm-handoff-completed") {
+      assert.strictEqual(reDecodedCompleted.payload.mode, "summary");
     }
   }),
 );

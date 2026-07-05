@@ -86,6 +86,7 @@ const makeThread = (
   updatedAt: now,
   archivedAt: null,
   deletedAt: null,
+  pendingPmHandoff: null,
   messages: [],
   proposedPlans: [],
   activities: [],

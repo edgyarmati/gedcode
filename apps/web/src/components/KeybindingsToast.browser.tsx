@@ -173,6 +173,7 @@ function createMinimalSnapshot(): OrchestrationReadModel {
         updatedAt: NOW_ISO,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages: [
           {
             id: "msg-1" as MessageId,

@@ -80,6 +80,7 @@ import {
   PmProjectRuntimeFactory,
   type PmProjectRuntimeFactoryShape,
 } from "./orchestration/Services/PmRuntime.ts";
+import { PmRuntimeError } from "./orchestration/pm/Errors.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import {
   ProjectionSnapshotQuery,
@@ -192,6 +193,7 @@ const makeDefaultOrchestrationReadModel = () => {
         proposedPlans: [],
         checkpoints: [],
         deletedAt: null,
+        pendingPmHandoff: null,
       },
     ],
     tasks: [],
@@ -217,6 +219,7 @@ const makeDefaultOrchestrationThreadShell = (
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
+    pendingPmHandoff: null,
     session: null,
     latestUserMessageAt: null,
     hasPendingApprovals: false,
@@ -690,12 +693,15 @@ const buildAppUnderTest = (options?: {
           getOrCreate: () =>
             Effect.succeed({
               surfaceUserMessage: () => Effect.void,
+              createHandoffBrief: Effect.succeed("handoff brief"),
               enqueue: () => Effect.void,
               drain: Effect.void,
             }),
           waitForIdle: () => Effect.void,
           invalidateRuntime: () => Effect.void,
           clearSessionStorage: () => Effect.void,
+          resetSessionBinding: () => Effect.void,
+          createHandoffBrief: () => Effect.succeed(Option.none()),
           ...options?.layers?.pmProjectRuntimeFactory,
         }),
       ),
@@ -3232,6 +3238,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             proposedPlans: [],
             checkpoints: [],
             deletedAt: null,
+            pendingPmHandoff: null,
           },
         ],
         tasks: [],
@@ -3380,6 +3387,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         proposedPlans: [],
         checkpoints: [],
         deletedAt: null,
+        pendingPmHandoff: null,
       };
       const snapshot: OrchestrationReadModel = {
         snapshotSequence: 12,
@@ -3454,6 +3462,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 dispatched.push(command);
                 if (command.type === "thread.clear") {
                   runtimeCalls.push("dispatch:thread.clear");
+                } else if (command.type === "thread.pm-handoff.request") {
+                  runtimeCalls.push(`dispatch:thread.pm-handoff.request:${command.mode}`);
                 }
                 return { sequence: 41 };
               }),
@@ -3469,6 +3479,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                       surfacedMessages.push(message);
                       runtimeCalls.push(`surface:${message}`);
                     }),
+                  createHandoffBrief: Effect.succeed("handoff brief"),
                   enqueue: (message) =>
                     Effect.sync(() => {
                       enqueuedMessages.push(message);
@@ -3486,6 +3497,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               Effect.sync(() => {
                 assert.equal(loadedProject.id, projectId);
                 runtimeCalls.push("clearSessionStorage");
+              }),
+            resetSessionBinding: (loadedProject) =>
+              Effect.sync(() => {
+                assert.equal(loadedProject.id, projectId);
+                runtimeCalls.push("resetSessionBinding");
+              }),
+            createHandoffBrief: (loadedProjectId) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                runtimeCalls.push("createHandoffBrief");
+                return Option.some("Current PM brief");
               }),
             invalidateRuntime: (loadedProjectId, reason) =>
               Effect.sync(() => {
@@ -3590,6 +3612,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             assert.equal(cancelTaskResult.sequence, 41);
 
+            const requestPmHandoffResult = yield* client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+              projectId,
+              mode: "summary",
+            });
+            assert.deepEqual(requestPmHandoffResult, {
+              accepted: true,
+              mode: "summary",
+            });
+
             const clearPmChatResult = yield* client[ORCHESTRATOR_WS_METHODS.clearPmChat]({
               projectId,
             });
@@ -3633,12 +3664,109 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(clearThreadCommand.threadId, pmThreadId);
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(clearThreadCommand.createdAt));
       }
+      const handoffCommand = dispatched.find(
+        (command) => command.type === "thread.pm-handoff.request",
+      );
+      assert.isDefined(handoffCommand);
+      if (handoffCommand?.type === "thread.pm-handoff.request") {
+        assert.equal(handoffCommand.threadId, pmThreadId);
+        assert.equal(handoffCommand.mode, "summary");
+        assert.equal(handoffCommand.brief, "Current PM brief");
+      }
       assert.deepEqual(runtimeCalls.slice(-4), [
         "waitForIdle",
         "dispatch:thread.clear",
         "clearSessionStorage",
         "invalidateRuntime",
       ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("falls back to transcript PM handoff when summary brief creation fails", () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          pmProjectRuntimeFactory: {
+            createHandoffBrief: () =>
+              Effect.fail(
+                new PmRuntimeError({
+                  operation: "test.createHandoffBrief",
+                  detail: "model unavailable",
+                }),
+              ),
+            resetSessionBinding: () => Effect.void,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: 52 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+            projectId: defaultProjectId,
+            mode: "summary",
+          }),
+        ),
+      );
+
+      assert.equal(result.accepted, true);
+      assert.equal(result.mode, "transcript");
+      assertInclude(result.fallback ?? "", "model unavailable");
+      const command = dispatched.find((entry) => entry.type === "thread.pm-handoff.request");
+      assert.isDefined(command);
+      if (command?.type === "thread.pm-handoff.request") {
+        assert.equal(command.mode, "transcript");
+        assert.isUndefined(command.brief);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("falls back to transcript PM handoff when no PM runtime exists", () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          pmProjectRuntimeFactory: {
+            createHandoffBrief: () => Effect.succeed(Option.none()),
+            resetSessionBinding: () => Effect.void,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: 53 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+            projectId: defaultProjectId,
+            mode: "summary",
+          }),
+        ),
+      );
+
+      assert.equal(result.accepted, true);
+      assert.equal(result.mode, "transcript");
+      assertInclude(result.fallback ?? "", "No active PM runtime");
+      const command = dispatched.find((entry) => entry.type === "thread.pm-handoff.request");
+      assert.isDefined(command);
+      if (command?.type === "thread.pm-handoff.request") {
+        assert.equal(command.threadId, ThreadId.make(`pm:${defaultProjectId}`));
+        assert.equal(command.mode, "transcript");
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3853,6 +3981,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         archivedAt: null,
         deletedAt: null,
         lastClearedSequence: 2,
+        pendingPmHandoff: null,
         messages: [
           {
             id: MessageId.make("message-b"),

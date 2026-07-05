@@ -2237,6 +2237,7 @@ function applyEnvironmentOrchestrationEvent(
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [],
           proposedPlans: [],
           activities: [],

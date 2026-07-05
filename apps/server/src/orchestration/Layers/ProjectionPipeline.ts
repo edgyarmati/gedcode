@@ -601,6 +601,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
             lastClearedSequence: null,
+            pendingPmHandoff: null,
             deletedAt: null,
           });
           return;
@@ -707,6 +708,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         case "thread.proposed-plan-upserted":
         case "thread.activity-appended":
         case "thread.cleared":
+        case "thread.pm-handoff-requested":
+        case "thread.pm-handoff-completed":
         case "thread.approval-response-requested":
         case "thread.user-input-response-requested": {
           const existingRow = yield* projectionThreadRepository.getById({
@@ -730,9 +733,23 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               event.type === "thread.cleared"
                 ? event.sequence
                 : existingRow.value.lastClearedSequence,
+            pendingPmHandoff:
+              event.type === "thread.cleared" || event.type === "thread.pm-handoff-completed"
+                ? null
+                : event.type === "thread.pm-handoff-requested"
+                  ? {
+                      mode: event.payload.mode,
+                      ...(event.payload.brief !== undefined ? { brief: event.payload.brief } : {}),
+                      requestedAt: event.payload.createdAt,
+                    }
+                  : existingRow.value.pendingPmHandoff,
             updatedAt: event.type === "thread.cleared" ? event.payload.clearedAt : event.occurredAt,
           });
-          if (event.type === "thread.cleared") {
+          if (
+            event.type === "thread.cleared" ||
+            event.type === "thread.pm-handoff-requested" ||
+            event.type === "thread.pm-handoff-completed"
+          ) {
             return;
           }
           yield* refreshThreadShellSummary(event.payload.threadId);

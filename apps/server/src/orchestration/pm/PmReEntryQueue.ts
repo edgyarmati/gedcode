@@ -8,7 +8,7 @@ import type { PmRuntimeError } from "./Errors.ts";
 export type PmReEntryQueueShape = {
   readonly enqueue: (message: string) => Effect.Effect<void>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
-  readonly runExclusive: <E>(operation: Effect.Effect<void, E>) => Effect.Effect<void, E>;
+  readonly runExclusive: <A, E>(operation: Effect.Effect<A, E>) => Effect.Effect<A, E>;
 };
 
 export type PmReEntryQueueOptions = {

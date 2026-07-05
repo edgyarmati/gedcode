@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
@@ -18,6 +19,7 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  type PmHandoffMode,
   type OrchestrationThread,
   ORCHESTRATOR_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -108,6 +110,8 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
       | "thread.message-sent"
       | "thread.created"
       | "thread.cleared"
+      | "thread.pm-handoff-requested"
+      | "thread.pm-handoff-completed"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -119,6 +123,8 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
     event.type === "thread.message-sent" ||
     event.type === "thread.created" ||
     event.type === "thread.cleared" ||
+    event.type === "thread.pm-handoff-requested" ||
+    event.type === "thread.pm-handoff-completed" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
@@ -175,6 +181,20 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+
+function pmHandoffFallbackReason(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const detail = "detail" in error ? error.detail : undefined;
+    if (typeof detail === "string" && detail.length > 0) {
+      return detail;
+    }
+    const message = "message" in error ? error.message : undefined;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return String(error);
+}
 
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
@@ -759,6 +779,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             updatedAt: project.value.updatedAt,
             archivedAt: null,
             deletedAt: null,
+            pendingPmHandoff: null,
             messages: [],
             proposedPlans: [],
             activities: [],
@@ -1314,6 +1335,75 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   ),
                 );
               return result;
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.requestPmHandoff]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.requestPmHandoff,
+            Effect.gen(function* () {
+              const project = yield* loadProjectForPmRuntime(input.projectId);
+              const pmThreadId = pmThreadIdForProject(project);
+              const dispatchRequest = (request: {
+                readonly mode: PmHandoffMode;
+                readonly brief?: string;
+              }): Effect.Effect<void, OrchestrationDispatchCommandError> =>
+                Effect.gen(function* () {
+                  const { commandId, createdAt } = yield* Effect.all({
+                    commandId: serverCommandId("orchestrator-request-pm-handoff"),
+                    createdAt: nowIso,
+                  });
+                  yield* dispatchNormalizedCommand({
+                    type: "thread.pm-handoff.request",
+                    commandId,
+                    threadId: pmThreadId,
+                    mode: request.mode,
+                    ...(request.brief !== undefined ? { brief: request.brief } : {}),
+                    createdAt,
+                  });
+                  yield* pmProjectRuntimeFactory
+                    .resetSessionBinding(project)
+                    .pipe(
+                      Effect.mapError((cause) =>
+                        toDispatchCommandError(
+                          cause,
+                          "Failed to reset PM session binding for handoff.",
+                        ),
+                      ),
+                    );
+                });
+
+              if (input.mode === "transcript") {
+                yield* pmProjectRuntimeFactory
+                  .waitForIdle(project.id)
+                  .pipe(
+                    Effect.mapError((cause) =>
+                      toDispatchCommandError(
+                        cause,
+                        "Failed to wait for PM runtime to become idle.",
+                      ),
+                    ),
+                  );
+                yield* dispatchRequest({ mode: "transcript" });
+                return { accepted: true as const, mode: "transcript" as const };
+              }
+
+              const summaryResult = yield* pmProjectRuntimeFactory
+                .createHandoffBrief(project.id)
+                .pipe(Effect.result);
+              if (Result.isSuccess(summaryResult) && Option.isSome(summaryResult.success)) {
+                yield* dispatchRequest({
+                  mode: "summary",
+                  brief: summaryResult.success.value,
+                });
+                return { accepted: true as const, mode: "summary" as const };
+              }
+
+              const fallback = Result.isFailure(summaryResult)
+                ? `Summary handoff failed; using transcript handoff. Reason: ${pmHandoffFallbackReason(summaryResult.failure)}`
+                : "No active PM runtime; using transcript handoff.";
+              yield* dispatchRequest({ mode: "transcript" });
+              return { accepted: true as const, mode: "transcript" as const, fallback };
             }),
             { "rpc.aggregate": "orchestrator" },
           ),

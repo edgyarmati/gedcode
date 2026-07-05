@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Add server-side Orchestrator PM harness handoff machinery. The PM conversation can be handed to a new PM session as a full transcript or a summary brief with transcript fallback, keeping the same PM thread and laying groundwork for switching PM harnesses.
 - Internal: Remove the per-thread `gedWorkflowEnabled` field from orchestration contracts and projections. Old append-only events that still contain the field remain replayable because unknown payload properties are ignored during decode.
 - Internal: The server-side ged workflow subsystem (turn guard/interceptor, event reactor, role prompts, gedWorkflowGetState RPC) and the @t3tools/ged-workflow package are removed, along with the ged settings fields and the ProviderSendTurnInput.gedWorkflowEnabled contract field. Orchestrator stage machinery (roles, role model selections, prompt prefixes, playbooks) is unaffected.
 - Change/UI: Normal chat threads no longer have a "Ged workflow" mode — the toggle, its drafts/settings plumbing, the "Ged orchestration" settings section, and the ged main-thread model override are removed. The orchestrator view is the workflow surface.

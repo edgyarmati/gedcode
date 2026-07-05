@@ -612,6 +612,7 @@ export const makeDriverPmAdapter = (
       events: Stream.fromQueue(eventQueue),
       isIdle: Ref.get(idle),
       latestAssistantUsage: Ref.get(latestUsage),
+      start: ensureSession.pipe(Effect.asVoid),
       waitForIdle: Effect.gen(function* () {
         const promptState = yield* Ref.get(activePrompt);
         if (promptState !== undefined) {

@@ -197,6 +197,7 @@ function makePmRuntimeLayer(input: {
       Effect.sync(() => {
         input.messages.push(`surface:${message}`);
       }),
+    createHandoffBrief: Effect.succeed("handoff brief"),
     enqueue: (message) =>
       Effect.sync(() => {
         input.messages.push(message);
@@ -291,6 +292,8 @@ function makePmRuntimeLayer(input: {
         waitForIdle: () => Effect.void,
         invalidateRuntime: () => Effect.void,
         clearSessionStorage: () => Effect.void,
+        resetSessionBinding: () => Effect.void,
+        createHandoffBrief: () => Effect.succeed(Option.none()),
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),

@@ -191,6 +191,7 @@ const stageThread: OrchestrationThread = {
   updatedAt: now,
   archivedAt: null,
   deletedAt: null,
+  pendingPmHandoff: null,
   messages: [
     {
       id: MessageId.make("user-1"),
@@ -433,6 +434,7 @@ const makeLayer = (input: {
       Effect.sync(() => {
         input.messages.push(`surface:${message}`);
       }),
+    createHandoffBrief: Effect.succeed("handoff brief"),
     enqueue: (message) =>
       Effect.sync(() => {
         input.messages.push(message);
@@ -627,6 +629,8 @@ const makeLayer = (input: {
         waitForIdle: () => Effect.void,
         invalidateRuntime: () => Effect.void,
         clearSessionStorage: () => Effect.void,
+        resetSessionBinding: () => Effect.void,
+        createHandoffBrief: () => Effect.succeed(Option.none()),
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),
@@ -639,6 +643,7 @@ const makeFactoryCaptureLayer = (input?: {
   readonly streamDomainEvents?: Stream.Stream<OrchestrationEvent>;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly dispatchCalls?: OrchestrationCommand[];
+  readonly threadDetails?: ReadonlyMap<string, OrchestrationThread>;
   readonly liveProjection?: boolean;
   readonly runtimeEvents?: Stream.Stream<ProviderRuntimeEvent>;
   readonly providerInstances?: ReadonlyMap<
@@ -714,7 +719,10 @@ const makeFactoryCaptureLayer = (input?: {
             getThreadCheckpointContext: () => Effect.succeed(Option.none()),
             getFullThreadDiffContext: () => Effect.succeed(Option.none()),
             getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
+            getThreadDetailById: (threadId) => {
+              const detail = input?.threadDetails?.get(String(threadId));
+              return Effect.succeed(detail === undefined ? Option.none() : Option.some(detail));
+            },
           }),
         );
 
@@ -783,6 +791,9 @@ const makeTestPmAdapter = (input?: {
     events: Stream.empty,
     isIdle: Effect.succeed(true),
     latestAssistantUsage: Effect.sync(() => undefined),
+    start: Effect.sync(() => {
+      input?.calls?.push("start");
+    }),
     waitForIdle:
       input?.waitForIdle ??
       Effect.sync(() => {
@@ -938,6 +949,97 @@ describe("PmRuntime", () => {
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "injects pending PM handoff context once and clears it with completion commands",
+    () => {
+      const pmThreadId = pmThreadIdForProject(project);
+      const dispatchCalls: OrchestrationCommand[] = [];
+      const pendingThread: OrchestrationThread = {
+        id: pmThreadId,
+        projectId: project.id,
+        title: "Project PM",
+        modelSelection: pmSelection(claudeInstanceId, "claude-opus-4-6"),
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: project.workspaceRoot,
+        latestTurn: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
+        pendingPmHandoff: {
+          mode: "transcript",
+          requestedAt: now,
+        },
+        messages: [
+          {
+            id: MessageId.make("pm-message-before-handoff"),
+            role: "user",
+            text: "Prior PM context",
+            turnId: null,
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        proposedPlans: [],
+        activities: [],
+        checkpoints: [],
+        session: null,
+      };
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const captured: DriverPmAdapterOptions[] = [];
+          const adapterCalls: string[] = [];
+          const factory = yield* makePmProjectRuntimeFactoryWithOptions({
+            makeDriverPmAdapterOverride: ((options: DriverPmAdapterOptions) =>
+              Effect.sync(() => {
+                captured.push(options);
+                return makeTestPmAdapter({ calls: adapterCalls });
+              })) satisfies NonNullable<
+              Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
+            >["makeDriverPmAdapterOverride"],
+          });
+
+          yield* factory.getOrCreate(project);
+
+          assert.strictEqual(adapterCalls.filter((call) => call === "start").length, 1);
+          assert.strictEqual(captured.length, 1);
+          assert.include(
+            captured[0]?.systemPrompt ?? "",
+            "You are the orchestrator project manager",
+          );
+          assert.include(captured[0]?.systemPrompt ?? "", "BEGIN PM HANDOFF CONTEXT");
+          assert.include(captured[0]?.systemPrompt ?? "", "Prior PM context");
+
+          const completedCommand = dispatchCalls.find(
+            (command) => command.type === "thread.pm-handoff.complete",
+          );
+          assert.isDefined(completedCommand);
+          const markerCommand = dispatchCalls.find(
+            (command) => command.type === "thread.activity.append",
+          );
+          assert.isDefined(markerCommand);
+          if (markerCommand?.type === "thread.activity.append") {
+            assert.equal(markerCommand.activity.kind, "pm.handoff");
+            assert.equal(markerCommand.activity.summary, "PM handed off (transcript)");
+          }
+
+          yield* factory.getOrCreate(project);
+          assert.strictEqual(adapterCalls.filter((call) => call === "start").length, 1);
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              dispatchCalls,
+              threadDetails: new Map([[String(pmThreadId), pendingThread]]),
+            }),
+          ),
+        ),
+      );
+    },
   );
 
   it.effect("uses the global PM model selection when the project selection is null", () =>
@@ -1371,6 +1473,7 @@ describe("PmRuntime", () => {
                   events: Stream.empty,
                   isIdle: Effect.succeed(true),
                   latestAssistantUsage: Effect.sync(() => undefined),
+                  start: Effect.void,
                   waitForIdle: Effect.sync(() => {
                     calls.push("waitForIdle");
                   }),
@@ -1419,6 +1522,7 @@ describe("PmRuntime", () => {
                 events: Stream.fromQueue(events),
                 isIdle: Effect.succeed(true),
                 latestAssistantUsage: Effect.sync(() => undefined),
+                start: Effect.void,
                 waitForIdle: Effect.void,
                 prompt: (text) =>
                   Effect.gen(function* () {
@@ -1499,6 +1603,7 @@ describe("PmRuntime", () => {
                   events: Stream.empty,
                   isIdle: Effect.succeed(true),
                   latestAssistantUsage: Effect.sync(() => undefined),
+                  start: Effect.void,
                   waitForIdle: Effect.sync(() => {
                     calls.push("waitForIdle");
                   }),
@@ -1582,6 +1687,7 @@ describe("PmRuntime", () => {
                 events: Stream.empty,
                 isIdle: Effect.succeed(true),
                 latestAssistantUsage: Effect.sync(() => undefined),
+                start: Effect.void,
                 waitForIdle: Effect.sync(() => {
                   calls.push("waitForIdle");
                 }),
@@ -1635,6 +1741,7 @@ describe("PmRuntime", () => {
                   events: Stream.empty,
                   isIdle: Effect.succeed(true),
                   latestAssistantUsage: Effect.sync(() => undefined),
+                  start: Effect.void,
                   waitForIdle: Effect.sync(() => {
                     calls.push("waitForIdle");
                   }),
@@ -1693,6 +1800,7 @@ describe("PmRuntime", () => {
                 events: Stream.empty,
                 isIdle: Effect.succeed(true),
                 latestAssistantUsage: Effect.sync(() => undefined),
+                start: Effect.void,
                 waitForIdle: Deferred.succeed(invalidated, void 0).pipe(Effect.asVoid),
                 prompt: () => Effect.succeed(fauxAssistantMessage("ok")),
                 followUp: () => Effect.void,

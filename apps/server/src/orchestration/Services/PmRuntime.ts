@@ -8,6 +8,7 @@
  * @module PmRuntime
  */
 import type { OrchestrationProject, ProjectId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
@@ -16,6 +17,7 @@ import type { PmRuntimeError } from "../pm/Errors.ts";
 
 export interface PmProjectRuntime {
   readonly surfaceUserMessage: (message: string) => Effect.Effect<void, PmRuntimeError>;
+  readonly createHandoffBrief: Effect.Effect<string, PmRuntimeError>;
   readonly enqueue: (message: string) => Effect.Effect<void, PmRuntimeError>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
 }
@@ -32,6 +34,12 @@ export interface PmProjectRuntimeFactoryShape {
   readonly clearSessionStorage: (
     project: OrchestrationProject,
   ) => Effect.Effect<void, PmRuntimeError>;
+  readonly resetSessionBinding: (
+    project: OrchestrationProject,
+  ) => Effect.Effect<void, PmRuntimeError>;
+  readonly createHandoffBrief: (
+    projectId: ProjectId,
+  ) => Effect.Effect<Option.Option<string>, PmRuntimeError>;
 }
 
 export class PmProjectRuntimeFactory extends Context.Service<

@@ -122,6 +122,10 @@ describe("wsRpcClient", () => {
       [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: vi.fn(() => ({ sequence: 8 })),
       [ORCHESTRATOR_WS_METHODS.cancelTask]: vi.fn(() => ({ sequence: 10 })),
       [ORCHESTRATOR_WS_METHODS.clearPmChat]: vi.fn(() => ({ sequence: 9 })),
+      [ORCHESTRATOR_WS_METHODS.requestPmHandoff]: vi.fn(() => ({
+        accepted: true,
+        mode: "transcript" as const,
+      })),
     };
     const request = vi.fn((execute: (client: typeof protocolClient) => unknown) =>
       Promise.resolve(execute(protocolClient)),
@@ -179,6 +183,9 @@ describe("wsRpcClient", () => {
     ).resolves.toEqual({ sequence: 8 });
     await expect(client.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 10 });
     await expect(client.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 9 });
+    await expect(
+      client.orchestrator.requestPmHandoff({ projectId, mode: "transcript" }),
+    ).resolves.toEqual({ accepted: true, mode: "transcript" });
 
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
       projectId,
@@ -207,6 +214,10 @@ describe("wsRpcClient", () => {
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.cancelTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.clearPmChat]).toHaveBeenCalledWith({
       projectId,
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.requestPmHandoff]).toHaveBeenCalledWith({
+      projectId,
+      mode: "transcript",
     });
     expect(subscribe.mock.calls[0]?.[2]).toEqual({
       onResubscribe,

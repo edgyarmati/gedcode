@@ -8,6 +8,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
+  type OrchestrationThread,
 } from "@t3tools/contracts";
 import {
   resolveAllowFullAccessWorkers,
@@ -55,6 +56,29 @@ function invariantError(commandType: string, detail: string): OrchestrationComma
     commandType,
     detail,
   });
+}
+
+function requirePmThread(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly threadId: OrchestrationThread["id"];
+}): Effect.Effect<OrchestrationThread, OrchestrationCommandInvariantError> {
+  return requireThread({
+    readModel: input.readModel,
+    command: input.command,
+    threadId: input.threadId,
+  }).pipe(
+    Effect.flatMap((thread) =>
+      String(thread.id) === `pm:${thread.projectId}`
+        ? Effect.succeed(thread)
+        : Effect.fail(
+            invariantError(
+              input.command.type,
+              `Thread '${input.threadId}' is not a PM thread for command '${input.command.type}'.`,
+            ),
+          ),
+    ),
+  );
 }
 
 function requireOrchestratorEnabled(input: {
@@ -778,6 +802,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           clearedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.pm-handoff.request": {
+      yield* requirePmThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.pm-handoff-requested",
+        payload: {
+          threadId: command.threadId,
+          mode: command.mode,
+          ...(command.brief !== undefined ? { brief: command.brief } : {}),
+          createdAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.pm-handoff.complete": {
+      yield* requirePmThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.pm-handoff-completed",
+        payload: {
+          threadId: command.threadId,
+          mode: command.mode,
+          createdAt: command.createdAt,
         },
       };
     }

@@ -14,6 +14,7 @@ import {
   OrchestrationStageHistoryEntry,
   OrchestrationTask,
   OrchestrationThread,
+  PendingPmHandoff,
   ProjectScript,
   TurnId,
   type OrchestrationCheckpointSummary,
@@ -89,6 +90,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -392,6 +394,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -421,6 +424,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -452,6 +456,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -909,6 +914,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
+          pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -1392,6 +1398,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 ...(row.lastClearedSequence !== null
                   ? { lastClearedSequence: row.lastClearedSequence }
                   : {}),
+                pendingPmHandoff: row.pendingPmHandoff,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: activitiesByThread.get(row.threadId) ?? [],
@@ -1680,6 +1687,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   ...(row.lastClearedSequence !== null
                     ? { lastClearedSequence: row.lastClearedSequence }
                     : {}),
+                  pendingPmHandoff: row.pendingPmHandoff,
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                   activities: [],
@@ -1815,6 +1823,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       ...(row.lastClearedSequence !== null
                         ? { lastClearedSequence: row.lastClearedSequence }
                         : {}),
+                      pendingPmHandoff: row.pendingPmHandoff,
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
                       hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -1952,6 +1961,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   ...(row.lastClearedSequence !== null
                     ? { lastClearedSequence: row.lastClearedSequence }
                     : {}),
+                  pendingPmHandoff: row.pendingPmHandoff,
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
                   hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -2197,6 +2207,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }
           : {}),
+        pendingPmHandoff: threadRow.value.pendingPmHandoff,
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
@@ -2295,6 +2306,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }
           : {}),
+        pendingPmHandoff: threadRow.value.pendingPmHandoff,
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,

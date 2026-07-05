@@ -43,6 +43,8 @@ import {
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
   ThreadMetaUpdatedPayload,
+  ThreadPmHandoffCompletedPayload,
+  ThreadPmHandoffRequestedPayload,
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
   ThreadUnarchivedPayload,
@@ -371,6 +373,7 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
             archivedAt: null,
             deletedAt: null,
+            pendingPmHandoff: null,
             messages: [],
             activities: [],
             checkpoints: [],
@@ -543,10 +546,47 @@ export function projectEvent(
               latestTurn: null,
               session: null,
               lastClearedSequence: event.sequence,
+              pendingPmHandoff: null,
               updatedAt: payload.clearedAt,
             }),
           };
         }),
+      );
+
+    case "thread.pm-handoff-requested":
+      return decodeForEvent(
+        ThreadPmHandoffRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            pendingPmHandoff: {
+              mode: payload.mode,
+              ...(payload.brief !== undefined ? { brief: payload.brief } : {}),
+              requestedAt: payload.createdAt,
+            },
+            updatedAt: payload.createdAt,
+          }),
+        })),
+      );
+
+    case "thread.pm-handoff-completed":
+      return decodeForEvent(
+        ThreadPmHandoffCompletedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            pendingPmHandoff: null,
+            updatedAt: payload.createdAt,
+          }),
+        })),
       );
 
     case "thread.session-set":

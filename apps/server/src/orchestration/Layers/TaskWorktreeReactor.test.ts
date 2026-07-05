@@ -109,6 +109,7 @@ function makeReadModel(input: {
         updatedAt: now,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages: [],
         proposedPlans: [],
         activities: [],

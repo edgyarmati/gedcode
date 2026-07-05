@@ -93,6 +93,7 @@ describe("orchestration projector", () => {
         updatedAt: now,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages: [],
         proposedPlans: [],
         activities: [],
@@ -190,6 +191,120 @@ describe("orchestration projector", () => {
     ]);
     expect(readModel.threads[0]?.messages[0]?.text).toBe("after clear");
     expect(readModel.threads[0]?.lastClearedSequence).toBe(3);
+  });
+
+  it("projects pending PM handoff requested, completed, and cleared state", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const threadId = "pm:project-1";
+    let readModel = createEmptyReadModel(now);
+
+    const events: OrchestrationEvent[] = [
+      makeEvent({
+        sequence: 1,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-create",
+        payload: {
+          threadId,
+          projectId: "project-1",
+          title: "Project PM",
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/project",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "thread.pm-handoff-requested",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-pm-handoff",
+        payload: {
+          threadId,
+          mode: "summary",
+          brief: "Brief",
+          createdAt: now,
+        },
+      }),
+    ];
+
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+    expect(readModel.threads[0]?.pendingPmHandoff).toEqual({
+      mode: "summary",
+      brief: "Brief",
+      requestedAt: now,
+    });
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 3,
+          type: "thread.pm-handoff-completed",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-pm-handoff-complete",
+          payload: {
+            threadId,
+            mode: "summary",
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff).toBeNull();
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 4,
+          type: "thread.pm-handoff-requested",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-pm-handoff-2",
+          payload: {
+            threadId,
+            mode: "transcript",
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff?.mode).toBe("transcript");
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 5,
+          type: "thread.cleared",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-thread-clear",
+          payload: {
+            threadId,
+            clearedAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff).toBeNull();
   });
 
   it("replays legacy pi-era PM model selections as unconfigured", async () => {

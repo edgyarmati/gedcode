@@ -255,6 +255,7 @@ export type PmAdapterShape = {
   readonly events: Stream.Stream<AgentHarnessEvent>;
   readonly isIdle: Effect.Effect<boolean>;
   readonly latestAssistantUsage: Effect.Effect<Usage | undefined>;
+  readonly start: Effect.Effect<void, PmRuntimeError>;
   readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
   readonly prompt: (
     text: string,

@@ -98,6 +98,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         pendingUserInputCount: 0,
         hasActionableProposedPlan: 0,
         lastClearedSequence: null,
+        pendingPmHandoff: null,
         deletedAt: null,
       });
 

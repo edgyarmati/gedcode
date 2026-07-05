@@ -11,6 +11,7 @@ import {
   ThreadId,
   TurnId,
   ProviderInstanceId,
+  type OrchestrationEvent,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -175,6 +176,140 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       for (const row of stateRows) {
         assert.equal(row.lastAppliedSequence, 3);
       }
+    }),
+  );
+
+  it.effect("projects pending PM handoff state on request, completion, and clear", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("pm:project-pm-handoff");
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-pm-handoff-thread"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-thread"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-thread"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-pm-handoff"),
+          title: "PM Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-opus-4-6",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.pm-handoff-requested",
+        eventId: EventId.make("evt-pm-handoff-requested"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-requested"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "summary",
+          brief: "Brief",
+          createdAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+      let rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.deepEqual(JSON.parse(rows[0]?.pendingPmHandoff ?? "null"), {
+        mode: "summary",
+        brief: "Brief",
+        requestedAt: now,
+      });
+
+      const completedEvent: OrchestrationEvent = {
+        sequence: 3,
+        type: "thread.pm-handoff-completed",
+        eventId: EventId.make("evt-pm-handoff-completed"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-completed"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-completed"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "summary",
+          createdAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(completedEvent);
+      rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.equal(rows[0]?.pendingPmHandoff, null);
+
+      const transcriptRequestEvent: OrchestrationEvent = {
+        sequence: 4,
+        type: "thread.pm-handoff-requested",
+        eventId: EventId.make("evt-pm-handoff-requested-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-requested-2"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-requested-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "transcript",
+          createdAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(transcriptRequestEvent);
+      const clearedEvent: OrchestrationEvent = {
+        sequence: 5,
+        type: "thread.cleared",
+        eventId: EventId.make("evt-pm-handoff-clear"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-clear"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-clear"),
+        metadata: {},
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(clearedEvent);
+      rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.equal(rows[0]?.pendingPmHandoff, null);
     }),
   );
 

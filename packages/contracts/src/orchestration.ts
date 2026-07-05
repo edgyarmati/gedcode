@@ -43,6 +43,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
   cancelTask: "orchestrator.cancelTask",
   clearPmChat: "orchestrator.clearPmChat",
+  requestPmHandoff: "orchestrator.requestPmHandoff",
 } as const;
 
 export const OrchestratorPlaybookFrontmatter = Schema.Struct({
@@ -389,6 +390,16 @@ export const OrchestrationThreadActivity = Schema.Struct({
 });
 export type OrchestrationThreadActivity = typeof OrchestrationThreadActivity.Type;
 
+export const PmHandoffMode = Schema.Literals(["transcript", "summary"]);
+export type PmHandoffMode = typeof PmHandoffMode.Type;
+
+export const PendingPmHandoff = Schema.Struct({
+  mode: PmHandoffMode,
+  brief: Schema.optional(Schema.String),
+  requestedAt: IsoDateTime,
+});
+export type PendingPmHandoff = typeof PendingPmHandoff.Type;
+
 const OrchestrationLatestTurnState = Schema.Literals([
   "running",
   "interrupted",
@@ -425,6 +436,9 @@ export const OrchestrationThread = Schema.Struct({
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   deletedAt: Schema.NullOr(IsoDateTime),
   lastClearedSequence: Schema.optional(NonNegativeInt),
+  pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -652,6 +666,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastClearedSequence: Schema.optional(NonNegativeInt),
+  pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -1121,6 +1138,23 @@ const ThreadClearCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadPmHandoffRequestCommand = Schema.Struct({
+  type: Schema.Literal("thread.pm-handoff.request"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  mode: PmHandoffMode,
+  brief: Schema.optional(Schema.String),
+  createdAt: IsoDateTime,
+});
+
+const ThreadPmHandoffCompleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.pm-handoff.complete"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  mode: PmHandoffMode,
+  createdAt: IsoDateTime,
+});
+
 const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
@@ -1165,6 +1199,8 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadClearCommand,
+  ThreadPmHandoffRequestCommand,
+  ThreadPmHandoffCompleteCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
@@ -1194,6 +1230,8 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.interaction-mode-set",
   "thread.message-sent",
   "thread.cleared",
+  "thread.pm-handoff-requested",
+  "thread.pm-handoff-completed",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.approval-response-requested",
@@ -1324,6 +1362,19 @@ export const ThreadMessageSentPayload = Schema.Struct({
 export const ThreadClearedPayload = Schema.Struct({
   threadId: ThreadId,
   clearedAt: IsoDateTime,
+});
+
+export const ThreadPmHandoffRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
+  mode: PmHandoffMode,
+  brief: Schema.optional(Schema.String),
+  createdAt: IsoDateTime,
+});
+
+export const ThreadPmHandoffCompletedPayload = Schema.Struct({
+  threadId: ThreadId,
+  mode: PmHandoffMode,
+  createdAt: IsoDateTime,
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1585,6 +1636,16 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.pm-handoff-requested"),
+    payload: ThreadPmHandoffRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.pm-handoff-completed"),
+    payload: ThreadPmHandoffCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.turn-start-requested"),
     payload: ThreadTurnStartRequestedPayload,
   }),
@@ -1810,6 +1871,19 @@ export const OrchestratorClearPmChatInput = Schema.Struct({
 });
 export type OrchestratorClearPmChatInput = typeof OrchestratorClearPmChatInput.Type;
 
+export const OrchestratorRequestPmHandoffInput = Schema.Struct({
+  projectId: ProjectId,
+  mode: PmHandoffMode,
+});
+export type OrchestratorRequestPmHandoffInput = typeof OrchestratorRequestPmHandoffInput.Type;
+
+export const OrchestratorRequestPmHandoffResult = Schema.Struct({
+  accepted: Schema.Literal(true),
+  mode: PmHandoffMode,
+  fallback: Schema.optional(Schema.String),
+});
+export type OrchestratorRequestPmHandoffResult = typeof OrchestratorRequestPmHandoffResult.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1963,6 +2037,10 @@ export const OrchestratorRpcSchemas = {
   clearPmChat: {
     input: OrchestratorClearPmChatInput,
     output: DispatchResult,
+  },
+  requestPmHandoff: {
+    input: OrchestratorRequestPmHandoffInput,
+    output: OrchestratorRequestPmHandoffResult,
   },
 } as const;
 
