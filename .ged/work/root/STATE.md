@@ -687,6 +687,19 @@ Seam (me): DriverPmAdapter.test collectBridgedEvents error-type annotation (PmRu
 12/12 (shared tsgo flake once), server 1324/1325 full, lint clean. NEXT **R2 = W5-D** runtime acceptance,
 then **R3 = W5-EF** picker unlock → handoff dialog LIVE.
 
+**W5 COMPLETE (2026-07-05)** — R2 **W5-D `87a927978`**: PM runtime resolves claudeAgent OR codex (unknown
+rejected); DriverPmAdapter takes explicit driverKind (binding + envelope stamps; codex → codex-app-server/
+openai); PmEventProjection providerName input; resetDriverPmSession driver-neutral (clear + handoff resets work
+on codex); pmAdapterModelDescriptor per-driver w/ DEFAULT_CODEX_PM_CONTEXT_WINDOW; PM prompt decision line
+Claude-conditional (codex asks in plain text). R3 **W5-EF `5458f0c27`**: picker offers claude+codex
+(SUPPORTED_PM_DRIVERS, pre-filtered entries + lockedProvider null), traits follow selected driver, dialog LIVE
+on cross-driver picks; browser coverage 5/5. Gates: server 1329/1330 full, web 1176, browser 177 + the 2 known.
+**THE FULL SCENARIO IS NOW LIVE**: Claude PM → pick codex model → handoff dialog (transcript/summary/fresh) →
+Codex PM continues same thread w/ charter via developerInstructions + orchestration tools via loopback HTTP MCP
+(config overlay) + handoff context via systemPromptAppend. AWAITING USER LIVE SMOKE TEST (restart dev server;
+switch PM to codex; verify dialog, handoff context, codex PM can createTask/handoffWorker/steerStage/
+inspectStage; check marker activity "pm.handoff"; also verify claude→claude model change still silent).
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
