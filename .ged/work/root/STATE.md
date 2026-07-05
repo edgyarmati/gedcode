@@ -606,7 +606,16 @@ Gate: fmt/lint/typecheck 12/12, worker's full `bun run test` 12/12 turbo tasks (
 green under full concurrency!), my re-run: server 1303/1304, browser 174 + the 2 known failures (pi browser
 tests deleted with the UI). −5,814 lines this commit; W6+W7 total ≈ −11k lines.
 
-- **DEFERRED follow-ups:** W7-C remove gedWorkflowEnabled from orchestration.ts thread structs/commands/events
+**W7-C DONE `f43d91592`** (2026-07-05, Codex yolo, gpt-5.5 high) — gedWorkflowEnabled removed from thread
+contracts/commands/payloads, decider (plumbing + stage/PM false literals), projector/pipeline/snapshot-query,
+ProjectionThreads persistence; DB column stays dead behind append-only migration 031; grep clean (031 only).
+Replay-safety VERIFIED by worker (event replay + command decode strip unknown props; receipts don't persist
+payloads). Review: reverted worker's out-of-scope effect-codex-app-server NodeRuntime import edits — the known
+tsgo phantom flake again (standalone typecheck green without them; same pattern as WP-CLRB round). Gate:
+typecheck 12/12, server 1303/1304, contracts 183, web 1168. **W6+W7 ARC COMPLETE** (~11k lines removed today).
+Queue: WP-PMHANDOFF design → W5 Codex PM parity (gated on handoff UX).
+
+- **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
   rpc pi methods + settings piProviders + web PiProviderSettings + drop pi deps + docs (needs T1; keep legacy
