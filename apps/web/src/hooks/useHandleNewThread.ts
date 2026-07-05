@@ -37,7 +37,6 @@ function useNewThreadState() {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
-        gedWorkflowEnabled?: boolean | null;
       },
     ): Promise<void> => {
       const {
@@ -45,7 +44,6 @@ function useNewThreadState() {
         getDraftSession,
         getDraftThread,
         applyStickyState,
-        setGedWorkflowEnabled,
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
       } = useComposerDraftStore.getState();
@@ -61,7 +59,6 @@ function useNewThreadState() {
       const hasBranchOption = options?.branch !== undefined;
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
-      const hasGedWorkflowOption = options?.gedWorkflowEnabled !== undefined;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const latestActiveDraftThread: DraftThreadState | null = currentRouteTarget
         ? currentRouteTarget.kind === "server"
@@ -76,9 +73,6 @@ function useNewThreadState() {
               ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
               ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
             });
-          }
-          if (hasGedWorkflowOption) {
-            setGedWorkflowEnabled(storedDraftThread.draftId, options?.gedWorkflowEnabled ?? null);
           }
           setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, storedDraftThread.draftId, {
             threadId: storedDraftThread.threadId,
@@ -118,9 +112,6 @@ function useNewThreadState() {
           ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
           ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
         });
-        if (hasGedWorkflowOption) {
-          setGedWorkflowEnabled(currentRouteTarget.draftId, options?.gedWorkflowEnabled ?? null);
-        }
         return Promise.resolve();
       }
 
@@ -137,9 +128,6 @@ function useNewThreadState() {
           runtimeMode: DEFAULT_RUNTIME_MODE,
         });
         applyStickyState(draftId);
-        if (hasGedWorkflowOption) {
-          setGedWorkflowEnabled(draftId, options?.gedWorkflowEnabled ?? null);
-        }
 
         await router.navigate({
           to: "/draft/$draftId",
@@ -177,14 +165,7 @@ export function useHandleNewThread() {
           ? store.getDraftThread(routeTarget.threadRef)
           : store.getDraftSession(routeTarget.draftId);
       if (!thread) return null;
-      const draft =
-        routeTarget.kind === "server"
-          ? store.getComposerDraft(routeTarget.threadRef)
-          : store.getComposerDraft(routeTarget.draftId);
-      return {
-        ...thread,
-        gedWorkflowEnabled: draft?.gedWorkflowEnabled ?? null,
-      };
+      return thread;
     }),
   );
   const projects = useStore(useShallow((store) => selectProjectsAcrossEnvironments(store)));

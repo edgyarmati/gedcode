@@ -1,5 +1,4 @@
 import type {
-  GedSubagentRole,
   ModelSelection,
   OrchestratorGatePolicy,
   OrchestratorGlobalDefaults,
@@ -65,23 +64,6 @@ export function formatDiagnosticsDescription(input: {
   }
 
   return `${mode}.`;
-}
-
-export function buildGedRoleSettingsPatch(input: {
-  readonly settings: Pick<ServerSettings, "gedRoleSettings">;
-  readonly role: GedSubagentRole;
-  readonly enabled: boolean;
-}): Pick<UnifiedSettings, "gedRoleSettings"> {
-  const current = input.settings.gedRoleSettings[input.role];
-  return {
-    gedRoleSettings: {
-      ...input.settings.gedRoleSettings,
-      [input.role]: {
-        ...current,
-        enabled: input.enabled,
-      },
-    },
-  };
 }
 
 export function buildProviderInstanceUpdatePatch(input: {

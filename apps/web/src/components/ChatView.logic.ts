@@ -28,7 +28,6 @@ export function buildLocalDraftThread(
   threadId: ThreadId,
   draftThread: DraftThreadState,
   fallbackModelSelection: ModelSelection,
-  gedWorkflowEnabled: boolean,
   error: string | null,
 ): Thread {
   return {
@@ -38,7 +37,6 @@ export function buildLocalDraftThread(
     projectId: draftThread.projectId,
     title: "New thread",
     modelSelection: fallbackModelSelection,
-    gedWorkflowEnabled,
     runtimeMode: draftThread.runtimeMode,
     interactionMode: draftThread.interactionMode,
     session: null,
@@ -56,18 +54,9 @@ export function buildLocalDraftThread(
 }
 
 export function resolveComposerModeModelFallback(input: {
-  gedWorkflowEnabled: boolean;
   projectDefaultModelSelection: ModelSelection | null | undefined;
-  gedMainModelSelection: ModelSelection | null | undefined;
   fallbackModelSelection: ModelSelection;
 }): ModelSelection {
-  if (input.gedWorkflowEnabled) {
-    return (
-      input.gedMainModelSelection ??
-      input.projectDefaultModelSelection ??
-      input.fallbackModelSelection
-    );
-  }
   return input.projectDefaultModelSelection ?? input.fallbackModelSelection;
 }
 

@@ -248,17 +248,6 @@ function createMockEnvironmentApi(input: {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["clearPmChat"],
     },
-    gedWorkflow: {
-      getState: (() =>
-        Promise.resolve({
-          enabled: true,
-          initialized: false,
-          phase: "inactive" as const,
-          classification: "unclassified" as const,
-          plannerCheckpointValid: false,
-          verifierCheckpointValid: false,
-        })) as EnvironmentApi["gedWorkflow"]["getState"],
-    },
   };
 }
 

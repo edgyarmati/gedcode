@@ -174,9 +174,6 @@ export interface WsRpcClient {
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
     readonly clearPmChat: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.clearPmChat>;
   };
-  readonly gedWorkflow: {
-    readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
-  };
 }
 
 export function createWsRpcClient(transport: WsTransport): WsRpcClient {
@@ -377,10 +374,6 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
       clearPmChat: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.clearPmChat](input)),
-    },
-    gedWorkflow: {
-      getState: (input) =>
-        transport.request((client) => client[WS_METHODS.gedWorkflowGetState](input)),
     },
   };
 }

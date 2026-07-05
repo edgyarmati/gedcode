@@ -332,9 +332,6 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     session: thread.session ? mapSession(thread.session) : null,
@@ -372,9 +369,6 @@ function mapThreadShell(
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
@@ -429,9 +423,6 @@ function toThreadShell(thread: Thread): ThreadShell {
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: thread.modelSelection,
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     error: thread.error,
@@ -532,7 +523,6 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.projectId === right.projectId &&
     left.title === right.title &&
     left.modelSelection === right.modelSelection &&
-    left.gedWorkflowEnabled === right.gedWorkflowEnabled &&
     left.runtimeMode === right.runtimeMode &&
     left.interactionMode === right.interactionMode &&
     left.error === right.error &&
@@ -2238,9 +2228,6 @@ function applyEnvironmentOrchestrationEvent(
           projectId: event.payload.projectId,
           title: event.payload.title,
           modelSelection: event.payload.modelSelection,
-          ...(event.payload.gedWorkflowEnabled !== undefined
-            ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
-            : {}),
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
@@ -2285,9 +2272,6 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: normalizeModelSelection(event.payload.modelSelection) }
           : {}),
-        ...(event.payload.gedWorkflowEnabled !== undefined
-          ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
-          : {}),
         ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
@@ -2314,9 +2298,6 @@ function applyEnvironmentOrchestrationEvent(
         ...thread,
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: normalizeModelSelection(event.payload.modelSelection) }
-          : {}),
-        ...(event.payload.gedWorkflowEnabled !== undefined
-          ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
           : {}),
         runtimeMode: event.payload.runtimeMode,
         interactionMode: event.payload.interactionMode,

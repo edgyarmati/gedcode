@@ -64,9 +64,6 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       cancelTask: rpcClient.orchestrator.cancelTask,
       clearPmChat: rpcClient.orchestrator.clearPmChat,
     },
-    gedWorkflow: {
-      getState: rpcClient.gedWorkflow.getState,
-    },
   };
 }
 

@@ -115,7 +115,6 @@ export interface Thread {
   projectId: ProjectId;
   title: string;
   modelSelection: ModelSelection;
-  gedWorkflowEnabled?: boolean | undefined;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   session: ThreadSession | null;
@@ -141,7 +140,6 @@ export interface ThreadShell {
   projectId: ProjectId;
   title: string;
   modelSelection: ModelSelection;
-  gedWorkflowEnabled?: boolean | undefined;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   error: string | null;

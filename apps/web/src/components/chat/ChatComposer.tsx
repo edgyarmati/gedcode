@@ -89,7 +89,6 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
-  WorkflowIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -133,20 +132,6 @@ const runtimeModeConfig: Record<
 };
 
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
-const workflowModeConfig = {
-  normal: {
-    label: "Normal thread",
-    shortLabel: "Normal",
-    description: "Run a normal provider thread with the selected model.",
-  },
-  ged: {
-    label: "Ged workflow",
-    shortLabel: "Ged",
-    description:
-      "Use the selected model for the main Ged thread; subagent mode comes from settings.",
-  },
-} as const;
-type WorkflowMode = keyof typeof workflowModeConfig;
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-slot="popover-popup"]',
   '[data-slot="menu-popup"]',
@@ -189,63 +174,20 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   runtimeMode: RuntimeMode;
-  workflowEnabled: boolean;
   showPlanToggle: boolean;
   planSidebarLabel: string;
   planSidebarOpen: boolean;
-  onToggleWorkflow: (enabled: boolean) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onTogglePlanSidebar: () => void;
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
-  const workflowMode: WorkflowMode = props.workflowEnabled ? "ged" : "normal";
-  const workflowModeOption = workflowModeConfig[workflowMode];
   const planSidebarTooltip = props.planSidebarOpen
     ? `Hide ${props.planSidebarLabel.toLowerCase()} sidebar`
     : `Show ${props.planSidebarLabel.toLowerCase()} sidebar`;
 
   return (
     <>
-      <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
-
-      <Select
-        value={workflowMode}
-        onValueChange={(value) => {
-          if (value === "normal" || value === "ged") {
-            props.onToggleWorkflow(value === "ged");
-          }
-        }}
-      >
-        <SelectTrigger
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "font-medium",
-            props.workflowEnabled
-              ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-              : "text-muted-foreground/80 hover:text-foreground/80",
-          )}
-          aria-label="Thread mode"
-          title={workflowModeOption.description}
-        >
-          <WorkflowIcon className="size-4" />
-          <SelectValue>{workflowModeOption.shortLabel}</SelectValue>
-        </SelectTrigger>
-        <SelectPopup alignItemWithTrigger={false}>
-          {Object.entries(workflowModeConfig).map(([mode, option]) => (
-            <SelectItem key={mode} value={mode} className="min-w-72 py-2">
-              <div className="grid min-w-0 gap-0.5">
-                <span className="font-medium text-foreground">{option.label}</span>
-                <span className="text-muted-foreground text-xs leading-4">
-                  {option.description}
-                </span>
-              </div>
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
 
       <Tooltip>
@@ -463,8 +405,6 @@ export interface ChatComposerProps {
 
   // Mode
   runtimeMode: RuntimeMode;
-  workflowEnabled: boolean;
-  onToggleWorkflow: (enabled: boolean) => void;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -561,8 +501,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planSidebarLabel,
     planSidebarOpen,
     runtimeMode,
-    workflowEnabled,
-    onToggleWorkflow,
     lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
@@ -2374,9 +2312,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     planSidebarLabel={planSidebarLabel}
                     planSidebarOpen={planSidebarOpen}
                     runtimeMode={runtimeMode}
-                    workflowEnabled={workflowEnabled}
                     traitsMenuContent={providerTraitsMenuContent}
-                    onToggleWorkflow={onToggleWorkflow}
                     onTogglePlanSidebar={togglePlanSidebar}
                     onRuntimeModeChange={handleRuntimeModeChange}
                   />
@@ -2390,11 +2326,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ) : null}
                     <ComposerFooterModeControls
                       runtimeMode={runtimeMode}
-                      workflowEnabled={workflowEnabled}
                       showPlanToggle={showPlanSidebarToggle}
                       planSidebarLabel={planSidebarLabel}
                       planSidebarOpen={planSidebarOpen}
-                      onToggleWorkflow={onToggleWorkflow}
                       onRuntimeModeChange={handleRuntimeModeChange}
                       onTogglePlanSidebar={togglePlanSidebar}
                     />
