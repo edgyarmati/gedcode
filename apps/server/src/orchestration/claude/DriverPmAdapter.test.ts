@@ -80,7 +80,7 @@ const providerSession = (
   provider,
   providerInstanceId: claudeInstanceId,
   status: "ready",
-  runtimeMode: "approval-required",
+  runtimeMode: "full-access",
   cwd: project.workspaceRoot,
   model: modelSelection.model,
   threadId,
@@ -169,7 +169,7 @@ describe("DriverPmAdapter", () => {
               provider,
               providerInstanceId: claudeInstanceId,
               resumeCursor: persistedResumeCursor,
-              runtimeMode: "approval-required",
+              runtimeMode: "full-access",
             }),
           ),
         listThreadIds: () => Effect.succeed([threadId]),
@@ -312,13 +312,13 @@ describe("DriverPmAdapter", () => {
           providerInstanceId: claudeInstanceId,
           cwd: project.workspaceRoot,
           modelSelection,
-          runtimeMode: "approval-required",
-          readOnly: true,
+          runtimeMode: "full-access",
           enableOrchestrationTools: true,
           systemPromptAppend: "PM system prompt",
           resumeCursor: persistedResumeCursor,
         },
       ]);
+      assert.strictEqual("readOnly" in startInputs[0]!, false);
       assert.deepStrictEqual(
         upserts.map((binding) => binding.resumeCursor),
         [{ resume: "resume-active" }, { resume: "resume-after-turn" }],

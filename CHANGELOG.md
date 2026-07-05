@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Change: The Orchestrator PM now runs with full tool access and no approval prompts. Its system prompt now steers it to keep PM responsibilities in-process, delegate implementation to work agents, dispatch exploration tasks for heavier research, and request plan-review second opinions when useful.
 - Fix: The Orchestrator PM chat send button no longer stays disabled when the chat opens before the environment connection is ready.
 - Fix: Clearing a chat now also clears its persisted activity feed, so old tool calls and failure notices no longer reappear in a cleared PM chat.
 - Fix: Clearing the Orchestrator PM chat can no longer resurrect pre-clear messages or activities on reconnect/resubscribe, and stale replayed session or turn state can no longer block the PM composer.

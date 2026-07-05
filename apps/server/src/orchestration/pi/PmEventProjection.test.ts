@@ -324,6 +324,10 @@ describe("PmEventProjection", () => {
         sessionCommands.map((command) => command.session.status),
         ["running", "ready"],
       );
+      assert.deepStrictEqual(
+        sessionCommands.map((command) => command.session.runtimeMode),
+        ["full-access", "full-access"],
+      );
 
       const pmThread = readModelRef.current.threads.find(
         (thread) => thread.id === runtime.pmThreadId,
@@ -360,6 +364,7 @@ describe("PmEventProjection", () => {
       assert.ok(sessionCommand);
       assert.strictEqual(sessionCommand.session.providerName, "claudeAgent");
       assert.strictEqual(sessionCommand.session.providerInstanceId, claudeWorkSelection.instanceId);
+      assert.strictEqual(sessionCommand.session.runtimeMode, "full-access");
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
@@ -456,6 +461,7 @@ describe("PmEventProjection", () => {
         assert.strictEqual(commands[0].threadId, runtime.pmThreadId);
         assert.strictEqual(commands[0].gedWorkflowEnabled, false);
         assert.deepStrictEqual(commands[0].modelSelection, pmModelSelection);
+        assert.strictEqual(commands[0].runtimeMode, "full-access");
       }
 
       const deltaCommands = commands.filter(

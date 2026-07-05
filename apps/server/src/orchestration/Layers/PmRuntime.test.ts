@@ -1113,12 +1113,12 @@ describe("PmRuntime", () => {
               providerInstanceId: claudeInstanceId,
               cwd: project.workspaceRoot,
               modelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
-              runtimeMode: "approval-required",
-              readOnly: true,
+              runtimeMode: "full-access",
               enableOrchestrationTools: true,
               systemPromptAppend: buildPmSystemPrompt(project),
             },
           ]);
+          assert.strictEqual("readOnly" in startInputs[0]!, false);
           assert.deepStrictEqual(
             dispatchCalls
               .map((command) => command.type)
@@ -1175,7 +1175,7 @@ describe("PmRuntime", () => {
             provider: claudeDriver,
             providerInstanceId: claudeInstanceId,
             status: "running",
-            runtimeMode: "approval-required",
+            runtimeMode: "full-access",
             resumeCursor: { resume: "previous-claude-session" },
           });
 
@@ -2420,8 +2420,11 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "/tmp/project");
     assert.include(prompt, "never ask the human for a project id");
     // Delegation framing: the PM orchestrates and never does the work itself.
-    assert.include(prompt, "DELEGATE");
-    assert.include(prompt, "READ-ONLY");
+    assert.include(prompt, "full tool access");
+    assert.include(prompt, "Never implement product changes yourself");
+    assert.include(prompt, "handoffWorker");
+    assert.notInclude(prompt, "READ-ONLY");
+    assert.notInclude(prompt, "NO shell");
     // Role guidance is preserved.
     assert.include(prompt, "classify");
   });

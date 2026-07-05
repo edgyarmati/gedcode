@@ -210,7 +210,7 @@ export const makeDriverPmAdapter = (
         provider: CLAUDE_PROVIDER,
         providerInstanceId: options.modelSelection.instanceId,
         status: session.status === "closed" ? "stopped" : "running",
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
     }).pipe(
@@ -499,8 +499,7 @@ export const makeDriverPmAdapter = (
         providerInstanceId: selection.instanceId,
         cwd: options.project.workspaceRoot,
         modelSelection: selection,
-        runtimeMode: "approval-required",
-        readOnly: true,
+        runtimeMode: "full-access",
         enableOrchestrationTools: true,
         ...(options.systemPrompt !== undefined && options.systemPrompt.length > 0
           ? { systemPromptAppend: options.systemPrompt }
@@ -514,7 +513,7 @@ export const makeDriverPmAdapter = (
         provider: CLAUDE_PROVIDER,
         providerInstanceId: selection.instanceId,
         status: "running",
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
       return session;
