@@ -76,13 +76,7 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
-  const {
-    automaticGitFetchInterval,
-    gedModelSelections,
-    gedRoleSettings,
-    orchestratorDefaults,
-    ...patchForMerge
-  } = patch;
+  const { automaticGitFetchInterval, orchestratorDefaults, ...patchForMerge } = patch;
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacements = {
     ...next,
@@ -90,21 +84,6 @@ export function applyServerSettingsPatch(
       ? { providerInstances: patch.providerInstances }
       : {}),
     ...(patch.piProviders !== undefined ? { piProviders: patch.piProviders } : {}),
-    ...(gedModelSelections !== undefined
-      ? {
-          gedModelSelections: {
-            mainThread:
-              gedModelSelections.mainThread !== undefined
-                ? gedModelSelections.mainThread
-                : current.gedModelSelections.mainThread,
-            roles:
-              gedModelSelections.roles !== undefined
-                ? gedModelSelections.roles
-                : current.gedModelSelections.roles,
-          },
-        }
-      : {}),
-    ...(gedRoleSettings !== undefined ? { gedRoleSettings } : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(orchestratorDefaults !== undefined ? { orchestratorDefaults } : {}),
   };

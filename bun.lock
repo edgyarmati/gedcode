@@ -59,7 +59,6 @@
       "devDependencies": {
         "@effect/vitest": "catalog:",
         "@t3tools/contracts": "workspace:*",
-        "@t3tools/ged-workflow": "workspace:*",
         "@t3tools/shared": "workspace:*",
         "@t3tools/tailscale": "workspace:*",
         "@t3tools/web": "workspace:*",
@@ -184,16 +183,6 @@
         "@effect/platform-node": "catalog:",
         "@effect/vitest": "catalog:",
         "@types/node": "catalog:",
-        "vitest": "catalog:",
-      },
-    },
-    "packages/ged-workflow": {
-      "name": "@t3tools/ged-workflow",
-      "version": "0.1.2",
-      "dependencies": {
-        "effect": "catalog:",
-      },
-      "devDependencies": {
         "vitest": "catalog:",
       },
     },
@@ -812,8 +801,6 @@
     "@t3tools/contracts": ["@t3tools/contracts@workspace:packages/contracts"],
 
     "@t3tools/desktop": ["@t3tools/desktop@workspace:apps/desktop"],
-
-    "@t3tools/ged-workflow": ["@t3tools/ged-workflow@workspace:packages/ged-workflow"],
 
     "@t3tools/oxlint-plugin-t3code": ["@t3tools/oxlint-plugin-t3code@workspace:oxlint-plugin-t3code"],
 

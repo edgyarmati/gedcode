@@ -43,9 +43,6 @@ import { OrphanTurnReconcilerLive } from "./orchestration/Layers/OrphanTurnRecon
 import { PiProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Layers/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
 import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
-import { GedWorkflowServiceLive } from "./gedWorkflow/Layers/GedWorkflowServiceLive.ts";
-import { GedWorkflowEventReactorLive } from "./gedWorkflow/Layers/GedWorkflowEventReactor.ts";
-import { GedWorkflowGuardLive } from "./gedWorkflow/Layers/GedWorkflowGuard.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
@@ -155,7 +152,6 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PiProjectRuntimeFactoryLive),
   Layer.provideMerge(OrphanTurnReconcilerLive),
   Layer.provideMerge(WorkerStartAdmissionLive),
-  Layer.provideMerge(GedWorkflowEventReactorLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -256,12 +252,6 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
-  // GedWorkflowGuardLive wraps ProviderService.sendTurn with checkpoint
-  // validation and prompt enrichment. It depends on both ProviderService
-  // (from ProviderRuntimeLayerLive) and GedWorkflowService — both must be
-  // in scope before the guard is merged.
-  Layer.provideMerge(GedWorkflowGuardLive),
-  Layer.provideMerge(GedWorkflowServiceLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(TerminalLayerLive),

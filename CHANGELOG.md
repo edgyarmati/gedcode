@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: The server-side ged workflow subsystem (turn guard/interceptor, event reactor, role prompts, gedWorkflowGetState RPC) and the @t3tools/ged-workflow package are removed, along with the ged settings fields and the ProviderSendTurnInput.gedWorkflowEnabled contract field. Orchestrator stage machinery (roles, role model selections, prompt prefixes, playbooks) is unaffected.
 - Change/UI: Normal chat threads no longer have a "Ged workflow" mode — the toggle, its drafts/settings plumbing, the "Ged orchestration" settings section, and the ged main-thread model override are removed. The orchestrator view is the workflow surface.
 - Internal: The orchestrator PM runtime no longer depends on the legacy pi agent packages — the PM harness event model, adapter shape, tool result typing, and compaction thresholds are now native modules; PM behavior is unchanged.
 - Fix/UI: The Orchestrator task-board count no longer includes abandoned tasks, and abandoned tasks are now viewable from a collapsed read-only section.

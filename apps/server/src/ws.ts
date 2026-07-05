@@ -102,7 +102,6 @@ import {
   type SessionCredentialChange,
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
-import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
@@ -267,7 +266,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const sessions = yield* SessionCredentialService;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
-      const gedWorkflowService = yield* GedWorkflowService;
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
           ? cause
@@ -1773,12 +1771,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
             }),
             { "rpc.aggregate": "auth" },
-          ),
-        [WS_METHODS.gedWorkflowGetState]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.gedWorkflowGetState,
-            gedWorkflowService.getStateByThreadId(input.threadId),
-            { "rpc.aggregate": "gedWorkflow" },
           ),
       });
     }),

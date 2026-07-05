@@ -58,11 +58,6 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   binaryPath: "codex",
   homePath: "",
   shadowHomePath: "",
-  gedSubagentPreset: {
-    "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-    "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-    "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-  },
   customModels: [],
   ...overrides,
 });

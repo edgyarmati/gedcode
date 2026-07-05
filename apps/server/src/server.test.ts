@@ -134,7 +134,6 @@ import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
-import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 import * as Data from "effect/Data";
 
 const defaultProjectId = ProjectId.make("project-default");
@@ -771,34 +770,6 @@ const buildAppUnderTest = (options?: {
             ...options?.layers?.checkpointDiffQuery,
           }),
         ),
-      ),
-      Layer.provide(
-        Layer.mock(GedWorkflowService)({
-          bootstrap: () => Effect.void,
-          classifyTurn: () => Effect.void,
-          getState: () =>
-            Effect.succeed({
-              enabled: true,
-              initialized: false,
-              phase: "inactive" as const,
-              classification: "unclassified" as const,
-              plannerCheckpointValid: false,
-              verifierCheckpointValid: false,
-            }),
-          getStateByThreadId: () =>
-            Effect.succeed({
-              enabled: true,
-              initialized: false,
-              phase: "inactive" as const,
-              classification: "unclassified" as const,
-              plannerCheckpointValid: false,
-              verifierCheckpointValid: false,
-            }),
-          getWorkflowPromptSuffix: () => Effect.succeed(""),
-          isEnabled: Effect.succeed(true),
-          recordThreadCwd: () => Effect.void,
-          validateTurnGuards: () => Effect.succeed({ valid: true }),
-        }),
       ),
     );
 

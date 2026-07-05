@@ -73,7 +73,6 @@ import type {
   OrchestratorTaskStreamItem,
 } from "./orchestration.ts";
 import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
-import type { GedWorkflowState } from "./gedWorkflow.ts";
 import { AuthBearerBootstrapResult, AuthSessionState, AuthWebSocketTokenResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
@@ -598,8 +597,5 @@ export interface EnvironmentApi {
     ) => Promise<{ sequence: number }>;
     cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
     clearPmChat: (input: OrchestratorClearPmChatInput) => Promise<{ sequence: number }>;
-  };
-  gedWorkflow: {
-    getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;
   };
 }

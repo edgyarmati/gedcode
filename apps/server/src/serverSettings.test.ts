@@ -125,11 +125,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
         shadowHomePath: "",
-        gedSubagentPreset: {
-          "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-          "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-          "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-        },
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
@@ -371,11 +366,6 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
         shadowHomePath: "",
-        gedSubagentPreset: {
-          "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-          "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-          "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-        },
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
