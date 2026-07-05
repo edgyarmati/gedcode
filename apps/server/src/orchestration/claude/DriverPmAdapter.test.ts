@@ -15,6 +15,7 @@ import {
   type ProviderSessionStartInput,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import type * as CodexSchema from "effect-codex-app-server/schema";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -30,9 +31,11 @@ import {
 } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import type { PmRuntimeError } from "../pm/Errors.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { makeDriverPmAdapter, type DriverPmClaudeAdapter } from "./DriverPmAdapter.ts";
-import { orchestrationMcpToolId } from "./pmMcpServer.ts";
+import { ORCHESTRATION_MCP_SERVER_NAME, orchestrationMcpToolId } from "./pmMcpServer.ts";
+import type { AgentHarnessEvent } from "./pmHarness.ts";
 
 const provider = ProviderDriverKind.make("claudeAgent");
 const projectId = ProjectId.make("project-1");
@@ -113,6 +116,73 @@ const makeProjectionLayer = (commands: OrchestrationCommand[]) =>
         ),
     } as never),
   );
+
+const emptyDirectoryLayer = Layer.succeed(ProviderSessionDirectory, {
+  upsert: () => Effect.void,
+  getProvider: () => Effect.succeed(provider),
+  getBinding: () => Effect.succeed(Option.none()),
+  listThreadIds: () => Effect.succeed([]),
+  listBindings: () => Effect.succeed([]),
+});
+
+type CodexStartedMcpToolCall = Extract<
+  CodexSchema.V2ItemStartedNotification["item"],
+  { readonly type: "mcpToolCall" }
+>;
+
+const codexStartedNotification = (
+  item: CodexStartedMcpToolCall,
+): CodexSchema.V2ItemStartedNotification => ({
+  item,
+  startedAtMs: 0,
+  threadId: "codex-thread",
+  turnId: "codex-turn",
+});
+
+const codexCompletedNotification = (
+  item: CodexSchema.V2ItemCompletedNotification["item"],
+): CodexSchema.V2ItemCompletedNotification => ({
+  completedAtMs: 1,
+  item,
+  threadId: "codex-thread",
+  turnId: "codex-turn",
+});
+
+const collectBridgedEvents = (
+  runtimeEventInputs: ReadonlyArray<ProviderRuntimeEvent>,
+  count: number,
+): Effect.Effect<ReadonlyArray<AgentHarnessEvent>, PmRuntimeError, never> =>
+  Effect.gen(function* () {
+    const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    const threadId = pmThreadIdForProject(project);
+    const claudeAdapter: DriverPmClaudeAdapter = {
+      provider,
+      startSession: () => Effect.succeed(providerSession(threadId)),
+      sendTurn: () => Effect.succeed({ threadId, turnId: TurnId.make("turn-bridged") }),
+      interruptTurn: () => Effect.void,
+      stopSession: () => Effect.void,
+      listSessions: () => Effect.succeed([]),
+      hasSession: () => Effect.succeed(true),
+    };
+
+    const adapter = yield* makeDriverPmAdapter({
+      project,
+      claudeAdapter,
+      runtimeEvents: Stream.fromQueue(runtimeEvents),
+      modelSelection,
+    }).pipe(Effect.provide(emptyDirectoryLayer));
+
+    const bridgedEventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, count)).pipe(
+      Effect.map((chunk) => Array.from(chunk)),
+      Effect.forkChild,
+    );
+    for (const event of runtimeEventInputs) {
+      yield* Queue.offer(runtimeEvents, event);
+    }
+    const bridgedEvents = yield* Fiber.join(bridgedEventsFiber);
+    yield* adapter.abort;
+    return bridgedEvents;
+  });
 
 describe("DriverPmAdapter", () => {
   it.effect("bridges Claude PM events into the PI PM adapter shape", () =>
@@ -553,6 +623,255 @@ describe("DriverPmAdapter", () => {
 
       yield* adapter.abort;
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("bridges Codex orchestration MCP tool lifecycle items with result details", () =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make("turn-codex-orchestration-tool");
+      const toolItemId = RuntimeItemId.make("codex-tool-call-1");
+      const result = {
+        content: [{ type: "text", text: "Started worker task." }],
+        structuredContent: { stageThreadId: "stage-thread-1" },
+      };
+
+      const bridgedEvents = yield* collectBridgedEvents(
+        [
+          makeEvent({
+            type: "item.started",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "inProgress",
+              title: "MCP tool call",
+              data: codexStartedNotification({
+                arguments: { taskId: "task-1", role: "work" },
+                id: String(toolItemId),
+                server: ORCHESTRATION_MCP_SERVER_NAME,
+                status: "inProgress",
+                tool: "handoffWorker",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+          makeEvent({
+            type: "item.completed",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "completed",
+              title: "MCP tool call",
+              data: codexCompletedNotification({
+                arguments: { taskId: "task-1", role: "work" },
+                id: String(toolItemId),
+                result,
+                server: ORCHESTRATION_MCP_SERVER_NAME,
+                status: "completed",
+                tool: "handoffWorker",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+        ],
+        2,
+      );
+
+      const toolCall = bridgedEvents[0];
+      const toolResult = bridgedEvents[1];
+      assert.strictEqual(toolCall?.type, "tool_call");
+      if (toolCall?.type === "tool_call") {
+        assert.strictEqual(toolCall.toolName, "handoffWorker");
+        assert.deepStrictEqual(toolCall.input, { taskId: "task-1", role: "work" });
+      }
+      assert.strictEqual(toolResult?.type, "tool_result");
+      if (toolResult?.type === "tool_result") {
+        assert.strictEqual(toolResult.toolName, "handoffWorker");
+        assert.deepStrictEqual(toolResult.input, { taskId: "task-1", role: "work" });
+        assert.deepStrictEqual(toolResult.content, [
+          { type: "text", text: "Started worker task." },
+        ]);
+        assert.deepStrictEqual(toolResult.details, result);
+        assert.strictEqual(toolResult.isError, false);
+      }
+    }),
+  );
+
+  it.effect("bridges Codex non-orchestration MCP tool lifecycle items without details", () =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make("turn-codex-external-tool");
+      const toolItemId = RuntimeItemId.make("codex-tool-call-external");
+
+      const bridgedEvents = yield* collectBridgedEvents(
+        [
+          makeEvent({
+            type: "item.started",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "inProgress",
+              title: "MCP tool call",
+              data: codexStartedNotification({
+                arguments: { owner: "openai", repo: "codex" },
+                id: String(toolItemId),
+                server: "github",
+                status: "inProgress",
+                tool: "getRepo",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+          makeEvent({
+            type: "item.completed",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "completed",
+              title: "MCP tool call",
+              data: codexCompletedNotification({
+                arguments: { owner: "openai", repo: "codex" },
+                id: String(toolItemId),
+                result: {
+                  content: [{ type: "text", text: "Repository details" }],
+                  structuredContent: { stars: 1 },
+                },
+                server: "github",
+                status: "completed",
+                tool: "getRepo",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+        ],
+        2,
+      );
+
+      const toolCall = bridgedEvents[0];
+      const toolResult = bridgedEvents[1];
+      assert.strictEqual(toolCall?.type, "tool_call");
+      if (toolCall?.type === "tool_call") {
+        assert.strictEqual(toolCall.toolName, "getRepo");
+        assert.deepStrictEqual(toolCall.input, { owner: "openai", repo: "codex" });
+      }
+      assert.strictEqual(toolResult?.type, "tool_result");
+      if (toolResult?.type === "tool_result") {
+        assert.strictEqual(toolResult.toolName, "getRepo");
+        assert.deepStrictEqual(toolResult.input, { owner: "openai", repo: "codex" });
+        assert.deepStrictEqual(toolResult.content, []);
+        assert.strictEqual(toolResult.details, undefined);
+        assert.strictEqual(toolResult.isError, false);
+      }
+    }),
+  );
+
+  it.effect("marks failed Codex MCP tool lifecycle items as errors", () =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make("turn-codex-failed-tool");
+      const toolItemId = RuntimeItemId.make("codex-tool-call-failed");
+      const error = { message: "Tool failed before producing a result." };
+
+      const bridgedEvents = yield* collectBridgedEvents(
+        [
+          makeEvent({
+            type: "item.started",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "inProgress",
+              title: "MCP tool call",
+              data: codexStartedNotification({
+                arguments: { taskId: "task-1" },
+                id: String(toolItemId),
+                server: ORCHESTRATION_MCP_SERVER_NAME,
+                status: "inProgress",
+                tool: "reviewTask",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+          makeEvent({
+            type: "item.completed",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "mcp_tool_call",
+              status: "completed",
+              title: "MCP tool call",
+              data: codexCompletedNotification({
+                arguments: { taskId: "task-1" },
+                error,
+                id: String(toolItemId),
+                server: ORCHESTRATION_MCP_SERVER_NAME,
+                status: "failed",
+                tool: "reviewTask",
+                type: "mcpToolCall",
+              }),
+            },
+          }),
+        ],
+        2,
+      );
+
+      const toolResult = bridgedEvents[1];
+      assert.strictEqual(toolResult?.type, "tool_result");
+      if (toolResult?.type === "tool_result") {
+        assert.strictEqual(toolResult.toolName, "reviewTask");
+        assert.deepStrictEqual(toolResult.content, [
+          { type: "text", text: "Tool failed before producing a result." },
+        ]);
+        assert.deepStrictEqual(toolResult.details, error);
+        assert.strictEqual(toolResult.isError, true);
+      }
+    }),
+  );
+
+  it.effect("does not treat Codex assistant-message items as tool lifecycle items", () =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make("turn-codex-assistant-message");
+      const assistantItemId = RuntimeItemId.make("codex-assistant-message");
+
+      const bridgedEvents = yield* collectBridgedEvents(
+        [
+          makeEvent({
+            type: "content.delta",
+            turnId,
+            itemId: assistantItemId,
+            payload: { streamKind: "assistant_text", delta: "Codex replied." },
+          }),
+          makeEvent({
+            type: "item.completed",
+            turnId,
+            itemId: assistantItemId,
+            payload: {
+              itemType: "assistant_message",
+              status: "completed",
+              title: "Assistant message",
+              data: codexCompletedNotification({
+                id: String(assistantItemId),
+                text: "Codex replied.",
+                type: "agentMessage",
+              }),
+            },
+          }),
+        ],
+        3,
+      );
+
+      assert.deepStrictEqual(
+        bridgedEvents.map((event) => event.type),
+        ["message_start", "message_update", "message_end"],
+      );
+      const completed = bridgedEvents[2];
+      assert.strictEqual(completed?.type, "message_end");
+      if (completed?.type === "message_end" && completed.message.role === "assistant") {
+        assert.deepStrictEqual(completed.message.content, [
+          { type: "text", text: "Codex replied." },
+        ]);
+      }
+    }),
   );
 
   it.effect("bridges non-orchestration PM tool lifecycle items without result details", () =>

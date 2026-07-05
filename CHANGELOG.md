@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: The orchestrator PM event bridge now understands Codex MCP tool-call items, so orchestration tool activity surfaces identically in the PM chat regardless of the PM's harness.
 - Internal: Codex sessions now honor `systemPromptAppend` (injected as `developerInstructions` on thread start/resume) and `enableOrchestrationTools` — the orchestration MCP tools are served over a loopback streamable-HTTP endpoint (bearer-token protected, same tool executors as the Claude in-process server) and attached to Codex sessions via the per-session thread/start config overlay. Groundwork for running the orchestrator PM on Codex.
 - UI: Switching the Orchestrator PM to a different harness now asks whether to hand off the conversation as a full transcript, hand off a summary brief, start fresh, or cancel. Same-harness model changes stay silent; the picker remains inert for non-Claude PM harnesses until those harnesses unlock.
 - Internal: Add server-side Orchestrator PM harness handoff machinery. The PM conversation can be handed to a new PM session as a full transcript or a summary brief with transcript fallback, keeping the same PM thread and laying groundwork for switching PM harnesses.

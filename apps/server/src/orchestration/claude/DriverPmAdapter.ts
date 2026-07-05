@@ -91,18 +91,27 @@ const usageFromSnapshot = (snapshot: ThreadTokenUsageSnapshot): Usage => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const lifecycleToolData = (
+type LifecycleToolData = {
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+  readonly result?: unknown;
+  readonly includeResultDetails?: boolean;
+  readonly isError?: boolean;
+};
+
+const inputRecord = (value: unknown): Record<string, unknown> => {
+  if (isRecord(value)) {
+    return value;
+  }
+  return value === undefined ? {} : { value };
+};
+
+const claudeLifecycleToolData = (
   payload: Extract<
     ProviderRuntimeEvent,
     { type: "item.started" | "item.updated" | "item.completed" }
   >["payload"],
-):
-  | {
-      readonly toolName: string;
-      readonly input: Record<string, unknown>;
-      readonly result?: unknown;
-    }
-  | undefined => {
+): LifecycleToolData | undefined => {
   if (!isRecord(payload.data)) {
     return undefined;
   }
@@ -110,13 +119,50 @@ const lifecycleToolData = (
   if (!toolName) {
     return undefined;
   }
-  const input = isRecord(payload.data.input) ? payload.data.input : {};
+  const input = inputRecord(payload.data.input);
   return {
     toolName,
     input,
     ...("result" in payload.data ? { result: payload.data.result } : {}),
   };
 };
+
+const codexLifecycleToolData = (
+  payload: Extract<
+    ProviderRuntimeEvent,
+    { type: "item.started" | "item.updated" | "item.completed" }
+  >["payload"],
+): LifecycleToolData | undefined => {
+  if (!isRecord(payload.data)) {
+    return undefined;
+  }
+  const item = isRecord(payload.data.item) ? payload.data.item : undefined;
+  if (item?.type !== "mcpToolCall") {
+    return undefined;
+  }
+  const server = typeof item.server === "string" ? item.server : undefined;
+  const toolName = typeof item.tool === "string" ? item.tool : undefined;
+  if (!server || !toolName) {
+    return undefined;
+  }
+  const result = "result" in item && item.result != null ? item.result : item.error;
+  const isError = item.status === "failed" || item.error != null;
+  return {
+    toolName,
+    input: inputRecord(item.arguments),
+    ...(result !== undefined ? { result } : {}),
+    includeResultDetails: server === ORCHESTRATION_MCP_SERVER_NAME,
+    isError,
+  };
+};
+
+const lifecycleToolData = (
+  payload: Extract<
+    ProviderRuntimeEvent,
+    { type: "item.started" | "item.updated" | "item.completed" }
+  >["payload"],
+): LifecycleToolData | undefined =>
+  claudeLifecycleToolData(payload) ?? codexLifecycleToolData(payload);
 
 const orchestrationToolName = (toolName: string): string | undefined => {
   const prefix = `mcp__${ORCHESTRATION_MCP_SERVER_NAME}__`;
@@ -135,6 +181,9 @@ const resultText = (result: unknown, fallback: string): string => {
           : "",
       )
       .join("");
+  }
+  if (isRecord(result) && typeof result.message === "string") {
+    return result.message;
   }
   return fallback;
 };
@@ -330,7 +379,7 @@ export const makeDriverPmAdapter = (
               toolCallId: String(event.itemId),
               toolName: strippedToolName ?? data.toolName,
               input: data.input,
-              includeResultDetails: strippedToolName !== undefined,
+              includeResultDetails: data.includeResultDetails ?? strippedToolName !== undefined,
             };
             activeTools.set(String(event.itemId), tool);
             yield* offer({
@@ -372,7 +421,7 @@ export const makeDriverPmAdapter = (
               return;
             }
             activeTools.delete(String(event.itemId));
-            const isError = event.payload.status === "failed";
+            const isError = data.isError ?? event.payload.status === "failed";
             yield* offer({
               type: "tool_result",
               toolCallId: existing.toolCallId,
