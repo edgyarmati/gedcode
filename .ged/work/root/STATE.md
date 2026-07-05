@@ -514,6 +514,21 @@ explicitly — semantically identical (decider ignores command's values for turn
 PmToolExecutionError tagged error for executor validation failures. Gate: fmt/lint/typecheck 13/13, pmTools/
 PmRuntime/pmMcpServer 49/49, the 2 known integration timeouts pass directly (full-concurrency flake as always).
 
+**WP-PEEK DONE `f0aedb4a1`** (2026-07-05) — inspectStage extended into a live stage tail (same tool name):
+optional stageThreadId (ownership-validated, defaults latest), stageDigest = stage role (readModel.stageHistory),
+latest-turn state + elapsedSeconds (Effect DateTime; running turns measured to now), last 10 messages truncated
+to 500 chars w/ truncated flag, last 20 activity {kind,tone,summary,createdAt} (no payloads), latest
+"context-window.updated" activity payload as tokenUsage. No-stage-thread → task row + note (not an error);
+missing thread row / foreign thread → PmToolExecutionError. One-line text digest for the PM; MCP schema +
+"Poll inspectStage" prompt line added. Gate: fmt/lint/typecheck 13/13, pmTools/PmRuntime/pmMcpServer 57/57,
+Codex full server suite 1377 passed, the 2 known integration files pass directly (root turbo run also showed
+them green but the Vitest process hung idle under turbo — new flavor of the known concurrency flake).
+Discovered during WP-PMTRAITS scoping (running in parallel, web-only): PM thinking/effort was ALREADY honored
+server-side (ClaudeAdapter maps selection options effort/thinking/fastMode/contextWindow; PM config-watch
+Equal.equals full selection, in-place apply per canApplyPmModelInPlace) — the gap is UI-only: PmChatComposer
+lacks the TraitsPicker next to ProviderModelPicker (pattern: SettingsPanels.tsx text-gen row ~1008,
+onModelOptionsChange variant).
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
