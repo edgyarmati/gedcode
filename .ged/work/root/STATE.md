@@ -460,6 +460,22 @@ as stale tab (composer canSend = environmentAvailable && !submitting; server had
 predated 2 restarts → dead ws). Gate: fmt/lint/typecheck 13/13, ProjectionPipeline tests 24/24. USER STEPS
 after this: restart server → HARD-refresh browser → clear PM chat once → genuinely blank slate expected.
 
+**WP-ENVAVAIL DONE `7ec181257` + WP-PMFA DONE `97ac57630`** (2026-07-05). ENVAVAIL: the "can't send /
+button greyed until leaving+reentering orchestrator" bug — PmChatComposer read the non-reactive environment-
+connection registry at render; new `useEnvironmentApiAvailable` hook (useSyncExternalStore +
+subscribeEnvironmentConnections) makes availability reactive. PMFA: **user decision — PM now FULL ACCESS**
+(runtimeMode "full-access", readOnly removed, no approvals; matches full-access workers) with a rewritten
+system-prompt charter: PM work only (feature design, classification, skill checks, research, planning,
+verifying), trivial exploration inline, implementation ALWAYS delegated (createTask+handoffWorker work role),
+heavy research → exploration tasks, doubtful plans → review-role second opinion, parallel agents allowed.
+Swept: DriverPmAdapter startSession/persist, resetClaudePmSession, PM thread.create, dispatchSession.
+ClaudeAdapter readOnly machinery kept (dies with pi in W6). Both run as PARALLEL Codex workers in one tree,
+committed by pathspec (CHANGELOG line split between commits). Gate: fmt/lint/typecheck 13/13, server PM tests
+44/44, hook test, browser 175 + the 2 known pre-existing failures. **NEXT: WP-EXPLTT** — add "exploration"
+task type (single stage, work role, exploration prompt prefix) as project-config default or settings step;
+verify Phase 3 task-type config shape first. Then W6 (remove pi). Memory updated
+(orchestrator-pm-harness-decision: full-access supersedes read-only).
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
