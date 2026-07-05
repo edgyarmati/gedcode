@@ -15,6 +15,7 @@ import {
   type OrchestrationTask,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
+import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
@@ -49,6 +50,13 @@ const HandoffWorkerParameters = Type.Object({
   instructions: Type.String(),
 });
 type HandoffWorkerParameters = Static<typeof HandoffWorkerParameters>;
+
+const SteerStageParameters = Type.Object({
+  taskId: Type.String(),
+  message: Type.String(),
+  stageThreadId: Type.Optional(Type.String()),
+});
+type SteerStageParameters = Static<typeof SteerStageParameters>;
 
 const RequestApprovalParameters = Type.Object({
   taskId: Type.String(),
@@ -109,6 +117,14 @@ const latestStageThreadId = (task: OrchestrationTask | undefined): ThreadId | nu
   task?.stageThreadIds.at(-1) ?? null;
 
 const pmMessageId = (toolCallId: string) => MessageId.make(`pm-tool:${toolCallId}`);
+
+class PmToolExecutionError extends Data.TaggedError("PmToolExecutionError")<{
+  readonly detail: string;
+}> {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 export const makePmToolExecutors = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
@@ -207,6 +223,70 @@ export const makePmToolExecutors = Effect.gen(function* () {
               ? `Started ${params.role} worker ${stageThreadId}.`
               : `Started ${params.role} worker.`,
             { taskId, sequence, stageThreadId, awaitedTurnId: null },
+          );
+        }),
+      ),
+  };
+
+  const steerStage: PmToolExecutor<
+    SteerStageParameters,
+    { taskId: string; stageThreadId: string; sequence: number }
+  > = {
+    name: "steerStage",
+    label: "Steer stage",
+    description:
+      "Send a user message into a running or idle worker stage thread to correct course, add context, or answer the worker without cancelling and re-handing off.",
+    parameters: SteerStageParameters,
+    execute: (toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId);
+          if (!task) {
+            return yield* new PmToolExecutionError({
+              detail: `Task '${taskId}' was not found.`,
+            });
+          }
+
+          const selectedStageThreadId =
+            params.stageThreadId === undefined
+              ? latestStageThreadId(task)
+              : ThreadId.make(params.stageThreadId);
+          if (selectedStageThreadId === null) {
+            return yield* new PmToolExecutionError({
+              detail: `Task '${taskId}' has no stage thread to steer yet.`,
+            });
+          }
+          if (!task.stageThreadIds.includes(selectedStageThreadId)) {
+            return yield* new PmToolExecutionError({
+              detail: `Stage thread '${selectedStageThreadId}' does not belong to task '${taskId}'.`,
+            });
+          }
+          const thread = readModel.threads.find((entry) => entry.id === selectedStageThreadId);
+          if (!thread) {
+            return yield* new PmToolExecutionError({
+              detail: `Stage thread '${selectedStageThreadId}' was not found.`,
+            });
+          }
+
+          const sequence = yield* dispatch({
+            type: "thread.turn.start",
+            commandId: yield* commandId("steer-stage"),
+            threadId: selectedStageThreadId,
+            message: {
+              messageId: pmMessageId(toolCallId),
+              role: "user",
+              text: params.message,
+              attachments: [],
+            },
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            createdAt: yield* nowIso,
+          });
+          return textResult(
+            `Sent steering message to ${selectedStageThreadId}; provider behavior matches the human chat path, so active worker turns accept or reject steering according to the target provider.`,
+            { taskId, stageThreadId: selectedStageThreadId, sequence },
           );
         }),
       ),
@@ -346,6 +426,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     classifyRequest,
     createTask,
     handoffWorker,
+    steerStage,
     requestApproval,
     setTaskBackend,
     inspectStage,

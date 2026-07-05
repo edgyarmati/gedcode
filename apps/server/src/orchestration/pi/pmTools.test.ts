@@ -1,10 +1,13 @@
 import {
   ProjectId,
   ProviderInstanceId,
+  MessageId,
   TaskId,
   TaskTypeId,
   ThreadId,
   type OrchestrationCommand,
+  type OrchestrationTask,
+  type OrchestrationThread,
 } from "@t3tools/contracts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { assert, it } from "@effect/vitest";
@@ -24,36 +27,75 @@ const now = "2026-06-14T00:00:00.000Z";
 const projectId = ProjectId.make("project-1");
 const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("stage-thread-1");
+const laterStageThreadId = ThreadId.make("stage-thread-2");
 
-const makeReadModel = () => ({
-  ...createEmptyReadModel(now),
-  tasks: [
-    {
-      id: taskId,
-      projectId,
-      type: TaskTypeId.make("feature"),
-      title: "Build the thing",
-      status: "planning" as const,
-      branch: "orchestrator/task-1",
-      worktreePath: "/repo/.worktrees/task-1",
-      prUrl: null,
-      pmMessageId: null,
-      stageThreadIds: [stageThreadId],
-      currentStageThreadId: stageThreadId,
-      roleModelSelections: {
-        plan: {
-          instanceId: ProviderInstanceId.make("codex_plan"),
-          model: "gpt-5-plan",
-        },
-      },
-      playbookVersion: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ],
+const makeThread = (
+  id: ThreadId = stageThreadId,
+  overrides: Partial<OrchestrationThread> = {},
+): OrchestrationThread => ({
+  id,
+  projectId,
+  title: `Stage ${id}`,
+  modelSelection: {
+    instanceId: ProviderInstanceId.make("codex"),
+    model: "gpt-5-codex",
+  },
+  runtimeMode: "approval-required",
+  interactionMode: "default",
+  branch: "orchestrator/task-1",
+  worktreePath: "/repo/.worktrees/task-1",
+  latestTurn: null,
+  createdAt: now,
+  updatedAt: now,
+  archivedAt: null,
+  deletedAt: null,
+  messages: [],
+  proposedPlans: [],
+  activities: [],
+  checkpoints: [],
+  session: null,
+  ...overrides,
 });
 
-const makeLayer = (dispatched: OrchestrationCommand[]) =>
+const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask => ({
+  id: taskId,
+  projectId,
+  type: TaskTypeId.make("feature"),
+  title: "Build the thing",
+  status: "planning" as const,
+  branch: "orchestrator/task-1",
+  worktreePath: "/repo/.worktrees/task-1",
+  prUrl: null,
+  pmMessageId: null,
+  stageThreadIds: [stageThreadId],
+  currentStageThreadId: stageThreadId,
+  roleModelSelections: {
+    plan: {
+      instanceId: ProviderInstanceId.make("codex_plan"),
+      model: "gpt-5-plan",
+    },
+  },
+  playbookVersion: null,
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
+const makeReadModel = (
+  tasks = [makeTask()],
+  threads: ReadonlyArray<OrchestrationThread> = tasks.flatMap((task) =>
+    task.stageThreadIds.map((threadId) => makeThread(threadId)),
+  ),
+) => ({
+  ...createEmptyReadModel(now),
+  threads,
+  tasks,
+});
+
+const makeLayer = (
+  dispatched: OrchestrationCommand[],
+  readModel: ReturnType<typeof makeReadModel> = makeReadModel(),
+) =>
   Layer.mergeAll(
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
@@ -66,8 +108,8 @@ const makeLayer = (dispatched: OrchestrationCommand[]) =>
       streamShellEvents: Stream.empty,
     }),
     Layer.mock(ProjectionSnapshotQuery)({
-      getCommandReadModel: () => Effect.succeed(makeReadModel()),
-      getSnapshot: () => Effect.succeed(makeReadModel()),
+      getCommandReadModel: () => Effect.succeed(readModel),
+      getSnapshot: () => Effect.succeed(readModel),
       getShellSnapshot: () =>
         Effect.succeed({
           snapshotSequence: 0,
@@ -144,6 +186,229 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].role, "verify");
     }
+  }),
+);
+
+it.effect("steerStage dispatches thread.turn.start to an explicit stage thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel(
+            [
+              makeTask({
+                stageThreadIds: [stageThreadId, laterStageThreadId],
+                currentStageThreadId: laterStageThreadId,
+              }),
+            ],
+            [
+              makeThread(stageThreadId, {
+                runtimeMode: "approval-required",
+                interactionMode: "default",
+              }),
+              makeThread(laterStageThreadId, {
+                runtimeMode: "full-access",
+                interactionMode: "plan",
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const result = yield* Effect.promise(() =>
+      steerStage.execute("tool-steer-explicit", {
+        taskId,
+        stageThreadId,
+        message: "Please keep the change scoped.",
+      }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "thread.turn.start");
+    if (dispatched[0]?.type === "thread.turn.start") {
+      assert.strictEqual(dispatched[0].threadId, stageThreadId);
+      assert.deepStrictEqual(dispatched[0].message, {
+        messageId: MessageId.make("pm-tool:tool-steer-explicit"),
+        role: "user",
+        text: "Please keep the change scoped.",
+        attachments: [],
+      });
+      assert.ok(!("modelSelection" in dispatched[0]));
+      assert.strictEqual(dispatched[0].runtimeMode, "approval-required");
+      assert.strictEqual(dispatched[0].interactionMode, "default");
+    }
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      stageThreadId,
+      sequence: 1,
+    });
+    const firstContent = result.content[0];
+    assert.strictEqual(firstContent?.type, "text");
+    if (firstContent?.type === "text") {
+      assert.match(firstContent.text, /provider behavior matches the human chat path/);
+    }
+  }),
+);
+
+it.effect("steerStage defaults to the latest stage thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel(
+            [
+              makeTask({
+                stageThreadIds: [stageThreadId, laterStageThreadId],
+                currentStageThreadId: laterStageThreadId,
+              }),
+            ],
+            [
+              makeThread(stageThreadId, {
+                runtimeMode: "approval-required",
+                interactionMode: "default",
+              }),
+              makeThread(laterStageThreadId, {
+                runtimeMode: "full-access",
+                interactionMode: "plan",
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const result = yield* Effect.promise(() =>
+      steerStage.execute("tool-steer-default", {
+        taskId,
+        message: "Use the latest stage thread.",
+      }),
+    );
+
+    assert.strictEqual(dispatched[0]?.type, "thread.turn.start");
+    if (dispatched[0]?.type === "thread.turn.start") {
+      assert.strictEqual(dispatched[0].threadId, laterStageThreadId);
+      assert.strictEqual(dispatched[0].runtimeMode, "full-access");
+      assert.strictEqual(dispatched[0].interactionMode, "plan");
+    }
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      stageThreadId: laterStageThreadId,
+      sequence: 1,
+    });
+  }),
+);
+
+it.effect("steerStage rejects a missing task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, makeReadModel([]))));
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-missing-task", {
+          taskId,
+          message: "Can you adjust this?",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /Task 'task-1' was not found/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage rejects a stage thread missing from the command read model", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel([makeTask()], []))),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-missing-thread", {
+          taskId,
+          stageThreadId,
+          message: "Can you adjust this?",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /Stage thread 'stage-thread-1' was not found/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage rejects a stage thread outside the task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-wrong-thread", {
+          taskId,
+          stageThreadId: "other-stage-thread",
+          message: "Can you adjust this?",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /does not belong to task 'task-1'/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage rejects a task with no stage thread yet", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([makeTask({ stageThreadIds: [], currentStageThreadId: null })]),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-no-stage", {
+          taskId,
+          message: "Can you adjust this?",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /has no stage thread to steer yet/);
+    assert.strictEqual(dispatched.length, 0);
   }),
 );
 

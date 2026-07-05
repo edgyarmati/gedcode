@@ -17,6 +17,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "classifyRequest",
   "createTask",
   "handoffWorker",
+  "steerStage",
   "requestApproval",
   "setTaskBackend",
   "inspectStage",
@@ -44,6 +45,11 @@ const mcpInputSchemas = {
     taskId: z.string(),
     role: stageRole,
     instructions: z.string(),
+  },
+  steerStage: {
+    taskId: z.string(),
+    message: z.string(),
+    stageThreadId: z.string().optional(),
   },
   requestApproval: {
     taskId: z.string(),

@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: The Orchestrator PM can now steer running worker stages by sending messages into their threads with `steerStage`, reusing the same `thread.turn.start` path as human chat messages.
 - UI: The Orchestrator PM chat now uses the standard provider/model picker for Claude-driver PM models, and the PM prompt now directs heavier exploration through native subagents instead of dedicated exploration tasks.
 - UI: The Orchestrator PM can now ask interactive questions in PM chat with clickable options like worker sessions instead of stalling, and pending PM questions clear when the PM turn aborts.
 - Change: The Orchestrator PM now runs with full tool access and no approval prompts. Its system prompt now steers it to keep PM responsibilities in-process, delegate implementation to work agents, use native subagents for heavier exploration, and request plan-review second opinions when useful.
