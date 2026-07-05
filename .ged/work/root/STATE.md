@@ -476,6 +476,30 @@ task type (single stage, work role, exploration prompt prefix) as project-config
 verify Phase 3 task-type config shape first. Then W6 (remove pi). Memory updated
 (orchestrator-pm-harness-decision: full-access supersedes read-only).
 
+**WP-PMQ DONE `3627ff854`** (2026-07-05) — live test showed the full-access PM calling AskUserQuestion and
+hanging forever (no answer surface on pm threads; follow-ups queued behind the stuck turn). Instead of
+disallowing the tool, enabled the full interactive flow (user chose this): DriverPmAdapter bridges
+user-input.requested/resolved + an abnormal-turn-end marker into PmEventProjection (single-writer preserved;
+adapter queue cast justified by PiAgentAdapterShape typing — dies in W6), projection records the SAME activity
+shapes the worker flow uses → shared derivePendingUserInputs + ComposerPendingUserInputPanel work unchanged in
+PM chat (options clickable, free text via composer box, respond via thread.user-input.respond → existing
+ProviderService.respondToUserInput through the PM binding — no gap). Pending questions clear on answer/failed/
+interrupt/abort/teardown. Prompt line scopes the tool to concrete optioned decisions. Gate: fmt/lint/typecheck
+13/13, server 46/46 + web 8/8 affected, browser 175 + the 2 known failures; the 2 known integration timeouts
+passed directly.
+
+**2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
+the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
+as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
+- **WP-PMMODEL**: standard ProviderModelPicker in PM chat (writes project PM model selection; config-watch
+  already rebuilds runtime; Claude-only until W5) + fold in PM prompt line: exploration via NATIVE subagents
+  (Claude Task tool in PM session; WP-EXPLTT CANCELLED — no task type needed; work/review roles stay in ledger).
+- **WP-STEER**: PM MCP tool to send messages into a running stage thread. **WP-PEEK**: inspectStage live tail
+  (recent activity/messages, elapsed, tokens).
+- **W6**: remove pi. **W7**: remove ged mode from normal chat (orchestrator is the only workflow surface,
+  name stays "orchestrator"); scope W6+W7 together — GedRoleModelSelections/prefixes/playbooks are shared
+  with the orchestrator, untangle not bulk-delete.
+
 **Review findings (now RESOLVED by WP-PMUX-FIX):** (HIGH robustness) the Running indicator is settled ONLY
 by completeTurn on turn_end/settled — if the harness crashes mid-turn it sticks forever; add a scoped finalizer
 that settles the PM turn on projection teardown. (LOW real) `dispatchSession` sets providerName=String(instanceId)
