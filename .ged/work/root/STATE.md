@@ -631,6 +631,20 @@ transcript builder, brief turn + fallback, injection, marker, consume-once) — 
 **WP-PMHO-2** web dialog gating cross-harness picker writes (dormant until W5 unlocks non-Claude PM instances);
 then W5. Cross-harness detection = driverKind(old instance) != driverKind(new); same-harness stays silent.
 
+**WP-PMHO-1 DONE `15f9db5a9`** (2026-07-05, Codex yolo gpt-5.5 high) — server-side PM handoff machinery:
+`orchestrator.requestPmHandoff {projectId, mode}` (transcript → dispatch directly after waitForIdle; summary →
+brief from CURRENT runtime w/ 90s timeout, Result-based fallback → transcript + reason in response; no-runtime →
+transcript); `thread.pm-handoff.request/.complete` commands + requested/completed events (decider requirePmThread);
+`pendingPmHandoff {mode, brief?, requestedAt}` on thread read model end-to-end (projector/pipeline/persistence
+migration 044/snapshot/ws replay; cleared by completed + thread.cleared); pm/pmHandoff.ts transcript builder
+(60k-char budget, newest-retained, truncation note, activity interleaving, pure + tested); PmRuntime getOrCreate
+consume-once: context appended after PM charter via systemPromptAppend, complete + "pm.handoff" marker activity
+after adapter.start; resetSessionBinding on request (no thread.clear — same-thread continuity). Gate: typecheck
+12/12 (shared tsgo flake once, standalone green), scoped server 415/416 + 5 flaky files direct 75/76, web 1168,
+browser 174 + 2 known, contracts 185. TESTABLE claude→claude now (dispatch requestPmHandoff manually).
+NEXT: **WP-PMHO-2** web dialog (cross-harness gate on PM picker writes: transcript/summary/fresh/cancel, dormant
+until W5 since picker is Claude-locked) → **W5** Codex PM adapter + unlock picker.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
