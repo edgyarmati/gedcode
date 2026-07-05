@@ -6,19 +6,23 @@ import {
   EnvironmentId,
   EventId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   TaskId,
   TaskTypeId,
   ThreadId,
 } from "@t3tools/contracts";
 
+import type { ProviderInstanceEntry } from "../../providerInstances";
 import type { OrchestratorTask, Project, Thread } from "../../types";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import { AbandonedTaskBoardSection, TaskBoard } from "./OrchestratorRoutes";
 import {
   buildPmModelSelectionUpdateCommand,
   buildPmUserInputRespondCommand,
+  decidePmHarnessSwitchGate,
   PmChatComposer,
+  runPmHarnessSwitchAction,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
@@ -250,6 +254,11 @@ describe("PmChatComposer", () => {
     turnDiffSummaries: [],
     activities: [],
   } satisfies Thread;
+  const codexDriver = ProviderDriverKind.make("codex");
+  const claudeDriver = ProviderDriverKind.make("claudeAgent");
+  const codexEntry = makeProviderEntry("codex", codexDriver, "Codex");
+  const codexAltEntry = makeProviderEntry("codex-alt", codexDriver, "Codex Alt");
+  const claudeEntry = makeProviderEntry("claudeAgent", claudeDriver, "Claude");
 
   it("renders a focused PM input without inert chat controls", () => {
     const markup = renderToStaticMarkup(
@@ -410,4 +419,233 @@ describe("PmChatComposer", () => {
       model: "claude-opus-4-8",
     });
   });
+
+  it("keeps same-driver PM model selections silent", () => {
+    expect(
+      decidePmHarnessSwitchGate({
+        currentSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        providerEntries: [codexEntry, codexAltEntry, claudeEntry],
+        picked: {
+          instanceId: ProviderInstanceId.make("codex-alt"),
+          model: "gpt-5-codex-high",
+        },
+      }),
+    ).toEqual({ kind: "silent" });
+  });
+
+  it("prompts when PM model selections cross driver kinds", () => {
+    expect(
+      decidePmHarnessSwitchGate({
+        currentSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        providerEntries: [codexEntry, claudeEntry],
+        picked: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-4-6",
+        },
+      }),
+    ).toMatchObject({
+      kind: "cross-harness",
+      fromDriver: "codex",
+      fromLabel: "Codex",
+      toDriver: "claudeAgent",
+      toLabel: "Claude",
+    });
+  });
+
+  it("keeps PM model selection silent when there is no current selection", () => {
+    expect(
+      decidePmHarnessSwitchGate({
+        currentSelection: null,
+        providerEntries: [codexEntry, claudeEntry],
+        picked: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-4-6",
+        },
+      }),
+    ).toEqual({ kind: "silent" });
+  });
+
+  it("keeps removed or unknown PM model instances silent", () => {
+    expect(
+      decidePmHarnessSwitchGate({
+        currentSelection: {
+          instanceId: ProviderInstanceId.make("removed-codex"),
+          model: "gpt-5-codex",
+        },
+        providerEntries: [claudeEntry],
+        picked: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-sonnet-4-6",
+        },
+      }),
+    ).toEqual({ kind: "silent" });
+
+    expect(
+      decidePmHarnessSwitchGate({
+        currentSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        providerEntries: [codexEntry],
+        picked: {
+          instanceId: ProviderInstanceId.make("removed-claude"),
+          model: "claude-sonnet-4-6",
+        },
+      }),
+    ).toEqual({ kind: "silent" });
+  });
+
+  it("requests transcript handoff before writing a cross-harness PM selection", async () => {
+    const calls: string[] = [];
+    const requestPmHandoff = vi.fn(async () => {
+      calls.push("handoff");
+      return { accepted: true as const, mode: "transcript" as const };
+    });
+    const dispatchCommand = vi.fn(async () => {
+      calls.push("dispatch");
+      return { sequence: 1 };
+    });
+
+    await runPmHarnessSwitchAction({
+      action: "transcript",
+      projectId,
+      project,
+      selection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      requestPmHandoff,
+      clearPmChat: vi.fn(),
+      dispatchCommand,
+    });
+
+    expect(calls).toEqual(["handoff", "dispatch"]);
+    expect(requestPmHandoff).toHaveBeenCalledWith({ projectId, mode: "transcript" });
+    expect(dispatchCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "project.meta.update",
+        projectId,
+      }),
+    );
+  });
+
+  it("surfaces summary fallback and still writes the PM selection after handoff", async () => {
+    const fallbacks: string[] = [];
+    const calls: string[] = [];
+
+    await runPmHarnessSwitchAction({
+      action: "summary",
+      projectId,
+      project,
+      selection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      requestPmHandoff: vi.fn(async () => {
+        calls.push("handoff");
+        return {
+          accepted: true as const,
+          mode: "transcript" as const,
+          fallback: "summary backend unavailable",
+        };
+      }),
+      clearPmChat: vi.fn(),
+      dispatchCommand: vi.fn(async () => {
+        calls.push("dispatch");
+        return { sequence: 1 };
+      }),
+      onFallback: (fallback) => fallbacks.push(fallback),
+    });
+
+    expect(calls).toEqual(["handoff", "dispatch"]);
+    expect(fallbacks).toEqual(["summary backend unavailable"]);
+  });
+
+  it("clears PM chat before writing a start-fresh PM selection", async () => {
+    const calls: string[] = [];
+
+    await runPmHarnessSwitchAction({
+      action: "fresh",
+      projectId,
+      project,
+      selection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      requestPmHandoff: vi.fn(),
+      clearPmChat: vi.fn(async () => {
+        calls.push("clear");
+        return { sequence: 1 };
+      }),
+      dispatchCommand: vi.fn(async () => {
+        calls.push("dispatch");
+        return { sequence: 2 };
+      }),
+    });
+
+    expect(calls).toEqual(["clear", "dispatch"]);
+  });
+
+  it("does not write a PM selection when cross-harness switching is cancelled", async () => {
+    const requestPmHandoff = vi.fn();
+    const clearPmChat = vi.fn();
+    const dispatchCommand = vi.fn();
+
+    await expect(
+      runPmHarnessSwitchAction({
+        action: "cancel",
+        projectId,
+        project,
+        selection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        requestPmHandoff,
+        clearPmChat,
+        dispatchCommand,
+      }),
+    ).resolves.toBe(false);
+
+    expect(requestPmHandoff).not.toHaveBeenCalled();
+    expect(clearPmChat).not.toHaveBeenCalled();
+    expect(dispatchCommand).not.toHaveBeenCalled();
+  });
 });
+
+function makeProviderEntry(
+  instanceId: string,
+  driverKind: ReturnType<typeof ProviderDriverKind.make>,
+  displayName: string,
+): ProviderInstanceEntry {
+  return {
+    instanceId: ProviderInstanceId.make(instanceId),
+    driverKind,
+    displayName,
+    enabled: true,
+    installed: true,
+    status: "ready",
+    isDefault: true,
+    isAvailable: true,
+    snapshot: {
+      instanceId: ProviderInstanceId.make(instanceId),
+      driver: driverKind,
+      displayName,
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-06-14T10:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    },
+    models: [],
+  };
+}

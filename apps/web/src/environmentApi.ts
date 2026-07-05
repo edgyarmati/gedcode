@@ -63,6 +63,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       setTaskRoleSelections: rpcClient.orchestrator.setTaskRoleSelections,
       cancelTask: rpcClient.orchestrator.cancelTask,
       clearPmChat: rpcClient.orchestrator.clearPmChat,
+      requestPmHandoff: rpcClient.orchestrator.requestPmHandoff,
     },
   };
 }

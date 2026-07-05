@@ -22,7 +22,11 @@ import {
 import { AppAtomRegistryProvider, resetAppAtomRegistryForTests } from "../../rpc/atomRegistry";
 import { resetServerStateForTests, setServerConfigSnapshot } from "../../rpc/serverState";
 import type { Project } from "../../types";
-import { PmChatComposer } from "./PmChatComposer";
+import {
+  PmChatComposer,
+  PmHarnessSwitchDialog,
+  type PmHarnessSwitchAction,
+} from "./PmChatComposer";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const projectId = ProjectId.make("project-browser");
@@ -234,5 +238,47 @@ describe("PmChatComposer model picker", () => {
         },
       },
     });
+  });
+
+  it("renders PM harness switch choices and cancel leaves selection untouched", async () => {
+    const dispatchCommand = vi.fn();
+    const actions: PmHarnessSwitchAction[] = [];
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmHarnessSwitchDialog
+          decision={{
+            kind: "cross-harness",
+            fromDriver: ProviderDriverKind.make("codex"),
+            fromLabel: "Codex",
+            toDriver: ProviderDriverKind.make("claudeAgent"),
+            toLabel: "Claude",
+          }}
+          disabled={false}
+          onAction={(action) => {
+            actions.push(action);
+            if (action !== "cancel") {
+              dispatchCommand();
+            }
+          }}
+          onClose={() => actions.push("cancel")}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    const dialog = page.getByRole("dialog", { name: "Switch PM harness?" });
+    await expect
+      .element(dialog.getByRole("button", { name: "Hand off history (full transcript)" }))
+      .toBeVisible();
+    await expect
+      .element(dialog.getByRole("button", { name: "Hand off history (summary brief)" }))
+      .toBeVisible();
+    await expect.element(dialog.getByRole("button", { name: "Start fresh" })).toBeVisible();
+    await expect.element(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    expect(actions).toEqual(["cancel"]);
+    expect(dispatchCommand).not.toHaveBeenCalled();
   });
 });

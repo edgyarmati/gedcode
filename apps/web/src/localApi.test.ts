@@ -123,6 +123,7 @@ const rpcClientMock = {
     setTaskRoleSelections: vi.fn(),
     cancelTask: vi.fn(),
     clearPmChat: vi.fn(),
+    requestPmHandoff: vi.fn(),
   },
   gedWorkflow: {
     getState: vi.fn(),

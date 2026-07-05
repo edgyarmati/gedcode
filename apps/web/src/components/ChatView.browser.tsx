@@ -247,6 +247,9 @@ function createMockEnvironmentApi(input: {
       clearPmChat: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["clearPmChat"],
+      requestPmHandoff: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["requestPmHandoff"],
     },
   };
 }

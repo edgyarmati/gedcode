@@ -37,6 +37,14 @@ import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputP
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
 import { Textarea } from "../ui/textarea";
 
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
@@ -79,6 +87,96 @@ export function buildPmModelSelectionUpdateCommand(input: {
       ),
     },
   };
+}
+
+type PmModelSelectionUpdateCommand = ReturnType<typeof buildPmModelSelectionUpdateCommand>;
+
+export type PmHarnessSwitchGateDecision =
+  | { readonly kind: "silent" }
+  | {
+      readonly kind: "cross-harness";
+      readonly fromDriver: ProviderDriverKind;
+      readonly fromLabel: string;
+      readonly toDriver: ProviderDriverKind;
+      readonly toLabel: string;
+    };
+
+export function decidePmHarnessSwitchGate(input: {
+  readonly currentSelection: ModelSelection | null;
+  readonly providerEntries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly picked: {
+    readonly instanceId: ProviderInstanceId;
+    readonly model: string;
+  };
+}): PmHarnessSwitchGateDecision {
+  if (!input.currentSelection) {
+    return { kind: "silent" };
+  }
+
+  const currentEntry =
+    input.providerEntries.find(
+      (entry) => entry.instanceId === input.currentSelection?.instanceId,
+    ) ?? null;
+  const pickedEntry =
+    input.providerEntries.find((entry) => entry.instanceId === input.picked.instanceId) ?? null;
+  if (!currentEntry || !pickedEntry || currentEntry.driverKind === pickedEntry.driverKind) {
+    return { kind: "silent" };
+  }
+
+  return {
+    kind: "cross-harness",
+    fromDriver: currentEntry.driverKind,
+    fromLabel: currentEntry.displayName,
+    toDriver: pickedEntry.driverKind,
+    toLabel: pickedEntry.displayName,
+  };
+}
+
+export type PmHarnessSwitchAction = "transcript" | "summary" | "fresh" | "cancel";
+
+export async function runPmHarnessSwitchAction(input: {
+  readonly action: PmHarnessSwitchAction;
+  readonly projectId: ProjectId;
+  readonly project: Project;
+  readonly selection: {
+    readonly instanceId: ProviderInstanceId;
+    readonly model: string;
+  };
+  readonly requestPmHandoff: (request: {
+    readonly projectId: ProjectId;
+    readonly mode: "transcript" | "summary";
+  }) => Promise<{
+    readonly accepted: true;
+    readonly mode: "transcript" | "summary";
+    readonly fallback?: string | undefined;
+  }>;
+  readonly clearPmChat: (request: { readonly projectId: ProjectId }) => Promise<unknown>;
+  readonly dispatchCommand: (command: PmModelSelectionUpdateCommand) => Promise<unknown>;
+  readonly onFallback?: (fallback: string) => void;
+}): Promise<boolean> {
+  if (input.action === "cancel") {
+    return false;
+  }
+
+  if (input.action === "transcript" || input.action === "summary") {
+    const result = await input.requestPmHandoff({
+      projectId: input.projectId,
+      mode: input.action,
+    });
+    if (input.action === "summary" && result.fallback) {
+      input.onFallback?.(result.fallback);
+    }
+  } else {
+    await input.clearPmChat({ projectId: input.projectId });
+  }
+
+  await input.dispatchCommand(
+    buildPmModelSelectionUpdateCommand({
+      project: input.project,
+      selection: input.selection,
+    }),
+  );
+  return true;
 }
 
 function readPmModelSelection(project: Project | undefined): ModelSelection | null {
@@ -143,6 +241,13 @@ export function PmChatComposer({
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [savingPmModelSelection, setSavingPmModelSelection] = useState(false);
+  const [pendingHarnessSwitch, setPendingHarnessSwitch] = useState<{
+    readonly gate: Extract<PmHarnessSwitchGateDecision, { readonly kind: "cross-harness" }>;
+    readonly selection: {
+      readonly instanceId: ProviderInstanceId;
+      readonly model: string;
+    };
+  } | null>(null);
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
@@ -150,6 +255,7 @@ export function PmChatComposer({
     Record<string, Record<string, PendingUserInputDraftAnswer>>
   >({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const pmModelSelection = readPmModelSelection(project);
   const providerEntries = useMemo(
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverConfig?.providers ?? [])),
@@ -223,10 +329,11 @@ export function PmChatComposer({
   const trimmedMessage = message.trim();
   const canSend = activePendingProgress
     ? environmentAvailable &&
+      !savingPmModelSelection &&
       !submitting &&
       !isAnsweringUserInput &&
       activePendingProgress.canAdvance
-    : environmentAvailable && !submitting && trimmedMessage.length > 0;
+    : environmentAvailable && !savingPmModelSelection && !submitting && trimmedMessage.length > 0;
 
   useEffect(() => {
     if (!activePendingProgress) {
@@ -371,6 +478,7 @@ export function PmChatComposer({
       }
       setSubmitting(true);
       setError(null);
+      setNotice(null);
       void api.orchestrator
         .sendMessage({ projectId, message: trimmedMessage })
         .then(() => {
@@ -405,8 +513,21 @@ export function PmChatComposer({
         return;
       }
 
+      const gate = decidePmHarnessSwitchGate({
+        currentSelection: pmModelSelection,
+        providerEntries,
+        picked: { instanceId, model },
+      });
+      if (gate.kind === "cross-harness") {
+        setPendingHarnessSwitch({ gate, selection: { instanceId, model } });
+        setError(null);
+        setNotice(null);
+        return;
+      }
+
       setSavingPmModelSelection(true);
       setError(null);
+      setNotice(null);
       void api.orchestration
         .dispatchCommand(
           buildPmModelSelectionUpdateCommand({
@@ -421,7 +542,62 @@ export function PmChatComposer({
           setSavingPmModelSelection(false);
         });
     },
-    [environmentId, project],
+    [environmentId, pmModelSelection, project, providerEntries],
+  );
+  const closePmHarnessSwitchDialog = useCallback(() => {
+    if (savingPmModelSelection) {
+      return;
+    }
+    setPendingHarnessSwitch(null);
+  }, [savingPmModelSelection]);
+  const runPendingHarnessSwitchAction = useCallback(
+    (action: PmHarnessSwitchAction) => {
+      const api = readEnvironmentApi(environmentId);
+      const pending = pendingHarnessSwitch;
+      if (!api) {
+        setError("Environment API unavailable.");
+        return;
+      }
+      if (!project) {
+        setError("Project unavailable.");
+        return;
+      }
+      if (!pending) {
+        return;
+      }
+      if (action === "cancel") {
+        setPendingHarnessSwitch(null);
+        return;
+      }
+
+      setSavingPmModelSelection(true);
+      setError(null);
+      setNotice(null);
+      void runPmHarnessSwitchAction({
+        action,
+        projectId,
+        project,
+        selection: pending.selection,
+        requestPmHandoff: api.orchestrator.requestPmHandoff,
+        clearPmChat: api.orchestrator.clearPmChat,
+        dispatchCommand: api.orchestration.dispatchCommand,
+        onFallback: (fallback) => {
+          setNotice(`Summary handoff fell back to the full transcript: ${fallback}`);
+        },
+      })
+        .then(() => {
+          setPendingHarnessSwitch(null);
+        })
+        .catch((switchError) => {
+          setError(
+            switchError instanceof Error ? switchError.message : "Failed to switch PM harness.",
+          );
+        })
+        .finally(() => {
+          setSavingPmModelSelection(false);
+        });
+    },
+    [environmentId, pendingHarnessSwitch, project, projectId],
   );
   const onPmModelOptionsChange = useCallback(
     (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
@@ -441,6 +617,7 @@ export function PmChatComposer({
 
       setSavingPmModelSelection(true);
       setError(null);
+      setNotice(null);
       void api.orchestration
         .dispatchCommand(
           buildPmModelSelectionUpdateCommand({
@@ -480,6 +657,11 @@ export function PmChatComposer({
           {error}
         </p>
       ) : null}
+      {!error && notice ? (
+        <p className="mb-2 text-xs text-muted-foreground" role="status">
+          {notice}
+        </p>
+      ) : null}
       <form className="space-y-2" onSubmit={onSend}>
         {pendingUserInputs.length > 0 ? (
           <div className="rounded-lg border border-border bg-muted/20">
@@ -497,7 +679,7 @@ export function PmChatComposer({
           <Textarea
             aria-label="Message PM"
             className="min-w-0 flex-1"
-            disabled={submitting || isAnsweringUserInput}
+            disabled={savingPmModelSelection || submitting || isAnsweringUserInput}
             onChange={(event) => {
               setMessage(event.currentTarget.value);
               setActivePendingUserInputCustomAnswer(event.currentTarget.value);
@@ -573,6 +755,86 @@ export function PmChatComposer({
           ) : null}
         </div>
       </form>
+      <PmHarnessSwitchDialog
+        decision={pendingHarnessSwitch?.gate ?? null}
+        disabled={savingPmModelSelection}
+        onAction={runPendingHarnessSwitchAction}
+        onClose={closePmHarnessSwitchDialog}
+      />
     </div>
+  );
+}
+
+export function PmHarnessSwitchDialog({
+  decision,
+  disabled,
+  onAction,
+  onClose,
+}: {
+  readonly decision: Extract<
+    PmHarnessSwitchGateDecision,
+    { readonly kind: "cross-harness" }
+  > | null;
+  readonly disabled: boolean;
+  readonly onAction: (action: PmHarnessSwitchAction) => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <Dialog
+      open={decision !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogPopup className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Switch PM harness?</DialogTitle>
+          <DialogDescription>
+            The PM session cannot continue directly across harnesses. Switch from{" "}
+            {decision?.fromLabel ?? "the current harness"} to{" "}
+            {decision?.toLabel ?? "the new harness"} by handing off the conversation or starting
+            with a fresh PM chat.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              disabled={disabled}
+              onClick={() => onAction("transcript")}
+              type="button"
+              variant="outline"
+            >
+              Hand off history (full transcript)
+            </Button>
+            <Button
+              disabled={disabled}
+              onClick={() => onAction("summary")}
+              type="button"
+              variant="outline"
+            >
+              Hand off history (summary brief)
+            </Button>
+            <Button
+              disabled={disabled}
+              onClick={() => onAction("fresh")}
+              type="button"
+              variant="outline"
+            >
+              Start fresh
+            </Button>
+            <Button
+              disabled={disabled}
+              onClick={() => onAction("cancel")}
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogPanel>
+      </DialogPopup>
+    </Dialog>
   );
 }

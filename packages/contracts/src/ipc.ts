@@ -64,6 +64,8 @@ import type {
   OrchestratorCancelTaskInput,
   OrchestratorClearPmChatInput,
   OrchestratorProjectStreamItem,
+  OrchestratorRequestPmHandoffInput,
+  OrchestratorRequestPmHandoffResult,
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
@@ -72,7 +74,7 @@ import type {
   OrchestratorSubscribeTaskInput,
   OrchestratorTaskStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
+import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthBearerBootstrapResult, AuthSessionState, AuthWebSocketTokenResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
@@ -597,5 +599,8 @@ export interface EnvironmentApi {
     ) => Promise<{ sequence: number }>;
     cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
     clearPmChat: (input: OrchestratorClearPmChatInput) => Promise<{ sequence: number }>;
+    requestPmHandoff: (
+      input: OrchestratorRequestPmHandoffInput,
+    ) => Promise<OrchestratorRequestPmHandoffResult>;
   };
 }

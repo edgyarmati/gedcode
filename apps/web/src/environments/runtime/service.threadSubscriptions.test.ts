@@ -323,6 +323,7 @@ describe("retainThreadDetailSubscription", () => {
         setTaskRoleSelections: vi.fn(),
         cancelTask: vi.fn(),
         clearPmChat: vi.fn(),
+        requestPmHandoff: vi.fn(),
       },
     });
     mockCreateEnvironmentConnection.mockImplementation((input) => {
