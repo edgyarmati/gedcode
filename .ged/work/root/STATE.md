@@ -501,6 +501,19 @@ render + reset registry in afterEach (pattern from SettingsPanels.browser.tsx). 
 Codex full `bun run test` 1363 passed, PmRuntime 36/36 + OrchestratorRoutes 9/9 rerun by me, browser 176 + the
 2 known pre-existing failures.
 
+**WP-STEER DONE `9f5761a9a`** (2026-07-05) — new `steerStage` PM MCP tool (pmTools.ts executor + pmMcpServer
+registration + PM prompt line "prefer steering over cancelling and re-handing-off"). Dispatches
+`thread.turn.start` on the task's stage thread (explicit stageThreadId validated against task.stageThreadIds,
+else latest), message role user / attachments [] / pm-tool messageId — the EXACT human chat path; decider
+derives runtimeMode/interactionMode from the target thread. Active-turn finding (Codex): Claude queues steering
+into the running turn via the prompt queue; Codex delegates to app-server turn/start semantics which can reject
+same-turn steering (moot until W5 — workers on Claude accept). Review round: rejected the initial
+`as unknown as Parameters<typeof engine.dispatch>[0]` double cast (disables typing on a cross-boundary command);
+fix reads the thread row from readModel.threads (error if missing) and passes runtimeMode/interactionMode
+explicitly — semantically identical (decider ignores command's values for turn start), fully typed. New
+PmToolExecutionError tagged error for executor validation failures. Gate: fmt/lint/typecheck 13/13, pmTools/
+PmRuntime/pmMcpServer 49/49, the 2 known integration timeouts pass directly (full-concurrency flake as always).
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
