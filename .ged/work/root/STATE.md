@@ -550,6 +550,36 @@ for abandoned; cancel button already hidden). Gate: fmt/lint/typecheck 13/13, we
 steerStage 10s after handoff → inspectStage (elapsed matched event log to the second) → AskUserQuestion answered
 + turn resumed in 30s → getTaskLedger → cancelTask ×2 (event log seq 8540-8868, 10003-10845).
 
+**W6+W7 SCOPING DONE (2026-07-05, two parallel read-only mappers).** Key facts: (pi) the pi packages carry
+RUNTIME values on the live PM path — pmTools uses pi-ai `Type` for a `parameters` field NOTHING consumes
+(pmMcpServer has its own zod schemas; verified only consumer of makePmToolExecutors) → delete outright;
+PmReEntryQueue uses pi-agent-core calculateContextTokens/shouldCompact (PM compaction — port faithfully);
+PiAgentAdapterShape is the contract DriverPmAdapter `satisfies` (source of the AgentHarnessEvent cast) → replace
+with native shape+event union; clearSqliteSessionStorage (PmRuntime:1620) + migration 035 must survive; legacy
+pmModelSelection {piProvider,model} must stay REPLAYABLE (orchestrator/config.ts:156). (ged) TWO disjoint role
+vocabularies: normal-chat GED_SUBAGENT_ROLES/gedWorkflowEnabled/gedWorkflow subsystem/@t3tools/ged-workflow vs
+orchestrator ORCHESTRATION_STAGE_ROLES/GedRoleModelSelections/GedRolePromptPrefixes/PlaybookLoader (orchestrator
+NEVER imports ged-workflow or reads gedWorkflowEnabled; stage/PM threads hardcode false). Full maps in this
+session's scoping agents; blast radii recorded in the three-task split below.
+
+**PARALLEL BATCH (dispatched 2026-07-05, three concurrent Codex threads, ZERO file overlap, no CHANGELOG edits
+— PM writes entries at commit):**
+- **T1 W6-A pi detangle** (owns orchestration/pi/* keep-files + claude/DriverPmAdapter* + Layers/PmRuntime* +
+  Services/PmRuntime.ts + PlaybookLoader.ts): native pm harness types module replaces pi type imports + the
+  cast; delete pmTools `parameters` + pi-ai Type; port calculateContextTokens/shouldCompact locally; NO file
+  moves/deletes, NO gedWorkflowEnabled/contracts/web/ws.ts edits.
+- **T2 W7-A ged web removal** (owns apps/web/** + packages/shared/gedModelSelection.*): toggle UI, draft
+  plumbing, ged settings section, gedWorkflowRoles, ChatView ged logic + gedWorkflowGetState client
+  (wsRpcClient/environmentApi/mocks), store/types read-side ged fields.
+- **T3 W7-B ged server removal** (owns apps/server/src/gedWorkflow/** + packages/ged-workflow/** + server.ts +
+  ws.ts ged handler + ProviderCommandReactor + serverRuntimeStartup + serverSettings* + contracts settings/
+  gedWorkflow/provider.ts field/rpc ws-method + shared/serverSettings + scripts refs + server package.json dep).
+- **DEFERRED follow-ups:** W7-C remove gedWorkflowEnabled from orchestration.ts thread structs/commands/events
+  (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
+  — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
+  rpc pi methods + settings piProviders + web PiProviderSettings + drop pi deps + docs (needs T1; keep legacy
+  piProvider pmModelSelection replayable).
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
