@@ -48,7 +48,10 @@ import {
 import { Textarea } from "../ui/textarea";
 
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-const CLAUDE_PM_DRIVER = ProviderDriverKind.make("claudeAgent");
+const SUPPORTED_PM_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set([
+  ProviderDriverKind.make("claudeAgent"),
+  ProviderDriverKind.make("codex"),
+]);
 
 export function buildPmUserInputRespondCommand(input: {
   readonly threadId: ThreadId;
@@ -206,17 +209,17 @@ function firstPickerModelForEntry(
 
 function resolvePmPickerSelection(
   selection: ModelSelection | null,
-  claudeProviderEntries: ReadonlyArray<ProviderInstanceEntry>,
+  pmProviderEntries: ReadonlyArray<ProviderInstanceEntry>,
   modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>,
 ): ModelSelection | null {
   const selectedEntry = selection
-    ? (claudeProviderEntries.find((entry) => entry.instanceId === selection.instanceId) ?? null)
+    ? (pmProviderEntries.find((entry) => entry.instanceId === selection.instanceId) ?? null)
     : null;
   if (selection && selectedEntry) {
     return selection;
   }
 
-  const fallbackEntry = claudeProviderEntries.find((entry) => entry.enabled && entry.isAvailable);
+  const fallbackEntry = pmProviderEntries.find((entry) => entry.enabled && entry.isAvailable);
   if (!fallbackEntry) {
     return null;
   }
@@ -261,32 +264,30 @@ export function PmChatComposer({
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverConfig?.providers ?? [])),
     [serverConfig?.providers],
   );
-  const claudeProviderEntries = useMemo(
-    () => providerEntries.filter((entry) => entry.driverKind === CLAUDE_PM_DRIVER),
+  const pmProviderEntries = useMemo(
+    () => providerEntries.filter((entry) => SUPPORTED_PM_DRIVERS.has(entry.driverKind)),
     [providerEntries],
   );
   const pmModelOptionsByInstance = useMemo<
     ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>
   >(() => {
     const out = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
-    for (const entry of claudeProviderEntries) {
+    for (const entry of pmProviderEntries) {
       out.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
     }
     return out;
-  }, [claudeProviderEntries, settings]);
+  }, [pmProviderEntries, settings]);
   const pmPickerSelection = useMemo(
-    () =>
-      resolvePmPickerSelection(pmModelSelection, claudeProviderEntries, pmModelOptionsByInstance),
-    [claudeProviderEntries, pmModelOptionsByInstance, pmModelSelection],
+    () => resolvePmPickerSelection(pmModelSelection, pmProviderEntries, pmModelOptionsByInstance),
+    [pmProviderEntries, pmModelOptionsByInstance, pmModelSelection],
   );
   const pmSelectedInstanceEntry = useMemo(
     () =>
       pmPickerSelection
-        ? (claudeProviderEntries.find(
-            (entry) => entry.instanceId === pmPickerSelection.instanceId,
-          ) ?? null)
+        ? (pmProviderEntries.find((entry) => entry.instanceId === pmPickerSelection.instanceId) ??
+          null)
         : null,
-    [claudeProviderEntries, pmPickerSelection],
+    [pmProviderEntries, pmPickerSelection],
   );
   const environmentAvailable = useEnvironmentApiAvailable(environmentId);
   const pendingUserInputs = useMemo(
@@ -721,9 +722,9 @@ export function PmChatComposer({
                   compact
                   activeInstanceId={pmPickerSelection.instanceId}
                   model={pmPickerSelection.model}
-                  lockedProvider={CLAUDE_PM_DRIVER}
+                  lockedProvider={null}
                   lockedContinuationGroupKey={null}
-                  instanceEntries={claudeProviderEntries}
+                  instanceEntries={pmProviderEntries}
                   modelOptionsByInstance={pmModelOptionsByInstance}
                   disabled={!project || savingPmModelSelection}
                   triggerClassName="max-w-64"
@@ -731,7 +732,7 @@ export function PmChatComposer({
                   onInstanceModelChange={onPmModelSelect}
                 />
                 <TraitsPicker
-                  provider={CLAUDE_PM_DRIVER}
+                  provider={pmSelectedInstanceEntry?.driverKind ?? ProviderDriverKind.make("codex")}
                   models={pmSelectedInstanceEntry?.models ?? []}
                   model={pmPickerSelection.model}
                   prompt=""
@@ -746,7 +747,7 @@ export function PmChatComposer({
               </div>
             ) : (
               <span className="truncate text-[11px] text-muted-foreground">
-                No Claude PM model configured
+                No PM model configured
               </span>
             )}
           </div>

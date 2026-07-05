@@ -42,7 +42,34 @@ const providers: ReadonlyArray<ServerProvider> = [
     status: "ready",
     auth: { status: "authenticated" },
     checkedAt: "2026-06-14T10:00:00.000Z",
-    models: [{ slug: "gpt-5-codex", name: "GPT-5 Codex", isCustom: false, capabilities: null }],
+    models: [
+      {
+        slug: "gpt-5.4",
+        name: "GPT-5 Codex",
+        isCustom: false,
+        capabilities: createModelCapabilities({
+          optionDescriptors: [
+            {
+              id: "reasoningEffort",
+              label: "Reasoning",
+              type: "select",
+              options: [
+                { id: "low", label: "Low" },
+                { id: "medium", label: "Medium", isDefault: true },
+                { id: "high", label: "High" },
+              ],
+              currentValue: "medium",
+            },
+            {
+              id: "fastMode",
+              label: "Fast Mode",
+              type: "boolean",
+              currentValue: true,
+            },
+          ],
+        }),
+      },
+    ],
     slashCommands: [],
     skills: [],
   },
@@ -85,6 +112,22 @@ const providers: ReadonlyArray<ServerProvider> = [
         isCustom: false,
         capabilities: createModelCapabilities({ optionDescriptors: [] }),
       },
+    ],
+    slashCommands: [],
+    skills: [],
+  },
+  {
+    instanceId: ProviderInstanceId.make("opencode"),
+    driver: ProviderDriverKind.make("opencode"),
+    displayName: "OpenCode",
+    enabled: true,
+    installed: true,
+    version: "0.5.0",
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-06-14T10:00:00.000Z",
+    models: [
+      { slug: "opencode-model", name: "OpenCode Model", isCustom: false, capabilities: null },
     ],
     slashCommands: [],
     skills: [],
@@ -154,7 +197,7 @@ describe("PmChatComposer model picker", () => {
     resetAppAtomRegistryForTests();
   });
 
-  it("offers only Claude-driver models and persists selection through project metadata", async () => {
+  it("offers Claude and Codex PM models, excludes unsupported drivers, and persists same-driver picks", async () => {
     const dispatchCommand = vi.fn(async (_command: unknown) => ({ sequence: 1 }));
     __setEnvironmentApiOverrideForTests(environmentId, {
       orchestration: { dispatchCommand },
@@ -176,16 +219,34 @@ describe("PmChatComposer model picker", () => {
     await page.getByRole("button", { name: /Sonnet 4\.6/u }).click();
 
     await vi.waitFor(() => {
-      expect(modelPickerListText()).toContain("Claude Opus 4.8");
+      expect(modelPickerListText()).toContain("Opus 4.8");
     });
-    expect(modelPickerListText()).not.toContain("GPT-5 Codex");
-    expect(document.querySelector('[data-model-picker-provider="codex"]')).toBeNull();
+    expect(document.querySelector('[data-model-picker-provider="codex"]')).not.toBeNull();
+    expect(document.querySelector('[data-model-picker-provider="claudeAgent"]')).not.toBeNull();
+    expect(document.querySelector('[data-model-picker-provider="opencode"]')).toBeNull();
+    expect(modelPickerListText()).not.toContain("OpenCode Model");
 
-    const opusOption = findModelOption("Claude Opus 4.8");
+    await userEvent.click(
+      document.querySelector<HTMLElement>('[data-model-picker-provider="codex"]')!,
+    );
+    await vi.waitFor(() => {
+      expect(modelPickerListText()).toContain("GPT-5 Codex");
+    });
+    expect(modelPickerListText()).not.toContain("OpenCode Model");
+
+    await userEvent.click(
+      document.querySelector<HTMLElement>('[data-model-picker-provider="claudeAgent"]')!,
+    );
+    await vi.waitFor(() => {
+      expect(modelPickerListText()).toContain("Opus 4.8");
+    });
+
+    const opusOption = findModelOption("Opus 4.8");
     expect(opusOption).toBeTruthy();
     await userEvent.click(opusOption!);
 
     await expect.poll(() => dispatchCommand.mock.calls.length).toBe(1);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(dispatchCommand.mock.calls.at(0)?.[0]).toMatchObject({
       type: "project.meta.update",
       projectId,
@@ -197,6 +258,87 @@ describe("PmChatComposer model picker", () => {
         },
       },
     });
+  });
+
+  it("surfaces the harness switch dialog for a Claude to Codex PM model pick", async () => {
+    const dispatchCommand = vi.fn(async (_command: unknown) => ({ sequence: 1 }));
+    __setEnvironmentApiOverrideForTests(environmentId, {
+      orchestration: { dispatchCommand },
+      orchestrator: {
+        sendMessage: vi.fn(),
+        requestPmHandoff: vi.fn(),
+        clearPmChat: vi.fn(),
+      },
+    } as unknown as EnvironmentApi);
+    setServerConfigSnapshot(serverConfig);
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={project}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByRole("button", { name: /Sonnet 4\.6/u }).click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-model-picker-provider="codex"]')).not.toBeNull();
+    });
+
+    await userEvent.click(
+      document.querySelector<HTMLElement>('[data-model-picker-provider="codex"]')!,
+    );
+    await vi.waitFor(() => {
+      expect(modelPickerListText()).toContain("GPT-5 Codex");
+    });
+
+    const codexOption = findModelOption("GPT-5 Codex");
+    expect(codexOption).toBeTruthy();
+    await userEvent.click(codexOption!);
+
+    const dialog = page.getByRole("dialog", { name: "Switch PM harness?" });
+    await expect.element(dialog).toBeVisible();
+    expect(document.body.textContent).toContain("Claude");
+    expect(document.body.textContent).toContain("Codex");
+    expect(dispatchCommand).not.toHaveBeenCalled();
+  });
+
+  it("renders Codex trait controls for a selected Codex PM instance", async () => {
+    __setEnvironmentApiOverrideForTests(environmentId, {
+      orchestration: { dispatchCommand: vi.fn() },
+      orchestrator: { sendMessage: vi.fn() },
+    } as unknown as EnvironmentApi);
+    setServerConfigSnapshot(serverConfig);
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={{
+            ...project,
+            orchestratorConfig: {
+              ...project.orchestratorConfig,
+              pmModelSelection: {
+                instanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5-codex",
+              },
+            },
+          }}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByRole("button", { name: /Medium/u }).click();
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Fast Mode");
+    });
+    expect(document.body.textContent).toContain("Reasoning");
   });
 
   it("persists PM model trait options through project metadata", async () => {
