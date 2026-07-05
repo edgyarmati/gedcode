@@ -645,6 +645,17 @@ browser 174 + 2 known, contracts 185. TESTABLE claude→claude now (dispatch req
 NEXT: **WP-PMHO-2** web dialog (cross-harness gate on PM picker writes: transcript/summary/fresh/cancel, dormant
 until W5 since picker is Claude-locked) → **W5** Codex PM adapter + unlock picker.
 
+**WP-PMHO-2 DONE `f1967638d`** (2026-07-05, Codex yolo gpt-5.5 medium) — cross-harness PM picks open the
+four-action dialog (transcript / summary / start fresh / cancel); handoff/clear runs BEFORE the selection write;
+summary fallback = informational notice; same-harness silent; exported+tested pure helpers
+decidePmHarnessSwitchGate + runPmHarnessSwitchAction; requestPmHandoff on EnvironmentApi; picker still
+Claude-locked → dialog DORMANT until W5. Gate: typecheck 12/12, web 1176/1176, browser 175 + 2 known.
+**WP-PMHANDOFF COMPLETE (server+web).** NEXT: **W5** — Codex PM adapter (DriverPmAdapter equivalent on the
+codex app-server driver: session start w/ systemPromptAppend-equivalent bootstrap + orchestration MCP tools,
+runtime-event bridging into PmEventProjection, resume cursor, resolvePmHarnessConfig accepts codex driver) +
+unlock the PM picker's driver filter — which activates the handoff dialog for real. Scope W5 before dispatch:
+check codex app-server session config surface (MCP tool injection + system prompt) first.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
