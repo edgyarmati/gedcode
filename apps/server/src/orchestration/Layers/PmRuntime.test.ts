@@ -22,8 +22,6 @@ import {
   type ProviderSession,
   type ProviderSessionStartInput,
 } from "@t3tools/contracts";
-import type { AgentHarnessEvent, AgentHarnessResources } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { assert, describe, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
 import * as Deferred from "effect/Deferred";
@@ -83,7 +81,12 @@ import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIde
 import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
 import { OrchestrationMcpServerProviderLive } from "../claude/OrchestrationMcpServerProvider.ts";
 import { PmRuntimeError } from "../pi/Errors.ts";
-import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
+import type {
+  AgentHarnessEvent,
+  AgentHarnessResources,
+  PmAdapterShape,
+} from "../claude/pmHarness.ts";
+import { fauxAssistantMessage } from "../claude/pmHarness.ts";
 import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
 import {
@@ -773,10 +776,10 @@ const makeFactoryCaptureLayer = (input?: {
 const makeTestPmAdapter = (input?: {
   readonly resourceCalls?: AgentHarnessResources[];
   readonly calls?: string[];
-  readonly prompt?: PiAgentAdapterShape["prompt"];
-  readonly waitForIdle?: PiAgentAdapterShape["waitForIdle"];
-  readonly compact?: PiAgentAdapterShape["compact"];
-  readonly setModel?: PiAgentAdapterShape["setModel"];
+  readonly prompt?: PmAdapterShape["prompt"];
+  readonly waitForIdle?: PmAdapterShape["waitForIdle"];
+  readonly compact?: PmAdapterShape["compact"];
+  readonly setModel?: PmAdapterShape["setModel"];
 }) =>
   ({
     events: Stream.empty,
@@ -816,7 +819,7 @@ const makeTestPmAdapter = (input?: {
         input?.resourceCalls?.push(resources);
       }),
     abort: Effect.void,
-  }) satisfies PiAgentAdapterShape;
+  }) satisfies PmAdapterShape;
 
 const makeCapturingAdapter = (
   captured: DriverPmAdapterOptions[],

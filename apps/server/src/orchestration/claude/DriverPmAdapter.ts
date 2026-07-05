@@ -1,15 +1,3 @@
-import type {
-  AgentHarnessEvent,
-  AgentHarnessResources,
-  CompactResult,
-} from "@earendil-works/pi-agent-core";
-import type {
-  AssistantMessage,
-  ImageContent,
-  Model,
-  TextContent,
-  Usage,
-} from "@earendil-works/pi-ai";
 import {
   type ModelSelection,
   type OrchestrationProject,
@@ -28,9 +16,19 @@ import * as Stream from "effect/Stream";
 import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
-import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
 import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pi/PmEventProjection.ts";
 import { CLAUDE_PM_DRIVER } from "./constants.ts";
+import type {
+  AgentHarnessEvent,
+  AgentHarnessResources,
+  AssistantMessage,
+  CompactResult,
+  ImageContent,
+  ModelDescriptor,
+  PmAdapterShape,
+  TextContent,
+  Usage,
+} from "./pmHarness.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME } from "./pmMcpServer.ts";
 
 const CLAUDE_PROVIDER = CLAUDE_PM_DRIVER;
@@ -178,7 +176,7 @@ export interface DriverPmAdapterOptions {
 
 export const makeDriverPmAdapter = (
   options: DriverPmAdapterOptions,
-): Effect.Effect<PiAgentAdapterShape, never, ProviderSessionDirectory> =>
+): Effect.Effect<PmAdapterShape, never, ProviderSessionDirectory> =>
   Effect.gen(function* () {
     const directory = yield* ProviderSessionDirectory;
     const eventQueue = yield* Queue.unbounded<AgentHarnessEvent>();
@@ -198,7 +196,7 @@ export const makeDriverPmAdapter = (
     const threadId = pmThreadIdForProject(options.project);
 
     const offer = (event: PmEventProjectionEvent) =>
-      Queue.offer(eventQueue, event as unknown as AgentHarnessEvent).pipe(Effect.asVoid);
+      Queue.offer(eventQueue, event).pipe(Effect.asVoid);
 
     const persistSession = Effect.gen(function* () {
       const sessions = yield* options.claudeAdapter.listSessions();
@@ -658,7 +656,7 @@ export const makeDriverPmAdapter = (
             tokensBefore: usage?.totalTokens ?? 0,
           } satisfies CompactResult;
         }),
-      setModel: (model: Model<any>) =>
+      setModel: (model: ModelDescriptor) =>
         Ref.update(currentModelSelection, (selection) => ({
           ...selection,
           model: model.id,
@@ -689,5 +687,5 @@ export const makeDriverPmAdapter = (
           toPmRuntimeError("DriverPmAdapter.abort", "Failed to abort Claude PM adapter."),
         ),
       ),
-    } satisfies PiAgentAdapterShape;
+    } satisfies PmAdapterShape;
   });

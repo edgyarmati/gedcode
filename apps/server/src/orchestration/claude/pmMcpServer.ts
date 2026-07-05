@@ -131,7 +131,7 @@ function makeMcpToolDefinition(
           ? (result.details as Record<string, unknown>)
           : { value: result.details };
       return {
-        content: result.content,
+        content: [...result.content],
         structuredContent,
       };
     },

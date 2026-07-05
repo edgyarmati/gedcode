@@ -1,5 +1,4 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { Usage } from "@earendil-works/pi-ai";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -7,8 +6,14 @@ import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
+import type { Usage } from "../claude/pmHarness.ts";
 import { PmRuntimeError } from "./Errors.ts";
-import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "./PmReEntryQueue.ts";
+import {
+  calculateContextTokens,
+  makePmReEntryQueue,
+  PM_COMPACTION_TIMEOUT,
+  shouldCompact,
+} from "./PmReEntryQueue.ts";
 
 const compactResult = {
   summary: "summary",
@@ -33,6 +38,58 @@ const makeUsage = (totalTokens: number): Usage => ({
 const noAssistantUsage = Effect.sync((): Usage | undefined => undefined);
 
 describe("PmReEntryQueue", () => {
+  it("calculates context tokens from totalTokens when it is non-zero", () => {
+    assert.strictEqual(
+      calculateContextTokens({
+        input: 10,
+        output: 20,
+        cacheRead: 30,
+        cacheWrite: 40,
+        totalTokens: 123,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      }),
+      123,
+    );
+  });
+
+  it("calculates context tokens from component tokens when totalTokens is zero", () => {
+    assert.strictEqual(
+      calculateContextTokens({
+        input: 10,
+        output: 20,
+        cacheRead: 30,
+        cacheWrite: 40,
+        totalTokens: 0,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      }),
+      100,
+    );
+  });
+
+  it("compacts only when enabled and above the reserve-adjusted threshold", () => {
+    const settings = {
+      enabled: true,
+      reserveTokens: 20,
+      keepRecentTokens: 10,
+    };
+
+    assert.isFalse(shouldCompact(80, 100, settings));
+    assert.isTrue(shouldCompact(81, 100, settings));
+    assert.isFalse(shouldCompact(99, 100, { ...settings, enabled: false }));
+  });
+
   it.effect("prompts when idle and buffers into follow-up when busy", () =>
     Effect.gen(function* () {
       const idle = yield* Ref.make(true);

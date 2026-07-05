@@ -1,4 +1,3 @@
-import type { Skill } from "@earendil-works/pi-agent-core";
 import { OrchestratorPlaybookFrontmatter } from "@t3tools/contracts";
 import { createHash } from "node:crypto";
 import * as Schema from "effect/Schema";
@@ -23,6 +22,14 @@ export type ResolvedPlaybook = {
   readonly body: string;
   readonly text: string;
   readonly skill: Skill;
+};
+
+export type Skill = {
+  readonly name: string;
+  readonly description: string;
+  readonly content: string;
+  readonly filePath: string;
+  readonly disableModelInvocation?: boolean;
 };
 
 const HASH_HEX_PREFIX_LENGTH = 12;

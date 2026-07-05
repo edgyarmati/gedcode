@@ -1,5 +1,3 @@
-import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -10,8 +8,6 @@ import {
   type ModelSelection,
   type OrchestrationProject,
   type OrchestrationThreadActivity,
-  type ProviderRuntimeUserInputRequestedEvent,
-  type ProviderRuntimeUserInputResolvedEvent,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -24,6 +20,7 @@ import * as Stream from "effect/Stream";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
+import type { AgentHarnessEvent, AssistantMessage, TextContent } from "../claude/pmHarness.ts";
 
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
   ThreadId.make(`pm:${project.id}`);
@@ -64,21 +61,7 @@ type PmEventProjectionRuntimeInputBase = {
   readonly events: Stream.Stream<AgentHarnessEvent>;
 };
 
-export type PmEventProjectionEvent =
-  | AgentHarnessEvent
-  | {
-      readonly type: "provider_runtime_user_input_requested";
-      readonly event: ProviderRuntimeUserInputRequestedEvent;
-    }
-  | {
-      readonly type: "provider_runtime_user_input_resolved";
-      readonly event: ProviderRuntimeUserInputResolvedEvent;
-    }
-  | {
-      readonly type: "provider_runtime_turn_abnormal_end";
-      readonly createdAt: string;
-      readonly reason: string;
-    };
+export type PmEventProjectionEvent = AgentHarnessEvent;
 
 type PmEventProjectionRuntimeInputWithNonce = PmEventProjectionRuntimeInputBase & {
   readonly incarnationNonce: string;

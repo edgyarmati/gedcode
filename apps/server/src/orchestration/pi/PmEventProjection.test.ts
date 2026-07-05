@@ -1,5 +1,3 @@
-import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EventId,
@@ -24,6 +22,7 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import type { AgentHarnessEvent, AssistantMessage } from "../claude/pmHarness.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "./PmEventProjection.ts";

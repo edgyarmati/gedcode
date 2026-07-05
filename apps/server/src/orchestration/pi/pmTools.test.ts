@@ -14,7 +14,6 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationThread,
 } from "@t3tools/contracts";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { assert, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
 import * as DateTime from "effect/DateTime";
@@ -28,7 +27,7 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { createEmptyReadModel } from "../projector.ts";
-import { makePmTools } from "./pmTools.ts";
+import { makePmTools, type PmToolExecutor } from "./pmTools.ts";
 
 const now = "2026-06-14T00:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -203,7 +202,7 @@ const makeLayer = (
     NodeServices.layer,
   );
 
-const findTool = (tools: ReadonlyArray<AgentTool>, name: string): AgentTool => {
+const findTool = (tools: ReadonlyArray<PmToolExecutor>, name: string): PmToolExecutor<any, any> => {
   const tool = tools.find((entry) => entry.name === name);
   assert.ok(tool);
   return tool;

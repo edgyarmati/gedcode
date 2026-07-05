@@ -13,8 +13,6 @@ import {
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAutoCompaction } from "@t3tools/shared/orchestrator";
-import type { AgentHarnessResources } from "@earendil-works/pi-agent-core";
-import type { Model } from "@earendil-works/pi-ai";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -85,7 +83,6 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
-import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pi/PmEventProjection.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { makePmReEntryQueue, PM_COMPACTION_TIMEOUT } from "../pi/PmReEntryQueue.ts";
@@ -94,6 +91,11 @@ import { makeDriverPmAdapter, type DriverPmAdapterOptions } from "../claude/Driv
 import { CLAUDE_PM_DRIVER } from "../claude/constants.ts";
 import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
 import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
+import type {
+  AgentHarnessResources,
+  ModelDescriptor,
+  PmAdapterShape,
+} from "../claude/pmHarness.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
 import {
   buildStageResult,
@@ -129,7 +131,7 @@ export interface PmRuntimeLiveOptions {
 export interface PmProjectRuntimeFactoryOptions {
   readonly makeDriverPmAdapterOverride?: (
     options: DriverPmAdapterOptions,
-  ) => Effect.Effect<PiAgentAdapterShape, never, never>;
+  ) => Effect.Effect<PmAdapterShape, never, never>;
 }
 
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
@@ -447,7 +449,7 @@ const resolveClaudePmContextWindow = (selection: ModelSelection): number =>
     ? EXTENDED_CLAUDE_PM_CONTEXT_WINDOW
     : DEFAULT_CLAUDE_PM_CONTEXT_WINDOW;
 
-const pmAdapterModelDescriptor = (selection: ModelSelection): Model<any> =>
+const pmAdapterModelDescriptor = (selection: ModelSelection): ModelDescriptor =>
   ({
     id: selection.model,
     name: selection.model,
@@ -464,7 +466,7 @@ const pmAdapterModelDescriptor = (selection: ModelSelection): Model<any> =>
     },
     contextWindow: resolveClaudePmContextWindow(selection),
     maxTokens: 0,
-  }) satisfies Model<any>;
+  }) satisfies ModelDescriptor;
 
 const resolvePmHarnessConfig = (
   project: OrchestrationProject,

@@ -1,5 +1,3 @@
-import { calculateContextTokens, shouldCompact } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -8,10 +6,28 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import { increment, orchestrationPmCompactionsTotal } from "../../observability/Metrics.ts";
+import type { PmAdapterShape, Usage } from "../claude/pmHarness.ts";
 import type { PmRuntimeError } from "./Errors.ts";
-import type { PiAgentAdapterShape } from "./PiAgentAdapter.ts";
 
 export const PM_COMPACTION_TIMEOUT = Duration.minutes(5);
+
+export interface CompactionSettings {
+  readonly enabled: boolean;
+  readonly reserveTokens: number;
+  readonly keepRecentTokens: number;
+}
+
+export const calculateContextTokens = (usage: Usage): number =>
+  usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+
+export const shouldCompact = (
+  contextTokens: number,
+  contextWindow: number,
+  settings: CompactionSettings,
+): boolean => {
+  if (!settings.enabled) return false;
+  return contextTokens > contextWindow - settings.reserveTokens;
+};
 
 export type PmReEntryQueueShape = {
   readonly enqueue: (message: string) => Effect.Effect<void>;
@@ -39,7 +55,7 @@ export type PmReEntryQueueOptions = {
 
 export const makePmReEntryQueue = (
   adapter: Pick<
-    PiAgentAdapterShape,
+    PmAdapterShape,
     "isIdle" | "latestAssistantUsage" | "prompt" | "followUp" | "compact"
   >,
   options?: PmReEntryQueueOptions,

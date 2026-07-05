@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: The orchestrator PM runtime no longer depends on the legacy pi agent packages — the PM harness event model, adapter shape, tool result typing, and compaction thresholds are now native modules; PM behavior is unchanged.
 - Fix/UI: The Orchestrator task-board count no longer includes abandoned tasks, and abandoned tasks are now viewable from a collapsed read-only section.
 - UI: The Orchestrator PM chat model picker now includes the thinking/effort traits picker.
 - Internal: `inspectStage` now returns a live tail of the worker stage, including recent messages, recent activities, turn elapsed time, and latest token usage.

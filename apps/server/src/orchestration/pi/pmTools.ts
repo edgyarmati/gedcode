@@ -1,5 +1,3 @@
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "@earendil-works/pi-ai";
 import {
   CommandId,
   GateId,
@@ -29,81 +27,65 @@ import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
-const CreateTaskParameters = Type.Object({
-  projectId: Type.String(),
-  title: Type.String(),
-  taskType: Type.Optional(Type.String()),
-  branch: Type.Optional(Type.String()),
-});
-type CreateTaskParameters = Static<typeof CreateTaskParameters>;
+interface CreateTaskParameters {
+  readonly projectId: string;
+  readonly title: string;
+  readonly taskType?: string;
+  readonly branch?: string;
+}
 
-const ClassifyRequestParameters = Type.Object({
-  taskId: Type.String(),
-  taskType: Type.Optional(Type.String()),
-  playbookVersion: Type.Optional(Type.String()),
-});
-type ClassifyRequestParameters = Static<typeof ClassifyRequestParameters>;
+interface ClassifyRequestParameters {
+  readonly taskId: string;
+  readonly taskType?: string;
+  readonly playbookVersion?: string;
+}
 
-const HandoffWorkerParameters = Type.Object({
-  taskId: Type.String(),
-  role: Type.Union([
-    Type.Literal("classify"),
-    Type.Literal("plan"),
-    Type.Literal("review"),
-    Type.Literal("work"),
-    Type.Literal("verify"),
-  ]),
-  instructions: Type.String(),
-});
-type HandoffWorkerParameters = Static<typeof HandoffWorkerParameters>;
+interface HandoffWorkerParameters {
+  readonly taskId: string;
+  readonly role: OrchestrationStageRole;
+  readonly instructions: string;
+}
 
-const SteerStageParameters = Type.Object({
-  taskId: Type.String(),
-  message: Type.String(),
-  stageThreadId: Type.Optional(Type.String()),
-});
-type SteerStageParameters = Static<typeof SteerStageParameters>;
+interface SteerStageParameters {
+  readonly taskId: string;
+  readonly message: string;
+  readonly stageThreadId?: string;
+}
 
-const RequestApprovalParameters = Type.Object({
-  taskId: Type.String(),
-  gate: Type.Union([Type.Literal("plan"), Type.Literal("land")]),
-  contentHash: Type.String(),
-  stageThreadId: Type.Optional(Type.String()),
-});
-type RequestApprovalParameters = Static<typeof RequestApprovalParameters>;
+interface RequestApprovalParameters {
+  readonly taskId: string;
+  readonly gate: OrchestrationGateKind;
+  readonly contentHash: string;
+  readonly stageThreadId?: string;
+}
 
-const SetTaskBackendParameters = Type.Object({
-  taskId: Type.String(),
-  role: Type.Union([
-    Type.Literal("classify"),
-    Type.Literal("plan"),
-    Type.Literal("review"),
-    Type.Literal("work"),
-    Type.Literal("verify"),
-  ]),
-  instanceId: Type.String(),
-  model: Type.String(),
-});
-type SetTaskBackendParameters = Static<typeof SetTaskBackendParameters>;
+interface SetTaskBackendParameters {
+  readonly taskId: string;
+  readonly role: OrchestrationStageRole;
+  readonly instanceId: string;
+  readonly model: string;
+}
 
-const InspectStageParameters = Type.Object({
-  taskId: Type.String(),
-  stageThreadId: Type.Optional(Type.String()),
-});
-type InspectStageParameters = Static<typeof InspectStageParameters>;
+interface InspectStageParameters {
+  readonly taskId: string;
+  readonly stageThreadId?: string;
+}
 
-const CancelTaskParameters = Type.Object({
-  taskId: Type.String(),
-});
-type CancelTaskParameters = Static<typeof CancelTaskParameters>;
+interface CancelTaskParameters {
+  readonly taskId: string;
+}
 
-const GetTaskLedgerParameters = Type.Object({
-  projectId: Type.String(),
-});
-type GetTaskLedgerParameters = Static<typeof GetTaskLedgerParameters>;
+interface GetTaskLedgerParameters {
+  readonly projectId: string;
+}
+
+interface PmToolContent {
+  readonly type: "text";
+  readonly text: string;
+}
 
 export interface PmToolResult<TDetails> {
-  readonly content: AgentToolResult<TDetails>["content"];
+  readonly content: ReadonlyArray<PmToolContent>;
   readonly details: TDetails;
 }
 
@@ -111,7 +93,6 @@ export interface PmToolExecutor<TParams = unknown, TDetails = unknown> {
   readonly name: string;
   readonly label: string;
   readonly description: string;
-  readonly parameters: unknown;
   readonly execute: (toolCallId: string, params: TParams) => Promise<PmToolResult<TDetails>>;
 }
 
@@ -278,7 +259,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "createTask",
     label: "Create task",
     description: "Create a new orchestrator task for a project.",
-    parameters: CreateTaskParameters,
     execute: (toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -306,7 +286,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "classifyRequest",
     label: "Classify request",
     description: "Classify an existing task into a task type/playbook.",
-    parameters: ClassifyRequestParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -334,7 +313,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     label: "Handoff worker",
     description:
       "Start a detached worker stage for a task. Use classify for task typing, plan for implementation planning, review for pre-work plan critique, work for implementation, and verify for post-work validation before landing.",
-    parameters: HandoffWorkerParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -368,7 +346,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     label: "Steer stage",
     description:
       "Send a user message into a running or idle worker stage thread to correct course, add context, or answer the worker without cancelling and re-handing off.",
-    parameters: SteerStageParameters,
     execute: (toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -431,7 +408,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "requestApproval",
     label: "Request approval",
     description: "Open a human approval gate for a task.",
-    parameters: RequestApprovalParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -465,7 +441,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     label: "Set task backend",
     description:
       "Change which provider/model a task stage role runs on when asked. This overrides the project's per-role default for that task only.",
-    parameters: SetTaskBackendParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -498,7 +473,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     label: "Inspect stage",
     description:
       "Inspect the current projected task/stage state and return a compact live tail of the selected worker stage thread.",
-    parameters: InspectStageParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -560,7 +534,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     label: "Cancel task",
     description:
       "Cancel/abandon a task and free its worktree slot — use to clear a stuck or stale task. Works on any non-terminal task.",
-    parameters: CancelTaskParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -583,7 +556,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "getTaskLedger",
     label: "Get task ledger",
     description: "Read the projected task ledger for a project.",
-    parameters: GetTaskLedgerParameters,
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -615,8 +587,7 @@ export const makePmTools = makePmToolExecutors.pipe(
         name: executor.name,
         label: executor.label,
         description: executor.description,
-        parameters: executor.parameters,
         execute: executor.execute,
-      })) as ReadonlyArray<AgentTool>,
+      })) as ReadonlyArray<PmToolExecutor>,
   ),
 );
