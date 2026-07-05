@@ -539,6 +539,17 @@ typecheck by my instruction): exactOptionalPropertyTypes on the helper's options
 optional-chain in the new OrchestratorRoutes test. Gate: fmt/lint/typecheck 13/13, web 1178/1178, browser 177 +
 the 2 known pre-existing failures (PM composer browser tests green).
 
+**WP-TASKARCH DONE `cf829a948`** (2026-07-05) — live-test findings closed: (1) task-board badge showed "6" on
+an empty board because cancelTask → task.abandon retains rows (all 6 were status=abandoned in projection_tasks)
+while BOARD_STATUSES deliberately has no Abandoned column and the badge counted the unfiltered list — badge now
+counts board-membership (BOARD_STATUS_SET, not a hardcoded !=abandoned); (2) abandoned tasks reachable again
+via a collapsed bottom section (AbandonedTaskBoardSection, local expand state — uiStateStore had no per-section
+slot; renders only when nonempty) whose TaskBoardCards open the existing task detail route (already read-only
+for abandoned; cancel button already hidden). Gate: fmt/lint/typecheck 13/13, web 1181/1181, browser 177 + the
+2 known failures. LIVE-CONFIRMED same day: full PM loop in production use — createTask → handoffWorker →
+steerStage 10s after handoff → inspectStage (elapsed matched event log to the second) → AskUserQuestion answered
++ turn resumed in 30s → getTaskLedger → cancelTask ×2 (event log seq 8540-8868, 10003-10845).
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
