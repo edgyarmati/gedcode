@@ -2,7 +2,6 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
@@ -20,15 +19,9 @@ import { ModelSelection } from "@t3tools/contracts";
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
-    gedWorkflowEnabled: Schema.Number,
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
-
-const mapProjectionThreadDbRow = (row: ProjectionThreadDbRow): ProjectionThread => ({
-  ...row,
-  gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
-});
 
 const makeProjectionThreadRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -41,9 +34,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           thread_id,
           project_id,
           title,
-	          model_selection_json,
-	          ged_workflow_enabled,
-	          runtime_mode,
+          model_selection_json,
+          runtime_mode,
           interaction_mode,
           branch,
           worktree_path,
@@ -62,9 +54,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.threadId},
           ${row.projectId},
           ${row.title},
-	          ${JSON.stringify(row.modelSelection)},
-	          ${(row.gedWorkflowEnabled ?? true) ? 1 : 0},
-	          ${row.runtimeMode},
+          ${JSON.stringify(row.modelSelection)},
+          ${row.runtimeMode},
           ${row.interactionMode},
           ${row.branch},
           ${row.worktreePath},
@@ -82,10 +73,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         ON CONFLICT (thread_id)
         DO UPDATE SET
           project_id = excluded.project_id,
-	          title = excluded.title,
-	          model_selection_json = excluded.model_selection_json,
-	          ged_workflow_enabled = excluded.ged_workflow_enabled,
-	          runtime_mode = excluded.runtime_mode,
+          title = excluded.title,
+          model_selection_json = excluded.model_selection_json,
+          runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
@@ -110,10 +100,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
-	          title,
-	          model_selection_json AS "modelSelection",
-	          ged_workflow_enabled AS "gedWorkflowEnabled",
-	          runtime_mode AS "runtimeMode",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
@@ -140,10 +129,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
-	          title,
-	          model_selection_json AS "modelSelection",
-	          ged_workflow_enabled AS "gedWorkflowEnabled",
-	          runtime_mode AS "runtimeMode",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
@@ -179,13 +167,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
 
   const getById: ProjectionThreadRepositoryShape["getById"] = (input) =>
     getProjectionThreadRow(input).pipe(
-      Effect.map(Option.map(mapProjectionThreadDbRow)),
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
     );
 
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
-      Effect.map((rows) => rows.map(mapProjectionThreadDbRow)),
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
     );
 

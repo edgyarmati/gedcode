@@ -319,7 +319,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           title: command.title,
           modelSelection: command.modelSelection,
-          gedWorkflowEnabled: command.gedWorkflowEnabled ?? true,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
           branch: command.branch,
@@ -417,9 +416,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.title !== undefined ? { title: command.title } : {}),
           ...(command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
-            : {}),
-          ...(command.gedWorkflowEnabled !== undefined
-            ? { gedWorkflowEnabled: command.gedWorkflowEnabled }
             : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
@@ -538,9 +534,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.message.messageId,
           ...(command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
-            : {}),
-          ...(command.gedWorkflowEnabled !== undefined
-            ? { gedWorkflowEnabled: command.gedWorkflowEnabled }
             : {}),
           ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
           runtimeMode: targetThread.runtimeMode,
@@ -1146,7 +1139,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: task.projectId,
           title: `${task.title} (${command.role})`,
           modelSelection,
-          gedWorkflowEnabled: false,
           runtimeMode: workerRuntimeMode,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: task.branch,
@@ -1189,7 +1181,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: stageThreadId,
           messageId,
           modelSelection,
-          gedWorkflowEnabled: false,
           runtimeMode: workerRuntimeMode,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           createdAt: command.createdAt,

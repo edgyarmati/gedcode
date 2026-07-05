@@ -175,7 +175,6 @@ const stageThread: OrchestrationThread = {
     instanceId: ProviderInstanceId.make("codex"),
     model: "gpt-5-codex",
   },
-  gedWorkflowEnabled: false,
   runtimeMode: "approval-required",
   interactionMode: "default",
   branch: "orchestrator/task-1",

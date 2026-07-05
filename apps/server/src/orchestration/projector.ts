@@ -362,7 +362,6 @@ export function projectEvent(
             projectId: payload.projectId,
             title: payload.title,
             modelSelection: payload.modelSelection,
-            gedWorkflowEnabled: payload.gedWorkflowEnabled ?? true,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
             branch: payload.branch,
@@ -430,9 +429,6 @@ export function projectEvent(
             ...(payload.title !== undefined ? { title: payload.title } : {}),
             ...(payload.modelSelection !== undefined
               ? { modelSelection: payload.modelSelection }
-              : {}),
-            ...(payload.gedWorkflowEnabled !== undefined
-              ? { gedWorkflowEnabled: payload.gedWorkflowEnabled }
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),

@@ -129,7 +129,6 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           projectId: input.project.id,
           title: `${input.project.title} PM`,
           modelSelection: input.pmModelSelection,
-          gedWorkflowEnabled: false,
           runtimeMode: "full-access",
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: null,

@@ -619,7 +619,6 @@ describe("PmEventProjection", () => {
       assert.strictEqual(commands[0]?.type, "thread.create");
       if (commands[0]?.type === "thread.create") {
         assert.strictEqual(commands[0].threadId, runtime.pmThreadId);
-        assert.strictEqual(commands[0].gedWorkflowEnabled, false);
         assert.deepStrictEqual(commands[0].modelSelection, pmModelSelection);
         assert.strictEqual(commands[0].runtimeMode, "full-access");
       }
