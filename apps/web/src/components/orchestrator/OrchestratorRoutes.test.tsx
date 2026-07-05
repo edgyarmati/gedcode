@@ -12,7 +12,11 @@ import {
 
 import type { Project, Thread } from "../../types";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
-import { buildPmUserInputRespondCommand, PmChatComposer } from "./PmChatComposer";
+import {
+  buildPmModelSelectionUpdateCommand,
+  buildPmUserInputRespondCommand,
+  PmChatComposer,
+} from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
 describe("TaskPrLink", () => {
@@ -141,8 +145,7 @@ describe("PmChatComposer", () => {
 
     expect(markup).toContain("Message PM");
     expect(markup).toContain("Send PM message");
-    expect(markup).toContain("PM model:");
-    expect(markup).toContain("claudeAgent · claude-sonnet-4-6");
+    expect(markup).not.toContain("PM model:");
     expect(markup).not.toContain('role="combobox"');
     expect(markup).not.toContain('data-slot="select-trigger"');
     expect(markup).not.toContain("Ged workflow");
@@ -213,6 +216,29 @@ describe("PmChatComposer", () => {
         scope: "Small",
       },
       createdAt: "2026-06-14T10:02:00.000Z",
+    });
+    expect(command.commandId).toBeTruthy();
+  });
+
+  it("builds PM model selection updates using project orchestrator config", () => {
+    const command = buildPmModelSelectionUpdateCommand({
+      project,
+      selection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-4-8",
+      },
+    });
+
+    expect(command).toMatchObject({
+      type: "project.meta.update",
+      projectId,
+      orchestratorConfig: {
+        enabled: true,
+        pmModelSelection: {
+          instanceId: "claudeAgent",
+          model: "claude-opus-4-8",
+        },
+      },
     });
     expect(command.commandId).toBeTruthy();
   });

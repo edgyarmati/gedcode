@@ -4,14 +4,18 @@ import type {
   ModelSelection,
   OrchestrationCommand,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@t3tools/contracts";
 import { ArrowUpIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { readEnvironmentApi } from "../../environmentApi";
 import { useEnvironmentApiAvailable } from "../../hooks/useEnvironmentApiAvailable";
+import { useSettings } from "../../hooks/useSettings";
 import { newCommandId } from "../../lib/utils";
+import { getAppModelOptionsForInstance, type AppModelOption } from "../../modelSelection";
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
@@ -19,16 +23,21 @@ import {
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
-import { deriveProviderInstanceEntries } from "../../providerInstances";
+import {
+  deriveProviderInstanceEntries,
+  sortProviderInstanceEntries,
+  type ProviderInstanceEntry,
+} from "../../providerInstances";
 import { useServerConfig } from "../../rpc/serverState";
 import { derivePendingUserInputs } from "../../session-logic";
 import type { Project, Thread } from "../../types";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
+import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { backendLabel } from "./RoleBackendPicker";
 
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const CLAUDE_PM_DRIVER = ProviderDriverKind.make("claudeAgent");
 
 export function buildPmUserInputRespondCommand(input: {
   readonly threadId: ThreadId;
@@ -43,6 +52,21 @@ export function buildPmUserInputRespondCommand(input: {
     requestId: input.requestId,
     answers: input.answers,
     createdAt: input.createdAt ?? new Date().toISOString(),
+  };
+}
+
+export function buildPmModelSelectionUpdateCommand(input: {
+  readonly project: Project;
+  readonly selection: ModelSelection;
+}): Extract<OrchestrationCommand, { type: "project.meta.update" }> {
+  return {
+    type: "project.meta.update",
+    commandId: newCommandId(),
+    projectId: input.project.id,
+    orchestratorConfig: {
+      ...input.project.orchestratorConfig,
+      pmModelSelection: input.selection,
+    },
   };
 }
 
@@ -64,6 +88,33 @@ function readPmModelSelection(project: Project | undefined): ModelSelection | nu
     : selection;
 }
 
+function firstPickerModelForEntry(
+  entry: ProviderInstanceEntry,
+  modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>,
+): string | null {
+  return modelOptionsByInstance.get(entry.instanceId)?.[0]?.slug ?? entry.models[0]?.slug ?? null;
+}
+
+function resolvePmPickerSelection(
+  selection: ModelSelection | null,
+  claudeProviderEntries: ReadonlyArray<ProviderInstanceEntry>,
+  modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>,
+): ModelSelection | null {
+  const selectedEntry = selection
+    ? (claudeProviderEntries.find((entry) => entry.instanceId === selection.instanceId) ?? null)
+    : null;
+  if (selection && selectedEntry) {
+    return selection;
+  }
+
+  const fallbackEntry = claudeProviderEntries.find((entry) => entry.enabled && entry.isAvailable);
+  if (!fallbackEntry) {
+    return null;
+  }
+  const fallbackModel = firstPickerModelForEntry(fallbackEntry, modelOptionsByInstance);
+  return fallbackModel ? { instanceId: fallbackEntry.instanceId, model: fallbackModel } : null;
+}
+
 export function PmChatComposer({
   environmentId,
   project,
@@ -76,9 +127,11 @@ export function PmChatComposer({
   thread: Thread | undefined;
 }) {
   const serverConfig = useServerConfig();
+  const settings = useSettings();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [savingPmModelSelection, setSavingPmModelSelection] = useState(false);
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
@@ -88,15 +141,27 @@ export function PmChatComposer({
   const [error, setError] = useState<string | null>(null);
   const pmModelSelection = readPmModelSelection(project);
   const providerEntries = useMemo(
-    () => deriveProviderInstanceEntries(serverConfig?.providers ?? []),
+    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverConfig?.providers ?? [])),
     [serverConfig?.providers],
   );
-  const pmModelLabel = pmModelSelection
-    ? backendLabel(
-        pmModelSelection,
-        providerEntries.find((entry) => entry.instanceId === pmModelSelection.instanceId),
-      )
-    : "Not configured";
+  const claudeProviderEntries = useMemo(
+    () => providerEntries.filter((entry) => entry.driverKind === CLAUDE_PM_DRIVER),
+    [providerEntries],
+  );
+  const pmModelOptionsByInstance = useMemo<
+    ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>
+  >(() => {
+    const out = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
+    for (const entry of claudeProviderEntries) {
+      out.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+    }
+    return out;
+  }, [claudeProviderEntries, settings]);
+  const pmPickerSelection = useMemo(
+    () =>
+      resolvePmPickerSelection(pmModelSelection, claudeProviderEntries, pmModelOptionsByInstance),
+    [claudeProviderEntries, pmModelOptionsByInstance, pmModelSelection],
+  );
   const environmentAvailable = useEnvironmentApiAvailable(environmentId);
   const pendingUserInputs = useMemo(
     () => derivePendingUserInputs(thread?.activities ?? []),
@@ -308,6 +373,36 @@ export function PmChatComposer({
       trimmedMessage,
     ],
   );
+  const onPmModelSelect = useCallback(
+    (instanceId: ProviderInstanceId, model: string) => {
+      const api = readEnvironmentApi(environmentId);
+      if (!api) {
+        setError("Environment API unavailable.");
+        return;
+      }
+      if (!project) {
+        setError("Project unavailable.");
+        return;
+      }
+
+      setSavingPmModelSelection(true);
+      setError(null);
+      void api.orchestration
+        .dispatchCommand(
+          buildPmModelSelectionUpdateCommand({
+            project,
+            selection: { instanceId, model },
+          }),
+        )
+        .catch((saveError) => {
+          setError(saveError instanceof Error ? saveError.message : "Failed to update PM model.");
+        })
+        .finally(() => {
+          setSavingPmModelSelection(false);
+        });
+    },
+    [environmentId, project],
+  );
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -377,9 +472,27 @@ export function PmChatComposer({
           </Button>
         </div>
         <div className="flex min-h-5 items-center justify-between gap-2">
-          <span className="truncate text-[11px] text-muted-foreground">
-            PM model: {pmModelLabel}
-          </span>
+          <div className="-m-1 flex min-w-0 flex-1 items-center overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {pmPickerSelection ? (
+              <ProviderModelPicker
+                compact
+                activeInstanceId={pmPickerSelection.instanceId}
+                model={pmPickerSelection.model}
+                lockedProvider={CLAUDE_PM_DRIVER}
+                lockedContinuationGroupKey={null}
+                instanceEntries={claudeProviderEntries}
+                modelOptionsByInstance={pmModelOptionsByInstance}
+                disabled={!project || savingPmModelSelection}
+                triggerClassName="max-w-64"
+                {...(serverConfig?.keybindings ? { keybindings: serverConfig.keybindings } : {})}
+                onInstanceModelChange={onPmModelSelect}
+              />
+            ) : (
+              <span className="truncate text-[11px] text-muted-foreground">
+                No Claude PM model configured
+              </span>
+            )}
+          </div>
           {isRunning ? (
             <span className="text-[11px] font-medium text-muted-foreground">Running</span>
           ) : null}
