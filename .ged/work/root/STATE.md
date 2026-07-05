@@ -596,6 +596,16 @@ PM, i.e. W5 territory) must ALWAYS prompt: hand off PM history to the new harnes
 PM thread; handoff → mechanism to export/transfer the PM conversation into the new harness's session). Same-
 harness model changes stay silent (current behavior). Design before W5; UX gate lives wherever PM harness
 selection changes (picker is Claude-only until W5, so no UI risk today).
+**W6-B DONE `0d4a59963`** (2026-07-05, single Codex yolo run, gpt-5.5 high, 522k tokens) — pi stack GONE:
+dead pi files + piProvider.ts contracts + 5 pi RPCs + piProviders settings (server/shared/web UI) + pi deps
+deleted; live PM modules moved orchestration/pi/ → orchestration/pm/ (clearSqliteSessionStorage extracted to
+pm/LegacySessionStorage.ts; migration 035 stays); vestigial auto-compaction removed end-to-end (trigger, no-op
+compact, config knobs, metric) — PM compaction = harness-native; legacy {piProvider,model} events decode to
+unconfigured PM (replay-safe, verified decode path); pi decision doc marked superseded. Eradication grep clean.
+Gate: fmt/lint/typecheck 12/12, worker's full `bun run test` 12/12 turbo tasks (both flaky integration files
+green under full concurrency!), my re-run: server 1303/1304, browser 174 + the 2 known failures (pi browser
+tests deleted with the UI). −5,814 lines this commit; W6+W7 total ≈ −11k lines.
+
 - **DEFERRED follow-ups:** W7-C remove gedWorkflowEnabled from orchestration.ts thread structs/commands/events
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
