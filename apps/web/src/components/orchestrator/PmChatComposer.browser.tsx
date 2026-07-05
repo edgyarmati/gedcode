@@ -10,6 +10,7 @@ import {
   type ServerConfig,
   type ServerProvider,
 } from "@t3tools/contracts";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -57,14 +58,28 @@ const providers: ReadonlyArray<ServerProvider> = [
         name: "Claude Sonnet 4.6",
         shortName: "Sonnet 4.6",
         isCustom: false,
-        capabilities: null,
+        capabilities: createModelCapabilities({
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Reasoning",
+              type: "select",
+              options: [
+                { id: "low", label: "Low" },
+                { id: "high", label: "High", isDefault: true },
+                { id: "max", label: "Max" },
+              ],
+              currentValue: "high",
+            },
+          ],
+        }),
       },
       {
         slug: "claude-opus-4-8",
         name: "Claude Opus 4.8",
         shortName: "Opus 4.8",
         isCustom: false,
-        capabilities: null,
+        capabilities: createModelCapabilities({ optionDescriptors: [] }),
       },
     ],
     slashCommands: [],
@@ -175,6 +190,47 @@ describe("PmChatComposer model picker", () => {
         pmModelSelection: {
           instanceId: "claudeAgent",
           model: "claude-opus-4-8",
+        },
+      },
+    });
+  });
+
+  it("persists PM model trait options through project metadata", async () => {
+    const dispatchCommand = vi.fn(async (_command: unknown) => ({ sequence: 1 }));
+    __setEnvironmentApiOverrideForTests(environmentId, {
+      orchestration: { dispatchCommand },
+      orchestrator: { sendMessage: vi.fn() },
+    } as unknown as EnvironmentApi);
+    setServerConfigSnapshot(serverConfig);
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={project}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByRole("button", { name: /^High$/u }).click();
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Max");
+    });
+    await page.getByText("Max").click();
+
+    await expect.poll(() => dispatchCommand.mock.calls.length).toBe(1);
+    expect(dispatchCommand.mock.calls.at(0)?.[0]).toMatchObject({
+      type: "project.meta.update",
+      projectId,
+      orchestratorConfig: {
+        enabled: true,
+        pmModelSelection: {
+          instanceId: "claudeAgent",
+          model: "claude-sonnet-4-6",
+          options: [{ id: "effort", value: "max" }],
         },
       },
     });

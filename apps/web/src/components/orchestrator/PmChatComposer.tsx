@@ -5,9 +5,11 @@ import type {
   OrchestrationCommand,
   ProjectId,
   ProviderInstanceId,
+  ProviderOptionSelection,
   ThreadId,
 } from "@t3tools/contracts";
 import { ProviderDriverKind } from "@t3tools/contracts";
+import { createModelSelection } from "@t3tools/shared/model";
 import { ArrowUpIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
@@ -33,6 +35,7 @@ import { derivePendingUserInputs } from "../../session-logic";
 import type { Project, Thread } from "../../types";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 
@@ -57,7 +60,11 @@ export function buildPmUserInputRespondCommand(input: {
 
 export function buildPmModelSelectionUpdateCommand(input: {
   readonly project: Project;
-  readonly selection: ModelSelection;
+  readonly selection: {
+    readonly instanceId: ModelSelection["instanceId"];
+    readonly model: string;
+    readonly options?: ReadonlyArray<ProviderOptionSelection> | null | undefined;
+  };
 }): Extract<OrchestrationCommand, { type: "project.meta.update" }> {
   return {
     type: "project.meta.update",
@@ -65,7 +72,11 @@ export function buildPmModelSelectionUpdateCommand(input: {
     projectId: input.project.id,
     orchestratorConfig: {
       ...input.project.orchestratorConfig,
-      pmModelSelection: input.selection,
+      pmModelSelection: createModelSelection(
+        input.selection.instanceId,
+        input.selection.model,
+        input.selection.options,
+      ),
     },
   };
 }
@@ -161,6 +172,15 @@ export function PmChatComposer({
     () =>
       resolvePmPickerSelection(pmModelSelection, claudeProviderEntries, pmModelOptionsByInstance),
     [claudeProviderEntries, pmModelOptionsByInstance, pmModelSelection],
+  );
+  const pmSelectedInstanceEntry = useMemo(
+    () =>
+      pmPickerSelection
+        ? (claudeProviderEntries.find(
+            (entry) => entry.instanceId === pmPickerSelection.instanceId,
+          ) ?? null)
+        : null,
+    [claudeProviderEntries, pmPickerSelection],
   );
   const environmentAvailable = useEnvironmentApiAvailable(environmentId);
   const pendingUserInputs = useMemo(
@@ -403,6 +423,46 @@ export function PmChatComposer({
     },
     [environmentId, project],
   );
+  const onPmModelOptionsChange = useCallback(
+    (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
+      const api = readEnvironmentApi(environmentId);
+      if (!api) {
+        setError("Environment API unavailable.");
+        return;
+      }
+      if (!project) {
+        setError("Project unavailable.");
+        return;
+      }
+      if (!pmPickerSelection) {
+        setError("PM model unavailable.");
+        return;
+      }
+
+      setSavingPmModelSelection(true);
+      setError(null);
+      void api.orchestration
+        .dispatchCommand(
+          buildPmModelSelectionUpdateCommand({
+            project,
+            selection: {
+              instanceId: pmPickerSelection.instanceId,
+              model: pmPickerSelection.model,
+              options,
+            },
+          }),
+        )
+        .catch((saveError) => {
+          setError(
+            saveError instanceof Error ? saveError.message : "Failed to update PM model options.",
+          );
+        })
+        .finally(() => {
+          setSavingPmModelSelection(false);
+        });
+    },
+    [environmentId, pmPickerSelection, project],
+  );
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -474,19 +534,34 @@ export function PmChatComposer({
         <div className="flex min-h-5 items-center justify-between gap-2">
           <div className="-m-1 flex min-w-0 flex-1 items-center overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {pmPickerSelection ? (
-              <ProviderModelPicker
-                compact
-                activeInstanceId={pmPickerSelection.instanceId}
-                model={pmPickerSelection.model}
-                lockedProvider={CLAUDE_PM_DRIVER}
-                lockedContinuationGroupKey={null}
-                instanceEntries={claudeProviderEntries}
-                modelOptionsByInstance={pmModelOptionsByInstance}
-                disabled={!project || savingPmModelSelection}
-                triggerClassName="max-w-64"
-                {...(serverConfig?.keybindings ? { keybindings: serverConfig.keybindings } : {})}
-                onInstanceModelChange={onPmModelSelect}
-              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ProviderModelPicker
+                  compact
+                  activeInstanceId={pmPickerSelection.instanceId}
+                  model={pmPickerSelection.model}
+                  lockedProvider={CLAUDE_PM_DRIVER}
+                  lockedContinuationGroupKey={null}
+                  instanceEntries={claudeProviderEntries}
+                  modelOptionsByInstance={pmModelOptionsByInstance}
+                  disabled={!project || savingPmModelSelection}
+                  triggerClassName="max-w-64"
+                  {...(serverConfig?.keybindings ? { keybindings: serverConfig.keybindings } : {})}
+                  onInstanceModelChange={onPmModelSelect}
+                />
+                <TraitsPicker
+                  provider={CLAUDE_PM_DRIVER}
+                  models={pmSelectedInstanceEntry?.models ?? []}
+                  model={pmPickerSelection.model}
+                  prompt=""
+                  onPromptChange={() => {}}
+                  modelOptions={pmModelSelection?.options ?? null}
+                  allowPromptInjectedEffort={false}
+                  triggerVariant="outline"
+                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                  disabled={!project || savingPmModelSelection}
+                  onModelOptionsChange={onPmModelOptionsChange}
+                />
+              </div>
             ) : (
               <span className="truncate text-[11px] text-muted-foreground">
                 No Claude PM model configured

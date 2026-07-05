@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: The Orchestrator PM chat model picker now includes the thinking/effort traits picker.
 - Internal: `inspectStage` now returns a live tail of the worker stage, including recent messages, recent activities, turn elapsed time, and latest token usage.
 - Internal: The Orchestrator PM can now steer running worker stages by sending messages into their threads with `steerStage`, reusing the same `thread.turn.start` path as human chat messages.
 - UI: The Orchestrator PM chat now uses the standard provider/model picker for Claude-driver PM models, and the PM prompt now directs heavier exploration through native subagents instead of dedicated exploration tasks.

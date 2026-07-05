@@ -242,4 +242,54 @@ describe("PmChatComposer", () => {
     });
     expect(command.commandId).toBeTruthy();
   });
+
+  it("builds PM model selection updates carrying options", () => {
+    const command = buildPmModelSelectionUpdateCommand({
+      project,
+      selection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+        options: [{ id: "effort", value: "max" }],
+      },
+    });
+
+    expect(command).toMatchObject({
+      type: "project.meta.update",
+      projectId,
+      orchestratorConfig: {
+        enabled: true,
+        pmModelSelection: {
+          instanceId: "claudeAgent",
+          model: "claude-sonnet-4-6",
+          options: [{ id: "effort", value: "max" }],
+        },
+      },
+    });
+    expect(command.commandId).toBeTruthy();
+  });
+
+  it("resets PM model options when building a model-change update", () => {
+    const command = buildPmModelSelectionUpdateCommand({
+      project: {
+        ...project,
+        orchestratorConfig: {
+          ...project.orchestratorConfig,
+          pmModelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: "claude-sonnet-4-6",
+            options: [{ id: "effort", value: "max" }],
+          },
+        },
+      },
+      selection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-4-8",
+      },
+    });
+
+    expect(command.orchestratorConfig?.pmModelSelection).toEqual({
+      instanceId: "claudeAgent",
+      model: "claude-opus-4-8",
+    });
+  });
 });
