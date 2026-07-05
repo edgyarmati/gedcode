@@ -574,6 +574,18 @@ session's scoping agents; blast radii recorded in the three-task split below.
 - **T3 W7-B ged server removal** (owns apps/server/src/gedWorkflow/** + packages/ged-workflow/** + server.ts +
   ws.ts ged handler + ProviderCommandReactor + serverRuntimeStartup + serverSettings* + contracts settings/
   gedWorkflow/provider.ts field/rpc ws-method + shared/serverSettings + scripts refs + server package.json dep).
+**PARALLEL BATCH DONE (2026-07-05)** — ran as 3 concurrent `codex exec --dangerously-bypass-approvals-and-sandbox`
+(gpt-5.5, T1/T3 high, T2 medium) launched by the PM directly (user authorized yolo); all finished cleanly, zero
+file-ownership violations. Commits: **T1 `f11481d54`** (pi detangle; pmHarness.ts native event union kills the
+AgentHarnessEvent cast; pmTools drops never-consumed `parameters` + 44 pi-ai Type schemas; compaction fns ported
+VERBATIM — verified against pi-agent-core dist source; acceptance grep: pi imports only in dead pi-only files),
+**T2 `7238f7752`** (ged web removal, -1050 lines), **T3 `63e8f3a80`** (ged server+contracts removal, -4115 lines
+incl. packages/ged-workflow). Seam pass (T4 Codex run FAILED: "workspace out of credits" — user must refill;
+PM fixed seams by hand instead): codex ged-subagent-preset picker ripped from ProviderSettingsForm(+test),
+KeybindingsToast + ProviderInstanceRegistryLive fixtures, restored ServerSettings import in SettingsPanels.logic,
+pmMcpServer content ReadonlyArray→mutable spread. Combined gate: typecheck 12/12 (tsgo flake fired twice across
+ssh/tailscale under load — standalone green, then full green after no-op bun install), lint clean, server
+1340/1341, web 1173, contracts 190, shared 149, browser 177 + the 2 known failures.
 - **DEFERRED follow-ups:** W7-C remove gedWorkflowEnabled from orchestration.ts thread structs/commands/events
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
