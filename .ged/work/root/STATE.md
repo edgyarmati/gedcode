@@ -529,6 +529,16 @@ Equal.equals full selection, in-place apply per canApplyPmModelInPlace) — the 
 lacks the TraitsPicker next to ProviderModelPicker (pattern: SettingsPanels.tsx text-gen row ~1008,
 onModelOptionsChange variant).
 
+**WP-PMTRAITS DONE `66fb7a0a7`** (2026-07-05, ran in parallel with WP-PEEK — web-only, no file overlap) —
+TraitsPicker (thinking/effort/fastMode/contextWindow) next to the PM model picker in PmChatComposer, settings
+text-gen-row pattern (onModelOptionsChange variant, allowPromptInjectedEffort false); trait changes persist
+options into pmModelSelection via buildPmModelSelectionUpdateCommand → createModelSelection; model switches
+reset options (capabilities differ per model, same as settings dialog); TraitsPicker gained a `disabled` prop.
+Server needed NOTHING (verified during scoping). Review fixes (me, mechanical typecheck-only — worker skipped
+typecheck by my instruction): exactOptionalPropertyTypes on the helper's options field (`| undefined`), and an
+optional-chain in the new OrchestratorRoutes test. Gate: fmt/lint/typecheck 13/13, web 1178/1178, browser 177 +
+the 2 known pre-existing failures (PM composer browser tests green).
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
