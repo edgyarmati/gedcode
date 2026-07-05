@@ -586,6 +586,16 @@ KeybindingsToast + ProviderInstanceRegistryLive fixtures, restored ServerSetting
 pmMcpServer content ReadonlyArray→mutable spread. Combined gate: typecheck 12/12 (tsgo flake fired twice across
 ssh/tailscale under load — standalone green, then full green after no-op bun install), lint clean, server
 1340/1341, web 1173, contracts 190, shared 149, browser 177 + the 2 known failures.
+**2026-07-05 USER DECISIONS (post-batch):** (1) W6-B = TOTAL pi eradication, zero debt tolerated — includes the
+vestigial PM auto-compaction trigger (DriverPmAdapter.compact is a NO-OP; real PM compaction is Claude Code's
+native auto-compaction; our trigger logs/metrics fake successes) → delete trigger + PmAdapterShape.compact +
+metric; ALSO move the live files out of orchestration/pi/ (→ orchestration/pm/) and delete the directory.
+ONLY survivor: legacy pmModelSelection {piProvider,model} event-replay compatibility (event store is
+append-only). (2) NEW ROADMAP ITEM **WP-PMHANDOFF**: switching the PM to a DIFFERENT harness (e.g. Claude→Codex
+PM, i.e. W5 territory) must ALWAYS prompt: hand off PM history to the new harness OR start fresh (fresh → new
+PM thread; handoff → mechanism to export/transfer the PM conversation into the new harness's session). Same-
+harness model changes stay silent (current behavior). Design before W5; UX gate lives wherever PM harness
+selection changes (picker is Claude-only until W5, so no UI risk today).
 - **DEFERRED follow-ups:** W7-C remove gedWorkflowEnabled from orchestration.ts thread structs/commands/events
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
