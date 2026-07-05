@@ -615,6 +615,22 @@ tsgo phantom flake again (standalone typecheck green without them; same pattern 
 typecheck 12/12, server 1303/1304, contracts 183, web 1168. **W6+W7 ARC COMPLETE** (~11k lines removed today).
 Queue: WP-PMHANDOFF design → W5 Codex PM parity (gated on handoff UX).
 
+**WP-PMHANDOFF DESIGN LOCKED (2026-07-05, user decisions):** mechanism = BOTH per switch — dialog offers
+"hand off: full transcript" / "hand off: summary brief" / "start fresh" / cancel; summary auto-falls-back to
+transcript when the outgoing harness can't respond (quota/auth death is a prime switch reason). Thread UX =
+SAME thread continues (pm:<projectId> keeps visible history; only the harness session is new; marker activity
+"PM handed off <from> → <to> (<mode>)"). Start fresh = existing thread.clear path. Architecture: PM history is
+already harness-agnostic in the event-sourced projection — transcript builder renders thread detail (messages +
+tool-activity summaries, char-budgeted, newest-first retention) into a bootstrap context; injection via the
+existing systemPromptAppend seam (PM charter + delimited handoff context, first session after handoff only).
+Flow: web `orchestrator.requestPmHandoff {mode}` BEFORE writing the new pmModelSelection (summary brief must run
+while the OLD runtime still exists; timeout → transcript fallback) → event `thread.pm-handoff-requested
+{mode, brief?}` → pendingPmHandoff on thread read model → next PM session build consumes it, injects context,
+emits `thread.pm-handoff-completed` + marker activity. Split: **WP-PMHO-1** server (command/event/projection,
+transcript builder, brief turn + fallback, injection, marker, consume-once) — testable today claude→claude;
+**WP-PMHO-2** web dialog gating cross-harness picker writes (dormant until W5 unlocks non-Claude PM instances);
+then W5. Cross-harness detection = driverKind(old instance) != driverKind(new); same-harness stays silent.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
