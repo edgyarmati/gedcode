@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: The Orchestrator PM chat send button no longer stays disabled when the chat opens before the environment connection is ready.
 - Fix: Clearing a chat now also clears its persisted activity feed, so old tool calls and failure notices no longer reappear in a cleared PM chat.
 - Fix: Clearing the Orchestrator PM chat can no longer resurrect pre-clear messages or activities on reconnect/resubscribe, and stale replayed session or turn state can no longer block the PM composer.
 - Fix: Prevent Orchestrator PM chat replies from rendering with missing text spans and stop Claude worker sessions from losing runtime events while the PM is active. The PM now subscribes to the provider event broadcast instead of competing with the provider pipeline for the Claude adapter's single-delivery event queue.

@@ -3,6 +3,7 @@ import { ArrowUpIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { readEnvironmentApi } from "../../environmentApi";
+import { useEnvironmentApiAvailable } from "../../hooks/useEnvironmentApiAvailable";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { useServerConfig } from "../../rpc/serverState";
 import type { Project, Thread } from "../../types";
@@ -55,7 +56,7 @@ export function PmChatComposer({
         providerEntries.find((entry) => entry.instanceId === pmModelSelection.instanceId),
       )
     : "Not configured";
-  const environmentAvailable = readEnvironmentApi(environmentId) !== undefined;
+  const environmentAvailable = useEnvironmentApiAvailable(environmentId);
   const trimmedMessage = message.trim();
   const canSend = environmentAvailable && !submitting && trimmedMessage.length > 0;
 
