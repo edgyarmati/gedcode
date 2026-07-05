@@ -29,7 +29,7 @@ import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.t
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pi/Errors.ts";
 import type { PiAgentAdapterShape } from "../pi/PiAgentAdapter.ts";
-import { pmThreadIdForProject } from "../pi/PmEventProjection.ts";
+import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pi/PmEventProjection.ts";
 import { CLAUDE_PM_DRIVER } from "./constants.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME } from "./pmMcpServer.ts";
 
@@ -197,7 +197,8 @@ export const makeDriverPmAdapter = (
     const activeTools = new Map<string, ActiveTool>();
     const threadId = pmThreadIdForProject(options.project);
 
-    const offer = (event: AgentHarnessEvent) => Queue.offer(eventQueue, event).pipe(Effect.asVoid);
+    const offer = (event: PmEventProjectionEvent) =>
+      Queue.offer(eventQueue, event as unknown as AgentHarnessEvent).pipe(Effect.asVoid);
 
     const persistSession = Effect.gen(function* () {
       const sessions = yield* options.claudeAdapter.listSessions();
@@ -396,9 +397,34 @@ export const makeDriverPmAdapter = (
             return;
           }
 
+          case "user-input.requested": {
+            yield* offer({
+              type: "provider_runtime_user_input_requested",
+              event,
+            });
+            return;
+          }
+
+          case "user-input.resolved": {
+            yield* offer({
+              type: "provider_runtime_user_input_resolved",
+              event,
+            });
+            return;
+          }
+
           case "turn.completed": {
             const failed = event.payload.state === "failed";
             const interrupted = event.payload.state === "interrupted";
+            if (failed || interrupted) {
+              yield* offer({
+                type: "provider_runtime_turn_abnormal_end",
+                createdAt: event.createdAt,
+                reason:
+                  event.payload.errorMessage ??
+                  (interrupted ? "Claude PM turn was interrupted." : "Claude PM turn failed."),
+              });
+            }
             const completedMessage =
               (yield* completeAssistant({
                 turnId: event.turnId,
@@ -447,6 +473,11 @@ export const makeDriverPmAdapter = (
 
           case "turn.aborted": {
             yield* Ref.set(idle, true);
+            yield* offer({
+              type: "provider_runtime_turn_abnormal_end",
+              createdAt: event.createdAt,
+              reason: event.payload.reason,
+            });
             yield* offer({
               type: "settled",
               nextTurnCount: 0,

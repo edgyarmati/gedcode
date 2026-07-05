@@ -2,13 +2,19 @@ import type { AgentHarnessEvent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EventId,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationProject,
   type OrchestrationReadModel,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
+  TurnId,
+  type ProviderRuntimeUserInputRequestedEvent,
+  type ProviderRuntimeUserInputResolvedEvent,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -24,6 +30,7 @@ import { makePmEventProjectionRuntime, pmThreadIdForProject } from "./PmEventPro
 
 const now = 1_797_209_000_000;
 const projectId = ProjectId.make("project-1");
+const provider = ProviderDriverKind.make("claudeAgent");
 const pmModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5.5",
@@ -75,10 +82,85 @@ const assistantMessage = (text: string): AssistantMessage => ({
   timestamp: now,
 });
 
+const userInputRequestedEvent = (input?: {
+  readonly eventId?: string;
+  readonly requestId?: string;
+}): ProviderRuntimeUserInputRequestedEvent => ({
+  eventId: EventId.make(input?.eventId ?? "event-user-input-requested"),
+  provider,
+  threadId: pmThreadIdForProject(project),
+  createdAt: "2026-06-14T10:01:00.000Z",
+  turnId: TurnId.make("turn-user-input"),
+  requestId: RuntimeRequestId.make(input?.requestId ?? "req-user-input-1"),
+  type: "user-input.requested",
+  payload: {
+    questions: [
+      {
+        id: "scope",
+        header: "Scope",
+        question: "Which scope should the PM use?",
+        options: [
+          {
+            label: "Small",
+            description: "Keep the plan narrow.",
+          },
+          {
+            label: "Large",
+            description: "Include adjacent cleanup.",
+          },
+        ],
+        multiSelect: false,
+      },
+    ],
+  },
+});
+
+const userInputResolvedEvent = (input?: {
+  readonly eventId?: string;
+  readonly requestId?: string;
+}): ProviderRuntimeUserInputResolvedEvent => ({
+  eventId: EventId.make(input?.eventId ?? "event-user-input-resolved"),
+  provider,
+  threadId: pmThreadIdForProject(project),
+  createdAt: "2026-06-14T10:02:00.000Z",
+  turnId: TurnId.make("turn-user-input"),
+  requestId: RuntimeRequestId.make(input?.requestId ?? "req-user-input-1"),
+  type: "user-input.resolved",
+  payload: {
+    answers: {
+      scope: "Small",
+    },
+  },
+});
+
 type PlannedEvent = Omit<OrchestrationEvent, "sequence">;
 
 const toEvents = (result: PlannedEvent | ReadonlyArray<PlannedEvent>): PlannedEvent[] =>
   Array.isArray(result) ? [...(result as ReadonlyArray<PlannedEvent>)] : [result as PlannedEvent];
+
+const countPendingUserInputActivities = (
+  activities: ReadonlyArray<OrchestrationReadModel["threads"][number]["activities"][number]>,
+): number => {
+  const openRequestIds = new Set<string>();
+  for (const activity of activities) {
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
+    if (requestId === null) {
+      continue;
+    }
+    if (activity.kind === "user-input.requested") {
+      openRequestIds.add(requestId);
+      continue;
+    }
+    if (activity.kind === "user-input.resolved") {
+      openRequestIds.delete(requestId);
+    }
+  }
+  return openRequestIds.size;
+};
 
 const makeReadModelRef = () => ({
   current: {
@@ -125,6 +207,85 @@ const makeLayer = (
   );
 
 describe("PmEventProjection", () => {
+  it.effect("projects PM user-input request and resolution onto pending-user-input state", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+        incarnationNonce: "test-nonce",
+      });
+
+      yield* runtime.project({
+        type: "provider_runtime_user_input_requested",
+        event: userInputRequestedEvent(),
+      });
+
+      let pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === runtime.pmThreadId,
+      );
+      assert.ok(pmThread);
+      assert.strictEqual(countPendingUserInputActivities(pmThread.activities), 1);
+      assert.deepStrictEqual(
+        pmThread.activities.map((activity) => activity.kind),
+        ["user-input.requested"],
+      );
+
+      yield* runtime.project({
+        type: "provider_runtime_user_input_resolved",
+        event: userInputResolvedEvent(),
+      });
+
+      pmThread = readModelRef.current.threads.find((thread) => thread.id === runtime.pmThreadId);
+      assert.ok(pmThread);
+      assert.strictEqual(countPendingUserInputActivities(pmThread.activities), 0);
+      assert.deepStrictEqual(
+        pmThread.activities.map((activity) => activity.kind),
+        ["user-input.requested", "user-input.resolved"],
+      );
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
+  });
+
+  it.effect("clears pending PM user-input requests when the PM turn aborts", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        pmModelSelection,
+        events: Stream.empty,
+        incarnationNonce: "test-nonce",
+      });
+
+      yield* runtime.project({
+        type: "provider_runtime_user_input_requested",
+        event: userInputRequestedEvent(),
+      });
+      yield* runtime.project({
+        type: "provider_runtime_turn_abnormal_end",
+        createdAt: "2026-06-14T10:03:00.000Z",
+        reason: "Turn aborted.",
+      });
+
+      const pmThread = readModelRef.current.threads.find(
+        (thread) => thread.id === runtime.pmThreadId,
+      );
+      assert.ok(pmThread);
+      assert.strictEqual(countPendingUserInputActivities(pmThread.activities), 0);
+      const resolvedActivity = pmThread.activities.find(
+        (activity) => activity.kind === "user-input.resolved",
+      );
+      assert.ok(resolvedActivity);
+      assert.deepStrictEqual(resolvedActivity.payload, {
+        requestId: "req-user-input-1",
+        answers: {},
+        detail: "Turn aborted.",
+      });
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
+  });
+
   it.effect("uses per-incarnation nonces for command, message, and turn ids", () => {
     const runIncarnation = (incarnationNonce: string, commands: OrchestrationCommand[]) =>
       Effect.scoped(

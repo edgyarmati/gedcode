@@ -1,10 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { EnvironmentId, ProjectId, ProviderInstanceId, TaskId } from "@t3tools/contracts";
+import {
+  ApprovalRequestId,
+  EnvironmentId,
+  EventId,
+  ProjectId,
+  ProviderInstanceId,
+  TaskId,
+  ThreadId,
+} from "@t3tools/contracts";
 
-import type { Project } from "../../types";
+import type { Project, Thread } from "../../types";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
-import { PmChatComposer } from "./PmChatComposer";
+import { buildPmUserInputRespondCommand, PmChatComposer } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
 
 describe("TaskPrLink", () => {
@@ -76,26 +84,52 @@ describe("TaskPrLink", () => {
 });
 
 describe("PmChatComposer", () => {
-  it("renders a focused PM input without inert chat controls", () => {
-    const environmentId = EnvironmentId.make("environment-local");
-    const projectId = ProjectId.make("project-1");
-    const project = {
-      id: projectId,
-      environmentId,
-      name: "Project",
-      cwd: "/tmp/project",
-      repositoryIdentity: null,
-      defaultModelSelection: null,
-      orchestratorConfig: {
-        enabled: true,
-        pmModelSelection: {
-          instanceId: ProviderInstanceId.make("claudeAgent"),
-          model: "claude-sonnet-4-6",
-        },
+  const environmentId = EnvironmentId.make("environment-local");
+  const projectId = ProjectId.make("project-1");
+  const pmThreadId = ThreadId.make("pm:project-1");
+  const project = {
+    id: projectId,
+    environmentId,
+    name: "Project",
+    cwd: "/tmp/project",
+    repositoryIdentity: null,
+    defaultModelSelection: null,
+    orchestratorConfig: {
+      enabled: true,
+      pmModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
       },
-      scripts: [],
-    } satisfies Project;
+    },
+    scripts: [],
+  } satisfies Project;
 
+  const pmThread = {
+    id: pmThreadId,
+    environmentId,
+    codexThreadId: null,
+    projectId,
+    title: "Project PM",
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    session: null,
+    messages: [],
+    proposedPlans: [],
+    error: null,
+    createdAt: "2026-06-14T10:00:00.000Z",
+    archivedAt: null,
+    latestTurn: null,
+    branch: null,
+    worktreePath: "/tmp/project",
+    turnDiffSummaries: [],
+    activities: [],
+  } satisfies Thread;
+
+  it("renders a focused PM input without inert chat controls", () => {
     const markup = renderToStaticMarkup(
       <PmChatComposer
         environmentId={environmentId}
@@ -114,5 +148,72 @@ describe("PmChatComposer", () => {
     expect(markup).not.toContain("Ged workflow");
     expect(markup).not.toContain("Runtime mode");
     expect(markup).not.toContain("Workflow");
+  });
+
+  it("shows pending PM user-input questions in the PM composer", () => {
+    const markup = renderToStaticMarkup(
+      <PmChatComposer
+        environmentId={environmentId}
+        project={project}
+        projectId={projectId}
+        thread={{
+          ...pmThread,
+          activities: [
+            {
+              id: EventId.make("activity-user-input-requested"),
+              kind: "user-input.requested",
+              tone: "info",
+              summary: "User input requested",
+              payload: {
+                requestId: "req-user-input-1",
+                questions: [
+                  {
+                    id: "scope",
+                    header: "Scope",
+                    question: "Which scope should the PM use?",
+                    options: [
+                      {
+                        label: "Small",
+                        description: "Keep the plan narrow.",
+                      },
+                    ],
+                    multiSelect: false,
+                  },
+                ],
+              },
+              turnId: null,
+              createdAt: "2026-06-14T10:01:00.000Z",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Which scope should the PM use?");
+    expect(markup).toContain("Small");
+    expect(markup).toContain("Type your own answer");
+    expect(markup).toContain("Message PM");
+  });
+
+  it("builds PM user-input answer commands for the PM thread", () => {
+    const command = buildPmUserInputRespondCommand({
+      threadId: pmThreadId,
+      requestId: ApprovalRequestId.make("req-user-input-1"),
+      answers: {
+        scope: "Small",
+      },
+      createdAt: "2026-06-14T10:02:00.000Z",
+    });
+
+    expect(command).toMatchObject({
+      type: "thread.user-input.respond",
+      threadId: pmThreadId,
+      requestId: "req-user-input-1",
+      answers: {
+        scope: "Small",
+      },
+      createdAt: "2026-06-14T10:02:00.000Z",
+    });
+    expect(command.commandId).toBeTruthy();
   });
 });

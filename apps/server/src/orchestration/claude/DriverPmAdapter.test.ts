@@ -7,6 +7,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeItemId,
+  RuntimeRequestId,
   ThreadId,
   TurnId,
   type ProviderRuntimeEvent,
@@ -273,6 +274,45 @@ describe("DriverPmAdapter", () => {
       yield* Queue.offer(
         runtimeEvents,
         makeEvent({
+          eventId: "event-user-input-requested",
+          type: "user-input.requested",
+          turnId,
+          requestId: RuntimeRequestId.make("req-user-input-1"),
+          payload: {
+            questions: [
+              {
+                id: "scope",
+                header: "Scope",
+                question: "Which scope should the PM use?",
+                options: [
+                  {
+                    label: "Small",
+                    description: "Keep the plan narrow.",
+                  },
+                ],
+                multiSelect: false,
+              },
+            ],
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          eventId: "event-user-input-resolved",
+          type: "user-input.resolved",
+          turnId,
+          requestId: RuntimeRequestId.make("req-user-input-1"),
+          payload: {
+            answers: {
+              scope: "Small",
+            },
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
           type: "item.completed",
           turnId,
           itemId: RuntimeItemId.make("assistant-1"),
@@ -333,6 +373,8 @@ describe("DriverPmAdapter", () => {
         "thread.activity.append",
         "thread.activity.append",
         "thread.message.assistant.delta",
+        "thread.activity.append",
+        "thread.activity.append",
         "thread.message.assistant.complete",
       ]);
 
@@ -342,6 +384,8 @@ describe("DriverPmAdapter", () => {
       );
       assert.strictEqual(toolActivities[0]?.activity.kind, "tool.started");
       assert.strictEqual(toolActivities[1]?.activity.kind, "tool.completed");
+      assert.strictEqual(toolActivities[2]?.activity.kind, "user-input.requested");
+      assert.strictEqual(toolActivities[3]?.activity.kind, "user-input.resolved");
       assert.deepStrictEqual(toolActivities[1]?.activity.payload, {
         itemType: "dynamic_tool_call",
         toolCallId: "tool-call-1",

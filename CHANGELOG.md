@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: The Orchestrator PM can now ask interactive questions in PM chat with clickable options like worker sessions instead of stalling, and pending PM questions clear when the PM turn aborts.
 - Change: The Orchestrator PM now runs with full tool access and no approval prompts. Its system prompt now steers it to keep PM responsibilities in-process, delegate implementation to work agents, dispatch exploration tasks for heavier research, and request plan-review second opinions when useful.
 - Fix: The Orchestrator PM chat send button no longer stays disabled when the chat opens before the environment connection is ready.
 - Fix: Clearing a chat now also clears its persisted activity feed, so old tool calls and failure notices no longer reappear in a cleared PM chat.

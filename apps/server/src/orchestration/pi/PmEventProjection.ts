@@ -10,6 +10,8 @@ import {
   type ModelSelection,
   type OrchestrationProject,
   type OrchestrationThreadActivity,
+  type ProviderRuntimeUserInputRequestedEvent,
+  type ProviderRuntimeUserInputResolvedEvent,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -62,6 +64,22 @@ type PmEventProjectionRuntimeInputBase = {
   readonly events: Stream.Stream<AgentHarnessEvent>;
 };
 
+export type PmEventProjectionEvent =
+  | AgentHarnessEvent
+  | {
+      readonly type: "provider_runtime_user_input_requested";
+      readonly event: ProviderRuntimeUserInputRequestedEvent;
+    }
+  | {
+      readonly type: "provider_runtime_user_input_resolved";
+      readonly event: ProviderRuntimeUserInputResolvedEvent;
+    }
+  | {
+      readonly type: "provider_runtime_turn_abnormal_end";
+      readonly createdAt: string;
+      readonly reason: string;
+    };
+
 type PmEventProjectionRuntimeInputWithNonce = PmEventProjectionRuntimeInputBase & {
   readonly incarnationNonce: string;
 };
@@ -81,6 +99,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
     let activePmTurnId: TurnId | null = null;
     let activeAssistantMessageId: MessageId | null = null;
     let activeAssistantTextLength = 0;
+    const pendingUserInputRequestIds = new Set<string>();
 
     const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
     const nextCommandId = (tag: string): CommandId => {
@@ -103,6 +122,12 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
     };
     const activityId = (tag: string, toolCallId: string): EventId =>
       EventId.make(`pm:${input.project.id}:${tag}:${toolCallId}`);
+    const nextActivityId = (tag: string): EventId => {
+      nextLocalId += 1;
+      return EventId.make(
+        `pm:${input.project.id}:${incarnationNonce}:activity:${tag}:${nextLocalId}`,
+      );
+    };
 
     const ensurePmThread = Effect.fn("PmEventProjection.ensurePmThread")(function* () {
       if (pmThreadEnsured) {
@@ -250,8 +275,47 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
       activePmTurnId = null;
     });
 
+    const dispatchPendingUserInputClear = Effect.fn(
+      "PmEventProjection.dispatchPendingUserInputClear",
+    )(function* (input: {
+      readonly requestId: string;
+      readonly createdAt: string;
+      readonly reason: string;
+    }) {
+      pendingUserInputRequestIds.delete(input.requestId);
+      yield* dispatchActivity({
+        id: nextActivityId("user-input-resolved"),
+        tone: "info",
+        kind: "user-input.resolved",
+        summary: "User input request cleared",
+        payload: {
+          requestId: input.requestId,
+          answers: {},
+          detail: input.reason,
+        },
+        turnId: activePmTurnId,
+        createdAt: input.createdAt,
+      });
+    });
+
+    const clearPendingUserInputs = Effect.fn("PmEventProjection.clearPendingUserInputs")(
+      function* (input: { readonly reason: string; readonly createdAt?: string }) {
+        if (pendingUserInputRequestIds.size === 0) {
+          return;
+        }
+        const createdAt = input.createdAt ?? (yield* nowIso);
+        const requestIds = Array.from(pendingUserInputRequestIds);
+        for (const requestId of requestIds) {
+          yield* dispatchPendingUserInputClear({ requestId, createdAt, reason: input.reason });
+        }
+      },
+    );
+
     yield* Effect.addFinalizer(() =>
-      completeTurn().pipe(
+      clearPendingUserInputs({
+        reason: "PM projection stopped before the user-input request resolved.",
+      }).pipe(
+        Effect.andThen(completeTurn()),
         Effect.catchCause((cause) =>
           Effect.logWarning("PM event projection teardown failed to complete active turn", {
             projectId: String(input.project.id),
@@ -262,9 +326,60 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
     );
 
     const processEvent = Effect.fn("PmEventProjection.processEvent")(function* (
-      event: AgentHarnessEvent,
+      event: PmEventProjectionEvent,
     ) {
       switch (event.type) {
+        case "provider_runtime_user_input_requested": {
+          const requestId = event.event.requestId ? String(event.event.requestId) : null;
+          if (requestId === null) {
+            return;
+          }
+          yield* startTurn();
+          pendingUserInputRequestIds.add(requestId);
+          yield* dispatchActivity({
+            id: event.event.eventId,
+            tone: "info",
+            kind: "user-input.requested",
+            summary: "User input requested",
+            payload: {
+              requestId,
+              questions: event.event.payload.questions,
+            },
+            turnId: activePmTurnId,
+            createdAt: event.event.createdAt,
+          });
+          return;
+        }
+
+        case "provider_runtime_user_input_resolved": {
+          const requestId = event.event.requestId ? String(event.event.requestId) : null;
+          if (requestId === null) {
+            return;
+          }
+          pendingUserInputRequestIds.delete(requestId);
+          yield* dispatchActivity({
+            id: event.event.eventId,
+            tone: "info",
+            kind: "user-input.resolved",
+            summary: "User input submitted",
+            payload: {
+              requestId,
+              answers: event.event.payload.answers,
+            },
+            turnId: activePmTurnId,
+            createdAt: event.event.createdAt,
+          });
+          return;
+        }
+
+        case "provider_runtime_turn_abnormal_end": {
+          yield* clearPendingUserInputs({
+            reason: event.reason,
+            createdAt: event.createdAt,
+          });
+          return;
+        }
+
         case "before_agent_start": {
           yield* startTurn();
           return;
