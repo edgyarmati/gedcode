@@ -1,3 +1,4 @@
+import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,17 +8,134 @@ import {
   ProjectId,
   ProviderInstanceId,
   TaskId,
+  TaskTypeId,
   ThreadId,
 } from "@t3tools/contracts";
 
-import type { Project, Thread } from "../../types";
+import type { OrchestratorTask, Project, Thread } from "../../types";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import { AbandonedTaskBoardSection, TaskBoard } from "./OrchestratorRoutes";
 import {
   buildPmModelSelectionUpdateCommand,
   buildPmUserInputRespondCommand,
   PmChatComposer,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
+
+type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+  children?: ReactNode;
+  params?: Record<string, string>;
+  to?: string;
+};
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, params: _params, to, ...props }: MockLinkProps) => (
+    <a href={to ?? "#"} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+vi.mock("../DiffWorkerPoolProvider", () => ({
+  DiffWorkerPoolProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+const boardEnvironmentId = EnvironmentId.make("environment-board");
+const boardProjectId = ProjectId.make("project-board");
+
+function makeBoardTask(
+  id: string,
+  status: OrchestratorTask["status"],
+  title: string,
+): OrchestratorTask {
+  return {
+    id: TaskId.make(id),
+    environmentId: boardEnvironmentId,
+    projectId: boardProjectId,
+    type: TaskTypeId.make("feature"),
+    title,
+    status,
+    branch: null,
+    worktreePath: null,
+    prUrl: null,
+    pmMessageId: null,
+    stageThreadIds: [],
+    currentStageThreadId: null,
+    roleModelSelections: {},
+    playbookVersion: null,
+    createdAt: "2026-06-14T00:00:00.000Z",
+    updatedAt: "2026-06-14T00:00:00.000Z",
+  };
+}
+
+describe("TaskBoard", () => {
+  it("excludes abandoned tasks from the header badge count", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[
+          makeBoardTask("task-draft", "draft", "Visible draft task"),
+          makeBoardTask("task-working", "working", "Visible working task"),
+          makeBoardTask("task-abandoned", "abandoned", "Cancelled task"),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Board task count">2</span>');
+    expect(markup).toContain("Visible draft task");
+    expect(markup).toContain("Visible working task");
+    expect(markup).not.toContain("Cancelled task");
+  });
+
+  it("renders abandoned tasks collapsed with a count and expanded with task cards", () => {
+    const tasks = [
+      makeBoardTask("task-abandoned-1", "abandoned", "Cancelled task one"),
+      makeBoardTask("task-abandoned-2", "abandoned", "Cancelled task two"),
+    ];
+    const collapsedMarkup = renderToStaticMarkup(
+      <AbandonedTaskBoardSection
+        environmentId={boardEnvironmentId}
+        expanded={false}
+        onExpandedChange={() => {}}
+        projectId={boardProjectId}
+        tasks={tasks}
+      />,
+    );
+    const expandedMarkup = renderToStaticMarkup(
+      <AbandonedTaskBoardSection
+        environmentId={boardEnvironmentId}
+        expanded={true}
+        onExpandedChange={() => {}}
+        projectId={boardProjectId}
+        tasks={tasks}
+      />,
+    );
+
+    expect(collapsedMarkup).toContain("Abandoned");
+    expect(collapsedMarkup).toContain('aria-expanded="false"');
+    expect(collapsedMarkup).toMatch(/aria-label="Abandoned task count"[^>]*>2<\/span>/);
+    expect(collapsedMarkup).not.toContain("Cancelled task one");
+    expect(collapsedMarkup).not.toContain("Cancelled task two");
+
+    expect(expandedMarkup).toContain('aria-expanded="true"');
+    expect(expandedMarkup).toContain("Cancelled task one");
+    expect(expandedMarkup).toContain("Cancelled task two");
+  });
+
+  it("omits the abandoned section when there are no abandoned tasks", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[makeBoardTask("task-working", "working", "Visible working task")]}
+      />,
+    );
+
+    expect(markup).not.toContain("Abandoned");
+    expect(markup).not.toContain("Abandoned task count");
+  });
+});
 
 describe("TaskPrLink", () => {
   it("renders a clickable PR link when a task has a PR URL", () => {

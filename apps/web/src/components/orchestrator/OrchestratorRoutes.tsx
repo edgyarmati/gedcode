@@ -19,6 +19,8 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   ClockIcon,
   GitBranchIcon,
@@ -110,6 +112,12 @@ const BOARD_STATUSES: ReadonlyArray<OrchestratorTask["status"]> = [
   "blocked-on-quota",
   "landed",
 ];
+
+const BOARD_STATUS_SET: ReadonlySet<OrchestratorTask["status"]> = new Set(BOARD_STATUSES);
+
+function isBoardTask(task: OrchestratorTask): boolean {
+  return BOARD_STATUS_SET.has(task.status);
+}
 
 function toEnvironmentId(value: string): EnvironmentId {
   return EnvironmentId.make(value);
@@ -452,7 +460,7 @@ function SharedThreadTimeline({
   );
 }
 
-function TaskBoard({
+export function TaskBoard({
   environmentId,
   projectId,
   tasks,
@@ -461,23 +469,31 @@ function TaskBoard({
   projectId: ProjectId;
   tasks: OrchestratorTask[];
 }) {
+  const [abandonedExpanded, setAbandonedExpanded] = useState(false);
+  const boardTasks = useMemo(() => tasks.filter(isBoardTask), [tasks]);
+  const abandonedTasks = useMemo(
+    () => tasks.filter((task) => task.status === "abandoned"),
+    [tasks],
+  );
   const taskCountByStatus = useMemo(() => {
     const counts = new Map<OrchestratorTask["status"], number>();
-    for (const task of tasks) {
+    for (const task of boardTasks) {
       counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
     }
     return counts;
-  }, [tasks]);
+  }, [boardTasks]);
 
   return (
     <aside className="min-h-0 overflow-auto bg-muted/18 px-3 py-4">
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase">Tasks</h2>
-        <Badge variant="outline">{tasks.length}</Badge>
+        <Badge aria-label="Board task count" variant="outline">
+          {boardTasks.length}
+        </Badge>
       </div>
       <div className="space-y-4">
         {BOARD_STATUSES.map((status) => {
-          const statusTasks = tasks.filter((task) => task.status === status);
+          const statusTasks = boardTasks.filter((task) => task.status === status);
           return (
             <section key={status} className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
@@ -499,8 +515,67 @@ function TaskBoard({
             </section>
           );
         })}
+        {abandonedTasks.length > 0 ? (
+          <AbandonedTaskBoardSection
+            environmentId={environmentId}
+            expanded={abandonedExpanded}
+            onExpandedChange={setAbandonedExpanded}
+            projectId={projectId}
+            tasks={abandonedTasks}
+          />
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+export function AbandonedTaskBoardSection({
+  environmentId,
+  expanded,
+  onExpandedChange,
+  projectId,
+  tasks,
+}: {
+  environmentId: EnvironmentId;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+  projectId: ProjectId;
+  tasks: OrchestratorTask[];
+}) {
+  return (
+    <section className="space-y-2 border-t border-border/70 pt-3">
+      <Button
+        aria-expanded={expanded}
+        className="h-auto w-full justify-between px-1 py-1 text-xs font-medium text-muted-foreground uppercase"
+        onClick={() => onExpandedChange(!expanded)}
+        size="sm"
+        variant="ghost"
+      >
+        <span className="flex min-w-0 items-center gap-1">
+          {expanded ? (
+            <ChevronDownIcon className="size-3" />
+          ) : (
+            <ChevronRightIcon className="size-3" />
+          )}
+          <span>Abandoned</span>
+        </span>
+        <span aria-label="Abandoned task count" className="text-[11px] text-muted-foreground/70">
+          {tasks.length}
+        </span>
+      </Button>
+      {expanded ? (
+        <div className="space-y-2">
+          {tasks.map((task) => (
+            <TaskBoardCard
+              key={task.id}
+              environmentId={environmentId}
+              projectId={projectId}
+              task={task}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

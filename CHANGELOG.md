@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: The Orchestrator task-board count no longer includes abandoned tasks, and abandoned tasks are now viewable from a collapsed read-only section.
 - UI: The Orchestrator PM chat model picker now includes the thinking/effort traits picker.
 - Internal: `inspectStage` now returns a live tail of the worker stage, including recent messages, recent activities, turn elapsed time, and latest token usage.
 - Internal: The Orchestrator PM can now steer running worker stages by sending messages into their threads with `steerStage`, reusing the same `thread.turn.start` path as human chat messages.
