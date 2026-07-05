@@ -676,6 +676,17 @@ disjoint; **R2** = W5-D runtime acceptance (PmRuntime/DriverPmAdapter de-Claudin
 **R3** = W5-EF picker unlock + tests → handoff dialog goes LIVE (PMHANDOFF context rides systemPromptAppend,
 works on codex via W5-AB automatically).
 
+**W5 R1 DONE** (2026-07-05, two parallel Codex yolo runs, zero violations) — **W5-AB `2f1e73598`**:
+systemPromptAppend → developerInstructions on thread/start AND resume; OrchestrationMcpHttpServer (loopback
+streamable-HTTP, per-process bearer via child env bearer_token_env_var, @modelcontextprotocol/sdk) reusing the
+shared executor table (extracted from pmMcpServer, Claude wrapper unchanged); attached via thread/start
+config.mcp_servers OVERLAY — shipped without fallback (schema exposes config; installed CLI advertises
+streamable-HTTP MCP fields). **W5-C `a62913ef6`**: codexLifecycleToolData beside the Claude extractor
+(mcpToolCall items, details keyed off t3_orchestrator server, isError from status/error); Codex V2 fixtures.
+Seam (me): DriverPmAdapter.test collectBridgedEvents error-type annotation (PmRuntimeError). Gate: typecheck
+12/12 (shared tsgo flake once), server 1324/1325 full, lint clean. NEXT **R2 = W5-D** runtime acceptance,
+then **R3 = W5-EF** picker unlock → handoff dialog LIVE.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
