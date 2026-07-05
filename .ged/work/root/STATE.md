@@ -488,6 +488,19 @@ interrupt/abort/teardown. Prompt line scopes the tool to concrete optioned decis
 13/13, server 46/46 + web 8/8 affected, browser 175 + the 2 known failures; the 2 known integration timeouts
 passed directly.
 
+**WP-PMMODEL DONE `dc8a3d163`** (2026-07-05) — PM chat now renders the standard ProviderModelPicker (compact,
+`lockedProvider: claudeAgent`, entries filtered to claudeAgent driver) instead of the static "PM model:" label;
+selection dispatches `project.meta.update` spreading `orchestratorConfig` with the new `pmModelSelection`
+(same write path as the settings dialog — helper `buildPmModelSelectionUpdateCommand`), and the existing
+config-watch rebuilds the PM runtime (Codex verified: no server change needed; non-Claude still rejected by
+resolvePmHarnessConfig). PM_SYSTEM_PROMPT exploration line now = native subagents (built-in agent/Task tool,
+parallel, conclusions-only) — WP-EXPLTT cancellation realized. Review fix (me, test harness only): the new
+PmChatComposer.browser.tsx rendered the composer WITHOUT AppAtomRegistryProvider, so useServerConfig read a
+different atom registry than setServerConfigSnapshot wrote → picker never rendered, 30s timeout; wrapped the
+render + reset registry in afterEach (pattern from SettingsPanels.browser.tsx). Gate: fmt/lint/typecheck 13/13,
+Codex full `bun run test` 1363 passed, PmRuntime 36/36 + OrchestratorRoutes 9/9 rerun by me, browser 176 + the
+2 known pre-existing failures.
+
 **2026-07-05 DESIGN DECISIONS (recorded in memory too):** GedCode orchestrator = this session's workflow with
 the PM prompting/steering workers itself (user vision; Provencher tweet: app-server threads/steer/poll/resume
 as MCP tools — we have threads/resume/MCP; gaps = steer + live-peek). Queue after PMQ:
