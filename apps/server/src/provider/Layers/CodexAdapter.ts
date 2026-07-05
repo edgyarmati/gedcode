@@ -51,6 +51,11 @@ import {
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import {
+  makeCodexMcpEnvironment,
+  makeCodexMcpServerConfig,
+  type OrchestrationMcpEndpoint,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { classifyRuntimeErrorClass, mapCodexRateLimits } from "../rateLimits.ts";
 import {
   CodexResumeCursorSchema,
@@ -73,6 +78,7 @@ const PROVIDER = ProviderDriverKind.make("codex");
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly orchestrationMcpEndpoint?: OrchestrationMcpEndpoint;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -1387,21 +1393,46 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           input.modelSelection?.instanceId === boundInstanceId
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
+        const baseEnvironment =
+          input.environment !== undefined
+            ? input.environment
+            : options?.environment
+              ? options.environment
+              : undefined;
+        const orchestrationMcpEndpoint =
+          input.enableOrchestrationTools === true ? options?.orchestrationMcpEndpoint : undefined;
+        if (input.enableOrchestrationTools === true && !orchestrationMcpEndpoint) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Codex orchestration MCP tools require an orchestration MCP HTTP endpoint.",
+          });
+        }
+        const orchestrationEnvironment = orchestrationMcpEndpoint
+          ? makeCodexMcpEnvironment(orchestrationMcpEndpoint)
+          : undefined;
+        const environment =
+          baseEnvironment || orchestrationEnvironment
+            ? {
+                ...baseEnvironment,
+                ...orchestrationEnvironment,
+              }
+            : undefined;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          ...(input.environment !== undefined
-            ? { environment: input.environment }
-            : options?.environment
-              ? { environment: options.environment }
-              : {}),
+          ...(environment ? { environment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
             : {}),
           runtimeMode: input.runtimeMode,
+          ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+          ...(orchestrationMcpEndpoint
+            ? { config: makeCodexMcpServerConfig(orchestrationMcpEndpoint) }
+            : {}),
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),

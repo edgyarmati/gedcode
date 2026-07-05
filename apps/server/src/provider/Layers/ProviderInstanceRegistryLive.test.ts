@@ -38,6 +38,10 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { ServerConfig } from "../../config.ts";
 import { OrchestrationMcpServerProviderLive } from "../../orchestration/claude/OrchestrationMcpServerProvider.ts";
+import {
+  ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  OrchestrationMcpHttpServer,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import type { BuiltInDriversEnv } from "../builtInDrivers.ts";
 import { ClaudeDriver } from "../Drivers/ClaudeDriver.ts";
 import { CodexDriver } from "../Drivers/CodexDriver.ts";
@@ -52,6 +56,14 @@ const TestHttpClientLive = Layer.succeed(
     Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ version: "0.0.0" }))),
   ),
 );
+
+const TestOrchestrationMcpHttpServerLive = Layer.succeed(OrchestrationMcpHttpServer, {
+  endpoint: {
+    url: "http://127.0.0.1:1/mcp/orchestration",
+    bearerToken: "test-token",
+    bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  },
+});
 
 const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   enabled: false,
@@ -93,6 +105,7 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     Layer.provideMerge(OrchestrationMcpServerProviderLive),
+    Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
   );
 
   it.live("boots two independent codex instances from a ProviderInstanceConfigMap", () =>
@@ -231,6 +244,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     Layer.provideMerge(OrchestrationMcpServerProviderLive),
+    Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
   );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>

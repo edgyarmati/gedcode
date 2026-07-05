@@ -35,6 +35,10 @@ import * as Stream from "effect/Stream";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import {
+  ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  type OrchestrationMcpEndpoint,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -57,6 +61,11 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
+const orchestrationMcpEndpoint = {
+  url: "http://127.0.0.1:45678/mcp/orchestration",
+  bearerToken: "test-bearer-token",
+  bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+} satisfies OrchestrationMcpEndpoint;
 
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
@@ -287,6 +296,69 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
+
+  it.effect("passes systemPromptAppend into the Codex session runtime", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-system-prompt"),
+        runtimeMode: "full-access",
+        systemPromptAppend: "Use the orchestrator PM rules.",
+      });
+
+      assert.equal(
+        validationRuntimeFactory.factory.mock.calls[0]?.[0].systemPromptAppend,
+        "Use the orchestrator PM rules.",
+      );
+    }),
+  );
+
+  it.effect("wires orchestration MCP config and bearer env when enabled", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+          orchestrationMcpEndpoint,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-orchestration-tools"),
+        runtimeMode: "approval-required",
+        environment: { EXISTING_ENV: "1" },
+        enableOrchestrationTools: true,
+      });
+
+      assert.deepStrictEqual(runtimeFactory.factory.mock.calls[0]?.[0].config, {
+        mcp_servers: {
+          t3_orchestrator: {
+            url: orchestrationMcpEndpoint.url,
+            bearer_token_env_var: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+          },
+        },
+      });
+      assert.deepStrictEqual(runtimeFactory.factory.mock.calls[0]?.[0].environment, {
+        EXISTING_ENV: "1",
+        [ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR]: orchestrationMcpEndpoint.bearerToken,
+      });
+    }).pipe(Effect.provide(layer));
+  });
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();

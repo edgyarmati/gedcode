@@ -31,6 +31,10 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { OrchestrationMcpServerProviderLive } from "../../orchestration/claude/OrchestrationMcpServerProvider.ts";
+import {
+  ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  OrchestrationMcpHttpServer,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
@@ -72,6 +76,14 @@ const TestHttpClientLive = Layer.succeed(
     Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ version: "0.0.0" }))),
   ),
 );
+
+const TestOrchestrationMcpHttpServerLive = Layer.succeed(OrchestrationMcpHttpServer, {
+  endpoint: {
+    url: "http://127.0.0.1:1/mcp/orchestration",
+    bearerToken: "test-token",
+    bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  },
+});
 
 function selectDescriptor(
   id: string,
@@ -1100,6 +1112,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
             Layer.provideMerge(OrchestrationMcpServerProviderLive),
+            Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             // NO spawner mock — `ChildProcessSpawner` is supplied by the
             // outer `NodeServices.layer` on `it.layer(...)` and will
@@ -1183,6 +1196,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
             Layer.provideMerge(OrchestrationMcpServerProviderLive),
+            Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             // `it.live` does not inherit layers from the outer `it.layer`
             // wrapper, so provide `NodeServices.layer` inline. This is the
@@ -1306,6 +1320,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             Layer.provideMerge(TestHttpClientLive),
             Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
             Layer.provideMerge(OrchestrationMcpServerProviderLive),
+            Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
             Layer.provideMerge(OpenCodeRuntimeLive),
             Layer.provideMerge(NodeServices.layer),
           );
