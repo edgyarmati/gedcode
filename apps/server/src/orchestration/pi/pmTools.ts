@@ -9,15 +9,21 @@ import {
   TaskId,
   TaskTypeId,
   ThreadId,
+  type OrchestrationLatestTurn,
+  type OrchestrationMessageRole,
   type GedRoleModelSelections,
   type OrchestrationGateKind,
   type OrchestrationStageRole,
   type OrchestrationTask,
+  type OrchestrationThread,
+  type OrchestrationThreadActivityTone,
+  type ThreadTokenUsageSnapshot,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -82,6 +88,7 @@ type SetTaskBackendParameters = Static<typeof SetTaskBackendParameters>;
 
 const InspectStageParameters = Type.Object({
   taskId: Type.String(),
+  stageThreadId: Type.Optional(Type.String()),
 });
 type InspectStageParameters = Static<typeof InspectStageParameters>;
 
@@ -117,6 +124,131 @@ const latestStageThreadId = (task: OrchestrationTask | undefined): ThreadId | nu
   task?.stageThreadIds.at(-1) ?? null;
 
 const pmMessageId = (toolCallId: string) => MessageId.make(`pm-tool:${toolCallId}`);
+
+interface InspectStageTurnDigest {
+  readonly state: OrchestrationLatestTurn["state"];
+  readonly requestedAt: string;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+  readonly elapsedSeconds: number | null;
+}
+
+interface InspectStageMessageDigest {
+  readonly role: OrchestrationMessageRole;
+  readonly createdAt: string;
+  readonly text: string;
+  readonly truncated: boolean;
+}
+
+interface InspectStageActivityDigest {
+  readonly kind: string;
+  readonly tone: OrchestrationThreadActivityTone;
+  readonly summary: string;
+  readonly createdAt: string;
+}
+
+interface InspectStageDigest {
+  readonly stageThreadId: string;
+  readonly stageRole: OrchestrationStageRole | null;
+  readonly turn: InspectStageTurnDigest | null;
+  readonly messageCount: number;
+  readonly activityCount: number;
+  readonly messages: ReadonlyArray<InspectStageMessageDigest>;
+  readonly activities: ReadonlyArray<InspectStageActivityDigest>;
+  readonly tokenUsage: ThreadTokenUsageSnapshot | null;
+}
+
+interface InspectStageDetails {
+  readonly task: OrchestrationTask | null;
+  readonly note?: string;
+  readonly stageDigest: InspectStageDigest | null;
+}
+
+const MESSAGE_TAIL_LIMIT = 10;
+const ACTIVITY_TAIL_LIMIT = 20;
+const MESSAGE_TEXT_LIMIT = 500;
+
+const truncateMessageText = (text: string): { text: string; truncated: boolean } => {
+  if (text.length <= MESSAGE_TEXT_LIMIT) {
+    return { text, truncated: false };
+  }
+  return { text: text.slice(0, MESSAGE_TEXT_LIMIT), truncated: true };
+};
+
+const elapsedSeconds = (turn: OrchestrationLatestTurn, now: DateTime.DateTime): number | null => {
+  if (turn.startedAt === null) {
+    return null;
+  }
+  const startedAtMs = DateTime.toEpochMillis(DateTime.makeUnsafe(turn.startedAt));
+  const completedAtMs =
+    turn.completedAt === null
+      ? turn.state === "running"
+        ? DateTime.toEpochMillis(now)
+        : null
+      : DateTime.toEpochMillis(DateTime.makeUnsafe(turn.completedAt));
+  if (completedAtMs === null) {
+    return null;
+  }
+  return Math.max(0, Math.floor((completedAtMs - startedAtMs) / 1000));
+};
+
+const latestTokenUsage = (thread: OrchestrationThread): ThreadTokenUsageSnapshot | null => {
+  const activity = thread.activities.findLast((entry) => entry.kind === "context-window.updated");
+  return activity ? (activity.payload as ThreadTokenUsageSnapshot) : null;
+};
+
+const formatTokenUsage = (usage: ThreadTokenUsageSnapshot | null): string =>
+  usage === null
+    ? "tokens n/a"
+    : usage.maxTokens === undefined
+      ? `${usage.usedTokens} tokens used`
+      : `${usage.usedTokens}/${usage.maxTokens} tokens used`;
+
+const formatElapsed = (seconds: number | null): string =>
+  seconds === null ? "elapsed n/a" : `elapsed ${seconds}s`;
+
+const buildInspectStageDigest = (input: {
+  readonly thread: OrchestrationThread;
+  readonly stageRole: OrchestrationStageRole | null;
+  readonly now: DateTime.DateTime;
+}): InspectStageDigest => {
+  const { thread, stageRole, now } = input;
+  const messages = thread.messages.slice(-MESSAGE_TAIL_LIMIT).map((message) => {
+    const truncated = truncateMessageText(message.text);
+    return {
+      role: message.role,
+      createdAt: message.createdAt,
+      text: truncated.text,
+      truncated: truncated.truncated,
+    };
+  });
+  const activities = thread.activities.slice(-ACTIVITY_TAIL_LIMIT).map((activity) => ({
+    kind: activity.kind,
+    tone: activity.tone,
+    summary: activity.summary,
+    createdAt: activity.createdAt,
+  }));
+
+  return {
+    stageThreadId: thread.id,
+    stageRole,
+    turn:
+      thread.latestTurn === null
+        ? null
+        : {
+            state: thread.latestTurn.state,
+            requestedAt: thread.latestTurn.requestedAt,
+            startedAt: thread.latestTurn.startedAt,
+            completedAt: thread.latestTurn.completedAt,
+            elapsedSeconds: elapsedSeconds(thread.latestTurn, now),
+          },
+    messageCount: thread.messages.length,
+    activityCount: thread.activities.length,
+    messages,
+    activities,
+    tokenUsage: latestTokenUsage(thread),
+  };
+};
 
 class PmToolExecutionError extends Data.TaggedError("PmToolExecutionError")<{
   readonly detail: string;
@@ -361,10 +493,11 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
-  const inspectStage: PmToolExecutor<InspectStageParameters, { task: OrchestrationTask | null }> = {
+  const inspectStage: PmToolExecutor<InspectStageParameters, InspectStageDetails> = {
     name: "inspectStage",
     label: "Inspect stage",
-    description: "Inspect the current projected task/stage state.",
+    description:
+      "Inspect the current projected task/stage state and return a compact live tail of the selected worker stage thread.",
     parameters: InspectStageParameters,
     execute: (_toolCallId, params) =>
       runPromise(
@@ -372,10 +505,50 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
           const readModel = yield* snapshotQuery.getCommandReadModel();
           const task = readModel.tasks.find((entry) => entry.id === taskId) ?? null;
+          if (!task) {
+            return textResult(`Task ${taskId} not found.`, {
+              task,
+              stageDigest: null,
+            });
+          }
+
+          const selectedStageThreadId =
+            params.stageThreadId === undefined
+              ? latestStageThreadId(task)
+              : ThreadId.make(params.stageThreadId);
+          if (selectedStageThreadId === null) {
+            const note = `Task '${taskId}' has no stage thread yet.`;
+            return textResult(`Task ${taskId} is ${task.status}; no stage thread yet.`, {
+              task,
+              note,
+              stageDigest: null,
+            });
+          }
+          if (!task.stageThreadIds.includes(selectedStageThreadId)) {
+            return yield* new PmToolExecutionError({
+              detail: `Stage thread '${selectedStageThreadId}' does not belong to task '${taskId}'.`,
+            });
+          }
+
+          const threadOption = yield* snapshotQuery.getThreadDetailById(selectedStageThreadId);
+          if (Option.isNone(threadOption)) {
+            return yield* new PmToolExecutionError({
+              detail: `Stage thread '${selectedStageThreadId}' was not found.`,
+            });
+          }
+          const stageRole = readModel.stageHistory[selectedStageThreadId]?.role ?? null;
+          const stageDigest = buildInspectStageDigest({
+            thread: threadOption.value,
+            stageRole,
+            now: yield* DateTime.now,
+          });
+          const turnState = stageDigest.turn?.state ?? "no turn";
+          const roleText = stageDigest.stageRole ?? "stage";
           return textResult(
-            task ? `Task ${taskId} is ${task.status}.` : `Task ${taskId} not found.`,
+            `Task ${taskId} is ${task.status}; ${roleText} ${selectedStageThreadId} turn ${turnState}, ${formatElapsed(stageDigest.turn?.elapsedSeconds ?? null)}, messages ${stageDigest.messages.length}/${stageDigest.messageCount}, activities ${stageDigest.activities.length}/${stageDigest.activityCount}, ${formatTokenUsage(stageDigest.tokenUsage)}.`,
             {
               task,
+              stageDigest,
             },
           );
         }),

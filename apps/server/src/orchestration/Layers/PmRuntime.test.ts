@@ -2424,6 +2424,7 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Never implement product changes yourself");
     assert.include(prompt, "handoffWorker");
     assert.include(prompt, "steerStage");
+    assert.include(prompt, "Poll inspectStage");
     assert.notInclude(prompt, "READ-ONLY");
     assert.notInclude(prompt, "NO shell");
     // Role guidance is preserved.

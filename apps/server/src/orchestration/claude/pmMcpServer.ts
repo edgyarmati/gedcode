@@ -65,6 +65,7 @@ const mcpInputSchemas = {
   },
   inspectStage: {
     taskId: z.string(),
+    stageThreadId: z.string().optional(),
   },
   cancelTask: {
     taskId: z.string(),

@@ -1,21 +1,28 @@
 import {
+  EventId,
   ProjectId,
   ProviderInstanceId,
   MessageId,
   TaskId,
   TaskTypeId,
   ThreadId,
+  TurnId,
   type OrchestrationCommand,
+  type OrchestrationMessage,
+  type OrchestrationReadModel,
   type OrchestrationTask,
+  type OrchestrationThreadActivity,
   type OrchestrationThread,
 } from "@t3tools/contracts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { assert, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -28,6 +35,37 @@ const projectId = ProjectId.make("project-1");
 const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("stage-thread-1");
 const laterStageThreadId = ThreadId.make("stage-thread-2");
+const turnId = TurnId.make("turn-1");
+
+const makeMessage = (
+  index: number,
+  overrides: Partial<OrchestrationMessage> = {},
+): OrchestrationMessage => ({
+  id: MessageId.make(`message-${index}`),
+  role: index % 2 === 0 ? "assistant" : "user",
+  text: `Message ${index}`,
+  attachments: [],
+  turnId,
+  streaming: false,
+  createdAt: `2026-06-14T00:00:${String(index).padStart(2, "0")}.000Z`,
+  updatedAt: `2026-06-14T00:00:${String(index).padStart(2, "0")}.000Z`,
+  ...overrides,
+});
+
+const makeActivity = (
+  index: number,
+  overrides: Partial<OrchestrationThreadActivity> = {},
+): OrchestrationThreadActivity => ({
+  id: EventId.make(`event-${index}`),
+  tone: "info",
+  kind: `activity.${index}`,
+  summary: `Activity ${index}`,
+  payload: { ignored: true },
+  turnId,
+  sequence: index,
+  createdAt: `2026-06-14T00:01:${String(index).padStart(2, "0")}.000Z`,
+  ...overrides,
+});
 
 const makeThread = (
   id: ThreadId = stageThreadId,
@@ -92,9 +130,32 @@ const makeReadModel = (
   tasks,
 });
 
+const withStageHistory = (
+  readModel: ReturnType<typeof makeReadModel>,
+  threadId: ThreadId,
+  role: "classify" | "plan" | "review" | "work" | "verify",
+): OrchestrationReadModel => ({
+  ...readModel,
+  stageHistory: {
+    ...readModel.stageHistory,
+    [threadId]: {
+      projectId,
+      taskId,
+      stageThreadId: threadId,
+      role,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      status: "running",
+      startedAt: now,
+      endedAt: null,
+    },
+  },
+});
+
 const makeLayer = (
   dispatched: OrchestrationCommand[],
-  readModel: ReturnType<typeof makeReadModel> = makeReadModel(),
+  readModel: OrchestrationReadModel = makeReadModel(),
+  threadDetails: ReadonlyMap<ThreadId, OrchestrationThread> | null = null,
 ) =>
   Layer.mergeAll(
     Layer.mock(OrchestrationEngineService)({
@@ -132,7 +193,12 @@ const makeLayer = (
       getThreadCheckpointContext: () => Effect.succeed(Option.none()),
       getFullThreadDiffContext: () => Effect.succeed(Option.none()),
       getThreadShellById: () => Effect.succeed(Option.none()),
-      getThreadDetailById: () => Effect.succeed(Option.none()),
+      getThreadDetailById: (threadId) => {
+        const thread = (
+          threadDetails ?? new Map(readModel.threads.map((entry) => [entry.id, entry]))
+        ).get(threadId);
+        return Effect.succeed(thread === undefined ? Option.none() : Option.some(thread));
+      },
     }),
     NodeServices.layer,
   );
@@ -409,6 +475,299 @@ it.effect("steerStage rejects a task with no stage thread yet", () =>
     assert.instanceOf(error, Error);
     assert.match(error.message, /has no stage thread to steer yet/);
     assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("inspectStage returns the task row with a note when no stage thread exists yet", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([makeTask({ stageThreadIds: [], currentStageThreadId: null })]),
+        ),
+      ),
+    );
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-no-stage", {
+        taskId,
+      }),
+    );
+
+    assert.strictEqual(result.details.task?.id, taskId);
+    assert.strictEqual(result.details.stageDigest, null);
+    assert.match(result.details.note, /has no stage thread yet/);
+    const firstContent = result.content[0];
+    assert.strictEqual(firstContent?.type, "text");
+    if (firstContent?.type === "text") {
+      assert.match(firstContent.text, /no stage thread yet/);
+    }
+  }),
+);
+
+it.effect("inspectStage defaults to the latest stage thread and returns bounded tails", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const earlyThread = makeThread(stageThreadId, {
+      messages: [makeMessage(1)],
+      activities: [makeActivity(1)],
+    });
+    const laterThread = makeThread(laterStageThreadId, {
+      messages: Array.from({ length: 12 }, (_, index) => makeMessage(index + 1)),
+      activities: Array.from({ length: 25 }, (_, index) => makeActivity(index + 1)),
+    });
+    const readModel = withStageHistory(
+      makeReadModel(
+        [
+          makeTask({
+            stageThreadIds: [stageThreadId, laterStageThreadId],
+            currentStageThreadId: laterStageThreadId,
+          }),
+        ],
+        [earlyThread, laterThread],
+      ),
+      laterStageThreadId,
+      "work",
+    );
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-default", {
+        taskId,
+      }),
+    );
+
+    assert.strictEqual(result.details.stageDigest.stageThreadId, laterStageThreadId);
+    assert.strictEqual(result.details.stageDigest.stageRole, "work");
+    assert.strictEqual(result.details.stageDigest.messageCount, 12);
+    assert.strictEqual(result.details.stageDigest.messages.length, 10);
+    assert.strictEqual(result.details.stageDigest.messages[0]?.text, "Message 3");
+    assert.strictEqual(result.details.stageDigest.activityCount, 25);
+    assert.strictEqual(result.details.stageDigest.activities.length, 20);
+    assert.strictEqual(result.details.stageDigest.activities[0]?.kind, "activity.6");
+    const firstContent = result.content[0];
+    assert.strictEqual(firstContent?.type, "text");
+    if (firstContent?.type === "text") {
+      assert.match(firstContent.text, /work stage-thread-2/);
+      assert.match(firstContent.text, /messages 10\/12/);
+      assert.match(firstContent.text, /activities 20\/25/);
+    }
+  }),
+);
+
+it.effect("inspectStage accepts an explicit owned stage thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel(
+      [
+        makeTask({
+          stageThreadIds: [stageThreadId, laterStageThreadId],
+          currentStageThreadId: laterStageThreadId,
+        }),
+      ],
+      [makeThread(stageThreadId), makeThread(laterStageThreadId)],
+    );
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-explicit", {
+        taskId,
+        stageThreadId,
+      }),
+    );
+
+    assert.strictEqual(result.details.stageDigest.stageThreadId, stageThreadId);
+  }),
+);
+
+it.effect("inspectStage rejects a stage thread outside the task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const error = yield* Effect.promise(() =>
+      inspectStage
+        .execute("tool-inspect-wrong-thread", {
+          taskId,
+          stageThreadId: "other-stage-thread",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /does not belong to task 'task-1'/);
+  }),
+);
+
+it.effect("inspectStage truncates long message text", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([
+            makeTask({
+              stageThreadIds: [stageThreadId],
+              currentStageThreadId: stageThreadId,
+            }),
+          ]),
+          new Map([
+            [
+              stageThreadId,
+              makeThread(stageThreadId, {
+                messages: [makeMessage(1, { text: "x".repeat(501) })],
+              }),
+            ],
+          ]),
+        ),
+      ),
+    );
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-truncate", {
+        taskId,
+      }),
+    );
+
+    assert.strictEqual(result.details.stageDigest.messages[0]?.text.length, 500);
+    assert.strictEqual(result.details.stageDigest.messages[0]?.truncated, true);
+  }),
+);
+
+it.effect("inspectStage computes running turn elapsed with the Effect clock", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(
+      DateTime.toEpochMillis(DateTime.makeUnsafe("2026-06-14T00:02:30.000Z")),
+    );
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([
+            makeTask({
+              stageThreadIds: [stageThreadId],
+              currentStageThreadId: stageThreadId,
+            }),
+          ]),
+          new Map([
+            [
+              stageThreadId,
+              makeThread(stageThreadId, {
+                latestTurn: {
+                  turnId,
+                  state: "running",
+                  requestedAt: "2026-06-14T00:00:00.000Z",
+                  startedAt: "2026-06-14T00:01:00.000Z",
+                  completedAt: null,
+                  assistantMessageId: null,
+                },
+              }),
+            ],
+          ]),
+        ),
+      ),
+    );
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-elapsed", {
+        taskId,
+      }),
+    );
+
+    assert.strictEqual(result.details.stageDigest.turn?.state, "running");
+    assert.strictEqual(result.details.stageDigest.turn?.elapsedSeconds, 90);
+  }).pipe(Effect.provide(TestClock.layer())),
+);
+
+it.effect("inspectStage returns token usage from the latest context-window activity", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([
+            makeTask({
+              stageThreadIds: [stageThreadId],
+              currentStageThreadId: stageThreadId,
+            }),
+          ]),
+          new Map([
+            [
+              stageThreadId,
+              makeThread(stageThreadId, {
+                activities: [
+                  makeActivity(1, {
+                    kind: "context-window.updated",
+                    payload: { usedTokens: 5, maxTokens: 100 },
+                  }),
+                  makeActivity(2),
+                  makeActivity(3, {
+                    kind: "context-window.updated",
+                    payload: { usedTokens: 42, maxTokens: 100 },
+                  }),
+                  makeActivity(4),
+                ],
+              }),
+            ],
+          ]),
+        ),
+      ),
+    );
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const result = yield* Effect.promise(() =>
+      inspectStage.execute("tool-inspect-token-usage", {
+        taskId,
+      }),
+    );
+
+    assert.deepStrictEqual(result.details.stageDigest.tokenUsage, {
+      usedTokens: 42,
+      maxTokens: 100,
+    });
+    const firstContent = result.content[0];
+    assert.strictEqual(firstContent?.type, "text");
+    if (firstContent?.type === "text") {
+      assert.match(firstContent.text, /42\/100 tokens used/);
+    }
+  }),
+);
+
+it.effect("inspectStage rejects when the selected stage thread detail row is missing", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel(), new Map())),
+    );
+    const inspectStage = findTool(tools, "inspectStage");
+
+    const error = yield* Effect.promise(() =>
+      inspectStage
+        .execute("tool-inspect-missing-thread", {
+          taskId,
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /Stage thread 'stage-thread-1' was not found/);
   }),
 );
 
