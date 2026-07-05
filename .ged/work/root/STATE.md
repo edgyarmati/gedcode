@@ -656,6 +656,26 @@ runtime-event bridging into PmEventProjection, resume cursor, resolvePmHarnessCo
 unlock the PM picker's driver filter — which activates the handoff dialog for real. Scope W5 before dispatch:
 check codex app-server session config surface (MCP tool injection + system prompt) first.
 
+**W5 SCOPED + DECISIONS LOCKED (2026-07-05, scout report + user):** Codex PM is architecturally cheap — Codex
+already emits the canonical ProviderRuntimeEvent stream the PM bridge consumes (incl. user-input.requested/
+resolved), resumeCursor {threadId} fits the existing ProviderSessionDirectory slot, pm tools are transport-
+neutral executors. Gaps: (1) CodexAdapter DROPS systemPromptAppend/enableOrchestrationTools (contract fields
+exist; buildThreadStartParams only sets cwd/approval/sandbox/model/serviceTier — inject charter via
+V2ThreadStartParams.developerInstructions, NOT baseInstructions which replaces codex base prompt); (2) MCP:
+codex needs stdio/HTTP endpoints — USER DECISION: loopback streamable-HTTP served in-process (127.0.0.1 +
+bearer via env var to the codex child), backed by makePmToolExecutors; delivery via thread/start config overlay
+(mcp_servers), FALLBACK ALLOWED into shadow CODEX_HOME config.toml if the build ignores overlay (worker reports
+which worked); (3) DriverPmAdapter.lifecycleToolData reads {toolName,input} — codex mcpToolCall items are
+{server,tool,arguments} → needs codex-aware extractor; (4) resolveClaudePmAdapter + resets + provider stamps
+hard-code claudeAgent (PmRuntime 558-585/437/457, DriverPmAdapter 33/59, PmEventProjection 232); (5) picker lock
+PmChatComposer 264/724/734. USER DECISION: accept v1 divergence — codex request_user_input only exists in plan
+collaboration mode → Codex PM asks decisions as plain text; PM prompt's interactive-question line becomes
+Claude-conditional. Rounds: **R1** = W5-AB (codex runtime injection + MCP HTTP endpoint; owns CodexAdapter/
+CodexSessionRuntime/new MCP module/server wiring/deps) ∥ W5-C (DriverPmAdapter codex tool extraction) —
+disjoint; **R2** = W5-D runtime acceptance (PmRuntime/DriverPmAdapter de-Clauding, resets, model descriptor);
+**R3** = W5-EF picker unlock + tests → handoff dialog goes LIVE (PMHANDOFF context rides systemPromptAppend,
+works on codex via W5-AB automatically).
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
