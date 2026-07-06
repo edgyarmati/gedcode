@@ -700,6 +700,18 @@ Codex PM continues same thread w/ charter via developerInstructions + orchestrat
 switch PM to codex; verify dialog, handoff context, codex PM can createTask/handoffWorker/steerStage/
 inspectStage; check marker activity "pm.handoff"; also verify claude→claude model change still silent).
 
+**W5 LIVE-TEST BUG FIXED `fc8fc6e3b`** (2026-07-06) — first claude→codex handoff: handoff+MCP overlay+charter
+all WORKED; codex accepted+ran+answered the turn, but the UI spun silently. Forensics (event log + provider
+NDJSON + trace spans + process sampling + 5 isolated codex repros that all passed): the codex session's runtime
+event pump was `Effect.forkChild` → tied to startSession CALLER's fiber → died the instant PmRuntime's
+getOrCreate build completed (log stops 07:39:13.174; sendTurn span Success 4.2ms at .19; codex idle with unread
+output). Workers never hit it (long-lived callers). Fix: `Effect.forkIn(sessionScope)` + red-checked regression
+(session started from short-lived scope, events must flow after close) + DriverPmAdapter treats bridge-stream
+death mid-prompt as abnormal turn end (loud failure, no silent spinner). Gate: typecheck 12/12, server full
+1331/1332. RETEST: restart dev server, ask the codex PM again (same thread; handoff already consumed, won't
+re-inject) — should stream; then exercise a codex-PM tool call (inspectStage/getTaskLedger) to confirm the MCP
+round-trip surfaces as activities.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
