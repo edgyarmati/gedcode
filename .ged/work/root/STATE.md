@@ -712,6 +712,16 @@ death mid-prompt as abnormal turn end (loud failure, no silent spinner). Gate: t
 re-inject) — should stream; then exercise a codex-PM tool call (inspectStage/getTaskLedger) to confirm the MCP
 round-trip surfaces as activities.
 
+**W5 LIVE-CONFIRMED (2026-07-06, user):** claude→codex handoff retested after fc8fc6e3b — codex PM streams,
+knows the handed-off history, and a full dogfooded task ran as expected. THE ENTIRE ORCHESTRATOR ARC IS DONE:
+PM loop (steer/peek/questions/pickers), pi+ged eradication, harness handoff, dual-harness PM. ROADMAP NEXT:
+(1) **UX pass** — user-driven walkthrough of the orchestrator surface (board, stage threads, handoff markers,
+question cards, PM composer row, abandoned section), grill-style, turn taste into WPs; (2) **upstream sync +
+merge to main** — 422 upstream commits since merge base e3accd6e957 (fetched 2026-07-06); read-only divergence
+audit launched (categorize vs docs/upstream-decisions.md, sync policy = everything minus mobile app #2013);
+sync lands on the branch BEFORE merging to main. UX implementation and upstream sync must NOT run concurrently
+(sync touches everything).
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
