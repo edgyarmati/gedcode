@@ -3,7 +3,49 @@
 This document tracks decisions about upstream-only work from `pingdotgg/t3code`.
 Use it before categorizing, cherry-picking, or reimplementing upstream commits.
 
-Last reviewed against `upstream/main` at `57f6bf7e` on 2026-06-11.
+Last reviewed against `upstream/main` at `32e78448` on 2026-07-06 (422 commits
+behind merge base `e3accd6e957` on `feat/orchestrator-mode`).
+
+## Policy change (2026-07-06) — leaving the fork network
+
+GedCode has drifted far from t3code and will leave the fork network in the
+near future. **Parity syncs are over.** Do not merge or stage-merge
+`upstream/main`. Instead, selectively port individual upstream features when
+they are useful and there is a good implementation for our tree.
+
+Decided against wholesale adoption (2026-07-06 audit of the 422-commit range):
+
+- **pnpm/Vite Plus tooling migration** (`b440dd18`, 299 files, + follow-ups) —
+  we stay on Bun; port only release/CI fixes that apply to our setup.
+- **Client-runtime connection rewrite** (`e95b57dc`, 606 files) — would
+  destabilize our hardened subscription/replay surfaces for no product need.
+- **Effect error-structuring campaign** (~200 commits) — style parity has no
+  value post-detach; our conventions evolve independently.
+- Long-standing exclusions remain: mobile (#2013 + ~44 follow-ons),
+  relay/cloud/APNs/Clerk/T3 Connect, marketing/docs/vendored refs, Grok
+  provider, Cursor provider (deleted here; drop all upstream Cursor work).
+
+Port shortlist (opportunistic, each as its own adapted port, not a raw
+cherry-pick):
+
+- Individual web/chat polish items: virtualized model picker (`31533466` —
+  already ported per Completed section), timeline scroll/minimap (`fda64862`),
+  word-wrap (`fb103454`), message metadata/work-log rows (`1916ac6d` — already
+  ported), workspace file browser (`de8bdc10`), inline tool timeline
+  (`649f4328`).
+- In-app browser preview subsystem (~48 commits incl. its `apps/server/src/mcp`
+  HTTP MCP server dependency) — future project when wanted; our
+  `orchestration/mcp` endpoint stays separate regardless.
+- Codex app-server protocol updates — driven by `@openai/codex` releases, not
+  t3code; upstream's protocol-sync commits are reference material when we bump.
+
+Mechanics: keep the `upstream` remote read-only for reference until detach.
+`main` fast-forwards cleanly from `feat/orchestrator-mode` and does not wait
+on any upstream work.
+
+Historical context below reflects the pre-2026-07-06 parity policy.
+
+Previous review: `upstream/main` at `57f6bf7e` on 2026-06-11.
 At that point, local `main` matched `origin/main`, and `main...upstream/main`
 was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 

@@ -722,6 +722,13 @@ audit launched (categorize vs docs/upstream-decisions.md, sync policy = everythi
 sync lands on the branch BEFORE merging to main. UX implementation and upstream sync must NOT run concurrently
 (sync touches everything).
 
+**UPSTREAM POLICY CHANGE (user, 2026-07-06):** GedCode is LEAVING the t3code fork network soon — NO parity
+syncs. The 422-commit audit's staged-merge plan is CANCELLED; converted to a selective port shortlist recorded
+in docs/upstream-decisions.md (web polish items, preview subsystem later, codex protocol updates via @openai/
+codex releases). Rejected wholesale: pnpm/Vite+ (stay Bun), client-runtime rewrite, Effect campaign. KEY
+UNLOCK: main is a clean fast-forward (0 own commits, 178 behind branch) — merge to main no longer waits on
+anything. Roadmap now: **UX pass → fast-forward main → opportunistic ports → detach fork (GitHub settings)**.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
