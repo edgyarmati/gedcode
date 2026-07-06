@@ -6,6 +6,7 @@ import {
   type ThreadTokenUsageSnapshot,
   type TurnId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -239,6 +240,7 @@ export const makeDriverPmAdapter = (
     const latestUsage = yield* Ref.make<Usage | undefined>(undefined);
     const currentModelSelection = yield* Ref.make(options.modelSelection);
     const resources = yield* Ref.make<AgentHarnessResources>({});
+    const bridgeClosing = yield* Ref.make(false);
     const activePrompt = yield* Ref.make<
       | {
           readonly turnId: TurnId;
@@ -566,9 +568,41 @@ export const makeDriverPmAdapter = (
         ),
       );
 
+    const failActivePromptOnBridgeEnd = Effect.gen(function* () {
+      if (yield* Ref.get(bridgeClosing)) {
+        return;
+      }
+      const promptState = yield* Ref.get(activePrompt);
+      if (promptState === undefined) {
+        return;
+      }
+      const reason = "Driver PM event stream ended before the active turn completed.";
+      yield* Ref.set(activePrompt, undefined);
+      yield* Ref.set(idle, true);
+      yield* offer({
+        type: "provider_runtime_turn_abnormal_end",
+        createdAt: DateTime.formatIso(yield* DateTime.now),
+        reason,
+      });
+      yield* offer({
+        type: "settled",
+        nextTurnCount: 0,
+      } satisfies AgentHarnessEvent);
+      yield* Deferred.fail(
+        promptState.deferred,
+        new PmRuntimeError({
+          operation: "DriverPmAdapter.prompt",
+          detail: reason,
+        }),
+      );
+    });
+
     const runtimeContext = yield* Effect.context<never>();
     const bridgeFiber = Effect.runForkWith(runtimeContext)(
-      options.runtimeEvents.pipe(Stream.runForEach(handleRuntimeEvent)),
+      options.runtimeEvents.pipe(
+        Stream.runForEach(handleRuntimeEvent),
+        Effect.ensuring(failActivePromptOnBridgeEnd),
+      ),
     );
 
     const startSession = Effect.gen(function* () {
@@ -730,6 +764,7 @@ export const makeDriverPmAdapter = (
           .interruptTurn(threadId, promptState?.turnId)
           .pipe(Effect.catch(() => Effect.void));
         yield* options.providerAdapter.stopSession(threadId).pipe(Effect.catch(() => Effect.void));
+        yield* Ref.set(bridgeClosing, true);
         yield* Fiber.interrupt(bridgeFiber);
         yield* Ref.set(idle, true);
       }).pipe(

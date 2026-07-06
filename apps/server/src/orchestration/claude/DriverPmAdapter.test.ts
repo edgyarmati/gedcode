@@ -649,6 +649,76 @@ describe("DriverPmAdapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("fails an active prompt when the provider runtime event stream ends", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const allowSendTurnReturn = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-stream-ended");
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            yield* Deferred.await(allowSendTurnReturn);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, 3)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+      const promptFiber = yield* adapter
+        .prompt("Plan the task.")
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Deferred.succeed(allowSendTurnReturn, undefined);
+      yield* Effect.yieldNow;
+
+      yield* Queue.shutdown(runtimeEvents);
+
+      const error = yield* Fiber.join(promptFiber);
+      assert.strictEqual(error.operation, "DriverPmAdapter.prompt");
+      assert.strictEqual(
+        error.detail,
+        "Driver PM event stream ended before the active turn completed.",
+      );
+      const events = yield* Fiber.join(eventsFiber);
+      assert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["before_agent_start", "provider_runtime_turn_abnormal_end", "settled"],
+      );
+      const abnormalEnd = events[1];
+      assert.ok(abnormalEnd);
+      assert.strictEqual(abnormalEnd.type, "provider_runtime_turn_abnormal_end");
+      if (abnormalEnd.type === "provider_runtime_turn_abnormal_end") {
+        assert.strictEqual(
+          abnormalEnd.reason,
+          "Driver PM event stream ended before the active turn completed.",
+        );
+      }
+      assert.strictEqual(yield* adapter.isIdle, true);
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("preserves every PM text delta when another consumer reads the runtime bus", () =>
     Effect.gen(function* () {
       const runtimeEventBus = yield* PubSub.unbounded<ProviderRuntimeEvent>();

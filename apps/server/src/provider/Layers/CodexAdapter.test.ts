@@ -32,6 +32,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
@@ -561,6 +562,68 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       assert.equal(firstEvent.value.turnId, "turn-1");
       assert.equal(firstEvent.value.payload.itemType, "assistant_message");
     }),
+  );
+
+  it.effect(
+    "keeps the runtime event pipeline alive after the startSession caller scope closes",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* CodexAdapter;
+        const callerScope = yield* Scope.make("sequential");
+
+        const startFiber = yield* adapter
+          .startSession({
+            provider: ProviderDriverKind.make("codex"),
+            threadId: asThreadId("thread-short-lived-caller"),
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.forkIn(callerScope));
+        yield* Fiber.join(startFiber);
+
+        const runtime = lifecycleRuntimeFactory.lastRuntime;
+        assert.ok(runtime);
+
+        yield* Scope.close(callerScope, Exit.void);
+
+        const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+        yield* runtime.emit({
+          id: asEventId("evt-after-caller-scope-closed"),
+          kind: "notification",
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          method: "item/completed",
+          threadId: asThreadId("thread-short-lived-caller"),
+          turnId: asTurnId("turn-1"),
+          itemId: asItemId("msg_1"),
+          payload: {
+            completedAtMs: 1_778_000_000_000,
+            threadId: "thread-short-lived-caller",
+            turnId: "turn-1",
+            item: {
+              type: "agentMessage",
+              id: "msg_1",
+              text: "still bridged",
+            },
+          },
+        } satisfies ProviderEvent);
+        const timedEventFiber = yield* Fiber.join(firstEventFiber).pipe(
+          Effect.timeout("1 second"),
+          Effect.forkChild,
+        );
+        yield* TestClock.adjust("1 second");
+        const firstEvent = yield* Fiber.join(timedEventFiber);
+
+        assert.equal(firstEvent._tag, "Some");
+        if (firstEvent._tag !== "Some") {
+          return;
+        }
+        assert.equal(firstEvent.value.type, "item.completed");
+        if (firstEvent.value.type !== "item.completed") {
+          return;
+        }
+        assert.equal(firstEvent.value.threadId, "thread-short-lived-caller");
+        assert.equal(firstEvent.value.payload.itemType, "assistant_message");
+      }),
   );
 
   it.effect("maps completed plan items to canonical proposed-plan completion events", () =>
