@@ -108,6 +108,7 @@ const BOARD_STATUSES: ReadonlyArray<OrchestratorTask["status"]> = [
   "reviewing",
   "working",
   "review",
+  "verifying",
   "blocked",
   "blocked-on-quota",
   "landed",

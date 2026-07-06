@@ -81,15 +81,31 @@ describe("TaskBoard", () => {
         tasks={[
           makeBoardTask("task-draft", "draft", "Visible draft task"),
           makeBoardTask("task-working", "working", "Visible working task"),
+          makeBoardTask("task-verifying", "verifying", "Visible verifying task"),
           makeBoardTask("task-abandoned", "abandoned", "Cancelled task"),
         ]}
       />,
     );
 
-    expect(markup).toContain('aria-label="Board task count">2</span>');
+    expect(markup).toContain('aria-label="Board task count">3</span>');
     expect(markup).toContain("Visible draft task");
     expect(markup).toContain("Visible working task");
+    expect(markup).toContain("Visible verifying task");
     expect(markup).not.toContain("Cancelled task");
+  });
+
+  it("renders verifying tasks in their board section", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[makeBoardTask("task-verifying", "verifying", "Verify stage task")]}
+      />,
+    );
+
+    expect(markup).toContain("Verifying");
+    expect(markup).toContain("Verify stage task");
+    expect(markup).toContain('aria-label="Board task count">1</span>');
   });
 
   it("renders abandoned tasks collapsed with a count and expanded with task cards", () => {

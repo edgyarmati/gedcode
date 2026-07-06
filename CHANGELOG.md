@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: opening an orchestrator task now actually shows the task view (stage output, work log, gates) — the route never rendered before.
+- Fix: tasks in a verify stage no longer disappear from the task board.
 - Fix: Codex-driver orchestrator PM sessions no longer go silent after starting. The session's runtime event pump was forked into the caller's short-lived scope and died the moment the PM runtime finished building — codex would run the turn and answer into an unread pipe. The pump now lives in the session-owned scope, and if the PM's event bridge ever ends mid-turn the turn fails loudly instead of spinning forever.
 - Feature/UI: The orchestrator PM can now run on Codex. The PM model picker offers Claude and Codex instances, and switching the PM across harnesses triggers the handoff dialog for real — hand off the conversation as a full transcript or summary brief, or start fresh. Traits follow the selected instance's driver.
 - Internal: The orchestrator PM runtime now accepts Codex provider instances alongside Claude — driver-neutral adapter wiring, session reset/clear, provider stamping, and a Codex-conditional PM prompt (decisions asked in plain text since Codex's interactive-question tool is unavailable outside plan mode). The PM model picker remains Claude-locked until the web unlock lands.
