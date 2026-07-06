@@ -751,8 +751,18 @@ release (memory: ui-work-goes-to-opus). Findings → WPs, priority order:
   titles; mark/group/hide them (decide with user).
 - **WP-UX6 (Opus):** consistency audit — dark mode pass (unverified), update-toast overlaps board header
   (z/position), spacing/empty-space on landing.
-Sequencing: UX0 → UX1+UX3 (parallel-safe? both touch orchestrator components — SEQUENTIAL per shared-tree
-rule) → UX2 → UX4/5/6. Merge to main AFTER user is satisfied with the pass.
+**PLAN REVISED (user input, 2026-07-06):** (a) BOARD = CONCERN BUCKETS (user-approved): "Needs you" (pending
+gates — first time ON the board — + blocked + quota + open PM questions) / "Active" (single section, cards wear
+stage-role badges Planning/Working/Reviewing/Verifying + live pulse + elapsed) / Landed + Abandoned collapsed.
+Ledger statuses untouched (presentation only). Supersedes the hide-empties idea in WP-UX1. Rationale: taxonomy
+is a Phase-3 conveyor-belt fossil; draft/classified are ms-transient with the LLM PM; planning/plan-review
+reachable but occasional; **verifying is MISSING from BOARD_STATUSES → verify-stage tasks vanish from the
+board (BUG, interim fix in UX0)**. (b) ORCH SIDEBAR = orchestrator nav (user-approved): projects w/ task/gate
+counts + running pulse; stage threads stop leaking into the chat thread list (absorbs WP-UX5). (c) NEW
+**WP-UX7 switch UX**: Orchestrator button → last-visited project workspace (landing only first-run/breadcrumb);
+paired cross-links "Open in Orchestrator"/"Open in Chat" per project. Sequencing: UX0 (Codex, DISPATCHED) →
+UX1 board reshape (Opus) → UX3 PM chat (Opus) → UX7+sidebar (Opus) → UX2 task detail (Opus) → UX4 landing +
+UX6 consistency (Opus). Merge to main after user satisfaction.
 
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
