@@ -729,6 +729,31 @@ codex releases). Rejected wholesale: pnpm/Vite+ (stay Bun), client-runtime rewri
 UNLOCK: main is a clean fast-forward (0 own commits, 178 behind branch) — merge to main no longer waits on
 anything. Roadmap now: **UX pass → fast-forward main → opportunistic ports → detach fork (GitHub settings)**.
 
+**UX PASS PLAN (2026-07-06, PM browser review of live dogfood data via Playwright; screenshots in session
+scratchpad ux-01..04):** RULE: appearance work → OPUS 4.8 agents (Agent tool), NOT Codex until next Codex
+release (memory: ui-work-goes-to-opus). Findings → WPs, priority order:
+- **WP-UX0 (BUG, not appearance — Codex ok):** task detail route NEVER RENDERS — routes/_orch.orch.$env.$proj.
+  tasks.$taskId.tsx nests under the project route whose component lacks an <Outlet/>; the full task view
+  (TaskHeader + SharedThreadTimeline stage output + TaskDetailRail w/ gates) exists in OrchestratorRoutes.tsx
+  ~655-760 but is unreachable. Fix = un-nest (trailing-underscore filename) or Outlet. PREREQ for UX2.
+- **WP-UX1 (Opus):** task board overhaul — hide zero-count status sections (keep canonical order); rich task
+  cards: stage-role badge, live "worker streaming" pulse, elapsed, worker model, drop the useless
+  `orchestrator/<uuid>` branch slug (keep on hover/detail); casing consistency (ABANDONED vs Title case);
+  cancel affordance on hover.
+- **WP-UX2 (Opus, after UX0):** task detail polish — verify stage timeline/gates rail live; multi-stage
+  history picker; breadcrumb sanity.
+- **WP-UX3 (Opus):** PM chat surface — handoff/abnormal-end markers as styled system divider rows (from→to +
+  time, not button-ish "work log" cluster); render task-dispatch tool activities as rich clickable task chips
+  (activity payloads carry taskId — don't parse PM prose); empty-state hint for fresh PM chat.
+- **WP-UX4 (Opus):** /orch landing cards — orchestrator status per project (enabled, task counts by phase,
+  PM model/driver, running-worker indicator) instead of bare "Open workspace".
+- **WP-UX5 (Opus):** sidebar in orch mode — stage threads leak into the normal chat thread list with generic
+  titles; mark/group/hide them (decide with user).
+- **WP-UX6 (Opus):** consistency audit — dark mode pass (unverified), update-toast overlaps board header
+  (z/position), spacing/empty-space on landing.
+Sequencing: UX0 → UX1+UX3 (parallel-safe? both touch orchestrator components — SEQUENTIAL per shared-tree
+rule) → UX2 → UX4/5/6. Merge to main AFTER user is satisfied with the pass.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
