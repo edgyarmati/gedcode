@@ -19,8 +19,6 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   CircleAlertIcon,
   ClockIcon,
   GitBranchIcon,
@@ -81,7 +79,11 @@ import {
 } from "./OrchestratorProjectLayout";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import { PmChatComposer } from "./PmChatComposer";
+import { TaskBoard } from "./TaskBoard";
 import { TaskPrLink } from "./TaskPrLink";
+
+// Re-exported so existing imports (e.g. tests) keep resolving from this module.
+export { AbandonedTaskBoardSection, TaskBoard } from "./TaskBoard";
 
 const LazyDiffPanel = lazy(() => import("../DiffPanel"));
 
@@ -99,26 +101,6 @@ const TASK_STATUS_LABELS: Record<OrchestratorTask["status"], string> = {
   verifying: "Verifying",
   working: "Working",
 };
-
-const BOARD_STATUSES: ReadonlyArray<OrchestratorTask["status"]> = [
-  "draft",
-  "classified",
-  "planning",
-  "plan-review",
-  "reviewing",
-  "working",
-  "review",
-  "verifying",
-  "blocked",
-  "blocked-on-quota",
-  "landed",
-];
-
-const BOARD_STATUS_SET: ReadonlySet<OrchestratorTask["status"]> = new Set(BOARD_STATUSES);
-
-function isBoardTask(task: OrchestratorTask): boolean {
-  return BOARD_STATUS_SET.has(task.status);
-}
 
 function toEnvironmentId(value: string): EnvironmentId {
   return EnvironmentId.make(value);
@@ -461,125 +443,6 @@ function SharedThreadTimeline({
   );
 }
 
-export function TaskBoard({
-  environmentId,
-  projectId,
-  tasks,
-}: {
-  environmentId: EnvironmentId;
-  projectId: ProjectId;
-  tasks: OrchestratorTask[];
-}) {
-  const [abandonedExpanded, setAbandonedExpanded] = useState(false);
-  const boardTasks = useMemo(() => tasks.filter(isBoardTask), [tasks]);
-  const abandonedTasks = useMemo(
-    () => tasks.filter((task) => task.status === "abandoned"),
-    [tasks],
-  );
-  const taskCountByStatus = useMemo(() => {
-    const counts = new Map<OrchestratorTask["status"], number>();
-    for (const task of boardTasks) {
-      counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
-    }
-    return counts;
-  }, [boardTasks]);
-
-  return (
-    <aside className="min-h-0 overflow-auto bg-muted/18 px-3 py-4">
-      <div className="mb-3 flex items-center justify-between gap-3 px-1">
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase">Tasks</h2>
-        <Badge aria-label="Board task count" variant="outline">
-          {boardTasks.length}
-        </Badge>
-      </div>
-      <div className="space-y-4">
-        {BOARD_STATUSES.map((status) => {
-          const statusTasks = boardTasks.filter((task) => task.status === status);
-          return (
-            <section key={status} className="space-y-2">
-              <div className="flex items-center justify-between gap-2 px-1">
-                <h3 className="text-xs font-medium text-muted-foreground">
-                  {TASK_STATUS_LABELS[status]}
-                </h3>
-                <span className="text-[11px] text-muted-foreground/70">
-                  {taskCountByStatus.get(status) ?? 0}
-                </span>
-              </div>
-              {statusTasks.map((task) => (
-                <TaskBoardCard
-                  key={task.id}
-                  environmentId={environmentId}
-                  projectId={projectId}
-                  task={task}
-                />
-              ))}
-            </section>
-          );
-        })}
-        {abandonedTasks.length > 0 ? (
-          <AbandonedTaskBoardSection
-            environmentId={environmentId}
-            expanded={abandonedExpanded}
-            onExpandedChange={setAbandonedExpanded}
-            projectId={projectId}
-            tasks={abandonedTasks}
-          />
-        ) : null}
-      </div>
-    </aside>
-  );
-}
-
-export function AbandonedTaskBoardSection({
-  environmentId,
-  expanded,
-  onExpandedChange,
-  projectId,
-  tasks,
-}: {
-  environmentId: EnvironmentId;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
-  projectId: ProjectId;
-  tasks: OrchestratorTask[];
-}) {
-  return (
-    <section className="space-y-2 border-t border-border/70 pt-3">
-      <Button
-        aria-expanded={expanded}
-        className="h-auto w-full justify-between px-1 py-1 text-xs font-medium text-muted-foreground uppercase"
-        onClick={() => onExpandedChange(!expanded)}
-        size="sm"
-        variant="ghost"
-      >
-        <span className="flex min-w-0 items-center gap-1">
-          {expanded ? (
-            <ChevronDownIcon className="size-3" />
-          ) : (
-            <ChevronRightIcon className="size-3" />
-          )}
-          <span>Abandoned</span>
-        </span>
-        <span aria-label="Abandoned task count" className="text-[11px] text-muted-foreground/70">
-          {tasks.length}
-        </span>
-      </Button>
-      {expanded ? (
-        <div className="space-y-2">
-          {tasks.map((task) => (
-            <TaskBoardCard
-              key={task.id}
-              environmentId={environmentId}
-              projectId={projectId}
-              task={task}
-            />
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 function formatQuotaResetLabel(iso: string): string | null {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) {
@@ -613,41 +476,6 @@ function TaskQuotaBadge({
       <ClockIcon className="size-3" />
       {resetLabel ? `Quota · resets ${resetLabel}` : "Quota-blocked"}
     </Badge>
-  );
-}
-
-function TaskBoardCard({
-  environmentId,
-  projectId,
-  task,
-}: {
-  environmentId: EnvironmentId;
-  projectId: ProjectId;
-  task: OrchestratorTask;
-}) {
-  return (
-    <Link
-      to="/orch/$environmentId/$projectId/tasks/$taskId"
-      params={{ environmentId, projectId, taskId: task.id }}
-      className="block rounded-lg border border-border bg-card px-3 py-2 text-card-foreground outline-hidden transition-colors hover:border-ring/50 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="line-clamp-2 text-sm font-medium">{task.title}</div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {task.branch ? (
-          <Badge size="sm" variant="outline">
-            <GitBranchIcon className="size-3" />
-            {task.branch}
-          </Badge>
-        ) : null}
-        {task.currentStageThreadId ? (
-          <Badge size="sm" variant="info">
-            <ClockIcon className="size-3" />
-            Running
-          </Badge>
-        ) : null}
-        <TaskQuotaBadge environmentId={environmentId} taskId={task.id} status={task.status} />
-      </div>
-    </Link>
   );
 }
 

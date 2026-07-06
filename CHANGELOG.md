@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: The Orchestrator task board is reorganized by concern instead of one section per status. A "Needs you" section surfaces tasks with a pending approval gate or a blocked/quota status (each with a reason chip); a single "Active" section holds every other in-progress task with a stage-role badge, a live pulse and elapsed time when its worker turn is running, and the worker model when known; "Landed" and "Abandoned" are collapsed count sections at the bottom. The header count now reflects needs-you + active only, the per-card `orchestrator/<uuid>` branch slug moved to the card tooltip, and section casing is consistent Title case.
 - Fix: opening an orchestrator task now actually shows the task view (stage output, work log, gates) — the route never rendered before.
 - Fix: tasks in a verify stage no longer disappear from the task board.
 - Fix: Codex-driver orchestrator PM sessions no longer go silent after starting. The session's runtime event pump was forked into the caller's short-lived scope and died the moment the PM runtime finished building — codex would run the turn and answer into an unread pipe. The pump now lives in the session-owned scope, and if the PM's event bridge ever ends mid-turn the turn fails loudly instead of spinning forever.

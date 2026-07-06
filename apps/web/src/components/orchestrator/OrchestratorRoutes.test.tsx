@@ -11,12 +11,22 @@ import {
   TaskId,
   TaskTypeId,
   ThreadId,
+  type OrchestrationGateKind,
 } from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import type { OrchestratorTask, Project, Thread } from "../../types";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
-import { AbandonedTaskBoardSection, TaskBoard } from "./OrchestratorRoutes";
+import {
+  AbandonedTaskBoardSection,
+  activeStageLabel,
+  formatElapsed,
+  needsYouReason,
+  needsYouReasonLabel,
+  partitionBoardTasks,
+  TaskBoard,
+  type BoardTaskEntry,
+} from "./TaskBoard";
 import {
   buildPmModelSelectionUpdateCommand,
   buildPmUserInputRespondCommand,
@@ -154,6 +164,137 @@ describe("TaskBoard", () => {
 
     expect(markup).not.toContain("Abandoned");
     expect(markup).not.toContain("Abandoned task count");
+  });
+
+  it("surfaces a blocked task in the Needs you section, not in Active", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[
+          makeBoardTask("task-blocked", "blocked", "Blocked task"),
+          makeBoardTask("task-working", "working", "Working task"),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Needs you");
+    expect(markup).toContain("Blocked task");
+    expect(markup).toContain(">Blocked</span>");
+    expect(markup).toContain("Active");
+    expect(markup).toContain("Working task");
+    // Header badge counts needs-you (1) + active (1).
+    expect(markup).toContain('aria-label="Board task count">2</span>');
+  });
+
+  it("omits the Needs you section when nothing needs the human", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[makeBoardTask("task-working", "working", "Working task")]}
+      />,
+    );
+
+    expect(markup).not.toContain("Needs you");
+  });
+
+  it("renders a draft task as Starting… in the Active section", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[makeBoardTask("task-draft", "draft", "Fresh draft task")]}
+      />,
+    );
+
+    expect(markup).toContain("Starting…");
+    expect(markup).toContain("Fresh draft task");
+  });
+
+  it("renders landed tasks collapsed with a count and excludes them from the header badge", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[
+          makeBoardTask("task-working", "working", "Working task"),
+          makeBoardTask("task-landed-1", "landed", "Landed task one"),
+          makeBoardTask("task-landed-2", "landed", "Landed task two"),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Landed");
+    expect(markup).toMatch(/aria-label="Landed task count"[^>]*>2<\/span>/);
+    // Collapsed by default: landed task titles are not rendered.
+    expect(markup).not.toContain("Landed task one");
+    expect(markup).not.toContain("Landed task two");
+    // Header badge counts only needs-you + active (the single working task).
+    expect(markup).toContain('aria-label="Board task count">1</span>');
+  });
+});
+
+describe("TaskBoard bucketing helpers", () => {
+  function entry(
+    status: OrchestratorTask["status"],
+    gates: readonly OrchestrationGateKind[] = [],
+  ): BoardTaskEntry {
+    return {
+      task: makeBoardTask(`task-${status}-${gates.join("-")}`, status, "title"),
+      pendingGateKinds: gates,
+    };
+  }
+
+  it("routes tasks with a pending gate or blocked status into Needs you", () => {
+    const partition = partitionBoardTasks([
+      entry("planning", ["plan"]),
+      entry("working"),
+      entry("blocked"),
+      entry("blocked-on-quota"),
+      entry("landed"),
+      entry("abandoned"),
+    ]);
+
+    expect(partition.needsYou.map(({ reason }) => reason)).toEqual([
+      { kind: "gate", gate: "plan" },
+      { kind: "blocked" },
+      { kind: "quota" },
+    ]);
+    expect(partition.active).toHaveLength(1);
+    expect(partition.active[0]?.status).toBe("working");
+    expect(partition.landed).toHaveLength(1);
+    expect(partition.abandoned).toHaveLength(1);
+  });
+
+  it("prefers a pending gate reason over a blocked status", () => {
+    expect(needsYouReason(entry("blocked", ["land"]))).toEqual({ kind: "gate", gate: "land" });
+  });
+
+  it("labels needs-you reasons", () => {
+    expect(needsYouReasonLabel({ kind: "gate", gate: "plan" })).toBe("Awaiting plan approval");
+    expect(needsYouReasonLabel({ kind: "gate", gate: "land" })).toBe("Awaiting land approval");
+    expect(needsYouReasonLabel({ kind: "blocked" })).toBe("Blocked");
+    expect(needsYouReasonLabel({ kind: "quota" })).toBe("Quota");
+  });
+
+  it("maps active statuses to stage-role labels", () => {
+    expect(activeStageLabel("draft")).toBe("Starting…");
+    expect(activeStageLabel("classified")).toBe("Starting…");
+    expect(activeStageLabel("planning")).toBe("Planning");
+    expect(activeStageLabel("plan-review")).toBe("Plan review");
+    expect(activeStageLabel("reviewing")).toBe("Reviewing");
+    expect(activeStageLabel("working")).toBe("Working");
+    expect(activeStageLabel("review")).toBe("Review");
+    expect(activeStageLabel("verifying")).toBe("Verifying");
+  });
+
+  it("formats elapsed time coarsely", () => {
+    const start = "2026-06-14T00:00:00.000Z";
+    expect(formatElapsed(start, Date.parse("2026-06-14T00:00:42.000Z"))).toBe("42s");
+    expect(formatElapsed(start, Date.parse("2026-06-14T00:03:05.000Z"))).toBe("3m 5s");
+    expect(formatElapsed(start, Date.parse("2026-06-14T02:07:00.000Z"))).toBe("2h 7m");
+    expect(formatElapsed("not-a-date", Date.now())).toBeNull();
   });
 });
 

@@ -3016,6 +3016,15 @@ export function selectSidebarThreadSummaryByRef(
     : undefined;
 }
 
+export function selectThreadShellByRef(
+  state: AppState,
+  ref: ScopedThreadRef | null | undefined,
+): ThreadShell | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).threadShellById[ref.threadId]
+    : undefined;
+}
+
 export function selectThreadIdsByProjectRef(
   state: AppState,
   ref: ScopedProjectRef | null | undefined,
