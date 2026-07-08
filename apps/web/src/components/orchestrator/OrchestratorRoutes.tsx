@@ -41,7 +41,7 @@ import { useShallow } from "zustand/react/shallow";
 import { DiffPanelLoadingState, DiffPanelShell } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { MessagesTimeline } from "../chat/MessagesTimeline";
+import { MessagesTimeline, type PmTaskChipContext } from "../chat/MessagesTimeline";
 import { ProposedPlanCard } from "../chat/ProposedPlanCard";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -290,6 +290,26 @@ function PmConversation({
   threadRef: ScopedThreadRef;
 }) {
   const [isClearing, setIsClearing] = useState(false);
+  const projectRef = useMemo(
+    () => scopeProjectRef(environmentId, projectId),
+    [environmentId, projectId],
+  );
+  const tasks = useStore(useShallow((state) => selectTasksForProjectRef(state, projectRef)));
+  const taskTitleById = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const task of tasks) {
+      byId.set(task.id, task.title);
+    }
+    return byId;
+  }, [tasks]);
+  const pmTaskChip = useMemo<PmTaskChipContext>(
+    () => ({
+      environmentId,
+      projectId,
+      resolveTaskTitle: (taskId: string) => taskTitleById.get(taskId),
+    }),
+    [environmentId, projectId, taskTitleById],
+  );
   const clearPmChat = useCallback(async () => {
     const api = readEnvironmentApi(environmentId);
     if (!api || isClearing) {
@@ -328,6 +348,8 @@ function PmConversation({
       <SharedThreadTimeline
         cwd={project?.cwd}
         emptyMessage="PM conversation will appear here."
+        emptyState={<PmChatEmptyState />}
+        pmTaskChip={pmTaskChip}
         thread={thread}
         threadRef={threadRef}
         workspaceRoot={project?.cwd}
@@ -342,15 +364,38 @@ function PmConversation({
   );
 }
 
+export function PmChatEmptyState() {
+  return (
+    <div className="mx-auto flex max-w-xs flex-col items-center gap-3 px-6 text-center">
+      <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40 text-muted-foreground">
+        <WorkflowIcon className="size-5" aria-hidden />
+      </span>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">
+          Tell the project manager what you want built.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          It plans the work and delegates to worker agents — the tasks it creates show up on the
+          board to the right.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SharedThreadTimeline({
   cwd,
   emptyMessage,
+  emptyState,
+  pmTaskChip,
   thread,
   threadRef,
   workspaceRoot,
 }: {
   cwd: string | undefined;
   emptyMessage: string;
+  emptyState?: ReactNode;
+  pmTaskChip?: PmTaskChipContext;
   thread: Thread | undefined;
   threadRef: ScopedThreadRef;
   workspaceRoot: string | undefined;
@@ -408,6 +453,9 @@ function SharedThreadTimeline({
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
   const activeTurnInProgress = thread?.latestTurn?.state === "running";
+  const resolvedEmptyState = emptyState ?? (
+    <p className="px-6 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+  );
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -416,6 +464,7 @@ function SharedThreadTimeline({
         activeThreadEnvironmentId={threadRef.environmentId}
         activeTurnInProgress={activeTurnInProgress}
         activeTurnStartedAt={thread?.latestTurn?.startedAt ?? null}
+        emptyState={resolvedEmptyState}
         isRevertingCheckpoint={false}
         isWorking={activeTurnInProgress}
         latestTurn={thread?.latestTurn ?? null}
@@ -425,6 +474,7 @@ function SharedThreadTimeline({
         onIsAtEndChange={() => {}}
         onOpenTurnDiff={() => {}}
         onRevertUserMessage={() => {}}
+        {...(pmTaskChip ? { pmTaskChip } : {})}
         resolvedTheme={resolvedTheme}
         revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
         routeThreadKey={scopedThreadKey(threadRef)}
@@ -434,11 +484,6 @@ function SharedThreadTimeline({
         turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
         workspaceRoot={workspaceRoot}
       />
-      {timelineEntries.length === 0 ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-muted-foreground">
-          {emptyMessage}
-        </div>
-      ) : null}
     </div>
   );
 }

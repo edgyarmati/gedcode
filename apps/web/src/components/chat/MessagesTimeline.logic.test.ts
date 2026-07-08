@@ -267,6 +267,79 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRows[1]?.showAssistantCopyButton).toBe(true);
   });
 
+  it("emits a PM handoff work entry as a system-marker row, not a work cluster or bubble", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-1" as never,
+            role: "user",
+            text: "Ship the feature",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "handoff-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "handoff-1",
+            createdAt: "2026-01-01T00:00:05Z",
+            label: "PM handed off (transcript)",
+            tone: "info",
+            sourceActivityKind: "pm.handoff",
+            pmHandoffMode: "transcript",
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["message", "system-marker"]);
+    expect(rows.some((row) => row.kind === "work")).toBe(false);
+  });
+
+  it("breaks the work cluster around a system marker", () => {
+    const workEntry = (id: string) => ({
+      id: `${id}-entry`,
+      kind: "work" as const,
+      createdAt: "2026-01-01T00:00:00Z",
+      entry: { id, createdAt: "2026-01-01T00:00:00Z", label: id, tone: "tool" as const },
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        workEntry("tool-a"),
+        {
+          id: "marker-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "marker",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "PM handed off (transcript)",
+            tone: "info",
+            sourceActivityKind: "pm.handoff",
+          },
+        },
+        workEntry("tool-b"),
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["work", "system-marker", "work"]);
+  });
+
   it("marks only the active assistant turn as streaming for copy controls", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

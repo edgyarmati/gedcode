@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Orchestrator PM chat polish. PM lifecycle events now render as centered system-divider rows instead of generic work-log clusters — "PM handed off — <mode> · <time>" for harness handoffs, and quiet destructive-tinted dividers for PM turn failures and quota pauses. PM tool activities that genuinely carry a task id (createTask, handoffWorker, steerStage, inspectStage, cancelTask, …) now show a compact clickable task chip (task title when known, short id otherwise) linking straight to the task view. A fresh PM chat shows a proper empty state explaining what the PM is for and that its tasks appear on the board.
 - UI: The Orchestrator task board is reorganized by concern instead of one section per status. A "Needs you" section surfaces tasks with a pending approval gate or a blocked/quota status (each with a reason chip); a single "Active" section holds every other in-progress task with a stage-role badge, a live pulse and elapsed time when its worker turn is running, and the worker model when known; "Landed" and "Abandoned" are collapsed count sections at the bottom. The header count now reflects needs-you + active only, the per-card `orchestrator/<uuid>` branch slug moved to the card tooltip, and section casing is consistent Title case.
 - Fix: opening an orchestrator task now actually shows the task view (stage output, work log, gates) — the route never rendered before.
 - Fix: tasks in a verify stage no longer disappear from the task board.

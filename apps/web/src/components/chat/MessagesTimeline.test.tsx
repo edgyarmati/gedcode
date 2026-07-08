@@ -1,8 +1,23 @@
-import { EnvironmentId, MessageId } from "@t3tools/contracts";
-import { createRef, type ReactNode, type Ref } from "react";
+import { EnvironmentId, MessageId, ProjectId } from "@t3tools/contracts";
+import { createRef, type AnchorHTMLAttributes, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { LegendListRef } from "@legendapp/list/react";
+import type { PmTaskChipContext } from "./MessagesTimeline";
+
+type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
+  children?: ReactNode;
+  params?: Record<string, string>;
+  to?: string;
+};
+
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, params, to, ...props }: MockLinkProps) => (
+    <a href={to ?? "#"} data-task-id={params?.taskId} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
 vi.mock("@legendapp/list/react", async () => {
   const legendListTestId = "legend-list";
@@ -321,5 +336,118 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("lucide-x");
     expect(markup).toContain('aria-label="Tool call failed"');
+  });
+
+  it("renders a PM handoff activity as a system-divider row, not a work cluster", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "handoff-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "PM handed off (transcript)",
+              tone: "info",
+              sourceActivityKind: "pm.handoff",
+              pmHandoffMode: "transcript",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-system-marker="pm.handoff"');
+    expect(markup).toContain("PM handed off — transcript");
+    expect(markup).not.toContain("work log");
+  });
+
+  it("renders a navigable task chip for a PM tool activity that carries a task id", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const pmTaskChip: PmTaskChipContext = {
+      environmentId: ACTIVE_THREAD_ENVIRONMENT_ID,
+      projectId: ProjectId.make("project-1"),
+      resolveTaskTitle: (taskId) => (taskId === "task-123" ? "Ship the feature" : undefined),
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        pmTaskChip={pmTaskChip}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "PM tool createTask completed",
+              tone: "tool",
+              sourceActivityKind: "tool.completed",
+              taskId: "task-123",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('data-task-chip="task-123"');
+    expect(markup).toContain('data-task-id="task-123"');
+    expect(markup).toContain("/orch/$environmentId/$projectId/tasks/$taskId");
+    expect(markup).toContain("Ship the feature");
+  });
+
+  it("renders no task chip when the activity carries no task id", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const pmTaskChip: PmTaskChipContext = {
+      environmentId: ACTIVE_THREAD_ENVIRONMENT_ID,
+      projectId: ProjectId.make("project-1"),
+      resolveTaskTitle: () => undefined,
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        pmTaskChip={pmTaskChip}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "PM tool getTaskLedger completed",
+              tone: "tool",
+              sourceActivityKind: "tool.completed",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).not.toContain("data-task-chip");
+  });
+
+  it("renders the empty-state slot only when the timeline has no rows", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const emptyState = <div>PM empty state marker</div>;
+
+    const emptyMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} emptyState={emptyState} timelineEntries={[]} />,
+    );
+    expect(emptyMarkup).toContain("PM empty state marker");
+
+    const populatedMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        emptyState={emptyState}
+        timelineEntries={[buildUserTimelineEntry("Hello there")]}
+      />,
+    );
+    expect(populatedMarkup).not.toContain("PM empty state marker");
   });
 });

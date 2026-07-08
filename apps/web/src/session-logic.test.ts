@@ -18,6 +18,7 @@ import {
   findSidebarProposedPlan,
   formatDuration,
   hasActionableProposedPlan,
+  isPmSystemMarkerEntry,
   isLatestTurnSettled,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
@@ -1646,5 +1647,184 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:11:00.000Z");
+  });
+});
+
+describe("PM lifecycle markers", () => {
+  it("carries the handoff mode and flags pm.handoff as a system marker", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-handoff",
+        kind: "pm.handoff",
+        tone: "info",
+        summary: "PM handed off (transcript)",
+        payload: { mode: "transcript", providerInstanceId: "claude-default" },
+      }),
+    ]);
+
+    expect(entry?.sourceActivityKind).toBe("pm.handoff");
+    expect(entry?.pmHandoffMode).toBe("transcript");
+    expect(entry ? isPmSystemMarkerEntry(entry) : false).toBe(true);
+  });
+
+  it("treats pm.turn.failed and quota.paused as system markers, but not ordinary tools", () => {
+    expect(isPmSystemMarkerEntry({ sourceActivityKind: "pm.turn.failed" })).toBe(true);
+    expect(isPmSystemMarkerEntry({ sourceActivityKind: "quota.paused" })).toBe(true);
+    expect(isPmSystemMarkerEntry({ sourceActivityKind: "tool.completed" })).toBe(false);
+    expect(isPmSystemMarkerEntry({})).toBe(false);
+  });
+});
+
+describe("PM task chip derivation", () => {
+  it("extracts the task id from a PM tool activity's structured details", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-create-task",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool createTask completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "createTask",
+          title: "createTask",
+          status: "completed",
+          details: { taskId: "task-123", sequence: 1 },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBe("task-123");
+  });
+
+  it("extracts the nested task id from an inspectStage activity", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-inspect-stage",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool inspectStage completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "inspectStage",
+          title: "inspectStage",
+          status: "completed",
+          details: { task: { id: "task-456" }, stageDigest: null },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBe("task-456");
+  });
+
+  it("extracts the task id from the structured tool input (steer/inspect/cancel shape)", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-steer-stage",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool steerStage completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "steerStage",
+          title: "steerStage",
+          status: "completed",
+          input: { taskId: "task-789", message: "keep going" },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBe("task-789");
+  });
+
+  it("extracts the task id from a Claude-driver tool_result details block (createTask shape)", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-create-task-claude",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool createTask completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "createTask",
+          title: "createTask",
+          status: "completed",
+          input: { projectId: "project-1", title: "Ship it" },
+          details: {
+            tool_use_id: "toolu_01",
+            type: "tool_result",
+            content: '{"taskId":"4b1e4e03-777c-4a58-b65c-dd23b0c5098a","sequence":8541}',
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBe("4b1e4e03-777c-4a58-b65c-dd23b0c5098a");
+  });
+
+  it("extracts the task id from an MCP structuredContent wrapper", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-create-task-mcp",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool createTask completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "createTask",
+          title: "createTask",
+          status: "completed",
+          details: {
+            content: [{ type: "text", text: "Created task task-abc." }],
+            structuredContent: { taskId: "task-abc", sequence: 12 },
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBe("task-abc");
+  });
+
+  it("does not extract a task id from non-JSON result prose", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-prose-result",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool createTask completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "createTask",
+          title: "createTask",
+          status: "completed",
+          details: {
+            tool_use_id: "toolu_02",
+            type: "tool_result",
+            content: "Created task task-999.",
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBeUndefined();
+  });
+
+  it("leaves taskId undefined when the activity carries no task id", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "pm-ledger",
+        kind: "tool.completed",
+        tone: "tool",
+        summary: "PM tool getTaskLedger completed",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolName: "getTaskLedger",
+          title: "getTaskLedger",
+          status: "completed",
+          details: { projectId: "project-1", tasks: [] },
+        },
+      }),
+    ]);
+
+    expect(entry?.taskId).toBeUndefined();
   });
 });

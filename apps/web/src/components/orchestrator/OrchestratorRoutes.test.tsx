@@ -35,6 +35,7 @@ import {
   runPmHarnessSwitchAction,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
+import { PmChatEmptyState } from "./OrchestratorRoutes";
 
 type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children?: ReactNode;
@@ -295,6 +296,15 @@ describe("TaskBoard bucketing helpers", () => {
     expect(formatElapsed(start, Date.parse("2026-06-14T00:03:05.000Z"))).toBe("3m 5s");
     expect(formatElapsed(start, Date.parse("2026-06-14T02:07:00.000Z"))).toBe("2h 7m");
     expect(formatElapsed("not-a-date", Date.now())).toBeNull();
+  });
+});
+
+describe("PmChatEmptyState", () => {
+  it("explains the PM's purpose and points to the task board", () => {
+    const markup = renderToStaticMarkup(<PmChatEmptyState />);
+
+    expect(markup).toContain("Tell the project manager what you want built.");
+    expect(markup).toContain("board to the right");
   });
 });
 

@@ -1,5 +1,10 @@
 import * as Equal from "effect/Equal";
-import { formatDuration, type TimelineEntry, type WorkLogEntry } from "../../session-logic";
+import {
+  formatDuration,
+  isPmSystemMarkerEntry,
+  type TimelineEntry,
+  type WorkLogEntry,
+} from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
 
@@ -30,6 +35,12 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       groupedEntries: WorkLogEntry[];
+    }
+  | {
+      kind: "system-marker";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
     }
   | {
       kind: "turn-fold";
@@ -308,6 +319,18 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
+      // PM lifecycle markers (handoff / turn-failed / quota-paused) render as
+      // their own system-divider row, never folded into the tool/work cluster.
+      if (isPmSystemMarkerEntry(timelineEntry.entry)) {
+        nextRows.push({
+          kind: "system-marker",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          entry: timelineEntry.entry,
+        });
+        continue;
+      }
+
       const groupedEntries = [timelineEntry.entry];
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
@@ -316,7 +339,8 @@ export function deriveMessagesTimelineRows(input: {
           !nextEntry ||
           nextEntry.kind !== "work" ||
           collapsedEntryIds.has(nextEntry.id) ||
-          foldsByAnchorEntryId.has(nextEntry.id)
+          foldsByAnchorEntryId.has(nextEntry.id) ||
+          isPmSystemMarkerEntry(nextEntry.entry)
         ) {
           break;
         }
@@ -428,6 +452,11 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);
+
+    case "system-marker": {
+      const bm = b as typeof a;
+      return a.createdAt === bm.createdAt && a.entry === bm.entry;
+    }
 
     case "message": {
       const bm = b as typeof a;
