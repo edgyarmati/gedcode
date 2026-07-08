@@ -764,6 +764,18 @@ paired cross-links "Open in Orchestrator"/"Open in Chat" per project. Sequencing
 UX1 board reshape (Opus) → UX3 PM chat (Opus) → UX7+sidebar (Opus) → UX2 task detail (Opus) → UX4 landing +
 UX6 consistency (Opus). Merge to main after user satisfaction.
 
+**UX PASS PROGRESS:** WP-UX0 `108b30bcf` (task route renders + verifying visible) · WP-UX1 `b619a75c1`
+(concern-bucket board, Opus agent, both themes verified) · WP-UX3 `854552f61` (PM chat system markers /
+task chips from structured payloads only / empty state, Opus agent — survived a session-limit kill +
+resume). NEXT: WP-UX7 (dispatched) → UX2 → UX4 → UX6. NOTE: Opus agents twice hit account session limits
+mid-run; agents are resumable via SendMessage with context intact — preserve the tree, never restart the task.
+
+**IDEA BACKLOG (user ↔ agent side-chat, 2026-07-08): TDD-sliced epics via the PM** — tier 1: PM prompt
+extension (grill-style slice interrogation w/ interactive questions, one task per slice, TDD briefing inlined
+in handoffWorker instructions / .claude/skills/tdd in target repo) — prompt-only, no code; tier 2: `tdd-feature`
+playbook via defaultPlaybookLoader/playbookVersion (~1 WP); tier 3: first-class epics (parent task, ordered
+slices, auto-advance on land, board grouping) — Phase-3-sized. Start tier 1 when user wants it.
+
 - **DEFERRED follow-ups (remaining):**
   (+decider/projector/pipeline/snapshotQuery/ProjectionThreads/migration/ws.ts:767/PmEventProjection:149/store)
   — ripples into T1+T2 files, must run AFTER batch lands. W6-B delete pi-only files + contracts piProvider +
