@@ -793,6 +793,16 @@ Orchestrator + new hero screenshot (assets/screenshot/orchestrator.png, workspac
 NOTE: patched-tsgo flake bit the first dry-run (spurious protocol.ts type errors in effect-codex-app-server —
 NOT module-resolution flavor this time; 3x full typecheck clean confirmed spurious); full dry-run then passed
 end-to-end incl. release:smoke. Watch the run; if CI preflight flakes on tsgo, re-dispatch.
+**RELEASE OUTCOME:** first run 29004272277 failed preflight on a FLAKY effect-acp client.test.ts 5s timeout
+(CI-runner timing; passes locally) — re-ran (gh run rerun); preflight + all 3 desktop builds + Publish
+succeeded → **v0.2.0 PUBLISHED, latest, not-draft/pre, installers live (dmg/zip/exe/AppImage + update
+manifests).** BUT the "Finalize release" job then FAILED: its version-bump-commit step (release.yml lines
+482/493/501) hardcoded packages/ged-workflow/package.json (deleted in W7) in oxfmt/git diff/git add → under
+bash -e the missing pathspec failed → main was never bumped to 0.2.0. FIXED: (1) removed the 3 stale
+ged-workflow refs from release.yml (`6b79f17fb`); (2) manually completed the finalize — ran
+update-release-package-versions.ts 0.2.0 + oxfmt, committed `chore(release): prepare v0.2.0` (`fc8c11311`),
+pushed main. main package.json now 0.2.0; future finalize won't break. (effect-acp 5s timeout flake could bite
+future releases — bump-timeout is a candidate Codex fix if it recurs.)
 
 **UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix + add-project all shipped, UX2/UX4 skipped by choice. NEXT: user looks
 over the live surface; if satisfied → fast-forward main (main is 0-own-commits behind feat/orchestrator-mode)
