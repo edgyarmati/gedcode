@@ -57,6 +57,7 @@ import Migration0041 from "./Migrations/041_ProjectionStageHistoryAndRoleOverrid
 import Migration0042 from "./Migrations/042_ProjectionTaskPrUrl.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
 import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
+import Migration0045 from "./Migrations/045_BackfillProjectionProjectOrchestratorConfig.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -113,6 +114,7 @@ export const migrationEntries = [
   [42, "ProjectionTaskPrUrl", Migration0042],
   [43, "ProjectionThreadLastClearedSequence", Migration0043],
   [44, "ProjectionThreadPendingPmHandoff", Migration0044],
+  [45, "BackfillProjectionProjectOrchestratorConfig", Migration0045],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

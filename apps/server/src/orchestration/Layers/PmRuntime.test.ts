@@ -1112,6 +1112,68 @@ describe("PmRuntime", () => {
     ),
   );
 
+  it.effect("starts a Codex PM from the projected config after a PM model update", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const engine = yield* OrchestrationEngineService;
+        const snapshotQuery = yield* ProjectionSnapshotQuery;
+        const captured: DriverPmAdapterOptions[] = [];
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: makeCapturingAdapter(captured),
+        });
+        const projectedProjectId = ProjectId.make("project-pm-projection-update");
+
+        yield* engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("cmd-pm-projection-create"),
+          projectId: projectedProjectId,
+          title: "PM Projection Update",
+          workspaceRoot: "/tmp/pm-projection-update",
+          defaultModelSelection: {
+            instanceId: codexInstanceId,
+            model: "gpt-5-codex",
+          },
+          orchestratorConfig: {
+            enabled: true,
+          },
+          createdAt: now,
+        });
+
+        yield* engine.dispatch({
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-pm-projection-select"),
+          projectId: projectedProjectId,
+          orchestratorConfig: {
+            enabled: true,
+            pmModelSelection: pmSelection(codexInstanceId, "gpt-5.5"),
+          },
+        });
+
+        const snapshot = yield* snapshotQuery.getSnapshot();
+        const projectedProject = snapshot.projects.find((entry) => entry.id === projectedProjectId);
+        if (projectedProject === undefined) {
+          assert.fail("expected projected project to exist");
+        }
+        assert.deepStrictEqual(projectedProject.orchestratorConfig, {
+          enabled: true,
+          pmModelSelection: {
+            instanceId: codexInstanceId,
+            model: "gpt-5.5",
+          },
+        });
+
+        yield* factory.getOrCreate(projectedProject);
+
+        assert.strictEqual(captured.length, 1);
+        assert.strictEqual(captured[0]?.driverKind, codexDriver);
+        assert.deepStrictEqual(captured[0]?.modelSelection, {
+          instanceId: codexInstanceId,
+          model: "gpt-5.5",
+        });
+      }).pipe(Effect.provide(makeFactoryCaptureLayer({ liveProjection: true }))),
+    ),
+  );
+
   it.effect("leaves a missing PM model selection unconfigured without creating an adapter", () =>
     Effect.scoped(
       Effect.gen(function* () {
