@@ -802,6 +802,17 @@ sequential). Parallel-safe NOW: the 2 pre-existing browser-test failures (ChatVi
 icon URL) — dispatched to Codex file-disjoint from UX7 (must avoid Sidebar/store/uiStateStore/orchestrator/*);
 green browser suite de-risks release.
 
+**IDEA BACKLOG — PM SESSION HISTORY RECOVERY (user, 2026-07-09):** Cleared PM chats ALWAYS persist — verified:
+thread.clear emits only a `thread.cleared` boundary marker + resets the harness resume cursor; the event log is
+strictly append-only (no DELETE/prune/GC/vacuum anywhere). So pre-clear messages/activities live in
+orchestration_events indefinitely (as long as the local ~/.gedcode DB survives; not remote-backed). Feasible
+recovery feature: each thread.cleared marker delimits a past "session" segment (by lastClearedSequence); the
+WP-PMHANDOFF transcript builder (pm/pmHandoff.ts) already renders PM events into a transcript. THE ONE NEW
+PIECE: a server read path that deliberately reads events BEFORE a clear boundary (current APIs intentionally
+CLAMP at it — WP-CLRB — so this is an opt-in inversion, must be explicit). Two flavors: (1) read-only history
+view (list past sessions by date + show transcript), (2) restore-into-live-session (reuse handoff
+transcript-injection to re-seed a PM). Decision: BACKLOG, ship first. Not started.
+
 **IDEA BACKLOG (user ↔ agent side-chat, 2026-07-08): TDD-sliced epics via the PM** — tier 1: PM prompt
 extension (grill-style slice interrogation w/ interactive questions, one task per slice, TDD briefing inlined
 in handoffWorker instructions / .claude/skills/tdd in target repo) — prompt-only, no code; tier 2: `tdd-feature`
