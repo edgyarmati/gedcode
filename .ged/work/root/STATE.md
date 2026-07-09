@@ -804,6 +804,17 @@ update-release-package-versions.ts 0.2.0 + oxfmt, committed `chore(release): pre
 pushed main. main package.json now 0.2.0; future finalize won't break. (effect-acp 5s timeout flake could bite
 future releases — bump-timeout is a candidate Codex fix if it recurs.)
 
+**0.2.0 PM-RUNTIME BUG FIXED `92a9871b0`** (2026-07-09, Codex, on main) — packaged 0.2.0 PM failed to start
+("Failed to start PM runtime"). Root cause (Codex, precise): migration 037 added
+projection_projects.orchestrator_config_json DEFAULT '{}' with NO backfill → pre-037 projects kept empty
+projected config while the event log had enabled:true → resolvePmHarnessConfig's enabled-guard refused startup
+(any harness, not codex-specific). Fix: migration 045 backfills enabled-missing rows by replaying project.
+created/meta-updated events in order + shallow-merge (preserves enabled:true over later PM-only updates); repairs
+data, doesn't weaken the guard. Tests: migration repro + codex-PM-starts-after-PM-model-update. Committed+pushed
+to main. NEEDS 0.2.1 patch release (./release.sh stable patch) to ship the fix — awaiting user go. Separate
+rebrand gap noted (not fixed): packaged backend home = ~/.t3/userdata (upstream t3 path) not ~/.gedcode.
+Diagnosis done by PM (me) from ~/.t3/userdata logs+DB; fix delegated to Codex to conserve quota.
+
 **UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix + add-project all shipped, UX2/UX4 skipped by choice. NEXT: user looks
 over the live surface; if satisfied → fast-forward main (main is 0-own-commits behind feat/orchestrator-mode)
 → ship. Then optional: opportunistic upstream ports, fork detach.
