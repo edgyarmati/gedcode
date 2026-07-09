@@ -770,6 +770,16 @@ task chips from structured payloads only / empty state, Opus agent — survived 
 resume). NEXT: WP-UX7 (dispatched) → UX2 → UX4 → UX6. NOTE: Opus agents twice hit account session limits
 mid-run; agents are resumable via SendMessage with context intact — preserve the tree, never restart the task.
 
+**DISPATCH POLICY REFINED (user, 2026-07-09):** decompose every remaining WP by discipline — non-visual
+slices (routing/selectors/state/data/server-contract/logic/tests/bugfix) → CODEX; pure visual/design →
+Opus. Memory: ui-work-goes-to-opus. Remaining-WP carve-up: WP-UX2 = Codex(multi-stage history picker
+routing/data) + Opus(task-detail styling); WP-UX4 = Codex(per-project orchestration-status selector,
+reuses UX7's orchestratorNav.logic counts) + Opus(landing card visuals); WP-UX6 = Opus-only (dark-mode/
+consistency, no logic slice). All three wait on WP-UX7 (holds shared Sidebar/orchestrator/store files —
+sequential). Parallel-safe NOW: the 2 pre-existing browser-test failures (ChatView Shift+Tab, MessagesTimeline
+icon URL) — dispatched to Codex file-disjoint from UX7 (must avoid Sidebar/store/uiStateStore/orchestrator/*);
+green browser suite de-risks release.
+
 **IDEA BACKLOG (user ↔ agent side-chat, 2026-07-08): TDD-sliced epics via the PM** — tier 1: PM prompt
 extension (grill-style slice interrogation w/ interactive questions, one task per slice, TDD briefing inlined
 in handoffWorker instructions / .claude/skills/tdd in target repo) — prompt-only, no code; tier 2: `tdd-feature`
