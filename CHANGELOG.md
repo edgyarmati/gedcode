@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.2.0 - 2026-07-09
+
 - UI: The orchestrator can now add a project from the landing header and the orchestrator sidebar, reusing the same add-project flow as chat.
 - Fix/UI: Run a dark-mode and spacing consistency pass across orchestrator surfaces; the update notification no longer overlaps the task board.
 - Fix/UI: Markdown file tags with line suffixes now derive their file icon from the unsuffixed path, so links like `package.json:25` show the npm package icon instead of the generic file icon.

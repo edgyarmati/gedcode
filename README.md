@@ -1,20 +1,18 @@
 # GedCode
 
-GedCode is a desktop and web workspace for running coding agents through the Ged workflow: clarify the request, plan the change, implement with visible progress, verify the result, and commit or continue from the same place. The current release supports Codex, Claude, and OpenCode provider sessions.
+GedCode is a desktop and web workspace for running coding agents. Its centerpiece is the **Orchestrator**: a per-project project-manager (PM) agent that plans work and delegates it to worker agents through a tracked task pipeline — so long-running agentic work stays visible, structured, and recoverable instead of scattered across loose chat threads. It also ships a plain chat surface for direct agent sessions. GedCode supports Codex, Claude, and OpenCode provider sessions.
 
-![GedCode workspace screenshot](./assets/screenshot/workspace.png)
+![GedCode Orchestrator screenshot](./assets/screenshot/orchestrator.png)
 
-## Ged workflow
+## Orchestrator
 
-The Ged workflow is the reason GedCode exists. It keeps agentic coding work on a predictable path instead of leaving every task as a loose chat thread:
+The Orchestrator is the reason GedCode exists. Every participant is an agent, and the human stays in control through conversation and approval gates:
 
-- clarify scope and success criteria before changing files
-- plan non-trivial work in tracked `.ged/` artifacts
-- implement focused slices with visible session state
-- verify with recorded evidence before treating work as done
-- commit or continue with the next bounded change
+- **The PM** is a per-project agent (running on Claude or Codex — your pick) that you chat with. It plans and delegates but never writes code itself. You can switch its harness mid-project and hand off the conversation to the new one.
+- **Workers** are agents the PM spawns to do the actual work. Each runs in its own isolated git worktree with full tool access, and the PM steers and polls them while they run.
+- **Tasks** move through a fixed pipeline — `classify → plan → review → work → verify` — surfaced on a task board organized by what needs your attention. `plan` and `land` are human approval gates.
 
-Read the public workflow guide: [docs/ged-workflow.md](./docs/ged-workflow.md).
+The result: you describe what you want, the PM breaks it into tasks and drives workers through the pipeline, and you approve the moments that matter. The same clarify → plan → implement → verify → commit discipline that GedCode has always been about, now run by an agent you supervise.
 
 ## Installation
 
@@ -36,7 +34,6 @@ GedCode is early and moving quickly. Expect bugs, but the direction is clear: ma
 
 Useful docs:
 
-- Ged workflow: [docs/ged-workflow.md](./docs/ged-workflow.md)
 - Source control integrations: [docs/source-control-providers.md](./docs/source-control-providers.md)
 - Observability guide: [docs/observability.md](./docs/observability.md)
 - Release checklist: [docs/release.md](./docs/release.md)
