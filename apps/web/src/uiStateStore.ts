@@ -1,3 +1,4 @@
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 
@@ -23,6 +24,13 @@ export interface PersistedUiState {
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   orchestratorMode?: boolean;
   orchestratorBoardCollapsed?: boolean;
+  lastOrchestratorProject?: { environmentId: string; projectId: string } | null;
+}
+
+/** The orchestrator project workspace the user most recently visited. */
+export interface LastOrchestratorProject {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
 }
 
 export interface UiProjectState {
@@ -42,6 +50,7 @@ export interface UiEndpointState {
 export interface UiModeState {
   orchestratorMode: boolean;
   orchestratorBoardCollapsed: boolean;
+  lastOrchestratorProject: LastOrchestratorProject | null;
 }
 
 export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiModeState {}
@@ -67,6 +76,7 @@ const initialState: UiState = {
   defaultAdvertisedEndpointKey: null,
   orchestratorMode: false,
   orchestratorBoardCollapsed: false,
+  lastOrchestratorProject: null,
 };
 
 const persistedCollapsedProjectCwds = new Set<string>();
@@ -114,10 +124,32 @@ function readPersistedState(): UiState {
       ),
       orchestratorMode: parsed.orchestratorMode === true,
       orchestratorBoardCollapsed: parsed.orchestratorBoardCollapsed === true,
+      lastOrchestratorProject: sanitizeLastOrchestratorProject(parsed.lastOrchestratorProject),
     };
   } catch {
     return initialState;
   }
+}
+
+function sanitizeLastOrchestratorProject(
+  value: PersistedUiState["lastOrchestratorProject"],
+): LastOrchestratorProject | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const { environmentId, projectId } = value;
+  if (
+    typeof environmentId === "string" &&
+    environmentId.length > 0 &&
+    typeof projectId === "string" &&
+    projectId.length > 0
+  ) {
+    return {
+      environmentId: environmentId as EnvironmentId,
+      projectId: projectId as ProjectId,
+    };
+  }
+  return null;
 }
 
 function sanitizePersistedThreadChangedFilesExpanded(
@@ -208,6 +240,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpandedById,
         orchestratorMode: state.orchestratorMode,
         orchestratorBoardCollapsed: state.orchestratorBoardCollapsed,
+        lastOrchestratorProject: state.lastOrchestratorProject,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -589,6 +622,28 @@ export function setOrchestratorMode(state: UiState, enabled: boolean): UiState {
   };
 }
 
+export function setLastOrchestratorProject(
+  state: UiState,
+  ref: LastOrchestratorProject | null,
+): UiState {
+  const current = state.lastOrchestratorProject;
+  if (current === ref) {
+    return state;
+  }
+  if (
+    current &&
+    ref &&
+    current.environmentId === ref.environmentId &&
+    current.projectId === ref.projectId
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    lastOrchestratorProject: ref,
+  };
+}
+
 export function setOrchestratorBoardCollapsed(state: UiState, collapsed: boolean): UiState {
   if (state.orchestratorBoardCollapsed === collapsed) {
     return state;
@@ -676,6 +731,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setOrchestratorMode: (enabled: boolean) => void;
   setOrchestratorBoardCollapsed: (collapsed: boolean) => void;
+  setLastOrchestratorProject: (ref: LastOrchestratorProject | null) => void;
   toggleProject: (projectId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
   reorderProjects: (
@@ -700,6 +756,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setOrchestratorMode: (enabled) => set((state) => setOrchestratorMode(state, enabled)),
   setOrchestratorBoardCollapsed: (collapsed) =>
     set((state) => setOrchestratorBoardCollapsed(state, collapsed)),
+  setLastOrchestratorProject: (ref) => set((state) => setLastOrchestratorProject(state, ref)),
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
     set((state) => setProjectExpanded(state, projectId, expanded)),

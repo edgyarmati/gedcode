@@ -145,7 +145,7 @@ export function formatElapsed(startedAt: string, nowMs: number): string | null {
   return `${hours}h ${minutes % 60}m`;
 }
 
-function isStageRunning(summary: SidebarThreadSummary | undefined): boolean {
+export function isStageRunning(summary: SidebarThreadSummary | undefined): boolean {
   if (!summary) {
     return false;
   }

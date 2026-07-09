@@ -74,6 +74,7 @@ import {
   selectThreadByRef,
   useStore,
 } from "../store";
+import { isOrchestratorManagedThread } from "../lib/orchestratorThreads";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import {
@@ -123,6 +124,8 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { ProjectOrchestrationSettingsDialog } from "./orchestrator/ProjectOrchestrationSettingsDialog";
+import { OrchestratorSidebarNav } from "./orchestrator/OrchestratorSidebarNav";
+import { resolveOrchestratorLandingTarget } from "./orchestrator/orchestratorNav.logic";
 import {
   Menu,
   MenuGroup,
@@ -1059,7 +1062,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   // thread-list change).
   const sidebarThreadByKeyRef = useRef(sidebarThreadByKey);
   sidebarThreadByKeyRef.current = sidebarThreadByKey;
-  const projectThreads = sidebarThreads;
+  // Orchestrator-owned threads (worker stage threads on an `orchestrator/<uuid>`
+  // branch; the `pm:` PM chat) must not appear in the chat thread list — they
+  // are reached from the orchestrator workspace / task detail view. Detected
+  // from the thread shell alone, so this works in chat mode where orchestrator
+  // task data is not subscribed.
+  const projectThreads = useMemo(
+    () => sidebarThreads.filter((thread) => !isOrchestratorManagedThread(thread)),
+    [sidebarThreads],
+  );
   const projectExpanded = useUiStateStore(
     (state) => state.projectExpandedById[project.projectKey] ?? true,
   );
@@ -2094,10 +2105,27 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             </TooltipPopup>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <div className="pointer-events-none absolute top-1 right-1.5 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+        <div className="pointer-events-none absolute top-1 right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Link
+                  to="/orch/$environmentId/$projectId"
+                  params={{ environmentId: project.environmentId, projectId: project.id }}
+                  aria-label={`Open ${project.displayName} in Orchestrator`}
+                  data-testid="open-in-orchestrator-button"
+                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 hover:bg-secondary hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <WorkflowIcon className="size-3.5" />
+                </Link>
+              }
+            />
+            <TooltipPopup side="top">Open in Orchestrator</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
                 <button
                   type="button"
                   aria-label={`Create new thread in ${project.displayName}`}
@@ -2107,13 +2135,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 >
                   <SquarePenIcon className="size-3.5" />
                 </button>
-              </div>
-            }
-          />
-          <TooltipPopup side="top">
-            {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
-          </TooltipPopup>
-        </Tooltip>
+              }
+            />
+            <TooltipPopup side="top">
+              {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
+            </TooltipPopup>
+          </Tooltip>
+        </div>
       </div>
 
       <SidebarProjectThreadList
@@ -2538,6 +2566,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const { isMobile, setOpenMobile } = useSidebar();
   const orchestratorMode = useUiStateStore((state) => state.orchestratorMode);
   const setOrchestratorMode = useUiStateStore((state) => state.setOrchestratorMode);
+  const lastOrchestratorProject = useUiStateStore((state) => state.lastOrchestratorProject);
   const isOrchestratorRoute = pathname.startsWith("/orch");
   const showOrchestratorMode = orchestratorMode || isOrchestratorRoute;
   const handleModeClick = useCallback(() => {
@@ -2546,8 +2575,36 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     if (isMobile) {
       setOpenMobile(false);
     }
-    void navigate({ to: nextMode ? "/orch" : "/" });
-  }, [isMobile, navigate, setOpenMobile, setOrchestratorMode, showOrchestratorMode]);
+    if (!nextMode) {
+      void navigate({ to: "/" });
+      return;
+    }
+    // Return to the last-visited orchestrator workspace when it still exists;
+    // otherwise land on the project grid.
+    const target = resolveOrchestratorLandingTarget({
+      lastProject: lastOrchestratorProject,
+      projectExists: (ref) =>
+        selectProjectByRef(
+          useStore.getState(),
+          scopeProjectRef(ref.environmentId, ref.projectId),
+        ) !== undefined,
+    });
+    if (target) {
+      void navigate({
+        to: "/orch/$environmentId/$projectId",
+        params: { environmentId: target.environmentId, projectId: target.projectId },
+      });
+      return;
+    }
+    void navigate({ to: "/orch" });
+  }, [
+    isMobile,
+    lastOrchestratorProject,
+    navigate,
+    setOpenMobile,
+    setOrchestratorMode,
+    showOrchestratorMode,
+  ]);
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2894,7 +2951,8 @@ export default function Sidebar() {
   const pathname = useLocation({ select: (loc) => loc.pathname });
   const isOnSettings = pathname.startsWith("/settings");
   const orchestratorMode = useUiStateStore((store) => store.orchestratorMode);
-  const hideThreadLists = orchestratorMode || pathname.startsWith("/orch");
+  const orchestratorSurface = orchestratorMode || pathname.startsWith("/orch");
+  const hideThreadLists = orchestratorSurface;
   const sidebarThreadSortOrder = useSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useSettings((s) => s.sidebarProjectSortOrder);
   const sidebarProjectGroupingMode = useSettings((s) => s.sidebarProjectGroupingMode);
@@ -3003,11 +3061,20 @@ export default function Sidebar() {
     return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
   }, [routeThreadKey, sidebarThreadByKey, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
 
+  // Chat-mode thread list excludes orchestrator-owned threads: the PM chat
+  // (`pm:` prefix) and worker stage threads (on an `orchestrator/<uuid>`
+  // branch). They are reachable from the orchestrator workspace / task detail
+  // view instead. Filtering here keeps the rendered rows and the jump-key
+  // ordering derived below in lockstep.
+  const chatListThreads = useMemo(
+    () => sidebarThreads.filter((thread) => !isOrchestratorManagedThread(thread)),
+    [sidebarThreads],
+  );
   // Group threads by logical project key so all threads from grouped projects
   // are displayed together.
   const threadsByProjectKey = useMemo(() => {
     const next = new Map<string, SidebarThreadSummary[]>();
-    for (const thread of sidebarThreads) {
+    for (const thread of chatListThreads) {
       const physicalKey =
         projectPhysicalKeyByScopedRef.get(
           scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
@@ -3021,7 +3088,7 @@ export default function Sidebar() {
       }
     }
     return next;
-  }, [sidebarThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
+  }, [chatListThreads, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
   const getCurrentSidebarShortcutContext = useCallback(
     () => ({
       terminalFocus: isTerminalFocused(),
@@ -3135,8 +3202,8 @@ export default function Sidebar() {
   }, []);
 
   const visibleThreads = useMemo(
-    () => sidebarThreads.filter((thread) => thread.archivedAt === null),
-    [sidebarThreads],
+    () => chatListThreads.filter((thread) => thread.archivedAt === null),
+    [chatListThreads],
   );
   const sortedProjects = useMemo(() => {
     const sortableProjects = sidebarProjects.map((project) => ({
@@ -3472,6 +3539,12 @@ export default function Sidebar() {
 
       {isOnSettings ? (
         <SettingsSidebarNav pathname={pathname} />
+      ) : orchestratorSurface ? (
+        <>
+          <OrchestratorSidebarNav />
+          <SidebarSeparator />
+          <SidebarChromeFooter />
+        </>
       ) : (
         <>
           <SidebarProjectsContent

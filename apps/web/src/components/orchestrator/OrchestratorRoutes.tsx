@@ -15,13 +15,14 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   CheckIcon,
   CircleAlertIcon,
   ClockIcon,
   GitBranchIcon,
+  MessageSquareIcon,
   Trash2Icon,
   WorkflowIcon,
   XIcon,
@@ -58,6 +59,7 @@ import {
   selectProjectPmQuotaBlockByRef,
   selectProjectByRef,
   selectProjectsAcrossEnvironments,
+  selectSidebarThreadsForProjectRef,
   selectTaskByRef,
   selectTaskQuotaBlockByRef,
   selectTasksForProjectRef,
@@ -66,6 +68,8 @@ import {
   type ScopedTaskRef,
 } from "../../store";
 import { deriveTimelineEntries, deriveWorkLogEntries } from "../../session-logic";
+import { buildThreadRouteParams } from "../../threadRoutes";
+import { isOrchestratorManagedThread } from "../../lib/orchestratorThreads";
 import type { OrchestratorPendingGate, OrchestratorTask, Project, Thread } from "../../types";
 import { useSettings } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
@@ -216,6 +220,44 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
   const pmThread = useStore((state) => selectThreadByRef(state, pmThreadRef));
   const boardCollapsed = useUiStateStore((state) => state.orchestratorBoardCollapsed);
   const setBoardCollapsed = useUiStateStore((state) => state.setOrchestratorBoardCollapsed);
+  const setLastOrchestratorProject = useUiStateStore((state) => state.setLastOrchestratorProject);
+  const navigate = useNavigate();
+
+  // Remember this workspace so the sidebar "Orchestrator" toggle returns here.
+  useEffect(() => {
+    setLastOrchestratorProject({ environmentId, projectId });
+  }, [environmentId, projectId, setLastOrchestratorProject]);
+
+  // "Open in Chat" lands on this project's most recent chat thread (stage/PM
+  // threads excluded), or the chat home when the project has no chat threads.
+  // Return a stable primitive (thread id) from the selector — returning a fresh
+  // `scopeThreadRef` object each call would break useSyncExternalStore's
+  // snapshot equality and loop forever.
+  const chatThreadId = useStore((state) => {
+    const candidates = selectSidebarThreadsForProjectRef(state, projectRef).filter(
+      (thread) => thread.archivedAt === null && !isOrchestratorManagedThread(thread),
+    );
+    const newest = candidates.reduce<(typeof candidates)[number] | null>((best, thread) => {
+      if (!best) {
+        return thread;
+      }
+      const bestAt = best.latestUserMessageAt ?? best.updatedAt ?? best.createdAt;
+      const threadAt = thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt;
+      return threadAt.localeCompare(bestAt) > 0 ? thread : best;
+    }, null);
+    return newest ? newest.id : null;
+  });
+
+  const handleOpenInChat = useCallback(() => {
+    if (chatThreadId) {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(environmentId, chatThreadId)),
+      });
+      return;
+    }
+    void navigate({ to: "/" });
+  }, [chatThreadId, environmentId, navigate]);
 
   useEffect(() => {
     return retainOrchestratorProjectSubscription(environmentId, projectId);
@@ -235,6 +277,15 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
           collapsed={boardCollapsed}
           setCollapsed={setBoardCollapsed}
         />
+        <Button
+          onClick={handleOpenInChat}
+          size="sm"
+          variant="outline"
+          data-testid="open-in-chat-button"
+        >
+          <MessageSquareIcon className="size-4" />
+          Open in Chat
+        </Button>
         <Button render={<Link to="/orch" />} size="sm" variant="outline">
           <ArrowLeftIcon className="size-4" />
           Projects

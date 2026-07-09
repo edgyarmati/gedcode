@@ -141,7 +141,7 @@ export interface ScopedTaskRef {
   readonly taskId: TaskId;
 }
 
-const initialEnvironmentState: EnvironmentState = {
+export const initialEnvironmentState: EnvironmentState = {
   projectIds: [],
   projectById: {},
   taskIds: [],
