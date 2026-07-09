@@ -167,8 +167,8 @@ export function OrchestratorHomeRoute() {
   return (
     <OrchestratorPage>
       <OrchestratorPageChrome title="Orchestrator" description={`${projects.length} projects`} />
-      <main className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <main className="min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-5 sm:py-4">
+        <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
           {projects.map((project) => (
             <ProjectGridCard
               key={scopedProjectKey(scopeProjectRef(project.environmentId, project.id))}
@@ -650,7 +650,7 @@ export function OrchestratorTaskRoute(props: {
             </div>
           )}
         </section>
-        <aside className="min-h-0 overflow-auto border-t border-border bg-muted/18 p-4 xl:border-t-0 xl:border-l">
+        <aside className="min-h-0 overflow-auto border-t border-border bg-muted/18 p-3 sm:p-4 xl:border-t-0 xl:border-l">
           <TaskDetailRail
             environmentId={environmentId}
             gates={gates}

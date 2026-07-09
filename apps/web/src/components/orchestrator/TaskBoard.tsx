@@ -200,7 +200,7 @@ export function TaskBoard({
     headerCount === 0 && partition.landed.length === 0 && partition.abandoned.length === 0;
 
   return (
-    <aside className="min-h-0 overflow-auto bg-muted/18 px-3 py-4">
+    <aside className="min-h-0 overflow-auto bg-muted/18 px-3 py-3">
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <h2 className="text-xs font-semibold text-muted-foreground">Tasks</h2>
         <Badge aria-label="Board task count" variant="outline">
