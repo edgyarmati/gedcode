@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Raise ACP child-process integration test timeouts to reduce CI and release preflight flakes under runner load.
+
 ## 0.2.1 - 2026-07-09
 
 - Fix: Repair stale projected Orchestrator project configs from the event log during upgrade so packaged 0.2.0 apps do not lose `enabled:true` and fail to start the PM runtime after selecting a PM model.
