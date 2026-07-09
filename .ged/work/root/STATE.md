@@ -779,7 +779,11 @@ consistency/bugfix cleanup=Codex ok, PM keeps browser verification). **WP-UX6 DO
 52→88px clears the board header (user's overlap complaint fixed; toast still floats over board CARDS — inherent
 to top-right toast over right-rail board, would need relocating a global component, left as-is); padding
 alignment; dark-mode audit found ZERO offenders (earlier WPs already token-driven). Browser suite 180/180.
-**UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix all shipped, UX2/UX4 skipped by choice. NEXT: user looks
+**ADD-PROJECT `e18db1e3f`** (Codex, 2026-07-09): orchestrator had no way to add a project — added a "New project"
+button in the landing header + FolderPlus icon in the orchestrator sidebar header, both reusing the existing
+command-palette openAddProject action. Visually verified, browser 182/182 (2 new tests), typecheck flake on
+effect-codex-app-server confirmed standalone-green.
+**UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix + add-project all shipped, UX2/UX4 skipped by choice. NEXT: user looks
 over the live surface; if satisfied → fast-forward main (main is 0-own-commits behind feat/orchestrator-mode)
 → ship. Then optional: opportunistic upstream ports, fork detach.
 NOTE: while verifying UX6 a stray "Clear PM chat?" confirm dialog surfaced on page load (leftover from an agent
