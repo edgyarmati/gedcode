@@ -783,6 +783,17 @@ alignment; dark-mode audit found ZERO offenders (earlier WPs already token-drive
 button in the landing header + FolderPlus icon in the orchestrator sidebar header, both reusing the existing
 command-palette openAddProject action. Visually verified, browser 182/182 (2 new tests), typecheck flake on
 effect-codex-app-server confirmed standalone-green.
+**0.2.0 SHIPPED (2026-07-09):** PR #66 (feat/orchestrator-mode → main) merged; main fast-forwarded to 4050baaaa.
+Reconciled a surprise: origin/main had advanced to a released v0.1.3 (CI-bot version bump 6e452877d; tag exists)
+— merged origin/main into the branch, resolved the one modify/delete conflict (packages/ged-workflow/
+package.json: kept deletion), versions now 0.1.3 (CI bumps to 0.2.0 at build). README rewritten around the
+Orchestrator + new hero screenshot (assets/screenshot/orchestrator.png, workspace.png removed); CHANGELOG cut to
+## 0.2.0. Release dispatched via `./release.sh stable minor` → CI workflow_dispatch run 29004272277 (queued,
+--ref main, version=0.2.0) — builds mac/linux/windows installers + publishes "GedCode v0.2.0" GitHub Release.
+NOTE: patched-tsgo flake bit the first dry-run (spurious protocol.ts type errors in effect-codex-app-server —
+NOT module-resolution flavor this time; 3x full typecheck clean confirmed spurious); full dry-run then passed
+end-to-end incl. release:smoke. Watch the run; if CI preflight flakes on tsgo, re-dispatch.
+
 **UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix + add-project all shipped, UX2/UX4 skipped by choice. NEXT: user looks
 over the live surface; if satisfied → fast-forward main (main is 0-own-commits behind feat/orchestrator-mode)
 → ship. Then optional: opportunistic upstream ports, fork detach.
