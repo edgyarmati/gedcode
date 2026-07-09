@@ -767,7 +767,15 @@ UX6 consistency (Opus). Merge to main after user satisfaction.
 **UX PASS PROGRESS:** WP-UX0 `108b30bcf` (task route renders + verifying visible) · WP-UX1 `b619a75c1`
 (concern-bucket board, Opus agent, both themes verified) · WP-UX3 `854552f61` (PM chat system markers /
 task chips from structured payloads only / empty state, Opus agent — survived a session-limit kill +
-resume). NEXT: WP-UX7 (dispatched) → UX2 → UX4 → UX6. NOTE: Opus agents twice hit account session limits
+resume). WP-UX7 `8d06a1ea6` (switch UX: last-project memory, cross-links, orch-mode sidebar swap, chat-list de-leak via
+thread-shell signal pm:/orchestrator-branch — no task data; Opus, both themes, survived 2 limit kills+resumes).
+BROWSER FIX `c1c8380b0` (Codex, parallel/file-disjoint): the 2 long-standing failures fixed — markdown file-tag
+icon ignored :line suffix (real bug), ChatView Shift+Tab test was stale. **BROWSER SUITE NOW FULLY GREEN
+180/180, 0 known failures.** CHANGELOG cleanup: UX7 agent had absorbed UX3's entry into a mega-line; I split it
+back (UX7 switching / UX3 pm-chat / UX1 board as distinct entries) and pathspec-committed the two jobs
+separately. REMAINING UX: UX2 (task detail — renders now, plain), UX4 (bare /orch landing grid), UX6 (dark/
+consistency sweep) — awaiting user scope/priority call (multi-stage picker worth it? landing grid worth polish
+now that last-project memory means it's rarely seen?). NOTE: Opus agents twice hit account session limits
 mid-run; agents are resumable via SendMessage with context intact — preserve the tree, never restart the task.
 
 **DISPATCH POLICY REFINED (user, 2026-07-09):** decompose every remaining WP by discipline — non-visual
