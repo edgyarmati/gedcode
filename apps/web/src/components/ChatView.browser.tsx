@@ -1426,18 +1426,6 @@ async function expectComposerActionsContained(): Promise<void> {
   );
 }
 
-async function waitForInteractionModeButton(
-  expectedLabel: "Build" | "Plan",
-): Promise<HTMLButtonElement> {
-  return waitForElement(
-    () =>
-      Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent?.trim() === expectedLabel,
-      ) as HTMLButtonElement | null,
-    `Unable to find ${expectedLabel} interaction mode button.`,
-  );
-}
-
 async function waitForServerConfigToApply(): Promise<void> {
   await vi.waitFor(
     () => {
@@ -3068,9 +3056,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const initialModeButton = await waitForInteractionModeButton("Build");
-      expect(initialModeButton.getAttribute("aria-label")).toContain("enter plan mode");
-      expect(initialModeButton.hasAttribute("title")).toBe(false);
+      await waitForComposerEditor();
+      expect(composerDraftFor(THREAD_ID)?.interactionMode ?? null).toBeNull();
 
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -3082,9 +3069,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       await waitForLayout();
 
-      expect((await waitForInteractionModeButton("Build")).getAttribute("aria-label")).toContain(
-        "enter plan mode",
-      );
+      expect(composerDraftFor(THREAD_ID)?.interactionMode ?? null).toBeNull();
 
       const composerEditor = await waitForComposerEditor();
       composerEditor.focus();
@@ -3098,10 +3083,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect((await waitForInteractionModeButton("Plan")).getAttribute("aria-label")).toContain(
-            "return to normal build mode",
-          );
+        () => {
+          expect(composerDraftFor(THREAD_ID)?.interactionMode).toBe("plan");
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -3116,10 +3099,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect(
-            (await waitForInteractionModeButton("Build")).getAttribute("aria-label"),
-          ).toContain("enter plan mode");
+        () => {
+          expect(composerDraftFor(THREAD_ID)?.interactionMode).toBe("default");
         },
         { timeout: 8_000, interval: 16 },
       );
