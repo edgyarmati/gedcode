@@ -12,6 +12,7 @@ These standards were imported from other harness-specific instruction files and 
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 - Document relevant unreleased changes in `CHANGELOG.md` before considering a task complete. If the change should matter to users, operators, or release notes, update the `## Unreleased` section as part of the task.
+- Do not implement fallback behavior or alternate degraded paths without asking the user first when a requested approach is blocked.
 
 ## Project Snapshot
 
@@ -67,7 +68,7 @@ Before categorizing, cherry-picking, or reimplementing upstream-only work from `
 
 ## CLAUDE.md
 
-````md
+```md
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -88,7 +89,6 @@ bun lint       # lint (oxlint + custom plugin)
 bun typecheck  # TypeScript strict mode + Effect diagnostics
 bun run test   # Vitest — NEVER use `bun test` (it bypasses Vitest)
 ```
-````
 
 ## Monorepo Structure
 
@@ -116,7 +116,5 @@ Codex-first: the server starts `codex app-server` per provider session, streams 
 Key files: `apps/server/src/codexAppServerManager.ts` (session lifecycle), `apps/server/src/providerManager.ts` (provider dispatch), `apps/server/src/wsServer.ts` (WebSocket routes).
 
 @AGENTS.md
-
 ```
 
-```
