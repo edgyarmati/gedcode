@@ -773,9 +773,19 @@ BROWSER FIX `c1c8380b0` (Codex, parallel/file-disjoint): the 2 long-standing fai
 icon ignored :line suffix (real bug), ChatView Shift+Tab test was stale. **BROWSER SUITE NOW FULLY GREEN
 180/180, 0 known failures.** CHANGELOG cleanup: UX7 agent had absorbed UX3's entry into a mega-line; I split it
 back (UX7 switching / UX3 pm-chat / UX1 board as distinct entries) and pathspec-committed the two jobs
-separately. REMAINING UX: UX2 (task detail — renders now, plain), UX4 (bare /orch landing grid), UX6 (dark/
-consistency sweep) — awaiting user scope/priority call (multi-stage picker worth it? landing grid worth polish
-now that last-project memory means it's rarely seen?). NOTE: Opus agents twice hit account session limits
+separately. UX SCOPE CALL (user, 2026-07-09): UX2 SKIPPED (task page fine as-is), UX4 SKIPPED (landing grid fine as-is),
+UX6 → Codex (user routed the cleanup sweep to Codex — memory ui-work-goes-to-opus refined: net-new design=Opus,
+consistency/bugfix cleanup=Codex ok, PM keeps browser verification). **WP-UX6 DONE `8f246c07a`**: toast offset
+52→88px clears the board header (user's overlap complaint fixed; toast still floats over board CARDS — inherent
+to top-right toast over right-rail board, would need relocating a global component, left as-is); padding
+alignment; dark-mode audit found ZERO offenders (earlier WPs already token-driven). Browser suite 180/180.
+**UX PASS COMPLETE** — UX0/1/3/6 + UX7 + browser fix all shipped, UX2/UX4 skipped by choice. NEXT: user looks
+over the live surface; if satisfied → fast-forward main (main is 0-own-commits behind feat/orchestrator-mode)
+→ ship. Then optional: opportunistic upstream ports, fork detach.
+NOTE: while verifying UX6 a stray "Clear PM chat?" confirm dialog surfaced on page load (leftover from an agent
+browser session); handled accept:false (cancel). PM chat showed a fresh short state after — likely user's own
+dogfooding (model was GPT-5.4-Mini, changed from before); clear is non-destructive anyway (event-sourced,
+lastClearedSequence boundary, history recoverable). Flagged to user. NOTE: Opus agents twice hit account session limits
 mid-run; agents are resumable via SendMessage with context intact — preserve the tree, never restart the task.
 
 **DISPATCH POLICY REFINED (user, 2026-07-09):** decompose every remaining WP by discipline — non-visual
