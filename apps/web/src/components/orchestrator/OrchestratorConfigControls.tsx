@@ -33,7 +33,6 @@ const PR_OPEN_MODE_LABELS: Record<"ready" | "draft", string> = {
 const PROJECT_RESOURCE_LIMIT_LABELS: Record<ProjectResourceLimitNumberKey, string> = {
   maxParallelTasks: "Max parallel tasks",
   maxParallelWorkers: "Max parallel workers",
-  maxStageHandoffs: "Max stage handoffs",
   maxRetriesPerStage: "Max retries per stage",
 };
 const USE_GLOBAL_VALUE = "__global__";
@@ -41,7 +40,7 @@ const CUSTOMIZE_VALUE = "__customize__";
 
 export type ProjectResourceLimitNumberKey = Exclude<
   keyof OrchestratorResourceLimits,
-  "allowFullAccessWorkers"
+  "allowFullAccessWorkers" | "maxStageHandoffs"
 >;
 
 export function OrchestratorStagesControl({

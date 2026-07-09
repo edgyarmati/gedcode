@@ -75,13 +75,11 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     ]);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(2);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(
-      5 * 60 * 1000,
-    );
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);
   });
 
   it("decodes a legacy config (no orchestrator key) without complaint", () => {
@@ -105,8 +103,8 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
-    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
-    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
+    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);
   });
 
   it("round-trips a fully empty config without dropping the orchestrator block", () => {

@@ -3,7 +3,6 @@ import {
   type EnvironmentId,
   type ModelSelection,
   type OrchestratorConfigJson,
-  type OrchestratorGatePolicy,
   type OrchestrationStageRole,
   type ProjectId,
 } from "@t3tools/contracts";
@@ -29,7 +28,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -39,15 +37,10 @@ import {
   resolveRoleDefaultSelection,
   seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
-  type EditableOrchestratorGate,
   type InheritableOrchestratorResourceLimits,
-  type InheritableOrchestratorStages,
-  type OptionalOrchestratorStage,
   type OrchestrationSettingsDraft,
 } from "./projectOrchestrationSettings.logic";
 import {
-  OrchestratorGateAutonomyControl,
-  OrchestratorStagesControl,
   ProjectOpenPrModeControl,
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
@@ -183,84 +176,6 @@ function PmModelSection({
   );
 }
 
-function formatEnabledOptionalStages(
-  optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>,
-): string {
-  const enabledStages = (["review", "verify"] as const)
-    .filter((stage) => optionalStages[stage])
-    .map((stage) => STAGE_ROLE_LABELS[stage]);
-  return enabledStages.length > 0 ? enabledStages.join(", ") : "required only";
-}
-
-function StagesSection({
-  optionalStages,
-  inheritedOptionalStages,
-  onOptionalStagesModeChange,
-  onOptionalStageChange,
-}: {
-  optionalStages: InheritableOrchestratorStages;
-  inheritedOptionalStages: Exclude<InheritableOrchestratorStages, null>;
-  onOptionalStagesModeChange: (next: InheritableOrchestratorStages) => void;
-  onOptionalStageChange: (stage: OptionalOrchestratorStage, enabled: boolean) => void;
-}) {
-  const inheriting = optionalStages === null;
-  const displayedStages = optionalStages ?? inheritedOptionalStages;
-  return (
-    <SettingsSection title="Stages" description="Classify, plan, and work always run.">
-      <Select
-        value={inheriting ? "inherit" : "customize"}
-        onValueChange={(value) =>
-          onOptionalStagesModeChange(value === "inherit" ? null : { ...displayedStages })
-        }
-      >
-        <SelectTrigger size="sm" aria-label="Stages inheritance mode">
-          <SelectValue>
-            {inheriting
-              ? `Use global stages (${formatEnabledOptionalStages(inheritedOptionalStages)})`
-              : "Customize"}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="start" alignItemWithTrigger={false}>
-          <SelectItem hideIndicator value="inherit">
-            Use global stages ({formatEnabledOptionalStages(inheritedOptionalStages)})
-          </SelectItem>
-          <SelectItem hideIndicator value="customize">
-            Customize
-          </SelectItem>
-        </SelectPopup>
-      </Select>
-      <OrchestratorStagesControl
-        optionalStages={displayedStages}
-        disabled={inheriting}
-        onOptionalStageChange={onOptionalStageChange}
-      />
-    </SettingsSection>
-  );
-}
-
-function GateAutonomySection({
-  gatePolicy,
-  inheritedGatePolicy,
-  onGatePolicyChange,
-}: {
-  gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy | null>>;
-  inheritedGatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
-  onGatePolicyChange: (
-    gate: EditableOrchestratorGate,
-    policy: OrchestratorGatePolicy | null,
-  ) => void;
-}) {
-  return (
-    <SettingsSection title="Gate autonomy">
-      <OrchestratorGateAutonomyControl
-        gatePolicy={gatePolicy}
-        inheritedGatePolicy={inheritedGatePolicy}
-        onGatePolicyChange={onGatePolicyChange}
-      />
-    </SettingsSection>
-  );
-}
-
 function ResourceLimitsSection({
   resourceLimits,
   inheritedResourceLimits,
@@ -304,8 +219,8 @@ function LandingPrSection({
 }) {
   return (
     <SettingsSection
-      title="Landing PRs"
-      description="Choose whether landing opens a ready pull request or a draft pull request."
+      title="Auto-create PRs"
+      description="When work is approved for landing, choose whether the created pull request starts ready or draft."
     >
       <ProjectOpenPrModeControl
         openPrAsDraft={openPrAsDraft}
@@ -382,39 +297,6 @@ export function ProjectOrchestrationSettingsDialog({
       orchestratorConfig: { ...current.orchestratorConfig, pmModelSelection: next },
     }));
   }, []);
-  const handleOptionalStageChange = useCallback(
-    (stage: OptionalOrchestratorStage, enabled: boolean) => {
-      setDraft((current) => ({
-        ...current,
-        orchestratorConfig: {
-          ...current.orchestratorConfig,
-          optionalStages: {
-            ...(current.orchestratorConfig.optionalStages ?? inheritedDefaults.optionalStages),
-            [stage]: enabled,
-          },
-        },
-      }));
-    },
-    [inheritedDefaults.optionalStages],
-  );
-  const handleOptionalStagesModeChange = useCallback((next: InheritableOrchestratorStages) => {
-    setDraft((current) => ({
-      ...current,
-      orchestratorConfig: { ...current.orchestratorConfig, optionalStages: next },
-    }));
-  }, []);
-  const handleGatePolicyChange = useCallback(
-    (gate: EditableOrchestratorGate, policy: OrchestratorGatePolicy | null) => {
-      setDraft((current) => ({
-        ...current,
-        orchestratorConfig: {
-          ...current.orchestratorConfig,
-          gatePolicy: { ...current.orchestratorConfig.gatePolicy, [gate]: policy },
-        },
-      }));
-    },
-    [],
-  );
   const handleOpenPrAsDraftChange = useCallback((openPrAsDraft: boolean | null) => {
     setDraft((current) => ({
       ...current,
@@ -516,17 +398,6 @@ export function ProjectOrchestrationSettingsDialog({
             instanceEntries={instanceEntries}
             defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
-          />
-          <StagesSection
-            optionalStages={draft.orchestratorConfig.optionalStages}
-            inheritedOptionalStages={inheritedDefaults.optionalStages}
-            onOptionalStagesModeChange={handleOptionalStagesModeChange}
-            onOptionalStageChange={handleOptionalStageChange}
-          />
-          <GateAutonomySection
-            gatePolicy={draft.orchestratorConfig.gatePolicy}
-            inheritedGatePolicy={inheritedDefaults.gatePolicy}
-            onGatePolicyChange={handleGatePolicyChange}
           />
           <LandingPrSection
             openPrAsDraft={draft.orchestratorConfig.openPrAsDraft}

@@ -122,7 +122,7 @@ export interface OrchestratorGlobalResourceDefaultsDraft {
 
 export type OrchestratorGlobalNumberDefaultKey = Exclude<
   keyof OrchestratorGlobalResourceDefaultsDraft,
-  "allowFullAccessWorkers"
+  "allowFullAccessWorkers" | "maxStageHandoffs"
 >;
 
 const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults;

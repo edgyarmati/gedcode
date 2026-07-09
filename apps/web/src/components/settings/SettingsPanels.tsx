@@ -8,7 +8,6 @@ import {
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   ProviderInstanceId,
-  type ModelSelection,
   type ProviderInstanceConfig,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -68,12 +67,7 @@ import {
 } from "../ProviderUpdateLaunchNotification.logic";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
-import {
-  NumberLimitRow,
-  OrchestratorGateAutonomyControl,
-  OrchestratorStagesControl,
-} from "../orchestrator/OrchestratorConfigControls";
-import { BackendModelPicker, backendLabel } from "../orchestrator/RoleBackendPicker";
+import { NumberLimitRow } from "../orchestrator/OrchestratorConfigControls";
 import {
   buildOrchestratorGlobalDefaultsPatch,
   buildProviderInstanceUpdatePatch,
@@ -102,7 +96,6 @@ const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
   maxParallelTasks: "Max parallel tasks",
   maxParallelWorkers: "Max parallel workers",
-  maxStageHandoffs: "Max stage handoffs",
   maxRetriesPerStage: "Max retries per stage",
   pmReconciliationIntervalMs: "PM reconciliation interval",
   worktreeReaperIntervalMinutes: "Worktree cleanup interval",
@@ -897,7 +890,6 @@ export function GeneralSettingsPanel() {
 export function OrchestratorDefaultsSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
-  const serverProviders = useServerProviders();
   const draft = useMemo(
     () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
     [settings.orchestratorDefaults],
@@ -909,11 +901,6 @@ export function OrchestratorDefaultsSettingsPanel() {
   const numberKeys = Object.keys(
     GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS,
   ) as OrchestratorGlobalNumberDefaultKey[];
-  const workerInstanceEntries = useMemo(
-    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
-    [serverProviders],
-  );
-
   const updateDraft = useCallback(
     (nextDraft: typeof draft) => {
       updateSettings(buildOrchestratorGlobalDefaultsPatch(nextDraft));
@@ -921,150 +908,18 @@ export function OrchestratorDefaultsSettingsPanel() {
     [updateSettings],
   );
 
-  const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
-  const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
-  const pmModelDirty = !Equal.equals(draft.pmModelSelection, defaultDraft.pmModelSelection);
-  const workerModelDirty = !Equal.equals(
-    draft.defaultWorkerModelSelection,
-    defaultDraft.defaultWorkerModelSelection,
-  );
   const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
   const resourceDefaultsDirty = !Equal.equals(
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
   );
-  const defaultPmEntry = defaultDraft.pmModelSelection
-    ? workerInstanceEntries.find(
-        (entry) => entry.instanceId === defaultDraft.pmModelSelection?.instanceId,
-      )
-    : undefined;
-  const defaultPmLabel = defaultDraft.pmModelSelection
-    ? backendLabel(defaultDraft.pmModelSelection, defaultPmEntry)
-    : null;
-  const defaultPmOptionLabel = defaultPmLabel ? `Default (${defaultPmLabel})` : "None";
-  const updatePmModelSelection = (pmModelSelection: ModelSelection | null) => {
-    updateDraft({ ...draft, pmModelSelection });
-  };
-  const updateWorkerModelSelection = (defaultWorkerModelSelection: ModelSelection | null) => {
-    updateDraft({ ...draft, defaultWorkerModelSelection });
-  };
 
   return (
     <SettingsPageContainer>
       <SettingsSection title="Orchestrator defaults">
         <SettingsRow
-          title="PM model"
-          description="Default provider instance and model for project manager runtime."
-          resetAction={
-            pmModelDirty ? (
-              <SettingResetButton
-                label="Orchestrator PM model"
-                onClick={() =>
-                  updateDraft({ ...draft, pmModelSelection: defaultDraft.pmModelSelection })
-                }
-              />
-            ) : null
-          }
-        >
-          <div className="pb-4 pt-3">
-            <BackendModelPicker
-              selection={draft.pmModelSelection}
-              instanceEntries={workerInstanceEntries}
-              unsetLabel="None"
-              unsetOptionLabel={defaultPmOptionLabel}
-              backendAriaLabel="Default PM backend"
-              modelAriaLabel="Default PM model"
-              onSelectionChange={updatePmModelSelection}
-            />
-          </div>
-        </SettingsRow>
-        <SettingsRow
-          title="Default worker backend"
-          description="Default provider instance and model for Orchestrator worker stages."
-          resetAction={
-            workerModelDirty ? (
-              <SettingResetButton
-                label="Orchestrator worker backend"
-                onClick={() =>
-                  updateDraft({
-                    ...draft,
-                    defaultWorkerModelSelection: defaultDraft.defaultWorkerModelSelection,
-                  })
-                }
-              />
-            ) : null
-          }
-        >
-          <div className="pb-4 pt-3">
-            <BackendModelPicker
-              selection={draft.defaultWorkerModelSelection}
-              instanceEntries={workerInstanceEntries}
-              unsetLabel="None"
-              unsetOptionLabel="None"
-              backendAriaLabel="Default worker backend"
-              modelAriaLabel="Default worker model"
-              onSelectionChange={updateWorkerModelSelection}
-            />
-          </div>
-        </SettingsRow>
-        <SettingsRow
-          title="Stages"
-          description="Default stage pipeline for projects that have not configured Orchestrator mode yet."
-          resetAction={
-            stagesDirty ? (
-              <SettingResetButton
-                label="Orchestrator stages"
-                onClick={() =>
-                  updateDraft({ ...draft, optionalStages: defaultDraft.optionalStages })
-                }
-              />
-            ) : null
-          }
-        >
-          <div className="pb-4 pt-3">
-            <OrchestratorStagesControl
-              optionalStages={draft.optionalStages}
-              onOptionalStageChange={(stage, enabled) =>
-                updateDraft({
-                  ...draft,
-                  optionalStages: { ...draft.optionalStages, [stage]: enabled },
-                })
-              }
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title="Gate autonomy"
-          description="Default approval policy for new project task gates. Land always requires approval."
-          resetAction={
-            gatePolicyDirty ? (
-              <SettingResetButton
-                label="Orchestrator gate autonomy"
-                onClick={() => updateDraft({ ...draft, gatePolicy: defaultDraft.gatePolicy })}
-              />
-            ) : null
-          }
-        >
-          <div className="pb-4 pt-3">
-            <OrchestratorGateAutonomyControl
-              gatePolicy={draft.gatePolicy}
-              onGatePolicyChange={(gate, policy) => {
-                if (policy === null) {
-                  return;
-                }
-                updateDraft({
-                  ...draft,
-                  gatePolicy: { ...draft.gatePolicy, [gate]: policy },
-                });
-              }}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title="Landing PRs"
-          description="Default state for pull requests opened after an approved Orchestrator land gate."
+          title="Auto-create PRs"
+          description="When work is approved for landing, choose the default state for the created pull request."
           resetAction={
             openPrAsDraftDirty ? (
               <SettingResetButton

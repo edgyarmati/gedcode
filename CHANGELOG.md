@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Simplify Orchestrator settings by removing stage, gate-autonomy, and stage-handoff controls from the settings surfaces, leaving auto-created PR mode and operational limits, with safer operational defaults and working Orchestrator-sidebar project context menus.
 - Internal: Raise ACP child-process integration test timeouts to reduce CI and release preflight flakes under runner load.
 
 ## 0.2.1 - 2026-07-09

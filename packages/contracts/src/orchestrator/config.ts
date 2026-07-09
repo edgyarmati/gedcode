@@ -88,12 +88,12 @@ export const OrchestratorTaskType = Schema.Struct({
 });
 export type OrchestratorTaskType = typeof OrchestratorTaskType.Type;
 
-export const DEFAULT_MAX_PARALLEL_WORKERS = 1;
-export const DEFAULT_MAX_PARALLEL_TASKS = 1;
-export const DEFAULT_MAX_STAGE_HANDOFFS = 8;
+export const DEFAULT_MAX_PARALLEL_WORKERS = 2;
+export const DEFAULT_MAX_PARALLEL_TASKS = 2;
+export const DEFAULT_MAX_STAGE_HANDOFFS = 6;
 export const DEFAULT_MAX_RETRIES_PER_STAGE = 2;
-export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000;
-export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 5;
+export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 60 * 1000;
+export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 15;
 
 /**
  * Hard resource limits the decider enforces as invariants (design §7). These

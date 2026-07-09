@@ -1,8 +1,8 @@
 import { scopedProjectKey, scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
-import { type OrchestrationGateKind } from "@t3tools/contracts";
+import { type ContextMenuItem, type OrchestrationGateKind } from "@t3tools/contracts";
 import { Link, useParams } from "@tanstack/react-router";
 import { CircleAlertIcon, FolderPlusIcon } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo, useState, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -22,7 +22,10 @@ import {
   useStore,
 } from "../../store";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
+import { readLocalApi } from "../../localApi";
 import type { Project } from "../../types";
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { ProjectOrchestrationSettingsDialog } from "./ProjectOrchestrationSettingsDialog";
 import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./TaskBoard";
 
 // Orchestrator-mode sidebar content. Replaces the chat thread list with a
@@ -33,6 +36,9 @@ import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./Task
 export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const openAddProject = useCommandPaletteStore((store) => store.openAddProject);
+  const [orchestrationSettingsTarget, setOrchestrationSettingsTarget] = useState<Project | null>(
+    null,
+  );
   const activeProjectKey = useParams({
     strict: false,
     select: (params) =>
@@ -42,57 +48,66 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   });
 
   return (
-    <SidebarContent className="gap-0">
-      <SidebarGroup className="px-2 pt-3 pb-2">
-        <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            Projects
-          </span>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Add project"
-                  data-testid="orchestrator-sidebar-add-project-trigger"
-                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                  onClick={openAddProject}
-                />
-              }
-            >
-              <FolderPlusIcon className="size-3.5" />
-            </TooltipTrigger>
-            <TooltipPopup side="right">Add project</TooltipPopup>
-          </Tooltip>
-        </div>
-        <SidebarMenu>
-          {projects.map((project) => {
-            const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
-            return (
-              <OrchestratorSidebarProjectRow
-                key={key}
-                project={project}
-                isActive={activeProjectKey === key}
-              />
-            );
-          })}
-        </SidebarMenu>
-        {projects.length === 0 ? (
-          <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
-            No projects yet
+    <>
+      <SidebarContent className="gap-0">
+        <SidebarGroup className="px-2 pt-3 pb-2">
+          <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              Projects
+            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Add project"
+                    data-testid="orchestrator-sidebar-add-project-trigger"
+                    className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={openAddProject}
+                  />
+                }
+              >
+                <FolderPlusIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="right">Add project</TooltipPopup>
+            </Tooltip>
           </div>
-        ) : null}
-      </SidebarGroup>
-    </SidebarContent>
+          <SidebarMenu>
+            {projects.map((project) => {
+              const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+              return (
+                <OrchestratorSidebarProjectRow
+                  key={key}
+                  project={project}
+                  isActive={activeProjectKey === key}
+                  onOpenOrchestrationSettings={setOrchestrationSettingsTarget}
+                />
+              );
+            })}
+          </SidebarMenu>
+          {projects.length === 0 ? (
+            <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
+              No projects yet
+            </div>
+          ) : null}
+        </SidebarGroup>
+      </SidebarContent>
+      <ProjectOrchestrationSettingsDialog
+        target={orchestrationSettingsTarget}
+        onClose={() => setOrchestrationSettingsTarget(null)}
+      />
+    </>
   );
 });
 
 const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRow({
   project,
   isActive,
+  onOpenOrchestrationSettings,
 }: {
   project: Project;
   isActive: boolean;
+  onOpenOrchestrationSettings: (project: Project) => void;
 }) {
   const environmentId = project.environmentId;
   const projectId = project.id;
@@ -144,6 +159,48 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
     }),
   );
 
+  const handleContextMenu = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      void (async () => {
+        const api = readLocalApi();
+        if (!api) {
+          return;
+        }
+        const openSettingsId = "orchestration-settings";
+        const copyPathId = "copy-path";
+        const items: ContextMenuItem<string>[] = [
+          { id: openSettingsId, label: "Orchestration settings…" },
+          { id: copyPathId, label: "Copy Project Path" },
+        ];
+        const clicked = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+        if (clicked === openSettingsId) {
+          onOpenOrchestrationSettings(project);
+          return;
+        }
+        if (clicked === copyPathId) {
+          await navigator.clipboard.writeText(project.cwd);
+          toastManager.add(
+            stackedThreadToast({
+              type: "success",
+              title: "Copied project path",
+              description: project.cwd,
+            }),
+          );
+        }
+      })().catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Project context menu failed",
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          }),
+        );
+      });
+    },
+    [onOpenOrchestrationSettings, project],
+  );
+
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -154,6 +211,7 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
             to="/orch/$environmentId/$projectId"
             params={{ environmentId, projectId }}
             data-testid={`orchestrator-project-row-${projectId}`}
+            onContextMenu={handleContextMenu}
           />
         }
         className="gap-2 px-2 py-1.5 text-left hover:bg-accent"
