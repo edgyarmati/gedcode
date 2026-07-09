@@ -113,7 +113,6 @@ export interface OrchestratorGlobalDefaultsDraft {
 export interface OrchestratorGlobalResourceDefaultsDraft {
   readonly maxParallelTasks: number;
   readonly maxParallelWorkers: number;
-  readonly maxStageHandoffs: number;
   readonly maxRetriesPerStage: number;
   readonly pmReconciliationIntervalMs: number;
   readonly worktreeReaperIntervalMinutes: number;
@@ -122,7 +121,7 @@ export interface OrchestratorGlobalResourceDefaultsDraft {
 
 export type OrchestratorGlobalNumberDefaultKey = Exclude<
   keyof OrchestratorGlobalResourceDefaultsDraft,
-  "allowFullAccessWorkers" | "maxStageHandoffs"
+  "allowFullAccessWorkers"
 >;
 
 const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults;
@@ -150,8 +149,6 @@ export function seedOrchestratorGlobalDefaultsDraft(
         defaults.maxParallelTasks ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelTasks,
       maxParallelWorkers:
         defaults.maxParallelWorkers ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelWorkers,
-      maxStageHandoffs:
-        defaults.maxStageHandoffs ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxStageHandoffs,
       maxRetriesPerStage:
         defaults.maxRetriesPerStage ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxRetriesPerStage,
       pmReconciliationIntervalMs:
@@ -188,7 +185,6 @@ export function buildOrchestratorGlobalDefaultsPatch(
       },
       maxParallelTasks: draft.resourceDefaults.maxParallelTasks,
       maxParallelWorkers: draft.resourceDefaults.maxParallelWorkers,
-      maxStageHandoffs: draft.resourceDefaults.maxStageHandoffs,
       maxRetriesPerStage: draft.resourceDefaults.maxRetriesPerStage,
       pmReconciliationIntervalMs: draft.resourceDefaults.pmReconciliationIntervalMs,
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,

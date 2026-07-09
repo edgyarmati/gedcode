@@ -43,6 +43,8 @@ export interface DesktopEnvironmentShape {
   readonly homeDirectory: string;
   readonly appDataDirectory: string;
   readonly baseDir: string;
+  readonly usesDefaultBaseDir: boolean;
+  readonly legacyDefaultBaseDir: string;
   readonly stateDir: string;
   readonly desktopSettingsPath: string;
   readonly clientSettingsPath: string;
@@ -156,7 +158,10 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
-  const baseDir = Option.getOrElse(config.t3Home, () => path.join(homeDirectory, ".t3"));
+  const defaultBaseDir = path.join(homeDirectory, ".gedcode");
+  const legacyDefaultBaseDir = path.join(homeDirectory, ".t3");
+  const usesDefaultBaseDir = Option.isNone(config.t3Home);
+  const baseDir = Option.getOrElse(config.t3Home, () => defaultBaseDir);
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const branding = resolveDesktopAppBranding({
@@ -185,6 +190,8 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     appDataDirectory,
     baseDir,
+    usesDefaultBaseDir,
+    legacyDefaultBaseDir,
     stateDir,
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
     clientSettingsPath: path.join(stateDir, "client-settings.json"),

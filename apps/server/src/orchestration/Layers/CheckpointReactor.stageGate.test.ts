@@ -224,7 +224,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
   });
 
   // Builds a CheckpointReactor harness over a real git repo, then drives the
-  // orchestrator command sequence (project enabled -> task.create ->
+  // orchestrator command sequence (task.create ->
   // task.classify -> task.stage.start) so a task is in `working` with an active
   // stage thread. Binds the provider session to that stage thread + git cwd so
   // CheckpointReactor resolves the workspace for real capture.
@@ -292,7 +292,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     const drain = () => Effect.runPromise(reactor.drain);
 
     const createdAt = "2026-01-01T00:00:00.000Z";
-    // Orchestrator-enabled project rooted at the real git repo.
+    // Orchestrator project rooted at the real git repo.
     await Effect.runPromise(
       engine.dispatch({
         type: "project.create",
@@ -304,7 +304,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
         },
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {},
         createdAt,
       }),
     );

@@ -452,7 +452,7 @@ function seedProjectAndTask(
           work: WORK_PREFIX,
           verify: VERIFY_PREFIX,
         },
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {},
         createdAt: iso(0),
       })
       .pipe(Effect.orDie);

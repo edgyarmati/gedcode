@@ -90,7 +90,6 @@ export type OrchestratorTaskType = typeof OrchestratorTaskType.Type;
 
 export const DEFAULT_MAX_PARALLEL_WORKERS = 2;
 export const DEFAULT_MAX_PARALLEL_TASKS = 2;
-export const DEFAULT_MAX_STAGE_HANDOFFS = 6;
 export const DEFAULT_MAX_RETRIES_PER_STAGE = 2;
 export const DEFAULT_PM_RECONCILIATION_INTERVAL_MS = 60 * 1000;
 export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 15;
@@ -115,9 +114,6 @@ export const OrchestratorResourceLimits = Schema.Struct({
   ),
   maxParallelWorkers: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_WORKERS)),
-  ),
-  maxStageHandoffs: PositiveInt.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_STAGE_HANDOFFS)),
   ),
   maxRetriesPerStage: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),
@@ -176,7 +172,6 @@ export type NullablePmModelSelection = typeof NullablePmModelSelection.Type;
  * on the project projection via `project.meta.update` (design §14).
  */
 export const OrchestratorProjectConfig = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Inheritable project-level landing default. The raw sparse project config can
   // omit this to inherit `OrchestratorGlobalDefaults.openPrAsDraft`; decode
   // defaults it for typed canonical config consumers.
@@ -234,9 +229,6 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // command in `apps/server/src/orchestration/decider.ts`.
   maxParallelWorkers: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_WORKERS)),
-  ),
-  maxStageHandoffs: PositiveInt.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_STAGE_HANDOFFS)),
   ),
   maxRetriesPerStage: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),

@@ -37,7 +37,6 @@ export type SparseOrchestratorDefaults = Partial<Omit<OrchestratorGlobalDefaults
 const numericResourceLimitKeys = [
   "maxParallelTasks",
   "maxParallelWorkers",
-  "maxStageHandoffs",
   "maxRetriesPerStage",
 ] as const satisfies ReadonlyArray<keyof OrchestratorResourceLimits>;
 

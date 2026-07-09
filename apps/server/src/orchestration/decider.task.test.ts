@@ -57,7 +57,7 @@ function makeProjectCreatedEvent(input?: {
         model: "gpt-5-codex",
       },
       roleModelSelections: {},
-      orchestratorConfig: input?.orchestratorConfig ?? { enabled: true },
+      orchestratorConfig: input?.orchestratorConfig ?? {},
       scripts: [],
       createdAt: now,
       updatedAt: now,
@@ -177,7 +177,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("rejects task creation when active task worktrees meet the project cap", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "working" });
+      const readModel = yield* taskReadModel(
+        { status: "working" },
+        { orchestratorConfig: { resourceLimits: { maxParallelTasks: 1 } } },
+      );
 
       const result = yield* Effect.exit(
         decideOrchestrationCommand({
@@ -233,7 +236,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         { status: "working" },
         {
           orchestratorConfig: {
-            enabled: true,
             resourceLimits: {
               maxParallelTasks: 1,
             },
@@ -416,7 +418,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         { status: "review", currentStageThreadId: null },
         {
           orchestratorConfig: {
-            enabled: true,
             resourceLimits: { allowFullAccessWorkers: true },
           },
         },
@@ -481,7 +482,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         { status: "review", currentStageThreadId: null },
         {
           orchestratorConfig: {
-            enabled: true,
             resourceLimits: { allowFullAccessWorkers: false },
           },
         },
@@ -518,7 +518,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         { status: "review", currentStageThreadId: null },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -597,7 +596,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         { status: "review", currentStageThreadId: null },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -882,34 +880,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("rejects stage handoffs beyond the fail-closed cap", () =>
-    Effect.gen(function* () {
-      const readModel = yield* taskReadModel({
-        status: "review",
-        currentStageThreadId: null,
-        stageThreadIds: Array.from({ length: 8 }, (_, index) =>
-          asThreadId(`thread-stage-${index}`),
-        ),
-      });
-
-      const result = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.stage.start",
-            commandId: asCommandId("cmd-stage-start"),
-            taskId: asTaskId("task-1"),
-            role: "work",
-            instructions: "Try to exceed the cap.",
-            createdAt: now,
-          },
-        }),
-      );
-
-      expect(result._tag).toBe("Failure");
-    }),
-  );
-
   it.effect("completes the active task stage through an internal command", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({
@@ -1035,7 +1005,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -1101,7 +1070,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -1192,7 +1160,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -1240,7 +1207,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
         {
           orchestratorConfig: {
-            enabled: true,
             pmModelSelection: null,
             taskTypes: [
               {
@@ -1258,7 +1224,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             resourceLimits: {
               maxParallelTasks: 1,
               maxParallelWorkers: 1,
-              maxStageHandoffs: 8,
               maxRetriesPerStage: 2,
               allowFullAccessWorkers: false,
             },
@@ -1340,7 +1305,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
         {
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",

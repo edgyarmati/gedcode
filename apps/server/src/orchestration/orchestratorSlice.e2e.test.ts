@@ -11,7 +11,6 @@ import {
   TurnId,
   type OrchestrationCommand,
   type OrchestrationEvent,
-  type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
   type OrchestrationThread,
@@ -72,7 +71,6 @@ function makeProjectCreatedEvent(): OrchestrationEvent {
       },
       roleModelSelections: {},
       orchestratorConfig: {
-        enabled: true,
         pmModelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
           model: "claude-sonnet-4-6",
@@ -125,12 +123,6 @@ function latestTask(readModel: OrchestrationReadModel): OrchestrationTask {
   const task = readModel.tasks.find((entry) => entry.id === taskId);
   assert.ok(task);
   return task;
-}
-
-function latestProject(readModel: OrchestrationReadModel): OrchestrationProject {
-  const project = readModel.projects.find((entry) => entry.id === projectId);
-  assert.ok(project);
-  return project;
 }
 
 function findEvent<TType extends OrchestrationEvent["type"]>(
@@ -456,7 +448,6 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         status: "landed",
         branch: "orchestrator/task-orch-e2e",
       });
-      expect(latestProject(readModel).orchestratorConfig).toMatchObject({ enabled: true });
     }),
   );
 });

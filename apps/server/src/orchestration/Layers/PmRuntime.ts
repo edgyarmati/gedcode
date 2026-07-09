@@ -144,6 +144,7 @@ export interface PmProjectRuntimeFactoryOptions {
 }
 
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+const defaultOrchestratorConfig = Option.getOrThrow(decodeOrchestratorConfig({}));
 const pmDecisionPromptLine = (driverKind: ProviderDriverKind): string =>
   driverKind === CODEX_PM_DRIVER
     ? "For decisions, ask in plain text and end your turn."
@@ -363,7 +364,10 @@ const findSettlementEvent = (
   );
 
 const resolveProjectConfig = (project: OrchestrationProject) =>
-  decodeOrchestratorConfig(project.orchestratorConfig ?? {});
+  Option.getOrElse(
+    decodeOrchestratorConfig(project.orchestratorConfig ?? {}),
+    () => defaultOrchestratorConfig,
+  );
 
 export const resolvePmHarnessResources = (
   taskTypeIds: ReadonlyArray<string>,
@@ -537,18 +541,13 @@ const resolvePmHarnessConfig = (
 ): Effect.Effect<ResolvedPmHarnessConfig, PmRuntimeError> =>
   Effect.gen(function* () {
     const config = resolveProjectConfig(project);
-    if (Option.isNone(config) || config.value.enabled !== true) {
-      return yield* makeNoPmRuntimeError(
-        `Orchestrator mode is not enabled for project '${project.id}'.`,
-      );
-    }
     const settings = yield* services.serverSettings.getSettings.pipe(
       Effect.mapError((cause) =>
         makeNoPmRuntimeError("Failed to read server settings for PM model selection.", cause),
       ),
     );
     const pmModelSelection =
-      config.value.pmModelSelection ?? settings.orchestratorDefaults.pmModelSelection ?? null;
+      config.pmModelSelection ?? settings.orchestratorDefaults.pmModelSelection ?? null;
     if (pmModelSelection === null) {
       return yield* makeNoPmRuntimeError(
         `Project '${project.id}' has no PM model selection configured.`,
@@ -791,14 +790,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       project: OrchestrationProject,
     ) {
       const config = resolveProjectConfig(project);
-      if (
-        Option.isNone(config) ||
-        config.value.enabled !== true ||
-        config.value.pmModelSelection === null
-      ) {
+      if (config.pmModelSelection === null) {
         return false;
       }
-      const providerInstanceId = config.value.pmModelSelection.instanceId;
+      const providerInstanceId = config.pmModelSelection.instanceId;
       // Deliberately fail open on BOTH a typed read error and an unexpected
       // defect: a quota read must never wedge PM re-entry. Approved as the
       // explicit fallback for the PM quota gate; interrupts still propagate.
@@ -1374,23 +1369,18 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           return existing.runtime;
         }
 
-        const config = resolveProjectConfig(project);
-        if (Option.isNone(config)) {
-          return yield* makeNoPmRuntimeError(
-            `Orchestrator mode is not enabled for project '${project.id}'.`,
-          );
-        }
         const harnessConfig = yield* resolvePmHarnessConfig(project, {
           serverSettings,
           providerAdapterRegistry,
         });
+        const config = resolveProjectConfig(project);
         const pmModelSelection = harnessConfig.selection;
         const providerAdapter = yield* resolveDriverPmAdapter(
           harnessConfig,
           providerAdapterRegistry,
         );
         const resources = resolvePmHarnessResources(
-          config.value.taskTypes.map((taskType) => taskType.id),
+          config.taskTypes.map((taskType) => taskType.id),
         );
         const pmThreadId = pmThreadIdForProject(project);
         const pendingPmThread = yield* projectionSnapshotQuery

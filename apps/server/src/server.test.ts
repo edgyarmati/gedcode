@@ -3333,7 +3333,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         repositoryIdentity: null,
         defaultModelSelection,
         roleModelSelections: {},
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {},
         scripts: [],
         createdAt: now,
         updatedAt: now,

@@ -2,7 +2,6 @@ import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
-  DEFAULT_MAX_STAGE_HANDOFFS,
   ORCHESTRATION_STAGE_ROLES,
   type OrchestrationStageRole,
   type OrchestrationGateKind,
@@ -17,7 +16,6 @@ import {
 export type OrchestratorNumericResourceLimitKey =
   | "maxParallelTasks"
   | "maxParallelWorkers"
-  | "maxStageHandoffs"
   | "maxRetriesPerStage";
 
 export type OrchestratorResourceLimitKey =
@@ -101,7 +99,6 @@ export interface ResolveOpenPrAsDraftInput {
 const DEFAULT_RESOURCE_LIMIT_BY_KEY = {
   maxParallelTasks: DEFAULT_MAX_PARALLEL_TASKS,
   maxParallelWorkers: DEFAULT_MAX_PARALLEL_WORKERS,
-  maxStageHandoffs: DEFAULT_MAX_STAGE_HANDOFFS,
   maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
 } as const satisfies Record<OrchestratorNumericResourceLimitKey, number>;
 
@@ -172,7 +169,6 @@ export function resolveResourceLimits(
   return {
     maxParallelTasks: resolveResourceLimit({ ...input, key: "maxParallelTasks" }),
     maxParallelWorkers: resolveResourceLimit({ ...input, key: "maxParallelWorkers" }),
-    maxStageHandoffs: resolveResourceLimit({ ...input, key: "maxStageHandoffs" }),
     maxRetriesPerStage: resolveResourceLimit({ ...input, key: "maxRetriesPerStage" }),
     allowFullAccessWorkers: resolveAllowFullAccessWorkers(input),
   };

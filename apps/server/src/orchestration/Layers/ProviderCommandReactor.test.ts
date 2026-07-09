@@ -431,7 +431,7 @@ describe("ProviderCommandReactor", () => {
         title: "Provider Project",
         workspaceRoot: projectRoot,
         defaultModelSelection: modelSelection,
-        orchestratorConfig: input?.orchestratorConfig ?? { enabled: true },
+        orchestratorConfig: input?.orchestratorConfig ?? {},
         createdAt: now,
       }),
     );

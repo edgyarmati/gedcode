@@ -12,7 +12,7 @@ const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 const decodeConfigJson = Schema.decodeUnknownSync(Schema.fromJsonString(OrchestratorConfigJson));
 
 layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
-  it.effect("repairs stale project orchestrator configs from historical events", () =>
+  it.effect("backfills stale project orchestrator configs from historical events", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
@@ -74,7 +74,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
             NULL,
             'cmd-project-created',
             'client',
-            '{"projectId":"project-repair","title":"Project Repair","workspaceRoot":"/tmp/project-repair","defaultModelSelection":null,"orchestratorConfig":{"enabled":true},"scripts":[],"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"}',
+            '{"projectId":"project-repair","title":"Project Repair","workspaceRoot":"/tmp/project-repair","defaultModelSelection":null,"orchestratorConfig":{"enabled":true,"resourceLimits":{"removedLimit":12,"maxParallelTasks":2}},"scripts":[],"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"}',
             '{}'
           ),
           (
@@ -102,7 +102,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
       `;
 
       assert.deepStrictEqual(decodeConfigJson(rows[0]?.orchestratorConfigJson ?? "{}"), {
-        enabled: true,
+        resourceLimits: { maxParallelTasks: 2 },
         pmModelSelection: {
           instanceId: "codex",
           model: "gpt-5.5",
@@ -112,7 +112,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
     }),
   );
 
-  it.effect("does not rewrite projects that already carry an explicit enabled flag", () =>
+  it.effect("does not rewrite projects that already carry projected config", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
@@ -139,7 +139,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
           NULL,
           '{}',
           '{}',
-          '{"enabled":false}',
+          '{"pmModelSelection":{"instanceId":"claudeAgent","model":"claude-sonnet-4-6"}}',
           '[]',
           '2026-07-09T00:00:00.000Z',
           '2026-07-09T00:00:00.000Z',
@@ -173,7 +173,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
           NULL,
           'cmd-project-current-created',
           'client',
-          '{"projectId":"project-current","title":"Project Current","workspaceRoot":"/tmp/project-current","defaultModelSelection":null,"orchestratorConfig":{"enabled":true},"scripts":[],"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"}',
+            '{"projectId":"project-current","title":"Project Current","workspaceRoot":"/tmp/project-current","defaultModelSelection":null,"orchestratorConfig":{"pmModelSelection":{"instanceId":"codex","model":"gpt-5.5"}},"scripts":[],"createdAt":"2026-07-09T00:00:00.000Z","updatedAt":"2026-07-09T00:00:00.000Z"}',
           '{}'
         )
       `;
@@ -187,7 +187,7 @@ layer("045_BackfillProjectionProjectOrchestratorConfig", (it) => {
       `;
 
       assert.deepStrictEqual(decodeConfigJson(rows[0]?.orchestratorConfigJson ?? "{}"), {
-        enabled: false,
+        pmModelSelection: { instanceId: "claudeAgent", model: "claude-sonnet-4-6" },
       });
     }),
   );

@@ -14,11 +14,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * write path reaches this column.
  *
  * The `'{}'` default decodes to a safe-by-default config: every field of
- * `OrchestratorProjectConfig` carries a `withDecodingDefault` (enabled=false,
- * pmModelSelection=null, the single `feature` task type, and
+ * `OrchestratorProjectConfig` carries a `withDecodingDefault`
+ * (pmModelSelection=null, the single `feature` task type, and
  * resourceLimits.allowFullAccessWorkers=false). So existing project rows that
- * predate this column decode unchanged with orchestrator mode disabled — the
- * fail-closed posture the runtime-mode clamp (WP-E) depends on.
+ * predate this column decode unchanged while preserving the fail-closed worker
+ * runtime-mode clamp (WP-E).
  *
  * Mirrors the `032_ProjectionProjectRoleModelSelections` convention
  * (single defaulted JSON `ALTER TABLE ... ADD COLUMN`). DDL-only — no backfill;

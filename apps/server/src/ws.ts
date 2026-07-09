@@ -658,9 +658,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
               const projectConfig = decodeOrchestratorConfig(project.orchestratorConfig ?? {});
               const pmQuotaBlock =
-                Option.isSome(projectConfig) &&
-                projectConfig.value.enabled === true &&
-                projectConfig.value.pmModelSelection !== null
+                Option.isSome(projectConfig) && projectConfig.value.pmModelSelection !== null
                   ? yield* providerQuotaStatusRepository
                       .isInstanceQuotaBlocked({
                         providerInstanceId: projectConfig.value.pmModelSelection.instanceId,

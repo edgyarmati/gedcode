@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Change: Use `~/.gedcode` as the default app data directory for fresh installs and copy existing default `~/.t3` data there on desktop startup when the new directory is absent.
+- Change: Treat orchestration as enabled for every project and remove the project enable toggle plus the stage-handoff resource limit from contracts, runtime enforcement, and settings logic.
 - UI: Simplify Orchestrator settings by removing stage, gate-autonomy, and stage-handoff controls from the settings surfaces, leaving auto-created PR mode and operational limits, with safer operational defaults and working Orchestrator-sidebar project context menus.
 - Internal: Raise ACP child-process integration test timeouts to reduce CI and release preflight flakes under runner load.
 

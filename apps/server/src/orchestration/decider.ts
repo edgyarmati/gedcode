@@ -46,6 +46,7 @@ import { resolveWorkerStageRuntimeMode } from "./workerSafety.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
+const defaultOrchestratorConfig = Option.getOrThrow(decodeOrchestratorConfig({}));
 
 function taskWorktreePath(input: { readonly workspaceRoot: string; readonly taskId: string }) {
   return `${input.workspaceRoot.replace(/[\\/]+$/, "")}/.gedcode/orchestrator/tasks/${input.taskId}`;
@@ -81,20 +82,15 @@ function requirePmThread(input: {
   );
 }
 
-function requireOrchestratorEnabled(input: {
+function requireOrchestratorConfig(input: {
   readonly command: OrchestrationCommand;
   readonly project: OrchestrationProject;
 }): Effect.Effect<OrchestratorProjectConfig, OrchestrationCommandInvariantError> {
   const config = decodeOrchestratorConfig(input.project.orchestratorConfig ?? {});
-  if (Option.isSome(config) && config.value.enabled === true) {
+  if (Option.isSome(config)) {
     return Effect.succeed(config.value);
   }
-  return Effect.fail(
-    invariantError(
-      input.command.type,
-      `Orchestrator mode is not enabled for project '${input.project.id}'.`,
-    ),
-  );
+  return Effect.succeed(defaultOrchestratorConfig);
 }
 
 function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
@@ -956,7 +952,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       yield* requireTaskAbsent({
         readModel,
         command,
@@ -1016,7 +1012,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -1045,7 +1041,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       // Model selection is not a guardrail, so the PM may set it; gates/runtime stay human-only.
       if (
         command.origin !== "human" &&
@@ -1085,7 +1081,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const allowedStages = resolveStages({
         config: projectConfig,
@@ -1103,17 +1099,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
-        );
-      }
-      const maxStageHandoffs = resolveResourceLimit({
-        config: projectConfig,
-        defaults: orchestratorDefaults,
-        key: "maxStageHandoffs",
-      });
-      if (task.stageThreadIds.length >= maxStageHandoffs) {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' exceeded the stage handoff limit (${maxStageHandoffs}).`,
         );
       }
       if (task.status === "blocked-on-quota") {
@@ -1270,7 +1255,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
 
       if (!task.stageThreadIds.includes(command.stageThreadId)) {
         return yield* invariantError(
@@ -1341,7 +1326,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
 
       if (!task.stageThreadIds.includes(command.stageThreadId)) {
         return yield* invariantError(
@@ -1400,7 +1385,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const gatePolicy = resolveGatePolicy({
         config: projectConfig,
@@ -1463,7 +1448,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       if (command.origin !== "human" && command.origin !== "client") {
         return yield* invariantError(
           command.type,
@@ -1538,7 +1523,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       if (task.status !== "review") {
         return yield* invariantError(
           command.type,
@@ -1584,7 +1569,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
 
       return {
         ...(yield* withEventBase({
@@ -1614,7 +1599,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: task.projectId,
       });
-      yield* requireOrchestratorEnabled({ command, project });
+      yield* requireOrchestratorConfig({ command, project });
       if (isTerminalTaskStatus(task.status)) {
         return yield* invariantError(
           command.type,

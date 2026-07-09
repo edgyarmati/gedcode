@@ -516,7 +516,7 @@ describe("ProviderRuntimeIngestion", () => {
         type: "project.meta.update",
         commandId: CommandId.make("cmd-provider-project-enable-orchestrator"),
         projectId: asProjectId("project-1"),
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {},
       }),
     );
     await Effect.runPromise(
@@ -2813,7 +2813,7 @@ describe("ProviderRuntimeIngestion", () => {
         type: "project.meta.update",
         commandId: CommandId.make("cmd-provider-project-enable-quota"),
         projectId: asProjectId("project-1"),
-        orchestratorConfig: { enabled: true },
+        orchestratorConfig: {},
       }),
     );
     await Effect.runPromise(

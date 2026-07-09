@@ -53,7 +53,6 @@ describe("seedOrchestrationSettingsDraft", () => {
     const draft = seedOrchestrationSettingsDraft({});
 
     expect(draft.orchestratorConfig).toEqual({
-      enabled: false,
       pmModelSelection: null,
       openPrAsDraft: null,
       optionalStages: null,
@@ -66,7 +65,6 @@ describe("seedOrchestrationSettingsDraft", () => {
       resourceLimits: {
         maxParallelTasks: null,
         maxParallelWorkers: null,
-        maxStageHandoffs: null,
         maxRetriesPerStage: null,
         allowFullAccessWorkers: null,
       },
@@ -107,7 +105,7 @@ describe("buildOrchestrationConfigUpdate", () => {
     expect(update.orchestratorConfig).toEqual(
       buildOrchestratorProjectConfig(draft.orchestratorConfig),
     );
-    expect(update.orchestratorConfig).toEqual({ enabled: false, pmModelSelection: null });
+    expect(update.orchestratorConfig).toEqual({ pmModelSelection: null });
   });
 
   it("round-trips a seeded sparse config back to the same maps", () => {
@@ -115,7 +113,6 @@ describe("buildOrchestrationConfigUpdate", () => {
       roleModelSelections: { work: selection("codex_task", "gpt-5-task") },
       rolePromptPrefixes: { verify: "Verify behavior." },
       orchestratorConfig: {
-        enabled: true,
         pmModelSelection: pmSelection("openai", "gpt-5-pm"),
         openPrAsDraft: true,
         taskTypes: [
@@ -140,7 +137,6 @@ describe("seedOrchestratorConfigDraft", () => {
   it("uses inherited values when config is absent", () => {
     const draft = seedOrchestratorConfigDraft(undefined);
     expect(draft).toEqual({
-      enabled: false,
       pmModelSelection: null,
       openPrAsDraft: null,
       optionalStages: null,
@@ -153,7 +149,6 @@ describe("seedOrchestratorConfigDraft", () => {
       resourceLimits: {
         maxParallelTasks: null,
         maxParallelWorkers: null,
-        maxStageHandoffs: null,
         maxRetriesPerStage: null,
         allowFullAccessWorkers: null,
       },
@@ -162,7 +157,6 @@ describe("seedOrchestratorConfigDraft", () => {
 
   it("normalizes a project config into the editor draft", () => {
     const draft = seedOrchestratorConfigDraft({
-      enabled: true,
       pmModelSelection: {
         ...pmSelection("claudeAgent", "claude-sonnet-4-6"),
         options: [{ id: "effort", value: "high" }],
@@ -184,12 +178,10 @@ describe("seedOrchestratorConfigDraft", () => {
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
-        maxStageHandoffs: 4,
         maxRetriesPerStage: 5,
         allowFullAccessWorkers: true,
       },
     });
-    expect(draft.enabled).toBe(true);
     expect(draft.pmModelSelection).toEqual({
       ...pmSelection("claudeAgent", "claude-sonnet-4-6"),
       options: [{ id: "effort", value: "high" }],
@@ -205,7 +197,6 @@ describe("seedOrchestratorConfigDraft", () => {
     expect(draft.resourceLimits).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
-      maxStageHandoffs: 4,
       maxRetriesPerStage: 5,
       allowFullAccessWorkers: true,
     });
@@ -214,7 +205,6 @@ describe("seedOrchestratorConfigDraft", () => {
   it("seeds an empty project config as inherited rather than global-filled", () => {
     const draft = seedOrchestratorConfigDraft({});
 
-    expect(draft.enabled).toBe(false);
     expect(draft.pmModelSelection).toBeNull();
     expect(draft.openPrAsDraft).toBeNull();
     expect(draft.optionalStages).toBeNull();
@@ -227,7 +217,6 @@ describe("seedOrchestratorConfigDraft", () => {
     expect(draft.resourceLimits).toEqual({
       maxParallelTasks: null,
       maxParallelWorkers: null,
-      maxStageHandoffs: null,
       maxRetriesPerStage: null,
       allowFullAccessWorkers: null,
     });
@@ -235,7 +224,6 @@ describe("seedOrchestratorConfigDraft", () => {
 
   it("seeds only the current project's explicit sparse config", () => {
     const draft = seedOrchestratorConfigDraft({
-      enabled: true,
       pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: false,
       taskTypes: [
@@ -251,7 +239,6 @@ describe("seedOrchestratorConfigDraft", () => {
       },
     });
 
-    expect(draft.enabled).toBe(true);
     expect(draft.pmModelSelection).toEqual(pmSelection("openai", "gpt-5-pm"));
     expect(draft.openPrAsDraft).toBe(false);
     expect(draft.optionalStages).toBeNull();
@@ -264,7 +251,6 @@ describe("seedOrchestratorConfigDraft", () => {
     expect(draft.resourceLimits).toEqual({
       maxParallelTasks: null,
       maxParallelWorkers: null,
-      maxStageHandoffs: null,
       maxRetriesPerStage: 5,
       allowFullAccessWorkers: null,
     });
@@ -272,7 +258,6 @@ describe("seedOrchestratorConfigDraft", () => {
 
   it("treats legacy pi-era PM selections as unconfigured", () => {
     const draft = seedOrchestratorConfigDraft({
-      enabled: true,
       pmModelSelection: { piProvider: "openai", model: "gpt-5-pm" },
     });
 
@@ -285,7 +270,6 @@ describe("buildOrchestratorProjectConfig", () => {
     const draft = seedOrchestratorConfigDraft({});
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
-      enabled: false,
       pmModelSelection: null,
     });
   });
@@ -302,7 +286,6 @@ describe("buildOrchestratorProjectConfig", () => {
     };
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
-      enabled: false,
       pmModelSelection: null,
       taskTypes: [
         {
@@ -321,14 +304,12 @@ describe("buildOrchestratorProjectConfig", () => {
       resourceLimits: {
         maxParallelTasks: null,
         maxParallelWorkers: 3,
-        maxStageHandoffs: null,
         maxRetriesPerStage: null,
         allowFullAccessWorkers: null,
       },
     };
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
-      enabled: false,
       pmModelSelection: null,
       resourceLimits: {
         maxParallelWorkers: 3,
@@ -343,7 +324,6 @@ describe("buildOrchestratorProjectConfig", () => {
     };
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
-      enabled: false,
       pmModelSelection: null,
       openPrAsDraft: true,
     });
@@ -352,7 +332,6 @@ describe("buildOrchestratorProjectConfig", () => {
 
   it("builds sparse feature config from edited settings", () => {
     const draft: OrchestratorConfigDraft = {
-      enabled: true,
       pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
       optionalStages: { review: false, verify: true },
@@ -365,13 +344,11 @@ describe("buildOrchestratorProjectConfig", () => {
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
-        maxStageHandoffs: 4,
         maxRetriesPerStage: 5,
         allowFullAccessWorkers: true,
       },
     };
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
-      enabled: true,
       pmModelSelection: pmSelection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
       taskTypes: [
@@ -389,7 +366,6 @@ describe("buildOrchestratorProjectConfig", () => {
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
-        maxStageHandoffs: 4,
         maxRetriesPerStage: 5,
         allowFullAccessWorkers: true,
       },
@@ -398,7 +374,6 @@ describe("buildOrchestratorProjectConfig", () => {
 
   it("keeps land require-approval across round trips", () => {
     const draft = seedOrchestratorConfigDraft({
-      enabled: true,
       taskTypes: [
         {
           id: "feature",
@@ -438,7 +413,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         },
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
-        maxStageHandoffs: 9,
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
@@ -461,7 +435,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
       resourceLimits: {
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
-        maxStageHandoffs: 9,
         maxRetriesPerStage: 5,
         allowFullAccessWorkers: true,
       },
@@ -528,7 +501,10 @@ describe("orchestrationSettingsDraftsEqual", () => {
     const changedOrchestratorConfig: OrchestrationSettingsDraft = {
       roleSelections: base.roleSelections,
       rolePrefixes: base.rolePrefixes,
-      orchestratorConfig: { ...base.orchestratorConfig, enabled: !base.orchestratorConfig.enabled },
+      orchestratorConfig: {
+        ...base.orchestratorConfig,
+        pmModelSelection: pmSelection("openai", "gpt-5-other"),
+      },
     };
     expect(orchestrationSettingsDraftsEqual(base, changedSelection)).toBe(false);
     expect(orchestrationSettingsDraftsEqual(base, changedPrefix)).toBe(false);
@@ -538,7 +514,6 @@ describe("orchestrationSettingsDraftsEqual", () => {
 
 describe("orchestratorConfigDraftsEqual", () => {
   const base = seedOrchestratorConfigDraft({
-    enabled: true,
     pmModelSelection: pmSelection("openai", "gpt-5-pm"),
     openPrAsDraft: true,
     taskTypes: [
@@ -557,15 +532,13 @@ describe("orchestratorConfigDraftsEqual", () => {
     resourceLimits: {
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
-      maxStageHandoffs: 4,
       maxRetriesPerStage: 5,
       allowFullAccessWorkers: false,
     },
   });
 
-  it("tracks edits across enabled, pm model, landing PR mode, stages, gates, and limits", () => {
+  it("tracks edits across pm model, landing PR mode, stages, gates, and limits", () => {
     expect(orchestratorConfigDraftsEqual(base, { ...base })).toBe(true);
-    expect(orchestratorConfigDraftsEqual(base, { ...base, enabled: false })).toBe(false);
     expect(
       orchestratorConfigDraftsEqual(base, {
         ...base,

@@ -130,7 +130,6 @@ const project: OrchestrationProject = {
   },
   roleModelSelections: {},
   orchestratorConfig: {
-    enabled: true,
     pmModelSelection: pmSelection(),
   },
   scripts: [],
@@ -843,7 +842,6 @@ const makeCapturingAdapter = (
 const projectWithPmModel = (instanceId: string, model: string): OrchestrationProject => ({
   ...project,
   orchestratorConfig: {
-    enabled: true,
     pmModelSelection: pmSelection(ProviderInstanceId.make(instanceId), model),
   },
 });
@@ -866,7 +864,6 @@ const projectMetaUpdatedEvent = (input: {
   payload: {
     projectId,
     orchestratorConfig: {
-      enabled: true,
       pmModelSelection: pmSelection(ProviderInstanceId.make(input.instanceId), input.model),
     },
     updatedAt: now,
@@ -1062,7 +1059,6 @@ describe("PmRuntime", () => {
         yield* factory.getOrCreate({
           ...project,
           orchestratorConfig: {
-            enabled: true,
             pmModelSelection: null,
           },
         });
@@ -1133,9 +1129,7 @@ describe("PmRuntime", () => {
             instanceId: codexInstanceId,
             model: "gpt-5-codex",
           },
-          orchestratorConfig: {
-            enabled: true,
-          },
+          orchestratorConfig: {},
           createdAt: now,
         });
 
@@ -1144,7 +1138,6 @@ describe("PmRuntime", () => {
           commandId: CommandId.make("cmd-pm-projection-select"),
           projectId: projectedProjectId,
           orchestratorConfig: {
-            enabled: true,
             pmModelSelection: pmSelection(codexInstanceId, "gpt-5.5"),
           },
         });
@@ -1155,7 +1148,6 @@ describe("PmRuntime", () => {
           assert.fail("expected projected project to exist");
         }
         assert.deepStrictEqual(projectedProject.orchestratorConfig, {
-          enabled: true,
           pmModelSelection: {
             instanceId: codexInstanceId,
             model: "gpt-5.5",
@@ -1186,7 +1178,6 @@ describe("PmRuntime", () => {
           .getOrCreate({
             ...project,
             orchestratorConfig: {
-              enabled: true,
               pmModelSelection: null,
             },
           })

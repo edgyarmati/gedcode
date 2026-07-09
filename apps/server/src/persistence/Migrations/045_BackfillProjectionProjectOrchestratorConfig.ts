@@ -17,20 +17,26 @@ const PayloadJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Un
 const ConfigJson = Schema.fromJsonString(OrchestratorConfigJson);
 const decodePayloadJson = Schema.decodeUnknownSync(PayloadJson);
 const encodeConfigJson = Schema.encodeSync(ConfigJson);
+const allowedResourceLimitKeys = new Set([
+  "maxParallelTasks",
+  "maxParallelWorkers",
+  "maxRetriesPerStage",
+  "allowFullAccessWorkers",
+]);
 
 /**
- * 045 — Repair project orchestrator config projections after 0.2.0.
+ * 045 — Backfill project orchestrator config projections after 0.2.0.
  *
  * Migration 037 added `projection_projects.orchestrator_config_json` with a
  * safe default of `{}` but did not backfill existing projection rows from the
  * append-only event log. Packaged 0.2.0 databases could therefore have
- * `project.meta-updated` events with `orchestratorConfig.enabled=true` while
- * every projected project still read as `{}`, causing PM startup to fail the
- * enabled guard.
+ * `project.meta-updated` events with PM model selections while every projected
+ * project still read as `{}`, causing PM startup to have no configured model.
  *
- * Only rows whose projected config is missing `enabled` are repaired. Historical
- * configs are shallow-merged in event order so a stale follow-up event that only
- * selected `pmModelSelection` does not erase an earlier explicit `enabled:true`.
+ * Only rows whose projected config is still `{}` are repaired. Historical
+ * configs are shallow-merged in event order and legacy project-enable / removed
+ * resource-limit keys are intentionally dropped because current GedCode treats
+ * every project as orchestrator-enabled.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -45,7 +51,7 @@ export default Effect.gen(function* () {
      AND events.stream_id = projects.project_id
     WHERE events.event_type IN ('project.created', 'project.meta-updated')
       AND json_type(events.payload_json, '$.orchestratorConfig') = 'object'
-      AND json_type(projects.orchestrator_config_json, '$.enabled') IS NULL
+      AND projects.orchestrator_config_json = '{}'
     ORDER BY projects.project_id ASC, events.sequence ASC
   `;
 
@@ -57,9 +63,19 @@ export default Effect.gen(function* () {
       continue;
     }
     const existingConfig = configByProject.get(row.projectId);
+    const { enabled: _enabled, resourceLimits, ...restConfig } = config;
+    const cleanResourceLimits = asRecord(resourceLimits);
+    const nextResourceLimits = cleanResourceLimits
+      ? Object.fromEntries(
+          Object.entries(cleanResourceLimits).filter(([key]) => allowedResourceLimitKeys.has(key)),
+        )
+      : undefined;
     configByProject.set(row.projectId, {
       ...(existingConfig !== undefined ? existingConfig : {}),
-      ...config,
+      ...restConfig,
+      ...(nextResourceLimits !== undefined && Object.keys(nextResourceLimits).length > 0
+        ? { resourceLimits: nextResourceLimits }
+        : {}),
     });
   }
 
@@ -68,7 +84,7 @@ export default Effect.gen(function* () {
       UPDATE projection_projects
       SET orchestrator_config_json = ${encodeConfigJson(config)}
       WHERE project_id = ${projectId}
-        AND json_type(orchestrator_config_json, '$.enabled') IS NULL
+        AND orchestrator_config_json = '{}'
     `;
   }
 });

@@ -28,7 +28,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -121,27 +120,6 @@ function RoleConfigRow({
   );
 }
 
-function EnabledSection({
-  enabled,
-  onEnabledChange,
-}: {
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}) {
-  return (
-    <SettingsSection title="Enabled">
-      <label className="flex items-center justify-between gap-3 text-sm">
-        <span>Run orchestrator mode for this project</span>
-        <Switch
-          checked={enabled}
-          aria-label="Enable orchestrator mode"
-          onCheckedChange={(checked) => onEnabledChange(Boolean(checked))}
-        />
-      </label>
-    </SettingsSection>
-  );
-}
-
 function PmModelSection({
   selection,
   instanceEntries,
@@ -186,7 +164,6 @@ function ResourceLimitsSection({
   inheritedResourceLimits: {
     readonly maxParallelTasks: number;
     readonly maxParallelWorkers: number;
-    readonly maxStageHandoffs: number;
     readonly maxRetriesPerStage: number;
     readonly allowFullAccessWorkers: boolean;
   };
@@ -283,12 +260,6 @@ export function ProjectOrchestrationSettingsDialog({
     setDraft((current) => ({
       ...current,
       rolePrefixes: { ...current.rolePrefixes, [role]: next },
-    }));
-  }, []);
-  const handleEnabledChange = useCallback((enabled: boolean) => {
-    setDraft((current) => ({
-      ...current,
-      orchestratorConfig: { ...current.orchestratorConfig, enabled },
     }));
   }, []);
   const handlePmModelSelectionChange = useCallback((next: ModelSelection | null) => {
@@ -389,10 +360,6 @@ export function ProjectOrchestrationSettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="max-h-[60vh] space-y-3 overflow-y-auto">
-          <EnabledSection
-            enabled={draft.orchestratorConfig.enabled}
-            onEnabledChange={handleEnabledChange}
-          />
           <PmModelSection
             selection={draft.orchestratorConfig.pmModelSelection}
             instanceEntries={instanceEntries}

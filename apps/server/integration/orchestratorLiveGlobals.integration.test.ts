@@ -459,14 +459,13 @@ it.live(
 );
 
 it.live(
-  "proves sparse projects inherit stages and resource limits while explicit values win",
+  "proves sparse projects inherit stages while explicit values win",
   () =>
     withHarness((harness) =>
       Effect.gen(function* () {
         yield* updateGlobalDefaults(harness, (current) => ({
           ...current,
           stages: ["classify", "plan", "work", "verify"],
-          maxStageHandoffs: 1,
         }));
 
         const inheritedStageTask = taskId("stage-inherited");
@@ -476,7 +475,6 @@ it.live(
           projectId: projectId("stage-inherited"),
           taskId: inheritedStageTask,
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [{ id: "feature" }],
           },
           createdAt: iso(10),
@@ -496,7 +494,6 @@ it.live(
           projectId: projectId("stage-explicit"),
           taskId: explicitStageTask,
           orchestratorConfig: {
-            enabled: true,
             taskTypes: [
               {
                 id: "feature",
@@ -512,61 +509,6 @@ it.live(
           taskId: explicitStageTask,
           role: "review",
           createdAt: iso(13),
-        });
-
-        const inheritedLimitTask = taskId("limit-inherited");
-        yield* seedProjectAndTask({
-          harness,
-          suffix: "limit-inherited",
-          projectId: projectId("limit-inherited"),
-          taskId: inheritedLimitTask,
-          orchestratorConfig: {
-            enabled: true,
-            taskTypes: [{ id: "feature" }],
-          },
-          createdAt: iso(14),
-        });
-        yield* startAndCompleteStage({
-          harness,
-          suffix: "limit-inherited-classify",
-          taskId: inheritedLimitTask,
-          role: "classify",
-          createdAt: iso(15),
-        });
-        yield* assertStageRejected({
-          harness,
-          suffix: "limit-inherited-plan",
-          taskId: inheritedLimitTask,
-          role: "plan",
-          createdAt: iso(16),
-        });
-
-        const explicitLimitTask = taskId("limit-explicit");
-        yield* seedProjectAndTask({
-          harness,
-          suffix: "limit-explicit",
-          projectId: projectId("limit-explicit"),
-          taskId: explicitLimitTask,
-          orchestratorConfig: {
-            enabled: true,
-            taskTypes: [{ id: "feature" }],
-            resourceLimits: { maxStageHandoffs: 2 },
-          },
-          createdAt: iso(17),
-        });
-        yield* startAndCompleteStage({
-          harness,
-          suffix: "limit-explicit-classify",
-          taskId: explicitLimitTask,
-          role: "classify",
-          createdAt: iso(18),
-        });
-        yield* startAndCompleteStage({
-          harness,
-          suffix: "limit-explicit-plan",
-          taskId: explicitLimitTask,
-          role: "plan",
-          createdAt: iso(19),
         });
       }),
     ),

@@ -33,14 +33,12 @@ const featureTaskType = {
 const projectConfig = (
   taskTypes: ReadonlyArray<OrchestratorTaskType> = [featureTaskType],
 ): OrchestratorProjectConfig => ({
-  enabled: true,
   openPrAsDraft: false,
   pmModelSelection: null,
   taskTypes,
   resourceLimits: {
     maxParallelTasks: DEFAULT_MAX_PARALLEL_TASKS,
     maxParallelWorkers: 1,
-    maxStageHandoffs: 8,
     maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
     allowFullAccessWorkers: false,
   },
@@ -243,12 +241,11 @@ describe("resolveResourceLimit", () => {
     expect(
       resolveResourceLimits({
         config: { resourceLimits: { maxParallelTasks: 2, allowFullAccessWorkers: true } },
-        defaults: { maxParallelWorkers: 5, maxStageHandoffs: 10 },
+        defaults: { maxParallelWorkers: 5 },
       }),
     ).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 5,
-      maxStageHandoffs: 10,
       maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
       allowFullAccessWorkers: true,
     });

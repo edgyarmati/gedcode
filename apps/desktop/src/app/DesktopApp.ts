@@ -11,6 +11,7 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
+import * as DesktopDataMigration from "./DesktopDataMigration.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -198,7 +199,12 @@ const startup = Effect.gen(function* () {
   yield* shellEnvironment.installIntoProcess;
   const userDataPath = yield* appIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
+  const migrationResult = yield* DesktopDataMigration.migrateDefaultAppDataDirectory;
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
+  const migrationLogFields = DesktopDataMigration.migrationResultLogFields(migrationResult);
+  if (Option.isSome(migrationLogFields)) {
+    yield* logStartupInfo("migrated default app data directory", migrationLogFields.value);
+  }
   yield* desktopSettings.load;
 
   if (environment.platform === "linux") {

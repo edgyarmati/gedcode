@@ -53,6 +53,8 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.isDevelopment, true);
       assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
       assert.equal(environment.baseDir, "/tmp/t3");
+      assert.equal(environment.usesDefaultBaseDir, false);
+      assert.equal(environment.legacyDefaultBaseDir, "/Users/alice/.t3");
       assert.equal(environment.stateDir, "/tmp/t3/dev");
       assert.equal(environment.desktopSettingsPath, "/tmp/t3/dev/desktop-settings.json");
       assert.equal(environment.clientSettingsPath, "/tmp/t3/dev/client-settings.json");
@@ -77,6 +79,18 @@ describe("DesktopEnvironment", () => {
       assert.deepEqual(environment.commitHashOverride, Option.some("0123456789abcdef"));
       assert.deepEqual(environment.otlpTracesUrl, Option.some("http://127.0.0.1:4318/v1/traces"));
       assert.equal(environment.otlpExportIntervalMs, 2500);
+    }),
+  );
+
+  it.effect("uses ~/.gedcode as the default base directory for fresh installs", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment();
+
+      assert.equal(environment.baseDir, "/Users/alice/.gedcode");
+      assert.equal(environment.legacyDefaultBaseDir, "/Users/alice/.t3");
+      assert.equal(environment.usesDefaultBaseDir, true);
+      assert.equal(environment.stateDir, "/Users/alice/.gedcode/userdata");
+      assert.equal(environment.serverSettingsPath, "/Users/alice/.gedcode/userdata/settings.json");
     }),
   );
 

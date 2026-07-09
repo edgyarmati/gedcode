@@ -126,7 +126,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         },
         allowFullAccessWorkers: true,
         defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
-        maxStageHandoffs: 20,
         maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
         worktreeReaperIntervalMinutes: 2,
@@ -141,7 +140,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       instanceId: "codex_worker",
       model: "gpt-5-worker",
     });
-    expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);

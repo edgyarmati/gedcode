@@ -332,7 +332,7 @@ describe("OrchestrationEngine", () => {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
           },
-          orchestratorConfig: { enabled: true },
+          orchestratorConfig: {},
           createdAt,
         }),
       );

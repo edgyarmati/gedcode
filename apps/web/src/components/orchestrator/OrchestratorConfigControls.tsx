@@ -40,7 +40,7 @@ const CUSTOMIZE_VALUE = "__customize__";
 
 export type ProjectResourceLimitNumberKey = Exclude<
   keyof OrchestratorResourceLimits,
-  "allowFullAccessWorkers" | "maxStageHandoffs"
+  "allowFullAccessWorkers"
 >;
 
 export function OrchestratorStagesControl({

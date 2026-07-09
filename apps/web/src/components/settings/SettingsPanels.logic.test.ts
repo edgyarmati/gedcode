@@ -129,7 +129,6 @@ describe("Orchestrator global defaults settings logic", () => {
       },
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
-      maxStageHandoffs: 10,
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
@@ -152,7 +151,6 @@ describe("Orchestrator global defaults settings logic", () => {
     expect(draft.resourceDefaults).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
-      maxStageHandoffs: 10,
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
@@ -174,7 +172,6 @@ describe("Orchestrator global defaults settings logic", () => {
       resourceDefaults: {
         maxParallelTasks: 4,
         maxParallelWorkers: 5,
-        maxStageHandoffs: 12,
         maxRetriesPerStage: 6,
         pmReconciliationIntervalMs: 180_000,
         worktreeReaperIntervalMinutes: 9,
@@ -194,7 +191,6 @@ describe("Orchestrator global defaults settings logic", () => {
       },
       maxParallelTasks: 4,
       maxParallelWorkers: 5,
-      maxStageHandoffs: 12,
       maxRetriesPerStage: 6,
       pmReconciliationIntervalMs: 180_000,
       worktreeReaperIntervalMinutes: 9,

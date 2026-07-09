@@ -2,7 +2,6 @@ import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
-  DEFAULT_MAX_STAGE_HANDOFFS,
   ModelSelection,
   ORCHESTRATION_STAGE_ROLES,
   OrchestratorGlobalDefaults,
@@ -37,7 +36,6 @@ export type InheritableOrchestratorGatePolicy = Readonly<
 export interface InheritableOrchestratorResourceLimits {
   readonly maxParallelTasks: number | null;
   readonly maxParallelWorkers: number | null;
-  readonly maxStageHandoffs: number | null;
   readonly maxRetriesPerStage: number | null;
   readonly allowFullAccessWorkers: boolean | null;
 }
@@ -59,7 +57,6 @@ export interface OrchestrationSettingsDraft {
 }
 
 export interface OrchestratorConfigDraft {
-  readonly enabled: boolean;
   readonly pmModelSelection: ModelSelection | null;
   readonly openPrAsDraft: boolean | null;
   readonly optionalStages: InheritableOrchestratorStages;
@@ -177,7 +174,6 @@ export function seedOrchestratorConfigDraft(
   const gatePolicy = asRecord(featureConfig?.gatePolicy);
   const resourceLimits = asRecord(raw.resourceLimits);
   return {
-    enabled: typeof raw.enabled === "boolean" ? raw.enabled : false,
     pmModelSelection: asModelSelection(raw.pmModelSelection),
     openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
     optionalStages:
@@ -196,7 +192,6 @@ export function seedOrchestratorConfigDraft(
     resourceLimits: {
       maxParallelTasks: asPositiveInt(resourceLimits?.maxParallelTasks),
       maxParallelWorkers: asPositiveInt(resourceLimits?.maxParallelWorkers),
-      maxStageHandoffs: asPositiveInt(resourceLimits?.maxStageHandoffs),
       maxRetriesPerStage: asPositiveInt(resourceLimits?.maxRetriesPerStage),
       allowFullAccessWorkers:
         typeof resourceLimits?.allowFullAccessWorkers === "boolean"
@@ -237,7 +232,6 @@ export function buildOrchestratorProjectConfig(
       [
         "maxParallelTasks",
         "maxParallelWorkers",
-        "maxStageHandoffs",
         "maxRetriesPerStage",
         "allowFullAccessWorkers",
       ] as const
@@ -248,7 +242,6 @@ export function buildOrchestratorProjectConfig(
   );
 
   return {
-    enabled: draft.enabled,
     pmModelSelection: draft.pmModelSelection,
     ...(draft.openPrAsDraft === null ? {} : { openPrAsDraft: draft.openPrAsDraft }),
     ...(Object.keys(featureConfig).length > 1 ? { taskTypes: [featureConfig] } : {}),
@@ -285,7 +278,6 @@ export function seedOrchestratorInheritedDefaultsDraft(
     resourceLimits: {
       maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
       maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
-      maxStageHandoffs: normalizedGlobals.maxStageHandoffs ?? DEFAULT_MAX_STAGE_HANDOFFS,
       maxRetriesPerStage: normalizedGlobals.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
       allowFullAccessWorkers: normalizedGlobals.allowFullAccessWorkers ?? false,
     },
@@ -332,7 +324,6 @@ export function orchestratorConfigDraftsEqual(
   right: OrchestratorConfigDraft,
 ): boolean {
   return (
-    left.enabled === right.enabled &&
     modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
     left.openPrAsDraft === right.openPrAsDraft &&
     ((left.optionalStages === null && right.optionalStages === null) ||
@@ -344,7 +335,6 @@ export function orchestratorConfigDraftsEqual(
     EDITABLE_ORCHESTRATOR_GATES.every((gate) => left.gatePolicy[gate] === right.gatePolicy[gate]) &&
     left.resourceLimits.maxParallelTasks === right.resourceLimits.maxParallelTasks &&
     left.resourceLimits.maxParallelWorkers === right.resourceLimits.maxParallelWorkers &&
-    left.resourceLimits.maxStageHandoffs === right.resourceLimits.maxStageHandoffs &&
     left.resourceLimits.maxRetriesPerStage === right.resourceLimits.maxRetriesPerStage &&
     left.resourceLimits.allowFullAccessWorkers === right.resourceLimits.allowFullAccessWorkers
   );

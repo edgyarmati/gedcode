@@ -51,10 +51,8 @@ layer("037_ProjectionProjectOrchestratorConfig", (it) => {
       const raw = rows[0]?.orchestrator_config_json;
       assert.strictEqual(raw, "{}");
 
-      // The default JSON must decode to the fail-closed config: orchestrator
-      // disabled and full-access workers forbidden (the runtime-mode clamp anchor).
+      // The default JSON must decode to the fail-closed worker runtime-mode clamp anchor.
       const config = decodeConfigJson(raw ?? "{}");
-      assert.strictEqual(config.enabled, false);
       assert.strictEqual(config.resourceLimits.allowFullAccessWorkers, false);
     }),
   );

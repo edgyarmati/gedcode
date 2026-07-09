@@ -354,7 +354,7 @@ function seedReviewTask(input: {
         title: `Landing ${input.suffix}`,
         workspaceRoot: input.harness.workspaceDir,
         defaultModelSelection: DEFAULT_SELECTION,
-        orchestratorConfig: input.orchestratorConfig ?? { enabled: true },
+        orchestratorConfig: input.orchestratorConfig ?? {},
         createdAt: iso(0),
       })
       .pipe(Effect.orDie);
@@ -550,7 +550,7 @@ it.live("opens a draft PR when project config sets openPrAsDraft", () => {
         taskId: id,
         branch: "orchestrator/landing-draft",
         title: "Landing draft PR",
-        orchestratorConfig: { enabled: true, openPrAsDraft: true },
+        orchestratorConfig: { openPrAsDraft: true },
       });
 
       yield* approveLandAndDispatch({ harness, suffix: "draft", taskId: id, stageThreadId });

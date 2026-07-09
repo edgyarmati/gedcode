@@ -5,7 +5,6 @@ import {
   DEFAULT_MAX_PARALLEL_TASKS,
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
-  DEFAULT_MAX_STAGE_HANDOFFS,
   DEFAULT_PM_RECONCILIATION_INTERVAL_MS,
   DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES,
   OrchestratorGlobalDefaults,
@@ -33,13 +32,11 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
-        maxStageHandoffs: 5,
         maxRetriesPerStage: 4,
       },
     });
     expect(decoded.resourceLimits.maxParallelTasks).toBe(2);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(3);
-    expect(decoded.resourceLimits.maxStageHandoffs).toBe(5);
     expect(decoded.resourceLimits.maxRetriesPerStage).toBe(4);
     expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(false);
   });
@@ -96,7 +93,6 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       },
       maxParallelTasks: 3,
       maxParallelWorkers: 4,
-      maxStageHandoffs: 9,
       maxRetriesPerStage: 5,
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
@@ -125,9 +121,8 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
 });
 
 describe("OrchestratorProjectConfig — safe-by-default shape", () => {
-  it("defaults to disabled with a require-approval feature task type", () => {
+  it("defaults to a require-approval feature task type", () => {
     const decoded = decodeProjectConfig({});
-    expect(decoded.enabled).toBe(false);
     expect(decoded.pmModelSelection).toBe(null);
     expect(decoded.taskTypes).toHaveLength(1);
     const feature = decoded.taskTypes[0];
@@ -144,7 +139,6 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     const decoded = decodeProjectConfig({});
     expect(decoded.resourceLimits.maxParallelTasks).toBe(DEFAULT_MAX_PARALLEL_TASKS);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(DEFAULT_MAX_PARALLEL_WORKERS);
-    expect(decoded.resourceLimits.maxStageHandoffs).toBe(DEFAULT_MAX_STAGE_HANDOFFS);
     expect(decoded.resourceLimits.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
   });
 });
@@ -180,7 +174,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
 
   it("round-trips a fully-specified config without loss", () => {
     const decoded = decodeProjectConfig({
-      enabled: true,
       pmModelSelection: {
         instanceId: "claudeAgent",
         model: "claude-opus-4-8",
@@ -202,7 +195,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 2,
-        maxStageHandoffs: 12,
         maxRetriesPerStage: 3,
         allowFullAccessWorkers: true,
       },
@@ -213,7 +205,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     const reDecoded = decodeProjectConfig(encoded);
 
     expect(reDecoded).toEqual(decoded);
-    expect(reDecoded.enabled).toBe(true);
     expect(reDecoded.pmModelSelection?.instanceId).toBe("claudeAgent");
     expect(reDecoded.pmModelSelection?.model).toBe("claude-opus-4-8");
     expect(reDecoded.pmModelSelection?.options).toEqual([{ id: "contextWindow", value: "1m" }]);
@@ -228,7 +219,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
 
   it("decodes legacy pi-era PM model selections as unconfigured", () => {
     const decoded = decodeProjectConfig({
-      enabled: true,
       pmModelSelection: { piProvider: "openai", model: "gpt-5.5" },
     });
 
@@ -237,7 +227,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
 
   it("round-trips worker-shaped PM model selections", () => {
     const decoded = decodeProjectConfig({
-      enabled: true,
       pmModelSelection: {
         instanceId: "claudeAgent",
         model: "claude-sonnet-4-6",
