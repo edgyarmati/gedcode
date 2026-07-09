@@ -1,7 +1,7 @@
 import { scopedProjectKey, scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
 import { type OrchestrationGateKind } from "@t3tools/contracts";
 import { Link, useParams } from "@tanstack/react-router";
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, FolderPlusIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -21,6 +21,7 @@ import {
   selectTasksForProjectRef,
   useStore,
 } from "../../store";
+import { useCommandPaletteStore } from "../../commandPaletteStore";
 import type { Project } from "../../types";
 import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./TaskBoard";
 
@@ -31,6 +32,7 @@ import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./Task
 // when any of the project's stage threads has a live session.
 export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  const openAddProject = useCommandPaletteStore((store) => store.openAddProject);
   const activeProjectKey = useParams({
     strict: false,
     select: (params) =>
@@ -46,6 +48,22 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
             Projects
           </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Add project"
+                  data-testid="orchestrator-sidebar-add-project-trigger"
+                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={openAddProject}
+                />
+              }
+            >
+              <FolderPlusIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="right">Add project</TooltipPopup>
+          </Tooltip>
         </div>
         <SidebarMenu>
           {projects.map((project) => {

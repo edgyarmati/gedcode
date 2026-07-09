@@ -21,6 +21,7 @@ import {
   CheckIcon,
   CircleAlertIcon,
   ClockIcon,
+  FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
   Trash2Icon,
@@ -48,6 +49,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
+import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import {
   retainOrchestratorProjectSubscription,
@@ -163,10 +165,16 @@ function OrchestratorPage({ children }: { children: ReactNode }) {
 
 export function OrchestratorHomeRoute() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  const openAddProject = useCommandPaletteStore((store) => store.openAddProject);
 
   return (
     <OrchestratorPage>
-      <OrchestratorPageChrome title="Orchestrator" description={`${projects.length} projects`} />
+      <OrchestratorPageChrome title="Orchestrator" description={`${projects.length} projects`}>
+        <Button onClick={openAddProject} size="sm" variant="outline">
+          <FolderPlusIcon className="size-4" />
+          New project
+        </Button>
+      </OrchestratorPageChrome>
       <main className="min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-5 sm:py-4">
         <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
           {projects.map((project) => (

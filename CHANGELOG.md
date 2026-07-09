@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: The orchestrator can now add a project from the landing header and the orchestrator sidebar, reusing the same add-project flow as chat.
 - Fix/UI: Run a dark-mode and spacing consistency pass across orchestrator surfaces; the update notification no longer overlaps the task board.
 - Fix/UI: Markdown file tags with line suffixes now derive their file icon from the unsuffixed path, so links like `package.json:25` show the npm package icon instead of the generic file icon.
 - UI: Switching between Chat and Orchestrator is now first-class. The sidebar "Orchestrator" toggle returns to your last-visited orchestrator project workspace (falling back to the project grid on first use or if that project no longer exists). A chat project row now has an "Open in Orchestrator" hover action next to "New thread", and the orchestrator workspace header has a symmetric "Open in Chat" button that lands on that project's most recent chat thread. In orchestrator mode the left sidebar swaps the chat thread list for an orchestrator project list — each row shows a needs-attention count (pending gates + blocked/quota), an active count, and a live pulse when any of the project's worker stage threads is running — while the Chat/Orchestrator toggle stays at the bottom. In chat mode, orchestrator-owned threads (PM chat and worker stage threads) no longer clutter the thread list; they remain reachable from the task detail view.

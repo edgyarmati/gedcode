@@ -15,7 +15,10 @@ import {
 } from "@t3tools/contracts";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
+import { useStore } from "../../store";
 import type { OrchestratorTask, Project, Thread } from "../../types";
+import { SidebarProvider } from "../ui/sidebar";
+import { OrchestratorSidebarNav } from "./OrchestratorSidebarNav";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import {
   AbandonedTaskBoardSection,
@@ -35,7 +38,7 @@ import {
   runPmHarnessSwitchAction,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
-import { PmChatEmptyState } from "./OrchestratorRoutes";
+import { OrchestratorHomeRoute, PmChatEmptyState } from "./OrchestratorRoutes";
 
 type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children?: ReactNode;
@@ -49,6 +52,7 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
+  useParams: () => null,
 }));
 
 vi.mock("../DiffWorkerPoolProvider", () => ({
@@ -305,6 +309,32 @@ describe("PmChatEmptyState", () => {
 
     expect(markup).toContain("Tell the project manager what you want built.");
     expect(markup).toContain("board to the right");
+  });
+});
+
+describe("Orchestrator add-project affordances", () => {
+  it("renders a New project control in the landing header", () => {
+    useStore.setState({ activeEnvironmentId: null, environmentStateById: {} });
+
+    const markup = renderToStaticMarkup(
+      <SidebarProvider>
+        <OrchestratorHomeRoute />
+      </SidebarProvider>,
+    );
+
+    expect(markup).toContain("New project");
+  });
+
+  it("renders an Add project control in the orchestrator sidebar nav", () => {
+    useStore.setState({ activeEnvironmentId: null, environmentStateById: {} });
+
+    const markup = renderToStaticMarkup(
+      <SidebarProvider>
+        <OrchestratorSidebarNav />
+      </SidebarProvider>,
+    );
+
+    expect(markup).toContain('aria-label="Add project"');
   });
 });
 

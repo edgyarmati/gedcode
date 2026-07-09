@@ -13,10 +13,11 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { initialEnvironmentState, useStore } from "../../store";
 import type { OrchestratorTask, SidebarThreadSummary } from "../../types";
 import { SidebarProvider } from "../ui/sidebar";
@@ -27,6 +28,7 @@ const projectId = ProjectId.make("proj-sidebar");
 const blockedTaskId = TaskId.make("task-blocked");
 const runningTaskId = TaskId.make("task-running");
 const runningStageThreadId = ThreadId.make("thread-running-stage");
+const realOpenAddProject = useCommandPaletteStore.getState().openAddProject;
 
 function makeTask(overrides: Partial<OrchestratorTask>): OrchestratorTask {
   return {
@@ -147,6 +149,11 @@ function renderNav() {
 
 afterEach(() => {
   useStore.setState({ activeEnvironmentId: null, environmentStateById: {} });
+  useCommandPaletteStore.setState({
+    open: false,
+    openIntent: null,
+    openAddProject: realOpenAddProject,
+  });
 });
 
 it("renders a project row with needs-attention and active counts and a running pulse", async () => {
@@ -162,4 +169,18 @@ it("renders a project row with needs-attention and active counts and a running p
   await expect.element(page.getByLabelText("1 active")).toBeInTheDocument();
   // The working task's stage thread has a running session → pulse present.
   await expect.element(page.getByLabelText("Running")).toBeInTheDocument();
+});
+
+it("opens the add-project flow from the orchestrator sidebar", async () => {
+  const openAddProject = vi.fn();
+  useCommandPaletteStore.setState({ openAddProject });
+  seedStore();
+  renderNav();
+
+  const trigger = page.getByTestId("orchestrator-sidebar-add-project-trigger");
+  await expect.element(trigger).toBeInTheDocument();
+
+  await trigger.click();
+
+  expect(openAddProject).toHaveBeenCalledOnce();
 });
