@@ -47,6 +47,15 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpServiceName: "t3-server",
   } as const;
 
+  // Persistence retry tunables resolve to the safe defaults whenever the
+  // `T3CODE_SQLITE_*` env vars are absent (the common case across these cases).
+  const defaultPersistenceConfig = {
+    busyTimeoutMs: 5000,
+    initialBackoffMs: 50,
+    maxBackoffMs: 1000,
+    maxAttempts: 4,
+  } as const;
+
   const openBootstrapFd = Effect.fn(function* (payload: DesktopBackendBootstrapValue) {
     const fs = yield* FileSystem.FileSystem;
     const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
@@ -138,6 +147,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Warn",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         mode: "desktop",
         port: 4001,
         cwd: process.cwd(),
@@ -204,6 +214,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Debug",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -273,6 +284,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -345,6 +357,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         otlpTracesUrl: "http://localhost:4318/v1/traces",
         otlpMetricsUrl: "http://localhost:4318/v1/metrics",
         mode: "desktop",
@@ -472,6 +485,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Debug",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         mode: "web",
         port: 8788,
         cwd: process.cwd(),
@@ -539,6 +553,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         otlpTracesUrl: "http://localhost:4318/v1/traces",
         otlpMetricsUrl: "http://localhost:4318/v1/metrics",
         mode: "desktop",
@@ -604,6 +619,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
+        persistence: defaultPersistenceConfig,
         mode: "web",
         port: 3773,
         cwd: process.cwd(),
@@ -619,6 +635,154 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
+      });
+    }),
+  );
+
+  it.effect("resolves SQLite persistence retry tunables from env vars", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+      const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-persistence-env");
+
+      const resolved = yield* resolveServerConfig(
+        {
+          mode: Option.some("desktop"),
+          port: Option.some(4888),
+          host: Option.none(),
+          baseDir: Option.some(baseDir),
+          cwd: Option.none(),
+          devUrl: Option.none(),
+          noBrowser: Option.none(),
+          bootstrapFd: Option.none(),
+          autoBootstrapProjectFromCwd: Option.none(),
+          logWebSocketEvents: Option.none(),
+          tailscaleServeEnabled: Option.none(),
+          tailscaleServePort: Option.none(),
+        },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_SQLITE_BUSY_TIMEOUT_MS: "7500",
+                  T3CODE_SQLITE_RETRY_INITIAL_BACKOFF_MS: "25",
+                  T3CODE_SQLITE_RETRY_MAX_BACKOFF_MS: "2000",
+                  T3CODE_SQLITE_RETRY_MAX_ATTEMPTS: "6",
+                },
+              }),
+            ),
+            NetService.layer,
+          ),
+        ),
+      );
+
+      expect(resolved.persistence).toEqual({
+        busyTimeoutMs: 7500,
+        initialBackoffMs: 25,
+        maxBackoffMs: 2000,
+        maxAttempts: 6,
+      });
+    }),
+  );
+
+  it.effect("clamps non-positive SQLite persistence tunables to a safe floor", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+      const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-persistence-clamp");
+
+      const resolved = yield* resolveServerConfig(
+        {
+          mode: Option.some("desktop"),
+          port: Option.some(4888),
+          host: Option.none(),
+          baseDir: Option.some(baseDir),
+          cwd: Option.none(),
+          devUrl: Option.none(),
+          noBrowser: Option.none(),
+          bootstrapFd: Option.none(),
+          autoBootstrapProjectFromCwd: Option.none(),
+          logWebSocketEvents: Option.none(),
+          tailscaleServeEnabled: Option.none(),
+          tailscaleServePort: Option.none(),
+        },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_SQLITE_BUSY_TIMEOUT_MS: "0",
+                  T3CODE_SQLITE_RETRY_INITIAL_BACKOFF_MS: "-10",
+                  T3CODE_SQLITE_RETRY_MAX_BACKOFF_MS: "0",
+                  T3CODE_SQLITE_RETRY_MAX_ATTEMPTS: "-1",
+                },
+              }),
+            ),
+            NetService.layer,
+          ),
+        ),
+      );
+
+      // Each tunable is floored to 1 so a misconfigured env can never disable
+      // the block window or produce a zero/negative retry count.
+      assert.deepEqual(resolved.persistence, {
+        busyTimeoutMs: 1,
+        initialBackoffMs: 1,
+        maxBackoffMs: 1,
+        maxAttempts: 1,
+      });
+    }),
+  );
+
+  it.effect("clamps each SQLite persistence tunable independently (mixed valid/invalid env)", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+      const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-persistence-mixed");
+
+      const resolved = yield* resolveServerConfig(
+        {
+          mode: Option.some("desktop"),
+          port: Option.some(4888),
+          host: Option.none(),
+          baseDir: Option.some(baseDir),
+          cwd: Option.none(),
+          devUrl: Option.none(),
+          noBrowser: Option.none(),
+          bootstrapFd: Option.none(),
+          autoBootstrapProjectFromCwd: Option.none(),
+          logWebSocketEvents: Option.none(),
+          tailscaleServeEnabled: Option.none(),
+          tailscaleServePort: Option.none(),
+        },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_SQLITE_BUSY_TIMEOUT_MS: "100",
+                  T3CODE_SQLITE_RETRY_INITIAL_BACKOFF_MS: "-5",
+                  T3CODE_SQLITE_RETRY_MAX_BACKOFF_MS: "2000",
+                  T3CODE_SQLITE_RETRY_MAX_ATTEMPTS: "0",
+                },
+              }),
+            ),
+            NetService.layer,
+          ),
+        ),
+      );
+
+      // Valid fields pass through untouched; only the non-positive neighbors are
+      // floored to 1. Proves the clamp is per-field, not an all-or-nothing reset.
+      assert.deepEqual(resolved.persistence, {
+        busyTimeoutMs: 100,
+        initialBackoffMs: 1,
+        maxBackoffMs: 2000,
+        maxAttempts: 1,
       });
     }),
   );

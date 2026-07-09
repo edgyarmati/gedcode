@@ -109,7 +109,6 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   // an entry already encodes "no selection for this instance".
   modelSelectionByProvider: Schema.optionalKey(Schema.Record(ProviderInstanceId, ModelSelection)),
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
-  gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
 });
@@ -199,7 +198,6 @@ const PersistedComposerDraftStoreState = Schema.Struct({
     Schema.Record(ProviderInstanceId, ModelSelection),
   ),
   stickyActiveProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
-  stickyGedWorkflowEnabled: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 });
 type PersistedComposerDraftStoreState = typeof PersistedComposerDraftStoreState.Type;
 
@@ -229,7 +227,6 @@ export interface ComposerThreadDraftState {
   modelSelectionByProvider: Partial<Record<ProviderInstanceId, ModelSelection>>;
   /** Routing key of the last picked instance (see `modelSelectionByProvider`). */
   activeProvider: ProviderInstanceId | null;
-  gedWorkflowEnabled?: boolean | null;
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
 }
@@ -286,7 +283,6 @@ interface ComposerDraftStoreState {
   logicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string>;
   stickyModelSelectionByProvider: Partial<Record<ProviderInstanceId, ModelSelection>>;
   stickyActiveProvider: ProviderInstanceId | null;
-  stickyGedWorkflowEnabled: boolean | null;
   /** Returns the editable composer content for a draft session or server thread. */
   getComposerDraft: (target: ComposerThreadTarget) => ComposerThreadDraftState | null;
   /** Looks up the active draft session for a logical project identity. */
@@ -355,7 +351,6 @@ interface ComposerDraftStoreState {
   finalizePromotedDraftThread: (threadRef: ComposerThreadTarget) => void;
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
-  setStickyGedWorkflowEnabled: (enabled: boolean | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
@@ -388,10 +383,6 @@ interface ComposerDraftStoreState {
   setInteractionMode: (
     threadRef: ComposerThreadTarget,
     interactionMode: ProviderInteractionMode | null | undefined,
-  ) => void;
-  setGedWorkflowEnabled: (
-    threadRef: ComposerThreadTarget,
-    enabled: boolean | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
@@ -475,7 +466,6 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftSt
   logicalProjectDraftThreadKeyByLogicalProjectKey: {},
   stickyModelSelectionByProvider: {},
   stickyActiveProvider: null,
-  stickyGedWorkflowEnabled: null,
 });
 
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
@@ -500,7 +490,6 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
-  gedWorkflowEnabled: null,
   runtimeMode: null,
   interactionMode: null,
 });
@@ -514,7 +503,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     terminalContexts: [],
     modelSelectionByProvider: {},
     activeProvider: null,
-    gedWorkflowEnabled: null,
     runtimeMode: null,
     interactionMode: null,
   };
@@ -585,7 +573,6 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.terminalContexts.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
-    (draft.gedWorkflowEnabled ?? null) === null &&
     draft.runtimeMode === null &&
     draft.interactionMode === null
   );
@@ -1498,10 +1485,6 @@ function normalizePersistedDraftsByThreadId(
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
         : null;
-    const gedWorkflowEnabled =
-      typeof draftCandidate.gedWorkflowEnabled === "boolean"
-        ? draftCandidate.gedWorkflowEnabled
-        : null;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1559,7 +1542,6 @@ function normalizePersistedDraftsByThreadId(
       attachments.length === 0 &&
       terminalContexts.length === 0 &&
       !hasModelData &&
-      gedWorkflowEnabled === null &&
       !runtimeMode &&
       !interactionMode
     ) {
@@ -1589,7 +1571,6 @@ function normalizePersistedDraftsByThreadId(
         : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
-      ...(gedWorkflowEnabled !== null ? { gedWorkflowEnabled } : {}),
     };
   }
 
@@ -1665,7 +1646,6 @@ function partializeComposerDraftStoreState(
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
       !hasModelData &&
-      (draft.gedWorkflowEnabled ?? null) === null &&
       draft.runtimeMode === null &&
       draft.interactionMode === null
     ) {
@@ -1697,9 +1677,6 @@ function partializeComposerDraftStoreState(
         : {}),
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
-      ...(draft.gedWorkflowEnabled !== undefined && draft.gedWorkflowEnabled !== null
-        ? { gedWorkflowEnabled: draft.gedWorkflowEnabled }
-        : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -1712,7 +1689,6 @@ function partializeComposerDraftStoreState(
       state.stickyModelSelectionByProvider,
     ),
     stickyActiveProvider: state.stickyActiveProvider,
-    stickyGedWorkflowEnabled: state.stickyGedWorkflowEnabled,
   };
 }
 
@@ -1783,10 +1759,6 @@ function normalizeCurrentPersistedComposerDraftStoreState(
     logicalProjectDraftThreadKeyByLogicalProjectKey,
     stickyModelSelectionByProvider: compactModelSelectionByProvider(stickyModelSelectionByProvider),
     stickyActiveProvider,
-    stickyGedWorkflowEnabled:
-      typeof normalizedPersistedState.stickyGedWorkflowEnabled === "boolean"
-        ? normalizedPersistedState.stickyGedWorkflowEnabled
-        : null,
   };
 }
 
@@ -1933,7 +1905,6 @@ function toHydratedThreadDraft(
       })) ?? [],
     modelSelectionByProvider,
     activeProvider,
-    gedWorkflowEnabled: persistedDraft.gedWorkflowEnabled ?? null,
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
   };
@@ -1980,7 +1951,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         logicalProjectDraftThreadKeyByLogicalProjectKey: {},
         stickyModelSelectionByProvider: {},
         stickyActiveProvider: null,
-        stickyGedWorkflowEnabled: null,
         getComposerDraft: (target) => getComposerDraftState(get(), target),
         getDraftThreadByLogicalProjectKey: (logicalProjectKey) => {
           return get().getDraftSessionByLogicalProjectKey(logicalProjectKey);
@@ -2310,14 +2280,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             };
           });
         },
-        setStickyGedWorkflowEnabled: (enabled) => {
-          const nextEnabled = typeof enabled === "boolean" ? enabled : null;
-          set((state) =>
-            state.stickyGedWorkflowEnabled === nextEnabled
-              ? state
-              : { stickyGedWorkflowEnabled: nextEnabled },
-          );
-        },
         applyStickyState: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
           if (threadKey.length === 0) {
@@ -2641,34 +2603,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               interactionMode: nextInteractionMode,
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
-        setGedWorkflowEnabled: (threadRef, enabled) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) {
-            return;
-          }
-          const nextEnabled = typeof enabled === "boolean" ? enabled : null;
-          set((state) => {
-            const existing = state.draftsByThreadKey[threadKey];
-            if (!existing && nextEnabled === null) {
-              return state;
-            }
-            const base = existing ?? createEmptyThreadDraft();
-            if ((base.gedWorkflowEnabled ?? null) === nextEnabled) {
-              return state;
-            }
-            const nextDraft: ComposerThreadDraftState = {
-              ...base,
-              gedWorkflowEnabled: nextEnabled,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -3006,7 +2940,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             normalizedPersisted.logicalProjectDraftThreadKeyByLogicalProjectKey,
           stickyModelSelectionByProvider: normalizedPersisted.stickyModelSelectionByProvider ?? {},
           stickyActiveProvider: normalizedPersisted.stickyActiveProvider ?? null,
-          stickyGedWorkflowEnabled: normalizedPersisted.stickyGedWorkflowEnabled ?? null,
         };
       },
     },

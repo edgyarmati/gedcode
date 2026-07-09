@@ -7,19 +7,25 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   EventId,
+  GateId,
   GitCommandError,
   KeybindingRule,
   MessageId,
   ExternalLauncherError,
+  type OrchestrationThread,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
   type OrchestrationCommand,
   type OrchestrationEvent,
+  type OrchestrationReadModel,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ResolvedKeybindingRule,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
@@ -70,6 +76,11 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "./orchestration/Services/OrchestrationEngine.ts";
+import {
+  PmProjectRuntimeFactory,
+  type PmProjectRuntimeFactoryShape,
+} from "./orchestration/Services/PmRuntime.ts";
+import { PmRuntimeError } from "./orchestration/pm/Errors.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import {
   ProjectionSnapshotQuery,
@@ -77,6 +88,11 @@ import {
 } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
+import {
+  defaultOkQuotaState,
+  ProviderQuotaStatusRepository,
+  type ProviderQuotaStatusRepositoryShape,
+} from "./persistence/Services/ProviderQuotaStatus.ts";
 import {
   ProviderRegistry,
   type ProviderRegistryShape,
@@ -119,7 +135,6 @@ import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
-import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 import * as Data from "effect/Data";
 
 const defaultProjectId = ProjectId.make("project-default");
@@ -178,8 +193,12 @@ const makeDefaultOrchestrationReadModel = () => {
         proposedPlans: [],
         checkpoints: [],
         deletedAt: null,
+        pendingPmHandoff: null,
       },
     ],
+    tasks: [],
+    quotaBlockedStages: [],
+    stageHistory: {},
   };
 };
 
@@ -200,6 +219,7 @@ const makeDefaultOrchestrationThreadShell = (
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
+    pendingPmHandoff: null,
     session: null,
     latestUserMessageAt: null,
     hasPendingApprovals: false,
@@ -333,7 +353,9 @@ const buildAppUnderTest = (options?: {
     projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
+    pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
+    providerQuotaStatusRepository?: Partial<ProviderQuotaStatusRepositoryShape>;
     checkpointDiffQuery?: Partial<CheckpointDiffQueryShape>;
     browserTraceCollector?: Partial<BrowserTraceCollectorShape>;
     serverLifecycleEvents?: Partial<ServerLifecycleEventsShape>;
@@ -667,6 +689,23 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
+        Layer.mock(PmProjectRuntimeFactory)({
+          getOrCreate: () =>
+            Effect.succeed({
+              surfaceUserMessage: () => Effect.void,
+              createHandoffBrief: Effect.succeed("handoff brief"),
+              enqueue: () => Effect.void,
+              drain: Effect.void,
+            }),
+          waitForIdle: () => Effect.void,
+          invalidateRuntime: () => Effect.void,
+          clearSessionStorage: () => Effect.void,
+          resetSessionBinding: () => Effect.void,
+          createHandoffBrief: () => Effect.succeed(Option.none()),
+          ...options?.layers?.pmProjectRuntimeFactory,
+        }),
+      ),
+      Layer.provide(
         Layer.mock(ProjectionSnapshotQuery)({
           getCommandReadModel: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
           getSnapshot: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
@@ -696,51 +735,47 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(CheckpointDiffQuery)({
-          getTurnDiff: () =>
-            Effect.succeed({
-              threadId: defaultThreadId,
-              fromTurnCount: 0,
-              toTurnCount: 0,
-              diff: "",
-            }),
-          getFullThreadDiff: () =>
-            Effect.succeed({
-              threadId: defaultThreadId,
-              fromTurnCount: 0,
-              toTurnCount: 0,
-              diff: "",
-            }),
-          ...options?.layers?.checkpointDiffQuery,
-        }),
-      ),
-      Layer.provide(
-        Layer.mock(GedWorkflowService)({
-          bootstrap: () => Effect.void,
-          classifyTurn: () => Effect.void,
-          getState: () =>
-            Effect.succeed({
-              enabled: true,
-              initialized: false,
-              phase: "inactive" as const,
-              classification: "unclassified" as const,
-              plannerCheckpointValid: false,
-              verifierCheckpointValid: false,
-            }),
-          getStateByThreadId: () =>
-            Effect.succeed({
-              enabled: true,
-              initialized: false,
-              phase: "inactive" as const,
-              classification: "unclassified" as const,
-              plannerCheckpointValid: false,
-              verifierCheckpointValid: false,
-            }),
-          getWorkflowPromptSuffix: () => Effect.succeed(""),
-          isEnabled: Effect.succeed(true),
-          recordThreadCwd: () => Effect.void,
-          validateTurnGuards: () => Effect.succeed({ valid: true }),
-        }),
+        Layer.mergeAll(
+          Layer.mock(ProviderQuotaStatusRepository)({
+            upsert: (input) =>
+              Effect.succeed({
+                providerInstanceId: input.providerInstanceId,
+                previousStatus: null,
+                nextStatus: input.status,
+                resetAt: input.resetAt,
+              }),
+            markBlocked: (input) =>
+              Effect.succeed({
+                providerInstanceId: input.providerInstanceId,
+                previousStatus: null,
+                nextStatus: input.resetAt === null ? "blocked-unknown" : "blocked-until",
+                resetAt: input.resetAt,
+              }),
+            observeRuntimeStatus: () => Effect.succeed(Option.none()),
+            getByProviderInstanceId: () => Effect.succeed(Option.none()),
+            isInstanceQuotaBlocked: (input) =>
+              Effect.succeed(defaultOkQuotaState(input.providerInstanceId)),
+            listBlocked: () => Effect.succeed([]),
+            ...options?.layers?.providerQuotaStatusRepository,
+          }),
+          Layer.mock(CheckpointDiffQuery)({
+            getTurnDiff: () =>
+              Effect.succeed({
+                threadId: defaultThreadId,
+                fromTurnCount: 0,
+                toTurnCount: 0,
+                diff: "",
+              }),
+            getFullThreadDiff: () =>
+              Effect.succeed({
+                threadId: defaultThreadId,
+                fromTurnCount: 0,
+                toTurnCount: 0,
+                diff: "",
+              }),
+            ...options?.layers?.checkpointDiffQuery,
+          }),
+        ),
       ),
     );
 
@@ -1775,6 +1810,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             ],
           },
         ],
+        tasks: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
       };
 
       const collector = yield* Effect.acquireRelease(
@@ -3200,8 +3238,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             proposedPlans: [],
             checkpoints: [],
             deletedAt: null,
+            pendingPmHandoff: null,
           },
         ],
+        tasks: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
       };
 
       yield* buildAppUnderTest({
@@ -3277,6 +3319,457 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("routes websocket rpc orchestrator methods", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-orchestrator");
+      const taskId = TaskId.make("task-orchestrator");
+      const gateId = GateId.make("gate-plan");
+      const pmThreadId = ThreadId.make("pm:project-orchestrator");
+      const project = {
+        id: projectId,
+        title: "Orchestrator Project",
+        workspaceRoot: "/tmp/orchestrator-project",
+        repositoryIdentity: null,
+        defaultModelSelection,
+        roleModelSelections: {},
+        orchestratorConfig: { enabled: true },
+        scripts: [],
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      const task = {
+        id: taskId,
+        projectId,
+        type: TaskTypeId.make("feature"),
+        title: "Ship orchestrator UI",
+        status: "plan-review" as const,
+        branch: "orchestrator/task-orchestrator",
+        worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        prUrl: null,
+        pmMessageId: MessageId.make("pm-message-1"),
+        stageThreadIds: [ThreadId.make("thread-plan")],
+        currentStageThreadId: ThreadId.make("thread-plan"),
+        playbookVersion: "feature@v1",
+        createdAt: now,
+        updatedAt: now,
+      };
+      const pendingGate = {
+        gateId,
+        taskId,
+        gate: "plan" as const,
+        contentHash: "sha256:plan",
+        stageThreadId: ThreadId.make("thread-plan"),
+        status: "pending" as const,
+        approvedHash: null,
+        decision: null,
+        origin: null,
+        requestedAt: now,
+        resolvedAt: null,
+      };
+      const pmThread = {
+        id: pmThreadId,
+        projectId,
+        title: "Orchestrator Project PM",
+        modelSelection: defaultModelSelection,
+        interactionMode: "default" as const,
+        runtimeMode: "approval-required" as const,
+        branch: null,
+        worktreePath: "/tmp/orchestrator-project",
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        latestTurn: null,
+        messages: [],
+        session: null,
+        activities: [],
+        proposedPlans: [],
+        checkpoints: [],
+        deletedAt: null,
+        pendingPmHandoff: null,
+      };
+      const snapshot: OrchestrationReadModel = {
+        snapshotSequence: 12,
+        updatedAt: now,
+        projects: [project],
+        threads: [pmThread],
+        tasks: [task],
+        pendingGates: [pendingGate],
+        quotaBlockedStages: [],
+        stageHistory: {},
+      };
+      const taskCreatedEvent: OrchestrationEvent = {
+        sequence: 13,
+        eventId: EventId.make("event-task-created"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-task-created"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-task-created"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Ship orchestrator UI",
+          branch: "orchestrator/task-orchestrator",
+          worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+          pmMessageId: MessageId.make("pm-message-1"),
+          playbookVersion: "feature@v1",
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const gateRequestedEvent: OrchestrationEvent = {
+        sequence: 14,
+        eventId: EventId.make("event-gate-requested"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.gate-requested",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-gate-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-gate-requested"),
+        metadata: {},
+        payload: {
+          taskId,
+          gateId,
+          gate: "plan",
+          contentHash: "sha256:plan",
+          stageThreadId: ThreadId.make("thread-plan"),
+          updatedAt: now,
+        },
+      };
+      const dispatched: OrchestrationCommand[] = [];
+      const enqueuedMessages: string[] = [];
+      const surfacedMessages: string[] = [];
+      const runtimeCalls: string[] = [];
+      const runtimeProjects: ProjectId[] = [];
+      const drainStarted = yield* Deferred.make<void>();
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getSnapshot: () => Effect.succeed(snapshot),
+            getCommandReadModel: () => Effect.succeed(snapshot),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                if (command.type === "thread.clear") {
+                  runtimeCalls.push("dispatch:thread.clear");
+                } else if (command.type === "thread.pm-handoff.request") {
+                  runtimeCalls.push(`dispatch:thread.pm-handoff.request:${command.mode}`);
+                }
+                return { sequence: 41 };
+              }),
+            streamDomainEvents: Stream.make(taskCreatedEvent, gateRequestedEvent),
+          },
+          pmProjectRuntimeFactory: {
+            getOrCreate: (loadedProject) =>
+              Effect.sync(() => {
+                runtimeProjects.push(loadedProject.id);
+                return {
+                  surfaceUserMessage: (message) =>
+                    Effect.sync(() => {
+                      surfacedMessages.push(message);
+                      runtimeCalls.push(`surface:${message}`);
+                    }),
+                  createHandoffBrief: Effect.succeed("handoff brief"),
+                  enqueue: (message) =>
+                    Effect.sync(() => {
+                      enqueuedMessages.push(message);
+                      runtimeCalls.push(`enqueue:${message}`);
+                    }),
+                  drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
+                };
+              }),
+            waitForIdle: (loadedProjectId) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                runtimeCalls.push("waitForIdle");
+              }),
+            clearSessionStorage: (loadedProject) =>
+              Effect.sync(() => {
+                assert.equal(loadedProject.id, projectId);
+                runtimeCalls.push("clearSessionStorage");
+              }),
+            resetSessionBinding: (loadedProject) =>
+              Effect.sync(() => {
+                assert.equal(loadedProject.id, projectId);
+                runtimeCalls.push("resetSessionBinding");
+              }),
+            createHandoffBrief: (loadedProjectId) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                runtimeCalls.push("createHandoffBrief");
+                return Option.some("Current PM brief");
+              }),
+            invalidateRuntime: (loadedProjectId, reason) =>
+              Effect.sync(() => {
+                assert.equal(loadedProjectId, projectId);
+                assert.equal(reason, "PM chat cleared");
+                runtimeCalls.push("invalidateRuntime");
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const sendResult = yield* client[ORCHESTRATOR_WS_METHODS.sendMessage]({
+              projectId,
+              message: "What is next?",
+            });
+            assert.deepEqual(sendResult, { accepted: true });
+            yield* Deferred.await(drainStarted).pipe(Effect.timeout("1 second"));
+            assert.deepEqual(runtimeProjects, [projectId]);
+            assert.deepEqual(surfacedMessages, ["What is next?"]);
+            assert.deepEqual(enqueuedMessages, ["What is next?"]);
+            assert.deepEqual(runtimeCalls, ["surface:What is next?", "enqueue:What is next?"]);
+
+            const projectItems = Array.from(
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
+                Stream.take(2),
+                Stream.runCollect,
+              ),
+            );
+            assert.equal(projectItems.length, 2);
+            const projectSnapshotItem = projectItems[0];
+            assert.equal(projectSnapshotItem?.kind, "snapshot");
+            if (projectSnapshotItem?.kind === "snapshot") {
+              assert.equal(projectSnapshotItem.snapshot.project.id, projectId);
+              assert.equal(projectSnapshotItem.snapshot.pmThreadId, pmThreadId);
+              assert.equal(projectSnapshotItem.snapshot.pmThread?.id, pmThreadId);
+              assert.deepEqual(
+                projectSnapshotItem.snapshot.tasks.map((entry) => entry.id),
+                [taskId],
+              );
+              assert.deepEqual(
+                projectSnapshotItem.snapshot.pendingGates.map((entry) => entry.gateId),
+                [gateId],
+              );
+            }
+            const projectEventItem = projectItems[1];
+            assert.equal(projectEventItem?.kind, "event");
+            if (projectEventItem?.kind === "event") {
+              assert.equal(projectEventItem.event.type, "task.created");
+            }
+
+            const taskItems = Array.from(
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({ taskId }).pipe(
+                Stream.take(2),
+                Stream.runCollect,
+              ),
+            );
+            assert.equal(taskItems.length, 2);
+            const taskSnapshotItem = taskItems[0];
+            assert.equal(taskSnapshotItem?.kind, "snapshot");
+            if (taskSnapshotItem?.kind === "snapshot") {
+              assert.equal(taskSnapshotItem.snapshot.task.id, taskId);
+              assert.deepEqual(
+                taskSnapshotItem.snapshot.pendingGates.map((entry) => entry.gateId),
+                [gateId],
+              );
+            }
+            const taskEventItem = taskItems[1];
+            assert.equal(taskEventItem?.kind, "event");
+            if (taskEventItem?.kind === "event") {
+              assert.equal(taskEventItem.event.type, "task.created");
+              assert.equal(taskEventItem.event.aggregateId, taskId);
+            }
+
+            const resolveResult = yield* client[ORCHESTRATOR_WS_METHODS.resolveGate]({
+              taskId,
+              gateId,
+              gate: "plan",
+              approvedHash: "sha256:plan",
+              decision: "approved",
+            });
+            assert.equal(resolveResult.sequence, 41);
+
+            const setTaskRoleSelectionsResult = yield* client[
+              ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+            ]({
+              taskId,
+              roleModelSelections: {
+                work: {
+                  instanceId: ProviderInstanceId.make("codex_task"),
+                  model: "gpt-5-task",
+                },
+              },
+            });
+            assert.equal(setTaskRoleSelectionsResult.sequence, 41);
+
+            const cancelTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.cancelTask]({
+              taskId,
+            });
+            assert.equal(cancelTaskResult.sequence, 41);
+
+            const requestPmHandoffResult = yield* client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+              projectId,
+              mode: "summary",
+            });
+            assert.deepEqual(requestPmHandoffResult, {
+              accepted: true,
+              mode: "summary",
+            });
+
+            const clearPmChatResult = yield* client[ORCHESTRATOR_WS_METHODS.clearPmChat]({
+              projectId,
+            });
+            assert.equal(clearPmChatResult.sequence, 41);
+          }),
+        ),
+      );
+
+      const resolveCommand = dispatched.find((command) => command.type === "task.gate.resolve");
+      assert.isDefined(resolveCommand);
+      if (resolveCommand?.type === "task.gate.resolve") {
+        assert.equal(resolveCommand.taskId, taskId);
+        assert.equal(resolveCommand.gateId, gateId);
+        assert.equal(resolveCommand.origin, "human");
+        assert.equal(resolveCommand.approvedHash, "sha256:plan");
+        assert.equal(resolveCommand.decision, "approved");
+      }
+
+      const setRoleSelectionsCommand = dispatched.find(
+        (command) => command.type === "task.role-selections.set",
+      );
+      assert.isDefined(setRoleSelectionsCommand);
+      if (setRoleSelectionsCommand?.type === "task.role-selections.set") {
+        assert.equal(setRoleSelectionsCommand.taskId, taskId);
+        assert.equal(setRoleSelectionsCommand.origin, "human");
+        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.instanceId, "codex_task");
+        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.model, "gpt-5-task");
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setRoleSelectionsCommand.createdAt));
+      }
+
+      const cancelTaskCommand = dispatched.find((command) => command.type === "task.abandon");
+      assert.isDefined(cancelTaskCommand);
+      if (cancelTaskCommand?.type === "task.abandon") {
+        assert.equal(cancelTaskCommand.taskId, taskId);
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(cancelTaskCommand.createdAt));
+      }
+
+      const clearThreadCommand = dispatched.find((command) => command.type === "thread.clear");
+      assert.isDefined(clearThreadCommand);
+      if (clearThreadCommand?.type === "thread.clear") {
+        assert.equal(clearThreadCommand.threadId, pmThreadId);
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(clearThreadCommand.createdAt));
+      }
+      const handoffCommand = dispatched.find(
+        (command) => command.type === "thread.pm-handoff.request",
+      );
+      assert.isDefined(handoffCommand);
+      if (handoffCommand?.type === "thread.pm-handoff.request") {
+        assert.equal(handoffCommand.threadId, pmThreadId);
+        assert.equal(handoffCommand.mode, "summary");
+        assert.equal(handoffCommand.brief, "Current PM brief");
+      }
+      assert.deepEqual(runtimeCalls.slice(-4), [
+        "waitForIdle",
+        "dispatch:thread.clear",
+        "clearSessionStorage",
+        "invalidateRuntime",
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("falls back to transcript PM handoff when summary brief creation fails", () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          pmProjectRuntimeFactory: {
+            createHandoffBrief: () =>
+              Effect.fail(
+                new PmRuntimeError({
+                  operation: "test.createHandoffBrief",
+                  detail: "model unavailable",
+                }),
+              ),
+            resetSessionBinding: () => Effect.void,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: 52 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+            projectId: defaultProjectId,
+            mode: "summary",
+          }),
+        ),
+      );
+
+      assert.equal(result.accepted, true);
+      assert.equal(result.mode, "transcript");
+      assertInclude(result.fallback ?? "", "model unavailable");
+      const command = dispatched.find((entry) => entry.type === "thread.pm-handoff.request");
+      assert.isDefined(command);
+      if (command?.type === "thread.pm-handoff.request") {
+        assert.equal(command.mode, "transcript");
+        assert.isUndefined(command.brief);
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("falls back to transcript PM handoff when no PM runtime exists", () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          pmProjectRuntimeFactory: {
+            createHandoffBrief: () => Effect.succeed(Option.none()),
+            resetSessionBinding: () => Effect.void,
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: 53 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
+            projectId: defaultProjectId,
+            mode: "summary",
+          }),
+        ),
+      );
+
+      assert.equal(result.accepted, true);
+      assert.equal(result.mode, "transcript");
+      assertInclude(result.fallback ?? "", "No active PM runtime");
+      const command = dispatched.find((entry) => entry.type === "thread.pm-handoff.request");
+      assert.isDefined(command);
+      if (command?.type === "thread.pm-handoff.request") {
+        assert.equal(command.threadId, ThreadId.make(`pm:${defaultProjectId}`));
+        assert.equal(command.mode, "transcript");
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestration shell snapshot errors", () =>
     Effect.gen(function* () {
       const projectionError = new PersistenceSqlError({
@@ -3302,6 +3795,234 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
       assertTrue(result.failure.cause instanceof Error);
       assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeThread returns an empty PM snapshot before the PM thread exists", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("project-pm-placeholder");
+      const threadId = ThreadId.make(`pm:${projectId}`);
+      const project = {
+        id: projectId,
+        title: "PM Placeholder Project",
+        workspaceRoot: "/tmp/pm-placeholder",
+        repositoryIdentity: null,
+        defaultModelSelection,
+        roleModelSelections: {},
+        orchestratorConfig: {
+          enabled: true,
+          pmModelSelection: defaultModelSelection,
+        },
+        scripts: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      const threadCreatedEvent: OrchestrationEvent = {
+        sequence: 1,
+        eventId: EventId.make("event-pm-created"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-created"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.created",
+        payload: {
+          threadId,
+          projectId,
+          title: "PM Placeholder Project PM",
+          modelSelection: defaultModelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/pm-placeholder",
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const firstMessageEvent: OrchestrationEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-pm-message"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-message"),
+        causationEventId: threadCreatedEvent.eventId,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-pm-first"),
+          role: "user",
+          text: "First PM message.",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.none()),
+            getProjectShellById: () => Effect.succeed(Option.some(project)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+          },
+          orchestrationEngine: {
+            readEvents: () => Stream.make(threadCreatedEvent, firstMessageEvent),
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(Stream.runCollect),
+        ),
+      );
+
+      const [snapshot, created, message] = Array.from(items);
+      assert.equal(snapshot?.kind, "snapshot");
+      if (snapshot?.kind === "snapshot") {
+        assert.equal(snapshot.snapshot.thread.id, threadId);
+        assert.deepEqual(snapshot.snapshot.thread.messages, []);
+      }
+      assert.equal(created?.kind, "event");
+      assert.equal(created?.kind === "event" ? created.event.type : null, "thread.created");
+      assert.equal(message?.kind, "event");
+      assert.equal(message?.kind === "event" ? message.event.type : null, "thread.message-sent");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeThread replay skips thread events at or before the last clear boundary", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("pm:project-replay-clear");
+      const projectId = ProjectId.make("project-replay-clear");
+      const beforeClearEvent: OrchestrationEvent = {
+        sequence: 1,
+        eventId: EventId.make("event-message-a"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-a"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-a"),
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const clearEvent: OrchestrationEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-clear"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.cleared",
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      };
+      const afterClearEvent: OrchestrationEvent = {
+        sequence: 3,
+        eventId: EventId.make("event-message-b"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-b"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-b"),
+          role: "assistant",
+          text: "after clear",
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
+      const thread: OrchestrationThread = {
+        id: threadId,
+        projectId,
+        title: "Replay Clear PM",
+        modelSelection: defaultModelSelection,
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: "/tmp/replay-clear",
+        latestTurn: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
+        lastClearedSequence: 2,
+        pendingPmHandoff: null,
+        messages: [
+          {
+            id: MessageId.make("message-b"),
+            role: "assistant",
+            text: "after clear",
+            turnId: null,
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        proposedPlans: [],
+        activities: [],
+        checkpoints: [],
+        session: null,
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.some(thread)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+          },
+          orchestrationEngine: {
+            readEvents: () => Stream.make(beforeClearEvent, clearEvent, afterClearEvent),
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(Stream.runCollect),
+        ),
+      );
+
+      const eventTypes = Array.from(items).flatMap((item) =>
+        item.kind === "event" ? [`${item.event.type}:${item.event.sequence}`] : [],
+      );
+      assert.deepEqual(eventTypes, ["thread.message-sent:3"]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

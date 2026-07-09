@@ -18,9 +18,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   planSidebarOpen: boolean;
   runtimeMode: RuntimeMode;
   traitsMenuContent?: ReactNode;
-  workflowEnabled: boolean;
   onTogglePlanSidebar: () => void;
-  onToggleWorkflow: (enabled: boolean) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
@@ -44,19 +42,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Thread mode</div>
-        <MenuRadioGroup
-          value={props.workflowEnabled ? "ged" : "normal"}
-          onValueChange={(value) => {
-            if (value === "normal" || value === "ged") {
-              props.onToggleWorkflow(value === "ged");
-            }
-          }}
-        >
-          <MenuRadioItem value="normal">Normal</MenuRadioItem>
-          <MenuRadioItem value="ged">Ged</MenuRadioItem>
-        </MenuRadioGroup>
-        <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
         <MenuRadioGroup
           value={props.runtimeMode}

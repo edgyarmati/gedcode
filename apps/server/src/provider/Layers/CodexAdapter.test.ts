@@ -32,9 +32,14 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import {
+  ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  type OrchestrationMcpEndpoint,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -57,6 +62,11 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
+const orchestrationMcpEndpoint = {
+  url: "http://127.0.0.1:45678/mcp/orchestration",
+  bearerToken: "test-bearer-token",
+  bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+} satisfies OrchestrationMcpEndpoint;
 
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
@@ -287,6 +297,69 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
+
+  it.effect("passes systemPromptAppend into the Codex session runtime", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-system-prompt"),
+        runtimeMode: "full-access",
+        systemPromptAppend: "Use the orchestrator PM rules.",
+      });
+
+      assert.equal(
+        validationRuntimeFactory.factory.mock.calls[0]?.[0].systemPromptAppend,
+        "Use the orchestrator PM rules.",
+      );
+    }),
+  );
+
+  it.effect("wires orchestration MCP config and bearer env when enabled", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+          orchestrationMcpEndpoint,
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-orchestration-tools"),
+        runtimeMode: "approval-required",
+        environment: { EXISTING_ENV: "1" },
+        enableOrchestrationTools: true,
+      });
+
+      assert.deepStrictEqual(runtimeFactory.factory.mock.calls[0]?.[0].config, {
+        mcp_servers: {
+          t3_orchestrator: {
+            url: orchestrationMcpEndpoint.url,
+            bearer_token_env_var: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+          },
+        },
+      });
+      assert.deepStrictEqual(runtimeFactory.factory.mock.calls[0]?.[0].environment, {
+        EXISTING_ENV: "1",
+        [ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR]: orchestrationMcpEndpoint.bearerToken,
+      });
+    }).pipe(Effect.provide(layer));
+  });
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();
@@ -489,6 +562,68 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       assert.equal(firstEvent.value.turnId, "turn-1");
       assert.equal(firstEvent.value.payload.itemType, "assistant_message");
     }),
+  );
+
+  it.effect(
+    "keeps the runtime event pipeline alive after the startSession caller scope closes",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* CodexAdapter;
+        const callerScope = yield* Scope.make("sequential");
+
+        const startFiber = yield* adapter
+          .startSession({
+            provider: ProviderDriverKind.make("codex"),
+            threadId: asThreadId("thread-short-lived-caller"),
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.forkIn(callerScope));
+        yield* Fiber.join(startFiber);
+
+        const runtime = lifecycleRuntimeFactory.lastRuntime;
+        assert.ok(runtime);
+
+        yield* Scope.close(callerScope, Exit.void);
+
+        const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+        yield* runtime.emit({
+          id: asEventId("evt-after-caller-scope-closed"),
+          kind: "notification",
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          method: "item/completed",
+          threadId: asThreadId("thread-short-lived-caller"),
+          turnId: asTurnId("turn-1"),
+          itemId: asItemId("msg_1"),
+          payload: {
+            completedAtMs: 1_778_000_000_000,
+            threadId: "thread-short-lived-caller",
+            turnId: "turn-1",
+            item: {
+              type: "agentMessage",
+              id: "msg_1",
+              text: "still bridged",
+            },
+          },
+        } satisfies ProviderEvent);
+        const timedEventFiber = yield* Fiber.join(firstEventFiber).pipe(
+          Effect.timeout("1 second"),
+          Effect.forkChild,
+        );
+        yield* TestClock.adjust("1 second");
+        const firstEvent = yield* Fiber.join(timedEventFiber);
+
+        assert.equal(firstEvent._tag, "Some");
+        if (firstEvent._tag !== "Some") {
+          return;
+        }
+        assert.equal(firstEvent.value.type, "item.completed");
+        if (firstEvent.value.type !== "item.completed") {
+          return;
+        }
+        assert.equal(firstEvent.value.threadId, "thread-short-lived-caller");
+        assert.equal(firstEvent.value.payload.itemType, "assistant_message");
+      }),
   );
 
   it.effect("maps completed plan items to canonical proposed-plan completion events", () =>

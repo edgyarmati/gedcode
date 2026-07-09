@@ -207,4 +207,69 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.reason).toBe("Policy denied this edit");
     expect(parsed.payload.agentId).toBe("agent-1");
   });
+
+  it("decodes account.rate-limits.updated with a structured quota payload", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: "event-rate-limits-1",
+      provider: "codex",
+      providerInstanceId: "codex_pro",
+      createdAt: "2026-02-28T00:00:05.000Z",
+      threadId: "thread-1",
+      payload: {
+        status: "exhausted",
+        resetAtEpochMs: 1_781_308_800_000,
+        windows: [{ label: "primary", usedPercent: 100, resetAtEpochMs: 1_781_308_800_000 }],
+        raw: { rateLimitReachedType: "rate_limit_reached" },
+      },
+    });
+
+    expect(parsed.type).toBe("account.rate-limits.updated");
+    if (parsed.type !== "account.rate-limits.updated") {
+      throw new Error("expected account.rate-limits.updated");
+    }
+    expect(parsed.payload.status).toBe("exhausted");
+    expect(parsed.payload.resetAtEpochMs).toBe(1_781_308_800_000);
+    expect(parsed.payload.windows?.[0]?.usedPercent).toBe(100);
+    expect(parsed.providerInstanceId).toBe("codex_pro");
+  });
+
+  it("decodes a minimal account.rate-limits.updated payload", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "account.rate-limits.updated",
+      eventId: "event-rate-limits-2",
+      provider: "claudeAgent",
+      createdAt: "2026-02-28T00:00:06.000Z",
+      threadId: "thread-1",
+      payload: {
+        status: "ok",
+      },
+    });
+
+    if (parsed.type !== "account.rate-limits.updated") {
+      throw new Error("expected account.rate-limits.updated");
+    }
+    expect(parsed.payload.status).toBe("ok");
+    expect(parsed.payload.resetAtEpochMs).toBeUndefined();
+    expect(parsed.payload.windows).toBeUndefined();
+  });
+
+  it("decodes runtime.error events carrying the rate_limit class", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "runtime.error",
+      eventId: "event-runtime-error-rate-limit",
+      provider: "claudeAgent",
+      createdAt: "2026-02-28T00:00:07.000Z",
+      threadId: "thread-1",
+      payload: {
+        message: "Usage limit reached",
+        class: "rate_limit",
+      },
+    });
+
+    if (parsed.type !== "runtime.error") {
+      throw new Error("expected runtime.error");
+    }
+    expect(parsed.payload.class).toBe("rate_limit");
+  });
 });

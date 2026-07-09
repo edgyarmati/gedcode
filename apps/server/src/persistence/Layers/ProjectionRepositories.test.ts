@@ -34,6 +34,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
           model: "gpt-5.4",
         },
         roleModelSelections: {},
+        rolePromptPrefixes: {},
         scripts: [],
         createdAt: "2026-03-24T00:00:00.000Z",
         updatedAt: "2026-03-24T00:00:00.000Z",
@@ -96,6 +97,8 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         pendingApprovalCount: 0,
         pendingUserInputCount: 0,
         hasActionableProposedPlan: 0,
+        lastClearedSequence: null,
+        pendingPmHandoff: null,
         deletedAt: null,
       });
 

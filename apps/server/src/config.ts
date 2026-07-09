@@ -14,6 +14,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 
+import type { PersistenceRetryPolicy } from "./persistence/retryPolicy.ts";
+
 export const DEFAULT_PORT = 3773;
 
 export const RuntimeMode = Schema.Literals(["web", "desktop"]);
@@ -72,6 +74,12 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly logWebSocketEvents: boolean;
   readonly tailscaleServeEnabled: boolean;
   readonly tailscaleServePort: number;
+  /**
+   * SQLite write-resilience tunables (`PRAGMA busy_timeout` + jittered retry).
+   * Optional: when omitted the persistence layer falls back to
+   * {@link DEFAULT_PERSISTENCE_RETRY_POLICY}.
+   */
+  readonly persistence?: PersistenceRetryPolicy | undefined;
 }
 
 export const deriveServerPaths = Effect.fn(function* (

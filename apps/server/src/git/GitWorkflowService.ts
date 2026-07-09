@@ -29,7 +29,7 @@ import {
 } from "@t3tools/contracts";
 
 import { GitManager, type GitRunStackedActionOptions } from "./GitManager.ts";
-import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import { GitVcsDriver, type GitRangeContext } from "../vcs/GitVcsDriver.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 
 export interface GitWorkflowServiceShape {
@@ -46,6 +46,23 @@ export interface GitWorkflowServiceShape {
   readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
   readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
   readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+  readonly pushCurrentBranch: (input: {
+    readonly cwd: string;
+    readonly fallbackBranch: string | null;
+    readonly remoteName?: string | null;
+  }) => Effect.Effect<
+    {
+      readonly status: "pushed" | "skipped_up_to_date";
+      readonly branch: string;
+      readonly upstreamBranch?: string | undefined;
+      readonly setUpstream?: boolean | undefined;
+    },
+    GitCommandError
+  >;
+  readonly readRangeContext: (input: {
+    readonly cwd: string;
+    readonly baseRef: string;
+  }) => Effect.Effect<GitRangeContext, GitCommandError>;
   readonly runStackedAction: (
     input: GitRunStackedActionInput,
     options?: GitRunStackedActionOptions,
@@ -271,6 +288,18 @@ export const make = Effect.fn("makeGitWorkflowService")(function* () {
     pullCurrentBranch: (cwd) =>
       ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
+      ),
+    pushCurrentBranch: (input) =>
+      ensureGitCommand("GitWorkflowService.pushCurrentBranch", input.cwd).pipe(
+        Effect.andThen(
+          git.pushCurrentBranch(input.cwd, input.fallbackBranch, {
+            remoteName: input.remoteName ?? null,
+          }),
+        ),
+      ),
+    readRangeContext: (input) =>
+      ensureGitCommand("GitWorkflowService.readRangeContext", input.cwd).pipe(
+        Effect.andThen(git.readRangeContext(input.cwd, input.baseRef)),
       ),
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(

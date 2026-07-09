@@ -252,6 +252,17 @@ export function getVisibleSidebarThreadIds<TThreadId>(
   );
 }
 
+export function shouldShowSidebarProjectThreadPanel(input: {
+  hideThreadLists: boolean;
+  projectExpanded: boolean;
+  pinnedCollapsedThreadPresent: boolean;
+}): boolean {
+  if (input.hideThreadLists) {
+    return false;
+  }
+  return input.projectExpanded || input.pinnedCollapsedThreadPresent;
+}
+
 export function getSidebarThreadIdsToPrewarm<TThreadId>(
   visibleThreadIds: readonly TThreadId[],
   limit = SIDEBAR_THREAD_PREWARM_LIMIT,

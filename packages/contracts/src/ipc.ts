@@ -61,9 +61,20 @@ import type {
   OrchestrationShellStreamItem,
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
+  OrchestratorCancelTaskInput,
+  OrchestratorClearPmChatInput,
+  OrchestratorProjectStreamItem,
+  OrchestratorRequestPmHandoffInput,
+  OrchestratorRequestPmHandoffResult,
+  OrchestratorResolveGateInput,
+  OrchestratorSendMessageInput,
+  OrchestratorSendMessageResult,
+  OrchestratorSetTaskRoleSelectionsInput,
+  OrchestratorSubscribeProjectInput,
+  OrchestratorSubscribeTaskInput,
+  OrchestratorTaskStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
-import type { GedWorkflowState } from "./gedWorkflow.ts";
+import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthBearerBootstrapResult, AuthSessionState, AuthWebSocketTokenResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { EditorId } from "./editor.ts";
@@ -566,7 +577,30 @@ export interface EnvironmentApi {
       },
     ) => () => void;
   };
-  gedWorkflow: {
-    getState: (input: { threadId: ThreadId }) => Promise<GedWorkflowState>;
+  orchestrator: {
+    sendMessage: (input: OrchestratorSendMessageInput) => Promise<OrchestratorSendMessageResult>;
+    subscribeProject: (
+      input: OrchestratorSubscribeProjectInput,
+      callback: (event: OrchestratorProjectStreamItem) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    subscribeTask: (
+      input: OrchestratorSubscribeTaskInput,
+      callback: (event: OrchestratorTaskStreamItem) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    resolveGate: (input: OrchestratorResolveGateInput) => Promise<{ sequence: number }>;
+    setTaskRoleSelections: (
+      input: OrchestratorSetTaskRoleSelectionsInput,
+    ) => Promise<{ sequence: number }>;
+    cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
+    clearPmChat: (input: OrchestratorClearPmChatInput) => Promise<{ sequence: number }>;
+    requestPmHandoff: (
+      input: OrchestratorRequestPmHandoffInput,
+    ) => Promise<OrchestratorRequestPmHandoffResult>;
   };
 }

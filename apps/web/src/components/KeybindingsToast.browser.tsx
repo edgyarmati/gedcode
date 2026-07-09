@@ -113,7 +113,6 @@ function createBaseServerConfig(): ServerConfig {
           binaryPath: "",
           homePath: "",
           shadowHomePath: "",
-          gedSubagentPreset: DEFAULT_SERVER_SETTINGS.providers.codex.gedSubagentPreset,
           customModels: [],
         },
         claudeAgent: {
@@ -153,6 +152,9 @@ function createMinimalSnapshot(): OrchestrationReadModel {
         deletedAt: null,
       },
     ],
+    tasks: [],
+    quotaBlockedStages: [],
+    stageHistory: {},
     threads: [
       {
         id: THREAD_ID,
@@ -171,6 +173,7 @@ function createMinimalSnapshot(): OrchestrationReadModel {
         updatedAt: NOW_ISO,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages: [
           {
             id: "msg-1" as MessageId,

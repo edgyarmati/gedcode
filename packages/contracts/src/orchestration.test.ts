@@ -6,23 +6,34 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
+  GedRoleModelSelections,
+  GedRolePromptPrefixes,
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationGateResolutionOrigin,
+  OrchestratorPlaybookFrontmatter,
+  OrchestrationStageHistory,
+  OrchestrationStageRole,
+  OrchestrationTaskStatus,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  OrchestrationTask,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
+  OrchestratorClearPmChatInput,
+  OrchestratorSetTaskRoleSelectionsInput,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -48,7 +59,22 @@ function getOptionValue(
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
+const encodeOrchestrationCommand = Schema.encodeEffect(OrchestrationCommand);
+const encodeOrchestrationEvent = Schema.encodeEffect(OrchestrationEvent);
+const decodeOrchestrationTask = Schema.decodeUnknownEffect(OrchestrationTask);
+const encodeOrchestrationTask = Schema.encodeEffect(OrchestrationTask);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+const decodeRoleModelSelections = Schema.decodeUnknownEffect(GedRoleModelSelections);
+const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixes);
+const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory);
+const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
+const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
+const decodeGateResolutionOrigin = Schema.decodeUnknownEffect(OrchestrationGateResolutionOrigin);
+const decodePlaybookFrontmatter = Schema.decodeUnknownEffect(OrchestratorPlaybookFrontmatter);
+const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
+  OrchestratorSetTaskRoleSelectionsInput,
+);
+const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(OrchestratorClearPmChatInput);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -196,6 +222,29 @@ it.effect("rejects command fields that become empty after trim", () =>
         title: "  ",
         workspaceRoot: "/tmp/workspace",
         createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes playbook frontmatter and trims string fields", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodePlaybookFrontmatter({
+      name: " feature-orchestration ",
+      description: " Feature orchestration playbook. ",
+    });
+    assert.strictEqual(parsed.name, "feature-orchestration");
+    assert.strictEqual(parsed.description, "Feature orchestration playbook.");
+  }),
+);
+
+it.effect("rejects playbook frontmatter fields that become empty after trim", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodePlaybookFrontmatter({
+        name: "feature-orchestration",
+        description: "  ",
       }),
     );
     assert.strictEqual(result._tag, "Failure");
@@ -616,6 +665,467 @@ it.effect("decodes orchestration session runtime mode defaults", () =>
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
+  }),
+);
+
+it.effect("decodes task.stage.block commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.stage.block",
+      commandId: "cmd-stage-block",
+      taskId: "task-1",
+      stageThreadId: "thread-stage-1",
+      role: "work",
+      reason: "quota",
+      providerInstanceId: "codex",
+      resetAt: "2026-01-01T00:10:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.type, "task.stage.block");
+    if (parsed.type === "task.stage.block") {
+      assert.strictEqual(parsed.providerInstanceId, "codex");
+      assert.strictEqual(parsed.reason, "quota");
+      assert.strictEqual(parsed.resetAt, "2026-01-01T00:10:00.000Z");
+    }
+  }),
+);
+
+it.effect("decodes task.stage-blocked events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-stage-blocked",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.stage-blocked",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-stage-block",
+      causationEventId: null,
+      correlationId: "cmd-stage-block",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        role: "work",
+        stageThreadId: "thread-stage-1",
+        reason: "quota",
+        providerInstanceId: "codex",
+        resetAt: "2026-01-01T00:10:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    assert.strictEqual(parsed.type, "task.stage-blocked");
+    if (parsed.type === "task.stage-blocked") {
+      assert.strictEqual(parsed.payload.providerInstanceId, "codex");
+      assert.strictEqual(parsed.payload.reason, "quota");
+    }
+  }),
+);
+
+it.effect("round-trips task.pr.opened commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.pr.opened",
+      commandId: "cmd-pr-opened",
+      taskId: "task-1",
+      prUrl: " https://github.com/acme/repo/pull/42 ",
+      prNumber: 42,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr.opened");
+    if (reDecoded.type === "task.pr.opened") {
+      assert.strictEqual(reDecoded.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.strictEqual(reDecoded.prNumber, 42);
+    }
+  }),
+);
+
+it.effect("round-trips thread.clear commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "thread.clear",
+      commandId: "cmd-thread-clear",
+      threadId: "pm:project-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "thread.clear");
+    if (reDecoded.type === "thread.clear") {
+      assert.strictEqual(reDecoded.threadId, "pm:project-1");
+    }
+  }),
+);
+
+it.effect("round-trips PM handoff commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const request = yield* decodeOrchestrationCommand({
+      type: "thread.pm-handoff.request",
+      commandId: "cmd-pm-handoff-request",
+      threadId: "pm:project-1",
+      mode: "summary",
+      brief: "Brief",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const complete = yield* decodeOrchestrationCommand({
+      type: "thread.pm-handoff.complete",
+      commandId: "cmd-pm-handoff-complete",
+      threadId: "pm:project-1",
+      mode: "summary",
+      createdAt: "2026-01-01T00:00:01.000Z",
+    });
+
+    const reDecodedRequest = yield* decodeOrchestrationCommand(
+      yield* encodeOrchestrationCommand(request),
+    );
+    const reDecodedComplete = yield* decodeOrchestrationCommand(
+      yield* encodeOrchestrationCommand(complete),
+    );
+
+    assert.strictEqual(reDecodedRequest.type, "thread.pm-handoff.request");
+    if (reDecodedRequest.type === "thread.pm-handoff.request") {
+      assert.strictEqual(reDecodedRequest.mode, "summary");
+      assert.strictEqual(reDecodedRequest.brief, "Brief");
+    }
+    assert.strictEqual(reDecodedComplete.type, "thread.pm-handoff.complete");
+    if (reDecodedComplete.type === "thread.pm-handoff.complete") {
+      assert.strictEqual(reDecodedComplete.mode, "summary");
+    }
+  }),
+);
+
+it.effect("round-trips thread.cleared events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-thread-cleared",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.cleared",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-thread-clear",
+      causationEventId: null,
+      correlationId: "cmd-thread-clear",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        clearedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "thread.cleared");
+    if (reDecoded.type === "thread.cleared") {
+      assert.strictEqual(reDecoded.payload.threadId, "pm:project-1");
+    }
+  }),
+);
+
+it.effect("round-trips PM handoff events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const requested = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-pm-handoff-requested",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.pm-handoff-requested",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-pm-handoff-request",
+      causationEventId: null,
+      correlationId: "cmd-pm-handoff-request",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        mode: "summary",
+        brief: "Brief",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const completed = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "evt-pm-handoff-completed",
+      aggregateKind: "thread",
+      aggregateId: "pm:project-1",
+      type: "thread.pm-handoff-completed",
+      occurredAt: "2026-01-01T00:00:01.000Z",
+      commandId: "cmd-pm-handoff-complete",
+      causationEventId: null,
+      correlationId: "cmd-pm-handoff-complete",
+      metadata: {},
+      payload: {
+        threadId: "pm:project-1",
+        mode: "summary",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+
+    const reDecodedRequested = yield* decodeOrchestrationEvent(
+      yield* encodeOrchestrationEvent(requested),
+    );
+    const reDecodedCompleted = yield* decodeOrchestrationEvent(
+      yield* encodeOrchestrationEvent(completed),
+    );
+
+    assert.strictEqual(reDecodedRequested.type, "thread.pm-handoff-requested");
+    if (reDecodedRequested.type === "thread.pm-handoff-requested") {
+      assert.strictEqual(reDecodedRequested.payload.brief, "Brief");
+    }
+    assert.strictEqual(reDecodedCompleted.type, "thread.pm-handoff-completed");
+    if (reDecodedCompleted.type === "thread.pm-handoff-completed") {
+      assert.strictEqual(reDecodedCompleted.payload.mode, "summary");
+    }
+  }),
+);
+
+it.effect("round-trips task.pr-opened events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-pr-opened",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.pr-opened",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-pr-opened",
+      causationEventId: null,
+      correlationId: "cmd-pr-opened",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        prUrl: " https://github.com/acme/repo/pull/42 ",
+        prNumber: 42,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr-opened");
+    if (reDecoded.type === "task.pr-opened") {
+      assert.strictEqual(reDecoded.payload.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.strictEqual(reDecoded.payload.prNumber, 42);
+    }
+  }),
+);
+
+it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips opened URLs", () =>
+  Effect.gen(function* () {
+    const decodedDefault = yield* decodeOrchestrationTask({
+      id: "task-1",
+      projectId: "project-1",
+      type: "feature",
+      title: "Task",
+      status: "draft",
+      branch: "orchestrator/task-1",
+      worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-1",
+      pmMessageId: "pm-message-1",
+      stageThreadIds: [],
+      currentStageThreadId: null,
+      playbookVersion: "feature@v1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(decodedDefault.prUrl, null);
+
+    const decodedOpened = yield* decodeOrchestrationTask({
+      ...decodedDefault,
+      prUrl: " https://github.com/acme/repo/pull/42 ",
+    });
+    const reDecoded = yield* decodeOrchestrationTask(yield* encodeOrchestrationTask(decodedOpened));
+    assert.strictEqual(reDecoded.prUrl, "https://github.com/acme/repo/pull/42");
+  }),
+);
+
+it.effect("accepts review and verify stage roles plus reviewing task status", () =>
+  Effect.gen(function* () {
+    const review = yield* decodeStageRole("review");
+    const verify = yield* decodeStageRole("verify");
+    const reviewing = yield* decodeTaskStatus("reviewing");
+
+    assert.strictEqual(review, "review");
+    assert.strictEqual(verify, "verify");
+    assert.strictEqual(reviewing, "reviewing");
+  }),
+);
+
+it.effect("role model selections are keyed only by known stage roles", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeRoleModelSelections({
+      review: {
+        instanceId: "codex_review",
+        model: "gpt-5.2",
+      },
+      verify: {
+        provider: "claudeAgent",
+        model: "claude-opus-4-6",
+      },
+    });
+
+    assert.strictEqual(parsed.review?.instanceId, ProviderInstanceId.make("codex_review"));
+    assert.strictEqual(parsed.verify?.instanceId, ProviderInstanceId.make("claudeAgent"));
+
+    const result = yield* Effect.exit(
+      decodeRoleModelSelections({
+        verfiy: {
+          instanceId: "codex",
+          model: "gpt-5.2",
+        },
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("role prompt prefixes are keyed only by known stage roles", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeRolePromptPrefixes({
+      review: "Focus on plan defects.",
+      verify: "Run targeted verification before reporting success.",
+    });
+
+    assert.strictEqual(parsed.review, "Focus on plan defects.");
+    assert.strictEqual(parsed.verify, "Run targeted verification before reporting success.");
+
+    const result = yield* Effect.exit(
+      decodeRolePromptPrefixes({
+        verfy: "typo",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes task role-selection commands and narrows persisted event origin", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeOrchestrationCommand({
+      type: "task.role-selections.set",
+      commandId: "cmd-role-selections",
+      taskId: "task-1",
+      roleModelSelections: {
+        review: {
+          instanceId: "codex_review",
+          model: "gpt-5.2",
+        },
+      },
+      origin: "human",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(command.type, "task.role-selections.set");
+
+    const event = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-role-selections",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.role-selections-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-role-selections",
+      causationEventId: null,
+      correlationId: "cmd-role-selections",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        roleModelSelections: {
+          review: {
+            instanceId: "codex_review",
+            model: "gpt-5.2",
+          },
+        },
+        origin: "client",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.strictEqual(event.type, "task.role-selections-updated");
+
+    const pmEvent = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "evt-role-selections-pm",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.role-selections-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-role-selections",
+      causationEventId: null,
+      correlationId: "cmd-role-selections",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        roleModelSelections: {},
+        origin: "pm-runtime",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.strictEqual(pmEvent.type, "task.role-selections-updated");
+  }),
+);
+
+it.effect("decodes system gate-resolution origin for internal engine decisions", () =>
+  Effect.gen(function* () {
+    const origin = yield* decodeGateResolutionOrigin("system");
+    assert.strictEqual(origin, "system");
+  }),
+);
+
+it.effect("decodes task role-selection websocket input with role-keyed selections", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorSetTaskRoleSelectionsInput({
+      taskId: "task-1",
+      roleModelSelections: {
+        work: {
+          instanceId: "codex_task",
+          model: "gpt-5.2",
+        },
+      },
+    });
+    assert.strictEqual(input.taskId, "task-1");
+    assert.strictEqual(input.roleModelSelections.work?.instanceId, "codex_task");
+
+    const result = yield* Effect.exit(
+      decodeOrchestratorSetTaskRoleSelectionsInput({
+        taskId: "task-1",
+        roleModelSelections: {
+          wrk: {
+            instanceId: "codex_task",
+            model: "gpt-5.2",
+          },
+        },
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes clear PM chat websocket input", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorClearPmChatInput({
+      projectId: "project-1",
+    });
+    assert.strictEqual(input.projectId, "project-1");
+  }),
+);
+
+it.effect("decodes stage history keyed by stage thread id", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeStageHistory({
+      "thread-stage-1": {
+        projectId: "project-1",
+        taskId: "task-1",
+        stageThreadId: "thread-stage-1",
+        role: "verify",
+        providerInstanceId: "codex_verify",
+        model: "gpt-5.2",
+        status: "blocked",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:10:00.000Z",
+      },
+    });
+
+    const stage = parsed[ThreadId.make("thread-stage-1")];
+    assert.strictEqual(stage?.role, "verify");
+    assert.strictEqual(stage?.providerInstanceId, "codex_verify");
+    assert.strictEqual(stage?.status, "blocked");
   }),
 );
 

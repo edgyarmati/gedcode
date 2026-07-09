@@ -24,6 +24,10 @@ import {
   type StartupPresentation,
 } from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
+import {
+  DEFAULT_PERSISTENCE_RETRY_POLICY,
+  type PersistenceRetryPolicy,
+} from "../persistence/retryPolicy.ts";
 
 export const modeFlag = Flag.choice("mode", RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
@@ -135,6 +139,18 @@ const EnvServerConfig = Config.all({
   tailscaleServePort: Config.port("T3CODE_TAILSCALE_SERVE_PORT").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
+  ),
+  sqliteBusyTimeoutMs: Config.int("T3CODE_SQLITE_BUSY_TIMEOUT_MS").pipe(
+    Config.withDefault(DEFAULT_PERSISTENCE_RETRY_POLICY.busyTimeoutMs),
+  ),
+  sqliteRetryInitialBackoffMs: Config.int("T3CODE_SQLITE_RETRY_INITIAL_BACKOFF_MS").pipe(
+    Config.withDefault(DEFAULT_PERSISTENCE_RETRY_POLICY.initialBackoffMs),
+  ),
+  sqliteRetryMaxBackoffMs: Config.int("T3CODE_SQLITE_RETRY_MAX_BACKOFF_MS").pipe(
+    Config.withDefault(DEFAULT_PERSISTENCE_RETRY_POLICY.maxBackoffMs),
+  ),
+  sqliteRetryMaxAttempts: Config.int("T3CODE_SQLITE_RETRY_MAX_ATTEMPTS").pipe(
+    Config.withDefault(DEFAULT_PERSISTENCE_RETRY_POLICY.maxAttempts),
   ),
 });
 
@@ -341,6 +357,16 @@ export const resolveServerConfig = (
     );
     const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
+    // SQLite write-resilience tunables. Clamp to safe minimums so a stray env
+    // value can never disable the busy handler outright (`busy_timeout <= 0`),
+    // tight-loop with a zero backoff, or drop below a single attempt.
+    const persistence: PersistenceRetryPolicy = {
+      busyTimeoutMs: Math.max(1, env.sqliteBusyTimeoutMs),
+      initialBackoffMs: Math.max(1, env.sqliteRetryInitialBackoffMs),
+      maxBackoffMs: Math.max(1, env.sqliteRetryMaxBackoffMs),
+      maxAttempts: Math.max(1, env.sqliteRetryMaxAttempts),
+    };
+
     const config: ServerConfigShape = {
       logLevel,
       traceMinLevel: env.traceMinLevel,
@@ -374,6 +400,7 @@ export const resolveServerConfig = (
       logWebSocketEvents,
       tailscaleServeEnabled,
       tailscaleServePort,
+      persistence,
     };
 
     return config;

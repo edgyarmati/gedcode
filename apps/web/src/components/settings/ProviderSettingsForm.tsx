@@ -4,19 +4,11 @@ import { useMemo, type ReactNode } from "react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type {
-  CodexGedSubagentPreset,
-  CodexGedSubagentPresetRole,
   ProviderSettingsFormAnnotation,
   ProviderSettingsFormControl,
   ProviderSettingsFormSchemaAnnotation,
   ServerProviderModel,
 } from "@t3tools/contracts";
-import {
-  CODEX_GED_SUBAGENT_PRESET_ROLES,
-  CODEX_GED_SUBAGENT_REASONING_LEVELS,
-  DEFAULT_CODEX_GED_SUBAGENT_PRESET,
-} from "@t3tools/contracts";
-import { normalizeCodexGedSubagentPreset } from "@t3tools/shared/gedSubagentPreset";
 
 import { cn } from "../../lib/utils";
 import { DraftInput } from "../ui/draft-input";
@@ -192,148 +184,7 @@ interface ProviderSettingsFieldRowProps {
   readonly value: unknown;
   readonly idPrefix: string;
   readonly variant: ProviderSettingsFormProps["variant"];
-  readonly models?: ReadonlyArray<ServerProviderModel> | undefined;
   readonly onChange: ProviderSettingsFormProps["onChange"];
-}
-
-function readCodexGedSubagentPresetConfig(config: unknown): CodexGedSubagentPreset {
-  if (config === null || typeof config !== "object") {
-    return normalizeCodexGedSubagentPreset(undefined);
-  }
-  const value = (config as Record<string, unknown>).gedSubagentPreset;
-  return normalizeCodexGedSubagentPreset(
-    value && typeof value === "object"
-      ? (value as Partial<
-          Record<
-            CodexGedSubagentPresetRole,
-            Partial<CodexGedSubagentPreset[CodexGedSubagentPresetRole]>
-          >
-        >)
-      : undefined,
-  );
-}
-
-function uniqueStrings(values: ReadonlyArray<string>): ReadonlyArray<string> {
-  return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
-function reasoningOptionsForModel(
-  models: ReadonlyArray<ServerProviderModel> | undefined,
-  modelSlug: string,
-  currentReasoning: string,
-): ReadonlyArray<string> {
-  const descriptor = models
-    ?.find((model) => model.slug === modelSlug)
-    ?.capabilities?.optionDescriptors?.find(
-      (option) => option.type === "select" && option.id === "reasoningEffort",
-    );
-  const descriptorValues =
-    descriptor?.type === "select" ? descriptor.options.map((option) => option.id) : [];
-  return uniqueStrings([
-    ...descriptorValues,
-    currentReasoning,
-    ...CODEX_GED_SUBAGENT_REASONING_LEVELS,
-  ]);
-}
-
-function CodexGedSubagentPresetPicker({
-  field,
-  value,
-  idPrefix,
-  variant,
-  models,
-  onChange,
-}: ProviderSettingsFieldRowProps) {
-  const preset = readCodexGedSubagentPresetConfig(value);
-  const modelOptions = uniqueStrings([
-    ...(models ?? []).map((model) => model.slug),
-    ...CODEX_GED_SUBAGENT_PRESET_ROLES.map((role) => preset[role].model),
-    ...CODEX_GED_SUBAGENT_PRESET_ROLES.map((role) => DEFAULT_CODEX_GED_SUBAGENT_PRESET[role].model),
-  ]);
-
-  const updateRole = (
-    role: CodexGedSubagentPresetRole,
-    next: Partial<CodexGedSubagentPreset[CodexGedSubagentPresetRole]>,
-  ) => {
-    const nextPreset = normalizeCodexGedSubagentPreset({
-      ...preset,
-      [role]: { ...preset[role], ...next },
-    });
-    onChange(nextProviderConfigWithFieldValue(value, field, nextPreset));
-  };
-
-  return (
-    <FieldFrame variant={variant}>
-      <div className="grid gap-2">
-        <div>
-          <span className="text-xs font-medium text-foreground">{field.label}</span>
-          {field.description ? (
-            <span
-              className={cn(
-                variant === "card"
-                  ? "mt-1 block text-xs text-muted-foreground"
-                  : "text-[11px] text-muted-foreground",
-              )}
-            >
-              {field.description}
-            </span>
-          ) : null}
-        </div>
-        <div className="grid gap-2">
-          {CODEX_GED_SUBAGENT_PRESET_ROLES.map((role) => {
-            const rolePreset = preset[role];
-            const reasoningOptions = reasoningOptionsForModel(
-              models,
-              rolePreset.model,
-              rolePreset.reasoning,
-            );
-            return (
-              <div
-                key={role}
-                className="grid gap-1.5 rounded-md border border-border/60 bg-muted/20 p-2 sm:grid-cols-[minmax(7rem,0.8fr)_minmax(0,1.4fr)_minmax(7rem,0.8fr)] sm:items-center"
-              >
-                <label
-                  htmlFor={`${idPrefix}-${field.key}-${role}-model`}
-                  className="text-[11px] font-medium text-muted-foreground"
-                >
-                  {role}
-                </label>
-                <select
-                  id={`${idPrefix}-${field.key}-${role}-model`}
-                  className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={rolePreset.model}
-                  onChange={(event) => updateRole(role, { model: event.target.value })}
-                >
-                  {modelOptions.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label={`${role} reasoning`}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={rolePreset.reasoning}
-                  onChange={(event) =>
-                    updateRole(role, {
-                      reasoning: event.target
-                        .value as CodexGedSubagentPreset[CodexGedSubagentPresetRole]["reasoning"],
-                    })
-                  }
-                >
-                  {reasoningOptions.map((reasoning) => (
-                    <option key={reasoning} value={reasoning}>
-                      {reasoning}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </FieldFrame>
-  );
 }
 
 function ProviderSettingsFieldRow({
@@ -341,7 +192,6 @@ function ProviderSettingsFieldRow({
   value,
   idPrefix,
   variant,
-  models,
   onChange,
 }: ProviderSettingsFieldRowProps) {
   const inputId = `${idPrefix}-${field.key}`;
@@ -395,19 +245,6 @@ function ProviderSettingsFieldRow({
     );
   }
 
-  if (field.control === "codexGedSubagentPreset") {
-    return (
-      <CodexGedSubagentPresetPicker
-        field={field}
-        value={value}
-        idPrefix={idPrefix}
-        variant={variant}
-        models={models}
-        onChange={onChange}
-      />
-    );
-  }
-
   const type = field.control === "password" ? "password" : undefined;
   return (
     <FieldFrame variant={variant}>
@@ -449,7 +286,6 @@ export function ProviderSettingsForm({
   value,
   idPrefix,
   variant,
-  models,
   onChange,
 }: ProviderSettingsFormProps) {
   const fields = useMemo(() => deriveProviderSettingsFields(definition), [definition]);
@@ -467,7 +303,6 @@ export function ProviderSettingsForm({
           value={value}
           idPrefix={idPrefix}
           variant={variant}
-          models={models}
           onChange={onChange}
         />
       ))}

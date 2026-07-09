@@ -39,9 +39,10 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import { GedWorkflowServiceLive } from "./gedWorkflow/Layers/GedWorkflowServiceLive.ts";
-import { GedWorkflowEventReactorLive } from "./gedWorkflow/Layers/GedWorkflowEventReactor.ts";
-import { GedWorkflowGuardLive } from "./gedWorkflow/Layers/GedWorkflowGuard.ts";
+import { OrphanTurnReconcilerLive } from "./orchestration/Layers/OrphanTurnReconciler.ts";
+import { PmProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Layers/PmRuntime.ts";
+import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
+import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
@@ -79,6 +80,8 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import { OrchestrationMcpServerProviderLive } from "./orchestration/claude/OrchestrationMcpServerProvider.ts";
+import { OrchestrationMcpHttpServerLive } from "./orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -145,7 +148,11 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
-  Layer.provideMerge(GedWorkflowEventReactorLive),
+  Layer.provideMerge(TaskWorktreeReactorLive),
+  Layer.provideMerge(PmRuntimeLive),
+  Layer.provideMerge(PmProjectRuntimeFactoryLive),
+  Layer.provideMerge(OrphanTurnReconcilerLive),
+  Layer.provideMerge(WorkerStartAdmissionLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -240,19 +247,19 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const ProviderInstanceRegistryHydrationWithOrchestrationMcpLive =
+  ProviderInstanceRegistryHydrationLive.pipe(
+    Layer.provideMerge(OrchestrationMcpHttpServerLive.pipe(Layer.provide(OrchestrationLayerLive))),
+  );
+
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
-  // GedWorkflowGuardLive wraps ProviderService.sendTurn with checkpoint
-  // validation and prompt enrichment. It depends on both ProviderService
-  // (from ProviderRuntimeLayerLive) and GedWorkflowService — both must be
-  // in scope before the guard is merged.
-  Layer.provideMerge(GedWorkflowGuardLive),
-  Layer.provideMerge(GedWorkflowServiceLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
+  Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
@@ -262,7 +269,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // through this layer. Built-in drivers come from `BUILT_IN_DRIVERS`;
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
-  Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  Layer.provideMerge(ProviderInstanceRegistryHydrationWithOrchestrationMcpLive),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).
@@ -415,6 +422,7 @@ export const makeServerLayer = Layer.unwrap(
 
     return serverApplicationLayer.pipe(
       Layer.provideMerge(RuntimeServicesLive),
+      Layer.provideMerge(OrchestrationMcpServerProviderLive),
       Layer.provideMerge(HttpServerLive),
       Layer.provide(ObservabilityLive),
       Layer.provideMerge(FetchHttpClient.layer),

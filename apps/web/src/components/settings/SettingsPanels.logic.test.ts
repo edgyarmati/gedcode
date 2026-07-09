@@ -2,13 +2,15 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ModelSelection,
   type ProviderInstanceConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 import {
-  buildGedRoleSettingsPatch,
+  buildOrchestratorGlobalDefaultsPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
+  seedOrchestratorGlobalDefaultsDraft,
 } from "./SettingsPanels.logic";
 
 describe("formatDiagnosticsDescription", () => {
@@ -104,23 +106,102 @@ describe("buildProviderInstanceUpdatePatch", () => {
   });
 });
 
-describe("buildGedRoleSettingsPatch", () => {
-  it("updates one role without dropping other role settings", () => {
-    const patch = buildGedRoleSettingsPatch({
-      settings: {
-        gedRoleSettings: {
-          ...DEFAULT_SERVER_SETTINGS.gedRoleSettings,
-          "ged-worker": { enabled: true },
-        },
+describe("Orchestrator global defaults settings logic", () => {
+  const pmModelSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-sonnet-4-6",
+  };
+  const workerModelSelection: ModelSelection = {
+    instanceId: ProviderInstanceId.make("codex_worker"),
+    model: "gpt-5-worker",
+  };
+
+  it("seeds the settings-panel draft from global defaults", () => {
+    const draft = seedOrchestratorGlobalDefaultsDraft({
+      ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+      stages: ["classify", "plan", "work"],
+      gatePolicy: {
+        classify: "auto",
+        plan: "require-approval",
+        work: "auto",
+        review: "require-approval",
+        land: "require-approval",
       },
-      role: "ged-explorer",
-      enabled: false,
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxStageHandoffs: 10,
+      maxRetriesPerStage: 4,
+      pmReconciliationIntervalMs: 90_000,
+      worktreeReaperIntervalMinutes: 7,
+      pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
+      openPrAsDraft: true,
+      allowFullAccessWorkers: true,
     });
 
-    expect(patch.gedRoleSettings["ged-explorer"]).toEqual({ enabled: false });
-    expect(patch.gedRoleSettings["ged-planner"]).toEqual(
-      DEFAULT_SERVER_SETTINGS.gedRoleSettings["ged-planner"],
-    );
-    expect(patch.gedRoleSettings["ged-worker"]).toEqual({ enabled: true });
+    expect(draft.pmModelSelection).toEqual(pmModelSelection);
+    expect(draft.defaultWorkerModelSelection).toEqual(workerModelSelection);
+    expect(draft.optionalStages).toEqual({ review: false, verify: false });
+    expect(draft.gatePolicy).toEqual({
+      classify: "auto",
+      plan: "require-approval",
+      work: "auto",
+      review: "require-approval",
+    });
+    expect(draft.openPrAsDraft).toBe(true);
+    expect(draft.resourceDefaults).toEqual({
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxStageHandoffs: 10,
+      maxRetriesPerStage: 4,
+      pmReconciliationIntervalMs: 90_000,
+      worktreeReaperIntervalMinutes: 7,
+      allowFullAccessWorkers: true,
+    });
+  });
+
+  it("builds a server settings patch with canonical stage order and pinned land gate", () => {
+    const patch = buildOrchestratorGlobalDefaultsPatch({
+      pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
+      optionalStages: { review: false, verify: true },
+      gatePolicy: {
+        classify: "auto",
+        plan: "auto",
+        work: "require-approval",
+        review: "auto",
+      },
+      resourceDefaults: {
+        maxParallelTasks: 4,
+        maxParallelWorkers: 5,
+        maxStageHandoffs: 12,
+        maxRetriesPerStage: 6,
+        pmReconciliationIntervalMs: 180_000,
+        worktreeReaperIntervalMinutes: 9,
+        allowFullAccessWorkers: false,
+      },
+      openPrAsDraft: true,
+    });
+
+    expect(patch.orchestratorDefaults).toEqual({
+      stages: ["classify", "plan", "work", "verify"],
+      gatePolicy: {
+        classify: "auto",
+        plan: "auto",
+        work: "require-approval",
+        review: "auto",
+        land: "require-approval",
+      },
+      maxParallelTasks: 4,
+      maxParallelWorkers: 5,
+      maxStageHandoffs: 12,
+      maxRetriesPerStage: 6,
+      pmReconciliationIntervalMs: 180_000,
+      worktreeReaperIntervalMinutes: 9,
+      pmModelSelection,
+      defaultWorkerModelSelection: workerModelSelection,
+      allowFullAccessWorkers: false,
+      openPrAsDraft: true,
+    });
   });
 });

@@ -268,6 +268,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           roleModelSelections: {},
+          rolePromptPrefixes: {},
+          orchestratorConfig: {},
           scripts: [
             {
               id: "script-1",
@@ -293,7 +295,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           },
           interactionMode: "default",
           runtimeMode: "full-access",
-          gedWorkflowEnabled: true,
           branch: null,
           worktreePath: null,
           latestTurn: {
@@ -312,6 +313,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [
             {
               id: asMessageId("message-1"),
@@ -381,6 +383,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           roleModelSelections: {},
+          rolePromptPrefixes: {},
+          orchestratorConfig: {},
           scripts: [
             {
               id: "script-1",
@@ -405,7 +409,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           },
           interactionMode: "default",
           runtimeMode: "full-access",
-          gedWorkflowEnabled: true,
           branch: null,
           worktreePath: null,
           latestTurn: {
@@ -423,6 +426,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
+          pendingPmHandoff: null,
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",

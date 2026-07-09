@@ -1437,34 +1437,13 @@ describe("composerDraftStore runtime and interaction settings", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.interactionMode).toBe("plan");
   });
 
-  it("stores Ged workflow overrides in the composer draft", () => {
-    const store = useComposerDraftStore.getState();
-
-    store.setGedWorkflowEnabled(threadRef, false);
-
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.gedWorkflowEnabled).toBe(false);
-  });
-
-  it("does not apply sticky Ged workflow state to unrelated new drafts", () => {
-    const store = useComposerDraftStore.getState();
-    const nextThreadId = ThreadId.make("thread-ged-sticky");
-    const nextThreadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, nextThreadId);
-
-    store.setStickyGedWorkflowEnabled(false);
-    store.applyStickyState(nextThreadRef);
-
-    expect(draftFor(nextThreadId, TEST_ENVIRONMENT_ID)?.gedWorkflowEnabled).toBeUndefined();
-  });
-
   it("removes empty settings-only drafts when overrides are cleared", () => {
     const store = useComposerDraftStore.getState();
 
     store.setRuntimeMode(threadRef, "approval-required");
     store.setInteractionMode(threadRef, "plan");
-    store.setGedWorkflowEnabled(threadRef, false);
     store.setRuntimeMode(threadRef, null);
     store.setInteractionMode(threadRef, null);
-    store.setGedWorkflowEnabled(threadRef, null);
 
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });

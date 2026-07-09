@@ -664,6 +664,7 @@ function UncachedShikiCodeBlock({
 
 interface MarkdownFileLinkProps {
   href: string;
+  iconPath: string;
   targetPath: string;
   displayPath: string;
   label: string;
@@ -937,6 +938,7 @@ function MarkdownExternalLinkContent({
 
 const MarkdownFileLink = memo(function MarkdownFileLink({
   href,
+  iconPath,
   targetPath,
   displayPath,
   label,
@@ -1044,7 +1046,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
             }}
             onContextMenu={handleContextMenu}
           >
-            <FileTagChipContent path={targetPath} label={label} theme={theme} selectable />
+            <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
           </a>
         }
       />
@@ -1066,6 +1068,7 @@ function areMarkdownFileLinkPropsEqual(
 ): boolean {
   return (
     previous.href === next.href &&
+    previous.iconPath === next.iconPath &&
     previous.targetPath === next.targetPath &&
     previous.displayPath === next.displayPath &&
     previous.label === next.label &&
@@ -1185,6 +1188,7 @@ function ChatMarkdown({
         return (
           <MarkdownFileLink
             href={fileLinkMeta.targetPath}
+            iconPath={fileLinkMeta.filePath}
             targetPath={fileLinkMeta.targetPath}
             displayPath={fileLinkMeta.displayPath}
             label={labelParts.join(" · ")}

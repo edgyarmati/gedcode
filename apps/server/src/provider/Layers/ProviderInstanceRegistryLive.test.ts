@@ -37,6 +37,12 @@ import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { ServerConfig } from "../../config.ts";
+import { OrchestrationMcpServerProviderLive } from "../../orchestration/claude/OrchestrationMcpServerProvider.ts";
+import {
+  ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  OrchestrationMcpHttpServer,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
+import type { BuiltInDriversEnv } from "../builtInDrivers.ts";
 import { ClaudeDriver } from "../Drivers/ClaudeDriver.ts";
 import { CodexDriver } from "../Drivers/CodexDriver.ts";
 import { OpenCodeDriver } from "../Drivers/OpenCodeDriver.ts";
@@ -51,16 +57,19 @@ const TestHttpClientLive = Layer.succeed(
   ),
 );
 
+const TestOrchestrationMcpHttpServerLive = Layer.succeed(OrchestrationMcpHttpServer, {
+  endpoint: {
+    url: "http://127.0.0.1:1/mcp/orchestration",
+    bearerToken: "test-token",
+    bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  },
+});
+
 const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
   enabled: false,
   binaryPath: "codex",
   homePath: "",
   shadowHomePath: "",
-  gedSubagentPreset: {
-    "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-    "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-    "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-  },
   customModels: [],
   ...overrides,
 });
@@ -95,6 +104,8 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(OrchestrationMcpServerProviderLive),
+    Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
   );
 
   it.live("boots two independent codex instances from a ProviderInstanceConfigMap", () =>
@@ -232,6 +243,8 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(infraLayer),
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+    Layer.provideMerge(OrchestrationMcpServerProviderLive),
+    Layer.provideMerge(TestOrchestrationMcpHttpServerLive),
   );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>
@@ -268,7 +281,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         },
       };
 
-      const { registry } = yield* makeProviderInstanceRegistry({
+      const { registry } = yield* makeProviderInstanceRegistry<BuiltInDriversEnv>({
         drivers: [CodexDriver, ClaudeDriver, OpenCodeDriver],
         configMap,
       });

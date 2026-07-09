@@ -4,6 +4,7 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
+  type OrchestrationProjectShell,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -13,12 +14,14 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+import { resolveAllowFullAccessWorkers } from "@t3tools/shared/orchestrator";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -31,15 +34,25 @@ import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
 } from "../Services/ProviderCommandReactor.ts";
+import { WorkerStartAdmission } from "../Services/WorkerStartAdmission.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import {
+  clampWorkerRuntimeMode,
+  installTaskWorktreePushBlockHook,
+  makeWorkerProviderEnvironment,
+} from "../workerSafety.ts";
+import { explicitlySetProjectConfig } from "../orchestratorConfigResolution.ts";
+import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -180,10 +193,13 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
   const gitWorkflow = yield* GitWorkflowService;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const workerStartAdmission = yield* WorkerStartAdmission;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -305,6 +321,23 @@ const make = Effect.gen(function* () {
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
+  const resolveTaskForStageThread = Effect.fnUntraced(function* (threadId: ThreadId) {
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    return readModel.tasks.find((task) =>
+      task.stageThreadIds.some((stageThreadId) => String(stageThreadId) === String(threadId)),
+    );
+  });
+
+  const resolveWorkerFullAccessOptIn = Effect.fnUntraced(function* (
+    project: OrchestrationProjectShell | undefined,
+  ) {
+    const settings = yield* serverSettingsService.getSettings;
+    return resolveAllowFullAccessWorkers({
+      config: explicitlySetProjectConfig(project?.orchestratorConfig ?? {}),
+      defaults: settings.orchestratorDefaults,
+    });
+  });
+
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -317,7 +350,20 @@ const make = Effect.gen(function* () {
       return yield* Effect.die(new Error(`Thread '${threadId}' was not found in read model.`));
     }
 
-    const desiredRuntimeMode = thread.runtimeMode;
+    const taskForStageThread = yield* resolveTaskForStageThread(threadId);
+    const isOrchestratorWorker =
+      taskForStageThread !== undefined ||
+      (thread.branch !== null && thread.branch.startsWith("orchestrator/"));
+    const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
+    const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
+    const project = yield* resolveProject(thread.projectId);
+    const allowFullAccessWorkers = isOrchestratorWorker
+      ? yield* resolveWorkerFullAccessOptIn(project)
+      : false;
+    const desiredRuntimeMode = isOrchestratorWorker
+      ? clampWorkerRuntimeMode({ requested: thread.runtimeMode, allowFullAccessWorkers })
+      : thread.runtimeMode;
+    const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -384,6 +430,42 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
+    if (isOrchestratorWorker) {
+      const quotaState = yield* providerQuotaStatusRepository.isInstanceQuotaBlocked({
+        providerInstanceId: desiredInstanceId,
+      });
+      if (quotaState.blocked) {
+        const activeStageRole =
+          taskForStageThread === undefined
+            ? null
+            : activeStageRoleForTaskStatus(taskForStageThread.status);
+        if (
+          taskForStageThread !== undefined &&
+          activeStageRole !== null &&
+          taskForStageThread.currentStageThreadId === threadId
+        ) {
+          yield* orchestrationEngine.dispatch({
+            type: "task.stage.block",
+            commandId: stageBlockCommandId(threadId, desiredInstanceId, "admission"),
+            taskId: taskForStageThread.id,
+            stageThreadId: threadId,
+            role: activeStageRole,
+            reason: "quota",
+            providerInstanceId: desiredInstanceId,
+            ...(quotaState.resetAt !== null ? { resetAt: quotaState.resetAt } : {}),
+            createdAt,
+          });
+        }
+        return yield* new ProviderAdapterRequestError({
+          provider: preferredProvider,
+          method: "thread.turn.start",
+          detail:
+            quotaState.status === "blocked-until" && quotaState.resetAt !== null
+              ? `Provider instance '${desiredInstanceId}' is quota-blocked until ${quotaState.resetAt}.`
+              : `Provider instance '${desiredInstanceId}' is quota-blocked with an unknown reset time.`,
+        });
+      }
+    }
     if (
       thread.session !== null &&
       requestedModelSelection !== undefined &&
@@ -407,25 +489,58 @@ const make = Effect.gen(function* () {
         });
       }
     }
-    const project = yield* resolveProject(thread.projectId);
+    const workspaceThread =
+      workerWorktreePath !== null
+        ? {
+            ...thread,
+            branch: workerBranch,
+            worktreePath: workerWorktreePath,
+          }
+        : thread;
     const effectiveCwd = resolveThreadWorkspaceCwd({
-      thread,
+      thread: workspaceThread,
       projects: project ? [project] : [],
+    });
+    const ensureWorkerWorktree = Effect.fn("ensureWorkerWorktree")(function* () {
+      if (
+        !isOrchestratorWorker ||
+        workerBranch === null ||
+        workerWorktreePath === null ||
+        project === undefined
+      ) {
+        return;
+      }
+      const exists = yield* fileSystem.exists(workerWorktreePath);
+      if (!exists) {
+        yield* gitWorkflow.createWorktree({
+          cwd: project.workspaceRoot,
+          refName: "HEAD",
+          newRefName: workerBranch,
+          path: workerWorktreePath,
+        });
+      }
+      yield* installTaskWorktreePushBlockHook(workerWorktreePath);
     });
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
       readonly provider?: ProviderDriverKind;
     }) =>
-      providerService.startSession(threadId, {
-        threadId,
-        ...(preferredProvider ? { provider: preferredProvider } : {}),
-        providerInstanceId: desiredInstanceId,
-        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        modelSelection: desiredModelSelection,
-        ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
-        runtimeMode: desiredRuntimeMode,
-      });
+      ensureWorkerWorktree().pipe(
+        Effect.andThen(() => {
+          const start = providerService.startSession(threadId, {
+            threadId,
+            ...(preferredProvider ? { provider: preferredProvider } : {}),
+            providerInstanceId: desiredInstanceId,
+            ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+            modelSelection: desiredModelSelection,
+            ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
+            runtimeMode: desiredRuntimeMode,
+            ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
+          });
+          return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;
+        }),
+      );
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {
@@ -456,7 +571,7 @@ const make = Effect.gen(function* () {
     const existingSessionThreadId =
       thread.session && thread.session.status !== "stopped" && activeSession ? thread.id : null;
     if (existingSessionThreadId) {
-      const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
+      const runtimeModeChanged = desiredRuntimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
       const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
         .sessionModelSwitch;
@@ -530,7 +645,6 @@ const make = Effect.gen(function* () {
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
-    readonly gedWorkflowEnabled?: boolean;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
   }) {
@@ -583,11 +697,6 @@ const make = Effect.gen(function* () {
       ...(normalizedInput ? { input: normalizedInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
-      ...(input.gedWorkflowEnabled !== undefined
-        ? { gedWorkflowEnabled: input.gedWorkflowEnabled }
-        : thread.gedWorkflowEnabled !== undefined
-          ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-          : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
     };
   });
@@ -791,9 +900,6 @@ const make = Effect.gen(function* () {
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
-        : {}),
-      ...(event.payload.gedWorkflowEnabled !== undefined
-        ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
         : {}),
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
@@ -1036,4 +1142,6 @@ const make = Effect.gen(function* () {
   } satisfies ProviderCommandReactorShape;
 });
 
-export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make);
+export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make).pipe(
+  Layer.provideMerge(ProviderQuotaStatusRepositoryLive),
+);

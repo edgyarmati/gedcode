@@ -45,6 +45,18 @@ import Migration0029 from "./Migrations/029_ProjectionThreadDetailOrderingIndexe
 import Migration0030 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
 import Migration0031 from "./Migrations/031_ProjectionThreadsGedWorkflowEnabled.ts";
 import Migration0032 from "./Migrations/032_ProjectionProjectRoleModelSelections.ts";
+import Migration0033 from "./Migrations/033_ProjectionTasks.ts";
+import Migration0034 from "./Migrations/034_ProjectionAwaitedStagesAndPendingGates.ts";
+import Migration0035 from "./Migrations/035_PmSessionEntries.ts";
+import Migration0036 from "./Migrations/036_PmRuntimeCursorAndConsumedSettlements.ts";
+import Migration0037 from "./Migrations/037_ProjectionProjectOrchestratorConfig.ts";
+import Migration0038 from "./Migrations/038_PmConsumedSettlementsStatus.ts";
+import Migration0039 from "./Migrations/039_ProviderQuotaStatus.ts";
+import Migration0040 from "./Migrations/040_ProjectionQuotaBlockedStages.ts";
+import Migration0041 from "./Migrations/041_ProjectionStageHistoryAndRoleOverrides.ts";
+import Migration0042 from "./Migrations/042_ProjectionTaskPrUrl.ts";
+import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
+import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -89,6 +101,18 @@ export const migrationEntries = [
   [30, "ProjectionThreadShellArchiveIndexes", Migration0030],
   [31, "ProjectionThreadsGedWorkflowEnabled", Migration0031],
   [32, "ProjectionProjectRoleModelSelections", Migration0032],
+  [33, "ProjectionTasks", Migration0033],
+  [34, "ProjectionAwaitedStagesAndPendingGates", Migration0034],
+  [35, "PmSessionEntries", Migration0035],
+  [36, "PmRuntimeCursorAndConsumedSettlements", Migration0036],
+  [37, "ProjectionProjectOrchestratorConfig", Migration0037],
+  [38, "PmConsumedSettlementsStatus", Migration0038],
+  [39, "ProviderQuotaStatus", Migration0039],
+  [40, "ProjectionQuotaBlockedStages", Migration0040],
+  [41, "ProjectionStageHistoryAndRoleOverrides", Migration0041],
+  [42, "ProjectionTaskPrUrl", Migration0042],
+  [43, "ProjectionThreadLastClearedSequence", Migration0043],
+  [44, "ProjectionThreadPendingPmHandoff", Migration0044],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

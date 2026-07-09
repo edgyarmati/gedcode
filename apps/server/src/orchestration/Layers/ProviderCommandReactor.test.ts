@@ -18,6 +18,8 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -28,6 +30,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
@@ -50,26 +53,33 @@ import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
 } from "./ProviderCommandReactor.ts";
+import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { stageBlockCommandId } from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
+import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
+import { WorkerStartAdmissionLive } from "./WorkerStartAdmission.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
+const asTaskId = (value: string): TaskId => TaskId.make(value);
+const asTaskTypeId = (value: string): TaskTypeId => TaskTypeId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+const ORCHESTRATION_WAIT_TIMEOUT_MS = 15_000;
 
 const deriveServerPathsSync = (baseDir: string, devUrl: URL | undefined) =>
   Effect.runSync(deriveServerPaths(baseDir, devUrl).pipe(Effect.provide(NodeServices.layer)));
 
 async function waitFor(
   predicate: () => boolean | Promise<boolean>,
-  timeoutMs = 2000,
+  timeoutMs = ORCHESTRATION_WAIT_TIMEOUT_MS,
 ): Promise<void> {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
   const poll = async (): Promise<void> => {
@@ -88,7 +98,10 @@ async function waitFor(
 
 describe("ProviderCommandReactor", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
-    OrchestrationEngineService | ProviderCommandReactor | ProjectionSnapshotQuery,
+    | OrchestrationEngineService
+    | ProviderCommandReactor
+    | ProjectionSnapshotQuery
+    | ProviderQuotaStatusRepository,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -142,10 +155,14 @@ describe("ProviderCommandReactor", () => {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
+    readonly orchestratorConfig?: Record<string, unknown>;
+    readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir = input?.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "t3code-reactor-"));
     createdBaseDirs.add(baseDir);
+    const projectRoot = path.join(baseDir, "project");
+    fs.mkdirSync(projectRoot, { recursive: true });
     const { stateDir } = deriveServerPathsSync(baseDir, undefined);
     createdStateDirs.add(stateDir);
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
@@ -191,7 +208,9 @@ describe("ProviderCommandReactor", () => {
           typeof input === "object" &&
           input !== null &&
           "runtimeMode" in input &&
-          (input.runtimeMode === "approval-required" || input.runtimeMode === "full-access")
+          (input.runtimeMode === "approval-required" ||
+            input.runtimeMode === "auto-accept-edits" ||
+            input.runtimeMode === "full-access")
             ? input.runtimeMode
             : "full-access",
         ...(typeof input === "object" &&
@@ -233,6 +252,18 @@ describe("ProviderCommandReactor", () => {
         if (index >= 0) {
           runtimeSessions.splice(index, 1);
         }
+      }),
+    );
+    const createWorktree = vi.fn<GitWorkflowServiceShape["createWorktree"]>((input) =>
+      Effect.sync(() => {
+        const worktreePath = input.path ?? path.join(baseDir, "worktree");
+        fs.mkdirSync(worktreePath, { recursive: true });
+        return {
+          worktree: {
+            path: worktreePath,
+            refName: input.newRefName ?? input.refName,
+          },
+        };
       }),
     );
     const renameBranch = vi.fn((input: unknown) =>
@@ -279,6 +310,15 @@ describe("ProviderCommandReactor", () => {
           detail: "disabled in test harness",
         }),
       ),
+    );
+    const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() =>
+      Effect.succeed({
+        exitCode: ChildProcessSpawner.ExitCode(0),
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      }),
     );
 
     const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
@@ -327,6 +367,10 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const serverSettingsLayer = ServerSettingsService.layerTest(input?.serverSettingsOverrides);
+    const workerStartAdmissionLayer = WorkerStartAdmissionLive.pipe(
+      Layer.provide(serverSettingsLayer),
+    );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(RepositoryIdentityResolverLive),
       Layer.provide(SqlitePersistenceMemory),
@@ -337,8 +381,14 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService)({
+          createWorktree,
           renameBranch,
         } satisfies Partial<GitWorkflowServiceShape>),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(VcsProcess, {
+          run: vcsProcessRun,
+        }),
       ),
       Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
@@ -355,14 +405,19 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(serverSettingsLayer),
+      Layer.provideMerge(workerStartAdmissionLayer),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+      Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
 
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+    const quotaStatusRepository = await runtime.runPromise(
+      Effect.service(ProviderQuotaStatusRepository),
+    );
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
@@ -374,8 +429,9 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot: projectRoot,
         defaultModelSelection: modelSelection,
+        orchestratorConfig: input?.orchestratorConfig ?? { enabled: true },
         createdAt: now,
       }),
     );
@@ -398,18 +454,22 @@ describe("ProviderCommandReactor", () => {
     return {
       engine,
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
+      quotaStatusRepository,
       startSession,
       sendTurn,
       interruptTurn,
       respondToRequest,
       respondToUserInput,
       stopSession,
+      createWorktree,
       renameBranch,
+      vcsProcessRun,
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
       runtimeSessions,
       stateDir,
+      projectRoot,
       drain,
     };
   }
@@ -439,7 +499,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.projectRoot,
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5-codex",
@@ -451,6 +511,481 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("does not promote regular chat threads when full-access workers are globally enabled", async () => {
+    const harness = await createHarness({
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-regular-global-optin"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-regular-global-optin"),
+          role: "user",
+          text: "hello reactor",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.runtimeMode).toBe("approval-required");
+    expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("clamps task worker runtime mode before provider start or restart", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create"),
+        taskId: asTaskId("task-1"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task",
+        pmMessageId: null,
+        branch: "orchestrator/task-1",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start"),
+        taskId: asTaskId("task-1"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModelAfterStageStart = await harness.readModel();
+    const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
+    expect(stageThreadId).toBeDefined();
+    if (!stageThreadId) {
+      return;
+    }
+
+    harness.startSession.mockClear();
+    harness.sendTurn.mockClear();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("cmd-worker-full-access"),
+        threadId: stageThreadId,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-worker-follow-up"),
+        threadId: stageThreadId,
+        message: {
+          messageId: asMessageId("user-message-worker-follow-up"),
+          role: "user",
+          text: "Continue.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(
+      harness.startSession.mock.calls.every((call) => {
+        const input = call[1] as { readonly runtimeMode?: string } | undefined;
+        return input?.runtimeMode !== "full-access";
+      }),
+    ).toBe(true);
+
+    const readModel = await harness.readModel();
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("blocks an active worker stage instead of starting a quota-blocked provider instance", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.quotaStatusRepository.markBlocked({
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        resetAt: "2026-01-01T00:10:00.000Z",
+        updatedAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-quota"),
+        taskId: asTaskId("task-quota"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Quota",
+        pmMessageId: null,
+        branch: "orchestrator/task-quota",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-quota"),
+        taskId: asTaskId("task-quota"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return readModel.tasks.some(
+        (task) =>
+          task.id === asTaskId("task-quota") &&
+          task.status === "blocked-on-quota" &&
+          task.currentStageThreadId === null,
+      );
+    });
+
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+
+    const readModel = await harness.readModel();
+    const task = readModel.tasks.find((entry) => entry.id === asTaskId("task-quota"));
+    const blockedStage = readModel.quotaBlockedStages.find(
+      (stage) => stage.taskId === asTaskId("task-quota"),
+    );
+    expect(blockedStage).toMatchObject({
+      taskId: asTaskId("task-quota"),
+      role: "work",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      resetAt: "2026-01-01T00:10:00.000Z",
+      status: "blocked",
+      retryCount: 1,
+    });
+    expect(blockedStage?.stageThreadId).toBe(task?.stageThreadIds[0]);
+
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const stageBlocked = events.find((event) => event.type === "task.stage-blocked");
+    expect(stageBlocked?.commandId).toBe(
+      stageBlockCommandId(
+        task?.stageThreadIds[0] ?? ThreadId.make("missing"),
+        ProviderInstanceId.make("codex"),
+        "admission",
+      ),
+    );
+  });
+
+  it("keeps a full-access worker when the project opts in via allowFullAccessWorkers", async () => {
+    const harness = await createHarness({
+      orchestratorConfig: {
+        enabled: true,
+        resourceLimits: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-optin"),
+        taskId: asTaskId("task-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Opt-in",
+        pmMessageId: null,
+        branch: "orchestrator/task-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-optin"),
+        taskId: asTaskId("task-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "full-access",
+    });
+
+    const readModelAfterStageStart = await harness.readModel();
+    const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
+    expect(stageThreadId).toBeDefined();
+    if (!stageThreadId) {
+      return;
+    }
+    const stageThreadAfterStart = readModelAfterStageStart.threads.find(
+      (thread) => thread.id === stageThreadId,
+    );
+    expect(stageThreadAfterStart?.runtimeMode).toBe("full-access");
+    expect(stageThreadAfterStart?.session?.runtimeMode).toBe("full-access");
+
+    harness.startSession.mockClear();
+    harness.sendTurn.mockClear();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.runtime-mode.set",
+        commandId: CommandId.make("cmd-worker-full-access-optin"),
+        threadId: stageThreadId,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-worker-follow-up-optin"),
+        threadId: stageThreadId,
+        message: {
+          messageId: asMessageId("user-message-worker-follow-up-optin"),
+          role: "user",
+          text: "Continue.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    const readModel = await harness.readModel();
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
+  });
+
+  it("starts a full-access worker when the global default opts in", async () => {
+    const harness = await createHarness({
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-global-optin"),
+        taskId: asTaskId("task-global-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Global Opt-in",
+        pmMessageId: null,
+        branch: "orchestrator/task-global-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-global-optin"),
+        taskId: asTaskId("task-global-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "full-access",
+    });
+
+    const readModel = await harness.readModel();
+    const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
+  });
+
+  it("keeps approval-required workers when the project disables a global opt-in", async () => {
+    const harness = await createHarness({
+      orchestratorConfig: {
+        enabled: true,
+        resourceLimits: { allowFullAccessWorkers: false },
+      },
+      serverSettingsOverrides: {
+        orchestratorDefaults: { allowFullAccessWorkers: true },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-project-disable-global-optin"),
+        taskId: asTaskId("task-project-disable-global-optin"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Project Disable",
+        pmMessageId: null,
+        branch: "orchestrator/task-project-disable-global-optin",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-project-disable-global-optin"),
+        taskId: asTaskId("task-project-disable-global-optin"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "approval-required",
+    });
+
+    const readModel = await harness.readModel();
+    const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
+    const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
+    expect(stageThread?.runtimeMode).toBe("approval-required");
+    expect(stageThread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("starts task workers with a secret-stripped environment override", async () => {
+    const previousEnv = {
+      PATH: process.env.PATH,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      CUSTOM_SECRET: process.env.CUSTOM_SECRET,
+      ORCHESTRATOR_PUBLIC_FLAG: process.env.ORCHESTRATOR_PUBLIC_FLAG,
+    };
+    process.env.PATH = "/usr/bin";
+    process.env.OPENAI_API_KEY = "do-not-forward";
+    process.env.GITHUB_TOKEN = "do-not-forward";
+    process.env.CUSTOM_SECRET = "do-not-forward";
+    process.env.ORCHESTRATOR_PUBLIC_FLAG = "do-not-forward-either";
+
+    try {
+      const harness = await createHarness();
+      const now = "2026-01-01T00:00:00.000Z";
+
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-create-env"),
+          taskId: asTaskId("task-env"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Task Env",
+          pmMessageId: null,
+          branch: "orchestrator/task-env",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-task-stage-start-env"),
+          taskId: asTaskId("task-env"),
+          role: "work",
+          instructions: "Implement with a stripped env.",
+          createdAt: now,
+        }),
+      );
+
+      await waitFor(() => harness.startSession.mock.calls.length === 1);
+      await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+      const input = harness.startSession.mock.calls[0]?.[1] as
+        | { readonly environment?: Record<string, string> }
+        | undefined;
+      expect(input?.environment).toMatchObject({ PATH: "/usr/bin" });
+      expect(input?.environment).not.toHaveProperty("OPENAI_API_KEY");
+      expect(input?.environment).not.toHaveProperty("GITHUB_TOKEN");
+      expect(input?.environment).not.toHaveProperty("CUSTOM_SECRET");
+      expect(input?.environment).not.toHaveProperty("ORCHESTRATOR_PUBLIC_FLAG");
+      const expectedWorktreePath = path.join(
+        harness.projectRoot,
+        ".gedcode/orchestrator/tasks/task-env",
+      );
+      expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+        cwd: expectedWorktreePath,
+      });
+      expect(harness.createWorktree).toHaveBeenCalledWith({
+        cwd: harness.projectRoot,
+        refName: "HEAD",
+        newRefName: "orchestrator/task-env",
+        path: expectedWorktreePath,
+      });
+      expect(
+        fs.readFileSync(path.join(expectedWorktreePath, ".gedcode-hooks/pre-push"), "utf8"),
+      ).toContain("cannot push protected ref");
+      expect(harness.vcsProcessRun.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          args: ["config", "extensions.worktreeConfig", "true"],
+          cwd: expectedWorktreePath,
+        }),
+        expect.objectContaining({
+          args: [
+            "config",
+            "--worktree",
+            "core.hooksPath",
+            path.join(expectedWorktreePath, ".gedcode-hooks"),
+          ],
+          cwd: expectedWorktreePath,
+        }),
+      ]);
+    } finally {
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
   });
 
   it("generates a thread title on the first turn", async () => {
@@ -1064,7 +1599,7 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: "/tmp/provider-project",
+      cwd: harness.projectRoot,
     });
 
     await Effect.runPromise(

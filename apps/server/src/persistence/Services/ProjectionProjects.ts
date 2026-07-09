@@ -8,8 +8,10 @@
  */
 import {
   GedRoleModelSelections,
+  GedRolePromptPrefixes,
   IsoDateTime,
   ModelSelection,
+  OrchestratorConfigJson,
   ProjectId,
   ProjectScript,
 } from "@t3tools/contracts";
@@ -26,6 +28,8 @@ export const ProjectionProject = Schema.Struct({
   workspaceRoot: Schema.String,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   roleModelSelections: GedRoleModelSelections,
+  rolePromptPrefixes: GedRolePromptPrefixes,
+  orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

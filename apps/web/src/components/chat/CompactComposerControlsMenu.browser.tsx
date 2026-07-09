@@ -151,9 +151,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
         />
       }
       onTogglePlanSidebar={vi.fn()}
-      onToggleWorkflow={vi.fn()}
       onRuntimeModeChange={vi.fn()}
-      workflowEnabled
     />,
     { container: host },
   );
@@ -301,9 +299,7 @@ describe("CompactComposerControlsMenu", () => {
         planSidebarOpen={false}
         runtimeMode="approval-required"
         onTogglePlanSidebar={vi.fn()}
-        onToggleWorkflow={vi.fn()}
         onRuntimeModeChange={vi.fn()}
-        workflowEnabled
       />,
       { container: host },
     );
@@ -315,8 +311,8 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).not.toContain("Mode");
       expect(text).not.toContain("Chat");
       expect(text).not.toContain("Plan");
-      expect(text).toContain("Thread mode");
-      expect(text).toContain("Ged");
+      expect(text).not.toContain("Thread mode");
+      expect(text).not.toContain("Ged");
       expect(text).toContain("Access");
       expect(text).toContain("Supervised");
       expect(text).toContain("Full access");

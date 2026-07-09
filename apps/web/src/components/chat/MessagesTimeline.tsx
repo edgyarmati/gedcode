@@ -1,9 +1,11 @@
 import {
   type EnvironmentId,
   type MessageId,
+  type ProjectId,
   type ServerProviderSkill,
   type TurnId,
 } from "@t3tools/contracts";
+import { Link } from "@tanstack/react-router";
 import {
   createContext,
   Fragment,
@@ -35,6 +37,7 @@ import {
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  ArrowRightLeftIcon,
   BotIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -44,9 +47,11 @@ import {
   EyeIcon,
   GlobeIcon,
   HammerIcon,
+  ListTodoIcon,
   type LucideIcon,
   MessageCircleIcon,
   MinusIcon,
+  PauseIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -101,6 +106,17 @@ import {
 // components (WorkingTimer, LiveElapsed) handle it.
 // ---------------------------------------------------------------------------
 
+/**
+ * Enables navigable task chips on PM tool activities that carry a task id.
+ * Only the orchestrator PM chat supplies this; worker/regular chat leaves it
+ * undefined so no chip is rendered.
+ */
+export interface PmTaskChipContext {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  resolveTaskTitle: (taskId: string) => string | undefined;
+}
+
 interface TimelineRowSharedState {
   timestampFormat: TimestampFormat;
   routeThreadKey: string;
@@ -109,6 +125,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
+  pmTaskChip: PmTaskChipContext | undefined;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -152,6 +169,10 @@ interface MessagesTimelineProps {
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   onIsAtEndChange: (isAtEnd: boolean) => void;
+  /** Rendered in place of the default prompt when the timeline is empty. */
+  emptyState?: ReactNode;
+  /** Enables PM task chips on activities that carry a task id (PM chat only). */
+  pmTaskChip?: PmTaskChipContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +200,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
   onIsAtEndChange,
+  emptyState,
+  pmTaskChip,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
 
@@ -305,6 +328,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      pmTaskChip,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -318,6 +342,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workspaceRoot,
       skills,
       activeThreadEnvironmentId,
+      pmTaskChip,
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
@@ -347,9 +372,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   if (rows.length === 0 && !isWorking) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground/30">
-          Send a message to start the conversation.
-        </p>
+        {emptyState ?? (
+          <p className="text-sm text-muted-foreground/30">
+            Send a message to start the conversation.
+          </p>
+        )}
       </div>
     );
   }
@@ -407,6 +434,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       data-message-role={row.kind === "message" ? row.message.role : undefined}
     >
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
+      {row.kind === "system-marker" ? <SystemMarkerRow entry={row.entry} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
@@ -637,6 +665,99 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// System marker — PM lifecycle events (handoff / turn-failed / quota-paused)
+// rendered as a centered divider row, distinct from chat bubbles and tool rows.
+// ---------------------------------------------------------------------------
+
+function systemMarkerLabel(entry: TimelineWorkEntry): string {
+  if (entry.sourceActivityKind === "pm.handoff") {
+    return entry.pmHandoffMode ? `PM handed off — ${entry.pmHandoffMode}` : entry.label;
+  }
+  return entry.label;
+}
+
+function systemMarkerIcon(entry: TimelineWorkEntry): LucideIcon {
+  switch (entry.sourceActivityKind) {
+    case "pm.handoff":
+      return ArrowRightLeftIcon;
+    case "quota.paused":
+      return PauseIcon;
+    default:
+      return CircleAlertIcon;
+  }
+}
+
+const SystemMarkerRow = memo(function SystemMarkerRow({ entry }: { entry: TimelineWorkEntry }) {
+  const ctx = use(TimelineRowCtx);
+  const isError = entry.tone === "error";
+  const Icon = systemMarkerIcon(entry);
+  const label = systemMarkerLabel(entry);
+  const ruleClass = cn("h-px flex-1", isError ? "bg-destructive/25" : "bg-border/60");
+
+  return (
+    <div className="flex items-center gap-3 py-2" data-system-marker={entry.sourceActivityKind}>
+      <span className={ruleClass} aria-hidden />
+      <span
+        className={cn(
+          "inline-flex min-w-0 items-center gap-1.5 text-xs",
+          isError ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        <Icon className="size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 truncate font-medium">{label}</span>
+        <span className="shrink-0 text-muted-foreground/70">·</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={<span className="shrink-0 text-muted-foreground/70 tabular-nums" />}
+          >
+            {formatShortTimestamp(entry.createdAt, ctx.timestampFormat)}
+          </TooltipTrigger>
+          <TooltipPopup>
+            {formatChatTimestampTooltip(entry.createdAt, ctx.timestampFormat)}
+          </TooltipPopup>
+        </Tooltip>
+      </span>
+      <span className={ruleClass} aria-hidden />
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// PM task chip — navigable link to a task the PM created/steered/inspected.
+// Rendered only when the activity genuinely carries a task id and the PM chip
+// context is present. Never parses task ids out of message prose.
+// ---------------------------------------------------------------------------
+
+function shortTaskId(taskId: string): string {
+  return taskId.length > 8 ? taskId.slice(0, 8) : taskId;
+}
+
+const PmTaskChip = memo(function PmTaskChip({ taskId }: { taskId: string }) {
+  const ctx = use(TimelineRowCtx);
+  const chip = ctx.pmTaskChip;
+  if (!chip) {
+    return null;
+  }
+  const title = chip.resolveTaskTitle(taskId);
+  const label = title && title.trim().length > 0 ? title : shortTaskId(taskId);
+
+  return (
+    <Link
+      to="/orch/$environmentId/$projectId/tasks/$taskId"
+      params={{ environmentId: chip.environmentId, projectId: chip.projectId, taskId }}
+      title={label}
+      onClick={stopRowToggle}
+      onPointerDown={stopRowToggle}
+      className="inline-flex max-w-[16rem] items-center gap-1 rounded-md border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[11px] font-medium text-foreground/80 outline-hidden transition-colors hover:border-ring/50 hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      data-task-chip={taskId}
+    >
+      <ListTodoIcon className="size-3 shrink-0 opacity-70" aria-hidden />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Self-ticking labels — update their own text nodes so elapsed-time display
@@ -1307,6 +1428,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot } = props;
   const activity = use(TimelineRowActivityCtx);
+  const { pmTaskChip } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -1506,6 +1628,15 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
             {expandedBody}
           </pre>
+        </div>
+      ) : null}
+      {pmTaskChip && workEntry.taskId ? (
+        <div
+          className="mt-1.5 ms-7 flex flex-wrap gap-1"
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          <PmTaskChip taskId={workEntry.taskId} />
         </div>
       ) : null}
       {hasChangedFiles && (

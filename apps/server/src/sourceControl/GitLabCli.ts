@@ -83,7 +83,8 @@ export interface GitLabCliShape {
     readonly target?: SourceControlProvider.SourceControlRefSelector;
     readonly title: string;
     readonly bodyFile: string;
-  }) => Effect.Effect<void, GitLabCliError>;
+    readonly draft?: boolean;
+  }) => Effect.Effect<GitLabMergeRequestSummary, GitLabCliError>;
 
   readonly getDefaultBranch: (input: {
     readonly cwd: string;
@@ -259,6 +260,11 @@ function parseRepositoryPath(repository: string): {
   return { namespacePath, projectPath };
 }
 
+function draftMergeRequestTitle(title: string): string {
+  const trimmed = title.trim();
+  return /^(draft|wip):/iu.test(trimmed) ? trimmed : `Draft: ${trimmed}`;
+}
+
 export const make = Effect.fn("makeGitLabCli")(function* () {
   const process = yield* VcsProcess.VcsProcess;
 
@@ -419,11 +425,30 @@ export const make = Effect.fn("makeGitLabCli")(function* () {
           `target_branch=${input.target?.refName ?? input.baseBranch}`,
           ...(sourceProject ? ["--raw-field", `source_project_id=${sourceProject}`] : []),
           "--raw-field",
-          `title=${input.title}`,
+          `title=${input.draft === true ? draftMergeRequestTitle(input.title) : input.title}`,
           "--field",
           `description=@${input.bodyFile}`,
         ],
-      }).pipe(Effect.asVoid);
+      }).pipe(
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          Effect.sync(() => GitLabMergeRequests.decodeGitLabMergeRequestJson(raw)).pipe(
+            Effect.flatMap((decoded) => {
+              if (!Result.isSuccess(decoded)) {
+                return Effect.fail(
+                  new GitLabCliError({
+                    operation: "createMergeRequest",
+                    detail: `GitLab CLI returned invalid merge request JSON: ${GitLabMergeRequests.formatGitLabJsonDecodeError(decoded.failure)}`,
+                    cause: decoded.failure,
+                  }),
+                );
+              }
+
+              return Effect.succeed(toSummaryWithOptionalUpdatedAt(decoded.success));
+            }),
+          ),
+        ),
+      );
     },
     getDefaultBranch: (input) =>
       execute({

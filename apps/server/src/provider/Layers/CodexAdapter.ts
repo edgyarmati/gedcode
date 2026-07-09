@@ -52,6 +52,12 @@ import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
+  makeCodexMcpEnvironment,
+  makeCodexMcpServerConfig,
+  type OrchestrationMcpEndpoint,
+} from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
+import { classifyRuntimeErrorClass, mapCodexRateLimits } from "../rateLimits.ts";
+import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
   makeCodexSessionRuntime,
@@ -72,6 +78,7 @@ const PROVIDER = ProviderDriverKind.make("codex");
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly orchestrationMcpEndpoint?: OrchestrationMcpEndpoint;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -496,7 +503,7 @@ function mapToRuntimeEvents(
         type: "runtime.error",
         payload: {
           message: event.message,
-          class: "provider_error",
+          class: classifyRuntimeErrorClass({ message: event.message, fallback: "provider_error" }),
           ...(event.payload !== undefined ? { detail: event.payload } : {}),
         },
       },
@@ -1113,16 +1120,18 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "account/rateLimits/updated") {
-    if (!readPayload(EffectCodexSchema.V2AccountRateLimitsUpdatedNotification, event.payload)) {
+    const payload = readPayload(
+      EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
       return [];
     }
     return [
       {
         type: "account.rate-limits.updated",
         ...runtimeEventBase(event, canonicalThreadId),
-        payload: {
-          rateLimits: event.payload ?? {},
-        },
+        payload: mapCodexRateLimits(payload.rateLimits, event.payload),
       },
     ];
   }
@@ -1245,7 +1254,9 @@ function mapToRuntimeEvents(
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
           message,
-          ...(!willRetry ? { class: "provider_error" as const } : {}),
+          ...(!willRetry
+            ? { class: classifyRuntimeErrorClass({ message, fallback: "provider_error" }) }
+            : {}),
           ...(event.payload !== undefined ? { detail: event.payload } : {}),
         },
       },
@@ -1262,7 +1273,7 @@ function mapToRuntimeEvents(
             ...runtimeEventBase(event, canonicalThreadId),
             payload: {
               message,
-              class: "provider_error" as const,
+              class: classifyRuntimeErrorClass({ message, fallback: "provider_error" }),
               ...(event.payload !== undefined ? { detail: event.payload } : {}),
             },
           }
@@ -1382,17 +1393,46 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           input.modelSelection?.instanceId === boundInstanceId
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
+        const baseEnvironment =
+          input.environment !== undefined
+            ? input.environment
+            : options?.environment
+              ? options.environment
+              : undefined;
+        const orchestrationMcpEndpoint =
+          input.enableOrchestrationTools === true ? options?.orchestrationMcpEndpoint : undefined;
+        if (input.enableOrchestrationTools === true && !orchestrationMcpEndpoint) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Codex orchestration MCP tools require an orchestration MCP HTTP endpoint.",
+          });
+        }
+        const orchestrationEnvironment = orchestrationMcpEndpoint
+          ? makeCodexMcpEnvironment(orchestrationMcpEndpoint)
+          : undefined;
+        const environment =
+          baseEnvironment || orchestrationEnvironment
+            ? {
+                ...baseEnvironment,
+                ...orchestrationEnvironment,
+              }
+            : undefined;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          ...(options?.environment ? { environment: options.environment } : {}),
+          ...(environment ? { environment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
             : {}),
           runtimeMode: input.runtimeMode,
+          ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+          ...(orchestrationMcpEndpoint
+            ? { config: makeCodexMcpServerConfig(orchestrationMcpEndpoint) }
+            : {}),
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),
@@ -1434,7 +1474,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
           }),
-        ).pipe(Effect.forkChild);
+        ).pipe(Effect.forkIn(sessionScope));
 
         const started = yield* runtime.start().pipe(
           Effect.mapError(

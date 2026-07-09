@@ -5,6 +5,7 @@ import {
   type VcsStatusResult,
   type VcsStatusStreamEvent,
   type LocalApi,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
   WS_METHODS,
@@ -153,8 +154,19 @@ export interface WsRpcClient {
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
   };
-  readonly gedWorkflow: {
-    readonly getState: RpcUnaryMethod<typeof WS_METHODS.gedWorkflowGetState>;
+  readonly orchestrator: {
+    readonly sendMessage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.sendMessage>;
+    readonly subscribeProject: RpcInputStreamMethod<
+      typeof ORCHESTRATOR_WS_METHODS.subscribeProject
+    >;
+    readonly subscribeTask: RpcInputStreamMethod<typeof ORCHESTRATOR_WS_METHODS.subscribeTask>;
+    readonly resolveGate: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.resolveGate>;
+    readonly setTaskRoleSelections: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+    >;
+    readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
+    readonly clearPmChat: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.clearPmChat>;
+    readonly requestPmHandoff: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.requestPmHandoff>;
   };
 }
 
@@ -322,9 +334,32 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           { ...options, tag: ORCHESTRATION_WS_METHODS.subscribeThread },
         ),
     },
-    gedWorkflow: {
-      getState: (input) =>
-        transport.request((client) => client[WS_METHODS.gedWorkflowGetState](input)),
+    orchestrator: {
+      sendMessage: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.sendMessage](input)),
+      subscribeProject: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[ORCHESTRATOR_WS_METHODS.subscribeProject](input),
+          listener,
+          { ...options, tag: ORCHESTRATOR_WS_METHODS.subscribeProject },
+        ),
+      subscribeTask: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[ORCHESTRATOR_WS_METHODS.subscribeTask](input),
+          listener,
+          { ...options, tag: ORCHESTRATOR_WS_METHODS.subscribeTask },
+        ),
+      resolveGate: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.resolveGate](input)),
+      // Dialog caller was removed; per-task model selection is now PM-driven, but this remains a human-origin RPC.
+      setTaskRoleSelections: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections](input)),
+      cancelTask: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
+      clearPmChat: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.clearPmChat](input)),
+      requestPmHandoff: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.requestPmHandoff](input)),
     },
   };
 }

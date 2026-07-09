@@ -3,6 +3,7 @@ import {
   EventId,
   ProjectId,
   ProviderDriverKind,
+  TaskId,
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
@@ -28,7 +29,9 @@ function makeEvent(input: {
     aggregateId:
       input.aggregateKind === "project"
         ? ProjectId.make(input.aggregateId)
-        : ThreadId.make(input.aggregateId),
+        : input.aggregateKind === "task"
+          ? TaskId.make(input.aggregateId)
+          : ThreadId.make(input.aggregateId),
     occurredAt: input.occurredAt,
     commandId: input.commandId === null ? null : CommandId.make(input.commandId),
     causationEventId: null,
@@ -81,7 +84,6 @@ describe("orchestration projector", () => {
           instanceId: "codex",
           model: "gpt-5-codex",
         },
-        gedWorkflowEnabled: true,
         runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,
@@ -91,6 +93,7 @@ describe("orchestration projector", () => {
         updatedAt: now,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages: [],
         proposedPlans: [],
         activities: [],
@@ -98,6 +101,257 @@ describe("orchestration projector", () => {
         session: null,
       },
     ]);
+  });
+
+  it("replays thread.cleared as dropping prior thread messages", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const threadId = "pm:project-1";
+    const events: OrchestrationEvent[] = [
+      makeEvent({
+        sequence: 1,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-create",
+        payload: {
+          threadId,
+          projectId: "project-1",
+          title: "Project PM",
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/project",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "thread.message-sent",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-message-before-clear",
+        payload: {
+          threadId,
+          messageId: "message-before-clear",
+          role: "user",
+          text: "before clear",
+          attachments: [],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "thread.cleared",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-clear",
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "thread.message-sent",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-message-after-clear",
+        payload: {
+          threadId,
+          messageId: "message-after-clear",
+          role: "assistant",
+          text: "after clear",
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+    ];
+
+    let readModel = createEmptyReadModel(now);
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+
+    expect(readModel.threads[0]?.messages.map((message) => message.id)).toEqual([
+      "message-after-clear",
+    ]);
+    expect(readModel.threads[0]?.messages[0]?.text).toBe("after clear");
+    expect(readModel.threads[0]?.lastClearedSequence).toBe(3);
+  });
+
+  it("projects pending PM handoff requested, completed, and cleared state", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const threadId = "pm:project-1";
+    let readModel = createEmptyReadModel(now);
+
+    const events: OrchestrationEvent[] = [
+      makeEvent({
+        sequence: 1,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-thread-create",
+        payload: {
+          threadId,
+          projectId: "project-1",
+          title: "Project PM",
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/project",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "thread.pm-handoff-requested",
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: "cmd-pm-handoff",
+        payload: {
+          threadId,
+          mode: "summary",
+          brief: "Brief",
+          createdAt: now,
+        },
+      }),
+    ];
+
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+    expect(readModel.threads[0]?.pendingPmHandoff).toEqual({
+      mode: "summary",
+      brief: "Brief",
+      requestedAt: now,
+    });
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 3,
+          type: "thread.pm-handoff-completed",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-pm-handoff-complete",
+          payload: {
+            threadId,
+            mode: "summary",
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff).toBeNull();
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 4,
+          type: "thread.pm-handoff-requested",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-pm-handoff-2",
+          payload: {
+            threadId,
+            mode: "transcript",
+            createdAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff?.mode).toBe("transcript");
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 5,
+          type: "thread.cleared",
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: "cmd-thread-clear",
+          payload: {
+            threadId,
+            clearedAt: now,
+          },
+        }),
+      ),
+    );
+    expect(readModel.threads[0]?.pendingPmHandoff).toBeNull();
+  });
+
+  it("replays legacy pi-era PM model selections as unconfigured", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const model = createEmptyReadModel(now);
+
+    const next = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "project.created",
+          aggregateKind: "project",
+          aggregateId: "project-legacy-pm-selection",
+          occurredAt: now,
+          commandId: "cmd-project-create",
+          payload: {
+            projectId: "project-legacy-pm-selection",
+            title: "Legacy PM Selection",
+            workspaceRoot: "/tmp/legacy-pm-selection",
+            defaultModelSelection: {
+              instanceId: "codex",
+              model: "gpt-5-codex",
+            },
+            roleModelSelections: {},
+            orchestratorConfig: {
+              enabled: true,
+              pmModelSelection: {
+                piProvider: "openai",
+                model: "gpt-5.5",
+              },
+              openPrAsDraft: true,
+            },
+            scripts: [],
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(next.projects).toHaveLength(1);
+    expect(next.projects[0]?.orchestratorConfig).toEqual({
+      enabled: true,
+      pmModelSelection: null,
+      openPrAsDraft: true,
+    });
   });
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
@@ -233,6 +487,449 @@ describe("orchestration projector", () => {
     expect(next.snapshotSequence).toBe(7);
     expect(next.updatedAt).toBe("2026-01-01T00:00:00.000Z");
     expect(next.threads).toEqual([]);
+  });
+
+  it("clears a task's pending gates when the task is abandoned", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const abandonedAt = "2026-01-01T00:05:00.000Z";
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-create-cancelled",
+        payload: {
+          taskId: "task-cancelled",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Cancelled task",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-other",
+        occurredAt: now,
+        commandId: "cmd-create-other",
+        payload: {
+          taskId: "task-other",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Other task",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-gate-cancelled",
+        payload: {
+          taskId: "task-cancelled",
+          gateId: "gate-cancelled",
+          gate: "plan",
+          contentHash: "sha256:cancelled",
+          stageThreadId: null,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-other",
+        occurredAt: now,
+        commandId: "cmd-gate-other",
+        payload: {
+          taskId: "task-other",
+          gateId: "gate-other",
+          gate: "plan",
+          contentHash: "sha256:other",
+          stageThreadId: null,
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 5,
+        type: "task.abandoned",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: abandonedAt,
+        commandId: "cmd-abandon",
+        payload: {
+          taskId: "task-cancelled",
+          updatedAt: abandonedAt,
+        },
+      }),
+    ];
+
+    let readModel = createEmptyReadModel(now);
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+
+    expect(readModel.tasks.find((task) => task.id === "task-cancelled")?.status).toBe("abandoned");
+    expect((readModel.pendingGates ?? []).map((gate) => gate.gateId)).toEqual(["gate-other"]);
+  });
+
+  it("derives task status purely from task events", async () => {
+    const createdAt = "2026-06-14T10:00:00.000Z";
+    const classifiedAt = "2026-06-14T10:01:00.000Z";
+    const planStartedAt = "2026-06-14T10:02:00.000Z";
+    const gateRequestedAt = "2026-06-14T10:03:00.000Z";
+    const gateResolvedAt = "2026-06-14T10:04:00.000Z";
+    const workStartedAt = "2026-06-14T10:05:00.000Z";
+    const workCompletedAt = "2026-06-14T10:06:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-1",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Add orchestrator task projection",
+          branch: "orchestrator/task-1",
+          worktreePath: "/tmp/task-1",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.classified",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: classifiedAt,
+        commandId: "cmd-task-classify",
+        payload: {
+          taskId: "task-1",
+          taskType: "feature",
+          playbookVersion: "feature@v1",
+          updatedAt: classifiedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: planStartedAt,
+        commandId: "cmd-plan-start",
+        payload: {
+          taskId: "task-1",
+          role: "plan",
+          stageThreadId: "thread-plan",
+          awaitedTurnId: "turn-plan",
+          updatedAt: planStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "task.gate-requested",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: gateRequestedAt,
+        commandId: "cmd-plan-gate",
+        payload: {
+          taskId: "task-1",
+          gateId: "gate-plan",
+          gate: "plan",
+          contentHash: "sha256:plan",
+          stageThreadId: "thread-plan",
+          updatedAt: gateRequestedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 5,
+        type: "task.gate-resolved",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: gateResolvedAt,
+        commandId: "cmd-plan-approve",
+        payload: {
+          taskId: "task-1",
+          gateId: "gate-plan",
+          gate: "plan",
+          approvedHash: "sha256:plan",
+          decision: "approved",
+          origin: "human",
+          updatedAt: gateResolvedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 6,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-1",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 7,
+        type: "task.stage-completed",
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        occurredAt: workCompletedAt,
+        commandId: "cmd-work-complete",
+        payload: {
+          taskId: "task-1",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workCompletedAt,
+        },
+      }),
+    ];
+
+    const statuses: string[] = [];
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+      statuses.push(state.tasks[0]?.status ?? "missing");
+    }
+
+    expect(statuses).toEqual([
+      "draft",
+      "classified",
+      "planning",
+      "plan-review",
+      "planning",
+      "working",
+      "review",
+    ]);
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-1",
+      projectId: "project-1",
+      type: "feature",
+      status: "review",
+      stageThreadIds: ["thread-plan", "thread-work"],
+      currentStageThreadId: null,
+      playbookVersion: "feature@v1",
+    });
+  });
+
+  it("tolerates the optional diffComplete marker on stage completion without changing status derivation", async () => {
+    const createdAt = "2026-06-19T10:00:00.000Z";
+    const workStartedAt = "2026-06-19T10:05:00.000Z";
+    const workCompletedAt = "2026-06-19T10:06:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-diff",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Stage completion with diff marker",
+          branch: "orchestrator/task-diff",
+          worktreePath: "/tmp/task-diff",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-diff",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-completed",
+        aggregateKind: "task",
+        aggregateId: "task-diff",
+        occurredAt: workCompletedAt,
+        commandId: "cmd-work-complete",
+        payload: {
+          taskId: "task-diff",
+          role: "work",
+          stageThreadId: "thread-work",
+          awaitedTurnId: "turn-work",
+          diffComplete: false,
+          updatedAt: workCompletedAt,
+        },
+      }),
+    ];
+
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+    }
+
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-diff",
+      status: "review",
+      currentStageThreadId: null,
+    });
+  });
+
+  it("tracks quota-blocked stages and marks them resumed on the next stage start", async () => {
+    const createdAt = "2026-06-20T10:00:00.000Z";
+    const workStartedAt = "2026-06-20T10:01:00.000Z";
+    const blockedAt = "2026-06-20T10:02:00.000Z";
+    const resumedAt = "2026-06-20T10:03:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: createdAt,
+        commandId: "cmd-task-create",
+        payload: {
+          taskId: "task-quota",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Quota task",
+          branch: "orchestrator/task-quota",
+          worktreePath: "/tmp/task-quota",
+          pmMessageId: "pm-message-1",
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: workStartedAt,
+        commandId: "cmd-work-start",
+        payload: {
+          taskId: "task-quota",
+          role: "work",
+          stageThreadId: "thread-work-blocked",
+          awaitedTurnId: null,
+          updatedAt: workStartedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-blocked",
+        aggregateKind: "task",
+        aggregateId: "task-quota",
+        occurredAt: blockedAt,
+        commandId: "cmd-work-block",
+        payload: {
+          taskId: "task-quota",
+          role: "work",
+          stageThreadId: "thread-work-blocked",
+          reason: "quota",
+          providerInstanceId: "codex",
+          resetAt: "2026-06-20T10:15:00.000Z",
+          updatedAt: blockedAt,
+        },
+      }),
+    ];
+
+    let state = model;
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+    }
+
+    expect(state.tasks[0]).toMatchObject({
+      id: "task-quota",
+      status: "blocked-on-quota",
+      currentStageThreadId: null,
+      stageThreadIds: ["thread-work-blocked"],
+    });
+    expect(state.quotaBlockedStages).toEqual([
+      {
+        taskId: "task-quota",
+        stageThreadId: "thread-work-blocked",
+        role: "work",
+        providerInstanceId: "codex",
+        resetAt: "2026-06-20T10:15:00.000Z",
+        status: "blocked",
+        retryCount: 1,
+        blockedAt,
+        resumedAt: null,
+      },
+    ]);
+
+    state = await Effect.runPromise(
+      projectEvent(
+        state,
+        makeEvent({
+          sequence: 4,
+          type: "task.stage-started",
+          aggregateKind: "task",
+          aggregateId: "task-quota",
+          occurredAt: resumedAt,
+          commandId: "cmd-work-resume",
+          payload: {
+            taskId: "task-quota",
+            role: "work",
+            stageThreadId: "thread-work-resumed",
+            awaitedTurnId: null,
+            updatedAt: resumedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(state.tasks[0]).toMatchObject({
+      status: "working",
+      currentStageThreadId: "thread-work-resumed",
+      stageThreadIds: ["thread-work-blocked", "thread-work-resumed"],
+    });
+    expect(state.quotaBlockedStages[0]).toMatchObject({
+      stageThreadId: "thread-work-blocked",
+      status: "resumed",
+      resumedAt,
+    });
   });
 
   it("tracks latest turn id from session lifecycle events", async () => {
@@ -950,5 +1647,60 @@ describe("orchestration projector", () => {
     expect(thread?.checkpoints).toHaveLength(500);
     expect(thread?.checkpoints[0]?.turnId).toBe("turn-100");
     expect(thread?.checkpoints.at(-1)?.turnId).toBe("turn-599");
+  });
+
+  it("records the opened PR URL on the task aggregate", async () => {
+    const createdAt = "2026-06-24T10:00:00.000Z";
+    const openedAt = "2026-06-24T10:05:00.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "task.created",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: createdAt,
+          commandId: "cmd-task-create",
+          payload: {
+            taskId: "task-pr",
+            projectId: "project-1",
+            taskType: "feature",
+            title: "Open a PR",
+            branch: "orchestrator/task-pr",
+            worktreePath: "/tmp/task-pr",
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+    const afterPrOpened = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "task.pr-opened",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: openedAt,
+          commandId: "cmd-pr-opened",
+          payload: {
+            taskId: "task-pr",
+            prUrl: "https://github.com/acme/repo/pull/42",
+            prNumber: 42,
+            updatedAt: openedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(afterCreate.tasks[0]?.prUrl).toBeNull();
+    expect(afterPrOpened.tasks[0]?.prUrl).toBe("https://github.com/acme/repo/pull/42");
+    expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
   });
 });

@@ -195,40 +195,35 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("replaces Ged role settings maps so omitted roles are cleared", () => {
+  it("replaces orchestrator defaults so shorter stage arrays clear omitted stages", () => {
     const current = {
       ...DEFAULT_SERVER_SETTINGS,
-      gedRoleSettings: {
-        ...DEFAULT_SERVER_SETTINGS.gedRoleSettings,
-        "ged-explorer": { enabled: false },
-        "ged-worker": { enabled: true },
+      orchestratorDefaults: {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+        stages: ["classify", "plan", "review", "work", "verify"] as const,
       },
     };
 
     expect(
       applyServerSettingsPatch(current, {
-        gedRoleSettings: { "ged-explorer": { enabled: true } },
-      }).gedRoleSettings,
-    ).toEqual({ "ged-explorer": { enabled: true } });
-  });
-
-  it("updates Ged subagent runtime mode without clearing role model selections", () => {
-    const explorerSelection = createModelSelection(
-      ProviderInstanceId.make("claude_global"),
-      "claude-global",
-    );
-    const current = {
-      ...DEFAULT_SERVER_SETTINGS,
-      gedModelSelections: {
-        mainThread: null,
-        roles: { "ged-explorer": explorerSelection },
+        orchestratorDefaults: {
+          ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+          stages: ["classify", "plan", "work"],
+          gatePolicy: {
+            ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
+            plan: "auto",
+            land: "require-approval",
+          },
+        },
+      }).orchestratorDefaults,
+    ).toEqual({
+      ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+      stages: ["classify", "plan", "work"],
+      gatePolicy: {
+        ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
+        plan: "auto",
+        land: "require-approval",
       },
-    };
-
-    expect(
-      applyServerSettingsPatch(current, {
-        gedSubagentRuntimeMode: "harness-native",
-      }).gedModelSelections.roles,
-    ).toEqual({ "ged-explorer": explorerSelection });
+    });
   });
 });

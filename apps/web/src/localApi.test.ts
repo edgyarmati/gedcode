@@ -3,11 +3,15 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type DesktopBridge,
   EnvironmentId,
+  GateId,
   type VcsStatusResult,
   ProjectId,
   type OrchestrationShellStreamItem,
+  type OrchestratorProjectStreamItem,
+  type OrchestratorTaskStreamItem,
   ProviderDriverKind,
   ProviderInstanceId,
+  TaskId,
   type ServerConfig,
   type ServerProvider,
   type TerminalEvent,
@@ -34,6 +38,8 @@ function registerListener<T>(listeners: Set<(event: T) => void>, listener: (even
 
 const terminalEventListeners = new Set<(event: TerminalEvent) => void>();
 const shellStreamListeners = new Set<(event: OrchestrationShellStreamItem) => void>();
+const projectStreamListeners = new Set<(event: OrchestratorProjectStreamItem) => void>();
+const taskStreamListeners = new Set<(event: OrchestratorTaskStreamItem) => void>();
 const gitStatusListeners = new Set<(event: VcsStatusResult) => void>();
 
 const rpcClientMock = {
@@ -97,10 +103,27 @@ const rpcClientMock = {
     dispatchCommand: vi.fn(),
     getTurnDiff: vi.fn(),
     getFullThreadDiff: vi.fn(),
+    getArchivedShellSnapshot: vi.fn(),
     subscribeShell: vi.fn((listener: (event: OrchestrationShellStreamItem) => void) =>
       registerListener(shellStreamListeners, listener),
     ),
     subscribeThread: vi.fn(() => () => undefined),
+  },
+  orchestrator: {
+    sendMessage: vi.fn(),
+    subscribeProject: vi.fn(
+      (input: { projectId: ProjectId }, listener: (event: OrchestratorProjectStreamItem) => void) =>
+        registerListener(projectStreamListeners, listener),
+    ),
+    subscribeTask: vi.fn(
+      (input: { taskId: TaskId }, listener: (event: OrchestratorTaskStreamItem) => void) =>
+        registerListener(taskStreamListeners, listener),
+    ),
+    resolveGate: vi.fn(),
+    setTaskRoleSelections: vi.fn(),
+    cancelTask: vi.fn(),
+    clearPmChat: vi.fn(),
+    requestPmHandoff: vi.fn(),
   },
   gedWorkflow: {
     getState: vi.fn(),
@@ -447,6 +470,89 @@ describe("wsApi", () => {
     await api.orchestration.dispatchCommand(command);
 
     expect(rpcClientMock.orchestration.dispatchCommand).toHaveBeenCalledWith(command);
+  });
+
+  it("forwards orchestrator requests and subscriptions to the RPC client", async () => {
+    rpcClientMock.orchestrator.sendMessage.mockResolvedValue({ accepted: true });
+    rpcClientMock.orchestrator.resolveGate.mockResolvedValue({ sequence: 42 });
+    rpcClientMock.orchestrator.setTaskRoleSelections.mockResolvedValue({ sequence: 43 });
+    rpcClientMock.orchestrator.cancelTask.mockResolvedValue({ sequence: 45 });
+    rpcClientMock.orchestrator.clearPmChat.mockResolvedValue({ sequence: 44 });
+    const { createEnvironmentApi } = await import("./environmentApi");
+
+    const api = createEnvironmentApi(rpcClientMock as never);
+    const projectId = ProjectId.make("project-1");
+    const taskId = TaskId.make("task-1");
+    const gateId = GateId.make("gate-1");
+    const onProjectEvent = vi.fn();
+    const onTaskEvent = vi.fn();
+    const onResubscribe = vi.fn();
+
+    await expect(api.orchestrator.sendMessage({ projectId, message: "Build it" })).resolves.toEqual(
+      { accepted: true },
+    );
+    const unsubscribeProject = api.orchestrator.subscribeProject({ projectId }, onProjectEvent, {
+      onResubscribe,
+    });
+    const unsubscribeTask = api.orchestrator.subscribeTask({ taskId }, onTaskEvent);
+    await expect(
+      api.orchestrator.resolveGate({
+        taskId,
+        gateId,
+        gate: "plan",
+        approvedHash: "hash-1",
+        decision: "approved",
+      }),
+    ).resolves.toEqual({ sequence: 42 });
+    await expect(
+      api.orchestrator.setTaskRoleSelections({
+        taskId,
+        roleModelSelections: {
+          work: {
+            instanceId: ProviderInstanceId.make("codex_task"),
+            model: "gpt-5-task",
+          },
+        },
+      }),
+    ).resolves.toEqual({ sequence: 43 });
+    await expect(api.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 45 });
+    await expect(api.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 44 });
+
+    expect(rpcClientMock.orchestrator.sendMessage).toHaveBeenCalledWith({
+      projectId,
+      message: "Build it",
+    });
+    expect(rpcClientMock.orchestrator.subscribeProject).toHaveBeenCalledWith(
+      { projectId },
+      onProjectEvent,
+      { onResubscribe },
+    );
+    expect(rpcClientMock.orchestrator.subscribeTask).toHaveBeenCalledWith(
+      { taskId },
+      onTaskEvent,
+      undefined,
+    );
+    expect(rpcClientMock.orchestrator.resolveGate).toHaveBeenCalledWith({
+      taskId,
+      gateId,
+      gate: "plan",
+      approvedHash: "hash-1",
+      decision: "approved",
+    });
+    expect(rpcClientMock.orchestrator.setTaskRoleSelections).toHaveBeenCalledWith({
+      taskId,
+      roleModelSelections: {
+        work: {
+          instanceId: ProviderInstanceId.make("codex_task"),
+          model: "gpt-5-task",
+        },
+      },
+    });
+    expect(rpcClientMock.orchestrator.cancelTask).toHaveBeenCalledWith({ taskId });
+    expect(rpcClientMock.orchestrator.clearPmChat).toHaveBeenCalledWith({ projectId });
+
+    unsubscribeProject();
+    unsubscribeTask();
   });
 
   it("forwards workspace file writes to the project RPC", async () => {

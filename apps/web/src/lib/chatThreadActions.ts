@@ -7,7 +7,6 @@ interface ThreadContextLike {
   projectId: ProjectId;
   branch: string | null;
   worktreePath: string | null;
-  gedWorkflowEnabled?: boolean | null | undefined;
 }
 
 interface DraftThreadContextLike extends ThreadContextLike {
@@ -21,7 +20,6 @@ interface NewThreadHandler {
       branch?: string | null;
       worktreePath?: string | null;
       envMode?: DraftThreadEnvMode;
-      gedWorkflowEnabled?: boolean | null;
     },
   ): Promise<void>;
 }
@@ -52,8 +50,6 @@ export function resolveThreadActionProjectRef(
 }
 
 function buildContextualThreadOptions(context: ChatThreadActionContext): NewThreadOptions {
-  const gedWorkflowEnabled =
-    context.activeThread?.gedWorkflowEnabled ?? context.activeDraftThread?.gedWorkflowEnabled;
   return {
     branch: context.activeThread?.branch ?? context.activeDraftThread?.branch ?? null,
     worktreePath:
@@ -61,20 +57,12 @@ function buildContextualThreadOptions(context: ChatThreadActionContext): NewThre
     envMode:
       context.activeDraftThread?.envMode ??
       (context.activeThread?.worktreePath ? "worktree" : "local"),
-    ...(gedWorkflowEnabled !== undefined && gedWorkflowEnabled !== null
-      ? { gedWorkflowEnabled }
-      : {}),
   };
 }
 
 function buildDefaultThreadOptions(context: ChatThreadActionContext): NewThreadOptions {
-  const gedWorkflowEnabled =
-    context.activeThread?.gedWorkflowEnabled ?? context.activeDraftThread?.gedWorkflowEnabled;
   return {
     envMode: context.defaultThreadEnvMode,
-    ...(gedWorkflowEnabled !== undefined && gedWorkflowEnabled !== null
-      ? { gedWorkflowEnabled }
-      : {}),
   };
 }
 

@@ -97,6 +97,9 @@ const RuntimeErrorClass = Schema.Literals([
   "transport_error",
   "permission_error",
   "validation_error",
+  // Subscription quota / rate-limit exhaustion (e.g. usage limit reached, HTTP 429).
+  // Identifiable so downstream orchestration can pause-and-resume rather than fail a stage.
+  "rate_limit",
   "unknown",
 ]);
 export type RuntimeErrorClass = typeof RuntimeErrorClass.Type;
@@ -535,8 +538,43 @@ const AccountUpdatedPayload = Schema.Struct({
 });
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
+// Normalized, backend-agnostic quota health derived by the adapter from each
+// provider's native rate-limit telemetry. `exhausted` is the load-bearing signal
+// that downstream orchestration uses to pause work on a provider instance.
+const RateLimitStatus = Schema.Literals([
+  "ok", // headroom remaining
+  "warning", // near the limit (high utilization), not yet blocked
+  "exhausted", // at/over the limit — new work on this instance should pause
+  "unknown", // backend reported telemetry we could not classify
+]);
+export type RateLimitStatus = typeof RateLimitStatus.Type;
+
+// A single normalized quota window. Backends expose multiple windows
+// (Codex primary/secondary/individual; Claude 5h/7d/overage); each maps to one entry.
+const RateLimitWindowSnapshot = Schema.Struct({
+  // Stable, human-readable window label, e.g. "primary" | "secondary" | "individual"
+  // (Codex) or "five_hour" | "seven_day" | "overage" (Claude).
+  label: Schema.optional(TrimmedNonEmptyStringSchema),
+  // Percentage of the window consumed, 0..100.
+  usedPercent: Schema.optional(Schema.Number),
+  // Absolute reset time as epoch milliseconds. Adapters normalize the backend's
+  // native unit (seconds vs milliseconds) before populating this — see normalizeEpochToMs.
+  resetAtEpochMs: Schema.optional(Schema.Number),
+  // Window duration in minutes, when the backend reports it.
+  windowDurationMins: Schema.optional(Schema.Number),
+});
+export type RateLimitWindowSnapshot = typeof RateLimitWindowSnapshot.Type;
+
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
-  rateLimits: Schema.Unknown,
+  // Normalized cross-backend health — the field every quota consumer reads.
+  status: RateLimitStatus,
+  // Soonest reset (epoch ms) among the windows driving a `warning`/`exhausted`
+  // status, when the backend provides one. Absent if no trustworthy reset is known.
+  resetAtEpochMs: Schema.optional(Schema.Number),
+  // Per-window detail for surfacing/diagnostics.
+  windows: Schema.optional(Schema.Array(RateLimitWindowSnapshot)),
+  // The original backend payload, preserved verbatim for forward-compat and debugging.
+  raw: Schema.optional(Schema.Unknown),
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
 

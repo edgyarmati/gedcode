@@ -10,6 +10,7 @@ import {
   IsoDateTime,
   ModelSelection,
   NonNegativeInt,
+  PendingPmHandoff,
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
@@ -28,7 +29,6 @@ export const ProjectionThread = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   modelSelection: ModelSelection,
-  gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
@@ -41,6 +41,8 @@ export const ProjectionThread = Schema.Struct({
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
+  lastClearedSequence: Schema.NullOr(NonNegativeInt),
+  pendingPmHandoff: Schema.NullOr(PendingPmHandoff),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

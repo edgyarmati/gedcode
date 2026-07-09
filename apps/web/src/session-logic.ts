@@ -65,6 +65,33 @@ export interface WorkLogEntry {
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   /** Originating orchestration activity kind (e.g. `user-input.requested`) for row chrome. */
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
+  /**
+   * Task id carried in a PM tool activity's structured `details` (createTask,
+   * handoffWorker, steerStage, inspectStage, cancelTask, …). Present only when
+   * the orchestration payload genuinely names a task — never parsed from prose.
+   * Drives the navigable task chip in the PM chat.
+   */
+  taskId?: string;
+  /** Handoff mode ("transcript", …) from a `pm.handoff` lifecycle marker payload. */
+  pmHandoffMode?: string;
+}
+
+/**
+ * PM lifecycle activity kinds that render as dedicated system-divider rows in
+ * the PM chat rather than as generic tool/work-log entries or chat bubbles.
+ */
+export const PM_SYSTEM_MARKER_KINDS: ReadonlyArray<OrchestrationThreadActivity["kind"]> = [
+  "pm.handoff",
+  "pm.turn.failed",
+  "quota.paused",
+];
+
+/** True when a work entry originates from a PM lifecycle marker activity. */
+export function isPmSystemMarkerEntry(entry: Pick<WorkLogEntry, "sourceActivityKind">): boolean {
+  return (
+    entry.sourceActivityKind !== undefined &&
+    PM_SYSTEM_MARKER_KINDS.includes(entry.sourceActivityKind)
+  );
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -728,6 +755,16 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolCallId) {
     entry.toolCallId = toolCallId;
   }
+  const taskId = extractPmTaskId(payload);
+  if (taskId) {
+    entry.taskId = taskId;
+  }
+  if (activity.kind === "pm.handoff") {
+    const handoffMode = asTrimmedString(payload?.mode);
+    if (handoffMode) {
+      entry.pmHandoffMode = handoffMode;
+    }
+  }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
     toolLifecycleStatus = "completed";
@@ -796,6 +833,8 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
+  const taskId = next.taskId ?? previous.taskId;
+  const pmHandoffMode = next.pmHandoffMode ?? previous.pmHandoffMode;
   return {
     ...previous,
     ...next,
@@ -809,6 +848,8 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
+    ...(taskId ? { taskId } : {}),
+    ...(pmHandoffMode ? { pmHandoffMode } : {}),
   };
 }
 
@@ -1061,6 +1102,58 @@ function extractToolTitle(payload: Record<string, unknown> | null): string | nul
 function extractToolCallId(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
   return asTrimmedString(data?.toolCallId);
+}
+
+/** `taskId` / `task.id` from a structured record (executor details shape). */
+function taskIdFromDetailsRecord(record: Record<string, unknown> | null): string | null {
+  if (!record) {
+    return null;
+  }
+  const direct = asTrimmedString(record.taskId);
+  if (direct) {
+    return direct;
+  }
+  const task = asRecord(record.task);
+  return asTrimmedString(task?.id);
+}
+
+/**
+ * Task id from a PM tool activity's structured payload — never parsed from
+ * prose. Shapes covered (see PmEventProjection.toolActivityPayload and
+ * DriverPmAdapter tool_result handling):
+ * - `payload.input.taskId` — structured tool input (handoffWorker, steerStage,
+ *   inspectStage, cancelTask, …).
+ * - `payload.details.taskId` / `payload.details.task.id` — bare executor details.
+ * - `payload.details.structuredContent.…` — MCP CallToolResult wrapper.
+ * - `payload.details.content` — Claude-driver tool_result block whose content
+ *   is the JSON-serialized executor details (createTask carries its new task
+ *   id only here).
+ * Returns null when the activity does not genuinely carry a task id.
+ */
+function extractPmTaskId(payload: Record<string, unknown> | null): string | null {
+  const fromInput = asTrimmedString(asRecord(payload?.input)?.taskId);
+  if (fromInput) {
+    return fromInput;
+  }
+  const details = asRecord(payload?.details);
+  if (!details) {
+    return null;
+  }
+  const fromDetails =
+    taskIdFromDetailsRecord(details) ??
+    taskIdFromDetailsRecord(asRecord(details.structuredContent));
+  if (fromDetails) {
+    return fromDetails;
+  }
+  const content = asTrimmedString(details.content);
+  if (!content || !content.startsWith("{")) {
+    return null;
+  }
+  try {
+    return taskIdFromDetailsRecord(asRecord(JSON.parse(content)));
+  } catch {
+    return null;
+  }
 }
 
 function normalizeInlinePreview(value: string): string {

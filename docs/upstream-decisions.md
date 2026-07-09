@@ -3,7 +3,49 @@
 This document tracks decisions about upstream-only work from `pingdotgg/t3code`.
 Use it before categorizing, cherry-picking, or reimplementing upstream commits.
 
-Last reviewed against `upstream/main` at `57f6bf7e` on 2026-06-11.
+Last reviewed against `upstream/main` at `32e78448` on 2026-07-06 (422 commits
+behind merge base `e3accd6e957` on `feat/orchestrator-mode`).
+
+## Policy change (2026-07-06) — leaving the fork network
+
+GedCode has drifted far from t3code and will leave the fork network in the
+near future. **Parity syncs are over.** Do not merge or stage-merge
+`upstream/main`. Instead, selectively port individual upstream features when
+they are useful and there is a good implementation for our tree.
+
+Decided against wholesale adoption (2026-07-06 audit of the 422-commit range):
+
+- **pnpm/Vite Plus tooling migration** (`b440dd18`, 299 files, + follow-ups) —
+  we stay on Bun; port only release/CI fixes that apply to our setup.
+- **Client-runtime connection rewrite** (`e95b57dc`, 606 files) — would
+  destabilize our hardened subscription/replay surfaces for no product need.
+- **Effect error-structuring campaign** (~200 commits) — style parity has no
+  value post-detach; our conventions evolve independently.
+- Long-standing exclusions remain: mobile (#2013 + ~44 follow-ons),
+  relay/cloud/APNs/Clerk/T3 Connect, marketing/docs/vendored refs, Grok
+  provider, Cursor provider (deleted here; drop all upstream Cursor work).
+
+Port shortlist (opportunistic, each as its own adapted port, not a raw
+cherry-pick):
+
+- Individual web/chat polish items: virtualized model picker (`31533466` —
+  already ported per Completed section), timeline scroll/minimap (`fda64862`),
+  word-wrap (`fb103454`), message metadata/work-log rows (`1916ac6d` — already
+  ported), workspace file browser (`de8bdc10`), inline tool timeline
+  (`649f4328`).
+- In-app browser preview subsystem (~48 commits incl. its `apps/server/src/mcp`
+  HTTP MCP server dependency) — future project when wanted; our
+  `orchestration/mcp` endpoint stays separate regardless.
+- Codex app-server protocol updates — driven by `@openai/codex` releases, not
+  t3code; upstream's protocol-sync commits are reference material when we bump.
+
+Mechanics: keep the `upstream` remote read-only for reference until detach.
+`main` fast-forwards cleanly from `feat/orchestrator-mode` and does not wait
+on any upstream work.
+
+Historical context below reflects the pre-2026-07-06 parity policy.
+
+Previous review: `upstream/main` at `57f6bf7e` on 2026-06-11.
 At that point, local `main` matched `origin/main`, and `main...upstream/main`
 was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 
@@ -13,6 +55,63 @@ was `117 83`: this fork was 117 commits ahead and 83 commits behind upstream.
 - **Deferred indefinitely**: Worth keeping in view, but not scheduled and not needed for current direction.
 - **Not doing for now**: Explicitly out of scope for this fork unless product direction changes.
 - **Needs decision**: Requires user/maintainer decision before implementation work starts.
+
+## Fork-Original Work
+
+### Orchestrator mode Phase 1
+
+- Tracking issue: [#32](https://github.com/edgyarmati/gedcode/issues/32)
+- Completed in this fork: 2026-06-18
+- Notes: This is fork-original product direction, not a cherry-pick from
+  `pingdotgg/t3code`. Phase 1 adds the pi-backed PM runtime, task aggregate,
+  detached worker handoff, human gates, restart-window PM re-entry proof, and
+  the initial `/orch` web surfaces.
+
+### Orchestrator mode Phase 2
+
+- Tracking issue: [#35](https://github.com/edgyarmati/gedcode/issues/35)
+- Completed in this fork: 2026-06-20
+- Notes: Fork-original durability and safety hardening of Phase 1, not a
+  cherry-pick from `pingdotgg/t3code`. Phase 2 adds SQLite concurrent-writer
+  hardening (`PRAGMA busy_timeout` + a jittered retry gated strictly on
+  `SQLITE_BUSY`/`SQLITE_LOCKED`), real-captured-diff completeness gating on
+  stage completion, durable two-phase `pending -> acted` settlement recovery
+  with a reconciliation sweep (closing the at-most-once PM re-entry liveness
+  gap), a bounded secret-scrubbed `StageResultBuilder` worker-diff envelope, a
+  periodic leaked-worktree reaper, durability-path Effect Metrics, and
+  measure-only command-queue contention instrumentation.
+
+### Orchestrator mode Phase 3
+
+- Tracking issue: [#51](https://github.com/edgyarmati/gedcode/issues/51)
+- Status: Complete in this fork as of 2026-06-22 (on `feat/orchestrator-mode`).
+- Notes: Fork-original multi-stage role and multi-backend work, not a
+  cherry-pick from `pingdotgg/t3code`. The P1-P3 engine foundation adds
+  `review`/`verify` worker roles, human-controlled per-task role model
+  overrides, per-role prompt prefixes, deterministic backend/model selection,
+  PM handoff support for the new roles, and a durable stage-history projection.
+  The follow-on UX/E2E lane added the stage-timeline UI and the P7
+  full-pipeline/restart-durability integration proof. Project/task configuration
+  editing was reshaped into Phase 4 (see below).
+
+### Orchestrator mode Phase 4
+
+- Tracking issue: [#59](https://github.com/edgyarmati/gedcode/issues/59)
+- Status: Complete in this fork as of 2026-06-23 (on `feat/orchestrator-mode`; not
+  yet merged to `main`).
+- Notes: Fork-original configuration, autonomy, and guidance layer over the Phase 3
+  pipeline — not a cherry-pick from `pingdotgg/t3code`. Adds a five-layer
+  `ConfigResolver`; per-gate autonomy (gates flippable to `auto`, auto-resolved by
+  the decider with a `system` origin; `land` hard-pinned to require-approval);
+  per-project stage toggles (review/verify optional, classify/plan/work mandatory)
+  with a global default that seeds new projects; a PM tool for PM-driven per-task
+  backend selection (the per-task settings dialog was removed in favor of
+  chat-driven control); PM-only built-in playbooks (a source-agnostic
+  `PlaybookLoader` + content-hash version, injected into the PM via pi
+  `setResources`); and PM context auto-compaction layered over pi's built-in
+  compaction. Deliberately NO per-task-type taxonomy and NO per-task config maps
+  (the single `feature` task type is an internal implementation detail). A full
+  E2E + restart-durability integration proof closes the phase.
 
 ## Removed Forked-In Features
 

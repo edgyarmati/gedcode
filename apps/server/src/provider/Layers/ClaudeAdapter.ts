@@ -8,6 +8,7 @@
  */
 import {
   type CanUseTool,
+  type McpServerConfig,
   query,
   type Options as ClaudeQueryOptions,
   type PermissionMode,
@@ -67,6 +68,12 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import {
+  isOrchestrationMcpToolId,
+  ORCHESTRATION_MCP_SERVER_NAME,
+  orchestrationMcpToolIds,
+} from "../../orchestration/claude/pmMcpServer.ts";
+import { classifyRuntimeErrorClass, mapClaudeRateLimits } from "../rateLimits.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
@@ -95,6 +102,58 @@ type ClaudeToolResultStreamKind = Extract<
   "command_output" | "file_change_output"
 >;
 type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
+
+export const CLAUDE_READ_ONLY_BUILTIN_TOOLS = ["Read", "Grep", "Glob"] as const;
+
+export const CLAUDE_READ_ONLY_DISALLOWED_TOOLS = [
+  "Bash",
+  "Edit",
+  "MultiEdit",
+  "Write",
+  "NotebookEdit",
+  "TodoWrite",
+  "Task",
+  "Agent",
+  "REPL",
+  "Workflow",
+  "CronCreate",
+  "CronDelete",
+  "ScheduleWakeup",
+  "RemoteTrigger",
+  "PushNotification",
+  "EnterWorktree",
+  "ExitWorktree",
+] as const;
+
+export function buildClaudeReadOnlyToolPolicy(input?: {
+  readonly enableOrchestrationTools?: boolean;
+}): Pick<
+  ClaudeQueryOptions,
+  "allowedTools" | "disallowedTools" | "permissionMode" | "strictMcpConfig" | "tools"
+> {
+  const mcpToolIds = input?.enableOrchestrationTools === true ? orchestrationMcpToolIds() : [];
+  return {
+    // Read-only is enforced by the allow/deny lists + `canUseTool` default-deny
+    // below — NOT by plan mode. Plan mode ("research and propose, don't act")
+    // stops the PM from actually invoking its orchestration MCP tools (create
+    // task, hand off a worker), so the workflow never starts and turns surface
+    // as "(empty response)". `default` lets the PM act while mutating built-ins
+    // (Write/Edit/Bash/…) stay blocked by `disallowedTools`/`canUseTool`.
+    permissionMode: "default",
+    tools: [...CLAUDE_READ_ONLY_BUILTIN_TOOLS],
+    allowedTools: [...CLAUDE_READ_ONLY_BUILTIN_TOOLS, ...mcpToolIds],
+    disallowedTools: [...CLAUDE_READ_ONLY_DISALLOWED_TOOLS],
+    strictMcpConfig: true,
+  };
+}
+
+export function isClaudeReadOnlyAllowedTool(toolName: string): boolean {
+  return (
+    CLAUDE_READ_ONLY_BUILTIN_TOOLS.includes(
+      toolName as (typeof CLAUDE_READ_ONLY_BUILTIN_TOOLS)[number],
+    ) || isOrchestrationMcpToolId(toolName)
+  );
+}
 
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
@@ -205,6 +264,7 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly makeOrchestrationMcpServer?: () => Promise<McpServerConfig>;
 }
 
 function isUuid(value: string): boolean {
@@ -1412,7 +1472,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ...(turnState ? { turnId: asCanonicalTurnId(turnState.turnId) } : {}),
       payload: {
         message,
-        class: "provider_error",
+        class: classifyRuntimeErrorClass({ message, fallback: "provider_error" }),
         ...(cause !== undefined ? { detail: cause } : {}),
       },
       providerRefs: nativeProviderRefs(context),
@@ -2415,9 +2475,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       yield* offerRuntimeEvent({
         ...base,
         type: "account.rate-limits.updated",
-        payload: {
-          rateLimits: message,
-        },
+        payload: mapClaudeRateLimits(message.rate_limit_info, message),
       });
       return;
     }
@@ -2669,6 +2727,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const runtimeContext = yield* Effect.context<never>();
       const runFork = Effect.runForkWith(runtimeContext);
       const runPromise = Effect.runPromiseWith(runtimeContext);
+      const queryEnvironment =
+        input.environment !== undefined
+          ? yield* makeClaudeEnvironment(claudeSettings, input.environment).pipe(
+              Effect.provideService(Path.Path, path),
+            )
+          : claudeEnvironment;
 
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
       const prompt = Stream.fromQueue(promptQueue).pipe(
@@ -2866,6 +2930,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         }
 
         const runtimeMode = input.runtimeMode ?? "full-access";
+        if (input.readOnly === true) {
+          if (isClaudeReadOnlyAllowedTool(toolName)) {
+            return {
+              behavior: "allow",
+              updatedInput: toolInput,
+            } satisfies PermissionResult;
+          }
+
+          return {
+            behavior: "deny",
+            message:
+              "This Claude session is read-only. File writes, edits, shell execution, and other mutating tools are disabled.",
+          } satisfies PermissionResult;
+        }
+
         if (runtimeMode === "full-access") {
           return {
             behavior: "allow",
@@ -3008,7 +3087,42 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "auto-accept-edits": "acceptEdits",
         "full-access": "bypassPermissions",
       };
-      const permissionMode = runtimeModeToPermission[input.runtimeMode];
+      const readOnlyPolicy =
+        input.readOnly === true
+          ? buildClaudeReadOnlyToolPolicy(
+              input.enableOrchestrationTools === true
+                ? { enableOrchestrationTools: true }
+                : undefined,
+            )
+          : undefined;
+      const permissionMode =
+        readOnlyPolicy?.permissionMode ?? runtimeModeToPermission[input.runtimeMode];
+      const orchestrationMcpServer =
+        input.enableOrchestrationTools === true
+          ? yield* Effect.tryPromise({
+              try: () => {
+                if (!options?.makeOrchestrationMcpServer) {
+                  throw new Error(
+                    "Claude orchestration MCP tools require makeOrchestrationMcpServer.",
+                  );
+                }
+                return options.makeOrchestrationMcpServer();
+              },
+              catch: (cause) =>
+                new ProviderAdapterProcessError({
+                  provider: PROVIDER,
+                  threadId,
+                  detail: toMessage(cause, "Failed to create Claude orchestration MCP server."),
+                  cause,
+                }),
+            })
+          : undefined;
+      const mcpServers =
+        orchestrationMcpServer === undefined
+          ? undefined
+          : {
+              [ORCHESTRATION_MCP_SERVER_NAME]: orchestrationMcpServer,
+            };
       const settings = {
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(fastMode ? { fastMode: true } : {}),
@@ -3018,7 +3132,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          ...(input.systemPromptAppend ? { append: input.systemPromptAppend } : {}),
+        },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
@@ -3031,12 +3149,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(permissionMode === "bypassPermissions"
           ? { allowDangerouslySkipPermissions: true }
           : {}),
+        ...(readOnlyPolicy?.tools ? { tools: readOnlyPolicy.tools } : {}),
+        ...(readOnlyPolicy?.allowedTools ? { allowedTools: readOnlyPolicy.allowedTools } : {}),
+        ...(readOnlyPolicy?.disallowedTools
+          ? { disallowedTools: readOnlyPolicy.disallowedTools }
+          : {}),
+        ...(readOnlyPolicy?.strictMcpConfig !== undefined
+          ? { strictMcpConfig: readOnlyPolicy.strictMcpConfig }
+          : {}),
+        ...(mcpServers ? { mcpServers } : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
-        env: claudeEnvironment,
+        env: queryEnvironment,
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
       };
@@ -3056,6 +3183,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.effort": effectiveEffort ?? "",
         "claude.query.permission_mode": permissionMode ?? "",
         "claude.query.allow_dangerously_skip_permissions": permissionMode === "bypassPermissions",
+        "claude.query.read_only": input.readOnly === true,
+        "claude.query.enable_orchestration_tools": input.enableOrchestrationTools === true,
+        "claude.query.tools_json": encodeJsonStringForDiagnostics(readOnlyPolicy?.tools) ?? "",
+        "claude.query.allowed_tools_json":
+          encodeJsonStringForDiagnostics(readOnlyPolicy?.allowedTools) ?? "",
+        "claude.query.disallowed_tools_json":
+          encodeJsonStringForDiagnostics(readOnlyPolicy?.disallowedTools) ?? "",
+        "claude.query.strict_mcp_config": readOnlyPolicy?.strictMcpConfig === true,
+        "claude.query.mcp_servers": mcpServers ? Object.keys(mcpServers) : [],
         "claude.query.resume": existingResumeSessionId ?? "",
         "claude.query.session_id": newSessionId ?? "",
         "claude.query.include_partial_messages": true,

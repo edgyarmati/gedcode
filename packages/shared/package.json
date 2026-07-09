@@ -63,6 +63,10 @@
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"
     },
+    "./orchestrator": {
+      "types": "./src/orchestrator.ts",
+      "import": "./src/orchestrator.ts"
+    },
     "./String": {
       "types": "./src/String.ts",
       "import": "./src/String.ts"
@@ -90,14 +94,6 @@
     "./keybindings": {
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
-    },
-    "./gedModelSelection": {
-      "types": "./src/gedModelSelection.ts",
-      "import": "./src/gedModelSelection.ts"
-    },
-    "./gedSubagentPreset": {
-      "types": "./src/gedSubagentPreset.ts",
-      "import": "./src/gedSubagentPreset.ts"
     },
     "./desktopReleaseTrack": {
       "types": "./src/desktopReleaseTrack.ts",

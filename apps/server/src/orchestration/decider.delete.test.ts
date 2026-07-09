@@ -19,9 +19,9 @@ const asCommandId = (value: string): CommandId => CommandId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
+const now = "2026-01-01T00:00:00.000Z";
 
 const seedReadModel = Effect.gen(function* () {
-  const now = "2026-01-01T00:00:00.000Z";
   const initial = createEmptyReadModel(now);
   const withProject = yield* projectEvent(initial, {
     sequence: 1,
@@ -102,6 +102,38 @@ const seedReadModel = Effect.gen(function* () {
   });
 });
 
+const seedPmReadModel = seedReadModel.pipe(
+  Effect.flatMap((readModel) =>
+    projectEvent(readModel, {
+      sequence: 4,
+      eventId: asEventId("evt-pm-thread-create"),
+      aggregateKind: "thread",
+      aggregateId: asThreadId("pm:project-delete"),
+      type: "thread.created",
+      occurredAt: now,
+      commandId: asCommandId("cmd-pm-thread-create"),
+      causationEventId: null,
+      correlationId: asCommandId("cmd-pm-thread-create"),
+      metadata: {},
+      payload: {
+        threadId: asThreadId("pm:project-delete"),
+        projectId: asProjectId("project-delete"),
+        title: "Project Delete PM",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claude"),
+          model: "claude-opus-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    }),
+  ),
+);
+
 type PlannedEvent = Omit<OrchestrationEvent, "sequence">;
 
 function normalizeDeleteEvent(event: PlannedEvent | ReadonlyArray<PlannedEvent>) {
@@ -137,6 +169,76 @@ function normalizeDeleteEvent(event: PlannedEvent | ReadonlyArray<PlannedEvent>)
 }
 
 it.layer(NodeServices.layer)("decider deletion flows", (it) => {
+  it.effect("emits a thread.cleared event for thread.clear", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedReadModel;
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "thread.clear",
+          commandId: asCommandId("cmd-thread-clear"),
+          threadId: asThreadId("thread-delete-1"),
+          createdAt: now,
+        },
+      });
+
+      const events = Array.isArray(event) ? event : [event];
+      expect(events).toHaveLength(1);
+      const clearedEvent = events[0];
+      expect(clearedEvent?.type).toBe("thread.cleared");
+      if (clearedEvent?.type === "thread.cleared") {
+        expect(clearedEvent.payload.threadId).toBe(asThreadId("thread-delete-1"));
+        expect(clearedEvent.payload.clearedAt).toBe(now);
+      }
+    }),
+  );
+
+  it.effect("emits a PM handoff requested event for a PM thread", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedPmReadModel;
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "thread.pm-handoff.request",
+          commandId: asCommandId("cmd-pm-handoff"),
+          threadId: asThreadId("pm:project-delete"),
+          mode: "summary",
+          brief: "Current state brief.",
+          createdAt: now,
+        },
+      });
+
+      const events = Array.isArray(event) ? event : [event];
+      expect(events).toHaveLength(1);
+      const requestedEvent = events[0];
+      expect(requestedEvent?.type).toBe("thread.pm-handoff-requested");
+      if (requestedEvent?.type === "thread.pm-handoff-requested") {
+        expect(requestedEvent.payload.threadId).toBe(asThreadId("pm:project-delete"));
+        expect(requestedEvent.payload.mode).toBe("summary");
+        expect(requestedEvent.payload.brief).toBe("Current state brief.");
+      }
+    }),
+  );
+
+  it.effect("rejects PM handoff requests for non-PM threads", () =>
+    Effect.gen(function* () {
+      const readModel = yield* seedPmReadModel;
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "thread.pm-handoff.request",
+            commandId: asCommandId("cmd-pm-handoff-non-pm"),
+            threadId: asThreadId("thread-delete-1"),
+            mode: "transcript",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(error.message).toContain("is not a PM thread");
+    }),
+  );
+
   it.effect("rejects deleting a non-empty project without force", () =>
     Effect.gen(function* () {
       const readModel = yield* seedReadModel;

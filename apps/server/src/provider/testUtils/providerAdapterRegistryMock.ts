@@ -7,9 +7,9 @@
  * and `listInstances`; this helper fills both in from a single kind-keyed
  * input so individual fixtures can stay concise.
  *
- * Non-default instance ids (e.g. `codex_personal`) are not addressable via
- * the shim returned here — the legacy test fixtures only ever had
- * single-instance-per-driver data anyway.
+ * Non-default instance ids (e.g. `codex_personal`) can be supplied as aliases
+ * for tests that need to exercise instance routing without booting separate
+ * provider adapters.
  *
  * @module provider/testUtils/providerAdapterRegistryMock
  */
@@ -32,18 +32,76 @@ export type KindAdapterMap = Partial<
   Record<ProviderDriverKind, ProviderAdapterShape<ProviderAdapterError>>
 >;
 
+export interface AdapterRegistryMockInstanceAlias {
+  readonly instanceId: ProviderInstanceId;
+  readonly driverKind: ProviderDriverKind;
+}
+
+export interface AdapterRegistryMockOptions {
+  readonly additionalInstances?: ReadonlyArray<AdapterRegistryMockInstanceAlias>;
+}
+
+const sessionBelongsToInstance =
+  (instanceId: ProviderInstanceId) =>
+  (session: {
+    readonly provider: ProviderDriverKind;
+    readonly providerInstanceId?: ProviderInstanceId | undefined;
+  }) =>
+    (session.providerInstanceId ?? defaultInstanceIdForDriver(session.provider)) === instanceId;
+
+const eventBelongsToInstance =
+  (instanceId: ProviderInstanceId) =>
+  (event: {
+    readonly provider: ProviderDriverKind;
+    readonly providerInstanceId?: ProviderInstanceId | undefined;
+  }) =>
+    (event.providerInstanceId ?? defaultInstanceIdForDriver(event.provider)) === instanceId;
+
 /**
  * Build a `ProviderAdapterRegistryShape` from a kind-keyed adapter map.
  * Every adapter present in the map is addressable via both the legacy
  * `getByProvider(kind)` path and the new `getByInstance(id)` path (where
  * `id = defaultInstanceIdForDriver(kind)`).
  */
-export const makeAdapterRegistryMock = (adapters: KindAdapterMap): ProviderAdapterRegistryShape => {
+export const makeAdapterRegistryMock = (
+  adapters: KindAdapterMap,
+  options?: AdapterRegistryMockOptions,
+): ProviderAdapterRegistryShape => {
   const byInstanceId = new Map<ProviderInstanceId, ProviderAdapterShape<ProviderAdapterError>>();
+  const bindAdapterToInstance = (
+    instanceId: ProviderInstanceId,
+    adapter: ProviderAdapterShape<ProviderAdapterError>,
+  ): ProviderAdapterShape<ProviderAdapterError> => ({
+    ...adapter,
+    streamEvents: adapter.streamEvents.pipe(Stream.filter(eventBelongsToInstance(instanceId))),
+    listSessions: () =>
+      adapter
+        .listSessions()
+        .pipe(Effect.map((sessions) => sessions.filter(sessionBelongsToInstance(instanceId)))),
+    hasSession: (threadId) =>
+      adapter
+        .listSessions()
+        .pipe(
+          Effect.map((sessions) =>
+            sessions.some(
+              (session) =>
+                session.threadId === threadId && sessionBelongsToInstance(instanceId)(session),
+            ),
+          ),
+        ),
+  });
+
   for (const [kind, adapter] of Object.entries(adapters)) {
     if (!adapter) continue;
     const driverKind = ProviderDriverKind.make(kind);
-    byInstanceId.set(defaultInstanceIdForDriver(driverKind), adapter);
+    const instanceId = defaultInstanceIdForDriver(driverKind);
+    byInstanceId.set(instanceId, bindAdapterToInstance(instanceId, adapter));
+  }
+  for (const alias of options?.additionalInstances ?? []) {
+    const adapter = adapters[alias.driverKind];
+    if (adapter) {
+      byInstanceId.set(alias.instanceId, bindAdapterToInstance(alias.instanceId, adapter));
+    }
   }
 
   const getByInstance: ProviderAdapterRegistryShape["getByInstance"] = (instanceId) => {

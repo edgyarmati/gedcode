@@ -35,6 +35,11 @@ import type { OrchestrationDispatchError } from "../Errors.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { WorkspaceEntries } from "../../workspace/Services/WorkspaceEntries.ts";
+import {
+  activeStageRoleForTaskStatus,
+  findTaskForStageThread,
+  stageCompleteCommandId,
+} from "../stageResolution.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -212,6 +217,39 @@ const make = Effect.gen(function* () {
     return cwd;
   });
 
+  // Settles the active orchestrator stage for `threadId` now that a REAL diff
+  // has been captured for `turnId` (status !== "missing"). Uses the same
+  // deterministic command id as the fail-loud timeout backstop in
+  // ProviderRuntimeIngestion, so whichever path commits first wins and the
+  // other dedups against the persisted command receipt (exactly-once PM
+  // re-entry). `diffComplete` is left absent here to record that a real diff
+  // was present at completion. Wrapped in Effect.catch(log) by the caller so a
+  // rejected or already-deduped dispatch NEVER fails checkpoint capture.
+  const settleStageOnCapturedDiff = Effect.fn("settleStageOnCapturedDiff")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly createdAt: string;
+  }) {
+    const { tasks } = yield* projectionSnapshotQuery.getCommandReadModel();
+    const task = findTaskForStageThread(tasks, input.threadId);
+    if (!task) {
+      return;
+    }
+    const role = activeStageRoleForTaskStatus(task.status);
+    if (role === null || !sameId(task.currentStageThreadId, input.threadId)) {
+      return;
+    }
+    yield* orchestrationEngine.dispatch({
+      type: "task.stage.complete",
+      commandId: stageCompleteCommandId(input.threadId, input.turnId),
+      taskId: task.id,
+      role,
+      stageThreadId: input.threadId,
+      awaitedTurnId: input.turnId,
+      createdAt: input.createdAt,
+    });
+  });
+
   // Shared tail for both capture paths: creates the git checkpoint ref, diffs
   // it against the previous turn, then dispatches the domain events to update
   // the orchestration read model.
@@ -346,6 +384,27 @@ const make = Effect.gen(function* () {
       },
       createdAt: input.createdAt,
     });
+
+    // A REAL diff was captured for this turn (an empty-but-captured diff with
+    // files: [] still counts; only "missing" no-op turns are excluded). Settle
+    // the active orchestrator stage so the PM re-enters — gating
+    // task.stage-completed on a confirmed diff. Wrapped in catch(log) so a
+    // duplicate/rejected dispatch never fails checkpoint capture.
+    if (input.status !== "missing") {
+      yield* settleStageOnCapturedDiff({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        createdAt: input.createdAt,
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("checkpoint reactor failed to settle stage on captured diff", {
+            threadId: input.threadId,
+            turnId: input.turnId,
+            detail: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      );
+    }
   });
 
   // Captures a real git checkpoint when a turn completes via a runtime event.

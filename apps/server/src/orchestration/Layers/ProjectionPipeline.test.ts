@@ -6,9 +6,12 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
   ProviderInstanceId,
+  type OrchestrationEvent,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -35,6 +38,7 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const makeProjectionPipelinePrefixedTestLayer = (prefix: string) =>
   OrchestrationProjectionPipelineLive.pipe(
@@ -172,6 +176,439 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       for (const row of stateRows) {
         assert.equal(row.lastAppliedSequence, 3);
       }
+    }),
+  );
+
+  it.effect("projects pending PM handoff state on request, completion, and clear", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("pm:project-pm-handoff");
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-pm-handoff-thread"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-thread"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-thread"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-pm-handoff"),
+          title: "PM Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-opus-4-6",
+          },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.pm-handoff-requested",
+        eventId: EventId.make("evt-pm-handoff-requested"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-requested"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "summary",
+          brief: "Brief",
+          createdAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+      let rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.deepEqual(JSON.parse(rows[0]?.pendingPmHandoff ?? "null"), {
+        mode: "summary",
+        brief: "Brief",
+        requestedAt: now,
+      });
+
+      const completedEvent: OrchestrationEvent = {
+        sequence: 3,
+        type: "thread.pm-handoff-completed",
+        eventId: EventId.make("evt-pm-handoff-completed"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-completed"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-completed"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "summary",
+          createdAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(completedEvent);
+      rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.equal(rows[0]?.pendingPmHandoff, null);
+
+      const transcriptRequestEvent: OrchestrationEvent = {
+        sequence: 4,
+        type: "thread.pm-handoff-requested",
+        eventId: EventId.make("evt-pm-handoff-requested-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-requested-2"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-requested-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          mode: "transcript",
+          createdAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(transcriptRequestEvent);
+      const clearedEvent: OrchestrationEvent = {
+        sequence: 5,
+        type: "thread.cleared",
+        eventId: EventId.make("evt-pm-handoff-clear"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-pm-handoff-clear"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-pm-handoff-clear"),
+        metadata: {},
+        payload: {
+          threadId,
+          clearedAt: now,
+        },
+      };
+      yield* projectionPipeline.projectEvent(clearedEvent);
+      rows = yield* sql<{ readonly pendingPmHandoff: string | null }>`
+        SELECT pending_pm_handoff_json AS "pendingPmHandoff"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.equal(rows[0]?.pendingPmHandoff, null);
+    }),
+  );
+
+  it.effect("projects stage history with task-level model overrides and blocked status", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-06-22T00:00:00.000Z";
+      const projectId = ProjectId.make("project-stage-history");
+      const taskId = TaskId.make("task-stage-history");
+      const stageThreadId = ThreadId.make("thread-stage-history");
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-stage-history-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-stage-history-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Stage history project",
+          workspaceRoot: "/tmp/stage-history-project",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex_default"),
+            model: "gpt-default",
+          },
+          roleModelSelections: {
+            work: {
+              instanceId: ProviderInstanceId.make("codex_project"),
+              model: "gpt-project",
+            },
+          },
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.created",
+        eventId: EventId.make("evt-stage-history-task"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-stage-history-task"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-task"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Stage history task",
+          branch: "orchestrator/stage-history",
+          worktreePath: "/tmp/stage-history-project/.gedcode/orchestrator/tasks/task-stage-history",
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.role-selections-updated",
+        eventId: EventId.make("evt-stage-history-role-selection"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:01.000Z",
+        commandId: CommandId.make("cmd-stage-history-role-selection"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-role-selection"),
+        metadata: {},
+        payload: {
+          taskId,
+          roleModelSelections: {
+            work: {
+              instanceId: ProviderInstanceId.make("codex_task"),
+              model: "gpt-task",
+            },
+          },
+          origin: "client",
+          updatedAt: "2026-06-22T00:00:01.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.stage-started",
+        eventId: EventId.make("evt-stage-history-started"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:02.000Z",
+        commandId: CommandId.make("cmd-stage-history-start"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-start"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          awaitedTurnId: null,
+          updatedAt: "2026-06-22T00:00:02.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.stage-blocked",
+        eventId: EventId.make("evt-stage-history-blocked"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:03.000Z",
+        commandId: CommandId.make("cmd-stage-history-block"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-block"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          reason: "quota",
+          providerInstanceId: ProviderInstanceId.make("codex_task"),
+          updatedAt: "2026-06-22T00:00:03.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "task.pr-opened",
+        eventId: EventId.make("evt-stage-history-pr-opened"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: "2026-06-22T00:00:04.000Z",
+        commandId: CommandId.make("cmd-stage-history-pr-opened"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-stage-history-pr-opened"),
+        metadata: {},
+        payload: {
+          taskId,
+          prUrl: "https://github.com/acme/repo/pull/42",
+          prNumber: 42,
+          updatedAt: "2026-06-22T00:00:04.000Z",
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly providerInstanceId: string;
+        readonly model: string;
+        readonly status: string;
+        readonly endedAt: string | null;
+      }>`
+        SELECT
+          provider_instance_id AS "providerInstanceId",
+          model,
+          status,
+          ended_at AS "endedAt"
+        FROM projection_stage_history
+        WHERE stage_thread_id = ${stageThreadId}
+      `;
+      assert.deepEqual(rows, [
+        {
+          providerInstanceId: "codex_task",
+          model: "gpt-task",
+          status: "blocked",
+          endedAt: "2026-06-22T00:00:03.000Z",
+        },
+      ]);
+
+      const taskRows = yield* sql<{ readonly prUrl: string | null }>`
+        SELECT pr_url AS "prUrl"
+        FROM projection_tasks
+        WHERE task_id = ${taskId}
+      `;
+      assert.strictEqual(taskRows[0]?.prUrl, "https://github.com/acme/repo/pull/42");
+    }),
+  );
+
+  it.effect("clears projected thread activities only for the cleared thread", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-07-04T00:00:00.000Z";
+      const projectId = ProjectId.make("project-clear-activities");
+      const clearedThreadId = ThreadId.make("thread-clear-activities");
+      const otherThreadId = ThreadId.make("thread-clear-activities-other");
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-clear-activities-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear-activities-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-clear-activities-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Clear activities project",
+          workspaceRoot: "/tmp/clear-activities-project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      for (const [threadId, label] of [
+        [clearedThreadId, "cleared"],
+        [otherThreadId, "other"],
+      ] as const) {
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make(`evt-clear-activities-thread-${label}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-clear-activities-thread-${label}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-clear-activities-thread-${label}`),
+          metadata: {},
+          payload: {
+            threadId,
+            projectId,
+            title: `Thread ${label}`,
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "approval-required",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+
+        yield* eventStore.append({
+          type: "thread.activity-appended",
+          eventId: EventId.make(`evt-clear-activities-activity-${label}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-clear-activities-activity-${label}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-clear-activities-activity-${label}`),
+          metadata: {},
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make(`activity-clear-activities-${label}`),
+              tone: "info",
+              kind: "provider.turn.start.failed",
+              summary: `Activity ${label}`,
+              payload: { label },
+              turnId: null,
+              createdAt: now,
+            },
+          },
+        });
+      }
+
+      yield* eventStore.append({
+        type: "thread.cleared",
+        eventId: EventId.make("evt-clear-activities-clear"),
+        aggregateKind: "thread",
+        aggregateId: clearedThreadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-clear-activities-clear"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-clear-activities-clear"),
+        metadata: {},
+        payload: {
+          threadId: clearedThreadId,
+          clearedAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const clearedRows = yield* sql<{ readonly activityId: string }>`
+        SELECT activity_id AS "activityId"
+        FROM projection_thread_activities
+        WHERE thread_id = ${clearedThreadId}
+      `;
+      assert.deepEqual(clearedRows, []);
+
+      const otherRows = yield* sql<{ readonly activityId: string }>`
+        SELECT activity_id AS "activityId"
+        FROM projection_thread_activities
+        WHERE thread_id = ${otherThreadId}
+        ORDER BY activity_id ASC
+      `;
+      assert.deepEqual(otherRows, [{ activityId: "activity-clear-activities-other" }]);
     }),
   );
 });
@@ -2402,6 +2839,7 @@ const engineLayer = it.layer(
         prefix: "t3-projection-pipeline-engine-dispatch-",
       }),
     ),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(NodeServices.layer),
   ),
 );

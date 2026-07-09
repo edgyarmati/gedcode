@@ -5,6 +5,7 @@
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 - Document relevant unreleased changes in `CHANGELOG.md` before considering a task complete. If the change should matter to users, operators, or release notes, update the `## Unreleased` section as part of the task.
+- Do not implement fallback behavior or alternate degraded paths without asking the user first when a requested approach is blocked.
 
 ## Project Snapshot
 

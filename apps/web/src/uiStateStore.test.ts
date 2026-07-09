@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -11,6 +11,8 @@ import {
   persistState,
   reorderProjects,
   setDefaultAdvertisedEndpointKey,
+  setLastOrchestratorProject,
+  setOrchestratorBoardCollapsed,
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   syncProjects,
@@ -25,6 +27,9 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    orchestratorMode: false,
+    orchestratorBoardCollapsed: false,
+    lastOrchestratorProject: null,
     ...overrides,
   };
 }
@@ -113,6 +118,39 @@ describe("uiStateStore pure functions", () => {
     expect(setDefaultAdvertisedEndpointKey(next, "desktop-core:lan:http")).toBe(next);
     expect(setDefaultAdvertisedEndpointKey(next, "")).toMatchObject({
       defaultAdvertisedEndpointKey: null,
+    });
+  });
+
+  it("setLastOrchestratorProject stores, is idempotent, and can be cleared", () => {
+    const ref = {
+      environmentId: EnvironmentId.make("env-1"),
+      projectId: ProjectId.make("proj-1"),
+    };
+    const initialState = makeUiState();
+
+    const next = setLastOrchestratorProject(initialState, ref);
+    expect(next.lastOrchestratorProject).toEqual(ref);
+
+    // Same value (by env + project id) is a no-op reference.
+    expect(
+      setLastOrchestratorProject(next, {
+        environmentId: EnvironmentId.make("env-1"),
+        projectId: ProjectId.make("proj-1"),
+      }),
+    ).toBe(next);
+
+    expect(setLastOrchestratorProject(next, null).lastOrchestratorProject).toBeNull();
+  });
+
+  it("setOrchestratorBoardCollapsed stores the board visibility preference", () => {
+    const initialState = makeUiState();
+
+    const next = setOrchestratorBoardCollapsed(initialState, true);
+
+    expect(next.orchestratorBoardCollapsed).toBe(true);
+    expect(setOrchestratorBoardCollapsed(next, true)).toBe(next);
+    expect(setOrchestratorBoardCollapsed(next, false)).toMatchObject({
+      orchestratorBoardCollapsed: false,
     });
   });
 
@@ -577,6 +615,34 @@ describe("uiStateStore persistence round-trip", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(persisted.defaultAdvertisedEndpointKey).toBe("desktop-core:lan:http");
+  });
+
+  it("persists the orchestrator board collapsed preference", () => {
+    const state = setOrchestratorBoardCollapsed(makeUiState(), true);
+
+    persistState(state);
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(persisted.orchestratorBoardCollapsed).toBe(true);
+  });
+
+  it("persists the last-visited orchestrator project", () => {
+    const state = setLastOrchestratorProject(makeUiState(), {
+      environmentId: EnvironmentId.make("env-1"),
+      projectId: ProjectId.make("proj-1"),
+    });
+
+    persistState(state);
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(persisted.lastOrchestratorProject).toEqual({
+      environmentId: "env-1",
+      projectId: "proj-1",
+    });
   });
 
   it("preserves expand state across restart when project's logical key changes", () => {

@@ -4,6 +4,8 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
   ProjectId,
+  TaskId,
+  TaskTypeId,
   ThreadId,
   TurnId,
   type OrchestrationEvent,
@@ -39,6 +41,7 @@ import {
 } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
@@ -61,6 +64,7 @@ async function createOrchestrationSystem() {
     Layer.provide(RepositoryIdentityResolverLive),
     Layer.provide(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(NodeServices.layer),
   );
   const runtime = ManagedRuntime.make(orchestrationLayer);
@@ -70,6 +74,19 @@ async function createOrchestrationSystem() {
     engine,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
+    setMaxParallelTasksDefault: (maxParallelTasks: number) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const serverSettings = yield* ServerSettingsService;
+          const current = yield* serverSettings.getSettings;
+          yield* serverSettings.updateSettings({
+            orchestratorDefaults: {
+              ...current.orchestratorDefaults,
+              maxParallelTasks,
+            },
+          });
+        }),
+      ),
     dispose: () => runtime.dispose(),
   };
 }
@@ -148,6 +165,7 @@ describe("OrchestrationEngine", () => {
           updatedAt: "2026-03-03T00:00:03.000Z",
           archivedAt: null,
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [],
           proposedPlans: [],
           activities: [],
@@ -155,6 +173,9 @@ describe("OrchestrationEngine", () => {
           session: null,
         },
       ],
+      tasks: [],
+      quotaBlockedStages: [],
+      stageHistory: {},
     };
     const commandReadModel = {
       ...projectionSnapshot,
@@ -212,6 +233,7 @@ describe("OrchestrationEngine", () => {
       Layer.provide(Layer.succeed(OrchestrationEventStore, eventStore)),
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(SqlitePersistenceMemory),
+      Layer.provide(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
     );
 
@@ -291,6 +313,79 @@ describe("OrchestrationEngine", () => {
     const readModelB = await system.readModel();
     expect(readModelB).toEqual(readModelA);
     await system.dispose();
+  });
+
+  it("reads live orchestrator defaults for each dispatched command", async () => {
+    const createdAt = now();
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+
+    try {
+      await system.run(
+        engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("cmd-project-live-defaults-create"),
+          projectId: asProjectId("project-live-defaults"),
+          title: "Live Defaults",
+          workspaceRoot: "/tmp/project-live-defaults",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          orchestratorConfig: { enabled: true },
+          createdAt,
+        }),
+      );
+      await system.run(
+        engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-live-defaults-1"),
+          taskId: TaskId.make("task-live-defaults-1"),
+          projectId: asProjectId("project-live-defaults"),
+          taskType: TaskTypeId.make("feature"),
+          title: "Task 1",
+          pmMessageId: null,
+          branch: null,
+          createdAt,
+        }),
+      );
+
+      await expect(
+        system.run(
+          engine.dispatch({
+            type: "task.create",
+            commandId: CommandId.make("cmd-task-live-defaults-rejected"),
+            taskId: TaskId.make("task-live-defaults-rejected"),
+            projectId: asProjectId("project-live-defaults"),
+            taskType: TaskTypeId.make("feature"),
+            title: "Rejected under initial cap",
+            pmMessageId: null,
+            branch: null,
+            createdAt,
+          }),
+        ),
+      ).rejects.toThrow("maxParallelTasks limit (1)");
+
+      await system.setMaxParallelTasksDefault(2);
+
+      const accepted = await system.run(
+        engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-live-defaults-2"),
+          taskId: TaskId.make("task-live-defaults-2"),
+          projectId: asProjectId("project-live-defaults"),
+          taskType: TaskTypeId.make("feature"),
+          title: "Task 2",
+          pmMessageId: null,
+          branch: null,
+          createdAt,
+        }),
+      );
+
+      expect(accepted.sequence).toBeGreaterThan(0);
+    } finally {
+      await system.dispose();
+    }
   });
 
   it("archives and unarchives threads through orchestration commands", async () => {
@@ -684,6 +779,7 @@ describe("OrchestrationEngine", () => {
         Layer.provide(RepositoryIdentityResolverLive),
         Layer.provide(SqlitePersistenceMemory),
         Layer.provideMerge(ServerConfigLayer),
+        Layer.provideMerge(ServerSettingsService.layerTest()),
         Layer.provideMerge(NodeServices.layer),
       ),
     );
@@ -788,6 +884,7 @@ describe("OrchestrationEngine", () => {
         Layer.provide(OrchestrationCommandReceiptRepositoryLive),
         Layer.provide(RepositoryIdentityResolverLive),
         Layer.provide(SqlitePersistenceMemory),
+        Layer.provide(ServerSettingsService.layerTest()),
         Layer.provide(NodeServices.layer),
       ),
     );
@@ -931,6 +1028,7 @@ describe("OrchestrationEngine", () => {
         Layer.provide(OrchestrationCommandReceiptRepositoryLive),
         Layer.provide(RepositoryIdentityResolverLive),
         Layer.provide(SqlitePersistenceMemory),
+        Layer.provide(ServerSettingsService.layerTest()),
         Layer.provide(NodeServices.layer),
       ),
     );
@@ -1105,10 +1203,19 @@ describe("OrchestrationEngine", () => {
     const shellEvent = await system.run(
       Effect.gen(function* () {
         const shellQueue = yield* Queue.unbounded<OrchestrationShellStreamEvent>();
+        // Filter to the thread event: the `project.create` above publishes a
+        // `project-upserted` shell event asynchronously (domain event → shell
+        // mapper fiber → shellPubSub), and that publish can land after this
+        // subscriber attaches, racing ahead of the thread event we assert on.
+        // Shell events are published in sequence order, so selecting the first
+        // `thread-upserted` is deterministic regardless of that timing.
         yield* Effect.forkScoped(
-          Stream.take(engine.streamShellEvents, 1).pipe(
-            Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid)),
-          ),
+          Stream.take(
+            engine.streamShellEvents.pipe(
+              Stream.filter((event) => event.kind === "thread-upserted"),
+            ),
+            1,
+          ).pipe(Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid))),
         );
         yield* Effect.sleep("10 millis");
         yield* engine.dispatch({
@@ -1166,13 +1273,21 @@ describe("OrchestrationEngine", () => {
         const queues = yield* Effect.forEach(Array.from({ length: subscriberCount }), () =>
           Queue.unbounded<OrchestrationShellStreamEvent>(),
         );
+        // Filter to the thread event for the same reason as the single-subscriber
+        // case: the prior `project.create` publishes a `project-upserted` shell
+        // event asynchronously, which can race ahead of this subscription. Every
+        // subscriber applies the identical filter, so the fan-out equality below
+        // still proves the event is mapped once and shared.
         yield* Effect.forEach(
           queues,
           (queue) =>
             Effect.forkScoped(
-              Stream.take(engine.streamShellEvents, 1).pipe(
-                Stream.runForEach((event) => Queue.offer(queue, event).pipe(Effect.asVoid)),
-              ),
+              Stream.take(
+                engine.streamShellEvents.pipe(
+                  Stream.filter((event) => event.kind === "thread-upserted"),
+                ),
+                1,
+              ).pipe(Stream.runForEach((event) => Queue.offer(queue, event).pipe(Effect.asVoid))),
             ),
           { concurrency: "unbounded" },
         );

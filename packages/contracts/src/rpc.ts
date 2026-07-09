@@ -2,9 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-import { ThreadId } from "./baseSchemas.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
-import { GedWorkflowState } from "./gedWorkflow.ts";
 import { AuthAccessStreamEvent } from "./auth.ts";
 import {
   FilesystemBrowseInput,
@@ -39,6 +37,7 @@ import {
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
+  ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
   OrchestrationGetFullThreadDiffError,
@@ -49,6 +48,7 @@ import {
   OrchestrationReplayEventsError,
   OrchestrationReplayEventsInput,
   OrchestrationRpcSchemas,
+  OrchestratorRpcSchemas,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -156,9 +156,6 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
-
-  // Ged workflow
-  gedWorkflowGetState: "gedWorkflow.getState",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -396,11 +393,6 @@ export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   error: TerminalError,
 });
 
-export const WsGedWorkflowGetStateRpc = Rpc.make(WS_METHODS.gedWorkflowGetState, {
-  payload: Schema.Struct({ threadId: ThreadId }),
-  success: GedWorkflowState,
-});
-
 export const WsOrchestrationDispatchCommandRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.dispatchCommand,
   {
@@ -454,6 +446,65 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
     success: OrchestrationRpcSchemas.subscribeThread.output,
     error: OrchestrationGetSnapshotError,
     stream: true,
+  },
+);
+
+export const WsOrchestratorSendMessageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.sendMessage, {
+  payload: OrchestratorRpcSchemas.sendMessage.input,
+  success: OrchestratorRpcSchemas.sendMessage.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorSubscribeProjectRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.subscribeProject,
+  {
+    payload: OrchestratorRpcSchemas.subscribeProject.input,
+    success: OrchestratorRpcSchemas.subscribeProject.output,
+    error: OrchestrationGetSnapshotError,
+    stream: true,
+  },
+);
+
+export const WsOrchestratorSubscribeTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.subscribeTask, {
+  payload: OrchestratorRpcSchemas.subscribeTask.input,
+  success: OrchestratorRpcSchemas.subscribeTask.output,
+  error: OrchestrationGetSnapshotError,
+  stream: true,
+});
+
+export const WsOrchestratorResolveGateRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.resolveGate, {
+  payload: OrchestratorRpcSchemas.resolveGate.input,
+  success: OrchestratorRpcSchemas.resolveGate.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorSetTaskRoleSelectionsRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+  {
+    payload: OrchestratorRpcSchemas.setTaskRoleSelections.input,
+    success: OrchestratorRpcSchemas.setTaskRoleSelections.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCancelTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.cancelTask, {
+  payload: OrchestratorRpcSchemas.cancelTask.input,
+  success: OrchestratorRpcSchemas.cancelTask.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorClearPmChatRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.clearPmChat, {
+  payload: OrchestratorRpcSchemas.clearPmChat.input,
+  success: OrchestratorRpcSchemas.clearPmChat.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorRequestPmHandoffRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.requestPmHandoff,
+  {
+    payload: OrchestratorRpcSchemas.requestPmHandoff.input,
+    success: OrchestratorRpcSchemas.requestPmHandoff.output,
+    error: OrchestrationDispatchCommandError,
   },
 );
 
@@ -524,7 +575,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
-  WsGedWorkflowGetStateRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
@@ -532,4 +582,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestratorSendMessageRpc,
+  WsOrchestratorSubscribeProjectRpc,
+  WsOrchestratorSubscribeTaskRpc,
+  WsOrchestratorResolveGateRpc,
+  WsOrchestratorSetTaskRoleSelectionsRpc,
+  WsOrchestratorCancelTaskRpc,
+  WsOrchestratorClearPmChatRpc,
+  WsOrchestratorRequestPmHandoffRpc,
 );

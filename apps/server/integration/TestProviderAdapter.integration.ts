@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
-import * as Queue from "effect/Queue";
+import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
 import {
@@ -187,6 +187,7 @@ export interface TestProviderAdapterHarness {
   readonly queueTurnResponseForNextSession: (
     response: TestTurnResponse,
   ) => Effect.Effect<void, never>;
+  readonly emitRuntimeEvent: (event: FixtureProviderRuntimeEvent) => Effect.Effect<void, never>;
   readonly getStartCount: () => number;
   readonly getRollbackCalls: (threadId: ThreadId) => ReadonlyArray<number>;
   readonly getInterruptCalls: (threadId: ThreadId) => ReadonlyArray<TurnId | undefined>;
@@ -227,7 +228,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
   Effect.gen(function* () {
     const provider = options?.provider ?? ProviderDriverKind.make("codex");
     const crypto = yield* Crypto.Crypto;
-    const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    const runtimeEvents = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     let sessionCount = 0;
     const sessions = new Map<ThreadId, SessionState>();
     const queuedResponsesForNextSession: TestTurnResponse[] = [];
@@ -241,7 +242,8 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       }>
     >();
 
-    const emit = (event: ProviderRuntimeEvent) => Queue.offer(runtimeEvents, event);
+    const emit = (event: ProviderRuntimeEvent) =>
+      PubSub.publish(runtimeEvents, event).pipe(Effect.asVoid);
     const randomUUIDv4 = (threadId: ThreadId) =>
       crypto.randomUUIDv4.pipe(
         Effect.mapError(
@@ -326,6 +328,12 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             provider,
             sessionId: RuntimeSessionId.make(String(input.threadId)),
           };
+          if (
+            !Object.hasOwn(rawEvent, "providerInstanceId") &&
+            state.session.providerInstanceId !== undefined
+          ) {
+            rawEvent.providerInstanceId = state.session.providerInstanceId;
+          }
           rawEvent.threadId = state.snapshot.threadId;
           if (Object.hasOwn(rawEvent, "turnId")) {
             rawEvent.turnId = turnId;
@@ -381,6 +389,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
             type: "turn.completed",
             eventId: EventId.make(yield* randomUUIDv4(input.threadId)),
             provider,
+            ...(state.session.providerInstanceId !== undefined
+              ? { providerInstanceId: state.session.providerInstanceId }
+              : {}),
             createdAt: nowIso(),
             threadId: state.snapshot.threadId,
             turnId,
@@ -504,7 +515,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       readThread,
       rollbackThread,
       stopAll,
-      streamEvents: Stream.fromQueue(runtimeEvents),
+      streamEvents: Stream.fromPubSub(runtimeEvents),
     };
 
     const queueTurnResponse = (
@@ -527,6 +538,9 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       Effect.sync(() => {
         queuedResponsesForNextSession.push(response);
       });
+
+    const emitRuntimeEvent = (event: FixtureProviderRuntimeEvent): Effect.Effect<void, never> =>
+      emit(normalizeFixtureEvent(event as unknown as Record<string, unknown>));
 
     const getRollbackCalls = (threadId: ThreadId): ReadonlyArray<number> => {
       const state = sessions.get(threadId);
@@ -568,6 +582,7 @@ export const makeTestProviderAdapterHarness = (options?: MakeTestProviderAdapter
       provider,
       queueTurnResponse,
       queueTurnResponseForNextSession,
+      emitRuntimeEvent,
       getStartCount,
       getRollbackCalls,
       getInterruptCalls,

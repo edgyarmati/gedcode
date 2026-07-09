@@ -205,6 +205,20 @@ vi.mock("../../environments/runtime", () => {
   };
 });
 
+vi.mock("../../environments/primary", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../environments/primary")>()),
+  getPrimaryKnownEnvironment: () => ({
+    id: "environment-local",
+    label: "Local environment",
+    source: "manual" as const,
+    environmentId: EnvironmentId.make("environment-local"),
+    target: {
+      httpBaseUrl: "http://localhost:3000",
+      wsBaseUrl: "ws://localhost:3000",
+    },
+  }),
+}));
+
 function createBaseServerConfig(): ServerConfig {
   return {
     environment: {

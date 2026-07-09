@@ -2,13 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
-import {
-  DEFAULT_CODEX_GED_SUBAGENT_PRESET,
-  DEFAULT_SERVER_SETTINGS,
-  CodexSettings,
-  ServerSettings,
-  ServerSettingsPatch,
-} from "./settings.ts";
+import { DEFAULT_SERVER_SETTINGS, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
@@ -21,58 +15,10 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
-    expect(decoded.gedWorkflowEnabled).toBe(true);
-    expect(decoded.gedSubagentsEnabled).toBe(true);
-    expect(decoded.gedSubagentRuntimeMode).toBe("harness-native");
-    expect(decoded.gedIntercomBridgeEnabled).toBe(true);
-    expect(decoded.gedCritiqueMode).toBe("risk-based");
-    expect(decoded.gedRoleSettings["ged-explorer"]?.enabled).toBe(true);
-    expect(decoded.gedRoleSettings["ged-worker"]?.enabled).toBe(true);
     expect(decoded.providerInstances).toEqual({});
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
-    expect(decoded.providers.codex.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
-  });
-
-  it("decodes legacy Codex Ged subagent preset strings", () => {
-    const legacyPreset =
-      "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
-      "ged-planner: model=gpt-5.5, reasoning=xhigh\n" +
-      "ged-verifier: model=gpt-5.5, reasoning=low";
-
-    const decoded = decodeServerSettings({
-      providers: {
-        codex: { gedSubagentPreset: legacyPreset },
-      },
-    });
-
-    expect(decoded.providers.codex.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
-    expect(encodeServerSettings(decoded).providers?.codex?.gedSubagentPreset).toEqual(
-      DEFAULT_CODEX_GED_SUBAGENT_PRESET,
-    );
-  });
-
-  it("decodes direct Codex config legacy preset strings for provider instances", () => {
-    const decodeCodexSettings = Schema.decodeUnknownSync(CodexSettings);
-
-    const decoded = decodeCodexSettings({
-      gedSubagentPreset:
-        "ged-explorer: model=gpt-5.4-mini, reasoning=invalid\n" +
-        "ged-planner: model=gpt-5.5, reasoning=xhigh",
-    });
-
-    expect(decoded.gedSubagentPreset["ged-explorer"]).toEqual({
-      model: "gpt-5.4-mini",
-      reasoning: "medium",
-    });
-    expect(decoded.gedSubagentPreset["ged-planner"]).toEqual({
-      model: "gpt-5.5",
-      reasoning: "xhigh",
-    });
-    expect(decoded.gedSubagentPreset["ged-verifier"]).toEqual(
-      DEFAULT_CODEX_GED_SUBAGENT_PRESET["ged-verifier"],
-    );
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -118,83 +64,126 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   });
 });
 
+describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
+  it("defaults the nested orchestrator block with a safe-by-default floor", () => {
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual([
+      "classify",
+      "plan",
+      "review",
+      "work",
+      "verify",
+    ]);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(1);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(1);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(
+      5 * 60 * 1000,
+    );
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+  });
+
+  it("decodes a legacy config (no orchestrator key) without complaint", () => {
+    // STOP-condition anchor: nesting the new optional defaults block must not
+    // break existing settings that predate the key.
+    const decoded = decodeServerSettings({});
+    expect(decoded.orchestratorDefaults.stages).toEqual([
+      "classify",
+      "plan",
+      "review",
+      "work",
+      "verify",
+    ]);
+    expect(decoded.orchestratorDefaults.gatePolicy).toEqual({
+      classify: "require-approval",
+      plan: "require-approval",
+      work: "require-approval",
+      review: "require-approval",
+      land: "require-approval",
+    });
+    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
+    expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
+    expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
+    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(5 * 60 * 1000);
+    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(5);
+  });
+
+  it("round-trips a fully empty config without dropping the orchestrator block", () => {
+    const decoded = decodeServerSettings({});
+    const reDecoded = decodeServerSettings(encodeServerSettings(decoded));
+    expect(reDecoded.orchestratorDefaults).toEqual(decoded.orchestratorDefaults);
+  });
+
+  it("honors an explicit human-set allowFullAccessWorkers floor", () => {
+    const decoded = decodeServerSettings({
+      orchestratorDefaults: {
+        stages: ["classify", "plan", "work"],
+        gatePolicy: {
+          classify: "auto",
+          plan: "require-approval",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+        allowFullAccessWorkers: true,
+        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
+        maxStageHandoffs: 20,
+        maxRetriesPerStage: 4,
+        pmReconciliationIntervalMs: 60_000,
+        worktreeReaperIntervalMinutes: 2,
+      },
+    });
+    expect(decoded.orchestratorDefaults.stages).toEqual(["classify", "plan", "work"]);
+    expect(decoded.orchestratorDefaults.gatePolicy.classify).toBe("auto");
+    expect(decoded.orchestratorDefaults.gatePolicy.work).toBe("auto");
+    expect(decoded.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
+    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
+    expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toEqual({
+      instanceId: "codex_worker",
+      model: "gpt-5-worker",
+    });
+    expect(decoded.orchestratorDefaults.maxStageHandoffs).toBe(20);
+    expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(4);
+    expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60_000);
+    expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(2);
+  });
+
+  it("accepts orchestratorDefaults via the settings patch", () => {
+    const patch = decodeServerSettingsPatch({
+      orchestratorDefaults: {
+        stages: ["classify", "plan", "review", "work"],
+        gatePolicy: {
+          classify: "require-approval",
+          plan: "auto",
+          work: "auto",
+          review: "require-approval",
+          land: "require-approval",
+        },
+        maxParallelTasks: 3,
+        maxParallelWorkers: 4,
+        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
+        maxRetriesPerStage: 5,
+        pmReconciliationIntervalMs: 120_000,
+        worktreeReaperIntervalMinutes: 10,
+      },
+    });
+    expect(patch.orchestratorDefaults?.stages).toEqual(["classify", "plan", "review", "work"]);
+    expect(patch.orchestratorDefaults?.gatePolicy.plan).toBe("auto");
+    expect(patch.orchestratorDefaults?.gatePolicy.land).toBe("require-approval");
+    expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
+    expect(patch.orchestratorDefaults?.maxParallelWorkers).toBe(4);
+    expect(patch.orchestratorDefaults?.defaultWorkerModelSelection).toEqual({
+      instanceId: "codex_worker",
+      model: "gpt-5-worker",
+    });
+    expect(patch.orchestratorDefaults?.maxRetriesPerStage).toBe(5);
+    expect(patch.orchestratorDefaults?.pmReconciliationIntervalMs).toBe(120_000);
+    expect(patch.orchestratorDefaults?.worktreeReaperIntervalMinutes).toBe(10);
+  });
+});
+
 describe("ServerSettingsPatch.providerInstances", () => {
-  it("accepts Ged workflow toggles", () => {
-    const patch = decodeServerSettingsPatch({
-      gedWorkflowEnabled: false,
-      gedSubagentsEnabled: false,
-      gedSubagentRuntimeMode: "harness-native",
-      gedIntercomBridgeEnabled: false,
-      gedCritiqueMode: "always",
-      gedRoleSettings: { "ged-explorer": { enabled: false } },
-    });
-    expect(patch.gedWorkflowEnabled).toBe(false);
-    expect(patch.gedSubagentsEnabled).toBe(false);
-    expect(patch.gedSubagentRuntimeMode).toBe("harness-native");
-    expect(patch.gedIntercomBridgeEnabled).toBe(false);
-    expect(patch.gedCritiqueMode).toBe("always");
-    expect(patch.gedRoleSettings?.["ged-explorer"]?.enabled).toBe(false);
-  });
-
-  it("rejects invalid Ged critique modes", () => {
-    expect(() => decodeServerSettingsPatch({ gedCritiqueMode: "sometimes" })).toThrow();
-  });
-
-  it("rejects invalid Ged subagent runtime modes", () => {
-    expect(() => decodeServerSettingsPatch({ gedSubagentRuntimeMode: "custom" })).toThrow();
-  });
-
-  it("accepts Codex Ged subagent preset patches", () => {
-    const patch = decodeServerSettingsPatch({
-      providers: {
-        codex: {
-          gedSubagentPreset: {
-            "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-            "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-            "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-          },
-        },
-      },
-    });
-
-    expect(patch.providers?.codex?.gedSubagentPreset?.["ged-explorer"]).toEqual({
-      model: "gpt-5.4-mini",
-      reasoning: "medium",
-    });
-  });
-
-  it("accepts legacy Codex Ged subagent preset string patches", () => {
-    const patch = decodeServerSettingsPatch({
-      providers: {
-        codex: {
-          gedSubagentPreset:
-            "ged-explorer: model=gpt-5.4-mini, reasoning=medium\n" +
-            "ged-planner: model=gpt-5.5, reasoning=xhigh\n" +
-            "ged-verifier: model=gpt-5.5, reasoning=low",
-        },
-      },
-    });
-
-    expect(patch.providers?.codex?.gedSubagentPreset).toEqual(DEFAULT_CODEX_GED_SUBAGENT_PRESET);
-  });
-
-  it("accepts full Codex reasoning effort values in Ged subagent preset patches", () => {
-    const patch = decodeServerSettingsPatch({
-      providers: {
-        codex: {
-          gedSubagentPreset: {
-            "ged-explorer": { model: "gpt-5.4-mini", reasoning: "minimal" },
-            "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-            "ged-verifier": { model: "gpt-5.5", reasoning: "none" },
-          },
-        },
-      },
-    });
-
-    expect(patch.providers?.codex?.gedSubagentPreset?.["ged-explorer"]?.reasoning).toBe("minimal");
-    expect(patch.providers?.codex?.gedSubagentPreset?.["ged-verifier"]?.reasoning).toBe("none");
-  });
-
   it("treats providerInstances as an optional whole-map replacement", () => {
     const patch = decodeServerSettingsPatch({});
     expect(patch.providerInstances).toBeUndefined();
@@ -236,11 +225,6 @@ describe("ServerSettingsPatch string normalization", () => {
         codex: {
           binaryPath: "  /opt/homebrew/bin/codex  ",
           homePath: "  ~/.codex  ",
-          gedSubagentPreset: {
-            "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-            "ged-planner": { model: "gpt-5.5", reasoning: "xhigh" },
-            "ged-verifier": { model: "gpt-5.5", reasoning: "xhigh" },
-          },
         },
       },
       providerInstances: {
@@ -257,10 +241,6 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(patch.observability?.otlpTracesUrl).toBe("http://localhost:4318/v1/traces");
     expect(patch.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(patch.providers?.codex?.homePath).toBe("~/.codex");
-    expect(patch.providers?.codex?.gedSubagentPreset?.["ged-verifier"]).toEqual({
-      model: "gpt-5.5",
-      reasoning: "xhigh",
-    });
     expect(patch.providerInstances?.[ProviderInstanceId.make("codex_personal")]?.driver).toBe(
       "codex",
     );
@@ -282,20 +262,11 @@ describe("ServerSettingsPatch string normalization", () => {
         codex: {
           ...defaultSettings.providers.codex,
           binaryPath: "  /opt/homebrew/bin/codex  ",
-          gedSubagentPreset: {
-            "ged-explorer": { model: "gpt-5.4-mini", reasoning: "medium" },
-            "ged-planner": { model: "gpt-5.4", reasoning: "high" },
-            "ged-verifier": { model: "gpt-5.5", reasoning: "low" },
-          },
         },
       },
     });
 
     expect(encoded.addProjectBaseDirectory).toBe("~/Development");
     expect(encoded.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
-    expect(encoded.providers?.codex?.gedSubagentPreset?.["ged-planner"]).toEqual({
-      model: "gpt-5.4",
-      reasoning: "high",
-    });
   });
 });

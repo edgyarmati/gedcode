@@ -1,11 +1,14 @@
 import type {
   EnvironmentId,
+  OrchestratorConfigJson,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
   RepositoryIdentity,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
+  OrchestrationPendingGate,
+  OrchestrationTask,
   ProjectScript as ContractProjectScript,
   ThreadId,
   ProjectId,
@@ -50,6 +53,7 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   turnId?: TurnId | null;
   createdAt: string;
+  updatedAt?: string | undefined;
   completedAt?: string | undefined;
   streaming: boolean;
 }
@@ -89,9 +93,19 @@ export interface Project {
   repositoryIdentity?: RepositoryIdentity | null;
   defaultModelSelection: ModelSelection | null;
   roleModelSelections?: Readonly<Record<string, ModelSelection>> | undefined;
+  rolePromptPrefixes?: Readonly<Record<string, string>> | undefined;
+  orchestratorConfig?: OrchestratorConfigJson | undefined;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];
+}
+
+export interface OrchestratorTask extends OrchestrationTask {
+  environmentId: EnvironmentId;
+}
+
+export interface OrchestratorPendingGate extends OrchestrationPendingGate {
+  environmentId: EnvironmentId;
 }
 
 export interface Thread {
@@ -101,7 +115,6 @@ export interface Thread {
   projectId: ProjectId;
   title: string;
   modelSelection: ModelSelection;
-  gedWorkflowEnabled?: boolean | undefined;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   session: ThreadSession | null;
@@ -111,6 +124,7 @@ export interface Thread {
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   latestTurn: OrchestrationLatestTurn | null;
   pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
   branch: string | null;
@@ -126,13 +140,13 @@ export interface ThreadShell {
   projectId: ProjectId;
   title: string;
   modelSelection: ModelSelection;
-  gedWorkflowEnabled?: boolean | undefined;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
   error: string | null;
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   branch: string | null;
   worktreePath: string | null;
 }
@@ -152,6 +166,7 @@ export interface SidebarThreadSummary {
   createdAt: string;
   archivedAt: string | null;
   updatedAt?: string | undefined;
+  lastClearedSequence?: number | undefined;
   latestTurn: OrchestrationLatestTurn | null;
   branch: string | null;
   worktreePath: string | null;

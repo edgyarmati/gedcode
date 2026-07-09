@@ -186,17 +186,40 @@ layer("GitLabCli.layer", (it) => {
 
   it.effect("creates merge requests through the GitLab API without placing the body in argv", () =>
     Effect.gen(function* () {
-      mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+      mockedRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              iid: 42,
+              title: "Draft: Provider MR",
+              web_url: "https://gitlab.com/acme/repo/-/merge_requests/42",
+              target_branch: "main",
+              source_branch: "feature/provider",
+              state: "opened",
+            }),
+          ),
+        ),
+      );
 
       const glab = yield* GitLabCli.GitLabCli;
-      yield* glab.createMergeRequest({
+      const result = yield* glab.createMergeRequest({
         cwd: "/repo",
         baseBranch: "main",
         headSelector: "owner:feature/provider",
         title: "Provider MR",
         bodyFile: "/tmp/t3-mr-body.md",
+        draft: true,
       });
 
+      assert.deepStrictEqual(result, {
+        number: 42,
+        title: "Draft: Provider MR",
+        url: "https://gitlab.com/acme/repo/-/merge_requests/42",
+        baseRefName: "main",
+        headRefName: "feature/provider",
+        state: "open",
+      });
       expect(mockedRun).toHaveBeenCalledWith(
         expect.objectContaining({
           command: "glab",
@@ -211,7 +234,7 @@ layer("GitLabCli.layer", (it) => {
             "--raw-field",
             "target_branch=main",
             "--raw-field",
-            "title=Provider MR",
+            "title=Draft: Provider MR",
             "--field",
             "description=@/tmp/t3-mr-body.md",
           ],

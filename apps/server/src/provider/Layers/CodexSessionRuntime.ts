@@ -102,6 +102,8 @@ export interface CodexSessionRuntimeOptions {
   readonly runtimeMode: RuntimeMode;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
+  readonly systemPromptAppend?: string;
+  readonly config?: Record<string, unknown>;
   readonly resumeCursor?: CodexResumeCursor;
 }
 
@@ -287,6 +289,8 @@ function buildThreadStartParams(input: {
   readonly runtimeMode: RuntimeMode;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
+  readonly systemPromptAppend: string | undefined;
+  readonly config: Record<string, unknown> | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
   const config = runtimeModeToThreadConfig(input.runtimeMode);
   return {
@@ -295,6 +299,8 @@ function buildThreadStartParams(input: {
     sandbox: config.sandbox,
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+    ...(input.systemPromptAppend ? { developerInstructions: input.systemPromptAppend } : {}),
+    ...(input.config ? { config: input.config } : {}),
   };
 }
 
@@ -436,6 +442,8 @@ export const openCodexThread = (input: {
   readonly cwd: string;
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
+  readonly systemPromptAppend: string | undefined;
+  readonly config: Record<string, unknown> | undefined;
   readonly resumeThreadId: string | undefined;
 }): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
@@ -444,6 +452,8 @@ export const openCodexThread = (input: {
     runtimeMode: input.runtimeMode,
     model: input.requestedModel,
     serviceTier: input.serviceTier,
+    systemPromptAppend: input.systemPromptAppend,
+    config: input.config,
   });
 
   if (resumeThreadId === undefined) {
@@ -1201,6 +1211,8 @@ export const makeCodexSessionRuntime = (
         cwd: options.cwd,
         requestedModel,
         serviceTier: options.serviceTier,
+        systemPromptAppend: options.systemPromptAppend,
+        config: options.config,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
       });
 

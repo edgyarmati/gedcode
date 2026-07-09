@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
@@ -18,16 +19,22 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  type PmHandoffMode,
+  type OrchestrationThread,
+  ORCHESTRATOR_WS_METHODS,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
+  OrchestratorProjectConfig,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
+  ProjectId,
+  TaskId,
   ThreadId,
   type TerminalEvent,
   WS_METHODS,
@@ -43,13 +50,16 @@ import { Keybindings } from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
+import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+import { ProviderQuotaStatusRepository } from "./persistence/Services/ProviderQuotaStatus.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
@@ -86,17 +96,22 @@ import {
   type SessionCredentialChange,
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
-import { GedWorkflowService } from "./gedWorkflow/Services/GedWorkflowService.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
   {
     type:
       | "thread.message-sent"
+      | "thread.created"
+      | "thread.cleared"
+      | "thread.pm-handoff-requested"
+      | "thread.pm-handoff-completed"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -106,6 +121,10 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 > {
   return (
     event.type === "thread.message-sent" ||
+    event.type === "thread.created" ||
+    event.type === "thread.cleared" ||
+    event.type === "thread.pm-handoff-requested" ||
+    event.type === "thread.pm-handoff-completed" ||
     event.type === "thread.proposed-plan-upserted" ||
     event.type === "thread.activity-appended" ||
     event.type === "thread.turn-diff-completed" ||
@@ -114,7 +133,68 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   );
 }
 
+function isAfterLastThreadClear(
+  event: OrchestrationEvent,
+  lastClearedSequence: number | undefined,
+) {
+  return lastClearedSequence === undefined || event.sequence > lastClearedSequence;
+}
+
+function projectIdFromPmThreadId(threadId: ThreadId): ProjectId | null {
+  const rawThreadId = String(threadId);
+  if (!isPmThreadId(threadId)) {
+    return null;
+  }
+  return ProjectId.make(rawThreadId.slice("pm:".length));
+}
+
+function isTaskEvent(event: OrchestrationEvent): event is Extract<
+  OrchestrationEvent,
+  {
+    type:
+      | "task.created"
+      | "task.classified"
+      | "task.role-selections-updated"
+      | "task.stage-started"
+      | "task.stage-completed"
+      | "task.stage-blocked"
+      | "task.gate-requested"
+      | "task.gate-resolved"
+      | "task.landed"
+      | "task.pr-opened"
+      | "task.abandoned";
+  }
+> {
+  return (
+    event.type === "task.created" ||
+    event.type === "task.classified" ||
+    event.type === "task.role-selections-updated" ||
+    event.type === "task.stage-started" ||
+    event.type === "task.stage-completed" ||
+    event.type === "task.stage-blocked" ||
+    event.type === "task.gate-requested" ||
+    event.type === "task.gate-resolved" ||
+    event.type === "task.landed" ||
+    event.type === "task.pr-opened" ||
+    event.type === "task.abandoned"
+  );
+}
+
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+
+function pmHandoffFallbackReason(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const detail = "detail" in error ? error.detail : undefined;
+    if (typeof detail === "string" && detail.length > 0) {
+      return detail;
+    }
+    const message = "message" in error ? error.message : undefined;
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return String(error);
+}
 
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
@@ -162,6 +242,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
+      const pmProjectRuntimeFactory = yield* PmProjectRuntimeFactory;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
@@ -170,6 +251,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
+      const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
@@ -195,7 +277,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const sessions = yield* SessionCredentialService;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
-      const gedWorkflowService = yield* GedWorkflowService;
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
           ? cause
@@ -457,9 +538,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 projectId: bootstrap.createThread.projectId,
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
-                ...(bootstrap.createThread.gedWorkflowEnabled !== undefined
-                  ? { gedWorkflowEnabled: bootstrap.createThread.gedWorkflowEnabled }
-                  : {}),
                 runtimeMode: bootstrap.createThread.runtimeMode,
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
@@ -524,6 +602,218 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
             ),
           );
+      };
+
+      const loadProjectForPmRuntime = (projectId: ProjectId) =>
+        projectionSnapshotQuery.getCommandReadModel().pipe(
+          Effect.map((readModel) => readModel.projects.find((project) => project.id === projectId)),
+          Effect.flatMap((project) =>
+            project === undefined
+              ? Effect.fail(
+                  new OrchestrationDispatchCommandError({
+                    message: `Project ${projectId} was not found`,
+                    cause: projectId,
+                  }),
+                )
+              : Effect.succeed(project),
+          ),
+          Effect.mapError((cause) =>
+            isOrchestrationDispatchCommandError(cause)
+              ? cause
+              : new OrchestrationDispatchCommandError({
+                  message: `Failed to load project ${projectId}`,
+                  cause,
+                }),
+          ),
+        );
+
+      const loadOrchestratorProjectSnapshot = (projectId: ProjectId) =>
+        projectionSnapshotQuery.getSnapshot().pipe(
+          Effect.flatMap((snapshot) =>
+            Effect.gen(function* () {
+              const project = snapshot.projects.find((entry) => entry.id === projectId);
+              if (project === undefined) {
+                return yield* new OrchestrationGetSnapshotError({
+                  message: `Project ${projectId} was not found`,
+                  cause: projectId,
+                });
+              }
+              const taskIds = new Set(
+                snapshot.tasks
+                  .filter((task) => task.projectId === projectId)
+                  .map((task) => String(task.id)),
+              );
+              const pendingGates = (snapshot.pendingGates ?? []).filter((gate) =>
+                taskIds.has(String(gate.taskId)),
+              );
+              const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
+                taskIds.has(String(stage.taskId)),
+              );
+              const stageHistory = Object.fromEntries(
+                Object.entries(snapshot.stageHistory).filter(([, stage]) =>
+                  taskIds.has(String(stage.taskId)),
+                ),
+              );
+              const pmThreadId = pmThreadIdForProject(project);
+              const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
+              const projectConfig = decodeOrchestratorConfig(project.orchestratorConfig ?? {});
+              const pmQuotaBlock =
+                Option.isSome(projectConfig) &&
+                projectConfig.value.enabled === true &&
+                projectConfig.value.pmModelSelection !== null
+                  ? yield* providerQuotaStatusRepository
+                      .isInstanceQuotaBlocked({
+                        providerInstanceId: projectConfig.value.pmModelSelection.instanceId,
+                      })
+                      .pipe(
+                        Effect.map((quotaState) =>
+                          quotaState.status === "blocked-until" ||
+                          quotaState.status === "blocked-unknown"
+                            ? {
+                                providerInstanceId: quotaState.providerInstanceId,
+                                status: quotaState.status,
+                                resetAt: quotaState.resetAt,
+                              }
+                            : null,
+                        ),
+                      )
+                  : null;
+              return {
+                snapshotSequence: snapshot.snapshotSequence,
+                project,
+                pmThreadId,
+                pmThread,
+                pmQuotaBlock,
+                tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
+                pendingGates,
+                quotaBlockedStages,
+                stageHistory,
+              };
+            }),
+          ),
+          Effect.mapError((cause) =>
+            isOrchestrationGetSnapshotError(cause)
+              ? cause
+              : new OrchestrationGetSnapshotError({
+                  message: `Failed to load orchestrator project ${projectId}`,
+                  cause,
+                }),
+          ),
+        );
+
+      const loadOrchestratorTaskSnapshot = (taskId: TaskId) =>
+        projectionSnapshotQuery.getSnapshot().pipe(
+          Effect.flatMap((snapshot) => {
+            const task = snapshot.tasks.find((entry) => entry.id === taskId);
+            if (task === undefined) {
+              return Effect.fail(
+                new OrchestrationGetSnapshotError({
+                  message: `Task ${taskId} was not found`,
+                  cause: taskId,
+                }),
+              );
+            }
+            return Effect.succeed({
+              snapshotSequence: snapshot.snapshotSequence,
+              task,
+              pendingGates: (snapshot.pendingGates ?? []).filter((gate) => gate.taskId === taskId),
+              stageHistory: Object.fromEntries(
+                Object.entries(snapshot.stageHistory).filter(
+                  ([, stage]) => stage.taskId === taskId,
+                ),
+              ),
+            });
+          }),
+          Effect.mapError((cause) =>
+            isOrchestrationGetSnapshotError(cause)
+              ? cause
+              : new OrchestrationGetSnapshotError({
+                  message: `Failed to load orchestrator task ${taskId}`,
+                  cause,
+                }),
+          ),
+        );
+
+      const loadMissingPmThreadPlaceholder = (
+        threadId: ThreadId,
+      ): Effect.Effect<Option.Option<OrchestrationThread>, OrchestrationGetSnapshotError> =>
+        Effect.gen(function* () {
+          const projectId = projectIdFromPmThreadId(threadId);
+          if (projectId === null) {
+            return Option.none<OrchestrationThread>();
+          }
+          const project = yield* projectionSnapshotQuery.getProjectShellById(projectId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetSnapshotError({
+                  message: `Failed to load project ${projectId} for PM thread ${threadId}`,
+                  cause,
+                }),
+            ),
+          );
+          if (Option.isNone(project)) {
+            return Option.none<OrchestrationThread>();
+          }
+          const projectConfig = decodeOrchestratorConfig(project.value.orchestratorConfig ?? {});
+          const modelSelection =
+            Option.isSome(projectConfig) && projectConfig.value.pmModelSelection !== null
+              ? projectConfig.value.pmModelSelection
+              : project.value.defaultModelSelection;
+          if (modelSelection === null) {
+            return yield* new OrchestrationGetSnapshotError({
+              message: `PM thread ${threadId} cannot be subscribed before creation because project ${projectId} has no PM model selection`,
+              cause: projectId,
+            });
+          }
+          return Option.some({
+            id: threadId,
+            projectId,
+            title: `${project.value.title} PM`,
+            modelSelection,
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: project.value.workspaceRoot,
+            latestTurn: null,
+            createdAt: project.value.updatedAt,
+            updatedAt: project.value.updatedAt,
+            archivedAt: null,
+            deletedAt: null,
+            pendingPmHandoff: null,
+            messages: [],
+            proposedPlans: [],
+            activities: [],
+            checkpoints: [],
+            session: null,
+          });
+        });
+
+      const isProjectOrchestratorEvent = (projectId: ProjectId, event: OrchestrationEvent) => {
+        const pmThreadId = pmThreadIdForProject({ id: projectId });
+        if (
+          event.aggregateKind === "thread" &&
+          event.aggregateId === pmThreadId &&
+          isThreadDetailEvent(event)
+        ) {
+          return Effect.succeed(true);
+        }
+
+        if (!isTaskEvent(event)) {
+          return Effect.succeed(false);
+        }
+
+        if (event.type === "task.created") {
+          return Effect.succeed(event.payload.projectId === projectId);
+        }
+
+        return projectionSnapshotQuery.getCommandReadModel().pipe(
+          Effect.map((readModel) =>
+            readModel.tasks.some(
+              (task) => task.id === event.payload.taskId && task.projectId === projectId,
+            ),
+          ),
+          Effect.catch(() => Effect.succeed(false)),
+        );
       };
 
       const loadServerConfig = Effect.gen(function* () {
@@ -732,7 +1022,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
-              const [threadDetail, snapshotSequence] = yield* Effect.all([
+              const [loadedThreadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(
                     (cause) =>
@@ -754,11 +1044,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ),
               ]);
 
+              let threadDetail = loadedThreadDetail;
               if (Option.isNone(threadDetail)) {
-                return yield* new OrchestrationGetSnapshotError({
-                  message: `Thread ${input.threadId} was not found`,
-                  cause: input.threadId,
-                });
+                threadDetail = yield* loadMissingPmThreadPlaceholder(input.threadId);
+                if (Option.isNone(threadDetail)) {
+                  return yield* new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  });
+                }
               }
 
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
@@ -773,6 +1067,26 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   event,
                 })),
               );
+              const replayStream = orchestrationEngine.readEvents(snapshotSequence).pipe(
+                Stream.filter(
+                  (event) =>
+                    event.aggregateKind === "thread" &&
+                    event.aggregateId === input.threadId &&
+                    isThreadDetailEvent(event) &&
+                    isAfterLastThreadClear(event, threadDetail.value.lastClearedSequence),
+                ),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay thread ${input.threadId} events`,
+                      cause,
+                    }),
+                ),
+              );
 
               return Stream.concat(
                 Stream.make({
@@ -782,10 +1096,316 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     thread: threadDetail.value,
                   },
                 }),
-                liveStream,
+                Stream.concat(replayStream, liveStream),
               );
             }),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.sendMessage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.sendMessage,
+            Effect.gen(function* () {
+              const project = yield* loadProjectForPmRuntime(input.projectId);
+              const runtime = yield* pmProjectRuntimeFactory.getOrCreate(project).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationDispatchCommandError({
+                      message: "Failed to start PM runtime",
+                      cause,
+                    }),
+                ),
+              );
+              yield* runtime.surfaceUserMessage(input.message).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationDispatchCommandError({
+                      message: "Failed to surface PM user message",
+                      cause,
+                    }),
+                ),
+              );
+              yield* runtime.enqueue(input.message).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationDispatchCommandError({
+                      message: "Failed to enqueue PM message",
+                      cause,
+                    }),
+                ),
+              );
+              yield* runtime.drain.pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("PM runtime failed while handling websocket message", {
+                    projectId: String(input.projectId),
+                    cause: Cause.pretty(cause),
+                  }),
+                ),
+                Effect.forkDetach,
+              );
+              return { accepted: true as const };
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.subscribeProject]: (input) =>
+          observeRpcStreamEffect(
+            ORCHESTRATOR_WS_METHODS.subscribeProject,
+            Effect.gen(function* () {
+              const snapshot = yield* loadOrchestratorProjectSnapshot(input.projectId);
+              const pmThreadLastClearedSequence = snapshot.pmThread?.lastClearedSequence;
+              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filterEffect((event) => isProjectOrchestratorEvent(input.projectId, event)),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+              );
+              const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
+                Stream.filterEffect((event) => isProjectOrchestratorEvent(input.projectId, event)),
+                Stream.filter((event) => {
+                  if (
+                    event.aggregateKind !== "thread" ||
+                    event.aggregateId !== snapshot.pmThreadId ||
+                    !isThreadDetailEvent(event)
+                  ) {
+                    return true;
+                  }
+                  return isAfterLastThreadClear(event, pmThreadLastClearedSequence);
+                }),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay project ${input.projectId} events`,
+                      cause,
+                    }),
+                ),
+              );
+
+              return Stream.concat(
+                Stream.make({
+                  kind: "snapshot" as const,
+                  snapshot,
+                }),
+                Stream.concat(replayStream, liveStream),
+              );
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.subscribeTask]: (input) =>
+          observeRpcStreamEffect(
+            ORCHESTRATOR_WS_METHODS.subscribeTask,
+            Effect.gen(function* () {
+              const snapshot = yield* loadOrchestratorTaskSnapshot(input.taskId);
+              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filter(
+                  (event) => event.aggregateKind === "task" && event.aggregateId === input.taskId,
+                ),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+              );
+              const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
+                Stream.filter(
+                  (event) => event.aggregateKind === "task" && event.aggregateId === input.taskId,
+                ),
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+                Stream.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay task ${input.taskId} events`,
+                      cause,
+                    }),
+                ),
+              );
+
+              return Stream.concat(
+                Stream.make({
+                  kind: "snapshot" as const,
+                  snapshot,
+                }),
+                Stream.concat(replayStream, liveStream),
+              );
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.resolveGate]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.resolveGate,
+            Effect.all({
+              commandId: serverCommandId("orchestrator-resolve-gate"),
+              createdAt: nowIso,
+            }).pipe(
+              Effect.flatMap(({ commandId, createdAt }) =>
+                dispatchNormalizedCommand({
+                  type: "task.gate.resolve",
+                  commandId,
+                  taskId: input.taskId,
+                  gateId: input.gateId,
+                  gate: input.gate,
+                  approvedHash: input.approvedHash,
+                  decision: input.decision,
+                  origin: "human",
+                  createdAt,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+            Effect.all({
+              commandId: serverCommandId("orchestrator-set-task-role-selections"),
+              createdAt: nowIso,
+            }).pipe(
+              Effect.flatMap(({ commandId, createdAt }) =>
+                dispatchNormalizedCommand({
+                  type: "task.role-selections.set",
+                  commandId,
+                  taskId: input.taskId,
+                  roleModelSelections: input.roleModelSelections,
+                  origin: "human",
+                  createdAt,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.cancelTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.cancelTask,
+            Effect.all({
+              commandId: serverCommandId("orchestrator-cancel-task"),
+              createdAt: nowIso,
+            }).pipe(
+              Effect.flatMap(({ commandId, createdAt }) =>
+                dispatchNormalizedCommand({
+                  type: "task.abandon",
+                  commandId,
+                  taskId: input.taskId,
+                  createdAt,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.clearPmChat]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.clearPmChat,
+            Effect.gen(function* () {
+              const project = yield* loadProjectForPmRuntime(input.projectId);
+              const pmThreadId = pmThreadIdForProject(project);
+              const { commandId, createdAt } = yield* Effect.all({
+                commandId: serverCommandId("orchestrator-clear-pm-chat"),
+                createdAt: nowIso,
+              });
+
+              yield* pmProjectRuntimeFactory
+                .waitForIdle(project.id)
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to wait for PM runtime to become idle."),
+                  ),
+                );
+              const result = yield* dispatchNormalizedCommand({
+                type: "thread.clear",
+                commandId,
+                threadId: pmThreadId,
+                createdAt,
+              });
+              yield* pmProjectRuntimeFactory
+                .clearSessionStorage(project)
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to clear PM session storage."),
+                  ),
+                );
+              yield* pmProjectRuntimeFactory
+                .invalidateRuntime(project.id, "PM chat cleared")
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to invalidate PM runtime."),
+                  ),
+                );
+              return result;
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.requestPmHandoff]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.requestPmHandoff,
+            Effect.gen(function* () {
+              const project = yield* loadProjectForPmRuntime(input.projectId);
+              const pmThreadId = pmThreadIdForProject(project);
+              const dispatchRequest = (request: {
+                readonly mode: PmHandoffMode;
+                readonly brief?: string;
+              }): Effect.Effect<void, OrchestrationDispatchCommandError> =>
+                Effect.gen(function* () {
+                  const { commandId, createdAt } = yield* Effect.all({
+                    commandId: serverCommandId("orchestrator-request-pm-handoff"),
+                    createdAt: nowIso,
+                  });
+                  yield* dispatchNormalizedCommand({
+                    type: "thread.pm-handoff.request",
+                    commandId,
+                    threadId: pmThreadId,
+                    mode: request.mode,
+                    ...(request.brief !== undefined ? { brief: request.brief } : {}),
+                    createdAt,
+                  });
+                  yield* pmProjectRuntimeFactory
+                    .resetSessionBinding(project)
+                    .pipe(
+                      Effect.mapError((cause) =>
+                        toDispatchCommandError(
+                          cause,
+                          "Failed to reset PM session binding for handoff.",
+                        ),
+                      ),
+                    );
+                });
+
+              if (input.mode === "transcript") {
+                yield* pmProjectRuntimeFactory
+                  .waitForIdle(project.id)
+                  .pipe(
+                    Effect.mapError((cause) =>
+                      toDispatchCommandError(
+                        cause,
+                        "Failed to wait for PM runtime to become idle.",
+                      ),
+                    ),
+                  );
+                yield* dispatchRequest({ mode: "transcript" });
+                return { accepted: true as const, mode: "transcript" as const };
+              }
+
+              const summaryResult = yield* pmProjectRuntimeFactory
+                .createHandoffBrief(project.id)
+                .pipe(Effect.result);
+              if (Result.isSuccess(summaryResult) && Option.isSome(summaryResult.success)) {
+                yield* dispatchRequest({
+                  mode: "summary",
+                  brief: summaryResult.success.value,
+                });
+                return { accepted: true as const, mode: "summary" as const };
+              }
+
+              const fallback = Result.isFailure(summaryResult)
+                ? `Summary handoff failed; using transcript handoff. Reason: ${pmHandoffFallbackReason(summaryResult.failure)}`
+                : "No active PM runtime; using transcript handoff.";
+              yield* dispatchRequest({ mode: "transcript" });
+              return { accepted: true as const, mode: "transcript" as const, fallback };
+            }),
+            { "rpc.aggregate": "orchestrator" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetConfig, loadServerConfig, {
@@ -1188,12 +1808,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
             }),
             { "rpc.aggregate": "auth" },
-          ),
-        [WS_METHODS.gedWorkflowGetState]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.gedWorkflowGetState,
-            gedWorkflowService.getStateByThreadId(input.threadId),
-            { "rpc.aggregate": "gedWorkflow" },
           ),
       });
     }),

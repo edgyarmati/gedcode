@@ -228,16 +228,28 @@ function createMockEnvironmentApi(input: {
       subscribeThread: (() => () =>
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
-    gedWorkflow: {
-      getState: (() =>
-        Promise.resolve({
-          enabled: true,
-          initialized: false,
-          phase: "inactive" as const,
-          classification: "unclassified" as const,
-          plannerCheckpointValid: false,
-          verifierCheckpointValid: false,
-        })) as EnvironmentApi["gedWorkflow"]["getState"],
+    orchestrator: {
+      sendMessage: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["sendMessage"],
+      subscribeProject: (() => () =>
+        undefined) as EnvironmentApi["orchestrator"]["subscribeProject"],
+      subscribeTask: (() => () => undefined) as EnvironmentApi["orchestrator"]["subscribeTask"],
+      resolveGate: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["resolveGate"],
+      setTaskRoleSelections: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["setTaskRoleSelections"],
+      cancelTask: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["cancelTask"],
+      clearPmChat: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["clearPmChat"],
+      requestPmHandoff: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["requestPmHandoff"],
     },
   };
 }
@@ -373,6 +385,7 @@ function createSnapshotForTargetUser(options: {
         updatedAt: NOW_ISO,
         archivedAt: null,
         deletedAt: null,
+        pendingPmHandoff: null,
         messages,
         activities: [],
         proposedPlans: [],
@@ -388,6 +401,9 @@ function createSnapshotForTargetUser(options: {
         },
       },
     ],
+    tasks: [],
+    quotaBlockedStages: [],
+    stageHistory: {},
     updatedAt: NOW_ISO,
   };
 }
@@ -434,6 +450,7 @@ function addThreadToSnapshot(
         branch: "main",
         worktreePath: null,
         latestTurn: null,
+        pendingPmHandoff: null,
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         archivedAt: null,
@@ -772,6 +789,7 @@ function createSnapshotWithSecondaryProject(options?: {
           createdAt: isoAt(30),
           updatedAt: isoAt(31),
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [],
           activities: [],
           proposedPlans: [],
@@ -804,6 +822,7 @@ function createSnapshotWithSecondaryProject(options?: {
           createdAt: isoAt(24),
           updatedAt: isoAt(25),
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [],
           activities: [],
           proposedPlans: [],
@@ -1404,18 +1423,6 @@ async function expectComposerActionsContained(): Promise<void> {
       }
     },
     { timeout: 8_000, interval: 16 },
-  );
-}
-
-async function waitForInteractionModeButton(
-  expectedLabel: "Build" | "Plan",
-): Promise<HTMLButtonElement> {
-  return waitForElement(
-    () =>
-      Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent?.trim() === expectedLabel,
-      ) as HTMLButtonElement | null,
-    `Unable to find ${expectedLabel} interaction mode button.`,
   );
 }
 
@@ -3049,9 +3056,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const initialModeButton = await waitForInteractionModeButton("Build");
-      expect(initialModeButton.getAttribute("aria-label")).toContain("enter plan mode");
-      expect(initialModeButton.hasAttribute("title")).toBe(false);
+      await waitForComposerEditor();
+      expect(composerDraftFor(THREAD_ID)?.interactionMode ?? null).toBeNull();
 
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -3063,9 +3069,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       await waitForLayout();
 
-      expect((await waitForInteractionModeButton("Build")).getAttribute("aria-label")).toContain(
-        "enter plan mode",
-      );
+      expect(composerDraftFor(THREAD_ID)?.interactionMode ?? null).toBeNull();
 
       const composerEditor = await waitForComposerEditor();
       composerEditor.focus();
@@ -3079,10 +3083,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect((await waitForInteractionModeButton("Plan")).getAttribute("aria-label")).toContain(
-            "return to normal build mode",
-          );
+        () => {
+          expect(composerDraftFor(THREAD_ID)?.interactionMode).toBe("plan");
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -3097,10 +3099,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect(
-            (await waitForInteractionModeButton("Build")).getAttribute("aria-label"),
-          ).toContain("enter plan mode");
+        () => {
+          expect(composerDraftFor(THREAD_ID)?.interactionMode).toBe("default");
         },
         { timeout: 8_000, interval: 16 },
       );

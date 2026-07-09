@@ -61,6 +61,13 @@ export const ProviderSessionStartInput = Schema.Struct({
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
+  environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  readOnly: Schema.optional(Schema.Boolean),
+  enableOrchestrationTools: Schema.optional(Schema.Boolean),
+  // Extra instructions appended to the provider's base system prompt for this
+  // session (e.g. the orchestrator PM role/delegation rules). Drivers that use a
+  // preset base prompt append this to it rather than replacing the base.
+  systemPromptAppend: Schema.optional(TrimmedNonEmptyString),
 });
 export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
@@ -73,7 +80,6 @@ export const ProviderSendTurnInput = Schema.Struct({
     Schema.Array(ChatAttachment).check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS)),
   ),
   modelSelection: Schema.optional(ModelSelection),
-  gedWorkflowEnabled: Schema.optional(Schema.Boolean),
   interactionMode: Schema.optional(ProviderInteractionMode),
 });
 export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;

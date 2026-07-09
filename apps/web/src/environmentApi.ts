@@ -53,8 +53,17 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeThread: (input, callback, options) =>
         rpcClient.orchestration.subscribeThread(input, callback, options),
     },
-    gedWorkflow: {
-      getState: rpcClient.gedWorkflow.getState,
+    orchestrator: {
+      sendMessage: rpcClient.orchestrator.sendMessage,
+      subscribeProject: (input, callback, options) =>
+        rpcClient.orchestrator.subscribeProject(input, callback, options),
+      subscribeTask: (input, callback, options) =>
+        rpcClient.orchestrator.subscribeTask(input, callback, options),
+      resolveGate: rpcClient.orchestrator.resolveGate,
+      setTaskRoleSelections: rpcClient.orchestrator.setTaskRoleSelections,
+      cancelTask: rpcClient.orchestrator.cancelTask,
+      clearPmChat: rpcClient.orchestrator.clearPmChat,
+      requestPmHandoff: rpcClient.orchestrator.requestPmHandoff,
     },
   };
 }

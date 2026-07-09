@@ -1046,7 +1046,11 @@ export function makeOpenCodeAdapter(
               const server = yield* openCodeRuntime.connectToOpenCodeServer({
                 binaryPath,
                 serverUrl,
-                ...(options?.environment ? { environment: options.environment } : {}),
+                ...(input.environment !== undefined
+                  ? { environment: input.environment }
+                  : options?.environment
+                    ? { environment: options.environment }
+                    : {}),
               });
               const client = openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,

@@ -267,6 +267,52 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("creates draft pull requests and parses the created PR URL", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(processOutput("https://github.com/octocat/codething-mvp/pull/42\n")),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.createPullRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "octocat:feature/provider",
+        title: "Provider PR",
+        bodyFile: "/tmp/t3-pr-body.md",
+        draft: true,
+      });
+
+      assert.deepStrictEqual(result, {
+        number: 42,
+        title: "Provider PR",
+        url: "https://github.com/octocat/codething-mvp/pull/42",
+        baseRefName: "main",
+        headRefName: "feature/provider",
+        state: "open",
+      });
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "pr",
+          "create",
+          "--draft",
+          "--base",
+          "main",
+          "--head",
+          "octocat:feature/provider",
+          "--title",
+          "Provider PR",
+          "--body-file",
+          "/tmp/t3-pr-body.md",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("surfaces a friendly error when the pull request is not found", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(

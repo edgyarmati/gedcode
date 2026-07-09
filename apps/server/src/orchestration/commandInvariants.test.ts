@@ -75,6 +75,7 @@ const readModel: OrchestrationReadModel = {
       proposedPlans: [],
       checkpoints: [],
       deletedAt: null,
+      pendingPmHandoff: null,
     },
     {
       id: ThreadId.make("thread-2"),
@@ -98,8 +99,13 @@ const readModel: OrchestrationReadModel = {
       proposedPlans: [],
       checkpoints: [],
       deletedAt: null,
+      pendingPmHandoff: null,
     },
   ],
+  tasks: [],
+  pendingGates: [],
+  quotaBlockedStages: [],
+  stageHistory: {},
 };
 
 const messageSendCommand: OrchestrationCommand = {

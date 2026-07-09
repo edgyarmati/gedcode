@@ -226,6 +226,8 @@ describe("openCodexThread", () => {
         cwd: "/tmp/project",
         requestedModel: "gpt-5.3-codex",
         serviceTier: undefined,
+        systemPromptAppend: undefined,
+        config: undefined,
         resumeThreadId: "stale-thread",
       }),
     );
@@ -266,6 +268,8 @@ describe("openCodexThread", () => {
           cwd: "/tmp/project",
           requestedModel: "gpt-5.3-codex",
           serviceTier: undefined,
+          systemPromptAppend: undefined,
+          config: undefined,
           resumeThreadId: "stale-thread",
         }),
       ),
@@ -273,5 +277,123 @@ describe("openCodexThread", () => {
         isCodexAppServerRequestError(error) &&
         error.errorMessage === "timed out waiting for server",
     );
+  });
+
+  it("sends developerInstructions on thread/start when systemPromptAppend is set", async () => {
+    const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+    const client = {
+      request: <M extends "thread/start" | "thread/resume">(
+        method: M,
+        payload: CodexRpc.ClientRequestParamsByMethod[M],
+      ) => {
+        calls.push({ method, payload });
+        return Effect.succeed(
+          makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+        );
+      },
+    };
+
+    await Effect.runPromise(
+      openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        systemPromptAppend: "Use the orchestration rules.",
+        config: undefined,
+        resumeThreadId: undefined,
+      }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      {
+        method: "thread/start",
+        payload: {
+          cwd: "/tmp/project",
+          approvalPolicy: "never",
+          sandbox: "danger-full-access",
+          model: "gpt-5.3-codex",
+          developerInstructions: "Use the orchestration rules.",
+        },
+      },
+    ]);
+  });
+
+  it("re-sends developerInstructions on thread/resume when systemPromptAppend is set", async () => {
+    const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+    const client = {
+      request: <M extends "thread/start" | "thread/resume">(
+        method: M,
+        payload: CodexRpc.ClientRequestParamsByMethod[M],
+      ) => {
+        calls.push({ method, payload });
+        return Effect.succeed(
+          makeThreadOpenResponse("resumed-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+        );
+      },
+    };
+
+    await Effect.runPromise(
+      openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "approval-required",
+        cwd: "/tmp/project",
+        requestedModel: undefined,
+        serviceTier: undefined,
+        systemPromptAppend: "Use the orchestration rules.",
+        config: undefined,
+        resumeThreadId: "provider-thread-1",
+      }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      {
+        method: "thread/resume",
+        payload: {
+          threadId: "provider-thread-1",
+          cwd: "/tmp/project",
+          approvalPolicy: "untrusted",
+          sandbox: "read-only",
+          developerInstructions: "Use the orchestration rules.",
+        },
+      },
+    ]);
+  });
+
+  it("omits developerInstructions when systemPromptAppend is unset", async () => {
+    const calls: Array<{
+      method: "thread/start" | "thread/resume";
+      payload: Record<string, unknown>;
+    }> = [];
+    const client = {
+      request: <M extends "thread/start" | "thread/resume">(
+        method: M,
+        payload: CodexRpc.ClientRequestParamsByMethod[M],
+      ) => {
+        calls.push({ method, payload: payload as Record<string, unknown> });
+        return Effect.succeed(
+          makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+        );
+      },
+    };
+
+    await Effect.runPromise(
+      openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: undefined,
+        serviceTier: undefined,
+        systemPromptAppend: undefined,
+        config: undefined,
+        resumeThreadId: undefined,
+      }),
+    );
+
+    assert.equal("developerInstructions" in calls[0]!.payload, false);
   });
 });

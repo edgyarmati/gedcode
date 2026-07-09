@@ -5,27 +5,37 @@ import type {
   OrchestrationEvent,
   OrchestrationLatestTurn,
   OrchestrationMessage,
+  OrchestrationPendingGate,
+  OrchestrationPmQuotaBlock,
   OrchestrationProposedPlan,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamEvent,
   OrchestrationSession,
   OrchestrationSessionStatus,
+  OrchestrationStageHistoryEntry,
+  OrchestrationTask,
   OrchestrationThread,
   OrchestrationThreadShell,
   OrchestrationThreadActivity,
+  OrchestratorProjectDetailSnapshot,
+  OrchestratorProjectStreamItem,
+  OrchestratorTaskDetailSnapshot,
+  OrchestratorTaskStreamItem,
   ProjectId,
   ScopedProjectRef,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { isProviderDriverKind, ProviderDriverKind } from "@t3tools/contracts";
-import type { ThreadId, TurnId } from "@t3tools/contracts";
+import { isProviderDriverKind, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import type { GateId, TaskId, ThreadId, TurnId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { resolveModelSlugForProvider } from "@t3tools/shared/model";
 import { create } from "zustand";
 import {
   type ChatMessage,
   type Project,
+  type OrchestratorPendingGate,
+  type OrchestratorTask,
   type ProposedPlan,
   type SidebarThreadSummary,
   type Thread,
@@ -39,9 +49,40 @@ import { sanitizeThreadErrorMessage } from "./rpc/transportError";
 import { getThreadFromEnvironmentState } from "./threadDerivation";
 const isProviderDriverKindValue = Schema.is(ProviderDriverKind);
 
+// Minimal per-task quota-block surface for the task-board badge. Sourced from
+// the project snapshot's `quotaBlockedStages` and the streamed `task.stage-blocked`
+// event; intentionally not the full contract row (no branded retry bookkeeping).
+export interface TaskQuotaBlock {
+  readonly resetAt: string | null;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly stageThreadId: ThreadId;
+}
+
+export type ProjectPmQuotaBlock = OrchestrationPmQuotaBlock;
+
 export interface EnvironmentState {
   projectIds: ProjectId[];
   projectById: Record<ProjectId, Project>;
+  taskIds: string[];
+  taskIdsByProjectId: Record<ProjectId, string[]>;
+  taskById: Record<string, OrchestratorTask>;
+  pendingGateIdsByTaskId: Record<string, string[]>;
+  pendingGateById: Record<string, OrchestratorPendingGate>;
+  // Active quota-blocked stage per task (at most one stage is active at a time).
+  // Seeded from the project snapshot and kept live by `task.stage-blocked`
+  // (set) / `task.stage-started` (clear) events. Drives the "resets ~HH:MM"
+  // task-board badge; the badge itself is gated on `task.status`.
+  quotaBlockedStageByTaskId: Record<string, TaskQuotaBlock>;
+  // Durable per-task stage history (the classify→plan→review→work→verify
+  // pipeline) keyed by stage thread id. Seeded from the project/task snapshot
+  // and kept live by `task.stage-started`/`-completed`/`-blocked` events. Drives
+  // the stage-timeline; the backend/model is stamped on the stage-started event
+  // so the client never re-resolves config.
+  stageHistoryByTaskId: Record<string, Record<string, OrchestrationStageHistoryEntry>>;
+  // Active PM-provider quota block per project. Seeded from the project snapshot,
+  // updated live from PM-thread quota-paused activity, and cleared when the PM
+  // starts speaking again.
+  pmQuotaBlockByProjectId: Record<string, ProjectPmQuotaBlock>;
 
   // ---------------------------------------------------------------------------
   // Thread bookkeeping — written by BOTH shell stream and detail stream.
@@ -95,9 +136,22 @@ export interface AppState {
   environmentStateById: Record<string, EnvironmentState>;
 }
 
-const initialEnvironmentState: EnvironmentState = {
+export interface ScopedTaskRef {
+  readonly environmentId: EnvironmentId;
+  readonly taskId: TaskId;
+}
+
+export const initialEnvironmentState: EnvironmentState = {
   projectIds: [],
   projectById: {},
+  taskIds: [],
+  taskIdsByProjectId: {},
+  taskById: {},
+  pendingGateIdsByTaskId: {},
+  pendingGateById: {},
+  quotaBlockedStageByTaskId: {},
+  stageHistoryByTaskId: {},
+  pmQuotaBlockByProjectId: {},
   threadIds: [],
   threadIdsByProjectId: {},
   threadShellById: {},
@@ -125,6 +179,8 @@ const MAX_THREAD_CHECKPOINTS = 500;
 const MAX_THREAD_PROPOSED_PLANS = 200;
 const MAX_THREAD_ACTIVITIES = 500;
 const EMPTY_THREAD_IDS: ThreadId[] = [];
+const EMPTY_TASK_IDS: string[] = [];
+const EMPTY_GATE_IDS: string[] = [];
 
 function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
@@ -179,6 +235,7 @@ function mapMessage(environmentId: EnvironmentId, message: OrchestrationMessage)
     text: message.text,
     turnId: message.turnId,
     createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
     streaming: message.streaming,
     ...(message.streaming ? {} : { completedAt: message.updatedAt }),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
@@ -230,9 +287,40 @@ function mapProject(
         normalizeModelSelection(selection),
       ]),
     ),
+    rolePromptPrefixes: { ...project.rolePromptPrefixes },
+    ...(project.orchestratorConfig !== undefined
+      ? { orchestratorConfig: { ...project.orchestratorConfig } }
+      : {}),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
     scripts: mapProjectScripts(project.scripts),
+  };
+}
+
+function mapOrchestratorTask(
+  task: OrchestrationTask,
+  environmentId: EnvironmentId,
+): OrchestratorTask {
+  return {
+    ...task,
+    stageThreadIds: [...task.stageThreadIds],
+    roleModelSelections: Object.fromEntries(
+      Object.entries(task.roleModelSelections ?? {}).map(([role, selection]) => [
+        role,
+        normalizeModelSelection(selection),
+      ]),
+    ),
+    environmentId,
+  };
+}
+
+function mapOrchestratorPendingGate(
+  pendingGate: OrchestrationPendingGate,
+  environmentId: EnvironmentId,
+): OrchestratorPendingGate {
+  return {
+    ...pendingGate,
+    environmentId,
   };
 }
 
@@ -244,9 +332,6 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     session: thread.session ? mapSession(thread.session) : null,
@@ -256,6 +341,9 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     latestTurn: thread.latestTurn,
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
@@ -281,15 +369,15 @@ function mapThreadShell(
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     branch: thread.branch,
     worktreePath: thread.worktreePath,
   };
@@ -308,6 +396,9 @@ function mapThreadShell(
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     latestTurn: thread.latestTurn,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
@@ -332,15 +423,15 @@ function toThreadShell(thread: Thread): ThreadShell {
     projectId: thread.projectId,
     title: thread.title,
     modelSelection: thread.modelSelection,
-    ...(thread.gedWorkflowEnabled !== undefined
-      ? { gedWorkflowEnabled: thread.gedWorkflowEnabled }
-      : {}),
     runtimeMode: thread.runtimeMode,
     interactionMode: thread.interactionMode,
     error: thread.error,
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
     updatedAt: thread.updatedAt,
+    ...(thread.lastClearedSequence !== undefined
+      ? { lastClearedSequence: thread.lastClearedSequence }
+      : {}),
     branch: thread.branch,
     worktreePath: thread.worktreePath,
   };
@@ -412,6 +503,7 @@ function sidebarThreadSummariesEqual(
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
+    left.lastClearedSequence === right.lastClearedSequence &&
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
@@ -431,13 +523,13 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.projectId === right.projectId &&
     left.title === right.title &&
     left.modelSelection === right.modelSelection &&
-    left.gedWorkflowEnabled === right.gedWorkflowEnabled &&
     left.runtimeMode === right.runtimeMode &&
     left.interactionMode === right.interactionMode &&
     left.error === right.error &&
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
+    left.lastClearedSequence === right.lastClearedSequence &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath
   );
@@ -519,6 +611,356 @@ function getThreads(state: EnvironmentState): Thread[] {
     const thread = getThreadFromEnvironmentState(state, threadId);
     return thread ? [thread] : [];
   });
+}
+
+function getTasks(state: EnvironmentState): OrchestratorTask[] {
+  return state.taskIds.flatMap((taskId) => {
+    const task = state.taskById[taskId];
+    return task ? [task] : [];
+  });
+}
+
+function pendingGatesForTask(state: EnvironmentState, taskId: string): OrchestratorPendingGate[] {
+  return (state.pendingGateIdsByTaskId[taskId] ?? EMPTY_GATE_IDS).flatMap((gateId) => {
+    const gate = state.pendingGateById[gateId];
+    return gate ? [gate] : [];
+  });
+}
+
+function writeTaskState(state: EnvironmentState, task: OrchestratorTask): EnvironmentState {
+  const taskKey = String(task.id);
+  const previousTask = state.taskById[taskKey];
+  const previousProjectId = previousTask?.projectId;
+  let nextState = state;
+
+  if (!state.taskIds.includes(taskKey)) {
+    nextState = {
+      ...nextState,
+      taskIds: [...nextState.taskIds, taskKey],
+    };
+  }
+
+  if (previousProjectId !== task.projectId) {
+    let taskIdsByProjectId = nextState.taskIdsByProjectId;
+    if (previousProjectId) {
+      const previousIds = taskIdsByProjectId[previousProjectId] ?? EMPTY_TASK_IDS;
+      const nextIds = removeId(previousIds, taskKey);
+      if (nextIds.length === 0) {
+        const { [previousProjectId]: _removed, ...rest } = taskIdsByProjectId;
+        taskIdsByProjectId = rest as Record<ProjectId, string[]>;
+      } else if (!arraysEqual(previousIds, nextIds)) {
+        taskIdsByProjectId = {
+          ...taskIdsByProjectId,
+          [previousProjectId]: nextIds,
+        };
+      }
+    }
+    const projectTaskIds = taskIdsByProjectId[task.projectId] ?? EMPTY_TASK_IDS;
+    const nextProjectTaskIds = appendId(projectTaskIds, taskKey);
+    if (!arraysEqual(projectTaskIds, nextProjectTaskIds)) {
+      taskIdsByProjectId = {
+        ...taskIdsByProjectId,
+        [task.projectId]: nextProjectTaskIds,
+      };
+    }
+    if (taskIdsByProjectId !== nextState.taskIdsByProjectId) {
+      nextState = {
+        ...nextState,
+        taskIdsByProjectId,
+      };
+    }
+  }
+
+  return {
+    ...nextState,
+    taskById: {
+      ...nextState.taskById,
+      [taskKey]: task,
+    },
+  };
+}
+
+function updateTaskState(
+  state: EnvironmentState,
+  taskId: string,
+  update: (task: OrchestratorTask) => OrchestratorTask,
+): EnvironmentState {
+  const task = state.taskById[taskId];
+  if (!task) {
+    return state;
+  }
+  const nextTask = update(task);
+  return nextTask === task ? state : writeTaskState(state, nextTask);
+}
+
+function setTaskQuotaBlock(
+  state: EnvironmentState,
+  taskId: string,
+  block: TaskQuotaBlock,
+): EnvironmentState {
+  return {
+    ...state,
+    quotaBlockedStageByTaskId: {
+      ...state.quotaBlockedStageByTaskId,
+      [taskId]: block,
+    },
+  };
+}
+
+function clearTaskQuotaBlock(state: EnvironmentState, taskId: string): EnvironmentState {
+  if (state.quotaBlockedStageByTaskId[taskId] === undefined) {
+    return state;
+  }
+  const nextQuota = { ...state.quotaBlockedStageByTaskId };
+  delete nextQuota[taskId];
+  return { ...state, quotaBlockedStageByTaskId: nextQuota };
+}
+
+function upsertStageHistoryEntry(
+  state: EnvironmentState,
+  entry: OrchestrationStageHistoryEntry,
+): EnvironmentState {
+  const taskId = String(entry.taskId);
+  const stageThreadId = String(entry.stageThreadId);
+  return {
+    ...state,
+    stageHistoryByTaskId: {
+      ...state.stageHistoryByTaskId,
+      [taskId]: {
+        ...state.stageHistoryByTaskId[taskId],
+        [stageThreadId]: entry,
+      },
+    },
+  };
+}
+
+// Patches an existing stage-history entry's lifecycle fields. A no-op when the
+// stage was never seeded (a snapshot will fill it), so `-completed`/`-blocked`
+// arriving before the seed never invents a partial row.
+function patchStageHistoryEntry(
+  state: EnvironmentState,
+  taskId: string,
+  stageThreadId: string,
+  patch: Partial<OrchestrationStageHistoryEntry>,
+): EnvironmentState {
+  const existing = state.stageHistoryByTaskId[taskId]?.[stageThreadId];
+  if (existing === undefined) {
+    return state;
+  }
+  return {
+    ...state,
+    stageHistoryByTaskId: {
+      ...state.stageHistoryByTaskId,
+      [taskId]: {
+        ...state.stageHistoryByTaskId[taskId],
+        [stageThreadId]: { ...existing, ...patch },
+      },
+    },
+  };
+}
+
+function resetTaskStageHistory(
+  state: EnvironmentState,
+  taskIds: ReadonlySet<string>,
+): EnvironmentState {
+  const next: Record<string, Record<string, OrchestrationStageHistoryEntry>> = {};
+  for (const taskId of taskIds) {
+    next[taskId] = {};
+  }
+  return { ...state, stageHistoryByTaskId: { ...state.stageHistoryByTaskId, ...next } };
+}
+
+function seedStageHistory(
+  state: EnvironmentState,
+  entries: ReadonlyArray<OrchestrationStageHistoryEntry>,
+): EnvironmentState {
+  let nextState = state;
+  for (const entry of entries) {
+    nextState = upsertStageHistoryEntry(nextState, entry);
+  }
+  return nextState;
+}
+
+function setProjectPmQuotaBlock(
+  state: EnvironmentState,
+  projectId: ProjectId,
+  block: ProjectPmQuotaBlock,
+): EnvironmentState {
+  return {
+    ...state,
+    pmQuotaBlockByProjectId: {
+      ...state.pmQuotaBlockByProjectId,
+      [projectId]: block,
+    },
+  };
+}
+
+function clearProjectPmQuotaBlock(state: EnvironmentState, projectId: ProjectId): EnvironmentState {
+  if (state.pmQuotaBlockByProjectId[projectId] === undefined) {
+    return state;
+  }
+  const nextQuota = { ...state.pmQuotaBlockByProjectId };
+  delete nextQuota[projectId];
+  return { ...state, pmQuotaBlockByProjectId: nextQuota };
+}
+
+function isPmThreadForProject(thread: Pick<Thread, "id" | "projectId">): boolean {
+  return String(thread.id) === `pm:${thread.projectId}`;
+}
+
+function pmQuotaBlockFromActivity(
+  activity: OrchestrationThreadActivity,
+): ProjectPmQuotaBlock | null {
+  if (activity.kind !== "quota.paused") {
+    return null;
+  }
+  const payload = activity.payload;
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+  const providerInstanceId = (payload as { providerInstanceId?: unknown }).providerInstanceId;
+  const resetAt = (payload as { resetAt?: unknown }).resetAt;
+  if (typeof providerInstanceId !== "string") {
+    return null;
+  }
+  if (resetAt !== null && resetAt !== undefined && typeof resetAt !== "string") {
+    return null;
+  }
+  const normalizedResetAt = typeof resetAt === "string" ? resetAt : null;
+  return {
+    providerInstanceId: ProviderInstanceId.make(providerInstanceId),
+    status: normalizedResetAt === null ? "blocked-unknown" : "blocked-until",
+    resetAt: normalizedResetAt,
+  };
+}
+
+function writePendingGateState(
+  state: EnvironmentState,
+  pendingGate: OrchestratorPendingGate,
+): EnvironmentState {
+  const gateKey = String(pendingGate.gateId);
+  const taskKey = String(pendingGate.taskId);
+  const taskGateIds = state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS;
+  const nextTaskGateIds = appendId(taskGateIds, gateKey);
+  return {
+    ...state,
+    pendingGateById: {
+      ...state.pendingGateById,
+      [gateKey]: pendingGate,
+    },
+    pendingGateIdsByTaskId: arraysEqual(taskGateIds, nextTaskGateIds)
+      ? state.pendingGateIdsByTaskId
+      : {
+          ...state.pendingGateIdsByTaskId,
+          [taskKey]: nextTaskGateIds,
+        },
+  };
+}
+
+function removePendingGateState(state: EnvironmentState, gateKey: string): EnvironmentState {
+  const gate = state.pendingGateById[gateKey];
+  if (gate === undefined) {
+    return state;
+  }
+
+  const taskKey = String(gate.taskId);
+  const taskGateIds = state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS;
+  const nextTaskGateIds = removeId(taskGateIds, gateKey);
+  const { [gateKey]: _removedGate, ...pendingGateById } = state.pendingGateById;
+  const pendingGateIdsByTaskId =
+    nextTaskGateIds.length === 0
+      ? (() => {
+          const { [taskKey]: _removedTaskGates, ...rest } = state.pendingGateIdsByTaskId;
+          return rest;
+        })()
+      : {
+          ...state.pendingGateIdsByTaskId,
+          [taskKey]: nextTaskGateIds,
+        };
+
+  return {
+    ...state,
+    pendingGateById,
+    pendingGateIdsByTaskId,
+  };
+}
+
+function removeTaskState(state: EnvironmentState, taskKey: string): EnvironmentState {
+  const task = state.taskById[taskKey];
+  if (task === undefined) {
+    return state;
+  }
+
+  const nextTaskIds = removeId(state.taskIds, taskKey);
+  const projectTaskIds = state.taskIdsByProjectId[task.projectId] ?? EMPTY_TASK_IDS;
+  const nextProjectTaskIds = removeId(projectTaskIds, taskKey);
+  const taskIdsByProjectId =
+    nextProjectTaskIds.length === 0
+      ? (() => {
+          const { [task.projectId]: _removedProjectTasks, ...rest } = state.taskIdsByProjectId;
+          return rest as Record<ProjectId, string[]>;
+        })()
+      : {
+          ...state.taskIdsByProjectId,
+          [task.projectId]: nextProjectTaskIds,
+        };
+  const { [taskKey]: _removedTask, ...taskById } = state.taskById;
+  const { [taskKey]: _removedTaskGateIds, ...pendingGateIdsByTaskId } =
+    state.pendingGateIdsByTaskId;
+
+  let pendingGateById = state.pendingGateById;
+  for (const gateKey of state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS) {
+    const { [gateKey]: _removedGate, ...rest } = pendingGateById;
+    pendingGateById = rest;
+  }
+
+  return {
+    ...state,
+    taskIds: nextTaskIds,
+    taskIdsByProjectId,
+    taskById,
+    pendingGateIdsByTaskId,
+    pendingGateById,
+  };
+}
+
+function retainTaskSnapshotGateState(
+  state: EnvironmentState,
+  taskKey: string,
+  snapshotGateIds: ReadonlySet<string>,
+): EnvironmentState {
+  let nextState = state;
+  for (const gateKey of state.pendingGateIdsByTaskId[taskKey] ?? EMPTY_GATE_IDS) {
+    if (!snapshotGateIds.has(gateKey)) {
+      nextState = removePendingGateState(nextState, gateKey);
+    }
+  }
+  return nextState;
+}
+
+function retainProjectSnapshotTaskState(params: {
+  readonly state: EnvironmentState;
+  readonly projectId: ProjectId;
+  readonly snapshotTaskIds: ReadonlySet<string>;
+  readonly snapshotGateIds: ReadonlySet<string>;
+  readonly skipTaskIds?: ReadonlySet<string>;
+}): EnvironmentState {
+  let nextState = params.state;
+
+  for (const taskKey of params.state.taskIdsByProjectId[params.projectId] ?? EMPTY_TASK_IDS) {
+    if (!params.snapshotTaskIds.has(taskKey) && !params.skipTaskIds?.has(taskKey)) {
+      nextState = removeTaskState(nextState, taskKey);
+    }
+  }
+
+  for (const taskKey of params.snapshotTaskIds) {
+    if (params.skipTaskIds?.has(taskKey)) {
+      continue;
+    }
+    nextState = retainTaskSnapshotGateState(nextState, taskKey, params.snapshotGateIds);
+  }
+
+  return nextState;
 }
 
 /**
@@ -858,6 +1300,17 @@ function retainThreadScopedRecord<T>(
   ) as Record<ThreadId, T>;
 }
 
+function retainProjectScopedRecord<T>(
+  record: Record<string, T>,
+  nextProjectIds: ReadonlySet<ProjectId>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).flatMap(([projectId, value]) =>
+      nextProjectIds.has(projectId as ProjectId) ? [[projectId, value] as const] : [],
+    ),
+  );
+}
+
 function removeThreadState(state: EnvironmentState, threadId: ThreadId): EnvironmentState {
   const shell = state.threadShellById[threadId];
   if (!shell) {
@@ -1169,6 +1622,19 @@ function buildProjectState(
   };
 }
 
+function writeProjectState(state: EnvironmentState, project: Project): EnvironmentState {
+  return {
+    ...state,
+    projectIds: state.projectIds.includes(project.id)
+      ? state.projectIds
+      : [...state.projectIds, project.id],
+    projectById: {
+      ...state.projectById,
+      [project.id]: project,
+    },
+  };
+}
+
 function getStoredEnvironmentState(
   state: AppState,
   environmentId: EnvironmentId,
@@ -1206,10 +1672,15 @@ function syncEnvironmentShellSnapshot(
   environmentId: EnvironmentId,
 ): EnvironmentState {
   const nextProjects = snapshot.projects.map((project) => mapProject(project, environmentId));
+  const nextProjectIds = new Set(nextProjects.map((project) => project.id));
   const nextThreadIds = new Set(snapshot.threads.map((thread) => thread.id));
   let nextState: EnvironmentState = {
     ...state,
     ...buildProjectState(nextProjects),
+    pmQuotaBlockByProjectId: retainProjectScopedRecord(
+      state.pmQuotaBlockByProjectId,
+      nextProjectIds,
+    ),
     threadIds: [],
     threadIdsByProjectId: {},
     threadShellById: {},
@@ -1270,6 +1741,147 @@ export function syncServerThreadDetail(
   );
 }
 
+interface SyncOrchestratorProjectSnapshotOptions {
+  readonly skipPmThread?: boolean;
+  readonly skipTaskIds?: ReadonlySet<string>;
+}
+
+export function syncOrchestratorProjectSnapshot(
+  state: AppState,
+  snapshot: OrchestratorProjectDetailSnapshot,
+  environmentId: EnvironmentId,
+  options: SyncOrchestratorProjectSnapshotOptions = {},
+): AppState {
+  const skipTaskIds = options.skipTaskIds ?? new Set<string>();
+  const snapshotTaskIds = new Set(snapshot.tasks.map((task) => String(task.id)));
+  const taskIdsToReset = new Set(
+    snapshot.tasks.map((task) => String(task.id)).filter((taskId) => !skipTaskIds.has(taskId)),
+  );
+  const snapshotGateIds = new Set(
+    snapshot.pendingGates
+      .filter((pendingGate) => !skipTaskIds.has(String(pendingGate.taskId)))
+      .map((pendingGate) => String(pendingGate.gateId)),
+  );
+  let nextEnvironmentState = writeProjectState(
+    getStoredEnvironmentState(state, environmentId),
+    mapProject(snapshot.project, environmentId),
+  );
+  if (!options.skipPmThread) {
+    nextEnvironmentState =
+      snapshot.pmQuotaBlock === null
+        ? clearProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id)
+        : setProjectPmQuotaBlock(nextEnvironmentState, snapshot.project.id, snapshot.pmQuotaBlock);
+  }
+
+  if (!options.skipPmThread && snapshot.pmThread !== null) {
+    const previousThread = getThreadFromEnvironmentState(
+      nextEnvironmentState,
+      snapshot.pmThread.id,
+    );
+    nextEnvironmentState = writeThreadState(
+      nextEnvironmentState,
+      mapThread(snapshot.pmThread, environmentId),
+      previousThread,
+    );
+  }
+
+  for (const task of snapshot.tasks) {
+    if (skipTaskIds.has(String(task.id))) {
+      continue;
+    }
+    nextEnvironmentState = writeTaskState(
+      nextEnvironmentState,
+      mapOrchestratorTask(task, environmentId),
+    );
+  }
+
+  for (const pendingGate of snapshot.pendingGates) {
+    if (skipTaskIds.has(String(pendingGate.taskId))) {
+      continue;
+    }
+    nextEnvironmentState = writePendingGateState(
+      nextEnvironmentState,
+      mapOrchestratorPendingGate(pendingGate, environmentId),
+    );
+  }
+
+  // Reset this project's quota-block index to match the snapshot (authoritative
+  // at subscribe time), then re-seed the actively blocked stages.
+  for (const taskId of taskIdsToReset) {
+    nextEnvironmentState = clearTaskQuotaBlock(nextEnvironmentState, taskId);
+  }
+  for (const stage of snapshot.quotaBlockedStages) {
+    if (skipTaskIds.has(String(stage.taskId))) {
+      continue;
+    }
+    if (stage.status !== "blocked") {
+      continue;
+    }
+    nextEnvironmentState = setTaskQuotaBlock(nextEnvironmentState, String(stage.taskId), {
+      resetAt: stage.resetAt,
+      providerInstanceId: stage.providerInstanceId,
+      stageThreadId: stage.stageThreadId,
+    });
+  }
+
+  // Stage history is authoritative at subscribe time: reset this project's tasks,
+  // then seed from the snapshot (scoped server-side to this project's tasks).
+  nextEnvironmentState = resetTaskStageHistory(nextEnvironmentState, taskIdsToReset);
+  nextEnvironmentState = seedStageHistory(
+    nextEnvironmentState,
+    Object.values(snapshot.stageHistory).filter((stage) => !skipTaskIds.has(String(stage.taskId))),
+  );
+
+  nextEnvironmentState = retainProjectSnapshotTaskState({
+    state: nextEnvironmentState,
+    projectId: snapshot.project.id,
+    snapshotTaskIds,
+    snapshotGateIds,
+    skipTaskIds,
+  });
+
+  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
+}
+
+export function syncOrchestratorTaskSnapshot(
+  state: AppState,
+  snapshot: OrchestratorTaskDetailSnapshot,
+  environmentId: EnvironmentId,
+): AppState {
+  const snapshotGateIds = new Set(
+    snapshot.pendingGates.map((pendingGate) => String(pendingGate.gateId)),
+  );
+  let nextEnvironmentState = writeTaskState(
+    getStoredEnvironmentState(state, environmentId),
+    mapOrchestratorTask(snapshot.task, environmentId),
+  );
+
+  for (const pendingGate of snapshot.pendingGates) {
+    nextEnvironmentState = writePendingGateState(
+      nextEnvironmentState,
+      mapOrchestratorPendingGate(pendingGate, environmentId),
+    );
+  }
+
+  nextEnvironmentState = retainTaskSnapshotGateState(
+    nextEnvironmentState,
+    String(snapshot.task.id),
+    snapshotGateIds,
+  );
+
+  // Reset and re-seed this task's stage history from the authoritative snapshot.
+  nextEnvironmentState = resetTaskStageHistory(
+    nextEnvironmentState,
+    new Set([String(snapshot.task.id)]),
+  );
+  nextEnvironmentState = seedStageHistory(
+    nextEnvironmentState,
+    Object.values(snapshot.stageHistory),
+  );
+
+  return commitEnvironmentState(state, environmentId, nextEnvironmentState);
+}
+
 function applyEnvironmentOrchestrationEvent(
   state: EnvironmentState,
   event: OrchestrationEvent,
@@ -1284,6 +1896,11 @@ function applyEnvironmentOrchestrationEvent(
           workspaceRoot: event.payload.workspaceRoot,
           repositoryIdentity: event.payload.repositoryIdentity ?? null,
           defaultModelSelection: event.payload.defaultModelSelection,
+          roleModelSelections: event.payload.roleModelSelections ?? {},
+          rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
+          ...(event.payload.orchestratorConfig !== undefined
+            ? { orchestratorConfig: event.payload.orchestratorConfig }
+            : {}),
           scripts: event.payload.scripts,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1356,6 +1973,12 @@ function applyEnvironmentOrchestrationEvent(
               ),
             }
           : {}),
+        ...(event.payload.rolePromptPrefixes !== undefined
+          ? { rolePromptPrefixes: { ...event.payload.rolePromptPrefixes } }
+          : {}),
+        ...(event.payload.orchestratorConfig !== undefined
+          ? { orchestratorConfig: { ...event.payload.orchestratorConfig } }
+          : {}),
         ...(event.payload.scripts !== undefined
           ? { scripts: mapProjectScripts(event.payload.scripts) }
           : {}),
@@ -1374,13 +1997,228 @@ function applyEnvironmentOrchestrationEvent(
       if (!state.projectById[event.payload.projectId]) {
         return state;
       }
+      let nextState = state;
+      for (const taskKey of state.taskIdsByProjectId[event.payload.projectId] ?? EMPTY_TASK_IDS) {
+        nextState = removeTaskState(nextState, taskKey);
+      }
       const { [event.payload.projectId]: _removedProject, ...projectById } = state.projectById;
+      const { [event.payload.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
+        nextState.pmQuotaBlockByProjectId;
       return {
-        ...state,
+        ...nextState,
         projectById,
-        projectIds: removeId(state.projectIds, event.payload.projectId),
+        pmQuotaBlockByProjectId,
+        projectIds: removeId(nextState.projectIds, event.payload.projectId),
       };
     }
+
+    case "task.created":
+      return writeTaskState(
+        state,
+        mapOrchestratorTask(
+          {
+            id: event.payload.taskId,
+            projectId: event.payload.projectId,
+            type: event.payload.taskType,
+            title: event.payload.title,
+            status: "draft",
+            branch: event.payload.branch,
+            worktreePath: event.payload.worktreePath,
+            prUrl: null,
+            pmMessageId: event.payload.pmMessageId,
+            stageThreadIds: [],
+            currentStageThreadId: null,
+            roleModelSelections: {},
+            playbookVersion: event.payload.playbookVersion,
+            createdAt: event.payload.createdAt,
+            updatedAt: event.payload.updatedAt,
+          },
+          environmentId,
+        ),
+      );
+
+    case "task.classified":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        type: event.payload.taskType,
+        status: "classified",
+        playbookVersion: event.payload.playbookVersion,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.role-selections-updated":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        roleModelSelections: Object.fromEntries(
+          Object.entries(event.payload.roleModelSelections).map(([role, selection]) => [
+            role,
+            normalizeModelSelection(selection),
+          ]),
+        ),
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.stage-started": {
+      const taskId = String(event.payload.taskId);
+      const nextState = updateTaskState(state, taskId, (task) => {
+        const status =
+          event.payload.role === "plan"
+            ? ("planning" as const)
+            : event.payload.role === "review"
+              ? ("reviewing" as const)
+              : event.payload.role === "work"
+                ? ("working" as const)
+                : event.payload.role === "verify"
+                  ? ("verifying" as const)
+                  : ("classified" as const);
+        return {
+          ...task,
+          status,
+          stageThreadIds: task.stageThreadIds.includes(event.payload.stageThreadId)
+            ? task.stageThreadIds
+            : [...task.stageThreadIds, event.payload.stageThreadId],
+          currentStageThreadId: event.payload.stageThreadId,
+          updatedAt: event.payload.updatedAt,
+        };
+      });
+      // A (re)started stage means the task is no longer parked on quota.
+      const withoutQuota = clearTaskQuotaBlock(nextState, taskId);
+      const projectId = withoutQuota.taskById[taskId]?.projectId;
+      const { providerInstanceId, model } = event.payload;
+      // The backend/model is stamped on the stage-started event; if absent
+      // (events appended before that field existed) or the task is unknown, the
+      // snapshot remains the source for this stage's history row.
+      if (projectId === undefined || providerInstanceId === undefined || model === undefined) {
+        return withoutQuota;
+      }
+      return upsertStageHistoryEntry(withoutQuota, {
+        projectId,
+        taskId: event.payload.taskId,
+        stageThreadId: event.payload.stageThreadId,
+        role: event.payload.role,
+        providerInstanceId,
+        model,
+        status: "running",
+        startedAt: event.payload.updatedAt,
+        endedAt: null,
+      });
+    }
+
+    case "task.stage-completed": {
+      const taskId = String(event.payload.taskId);
+      const withTask = updateTaskState(state, taskId, (task) => ({
+        ...task,
+        ...(event.payload.role === "work" ? { status: "review" as const } : {}),
+        currentStageThreadId: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+      return patchStageHistoryEntry(withTask, taskId, String(event.payload.stageThreadId), {
+        status: "completed",
+        endedAt: event.payload.updatedAt,
+      });
+    }
+
+    case "task.stage-blocked": {
+      const taskId = String(event.payload.taskId);
+      const withTask = updateTaskState(state, taskId, (task) => ({
+        ...task,
+        status: "blocked-on-quota" as const,
+        currentStageThreadId: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+      const withQuota = setTaskQuotaBlock(withTask, taskId, {
+        resetAt: event.payload.resetAt ?? null,
+        providerInstanceId: event.payload.providerInstanceId,
+        stageThreadId: event.payload.stageThreadId,
+      });
+      return patchStageHistoryEntry(withQuota, taskId, String(event.payload.stageThreadId), {
+        status: "blocked",
+        endedAt: event.payload.updatedAt,
+        providerInstanceId: event.payload.providerInstanceId,
+      });
+    }
+
+    case "task.gate-requested": {
+      const existingGate = state.pendingGateById[String(event.payload.gateId)];
+      const pendingGate = mapOrchestratorPendingGate(
+        {
+          gateId: event.payload.gateId,
+          taskId: event.payload.taskId,
+          gate: event.payload.gate,
+          contentHash: event.payload.contentHash,
+          stageThreadId: event.payload.stageThreadId,
+          status: existingGate?.status ?? "pending",
+          approvedHash: existingGate?.approvedHash ?? null,
+          decision: existingGate?.decision ?? null,
+          origin: existingGate?.origin ?? null,
+          requestedAt: existingGate?.requestedAt ?? event.payload.updatedAt,
+          resolvedAt: existingGate?.resolvedAt ?? null,
+        },
+        environmentId,
+      );
+      const withGate = writePendingGateState(state, pendingGate);
+      return updateTaskState(withGate, String(event.payload.taskId), (task) => ({
+        ...task,
+        ...(existingGate?.status === "resolved"
+          ? {}
+          : event.payload.gate === "plan"
+            ? { status: "plan-review" as const }
+            : event.payload.gate === "land"
+              ? { status: "review" as const }
+              : {}),
+        updatedAt: event.payload.updatedAt,
+      }));
+    }
+
+    case "task.gate-resolved": {
+      const nextStatus =
+        event.payload.gate === "plan"
+          ? event.payload.decision === "approved"
+            ? ("planning" as const)
+            : ("blocked" as const)
+          : event.payload.gate === "land" && event.payload.decision === "rejected"
+            ? ("blocked" as const)
+            : null;
+      let nextState = updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        ...(nextStatus !== null ? { status: nextStatus } : {}),
+        updatedAt: event.payload.updatedAt,
+      }));
+      const gateKey = String(event.payload.gateId);
+      const existingGate = nextState.pendingGateById[gateKey];
+      if (existingGate !== undefined) {
+        nextState = writePendingGateState(nextState, {
+          ...existingGate,
+          status: "resolved",
+          approvedHash: event.payload.approvedHash,
+          decision: event.payload.decision,
+          origin: event.payload.origin,
+          resolvedAt: event.payload.updatedAt,
+        });
+      }
+      return nextState;
+    }
+
+    case "task.landed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "landed",
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.pr-opened":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        prUrl: event.payload.prUrl,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.abandoned":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "abandoned",
+        updatedAt: event.payload.updatedAt,
+      }));
 
     case "thread.created": {
       const previousThread = getThreadFromEnvironmentState(state, event.payload.threadId);
@@ -1390,9 +2228,6 @@ function applyEnvironmentOrchestrationEvent(
           projectId: event.payload.projectId,
           title: event.payload.title,
           modelSelection: event.payload.modelSelection,
-          ...(event.payload.gedWorkflowEnabled !== undefined
-            ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
-            : {}),
           runtimeMode: event.payload.runtimeMode,
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
@@ -1402,6 +2237,7 @@ function applyEnvironmentOrchestrationEvent(
           updatedAt: event.payload.updatedAt,
           archivedAt: null,
           deletedAt: null,
+          pendingPmHandoff: null,
           messages: [],
           proposedPlans: [],
           activities: [],
@@ -1437,9 +2273,6 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: normalizeModelSelection(event.payload.modelSelection) }
           : {}),
-        ...(event.payload.gedWorkflowEnabled !== undefined
-          ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
-          : {}),
         ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
@@ -1466,9 +2299,6 @@ function applyEnvironmentOrchestrationEvent(
         ...thread,
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: normalizeModelSelection(event.payload.modelSelection) }
-          : {}),
-        ...(event.payload.gedWorkflowEnabled !== undefined
-          ? { gedWorkflowEnabled: event.payload.gedWorkflowEnabled }
           : {}),
         runtimeMode: event.payload.runtimeMode,
         interactionMode: event.payload.interactionMode,
@@ -1522,8 +2352,8 @@ function applyEnvironmentOrchestrationEvent(
       });
     }
 
-    case "thread.message-sent":
-      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
+    case "thread.message-sent": {
+      const nextState = updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const message = mapMessage(thread.environmentId, {
           id: event.payload.messageId,
           role: event.payload.role,
@@ -1553,6 +2383,7 @@ function applyEnvironmentOrchestrationEvent(
                       : entry.text,
                   streaming: message.streaming,
                   ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                  updatedAt: message.updatedAt,
                   ...(message.streaming
                     ? entry.completedAt !== undefined
                       ? { completedAt: entry.completedAt }
@@ -1627,6 +2458,25 @@ function applyEnvironmentOrchestrationEvent(
           hints: { changedMessage: changedMessage! },
         };
       });
+      const thread = getThreadFromEnvironmentState(nextState, event.payload.threadId);
+      return thread && isPmThreadForProject(thread)
+        ? clearProjectPmQuotaBlock(nextState, thread.projectId)
+        : nextState;
+    }
+
+    case "thread.cleared":
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        messages: [],
+        activities: [],
+        proposedPlans: [],
+        turnDiffSummaries: [],
+        latestTurn: null,
+        session: null,
+        pendingSourceProposedPlan: undefined,
+        lastClearedSequence: event.sequence,
+        updatedAt: event.payload.clearedAt,
+      }));
 
     case "thread.session-set":
       return updateThreadState(state, event.payload.threadId, (thread) => {
@@ -1814,8 +2664,8 @@ function applyEnvironmentOrchestrationEvent(
         };
       });
 
-    case "thread.activity-appended":
-      return updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
+    case "thread.activity-appended": {
+      const nextState = updateThreadStateWithHints(state, event.payload.threadId, (thread) => {
         const newActivity = { ...event.payload.activity };
         const existingActivity = state.activityByThreadId[event.payload.threadId]?.[newActivity.id];
         let activities: OrchestrationThreadActivity[];
@@ -1852,6 +2702,12 @@ function applyEnvironmentOrchestrationEvent(
           hints: changedActivity !== undefined ? { changedActivity } : {},
         };
       });
+      const thread = getThreadFromEnvironmentState(nextState, event.payload.threadId);
+      const quotaBlock = pmQuotaBlockFromActivity(event.payload.activity);
+      return thread && isPmThreadForProject(thread) && quotaBlock !== null
+        ? setProjectPmQuotaBlock(nextState, thread.projectId, quotaBlock)
+        : nextState;
+    }
 
     case "thread.approval-response-requested":
     case "thread.user-input-response-requested":
@@ -1909,9 +2765,12 @@ function applyEnvironmentShellEvent(
         return state;
       }
       const { [event.projectId]: _removedProject, ...projectById } = state.projectById;
+      const { [event.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
+        state.pmQuotaBlockByProjectId;
       return {
         ...state,
         projectById,
+        pmQuotaBlockByProjectId,
         projectIds: removeId(state.projectIds, event.projectId),
       };
     }
@@ -1967,6 +2826,100 @@ export function selectThreadsForEnvironment(
   return getThreads(selectEnvironmentState(state, environmentId));
 }
 
+export function selectTasksForEnvironment(
+  state: AppState,
+  environmentId: EnvironmentId | null | undefined,
+): OrchestratorTask[] {
+  return getTasks(selectEnvironmentState(state, environmentId));
+}
+
+export function selectTasksForProjectRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): OrchestratorTask[] {
+  if (!ref) {
+    return [];
+  }
+  const environmentState = selectEnvironmentState(state, ref.environmentId);
+  return (environmentState.taskIdsByProjectId[ref.projectId] ?? EMPTY_TASK_IDS).flatMap(
+    (taskId) => {
+      const task = environmentState.taskById[taskId];
+      return task ? [task] : [];
+    },
+  );
+}
+
+export function selectTaskByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestratorTask | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).taskById[String(ref.taskId)]
+    : undefined;
+}
+
+export function selectTaskQuotaBlockByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): TaskQuotaBlock | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).quotaBlockedStageByTaskId[String(ref.taskId)]
+    : undefined;
+}
+
+// Per-task stage history (classify→plan→review→work→verify) in chronological
+// start order, for the stage timeline. Ties broken by stage thread id so the
+// order is stable across renders.
+export function selectTaskStageHistoryByRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestrationStageHistoryEntry[] {
+  if (!ref) {
+    return [];
+  }
+  const byThreadId = selectEnvironmentState(state, ref.environmentId).stageHistoryByTaskId[
+    String(ref.taskId)
+  ];
+  if (byThreadId === undefined) {
+    return [];
+  }
+  return Object.values(byThreadId).toSorted(
+    (left, right) =>
+      left.startedAt.localeCompare(right.startedAt) ||
+      String(left.stageThreadId).localeCompare(String(right.stageThreadId)),
+  );
+}
+
+export function selectProjectPmQuotaBlockByRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): ProjectPmQuotaBlock | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).pmQuotaBlockByProjectId[
+        String(ref.projectId)
+      ]
+    : undefined;
+}
+
+export function selectPendingGatesForTaskRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestratorPendingGate[] {
+  return ref
+    ? pendingGatesForTask(selectEnvironmentState(state, ref.environmentId), String(ref.taskId))
+    : [];
+}
+
+export function selectPendingGateById(
+  state: AppState,
+  environmentId: EnvironmentId | null | undefined,
+  gateId: GateId | null | undefined,
+): OrchestratorPendingGate | undefined {
+  return environmentId && gateId
+    ? selectEnvironmentState(state, environmentId).pendingGateById[String(gateId)]
+    : undefined;
+}
+
 export function selectProjectsAcrossEnvironments(state: AppState): Project[] {
   return getEnvironmentEntries(state).flatMap(([, environmentState]) =>
     getProjects(environmentState),
@@ -2010,7 +2963,7 @@ export function selectSidebarThreadsForProjectRef(
   const threadIds = environmentState.threadIdsByProjectId[ref.projectId] ?? EMPTY_THREAD_IDS;
   return threadIds.flatMap((threadId) => {
     const thread = environmentState.sidebarThreadSummaryById[threadId];
-    return thread ? [thread] : [];
+    return thread && !thread.id.startsWith("pm:") ? [thread] : [];
   });
 }
 
@@ -2060,6 +3013,15 @@ export function selectSidebarThreadSummaryByRef(
 ): SidebarThreadSummary | undefined {
   return ref
     ? selectEnvironmentState(state, ref.environmentId).sidebarThreadSummaryById[ref.threadId]
+    : undefined;
+}
+
+export function selectThreadShellByRef(
+  state: AppState,
+  ref: ScopedThreadRef | null | undefined,
+): ThreadShell | undefined {
+  return ref
+    ? selectEnvironmentState(state, ref.environmentId).threadShellById[ref.threadId]
     : undefined;
 }
 
@@ -2177,6 +3139,23 @@ interface AppStore extends AppState {
     environmentId: EnvironmentId,
   ) => void;
   syncServerThreadDetail: (thread: OrchestrationThread, environmentId: EnvironmentId) => void;
+  syncOrchestratorProjectSnapshot: (
+    snapshot: OrchestratorProjectDetailSnapshot,
+    environmentId: EnvironmentId,
+    options?: SyncOrchestratorProjectSnapshotOptions,
+  ) => void;
+  syncOrchestratorTaskSnapshot: (
+    snapshot: OrchestratorTaskDetailSnapshot,
+    environmentId: EnvironmentId,
+  ) => void;
+  applyOrchestratorProjectStreamItem: (
+    item: OrchestratorProjectStreamItem,
+    environmentId: EnvironmentId,
+  ) => void;
+  applyOrchestratorTaskStreamItem: (
+    item: OrchestratorTaskStreamItem,
+    environmentId: EnvironmentId,
+  ) => void;
   applyOrchestrationEvent: (event: OrchestrationEvent, environmentId: EnvironmentId) => void;
   applyOrchestrationEvents: (
     events: ReadonlyArray<OrchestrationEvent>,
@@ -2201,6 +3180,22 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => syncServerShellSnapshot(state, snapshot, environmentId)),
   syncServerThreadDetail: (thread, environmentId) =>
     set((state) => syncServerThreadDetail(state, thread, environmentId)),
+  syncOrchestratorProjectSnapshot: (snapshot, environmentId, options) =>
+    set((state) => syncOrchestratorProjectSnapshot(state, snapshot, environmentId, options)),
+  syncOrchestratorTaskSnapshot: (snapshot, environmentId) =>
+    set((state) => syncOrchestratorTaskSnapshot(state, snapshot, environmentId)),
+  applyOrchestratorProjectStreamItem: (item, environmentId) =>
+    set((state) =>
+      item.kind === "snapshot"
+        ? syncOrchestratorProjectSnapshot(state, item.snapshot, environmentId)
+        : applyOrchestrationEvent(state, item.event, environmentId),
+    ),
+  applyOrchestratorTaskStreamItem: (item, environmentId) =>
+    set((state) =>
+      item.kind === "snapshot"
+        ? syncOrchestratorTaskSnapshot(state, item.snapshot, environmentId)
+        : applyOrchestrationEvent(state, item.event, environmentId),
+    ),
   applyOrchestrationEvent: (event, environmentId) =>
     set((state) => applyOrchestrationEvent(state, event, environmentId)),
   applyOrchestrationEvents: (events, environmentId) =>

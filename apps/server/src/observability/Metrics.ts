@@ -74,9 +74,159 @@ export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total"
   description: "Total terminal restart requests handled.",
 });
 
+// Orchestrator durability (WP-6)
+//
+// Observability for the durability paths that keep the orchestrator correct
+// under crashes and contention: the PM reconciliation sweep, the PM re-entry
+// turn latency, the SQLite busy/locked retry, and the periodic worktree reaper.
+// These are instrumentation-only taps — they never change control flow.
+
+export const orchestrationReconciliationSweepsTotal = Metric.counter(
+  "t3_orchestration_reconciliation_sweeps_total",
+  {
+    description: "Total PM runtime reconciliation sweep runs.",
+  },
+);
+
+export const orchestrationReconciliationSweepDuration = Metric.timer(
+  "t3_orchestration_reconciliation_sweep_duration",
+  {
+    description: "PM runtime reconciliation sweep duration.",
+  },
+);
+
+export const orchestrationReconciliationSettlementsRedrivenTotal = Metric.counter(
+  "t3_orchestration_reconciliation_settlements_redriven_total",
+  {
+    description:
+      "Total settlements re-driven by the PM runtime reconciliation sweep (never-consumed plus pending).",
+  },
+);
+
+export const orchestrationPmReEntryDuration = Metric.timer("t3_orchestration_pm_reentry_duration", {
+  description:
+    "PM re-entry latency: time to enqueue a settlement and drain the PM project runtime turn.",
+});
+
+export const orchestrationBusyRetryAttemptsTotal = Metric.counter(
+  "t3_orchestration_busy_retry_attempts_total",
+  {
+    description: "Total SQLite busy/locked write retries attempted by the persistence layer.",
+  },
+);
+
+export const orchestrationBusyRetryExhaustionsTotal = Metric.counter(
+  "t3_orchestration_busy_retry_exhaustions_total",
+  {
+    description:
+      "Total SQLite busy/locked retries that exhausted their attempt budget while still busy.",
+  },
+);
+
+export const orchestrationWorktreeReaperOrphansRemovedTotal = Metric.counter(
+  "t3_orchestration_worktree_reaper_orphans_removed_total",
+  {
+    description: "Total task worktrees removed by the reaper, labeled by cleanup reason.",
+  },
+);
+
+// Command-queue contention (WP-7)
+//
+// MEASUREMENT ONLY. These histograms observe the existing single-queue,
+// serialized command dispatch in OrchestrationEngine — they do not change
+// dispatch ordering or serialization. They exist to inform a FUTURE
+// lane-split decision: if a single command class (e.g. high-frequency
+// streaming writes) dominates queue depth / wait time, that data justifies
+// splitting it onto its own lane. The `commandClass` attribute is attached
+// via Metric.withAttributes at the dispatch site (see Attributes label rules).
+//
+// Boundaries are chosen for the two distributions we expect to be small in
+// the common case but heavy-tailed under contention: queue depth (counts of
+// in-flight envelopes) and queue wait (milliseconds an envelope sat enqueued
+// before the serialized worker began processing it).
+
+export const orchestrationCommandQueueDepth = Metric.histogram(
+  "t3_orchestration_command_queue_depth",
+  {
+    description:
+      "Command-queue depth (number of envelopes enqueued, including the one being dispatched) sampled when an envelope is offered to the serialized dispatch queue.",
+    boundaries: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256],
+  },
+);
+
+export const orchestrationCommandQueueWaitDuration = Metric.histogram(
+  "t3_orchestration_command_queue_wait_duration",
+  {
+    description:
+      "Command-queue wait time in milliseconds: from when an envelope was enqueued to when the serialized worker began processing it.",
+    boundaries: [0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+  },
+);
+
+// Subscription-quota handling (WP-Q7)
+//
+// Observability for the quota-exhaustion handling (WP-Q1..Q5): how many provider
+// instances and worker stages are currently parked on subscription quota, how
+// many blocked stages the reconciliation sweep has re-driven once their instance
+// recovered, and how long stages sat blocked. The gauges are sampled once per
+// reconciliation sweep (instantaneous "how much is parked right now"); the
+// counter and timer are emitted as the sweep resumes blocked stages.
+
+export const orchestrationQuotaBlockedInstances = Metric.gauge(
+  "t3_orchestration_quota_blocked_instances",
+  {
+    description:
+      "Provider instances currently marked quota-blocked, sampled once per PM reconciliation sweep.",
+  },
+);
+
+export const orchestrationQuotaBlockedStages = Metric.gauge(
+  "t3_orchestration_quota_blocked_stages",
+  {
+    description:
+      "Worker stages currently parked on subscription quota, sampled once per PM reconciliation sweep.",
+  },
+);
+
+export const orchestrationQuotaStageResumedTotal = Metric.counter(
+  "t3_orchestration_quota_stage_resumed_total",
+  {
+    description:
+      "Total quota-blocked worker stages re-driven by the reconciliation sweep after their provider instance recovered.",
+  },
+);
+
+export const orchestrationQuotaResetClearedTotal = Metric.counter(
+  "t3_orchestration_quota_reset_cleared_total",
+  {
+    description:
+      "Total provider instances optimistically cleared to ok by the reconciliation sweep once their parsed quota reset time elapsed (WP-Q6 auto-resume-at-reset).",
+  },
+);
+
+export const orchestrationQuotaBlockedDuration = Metric.timer(
+  "t3_orchestration_quota_blocked_duration",
+  {
+    description:
+      "Time a worker stage spent parked on subscription quota, from blockedAt to resume.",
+  },
+);
+
 export const metricAttributes = (
   attributes: Readonly<Record<string, unknown>>,
 ): ReadonlyArray<[string, string]> => Object.entries(compactMetricAttributes(attributes));
+
+export const setGauge = (
+  metric: Metric.Metric<number, unknown>,
+  value: number,
+  attributes: Readonly<Record<string, unknown>> = {},
+) => Metric.update(Metric.withAttributes(metric, metricAttributes(attributes)), value);
+
+export const recordDuration = (
+  metric: Metric.Metric<Duration.Duration, unknown>,
+  duration: Duration.Duration,
+  attributes: Readonly<Record<string, unknown>> = {},
+) => Metric.update(Metric.withAttributes(metric, metricAttributes(attributes)), duration);
 
 export const increment = (
   metric: Metric.Metric<number, unknown>,

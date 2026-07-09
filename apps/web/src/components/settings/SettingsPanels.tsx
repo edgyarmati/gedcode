@@ -5,11 +5,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
-  type GedSubagentRole,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
+  ProviderInstanceId,
+  type ModelSelection,
   type ProviderInstanceConfig,
-  type ProviderInstanceId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
@@ -69,11 +69,18 @@ import {
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
-  buildGedRoleSettingsPatch,
+  NumberLimitRow,
+  OrchestratorGateAutonomyControl,
+  OrchestratorStagesControl,
+} from "../orchestrator/OrchestratorConfigControls";
+import { BackendModelPicker, backendLabel } from "../orchestrator/RoleBackendPicker";
+import {
+  buildOrchestratorGlobalDefaultsPatch,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
+  seedOrchestratorGlobalDefaultsDraft,
+  type OrchestratorGlobalNumberDefaultKey,
 } from "./SettingsPanels.logic";
-import { GED_ROLE_DISPLAY_BY_ROLE } from "../../gedWorkflowRoles";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -84,18 +91,6 @@ import {
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useServerObservability, useServerProviders } from "../../rpc/serverState";
 
-const GED_CRITIQUE_MODE_LABELS = {
-  off: "Off",
-  "risk-based": "Risk-based",
-  always: "Always",
-} as const;
-
-const GED_NATIVE_ROLE_TOGGLES = [
-  "ged-explorer",
-  "ged-planner",
-  "ged-verifier",
-] as const satisfies ReadonlyArray<GedSubagentRole>;
-
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
   "12-hour": "12-hour",
@@ -103,6 +98,15 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
+  maxParallelTasks: "Max parallel tasks",
+  maxParallelWorkers: "Max parallel workers",
+  maxStageHandoffs: "Max stage handoffs",
+  maxRetriesPerStage: "Max retries per stage",
+  pmReconciliationIntervalMs: "PM reconciliation interval",
+  worktreeReaperIntervalMinutes: "Worktree cleanup interval",
+} as const satisfies Record<OrchestratorGlobalNumberDefaultKey, string>;
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -385,9 +389,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
-      ...(!Equal.equals(settings.gedRoleSettings, DEFAULT_UNIFIED_SETTINGS.gedRoleSettings)
-        ? ["Ged role subagents"]
-        : []),
       ...(Duration.toMillis(settings.automaticGitFetchInterval) !==
       Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval)
         ? ["Automatic Git fetch interval"]
@@ -417,7 +418,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
-      settings.gedRoleSettings,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       theme,
@@ -442,7 +442,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
-      gedRoleSettings: DEFAULT_UNIFIED_SETTINGS.gedRoleSettings,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
@@ -495,12 +494,6 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
-  const areGedRoleSettingsDirty = GED_NATIVE_ROLE_TOGGLES.some(
-    (role) =>
-      (settings.gedRoleSettings[role]?.enabled ?? true) !==
-      (DEFAULT_UNIFIED_SETTINGS.gedRoleSettings[role]?.enabled ?? true),
-  );
-
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
@@ -655,151 +648,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-
-        <SettingsSection title="Ged orchestration">
-          <SettingsRow
-            title="Default Ged workflow"
-            description="Default new chats to structured workflow prompts and Ged checkpoint enforcement."
-            resetAction={
-              settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
-                <SettingResetButton
-                  label="Ged workflow"
-                  onClick={() =>
-                    updateSettings({
-                      gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.gedWorkflowEnabled}
-                onCheckedChange={(checked) =>
-                  updateSettings({ gedWorkflowEnabled: Boolean(checked) })
-                }
-                aria-label="Enable Ged workflow"
-              />
-            }
-          />
-
-          <SettingsRow
-            title="Subagents"
-            description="Allow the selected harness to launch native Ged role subagents such as explorer."
-            resetAction={
-              settings.gedSubagentsEnabled !== DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled ? (
-                <SettingResetButton
-                  label="Ged subagents"
-                  onClick={() =>
-                    updateSettings({
-                      gedSubagentsEnabled: DEFAULT_UNIFIED_SETTINGS.gedSubagentsEnabled,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.gedSubagentsEnabled}
-                onCheckedChange={(checked) =>
-                  updateSettings({ gedSubagentsEnabled: Boolean(checked) })
-                }
-                aria-label="Enable Ged subagents"
-              />
-            }
-          />
-
-          <SettingsRow
-            title="Role subagents"
-            description="Choose which Ged roles use native subagents; disabled roles run on the main agent."
-            resetAction={
-              areGedRoleSettingsDirty ? (
-                <SettingResetButton
-                  label="Ged role subagents"
-                  onClick={() =>
-                    updateSettings({
-                      gedRoleSettings: DEFAULT_UNIFIED_SETTINGS.gedRoleSettings,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <div className="grid w-full gap-2 sm:w-[28rem]">
-                {GED_NATIVE_ROLE_TOGGLES.map((role) => {
-                  const meta = GED_ROLE_DISPLAY_BY_ROLE[role];
-                  const enabled = settings.gedRoleSettings[role]?.enabled ?? true;
-                  return (
-                    <label
-                      className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2"
-                      key={role}
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">{meta.label}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {enabled ? "Native subagent" : "Main agent"}
-                        </span>
-                      </span>
-                      <Switch
-                        checked={enabled}
-                        onCheckedChange={(checked) =>
-                          updateSettings(
-                            buildGedRoleSettingsPatch({
-                              settings,
-                              role,
-                              enabled: Boolean(checked),
-                            }),
-                          )
-                        }
-                        aria-label={`Enable ${meta.label} subagent`}
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-            }
-          />
-
-          <SettingsRow
-            title="Critique mode"
-            description="Controls when plan review should run in upcoming orchestration slices."
-            resetAction={
-              settings.gedCritiqueMode !== DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode ? (
-                <SettingResetButton
-                  label="Ged critique mode"
-                  onClick={() =>
-                    updateSettings({ gedCritiqueMode: DEFAULT_UNIFIED_SETTINGS.gedCritiqueMode })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.gedCritiqueMode}
-                onValueChange={(value) => {
-                  if (value === "off" || value === "risk-based" || value === "always") {
-                    updateSettings({ gedCritiqueMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-40" aria-label="Ged critique mode">
-                  <SelectValue>{GED_CRITIQUE_MODE_LABELS[settings.gedCritiqueMode]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="off">
-                    {GED_CRITIQUE_MODE_LABELS.off}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="risk-based">
-                    {GED_CRITIQUE_MODE_LABELS["risk-based"]}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="always">
-                    {GED_CRITIQUE_MODE_LABELS.always}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-        </SettingsSection>
 
         <SettingsRow
           title="Auto-open task panel"
@@ -1041,6 +889,253 @@ export function GeneralSettingsPanel() {
             </Button>
           }
         />
+      </SettingsSection>
+    </SettingsPageContainer>
+  );
+}
+
+export function OrchestratorDefaultsSettingsPanel() {
+  const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
+  const serverProviders = useServerProviders();
+  const draft = useMemo(
+    () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
+    [settings.orchestratorDefaults],
+  );
+  const defaultDraft = useMemo(
+    () => seedOrchestratorGlobalDefaultsDraft(DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults),
+    [],
+  );
+  const numberKeys = Object.keys(
+    GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS,
+  ) as OrchestratorGlobalNumberDefaultKey[];
+  const workerInstanceEntries = useMemo(
+    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
+    [serverProviders],
+  );
+
+  const updateDraft = useCallback(
+    (nextDraft: typeof draft) => {
+      updateSettings(buildOrchestratorGlobalDefaultsPatch(nextDraft));
+    },
+    [updateSettings],
+  );
+
+  const stagesDirty = !Equal.equals(draft.optionalStages, defaultDraft.optionalStages);
+  const gatePolicyDirty = !Equal.equals(draft.gatePolicy, defaultDraft.gatePolicy);
+  const pmModelDirty = !Equal.equals(draft.pmModelSelection, defaultDraft.pmModelSelection);
+  const workerModelDirty = !Equal.equals(
+    draft.defaultWorkerModelSelection,
+    defaultDraft.defaultWorkerModelSelection,
+  );
+  const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
+  const resourceDefaultsDirty = !Equal.equals(
+    draft.resourceDefaults,
+    defaultDraft.resourceDefaults,
+  );
+  const defaultPmEntry = defaultDraft.pmModelSelection
+    ? workerInstanceEntries.find(
+        (entry) => entry.instanceId === defaultDraft.pmModelSelection?.instanceId,
+      )
+    : undefined;
+  const defaultPmLabel = defaultDraft.pmModelSelection
+    ? backendLabel(defaultDraft.pmModelSelection, defaultPmEntry)
+    : null;
+  const defaultPmOptionLabel = defaultPmLabel ? `Default (${defaultPmLabel})` : "None";
+  const updatePmModelSelection = (pmModelSelection: ModelSelection | null) => {
+    updateDraft({ ...draft, pmModelSelection });
+  };
+  const updateWorkerModelSelection = (defaultWorkerModelSelection: ModelSelection | null) => {
+    updateDraft({ ...draft, defaultWorkerModelSelection });
+  };
+
+  return (
+    <SettingsPageContainer>
+      <SettingsSection title="Orchestrator defaults">
+        <SettingsRow
+          title="PM model"
+          description="Default provider instance and model for project manager runtime."
+          resetAction={
+            pmModelDirty ? (
+              <SettingResetButton
+                label="Orchestrator PM model"
+                onClick={() =>
+                  updateDraft({ ...draft, pmModelSelection: defaultDraft.pmModelSelection })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <BackendModelPicker
+              selection={draft.pmModelSelection}
+              instanceEntries={workerInstanceEntries}
+              unsetLabel="None"
+              unsetOptionLabel={defaultPmOptionLabel}
+              backendAriaLabel="Default PM backend"
+              modelAriaLabel="Default PM model"
+              onSelectionChange={updatePmModelSelection}
+            />
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          title="Default worker backend"
+          description="Default provider instance and model for Orchestrator worker stages."
+          resetAction={
+            workerModelDirty ? (
+              <SettingResetButton
+                label="Orchestrator worker backend"
+                onClick={() =>
+                  updateDraft({
+                    ...draft,
+                    defaultWorkerModelSelection: defaultDraft.defaultWorkerModelSelection,
+                  })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <BackendModelPicker
+              selection={draft.defaultWorkerModelSelection}
+              instanceEntries={workerInstanceEntries}
+              unsetLabel="None"
+              unsetOptionLabel="None"
+              backendAriaLabel="Default worker backend"
+              modelAriaLabel="Default worker model"
+              onSelectionChange={updateWorkerModelSelection}
+            />
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          title="Stages"
+          description="Default stage pipeline for projects that have not configured Orchestrator mode yet."
+          resetAction={
+            stagesDirty ? (
+              <SettingResetButton
+                label="Orchestrator stages"
+                onClick={() =>
+                  updateDraft({ ...draft, optionalStages: defaultDraft.optionalStages })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <OrchestratorStagesControl
+              optionalStages={draft.optionalStages}
+              onOptionalStageChange={(stage, enabled) =>
+                updateDraft({
+                  ...draft,
+                  optionalStages: { ...draft.optionalStages, [stage]: enabled },
+                })
+              }
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Gate autonomy"
+          description="Default approval policy for new project task gates. Land always requires approval."
+          resetAction={
+            gatePolicyDirty ? (
+              <SettingResetButton
+                label="Orchestrator gate autonomy"
+                onClick={() => updateDraft({ ...draft, gatePolicy: defaultDraft.gatePolicy })}
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <OrchestratorGateAutonomyControl
+              gatePolicy={draft.gatePolicy}
+              onGatePolicyChange={(gate, policy) => {
+                if (policy === null) {
+                  return;
+                }
+                updateDraft({
+                  ...draft,
+                  gatePolicy: { ...draft.gatePolicy, [gate]: policy },
+                });
+              }}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Landing PRs"
+          description="Default state for pull requests opened after an approved Orchestrator land gate."
+          resetAction={
+            openPrAsDraftDirty ? (
+              <SettingResetButton
+                label="Orchestrator landing PR mode"
+                onClick={() => updateDraft({ ...draft, openPrAsDraft: defaultDraft.openPrAsDraft })}
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={draft.openPrAsDraft}
+              aria-label="Open landing PRs as draft by default"
+              onCheckedChange={(checked) =>
+                updateDraft({ ...draft, openPrAsDraft: Boolean(checked) })
+              }
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Operational knobs"
+          description="Default runtime limits and maintenance intervals used when a project first seeds Orchestrator settings."
+          resetAction={
+            resourceDefaultsDirty ? (
+              <SettingResetButton
+                label="Orchestrator operational knobs"
+                onClick={() =>
+                  updateDraft({ ...draft, resourceDefaults: defaultDraft.resourceDefaults })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="grid gap-2 pb-4 pt-3">
+            {numberKeys.map((key) => (
+              <NumberLimitRow
+                key={key}
+                label={GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS[key]}
+                value={draft.resourceDefaults[key]}
+                onChange={(value) =>
+                  updateDraft({
+                    ...draft,
+                    resourceDefaults: { ...draft.resourceDefaults, [key]: value },
+                  })
+                }
+              >
+                {key === "pmReconciliationIntervalMs"
+                  ? "Milliseconds"
+                  : key === "worktreeReaperIntervalMinutes"
+                    ? "Minutes"
+                    : null}
+              </NumberLimitRow>
+            ))}
+            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+              <span>Allow full-access workers safety opt-in</span>
+              <Switch
+                checked={draft.resourceDefaults.allowFullAccessWorkers}
+                aria-label="Allow full-access workers safety opt-in by default"
+                onCheckedChange={(checked) =>
+                  updateDraft({
+                    ...draft,
+                    resourceDefaults: {
+                      ...draft.resourceDefaults,
+                      allowFullAccessWorkers: Boolean(checked),
+                    },
+                  })
+                }
+              />
+            </label>
+          </div>
+        </SettingsRow>
       </SettingsSection>
     </SettingsPageContainer>
   );

@@ -3,6 +3,7 @@ import type {
   OrchestrationReadModel,
   OrchestrationShellStreamEvent,
   ProjectId,
+  TaskId,
 } from "@t3tools/contracts";
 import { OrchestrationCommand, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -25,10 +26,13 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import {
   metricAttributes,
   orchestrationCommandAckDuration,
+  orchestrationCommandQueueDepth,
+  orchestrationCommandQueueWaitDuration,
   orchestrationCommandsTotal,
   orchestrationCommandDuration,
 } from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
+import { withBusyRetry } from "../../persistence/retryPolicy.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
@@ -48,6 +52,7 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
 );
@@ -57,11 +62,99 @@ interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
+  // Enqueue timestamp, captured when the envelope is offered to the single
+  // serialized dispatch queue. Used purely for the WP-7 queue-wait metric
+  // (time spent waiting behind the in-flight command). Distinct from
+  // `startedAtMs` so the ack-latency anchor and the queue-wait anchor stay
+  // independent even though they currently coincide.
+  enqueuedAtMs: number;
+}
+
+/**
+ * Coarse command class for queue-contention measurement (WP-7).
+ *
+ * MEASUREMENT ONLY. This classifier exists so the WP-7 queue metrics can be
+ * sliced by the kind of work flowing through the single serialized dispatch
+ * queue. It does NOT influence dispatch ordering or serialization — it is a
+ * pure, total function over the command type used solely as a metric label to
+ * inform a FUTURE lane-split decision.
+ *
+ * Classes:
+ * - `streaming`: high-frequency, internally-generated thread writes that
+ *   accompany an active turn (message deltas/appends, activity, plan upserts).
+ *   These are the prime candidate for a dedicated lane.
+ * - `turn`: turn lifecycle and interactive responses (start/interrupt/diff,
+ *   approvals, user-input, checkpoint/revert).
+ * - `thread-control`: thread create/delete/archive and mode/session control.
+ * - `project`: project lifecycle.
+ * - `task`: task lifecycle and gating.
+ */
+export type OrchestrationCommandClass =
+  | "streaming"
+  | "turn"
+  | "thread-control"
+  | "project"
+  | "task";
+
+export function classifyOrchestrationCommand(
+  command: OrchestrationCommand,
+): OrchestrationCommandClass {
+  switch (command.type) {
+    case "project.create":
+    case "project.meta.update":
+    case "project.delete":
+      return "project";
+    case "task.create":
+    case "task.classify":
+    case "task.role-selections.set":
+    case "task.stage.start":
+    case "task.stage.complete":
+    case "task.stage.block":
+    case "task.gate.request":
+    case "task.gate.resolve":
+    case "task.land":
+    case "task.pr.opened":
+    case "task.abandon":
+      return "task";
+    case "thread.message.user.append":
+    case "thread.message.assistant.delta":
+    case "thread.message.assistant.complete":
+    case "thread.clear":
+    case "thread.pm-handoff.request":
+    case "thread.pm-handoff.complete":
+    case "thread.proposed-plan.upsert":
+    case "thread.activity.append":
+      return "streaming";
+    case "thread.turn.start":
+    case "thread.turn.interrupt":
+    case "thread.turn.diff.complete":
+    case "thread.approval.respond":
+    case "thread.user-input.respond":
+    case "thread.checkpoint.revert":
+    case "thread.revert.complete":
+      return "turn";
+    case "thread.create":
+    case "thread.delete":
+    case "thread.archive":
+    case "thread.unarchive":
+    case "thread.meta.update":
+    case "thread.runtime-mode.set":
+    case "thread.interaction-mode.set":
+    case "thread.session.set":
+    case "thread.session.stop":
+      return "thread-control";
+    default: {
+      // Exhaustiveness guard: a new command type must be classified above.
+      const _exhaustive: never = command;
+      void _exhaustive;
+      return "thread-control";
+    }
+  }
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "task";
+  readonly aggregateId: ProjectId | ThreadId | TaskId;
 } {
   switch (command.type) {
     case "project.create":
@@ -70,6 +163,21 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
+      };
+    case "task.create":
+    case "task.classify":
+    case "task.role-selections.set":
+    case "task.stage.start":
+    case "task.stage.complete":
+    case "task.stage.block":
+    case "task.gate.request":
+    case "task.gate.resolve":
+    case "task.land":
+    case "task.pr.opened":
+    case "task.abandon":
+      return {
+        aggregateKind: "task",
+        aggregateId: command.taskId,
       };
     default:
       return {
@@ -157,6 +265,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const serverSettings = yield* ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -185,6 +294,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
     let processingStartedAtMs = 0;
     const aggregateRef = commandToAggregateRef(envelope.command);
+    const commandClass = classifyOrchestrationCommand(envelope.command);
     const baseMetricAttributes = {
       commandType: envelope.command.type,
       aggregateKind: aggregateRef.aggregateKind,
@@ -207,6 +317,17 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     return Effect.exit(
       Effect.gen(function* () {
         processingStartedAtMs = yield* Clock.currentTimeMillis;
+        // WP-7 (measurement only): record how long this envelope waited in the
+        // single serialized dispatch queue before the worker picked it up. This
+        // is observed strictly after the worker has dequeued the envelope, so it
+        // does not affect dispatch ordering or serialization in any way.
+        yield* Metric.update(
+          Metric.withAttributes(
+            orchestrationCommandQueueWaitDuration,
+            metricAttributes({ ...baseMetricAttributes, commandClass }),
+          ),
+          Math.max(0, processingStartedAtMs - envelope.enqueuedAtMs),
+        );
         yield* Effect.annotateCurrentSpan({
           "orchestration.command_id": envelope.command.commandId,
           "orchestration.command_type": envelope.command.type,
@@ -229,8 +350,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        const orchestratorDefaults = (yield* serverSettings.getSettings).orchestratorDefaults;
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
+          orchestratorDefaults,
           readModel: commandReadModel,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
@@ -245,8 +368,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           ),
         );
         const eventBases = Array.isArray(eventBase) ? eventBase : [eventBase];
-        const committedCommand = yield* sql
-          .withTransaction(
+        const committedCommand = yield* withBusyRetry(
+          sql.withTransaction(
             Effect.gen(function* () {
               const committedEvents: OrchestrationEvent[] = [];
               let nextCommandReadModel = commandReadModel;
@@ -282,14 +405,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 nextCommandReadModel,
               } as const;
             }),
-          )
-          .pipe(
-            Effect.catchTag("SqlError", (sqlError) =>
-              Effect.fail(
-                toPersistenceSqlError("OrchestrationEngine.processEnvelope:transaction")(sqlError),
-              ),
+          ),
+        ).pipe(
+          Effect.catchTag("SqlError", (sqlError) =>
+            Effect.fail(
+              toPersistenceSqlError("OrchestrationEngine.processEnvelope:transaction")(sqlError),
             ),
-          );
+          ),
+        );
 
         commandReadModel = committedCommand.nextCommandReadModel;
         for (const [index, event] of committedCommand.committedEvents.entries()) {
@@ -403,11 +526,27 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
     Effect.gen(function* () {
       const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
+      const enqueuedAtMs = yield* Clock.currentTimeMillis;
       yield* Queue.offer(commandQueue, {
         command,
         result,
-        startedAtMs: yield* Clock.currentTimeMillis,
+        startedAtMs: enqueuedAtMs,
+        enqueuedAtMs,
       });
+      // WP-7 (measurement only): sample the single serialized dispatch queue's
+      // depth right after offering this envelope. The reading includes this
+      // envelope plus any others still waiting behind the in-flight command, so
+      // it captures contention without altering the offer or the worker loop.
+      yield* Metric.update(
+        Metric.withAttributes(
+          orchestrationCommandQueueDepth,
+          metricAttributes({
+            commandType: command.type,
+            commandClass: classifyOrchestrationCommand(command),
+          }),
+        ),
+        yield* Queue.size(commandQueue),
+      );
       return yield* Deferred.await(result);
     });
 

@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
+import { withBusyRetry } from "../retryPolicy.ts";
 import {
   ClearCheckpointTurnConflictInput,
   DeleteProjectionTurnsByThreadInput,
@@ -265,20 +266,20 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
     );
 
   const replacePendingTurnStart: ProjectionTurnRepositoryShape["replacePendingTurnStart"] = (row) =>
-    sql
-      .withTransaction(
+    withBusyRetry(
+      sql.withTransaction(
         clearPendingProjectionTurnsByThread({ threadId: row.threadId }).pipe(
           Effect.flatMap(() => insertPendingProjectionTurn(row)),
         ),
-      )
-      .pipe(
-        Effect.mapError(
-          toPersistenceSqlOrDecodeError(
-            "ProjectionTurnRepository.replacePendingTurnStart:query",
-            "ProjectionTurnRepository.replacePendingTurnStart:encodeRequest",
-          ),
+      ),
+    ).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionTurnRepository.replacePendingTurnStart:query",
+          "ProjectionTurnRepository.replacePendingTurnStart:encodeRequest",
         ),
-      );
+      ),
+    );
 
   const getPendingTurnStartByThreadId: ProjectionTurnRepositoryShape["getPendingTurnStartByThreadId"] =
     (input) =>
