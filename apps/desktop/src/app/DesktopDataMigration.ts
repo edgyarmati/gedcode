@@ -2,6 +2,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -19,7 +20,12 @@ export type DesktopDataMigrationResult =
   | { readonly migrated: true; readonly source: string; readonly target: string }
   | {
       readonly migrated: false;
-      readonly reason: "custom-base-dir" | "target-exists" | "source-missing";
+      readonly reason:
+        | "custom-base-dir"
+        | "target-exists"
+        | "target-state-exists"
+        | "source-missing"
+        | "source-state-missing";
     };
 
 const pathExists = (path: string) =>
@@ -37,26 +43,54 @@ const pathExists = (path: string) =>
 export const migrateDefaultAppDataDirectory = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   if (!environment.usesDefaultBaseDir) {
     return { migrated: false, reason: "custom-base-dir" } as const;
   }
 
   const targetExists = yield* pathExists(environment.baseDir);
-  if (targetExists) {
-    return { migrated: false, reason: "target-exists" } as const;
+  if (!targetExists) {
+    const sourceExists = yield* pathExists(environment.legacyDefaultBaseDir);
+    if (!sourceExists) {
+      return { migrated: false, reason: "source-missing" } as const;
+    }
+
+    yield* fileSystem.copy(environment.legacyDefaultBaseDir, environment.baseDir).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopDataMigrationError({
+            source: environment.legacyDefaultBaseDir,
+            target: environment.baseDir,
+            cause,
+          }),
+      ),
+    );
+
+    return {
+      migrated: true,
+      source: environment.legacyDefaultBaseDir,
+      target: environment.baseDir,
+    } as const;
   }
 
-  const sourceExists = yield* pathExists(environment.legacyDefaultBaseDir);
-  if (!sourceExists) {
-    return { migrated: false, reason: "source-missing" } as const;
+  const targetStateExists = yield* pathExists(environment.stateDir);
+  if (targetStateExists) {
+    return { migrated: false, reason: "target-state-exists" } as const;
   }
 
-  yield* fileSystem.copy(environment.legacyDefaultBaseDir, environment.baseDir).pipe(
+  const stateDirName = path.basename(environment.stateDir);
+  const legacyStateDir = path.join(environment.legacyDefaultBaseDir, stateDirName);
+  const sourceStateExists = yield* pathExists(legacyStateDir);
+  if (!sourceStateExists) {
+    return { migrated: false, reason: "source-state-missing" } as const;
+  }
+
+  yield* fileSystem.copy(legacyStateDir, environment.stateDir).pipe(
     Effect.mapError(
       (cause) =>
         new DesktopDataMigrationError({
-          source: environment.legacyDefaultBaseDir,
-          target: environment.baseDir,
+          source: legacyStateDir,
+          target: environment.stateDir,
           cause,
         }),
     ),
@@ -64,8 +98,8 @@ export const migrateDefaultAppDataDirectory = Effect.gen(function* () {
 
   return {
     migrated: true,
-    source: environment.legacyDefaultBaseDir,
-    target: environment.baseDir,
+    source: legacyStateDir,
+    target: environment.stateDir,
   } as const;
 });
 

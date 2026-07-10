@@ -53,6 +53,62 @@ it.layer(NodeServices.layer)("DesktopDataMigration", (it) => {
     }),
   );
 
+  it.effect(
+    "copies the active legacy state directory when ~/.gedcode exists without that state directory",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "gedcode-data-migration-base-" });
+        const legacySettingsPath = path.join(home, ".t3", "userdata", "settings.json");
+        const migratedSettingsPath = path.join(home, ".gedcode", "userdata", "settings.json");
+
+        yield* fs.makeDirectory(path.dirname(legacySettingsPath), { recursive: true });
+        yield* fs.writeFileString(legacySettingsPath, '{"theme":"legacy"}');
+        yield* fs.makeDirectory(path.join(home, ".gedcode"), { recursive: true });
+        yield* fs.writeFileString(path.join(home, ".gedcode", "settings.json"), '{"root":true}');
+
+        const result = yield* DesktopDataMigration.migrateDefaultAppDataDirectory.pipe(
+          Effect.provide(makeLayer(home)),
+        );
+
+        assert.deepEqual(result, {
+          migrated: true,
+          source: path.join(home, ".t3", "userdata"),
+          target: path.join(home, ".gedcode", "userdata"),
+        });
+        assert.equal(yield* fs.readFileString(migratedSettingsPath), '{"theme":"legacy"}');
+        assert.equal(
+          yield* fs.readFileString(path.join(home, ".gedcode", "settings.json")),
+          '{"root":true}',
+        );
+      }),
+  );
+
+  it.effect("does not overwrite an existing active state directory", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped({
+        prefix: "gedcode-data-migration-existing-",
+      });
+      const legacySettingsPath = path.join(home, ".t3", "userdata", "settings.json");
+      const targetSettingsPath = path.join(home, ".gedcode", "userdata", "settings.json");
+
+      yield* fs.makeDirectory(path.dirname(legacySettingsPath), { recursive: true });
+      yield* fs.writeFileString(legacySettingsPath, '{"theme":"legacy"}');
+      yield* fs.makeDirectory(path.dirname(targetSettingsPath), { recursive: true });
+      yield* fs.writeFileString(targetSettingsPath, '{"theme":"target"}');
+
+      const result = yield* DesktopDataMigration.migrateDefaultAppDataDirectory.pipe(
+        Effect.provide(makeLayer(home)),
+      );
+
+      assert.deepEqual(result, { migrated: false, reason: "target-state-exists" });
+      assert.equal(yield* fs.readFileString(targetSettingsPath), '{"theme":"target"}');
+    }),
+  );
+
   it.effect("skips migration for explicit T3CODE_HOME", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

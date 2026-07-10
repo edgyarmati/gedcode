@@ -5,3 +5,4 @@
 3. Remove `maxStageHandoffs` from contracts/shared resolution/server enforcement/UI logic/tests.
 4. Update changelog and Ged durable notes.
 5. Run focused tests plus `bun fmt`, `bun lint`, `bun typecheck`, and `git diff --check`.
+6. Tighten desktop data migration so an existing `~/.gedcode` base directory does not prevent migrating the active legacy state directory from `~/.t3/userdata` or `~/.t3/dev` when the corresponding target state directory is absent.
