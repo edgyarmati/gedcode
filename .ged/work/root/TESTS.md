@@ -94,3 +94,15 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   compatibility for durable cancellation state.
 - Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run test`, and
   `bun run build`.
+
+### ORCH-LC-03
+
+- Startup reconciler tests prove completed phases are not repeated, missing provider sessions are not
+  resurrected, terminal cleanup runs once, transient shutdown failure retries in the same startup, and a
+  second reconciliation is a no-op.
+- A persistence-backed three-runtime integration test persists reservation plus an interrupt checkpoint,
+  resumes to abandonment after restart, and observes exactly one abandonment across another restart.
+- External shutdown effects remain retry-safe/idempotent rather than transactionally exactly-once across
+  a process crash between effect completion and its durable checkpoint.
+- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and a
+  clean root `bun run test` rerun (server 1,360 passed/1 skipped; web 1,214 passed).
