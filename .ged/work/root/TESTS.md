@@ -106,3 +106,19 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   a process crash between effect completion and its durable checkpoint.
 - Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and a
   clean root `bun run test` rerun (server 1,360 passed/1 skipped; web 1,214 passed).
+
+### ORCH-LC-04
+
+- Decider, in-memory projection, SQL projection, awaited-stage, live WebSocket, and web-store tests cover
+  durable orphan interruption and clearing `currentStageThreadId` without treating interrupted work as
+  completed or quota-blocked.
+- Startup reconciler tests cover missing, null, already-interrupted, and stale provider sessions;
+  independent session/stage repair; bounded retries; deterministic command IDs; and a worker becoming
+  live while reconciliation is waiting for the task lifecycle lock.
+- PM settlement tests prove the interruption wake-up is consumed exactly once and instructs the PM to
+  inspect the preserved worktree before retrying the same role with a fresh handoff.
+- A persistence-backed two-runtime integration test leaves an active stage behind, starts the real
+  reconciler after restart, verifies the old stage and session are interrupted, and successfully starts
+  a new same-role handoff.
+- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
+  `bun run test` (server 1,373 passed/1 skipped; web 1,215 passed).
