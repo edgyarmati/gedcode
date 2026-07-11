@@ -54,6 +54,13 @@ export interface CancelOrchestrationTaskInput {
   readonly commandId: Effect.Effect<CommandId, CancelOrchestrationTaskError>;
   readonly createdAt: Effect.Effect<string, CancelOrchestrationTaskError>;
   readonly dispatch: DispatchCancellationCommand;
+  /**
+   * Startup reconciliation can provide the provider sessions observed before
+   * reactors start. A projected running turn whose thread is absent from this
+   * set belonged to the previous process, so interrupt/stop are already
+   * satisfied without attempting to recover a dead provider session.
+   */
+  readonly liveProviderThreadIds?: ReadonlySet<string>;
 }
 
 const shutdownFailure = (input: {
@@ -192,7 +199,10 @@ const cancelOrchestrationTaskUnlocked = Effect.fn("cancelOrchestrationTaskUnlock
   if (stageThreadId !== null) {
     const thread = readModel.threads.find((entry) => entry.id === stageThreadId);
     const latestTurn = thread?.latestTurn ?? null;
-    if (latestTurn?.state === "running") {
+    const providerSessionIsKnownAbsent =
+      input.liveProviderThreadIds !== undefined &&
+      !input.liveProviderThreadIds.has(String(stageThreadId));
+    if (latestTurn?.state === "running" && !providerSessionIsKnownAbsent) {
       yield* runShutdownPhase(
         "interrupt-turn",
         services.providerService.interruptTurn({
@@ -206,7 +216,9 @@ const cancelOrchestrationTaskUnlocked = Effect.fn("cancelOrchestrationTaskUnlock
 
     yield* runShutdownPhase(
       "stop-session",
-      services.providerService.stopSession({ threadId: stageThreadId }),
+      providerSessionIsKnownAbsent
+        ? Effect.void
+        : services.providerService.stopSession({ threadId: stageThreadId }),
     );
     yield* runShutdownPhase(
       "close-terminals",

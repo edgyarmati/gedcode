@@ -11,6 +11,7 @@ import { PmRuntime } from "../Services/PmRuntime.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
+import { TaskCancellationReconciler } from "../Services/TaskCancellationReconciler.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
@@ -30,6 +31,14 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provideMerge(
+          Layer.succeed(TaskCancellationReconciler, {
+            reconcile: () => {
+              started.push("task-cancellation-reconciler");
+              return Effect.succeed(0);
+            },
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(OrphanTurnReconciler, {
             reconcile: () => {
@@ -101,6 +110,7 @@ describe("OrchestrationReactor", () => {
 
     expect(started).toEqual([
       "orphan-turn-reconciler",
+      "task-cancellation-reconciler",
       "pm-runtime",
       "provider-runtime-ingestion",
       "provider-command-reactor",

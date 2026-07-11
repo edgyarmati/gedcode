@@ -71,6 +71,8 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import { TaskWorktreeReactor } from "../src/orchestration/Services/TaskWorktreeReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { OrphanTurnReconciler } from "../src/orchestration/Services/OrphanTurnReconciler.ts";
+import { TaskCancellationReconciler } from "../src/orchestration/Services/TaskCancellationReconciler.ts";
+import { makeTaskCancellationReconcilerLive } from "../src/orchestration/Layers/TaskCancellationReconciler.ts";
 import { PmRuntime } from "../src/orchestration/Services/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "../src/orchestration/Layers/WorkerStartAdmission.ts";
 import { makeTaskWorktreeReactorLive } from "../src/orchestration/Layers/TaskWorktreeReactor.ts";
@@ -97,6 +99,7 @@ import {
   type SourceControlProviderRegistryShape,
 } from "../src/sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlProvider from "../src/sourceControl/SourceControlProvider.ts";
+import { TerminalManager } from "../src/terminal/Services/Manager.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
@@ -296,6 +299,9 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   readonly realCodex?: boolean;
   readonly rootDir?: string;
   readonly additionalProviderInstances?: ReadonlyArray<ProviderInstanceId>;
+  readonly taskCancellationReconciler?: {
+    readonly enabled: boolean;
+  };
   readonly taskWorktreeReactor?: {
     readonly enabled: boolean;
     readonly sourceControlProviderRegistry?: SourceControlProviderRegistryShape;
@@ -561,7 +567,24 @@ export const makeOrchestrationIntegrationHarness = (
             start: () => Effect.void,
             drain: Effect.void,
           });
+    const taskCancellationReconcilerLayer =
+      options?.taskCancellationReconciler?.enabled === true
+        ? makeTaskCancellationReconcilerLive({
+            maxAttempts: 1,
+            retryDelayMs: 1,
+          }).pipe(
+            Layer.provideMerge(runtimeServicesLayer),
+            Layer.provideMerge(
+              Layer.mock(TerminalManager)({
+                close: () => Effect.void,
+              }),
+            ),
+          )
+        : Layer.succeed(TaskCancellationReconciler, {
+            reconcile: () => Effect.succeed(0),
+          });
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
+      Layer.provideMerge(taskCancellationReconcilerLayer),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),

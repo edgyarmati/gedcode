@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Resume durably reserved Orchestrator task cancellations during server startup, skip shutdown phases already checkpointed, and avoid resurrecting orphaned provider sessions merely to interrupt them.
 - Fix: Atomically reserve Orchestrator task cancellation before worker shutdown, serialize cancellation against queued worker startup, durably checkpoint shutdown progress/failures for safe retry, and prevent direct abandonment or task progression from bypassing cleanup.
 - Fix: Make Orchestrator cancellation side-effect free for landed and abandoned tasks, so terminal task history is never removed after completion.
 - Fix: Orchestrator task cancellation now stops the active worker turn/session and closes stage terminals before dispatching `task.abandon`, surfaces typed shutdown failures without removing the worktree, and clears the abandoned task's active stage pointer in projections.

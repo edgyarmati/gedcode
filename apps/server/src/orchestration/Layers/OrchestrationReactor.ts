@@ -11,9 +11,11 @@ import { PmRuntime } from "../Services/PmRuntime.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
+import { TaskCancellationReconciler } from "../Services/TaskCancellationReconciler.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
+  const taskCancellationReconciler = yield* TaskCancellationReconciler;
   const orphanTurnReconciler = yield* OrphanTurnReconciler;
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
   const providerCommandReactor = yield* ProviderCommandReactor;
@@ -24,6 +26,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* orphanTurnReconciler.reconcile();
+    yield* taskCancellationReconciler.reconcile();
     yield* pmRuntime.start();
     yield* providerRuntimeIngestion.start();
     yield* providerCommandReactor.start();

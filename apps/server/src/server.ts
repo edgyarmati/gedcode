@@ -40,6 +40,7 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import { OrphanTurnReconcilerLive } from "./orchestration/Layers/OrphanTurnReconciler.ts";
+import { TaskCancellationReconcilerLive } from "./orchestration/Layers/TaskCancellationReconciler.ts";
 import { PmProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Layers/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
 import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
@@ -152,6 +153,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PmRuntimeLive),
   Layer.provideMerge(PmProjectRuntimeFactoryLive),
   Layer.provideMerge(OrphanTurnReconcilerLive),
+  Layer.provideMerge(TaskCancellationReconcilerLive),
   Layer.provideMerge(WorkerStartAdmissionLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
