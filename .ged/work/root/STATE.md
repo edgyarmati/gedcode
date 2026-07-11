@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-WT-01` - close the TaskWorktreeReactor startup subscription race.
+- **Active task**: `ORCH-LAND-03` - add first-class durable landing substates.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -48,11 +48,17 @@
 - `ORCH-LAND-03` and `ORCH-LAND-04` record follow-up reliability work discovered during LAND-02: the
   current aggregate still infers PR-opening/failure outside a first-class task substate, and exhausted PR
   creation has no explicit retry actuator.
+- `ORCH-WT-01` is complete. TaskWorktreeReactor now buffers its hot domain-event subscription before
+  capturing one startup snapshot, processes that snapshot, durably replays later events, and deduplicates
+  replay/live overlap by sequence before the serial terminal-task worker.
+- Final `ORCH-WT-01` verification passed on 2026-07-11: focused reactor and persistence-backed landing
+  race tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
+  `bun run test` (server 1,384 passed/1 skipped; web 1,218 passed).
 
 ## Immediate Sequence
 
-1. `ORCH-WT-01` close the TaskWorktreeReactor startup subscription race.
-2. `ORCH-LAND-03` and `ORCH-LAND-04` make landing outcomes durable and retryable.
+1. `ORCH-LAND-03` add durable task-level landing outcomes.
+2. `ORCH-LAND-04` add an idempotent failed-landing retry actuator.
 
 ## Repository State Notes
 

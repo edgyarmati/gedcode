@@ -151,3 +151,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Repository gates passed on 2026-07-11: focused server/integration/web/browser tests, `bun fmt`,
   `bun lint`, `bun typecheck`, `bun run build`, and `bun run test` (server 1,382 passed/1 skipped; web
   1,218 passed).
+
+### ORCH-WT-01
+
+- Focused reactor coverage publishes the same terminal event through the buffered live subscription and
+  durable replay while startup snapshot capture is in progress, then proves one cleanup side effect.
+- Persistence-backed landing coverage pauses startup terminal cleanup after the reactor has subscribed,
+  lands another task inside the former gap, and proves exactly one branch push, PR creation,
+  `task.pr-opened` event, and target worktree cleanup.
+- Startup snapshot scans use one captured read model/cursor; snapshot failure replays from sequence zero,
+  replay failures are logged, and replay/live terminal events are sequence-deduplicated before the serial
+  worker without dropping the ongoing hot subscription.
+- Repository gates passed on 2026-07-11: focused reactor/integration tests, `bun fmt`, `bun lint`,
+  `bun typecheck`, `bun run build`, and `bun run test` (server 1,384 passed/1 skipped; web 1,218 passed).
