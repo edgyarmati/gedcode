@@ -4,6 +4,7 @@ import {
   ProviderInstanceId,
   MessageId,
   OrchestrationCancelTaskError,
+  OrchestrationDispatchCommandError,
   TaskId,
   TaskTypeId,
   TerminalSessionLookupError,
@@ -115,6 +116,7 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   pmMessageId: null,
   stageThreadIds: [stageThreadId],
   currentStageThreadId: stageThreadId,
+  cancellation: null,
   roleModelSelections: {
     plan: {
       instanceId: ProviderInstanceId.make("codex_plan"),
@@ -167,22 +169,95 @@ const makeLayer = (
   overrides: {
     readonly providerService?: Partial<ProviderServiceShape>;
     readonly terminalManager?: Partial<TerminalManagerShape>;
+    readonly afterCancellationRequest?: OrchestrationReadModel;
+    readonly failDispatchFor?: ReadonlySet<OrchestrationCommand["type"]>;
   } = {},
-) =>
-  Layer.mergeAll(
+) => {
+  let currentReadModel = readModel;
+  return Layer.mergeAll(
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
       dispatch: (command) =>
         Effect.sync(() => {
           dispatched.push(command);
+          if (overrides.failDispatchFor?.has(command.type) === true) {
+            throw new OrchestrationDispatchCommandError({
+              message: `Dispatch failed for ${command.type}`,
+            });
+          }
+          if (command.type === "task.cancellation.request") {
+            currentReadModel = overrides.afterCancellationRequest ?? {
+              ...currentReadModel,
+              snapshotSequence: dispatched.length,
+              tasks: currentReadModel.tasks.map((task) =>
+                task.id === command.taskId
+                  ? {
+                      ...task,
+                      cancellation: {
+                        requestedAt: command.createdAt,
+                        failurePhase: null,
+                        failureMessage: null,
+                        failedAt: null,
+                        completedPhases: [],
+                      },
+                    }
+                  : task,
+              ),
+            };
+          } else if (command.type === "task.cancellation.phase.complete") {
+            currentReadModel = {
+              ...currentReadModel,
+              snapshotSequence: dispatched.length,
+              tasks: currentReadModel.tasks.map((task) =>
+                task.id === command.taskId && task.cancellation != null
+                  ? {
+                      ...task,
+                      cancellation: {
+                        ...task.cancellation,
+                        completedPhases: [
+                          ...(task.cancellation.completedPhases ?? []),
+                          command.phase,
+                        ],
+                      },
+                    }
+                  : task,
+              ),
+            };
+          } else if (command.type === "task.cancellation.fail") {
+            currentReadModel = {
+              ...currentReadModel,
+              snapshotSequence: dispatched.length,
+              tasks: currentReadModel.tasks.map((task) =>
+                task.id === command.taskId && task.cancellation != null
+                  ? {
+                      ...task,
+                      cancellation: {
+                        ...task.cancellation,
+                        failurePhase: command.phase,
+                        failureMessage: command.message,
+                        failedAt: command.createdAt,
+                      },
+                    }
+                  : task,
+              ),
+            };
+          } else if (command.type === "task.abandon") {
+            currentReadModel = {
+              ...currentReadModel,
+              snapshotSequence: dispatched.length,
+              tasks: currentReadModel.tasks.map((task) =>
+                task.id === command.taskId ? { ...task, status: "abandoned" as const } : task,
+              ),
+            };
+          }
           return { sequence: dispatched.length };
         }),
       streamDomainEvents: Stream.empty,
       streamShellEvents: Stream.empty,
     }),
     Layer.mock(ProjectionSnapshotQuery)({
-      getCommandReadModel: () => Effect.succeed(readModel),
-      getSnapshot: () => Effect.succeed(readModel),
+      getCommandReadModel: () => Effect.succeed(currentReadModel),
+      getSnapshot: () => Effect.succeed(currentReadModel),
       getShellSnapshot: () =>
         Effect.succeed({
           snapshotSequence: 0,
@@ -207,7 +282,7 @@ const makeLayer = (
       getThreadShellById: () => Effect.succeed(Option.none()),
       getThreadDetailById: (threadId) => {
         const thread = (
-          threadDetails ?? new Map(readModel.threads.map((entry) => [entry.id, entry]))
+          threadDetails ?? new Map(currentReadModel.threads.map((entry) => [entry.id, entry]))
         ).get(threadId);
         return Effect.succeed(thread === undefined ? Option.none() : Option.some(thread));
       },
@@ -240,6 +315,7 @@ const makeLayer = (
     }),
     NodeServices.layer,
   );
+};
 
 const findTool = (tools: ReadonlyArray<PmToolExecutor>, name: string): PmToolExecutor<any, any> => {
   const tool = tools.find((entry) => entry.name === name);
@@ -809,7 +885,7 @@ it.effect("inspectStage rejects when the selected stage thread detail row is mis
   }),
 );
 
-it.effect("cancelTask dispatches a task.abandon command", () =>
+it.effect("cancelTask reserves cancellation before dispatching task.abandon", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
@@ -821,12 +897,26 @@ it.effect("cancelTask dispatches a task.abandon command", () =>
       }),
     );
 
-    assert.strictEqual(dispatched.length, 1);
-    assert.strictEqual(dispatched[0]?.type, "task.abandon");
-    if (dispatched[0]?.type === "task.abandon") {
-      assert.strictEqual(dispatched[0].taskId, taskId);
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.abandon",
+      ],
+    );
+    assert.deepStrictEqual(
+      dispatched
+        .filter((command) => command.type === "task.cancellation.phase.complete")
+        .map((command) => command.phase),
+      ["interrupt-turn", "stop-session", "close-terminals"],
+    );
+    if (dispatched[1]?.type === "task.abandon") {
+      assert.strictEqual(dispatched[1].taskId, taskId);
     }
-    assert.deepStrictEqual(result.details, { taskId, sequence: 1 });
+    assert.deepStrictEqual(result.details, { taskId, sequence: 5 });
   }),
 );
 
@@ -881,8 +971,120 @@ it.effect("cancelTask stops an active stage turn, session, and terminals before 
       `stop:${stageThreadId}`,
       `close:${stageThreadId}:true`,
     ]);
-    assert.strictEqual(dispatched.length, 1);
-    assert.strictEqual(dispatched[0]?.type, "task.abandon");
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.abandon",
+      ],
+    );
+  }),
+);
+
+it.effect("cancelTask refreshes after reservation and shuts down a newly-started stage", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const initialReadModel = makeReadModel([
+      makeTask({ stageThreadIds: [], currentStageThreadId: null }),
+    ]);
+    const postReservationReadModel = makeReadModel(
+      [
+        makeTask({
+          stageThreadIds: [laterStageThreadId],
+          currentStageThreadId: laterStageThreadId,
+          cancellation: {
+            requestedAt: now,
+            failurePhase: null,
+            failureMessage: null,
+            failedAt: null,
+            completedPhases: [],
+          },
+        }),
+      ],
+      [
+        makeThread(laterStageThreadId, {
+          latestTurn: {
+            turnId,
+            state: "running",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: null,
+            assistantMessageId: null,
+          },
+        }),
+      ],
+    );
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, initialReadModel, null, {
+          afterCancellationRequest: postReservationReadModel,
+          providerService: {
+            interruptTurn: ({ threadId }) => Effect.sync(() => calls.push(`interrupt:${threadId}`)),
+            stopSession: ({ threadId }) => Effect.sync(() => calls.push(`stop:${threadId}`)),
+          },
+          terminalManager: {
+            close: ({ threadId }) => Effect.sync(() => calls.push(`close:${threadId}`)),
+          },
+        }),
+      ),
+    );
+
+    yield* Effect.promise(() =>
+      findTool(tools, "cancelTask").execute("tool-cancel-racing-stage", { taskId }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      `interrupt:${laterStageThreadId}`,
+      `stop:${laterStageThreadId}`,
+      `close:${laterStageThreadId}`,
+    ]);
+  }),
+);
+
+it.effect("concurrent cancelTask calls shut the worker down only once", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          providerService: {
+            stopSession: () => Effect.sync(() => calls.push("stop")),
+          },
+          terminalManager: {
+            close: () => Effect.sync(() => calls.push("close")),
+          },
+        }),
+      ),
+    );
+    const cancelTask = findTool(tools, "cancelTask");
+
+    const results = yield* Effect.promise(() =>
+      Promise.all([
+        cancelTask.execute("tool-cancel-concurrent-1", { taskId }),
+        cancelTask.execute("tool-cancel-concurrent-2", { taskId }),
+      ]),
+    );
+
+    assert.deepStrictEqual(calls, ["stop", "close"]);
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.abandon",
+      ],
+    );
+    assert.deepStrictEqual(
+      results.map((result) => result.details.sequence),
+      [5, 5],
+    );
   }),
 );
 
@@ -997,7 +1199,136 @@ it.effect("cancelTask does not abandon when terminal shutdown fails", () =>
 
     assert.instanceOf(error, OrchestrationCancelTaskError);
     assert.strictEqual((error as OrchestrationCancelTaskError).phase, "close-terminals");
-    assert.deepStrictEqual(dispatched, []);
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.fail",
+      ],
+    );
+  }),
+);
+
+it.effect("cancelTask retries an existing durable reservation without reserving twice", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const readModel = makeReadModel([
+      makeTask({
+        cancellation: {
+          requestedAt: now,
+          failurePhase: "close-terminals",
+          failureMessage: "previous close failed",
+          failedAt: now,
+          completedPhases: [],
+        },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          providerService: { stopSession: () => Effect.sync(() => calls.push("stop")) },
+          terminalManager: { close: () => Effect.sync(() => calls.push("close")) },
+        }),
+      ),
+    );
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "cancelTask").execute("tool-cancel-retry", { taskId }),
+    );
+
+    assert.deepStrictEqual(calls, ["stop", "close"]);
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.abandon",
+      ],
+    );
+    assert.deepStrictEqual(result.details, { taskId, sequence: 4 });
+  }),
+);
+
+it.effect("cancelTask records a final abandon dispatch failure", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          failDispatchFor: new Set(["task.abandon"]),
+        }),
+      ),
+    );
+
+    const error = yield* Effect.promise(() =>
+      findTool(tools, "cancelTask")
+        .execute("tool-cancel-abandon-failure", { taskId })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, OrchestrationCancelTaskError);
+    assert.strictEqual((error as OrchestrationCancelTaskError).phase, "abandon");
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.abandon",
+        "task.cancellation.fail",
+      ],
+    );
+  }),
+);
+
+it.effect("cancellation failure persistence does not mask the shutdown error", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          failDispatchFor: new Set(["task.cancellation.fail"]),
+          terminalManager: {
+            close: () =>
+              Effect.fail(
+                new TerminalSessionLookupError({
+                  threadId: stageThreadId,
+                  terminalId: "default",
+                }),
+              ),
+          },
+        }),
+      ),
+    );
+
+    const error = yield* Effect.promise(() =>
+      findTool(tools, "cancelTask")
+        .execute("tool-cancel-unpersisted-failure", { taskId })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, OrchestrationCancelTaskError);
+    assert.strictEqual((error as OrchestrationCancelTaskError).phase, "close-terminals");
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      [
+        "task.cancellation.request",
+        "task.cancellation.phase.complete",
+        "task.cancellation.phase.complete",
+        "task.cancellation.fail",
+      ],
+    );
   }),
 );
 

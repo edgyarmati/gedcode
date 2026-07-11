@@ -938,6 +938,33 @@ it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips o
   }),
 );
 
+it.effect("decodes legacy OrchestrationTask values without cancellation metadata", () =>
+  Effect.gen(function* () {
+    const legacyTask = {
+      id: "task-legacy",
+      projectId: "project-1",
+      type: "feature",
+      title: "Legacy task",
+      status: "working",
+      branch: "orchestrator/task-legacy",
+      worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-legacy",
+      pmMessageId: null,
+      stageThreadIds: ["thread-work"],
+      currentStageThreadId: "thread-work",
+      playbookVersion: "feature@v1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:01:00.000Z",
+    };
+
+    const decoded = yield* decodeOrchestrationTask(legacyTask);
+    const reDecoded = yield* decodeOrchestrationTask(yield* encodeOrchestrationTask(decoded));
+
+    assert.strictEqual(decoded.cancellation, undefined);
+    assert.strictEqual(reDecoded.cancellation, undefined);
+    assert.strictEqual(reDecoded.currentStageThreadId, "thread-work");
+  }),
+);
+
 it.effect("accepts review and verify stage roles plus reviewing task status", () =>
   Effect.gen(function* () {
     const review = yield* decodeStageRole("review");

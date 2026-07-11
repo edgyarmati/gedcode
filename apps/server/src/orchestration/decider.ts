@@ -97,6 +97,20 @@ function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["s
   return status === "landed" || status === "abandoned";
 }
 
+function requireTaskNotCancelling(input: {
+  readonly command: OrchestrationCommand;
+  readonly task: OrchestrationReadModel["tasks"][number];
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  return input.task.cancellation == null
+    ? Effect.void
+    : Effect.fail(
+        invariantError(
+          input.command.type,
+          `Task '${input.task.id}' cannot process '${input.command.type}' after cancellation has been requested.`,
+        ),
+      );
+}
+
 function countActiveTaskWorktrees(input: {
   readonly readModel: OrchestrationReadModel;
   readonly projectId: OrchestrationProject["id"];
@@ -1007,6 +1021,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1036,6 +1051,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1076,6 +1092,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1250,6 +1267,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1321,6 +1339,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1380,6 +1399,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1443,6 +1463,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1524,6 +1545,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
+      yield* requireTaskNotCancelling({ command, task });
       if (task.status !== "review") {
         return yield* invariantError(
           command.type,
@@ -1564,6 +1586,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
         readModel,
         command,
@@ -1606,6 +1629,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' is already terminal with status '${task.status}'.`,
         );
       }
+      if (task.cancellation == null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot be abandoned without a cancellation reservation.`,
+        );
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -1616,6 +1645,100 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "task.abandoned",
         payload: {
           taskId: command.taskId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.cancellation.request": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const project = yield* requireProject({ readModel, command, projectId: task.projectId });
+      yield* requireOrchestratorConfig({ command, project });
+      if (isTerminalTaskStatus(task.status)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is already terminal with status '${task.status}'.`,
+        );
+      }
+      if (task.cancellation != null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' already has cancellation reserved.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.cancellation-requested",
+        payload: {
+          taskId: command.taskId,
+          requestedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.cancellation.fail": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.cancellation == null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no cancellation reservation.`,
+        );
+      }
+      if (isTerminalTaskStatus(task.status)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is already terminal with status '${task.status}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.cancellation-failed",
+        payload: {
+          taskId: command.taskId,
+          phase: command.phase,
+          message: command.message,
+          failedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.cancellation.phase.complete": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.cancellation == null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no cancellation reservation.`,
+        );
+      }
+      if (isTerminalTaskStatus(task.status)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is already terminal with status '${task.status}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.cancellation-phase-completed",
+        payload: {
+          taskId: command.taskId,
+          phase: command.phase,
           updatedAt: command.createdAt,
         },
       };

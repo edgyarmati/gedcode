@@ -2028,6 +2028,7 @@ function applyEnvironmentOrchestrationEvent(
             pmMessageId: event.payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            cancellation: null,
             roleModelSelections: {},
             playbookVersion: event.payload.playbookVersion,
             createdAt: event.payload.createdAt,
@@ -2206,6 +2207,53 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
+    case "task.cancellation-requested":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        cancellation: {
+          requestedAt: event.payload.requestedAt,
+          completedPhases: [],
+          failurePhase: null,
+          failureMessage: null,
+          failedAt: null,
+        },
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.cancellation-failed":
+      return updateTaskState(state, String(event.payload.taskId), (task) =>
+        task.cancellation == null
+          ? task
+          : {
+              ...task,
+              cancellation: {
+                ...task.cancellation,
+                failurePhase: event.payload.phase,
+                failureMessage: event.payload.message,
+                failedAt: event.payload.failedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            },
+      );
+
+    case "task.cancellation-phase-completed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => {
+        if (task.cancellation == null) return task;
+        return {
+          ...task,
+          cancellation: {
+            ...task.cancellation,
+            completedPhases: Array.from(
+              new Set([...(task.cancellation.completedPhases ?? []), event.payload.phase]),
+            ),
+            failurePhase: null,
+            failureMessage: null,
+            failedAt: null,
+          },
+          updatedAt: event.payload.updatedAt,
+        };
+      });
+
     case "task.pr-opened":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
@@ -2218,6 +2266,19 @@ function applyEnvironmentOrchestrationEvent(
         ...task,
         status: "abandoned",
         currentStageThreadId: null,
+        ...(task.cancellation === undefined
+          ? {}
+          : {
+              cancellation:
+                task.cancellation === null
+                  ? null
+                  : {
+                      ...task.cancellation,
+                      failurePhase: null,
+                      failureMessage: null,
+                      failedAt: null,
+                    },
+            }),
         updatedAt: event.payload.updatedAt,
       }));
 

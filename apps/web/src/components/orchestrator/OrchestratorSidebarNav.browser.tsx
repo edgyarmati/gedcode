@@ -44,6 +44,7 @@ function makeTask(overrides: Partial<OrchestratorTask>): OrchestratorTask {
     pmMessageId: null,
     stageThreadIds: [],
     currentStageThreadId: null,
+    cancellation: null,
     roleModelSelections: {},
     playbookVersion: null,
     createdAt: "2026-07-01T00:00:00.000Z",

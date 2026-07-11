@@ -115,6 +115,9 @@ export function classifyOrchestrationCommand(
     case "task.land":
     case "task.pr.opened":
     case "task.abandon":
+    case "task.cancellation.request":
+    case "task.cancellation.fail":
+    case "task.cancellation.phase.complete":
       return "task";
     case "thread.message.user.append":
     case "thread.message.assistant.delta":
@@ -175,6 +178,9 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.land":
     case "task.pr.opened":
     case "task.abandon":
+    case "task.cancellation.request":
+    case "task.cancellation.fail":
+    case "task.cancellation.phase.complete":
       return {
         aggregateKind: "task",
         aggregateId: command.taskId,

@@ -1538,6 +1538,106 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("serializes cancellation reservation ahead of land", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:land",
+            stageThreadId: null,
+            status: "resolved" as const,
+            approvedHash: "sha256:land",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+        ],
+      };
+      const requested = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.cancellation.request",
+          commandId: asCommandId("cmd-cancel"),
+          taskId: asTaskId("task-1"),
+          createdAt: now,
+        },
+      });
+      const requestedEvent = Array.isArray(requested) ? requested[0] : requested;
+      expect(requestedEvent?.type).toBe("task.cancellation-requested");
+      const reserved = yield* projectEvent(readModel, withSequence(requestedEvent!, 3));
+
+      const land = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: reserved,
+          command: {
+            type: "task.land",
+            commandId: asCommandId("cmd-land-after-cancel"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(land._tag).toBe("Failure");
+      expect(reserved.tasks[0]?.status).toBe("review");
+      expect(reserved.tasks[0]?.cancellation?.requestedAt).toBe(now);
+    }),
+  );
+
+  it.effect("rejects cancellation reservation after land wins", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "landed" });
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.cancellation.request",
+            commandId: asCommandId("cmd-cancel-after-land"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("rejects starting a stage after cancellation is reserved", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "planning",
+        currentStageThreadId: null,
+        cancellation: {
+          requestedAt: now,
+          failurePhase: null,
+          failureMessage: null,
+          failedAt: null,
+          completedPhases: [],
+        },
+      });
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-after-cancel"),
+            taskId: asTaskId("task-1"),
+            role: "plan",
+            instructions: "Plan after cancellation.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("records an opened PR through an internal task command", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "landed" });
@@ -1568,9 +1668,20 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("abandons a non-terminal task", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "blocked" });
+      const reservation = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.cancellation.request",
+          commandId: asCommandId("cmd-reserve-abandon"),
+          taskId: asTaskId("task-1"),
+          createdAt: now,
+        },
+      });
+      const reservationEvent = Array.isArray(reservation) ? reservation[0] : reservation;
+      const reserved = yield* projectEvent(readModel, withSequence(reservationEvent!, 3));
 
       const event = yield* decideOrchestrationCommand({
-        readModel,
+        readModel: reserved,
         command: {
           type: "task.abandon",
           commandId: asCommandId("cmd-abandon"),
@@ -1581,6 +1692,26 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const singleEvent = Array.isArray(event) ? event[0] : event;
       expect(singleEvent?.type).toBe("task.abandoned");
+    }),
+  );
+
+  it.effect("rejects abandoning a task without a cancellation reservation", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "blocked" });
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.abandon",
+            commandId: asCommandId("cmd-unreserved-abandon"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
     }),
   );
 });

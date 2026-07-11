@@ -80,6 +80,7 @@ function makeBoardTask(
     pmMessageId: null,
     stageThreadIds: [],
     currentStageThreadId: null,
+    cancellation: null,
     roleModelSelections: {},
     playbookVersion: null,
     createdAt: "2026-06-14T00:00:00.000Z",

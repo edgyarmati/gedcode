@@ -480,6 +480,29 @@ export const OrchestrationTaskStatus = Schema.Literals([
 ]);
 export type OrchestrationTaskStatus = typeof OrchestrationTaskStatus.Type;
 
+export const OrchestrationTaskCancellationShutdownPhase = Schema.Literals([
+  "interrupt-turn",
+  "stop-session",
+  "close-terminals",
+]);
+export type OrchestrationTaskCancellationShutdownPhase =
+  typeof OrchestrationTaskCancellationShutdownPhase.Type;
+
+export const OrchestrationTaskCancellationPhase = Schema.Literals([
+  ...OrchestrationTaskCancellationShutdownPhase.literals,
+  "abandon",
+]);
+export type OrchestrationTaskCancellationPhase = typeof OrchestrationTaskCancellationPhase.Type;
+
+export const OrchestrationTaskCancellation = Schema.Struct({
+  requestedAt: IsoDateTime,
+  completedPhases: Schema.optionalKey(Schema.Array(OrchestrationTaskCancellationShutdownPhase)),
+  failurePhase: Schema.NullOr(OrchestrationTaskCancellationPhase),
+  failureMessage: Schema.NullOr(TrimmedNonEmptyString),
+  failedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationTaskCancellation = typeof OrchestrationTaskCancellation.Type;
+
 /**
  * The task aggregate: one worktree + branch, grouping per-stage worker threads.
  *
@@ -500,6 +523,7 @@ export const OrchestrationTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -1046,6 +1070,30 @@ const TaskAbandonCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskCancellationRequestCommand = Schema.Struct({
+  type: Schema.Literal("task.cancellation.request"),
+  commandId: CommandId,
+  taskId: TaskId,
+  createdAt: IsoDateTime,
+});
+
+const TaskCancellationFailCommand = Schema.Struct({
+  type: Schema.Literal("task.cancellation.fail"),
+  commandId: CommandId,
+  taskId: TaskId,
+  phase: OrchestrationTaskCancellationPhase,
+  message: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskCancellationPhaseCompleteCommand = Schema.Struct({
+  type: Schema.Literal("task.cancellation.phase.complete"),
+  commandId: CommandId,
+  taskId: TaskId,
+  phase: OrchestrationTaskCancellationShutdownPhase,
+  createdAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -1070,7 +1118,6 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskGateRequestCommand,
   TaskGateResolveCommand,
   TaskLandCommand,
-  TaskAbandonCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -1208,6 +1255,10 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskStageCompleteCommand,
   TaskStageBlockCommand,
   TaskPrOpenedCommand,
+  TaskAbandonCommand,
+  TaskCancellationRequestCommand,
+  TaskCancellationFailCommand,
+  TaskCancellationPhaseCompleteCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1251,6 +1302,9 @@ export const OrchestrationEventType = Schema.Literals([
   "task.stage-blocked",
   "task.gate-requested",
   "task.gate-resolved",
+  "task.cancellation-requested",
+  "task.cancellation-failed",
+  "task.cancellation-phase-completed",
   "task.landed",
   "task.pr-opened",
   "task.abandoned",
@@ -1540,6 +1594,26 @@ export const TaskLandedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskCancellationRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  requestedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskCancellationFailedPayload = Schema.Struct({
+  taskId: TaskId,
+  phase: OrchestrationTaskCancellationPhase,
+  message: TrimmedNonEmptyString,
+  failedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskCancellationPhaseCompletedPayload = Schema.Struct({
+  taskId: TaskId,
+  phase: OrchestrationTaskCancellationShutdownPhase,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskPrOpenedPayload = Schema.Struct({
   taskId: TaskId,
   prUrl: TrimmedNonEmptyString,
@@ -1738,6 +1812,21 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.gate-resolved"),
     payload: TaskGateResolvedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.cancellation-requested"),
+    payload: TaskCancellationRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.cancellation-failed"),
+    payload: TaskCancellationFailedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.cancellation-phase-completed"),
+    payload: TaskCancellationPhaseCompletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -2064,7 +2153,13 @@ export class OrchestrationCancelTaskError extends Schema.TaggedErrorClass<Orches
   "OrchestrationCancelTaskError",
   {
     taskId: TaskId,
-    phase: Schema.Literals(["read-task", "interrupt-turn", "stop-session", "close-terminals"]),
+    phase: Schema.Literals([
+      "read-task",
+      "interrupt-turn",
+      "stop-session",
+      "close-terminals",
+      "abandon",
+    ]),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
   },

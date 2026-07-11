@@ -53,6 +53,7 @@ import {
 } from "../workerSafety.ts";
 import { explicitlySetProjectConfig } from "../orchestratorConfigResolution.ts";
 import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
+import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -894,27 +895,40 @@ const make = Effect.gen(function* () {
         ),
       );
 
-    const sendTurnRequest = yield* buildSendTurnRequestForThread({
-      threadId: event.payload.threadId,
-      messageText: message.text,
-      ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
-      ...(event.payload.modelSelection !== undefined
-        ? { modelSelection: event.payload.modelSelection }
-        : {}),
-      interactionMode: event.payload.interactionMode,
-      createdAt: event.payload.createdAt,
-    }).pipe(
-      Effect.map(Option.some),
-      Effect.catchCause((cause) => handleTurnStartFailure(cause).pipe(Effect.as(Option.none()))),
-    );
+    const taskForStageThread = yield* resolveTaskForStageThread(event.payload.threadId);
+    const startTurn = Effect.gen(function* () {
+      if (taskForStageThread !== undefined) {
+        const freshTask = yield* resolveTaskForStageThread(event.payload.threadId);
+        if (
+          freshTask === undefined ||
+          freshTask.cancellation != null ||
+          freshTask.status === "landed" ||
+          freshTask.status === "abandoned" ||
+          freshTask.currentStageThreadId !== event.payload.threadId
+        ) {
+          return;
+        }
+      }
 
-    if (Option.isNone(sendTurnRequest)) {
-      return;
-    }
+      const sendTurnRequest = yield* buildSendTurnRequestForThread({
+        threadId: event.payload.threadId,
+        messageText: message.text,
+        ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+        ...(event.payload.modelSelection !== undefined
+          ? { modelSelection: event.payload.modelSelection }
+          : {}),
+        interactionMode: event.payload.interactionMode,
+        createdAt: event.payload.createdAt,
+      });
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+      yield* providerService.sendTurn(sendTurnRequest);
+    });
+    const guardedStart =
+      taskForStageThread === undefined
+        ? startTurn
+        : withTaskLifecycleLock(taskForStageThread.id, startTurn);
+
+    yield* guardedStart.pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (

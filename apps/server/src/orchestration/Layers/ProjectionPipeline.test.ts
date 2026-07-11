@@ -179,6 +179,148 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
+  it.effect("projects cancellation progress and ignores failures without a reservation", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-cancellation-projection");
+      const taskId = TaskId.make("task-cancellation-projection");
+      const outOfOrderTaskId = TaskId.make("task-cancellation-out-of-order");
+      const createdAt = "2026-07-11T00:00:00.000Z";
+      const requestedAt = "2026-07-11T00:01:00.000Z";
+      const interruptedAt = "2026-07-11T00:02:00.000Z";
+      const failedAt = "2026-07-11T00:03:00.000Z";
+
+      for (const [id, title] of [
+        [taskId, "Cancellation projection"],
+        [outOfOrderTaskId, "Out-of-order cancellation"],
+      ] as const) {
+        yield* eventStore.append({
+          type: "task.created",
+          eventId: EventId.make(`evt-create-${id}`),
+          aggregateKind: "task",
+          aggregateId: id,
+          occurredAt: createdAt,
+          commandId: CommandId.make(`cmd-create-${id}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-create-${id}`),
+          metadata: {},
+          payload: {
+            taskId: id,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title,
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+      }
+
+      yield* eventStore.append({
+        type: "task.cancellation-requested",
+        eventId: EventId.make("evt-cancellation-requested"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: requestedAt,
+        commandId: CommandId.make("cmd-cancellation-requested"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-cancellation-requested"),
+        metadata: {},
+        payload: {
+          taskId,
+          requestedAt,
+          updatedAt: requestedAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.cancellation-phase-completed",
+        eventId: EventId.make("evt-cancellation-interrupted"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: interruptedAt,
+        commandId: CommandId.make("cmd-cancellation-interrupted"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-cancellation-interrupted"),
+        metadata: {},
+        payload: {
+          taskId,
+          phase: "interrupt-turn",
+          updatedAt: interruptedAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.cancellation-failed",
+        eventId: EventId.make("evt-cancellation-failed"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: failedAt,
+        commandId: CommandId.make("cmd-cancellation-failed"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-cancellation-failed"),
+        metadata: {},
+        payload: {
+          taskId,
+          phase: "stop-session",
+          message: "provider session did not stop",
+          failedAt,
+          updatedAt: failedAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.cancellation-failed",
+        eventId: EventId.make("evt-cancellation-failed-out-of-order"),
+        aggregateKind: "task",
+        aggregateId: outOfOrderTaskId,
+        occurredAt: failedAt,
+        commandId: CommandId.make("cmd-cancellation-failed-out-of-order"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-cancellation-failed-out-of-order"),
+        metadata: {},
+        payload: {
+          taskId: outOfOrderTaskId,
+          phase: "interrupt-turn",
+          message: "no cancellation reservation",
+          failedAt,
+          updatedAt: failedAt,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly taskId: string;
+        readonly cancellation: string | null;
+        readonly updatedAt: string;
+      }>`
+        SELECT
+          task_id AS "taskId",
+          cancellation_json AS cancellation,
+          updated_at AS "updatedAt"
+        FROM projection_tasks
+        WHERE task_id IN (${taskId}, ${outOfOrderTaskId})
+        ORDER BY task_id ASC
+      `;
+      assert.deepEqual(rows, [
+        {
+          taskId: "task-cancellation-out-of-order",
+          cancellation: null,
+          updatedAt: createdAt,
+        },
+        {
+          taskId: "task-cancellation-projection",
+          cancellation:
+            '{"requestedAt":"2026-07-11T00:01:00.000Z","completedPhases":["interrupt-turn"],"failurePhase":"stop-session","failureMessage":"provider session did not stop","failedAt":"2026-07-11T00:03:00.000Z"}',
+          updatedAt: failedAt,
+        },
+      ]);
+    }),
+  );
+
   it.effect("projects pending PM handoff state on request, completion, and clear", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
@@ -1880,7 +2022,11 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         ORDER BY requested_at
       `;
       assert.deepEqual(rows, [
-        { turnId: oldTurnId, state: "completed", completedAt: "2026-01-01T00:00:30.000Z" },
+        {
+          turnId: oldTurnId,
+          state: "completed",
+          completedAt: "2026-01-01T00:00:30.000Z",
+        },
         { turnId: newTurnId, state: "running", completedAt: null },
       ]);
     }),
@@ -2008,7 +2154,10 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       yield* projectionPipeline.bootstrap;
 
-      const messageRows = yield* sql<{ readonly text: string; readonly isStreaming: unknown }>`
+      const messageRows = yield* sql<{
+        readonly text: string;
+        readonly isStreaming: unknown;
+      }>`
         SELECT
           text,
           is_streaming AS "isStreaming"
@@ -2161,8 +2310,16 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           requested_at ASC
       `;
         assert.deepEqual(turnRows, [
-          { turnId: "turn-completed", checkpointTurnCount: 1, status: "completed" },
-          { turnId: "turn-interrupted", checkpointTurnCount: null, status: "interrupted" },
+          {
+            turnId: "turn-completed",
+            checkpointTurnCount: 1,
+            status: "completed",
+          },
+          {
+            turnId: "turn-interrupted",
+            checkpointTurnCount: null,
+            status: "interrupted",
+          },
         ]);
       }),
   );
@@ -2864,7 +3021,10 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         createdAt,
       });
 
-      const projectRows = yield* sql<{ readonly title: string; readonly scriptsJson: string }>`
+      const projectRows = yield* sql<{
+        readonly title: string;
+        readonly scriptsJson: string;
+      }>`
         SELECT
           title,
           scripts_json AS "scriptsJson"
@@ -2873,7 +3033,9 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       `;
       assert.deepEqual(projectRows, [{ title: "Live Project", scriptsJson: "[]" }]);
 
-      const projectorRows = yield* sql<{ readonly lastAppliedSequence: number }>`
+      const projectorRows = yield* sql<{
+        readonly lastAppliedSequence: number;
+      }>`
         SELECT
           last_applied_sequence AS "lastAppliedSequence"
         FROM projection_state

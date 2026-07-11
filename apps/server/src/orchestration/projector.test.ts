@@ -606,6 +606,167 @@ describe("orchestration projector", () => {
     expect((readModel.pendingGates ?? []).map((gate) => gate.gateId)).toEqual(["gate-other"]);
   });
 
+  it("replays cancellation progress and failure without losing completed phases", async () => {
+    const createdAt = "2026-07-11T00:00:00.000Z";
+    const requestedAt = "2026-07-11T00:01:00.000Z";
+    const interruptedAt = "2026-07-11T00:02:00.000Z";
+    const failedAt = "2026-07-11T00:03:00.000Z";
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-cancellation-replay",
+        occurredAt: createdAt,
+        commandId: "cmd-create-cancellation-replay",
+        payload: {
+          taskId: "task-cancellation-replay",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Cancellation replay",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.cancellation-requested",
+        aggregateKind: "task",
+        aggregateId: "task-cancellation-replay",
+        occurredAt: requestedAt,
+        commandId: "cmd-request-cancellation-replay",
+        payload: {
+          taskId: "task-cancellation-replay",
+          requestedAt,
+          updatedAt: requestedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.cancellation-phase-completed",
+        aggregateKind: "task",
+        aggregateId: "task-cancellation-replay",
+        occurredAt: interruptedAt,
+        commandId: "cmd-complete-interrupt",
+        payload: {
+          taskId: "task-cancellation-replay",
+          phase: "interrupt-turn",
+          updatedAt: interruptedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "task.cancellation-failed",
+        aggregateKind: "task",
+        aggregateId: "task-cancellation-replay",
+        occurredAt: failedAt,
+        commandId: "cmd-fail-session-stop",
+        payload: {
+          taskId: "task-cancellation-replay",
+          phase: "stop-session",
+          message: "provider session did not stop",
+          failedAt,
+          updatedAt: failedAt,
+        },
+      }),
+    ];
+
+    let readModel = createEmptyReadModel(createdAt);
+    for (const event of events) {
+      readModel = await Effect.runPromise(projectEvent(readModel, event));
+    }
+
+    expect(readModel.tasks[0]?.cancellation).toEqual({
+      requestedAt,
+      completedPhases: ["interrupt-turn"],
+      failurePhase: "stop-session",
+      failureMessage: "provider session did not stop",
+      failedAt,
+    });
+    expect(readModel.tasks[0]?.updatedAt).toBe(failedAt);
+
+    const abandonedAt = "2026-07-11T00:04:00.000Z";
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 5,
+          type: "task.abandoned",
+          aggregateKind: "task",
+          aggregateId: "task-cancellation-replay",
+          occurredAt: abandonedAt,
+          commandId: "cmd-abandon-cancellation-replay",
+          payload: { taskId: "task-cancellation-replay", updatedAt: abandonedAt },
+        }),
+      ),
+    );
+    expect(readModel.tasks[0]?.cancellation).toEqual({
+      requestedAt,
+      completedPhases: ["interrupt-turn"],
+      failurePhase: null,
+      failureMessage: null,
+      failedAt: null,
+    });
+  });
+
+  it("ignores an out-of-order cancellation failure before cancellation is requested", async () => {
+    const createdAt = "2026-07-11T01:00:00.000Z";
+    const failedAt = "2026-07-11T01:01:00.000Z";
+    let readModel = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(createdAt),
+        makeEvent({
+          sequence: 1,
+          type: "task.created",
+          aggregateKind: "task",
+          aggregateId: "task-out-of-order-cancellation",
+          occurredAt: createdAt,
+          commandId: "cmd-create-out-of-order-cancellation",
+          payload: {
+            taskId: "task-out-of-order-cancellation",
+            projectId: "project-1",
+            taskType: "feature",
+            title: "Out-of-order cancellation",
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+
+    readModel = await Effect.runPromise(
+      projectEvent(
+        readModel,
+        makeEvent({
+          sequence: 2,
+          type: "task.cancellation-failed",
+          aggregateKind: "task",
+          aggregateId: "task-out-of-order-cancellation",
+          occurredAt: failedAt,
+          commandId: "cmd-fail-out-of-order-cancellation",
+          payload: {
+            taskId: "task-out-of-order-cancellation",
+            phase: "interrupt-turn",
+            message: "no cancellation reservation",
+            failedAt,
+            updatedAt: failedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(readModel.tasks[0]?.cancellation).toBeNull();
+    expect(readModel.tasks[0]?.updatedAt).toBe(createdAt);
+  });
+
   it("derives task status purely from task events", async () => {
     const createdAt = "2026-06-14T10:00:00.000Z";
     const classifiedAt = "2026-06-14T10:01:00.000Z";
@@ -1400,14 +1561,20 @@ describe("orchestration projector", () => {
     );
 
     const thread = afterRevert.threads[0];
-    expect(thread?.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual(
-      [
-        { role: "user", text: "First edit" },
-        { role: "assistant", text: "Updated README to v2.\n" },
-      ],
-    );
     expect(
-      thread?.activities.map((activity) => ({ id: activity.id, turnId: activity.turnId })),
+      thread?.messages.map((message) => ({
+        role: message.role,
+        text: message.text,
+      })),
+    ).toEqual([
+      { role: "user", text: "First edit" },
+      { role: "assistant", text: "Updated README to v2.\n" },
+    ]);
+    expect(
+      thread?.activities.map((activity) => ({
+        id: activity.id,
+        turnId: activity.turnId,
+      })),
     ).toEqual([{ id: "activity-1", turnId: "turn-1" }]);
     expect(thread?.checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)).toEqual([1]);
     expect(thread?.latestTurn?.turnId).toBe("turn-1");

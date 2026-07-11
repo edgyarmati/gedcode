@@ -15,6 +15,9 @@ import {
   OrchestrationSession,
   OrchestrationThread,
   TaskAbandonedPayload,
+  TaskCancellationFailedPayload,
+  TaskCancellationPhaseCompletedPayload,
+  TaskCancellationRequestedPayload,
   TaskClassifiedPayload,
   TaskCreatedPayload,
   TaskGateRequestedPayload,
@@ -857,6 +860,7 @@ export function projectEvent(
             pmMessageId: payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            cancellation: null,
             roleModelSelections: {},
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
@@ -1150,6 +1154,81 @@ export function projectEvent(
         })),
       );
 
+    case "task.cancellation-requested":
+      return decodeForEvent(
+        TaskCancellationRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            cancellation: {
+              requestedAt: payload.requestedAt,
+              completedPhases: [],
+              failurePhase: null,
+              failureMessage: null,
+              failedAt: null,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.cancellation-failed":
+      return decodeForEvent(
+        TaskCancellationFailedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          if (task?.cancellation == null) return nextBase;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              cancellation: {
+                ...task.cancellation,
+                failurePhase: payload.phase,
+                failureMessage: payload.message,
+                failedAt: payload.failedAt,
+              },
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "task.cancellation-phase-completed":
+      return decodeForEvent(
+        TaskCancellationPhaseCompletedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          if (task?.cancellation == null) return nextBase;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              cancellation: {
+                ...task.cancellation,
+                completedPhases: Array.from(
+                  new Set([...(task.cancellation.completedPhases ?? []), payload.phase]),
+                ),
+                failurePhase: null,
+                failureMessage: null,
+                failedAt: null,
+              },
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
     case "task.pr-opened":
       return decodeForEvent(TaskPrOpenedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -1164,17 +1243,35 @@ export function projectEvent(
     case "task.abandoned":
       // `task.abandoned → abandoned` (terminal).
       return decodeForEvent(TaskAbandonedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          tasks: updateTask(nextBase.tasks, payload.taskId, {
-            status: "abandoned",
-            currentStageThreadId: null,
-            updatedAt: payload.updatedAt,
-          }),
-          pendingGates: (nextBase.pendingGates ?? []).filter(
-            (gate) => gate.taskId !== payload.taskId,
-          ),
-        })),
+        Effect.map((payload) => {
+          const cancellation = nextBase.tasks.find(
+            (task) => task.id === payload.taskId,
+          )?.cancellation;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              status: "abandoned",
+              currentStageThreadId: null,
+              ...(cancellation === undefined
+                ? {}
+                : {
+                    cancellation:
+                      cancellation === null
+                        ? null
+                        : {
+                            ...cancellation,
+                            failurePhase: null,
+                            failureMessage: null,
+                            failedAt: null,
+                          },
+                  }),
+              updatedAt: payload.updatedAt,
+            }),
+            pendingGates: (nextBase.pendingGates ?? []).filter(
+              (gate) => gate.taskId !== payload.taskId,
+            ),
+          };
+        }),
       );
 
     default:

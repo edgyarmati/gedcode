@@ -25,6 +25,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
@@ -60,11 +61,13 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { stageBlockCommandId } from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService, type GitWorkflowServiceShape } from "../../git/GitWorkflowService.ts";
 import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
 import { WorkerStartAdmissionLive } from "./WorkerStartAdmission.ts";
+import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asTaskId = (value: string): TaskId => TaskId.make(value);
@@ -631,6 +634,202 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("starts provider work for a normally active task stage", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-active-start"),
+        taskId: asTaskId("task-active-start"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Active start",
+        pmMessageId: null,
+        branch: "orchestrator/task-active-start",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-active"),
+        taskId: asTaskId("task-active-start"),
+        role: "work",
+        instructions: "Start the active worker.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start queued provider work after task cancellation is reserved", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const taskId = asTaskId("task-cancel-reserved-start");
+    const lockAcquired = await Effect.runPromise(Deferred.make<void>());
+    const releaseLock = await Effect.runPromise(Deferred.make<void>());
+    const lockFiber = Effect.runFork(
+      withTaskLifecycleLock(
+        taskId,
+        Deferred.succeed(lockAcquired, undefined).pipe(Effect.andThen(Deferred.await(releaseLock))),
+      ),
+    );
+    await Effect.runPromise(Deferred.await(lockAcquired));
+
+    try {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-create-cancel-reserved-start"),
+          taskId,
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Cancellation reserved start",
+          pmMessageId: null,
+          branch: "orchestrator/task-cancel-reserved-start",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-task-stage-start-cancel-reserved"),
+          taskId,
+          role: "work",
+          instructions: "This queued worker must not start.",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.cancellation.request",
+          commandId: CommandId.make("cmd-task-cancel-reserve-before-start"),
+          taskId,
+          createdAt: now,
+        }),
+      );
+    } finally {
+      await Effect.runPromise(Deferred.succeed(releaseLock, undefined));
+      await Effect.runPromise(Fiber.join(lockFiber));
+    }
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-sentinel-after-cancel-reserved"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-sentinel-after-cancel-reserved"),
+          role: "user",
+          text: "Sentinel after the queued task start.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.startSession.mock.calls[0]?.[0]).toBe(ThreadId.make("thread-1"));
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    const task = (await harness.readModel()).tasks.find((entry) => entry.id === taskId);
+    expect(task?.cancellation?.requestedAt).toBe(now);
+    expect(task?.status).not.toBe("abandoned");
+  });
+
+  it("does not start queued provider work after the task becomes terminal", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const taskId = asTaskId("task-terminal-before-start");
+    const lockAcquired = await Effect.runPromise(Deferred.make<void>());
+    const releaseLock = await Effect.runPromise(Deferred.make<void>());
+    const lockFiber = Effect.runFork(
+      withTaskLifecycleLock(
+        taskId,
+        Deferred.succeed(lockAcquired, undefined).pipe(Effect.andThen(Deferred.await(releaseLock))),
+      ),
+    );
+    await Effect.runPromise(Deferred.await(lockAcquired));
+
+    try {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-create-terminal-before-start"),
+          taskId,
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Terminal before start",
+          pmMessageId: null,
+          branch: "orchestrator/task-terminal-before-start",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-task-stage-start-before-terminal"),
+          taskId,
+          role: "work",
+          instructions: "This queued worker must remain stopped.",
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.cancellation.request",
+          commandId: CommandId.make("cmd-task-cancel-before-terminal"),
+          taskId,
+          createdAt: now,
+        }),
+      );
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "task.abandon",
+          commandId: CommandId.make("cmd-task-abandon-before-start"),
+          taskId,
+          createdAt: now,
+        }),
+      );
+    } finally {
+      await Effect.runPromise(Deferred.succeed(releaseLock, undefined));
+      await Effect.runPromise(Fiber.join(lockFiber));
+    }
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-sentinel-after-terminal"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-sentinel-after-terminal"),
+          role: "user",
+          text: "Sentinel after the terminal task start.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    expect(harness.startSession).toHaveBeenCalledTimes(1);
+    expect(harness.startSession.mock.calls[0]?.[0]).toBe(ThreadId.make("thread-1"));
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    const task = (await harness.readModel()).tasks.find((entry) => entry.id === taskId);
+    expect(task?.status).toBe("abandoned");
+    expect(task?.currentStageThreadId).toBeNull();
   });
 
   it("blocks an active worker stage instead of starting a quota-blocked provider instance", async () => {

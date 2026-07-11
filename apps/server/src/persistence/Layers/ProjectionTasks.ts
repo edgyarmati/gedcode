@@ -1,4 +1,8 @@
-import { GedRoleModelSelections, ThreadId } from "@t3tools/contracts";
+import {
+  GedRoleModelSelections,
+  OrchestrationTaskCancellation,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
@@ -22,6 +26,7 @@ const ProjectionTaskDbRow = ProjectionTask.mapFields(
   Struct.assign({
     stageThreadIds: Schema.fromJsonString(Schema.Array(ThreadId)),
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
+    cancellation: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskCancellation)),
   }),
 );
 type ProjectionTaskDbRow = typeof ProjectionTaskDbRow.Type;
@@ -45,6 +50,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id,
           stage_thread_ids_json,
           current_stage_thread_id,
+          cancellation_json,
           role_model_selections_json,
           playbook_version,
           created_at,
@@ -62,6 +68,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           ${row.pmMessageId},
           ${JSON.stringify(row.stageThreadIds)},
           ${row.currentStageThreadId},
+          ${row.cancellation === null ? null : JSON.stringify(row.cancellation)},
           ${JSON.stringify(row.roleModelSelections)},
           ${row.playbookVersion},
           ${row.createdAt},
@@ -79,6 +86,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id = excluded.pm_message_id,
           stage_thread_ids_json = excluded.stage_thread_ids_json,
           current_stage_thread_id = excluded.current_stage_thread_id,
+          cancellation_json = excluded.cancellation_json,
           role_model_selections_json = excluded.role_model_selections_json,
           playbook_version = excluded.playbook_version,
           created_at = excluded.created_at,
@@ -103,6 +111,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          cancellation_json AS "cancellation",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
@@ -129,6 +138,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          cancellation_json AS "cancellation",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
@@ -156,6 +166,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          cancellation_json AS "cancellation",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",

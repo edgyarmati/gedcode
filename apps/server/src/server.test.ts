@@ -3373,6 +3373,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         pmMessageId: MessageId.make("pm-message-1"),
         stageThreadIds: [ThreadId.make("thread-plan")],
         currentStageThreadId: ThreadId.make("thread-plan"),
+        cancellation: null,
         playbookVersion: "feature@v1",
         createdAt: now,
         updatedAt: now,
@@ -3426,7 +3427,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           assistantMessageId: null,
         },
       };
-      const snapshot: OrchestrationReadModel = {
+      let snapshot: OrchestrationReadModel = {
         snapshotSequence: 12,
         updatedAt: now,
         projects: [project],
@@ -3480,6 +3481,51 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           updatedAt: now,
         },
       };
+      const cancellationRequestedEvent: OrchestrationEvent = {
+        sequence: 15,
+        eventId: EventId.make("event-cancellation-requested"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.cancellation-requested",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-cancellation-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-cancellation-requested"),
+        metadata: {},
+        payload: { taskId, requestedAt: now, updatedAt: now },
+      };
+      const cancellationPhaseCompletedEvent: OrchestrationEvent = {
+        sequence: 16,
+        eventId: EventId.make("event-cancellation-phase-completed"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.cancellation-phase-completed",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-cancellation-phase-completed"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-cancellation-phase-completed"),
+        metadata: {},
+        payload: { taskId, phase: "interrupt-turn", updatedAt: now },
+      };
+      const cancellationFailedEvent: OrchestrationEvent = {
+        sequence: 17,
+        eventId: EventId.make("event-cancellation-failed"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.cancellation-failed",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-cancellation-failed"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-cancellation-failed"),
+        metadata: {},
+        payload: {
+          taskId,
+          phase: "stop-session",
+          message: "provider session did not stop",
+          failedAt: now,
+          updatedAt: now,
+        },
+      };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
       const surfacedMessages: string[] = [];
@@ -3498,7 +3544,51 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             dispatch: (command) =>
               Effect.sync(() => {
                 dispatched.push(command);
-                if (command.type === "task.abandon") {
+                if (command.type === "task.cancellation.request") {
+                  snapshot = {
+                    ...snapshot,
+                    snapshotSequence: 41,
+                    tasks: snapshot.tasks.map((entry) =>
+                      entry.id === command.taskId
+                        ? {
+                            ...entry,
+                            cancellation: {
+                              requestedAt: command.createdAt,
+                              failurePhase: null,
+                              failureMessage: null,
+                              failedAt: null,
+                              completedPhases: [],
+                            },
+                          }
+                        : entry,
+                    ),
+                  };
+                } else if (command.type === "task.cancellation.phase.complete") {
+                  snapshot = {
+                    ...snapshot,
+                    snapshotSequence: 41,
+                    tasks: snapshot.tasks.map((entry) =>
+                      entry.id === command.taskId && entry.cancellation != null
+                        ? {
+                            ...entry,
+                            cancellation: {
+                              ...entry.cancellation,
+                              completedPhases: [
+                                ...(entry.cancellation.completedPhases ?? []),
+                                command.phase,
+                              ],
+                            },
+                          }
+                        : entry,
+                    ),
+                  };
+                }
+                if (command.type === "task.cancellation.phase.complete") {
+                  cancellationCalls.push(`dispatch:${command.type}:${command.phase}`);
+                } else if (
+                  command.type === "task.cancellation.request" ||
+                  command.type === "task.abandon"
+                ) {
                   cancellationCalls.push(`dispatch:${command.type}`);
                 }
                 if (command.type === "thread.clear") {
@@ -3508,7 +3598,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 }
                 return { sequence: 41 };
               }),
-            streamDomainEvents: Stream.make(taskCreatedEvent, gateRequestedEvent),
+            streamDomainEvents: Stream.make(
+              taskCreatedEvent,
+              gateRequestedEvent,
+              cancellationRequestedEvent,
+              cancellationPhaseCompletedEvent,
+              cancellationFailedEvent,
+            ),
           },
           providerService: {
             interruptTurn: (input) =>
@@ -3593,11 +3689,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
-                Stream.take(2),
+                Stream.take(6),
                 Stream.runCollect,
               ),
             );
-            assert.equal(projectItems.length, 2);
+            assert.equal(projectItems.length, 6);
             const projectSnapshotItem = projectItems[0];
             assert.equal(projectSnapshotItem?.kind, "snapshot");
             if (projectSnapshotItem?.kind === "snapshot") {
@@ -3613,11 +3709,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 [gateId],
               );
             }
-            const projectEventItem = projectItems[1];
-            assert.equal(projectEventItem?.kind, "event");
-            if (projectEventItem?.kind === "event") {
-              assert.equal(projectEventItem.event.type, "task.created");
-            }
+            assert.deepEqual(
+              projectItems.slice(1).map((item) => (item.kind === "event" ? item.event.type : null)),
+              [
+                "task.created",
+                "task.gate-requested",
+                "task.cancellation-requested",
+                "task.cancellation-phase-completed",
+                "task.cancellation-failed",
+              ],
+            );
 
             const taskItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({ taskId }).pipe(
@@ -3669,9 +3770,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             assert.equal(cancelTaskResult.sequence, 41);
             assert.deepEqual(cancellationCalls, [
+              "dispatch:task.cancellation.request",
               "interrupt:thread-plan:turn-plan",
+              "dispatch:task.cancellation.phase.complete:interrupt-turn",
               "stop:thread-plan",
+              "dispatch:task.cancellation.phase.complete:stop-session",
               "close:thread-plan:true",
+              "dispatch:task.cancellation.phase.complete:close-terminals",
               "dispatch:task.abandon",
             ]);
 

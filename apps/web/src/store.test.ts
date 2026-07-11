@@ -826,6 +826,106 @@ describe("incremental orchestration updates", () => {
     expect(gates[0]?.resolvedAt).toBe("2026-02-27T00:00:04.000Z");
   });
 
+  it("reduces cancellation progress and ignores failures without a reservation", () => {
+    const projectId = ProjectId.make("project-cancellation-store");
+    const taskId = TaskId.make("task-cancellation-store");
+    const outOfOrderTaskId = TaskId.make("task-cancellation-store-out-of-order");
+    const createdAt = "2026-07-11T00:00:00.000Z";
+    const requestedAt = "2026-07-11T00:01:00.000Z";
+    const interruptedAt = "2026-07-11T00:02:00.000Z";
+    const failedAt = "2026-07-11T00:03:00.000Z";
+    const taskCreatedPayload = (createdTaskId: TaskId, title: string) => ({
+      taskId: createdTaskId,
+      projectId,
+      taskType: TaskTypeId.make("feature"),
+      title,
+      branch: null,
+      worktreePath: null,
+      pmMessageId: null,
+      playbookVersion: null,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    const next = applyOrchestrationEvents(
+      makeEmptyState(),
+      [
+        makeEvent("task.created", taskCreatedPayload(taskId, "Cancellation store"), {
+          sequence: 1,
+          aggregateKind: "task",
+          aggregateId: taskId,
+        }),
+        makeEvent(
+          "task.created",
+          taskCreatedPayload(outOfOrderTaskId, "Out-of-order cancellation store"),
+          {
+            sequence: 2,
+            aggregateKind: "task",
+            aggregateId: outOfOrderTaskId,
+          },
+        ),
+        makeEvent(
+          "task.cancellation-requested",
+          { taskId, requestedAt, updatedAt: requestedAt },
+          { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.cancellation-phase-completed",
+          { taskId, phase: "interrupt-turn", updatedAt: interruptedAt },
+          { sequence: 4, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.cancellation-failed",
+          {
+            taskId,
+            phase: "stop-session",
+            message: "provider session did not stop",
+            failedAt,
+            updatedAt: failedAt,
+          },
+          { sequence: 5, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.cancellation-failed",
+          {
+            taskId: outOfOrderTaskId,
+            phase: "interrupt-turn",
+            message: "no cancellation reservation",
+            failedAt,
+            updatedAt: failedAt,
+          },
+          { sequence: 6, aggregateKind: "task", aggregateId: outOfOrderTaskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+
+    expect(
+      selectTaskByRef(next, { environmentId: localEnvironmentId, taskId })?.cancellation,
+    ).toEqual({
+      requestedAt,
+      completedPhases: ["interrupt-turn"],
+      failurePhase: "stop-session",
+      failureMessage: "provider session did not stop",
+      failedAt,
+    });
+    expect(selectTaskByRef(next, { environmentId: localEnvironmentId, taskId })?.updatedAt).toBe(
+      failedAt,
+    );
+    expect(
+      selectTaskByRef(next, {
+        environmentId: localEnvironmentId,
+        taskId: outOfOrderTaskId,
+      })?.cancellation,
+    ).toBeNull();
+    expect(
+      selectTaskByRef(next, {
+        environmentId: localEnvironmentId,
+        taskId: outOfOrderTaskId,
+      })?.updatedAt,
+    ).toBe(createdAt);
+  });
+
   it("prunes stale orchestrator task and gate state from snapshots", () => {
     const projectId = ProjectId.make("project-1");
     const retainedTaskId = TaskId.make("task-retained");

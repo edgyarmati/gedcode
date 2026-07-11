@@ -1538,6 +1538,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               pmMessageId: event.payload.pmMessageId,
               stageThreadIds: [],
               currentStageThreadId: null,
+              cancellation: null,
               roleModelSelections: {},
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
@@ -1689,6 +1690,67 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.cancellation-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              cancellation: {
+                requestedAt: event.payload.requestedAt,
+                completedPhases: [],
+                failurePhase: null,
+                failureMessage: null,
+                failedAt: null,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.cancellation-failed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow) || existingRow.value.cancellation === null) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              cancellation: {
+                ...existingRow.value.cancellation,
+                failurePhase: event.payload.phase,
+                failureMessage: event.payload.message,
+                failedAt: event.payload.failedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.cancellation-phase-completed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow) || existingRow.value.cancellation === null) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              cancellation: {
+                ...existingRow.value.cancellation,
+                completedPhases: Array.from(
+                  new Set([
+                    ...(existingRow.value.cancellation.completedPhases ?? []),
+                    event.payload.phase,
+                  ]),
+                ),
+                failurePhase: null,
+                failureMessage: null,
+                failedAt: null,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.pr-opened": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,
@@ -1715,6 +1777,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ...existingRow.value,
               status: "abandoned",
               currentStageThreadId: null,
+              cancellation:
+                existingRow.value.cancellation === null
+                  ? null
+                  : {
+                      ...existingRow.value.cancellation,
+                      failurePhase: null,
+                      failureMessage: null,
+                      failedAt: null,
+                    },
               updatedAt: event.payload.updatedAt,
             });
             return;
