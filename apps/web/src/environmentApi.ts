@@ -61,6 +61,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
         rpcClient.orchestrator.subscribeTask(input, callback, options),
       resolveGate: rpcClient.orchestrator.resolveGate,
       setTaskRoleSelections: rpcClient.orchestrator.setTaskRoleSelections,
+      landTask: rpcClient.orchestrator.landTask,
       cancelTask: rpcClient.orchestrator.cancelTask,
       clearPmChat: rpcClient.orchestrator.clearPmChat,
       requestPmHandoff: rpcClient.orchestrator.requestPmHandoff,

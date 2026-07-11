@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature/UI: Land approved Orchestrator tasks from task detail through a typed client RPC, with exact gate eligibility, monotonic request progress, retryable request errors, pull-request opening/failure status, and the final PR link.
 - Feature: Let the Orchestrator PM land a reviewed task through its shared Claude/Codex MCP tool after the latest land gate is content-matched and approved; landing is serialized against worker startup/cancellation and repeated calls are idempotent.
 - Fix: Recover Orchestrator worker stages orphaned by a server restart by durably interrupting the stale attempt, clearing task ownership, notifying the PM exactly once, and allowing a fresh same-role handoff without misreporting completion or quota exhaustion.
 - Fix: Resume durably reserved Orchestrator task cancellations during server startup, skip shutdown phases already checkpointed, and avoid resurrecting orphaned provider sessions merely to interrupt them.

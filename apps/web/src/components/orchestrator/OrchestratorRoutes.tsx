@@ -23,6 +23,8 @@ import {
   ClockIcon,
   FolderPlusIcon,
   GitBranchIcon,
+  GitPullRequestIcon,
+  LoaderCircleIcon,
   MessageSquareIcon,
   Trash2Icon,
   WorkflowIcon,
@@ -83,7 +85,11 @@ import {
   getOrchestratorPmSectionClassName,
   OrchestratorBoardVisibilityButton,
 } from "./OrchestratorProjectLayout";
-import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import {
+  confirmAndCancelTask,
+  confirmAndClearPmChat,
+  deriveTaskLandingPresentation,
+} from "./OrchestratorRoutes.logic";
 import { PmChatComposer } from "./PmChatComposer";
 import { TaskBoard } from "./TaskBoard";
 import { TaskPrLink } from "./TaskPrLink";
@@ -107,6 +113,8 @@ const TASK_STATUS_LABELS: Record<OrchestratorTask["status"], string> = {
   verifying: "Verifying",
   working: "Working",
 };
+const EMPTY_TASK_GATES: OrchestratorPendingGate[] = [];
+const EMPTY_THREAD_ACTIVITIES: Thread["activities"] = [];
 
 function toEnvironmentId(value: string): EnvironmentId {
   return EnvironmentId.make(value);
@@ -643,7 +651,14 @@ export function OrchestratorTaskRoute(props: {
       </OrchestratorPageChrome>
       <main className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {task ? <TaskHeader task={task} /> : null}
+          {task ? (
+            <TaskHeader
+              key={task.id}
+              activities={stageThread?.activities ?? []}
+              gates={gates}
+              task={task}
+            />
+          ) : null}
           {stageThreadRef ? (
             <SharedThreadTimeline
               cwd={stageThread?.worktreePath ?? project?.cwd}
@@ -673,12 +688,43 @@ export function OrchestratorTaskRoute(props: {
   );
 }
 
-export function TaskHeader({ task }: { task: OrchestratorTask }) {
+export function TaskHeader({
+  activities = EMPTY_THREAD_ACTIVITIES,
+  gates = EMPTY_TASK_GATES,
+  task,
+}: {
+  activities?: Thread["activities"];
+  gates?: OrchestratorPendingGate[];
+  task: OrchestratorTask;
+}) {
   const [isCancelling, setIsCancelling] = useState(false);
+  const [landingPending, setLandingPending] = useState(false);
+  const [landingError, setLandingError] = useState<string | null>(null);
   const canCancel = task.status !== "landed" && task.status !== "abandoned";
+  const landing = deriveTaskLandingPresentation({
+    task,
+    gates,
+    activities,
+    requestPending: landingPending,
+    requestError: landingError,
+  });
+  useEffect(() => {
+    if (task.status !== "review") {
+      setLandingPending(false);
+      setLandingError(null);
+    }
+  }, [task.status]);
+  const taskStatusLabel =
+    landing.kind === "pending" || landing.kind === "opening-pr"
+      ? "Landing"
+      : landing.kind === "request-failed"
+        ? "Landing request failed"
+        : landing.kind === "failed"
+          ? "Landing failed"
+          : TASK_STATUS_LABELS[task.status];
   const cancelTask = useCallback(async () => {
     const api = readEnvironmentApi(task.environmentId);
-    if (!api || isCancelling || !canCancel) {
+    if (!api || isCancelling || landingPending || !canCancel) {
       return;
     }
     setIsCancelling(true);
@@ -691,13 +737,27 @@ export function TaskHeader({ task }: { task: OrchestratorTask }) {
     } finally {
       setIsCancelling(false);
     }
-  }, [canCancel, isCancelling, task.environmentId, task.id]);
+  }, [canCancel, isCancelling, landingPending, task.environmentId, task.id]);
+  const landTask = useCallback(async () => {
+    const api = readEnvironmentApi(task.environmentId);
+    if (!api || (landing.kind !== "ready" && landing.kind !== "request-failed") || isCancelling) {
+      return;
+    }
+    setLandingPending(true);
+    setLandingError(null);
+    try {
+      await api.orchestrator.landTask({ taskId: task.id });
+    } catch (error) {
+      setLandingPending(false);
+      setLandingError(error instanceof Error ? error.message : String(error));
+    }
+  }, [isCancelling, landing.kind, task.environmentId, task.id]);
 
   return (
     <div className="border-b border-border bg-card/70 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{TASK_STATUS_LABELS[task.status]}</Badge>
+          <Badge variant="outline">{taskStatusLabel}</Badge>
           <Badge variant="outline">{task.type}</Badge>
           {task.branch ? (
             <Badge variant="outline">
@@ -712,10 +772,39 @@ export function TaskHeader({ task }: { task: OrchestratorTask }) {
           />
         </div>
         <div className="flex items-center gap-2">
+          {landing.kind === "ready" || landing.kind === "request-failed" ? (
+            <>
+              {landing.kind === "request-failed" ? (
+                <Badge size="lg" title={landing.message} variant="error">
+                  <CircleAlertIcon className="size-4" />
+                  Landing request failed
+                </Badge>
+              ) : null}
+              <Button disabled={isCancelling} onClick={() => void landTask()} size="sm">
+                <GitPullRequestIcon className="size-4" />
+                {landing.kind === "request-failed" ? "Retry landing" : "Land task"}
+              </Button>
+            </>
+          ) : landing.kind === "pending" ? (
+            <Button aria-label="Landing task" disabled size="sm">
+              <LoaderCircleIcon className="size-4 animate-spin" />
+              Landing…
+            </Button>
+          ) : landing.kind === "opening-pr" ? (
+            <Badge size="lg" variant="info">
+              <LoaderCircleIcon className="size-4 animate-spin" />
+              Opening pull request…
+            </Badge>
+          ) : landing.kind === "failed" ? (
+            <Badge size="lg" title={landing.message} variant="error">
+              <CircleAlertIcon className="size-4" />
+              Landing failed
+            </Badge>
+          ) : null}
           {canCancel ? (
             <Button
               aria-label="Cancel task"
-              disabled={isCancelling}
+              disabled={isCancelling || landingPending}
               onClick={() => void cancelTask()}
               size="sm"
               title="Cancel task"
@@ -725,7 +814,7 @@ export function TaskHeader({ task }: { task: OrchestratorTask }) {
               Cancel task
             </Button>
           ) : null}
-          {task.status === "landed" ? <TaskPrLink prUrl={task.prUrl} /> : null}
+          {landing.kind === "landed" ? <TaskPrLink prUrl={landing.prUrl} /> : null}
         </div>
       </div>
       {task.worktreePath ? (

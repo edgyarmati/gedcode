@@ -37,6 +37,7 @@ import type {
   SourceControlProviderRegistryShape,
   SourceControlProviderHandle,
 } from "../src/sourceControl/SourceControlProviderRegistry.ts";
+import { landOrchestrationTaskWithServices } from "../src/orchestration/taskLanding.ts";
 
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
 const DEFAULT_INSTANCE = ProviderInstanceId.make("codex");
@@ -474,14 +475,15 @@ function approveLandAndDispatch(input: {
         createdAt: iso(6),
       })
       .pipe(Effect.orDie);
-    yield* input.harness.engine
-      .dispatch({
-        type: "task.land",
-        commandId: commandId(`${input.suffix}-land`),
+    yield* landOrchestrationTaskWithServices(
+      { snapshotQuery: input.harness.snapshotQuery },
+      {
         taskId: input.taskId,
-        createdAt: iso(7),
-      })
-      .pipe(Effect.orDie);
+        commandId: Effect.succeed(commandId(`${input.suffix}-land`)),
+        createdAt: Effect.succeed(iso(7)),
+        dispatch: (command) => input.harness.engine.dispatch(command),
+      },
+    ).pipe(Effect.orDie);
   });
 }
 

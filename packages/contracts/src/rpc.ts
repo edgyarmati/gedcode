@@ -41,6 +41,7 @@ import {
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
+  OrchestrationLandTaskError,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetSnapshotError,
@@ -494,6 +495,12 @@ export const WsOrchestratorCancelTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.canc
   error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationCancelTaskError]),
 });
 
+export const WsOrchestratorLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.landTask, {
+  payload: OrchestratorRpcSchemas.landTask.input,
+  success: OrchestratorRpcSchemas.landTask.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationLandTaskError]),
+});
+
 export const WsOrchestratorClearPmChatRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.clearPmChat, {
   payload: OrchestratorRpcSchemas.clearPmChat.input,
   success: OrchestratorRpcSchemas.clearPmChat.output,
@@ -589,6 +596,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorResolveGateRpc,
   WsOrchestratorSetTaskRoleSelectionsRpc,
   WsOrchestratorCancelTaskRpc,
+  WsOrchestratorLandTaskRpc,
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
 );

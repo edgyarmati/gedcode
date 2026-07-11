@@ -120,6 +120,10 @@ describe("wsRpcClient", () => {
       [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
       [ORCHESTRATOR_WS_METHODS.resolveGate]: vi.fn(() => ({ sequence: 7 })),
       [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: vi.fn(() => ({ sequence: 8 })),
+      [ORCHESTRATOR_WS_METHODS.landTask]: vi.fn(() => ({
+        sequence: 11,
+        alreadyLanded: false,
+      })),
       [ORCHESTRATOR_WS_METHODS.cancelTask]: vi.fn(() => ({ sequence: 10 })),
       [ORCHESTRATOR_WS_METHODS.clearPmChat]: vi.fn(() => ({ sequence: 9 })),
       [ORCHESTRATOR_WS_METHODS.requestPmHandoff]: vi.fn(() => ({
@@ -182,6 +186,10 @@ describe("wsRpcClient", () => {
       }),
     ).resolves.toEqual({ sequence: 8 });
     await expect(client.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 10 });
+    await expect(client.orchestrator.landTask({ taskId })).resolves.toEqual({
+      sequence: 11,
+      alreadyLanded: false,
+    });
     await expect(client.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 9 });
     await expect(
       client.orchestrator.requestPmHandoff({ projectId, mode: "transcript" }),
@@ -212,6 +220,7 @@ describe("wsRpcClient", () => {
       },
     });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.cancelTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.landTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.clearPmChat]).toHaveBeenCalledWith({
       projectId,
     });

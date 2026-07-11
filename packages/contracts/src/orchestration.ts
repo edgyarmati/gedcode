@@ -42,6 +42,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   resolveGate: "orchestrator.resolveGate",
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
   cancelTask: "orchestrator.cancelTask",
+  landTask: "orchestrator.landTask",
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
 } as const;
@@ -1985,6 +1986,17 @@ export const OrchestratorCancelTaskInput = Schema.Struct({
 });
 export type OrchestratorCancelTaskInput = typeof OrchestratorCancelTaskInput.Type;
 
+export const OrchestratorLandTaskInput = Schema.Struct({
+  taskId: TaskId,
+});
+export type OrchestratorLandTaskInput = typeof OrchestratorLandTaskInput.Type;
+
+export const OrchestratorLandTaskResult = Schema.Struct({
+  sequence: NonNegativeInt,
+  alreadyLanded: Schema.Boolean,
+});
+export type OrchestratorLandTaskResult = typeof OrchestratorLandTaskResult.Type;
+
 export const OrchestratorClearPmChatInput = Schema.Struct({
   projectId: ProjectId,
 });
@@ -2153,6 +2165,10 @@ export const OrchestratorRpcSchemas = {
     input: OrchestratorCancelTaskInput,
     output: DispatchResult,
   },
+  landTask: {
+    input: OrchestratorLandTaskInput,
+    output: OrchestratorLandTaskResult,
+  },
   clearPmChat: {
     input: OrchestratorClearPmChatInput,
     output: DispatchResult,
@@ -2192,6 +2208,15 @@ export class OrchestrationCancelTaskError extends Schema.TaggedErrorClass<Orches
     ]),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationLandTaskError extends Schema.TaggedErrorClass<OrchestrationLandTaskError>()(
+  "OrchestrationLandTaskError",
+  {
+    taskId: TaskId,
+    reason: Schema.Literal("task-not-found"),
+    message: TrimmedNonEmptyString,
   },
 ) {}
 

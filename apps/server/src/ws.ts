@@ -23,6 +23,7 @@ import {
   type OrchestrationThread,
   ORCHESTRATOR_WS_METHODS,
   OrchestrationCancelTaskError,
+  OrchestrationLandTaskError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   OrchestrationGetFullThreadDiffError,
@@ -55,6 +56,10 @@ import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
+import {
+  landOrchestrationTaskWithServices,
+  OrchestrationLandTaskError as TaskLandingError,
+} from "./orchestration/taskLanding.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
@@ -101,6 +106,8 @@ import {
 import { respondToAuthError } from "./auth/http.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const isOrchestrationCancelTaskError = Schema.is(OrchestrationCancelTaskError);
+const isTaskLandingError = (cause: unknown): cause is TaskLandingError =>
+  cause instanceof TaskLandingError;
 const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
 
@@ -1309,6 +1316,30 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 isOrchestrationCancelTaskError(cause)
                   ? cause
                   : toDispatchCommandError(cause, "Failed to cancel orchestration task"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.landTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.landTask,
+            landOrchestrationTaskWithServices(
+              { snapshotQuery: projectionSnapshotQuery },
+              {
+                taskId: input.taskId,
+                commandId: serverCommandId("orchestrator-land-task"),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.mapError((cause) =>
+                isTaskLandingError(cause)
+                  ? new OrchestrationLandTaskError({
+                      taskId: cause.taskId,
+                      reason: cause.reason,
+                      message: cause.detail,
+                    })
+                  : toDispatchCommandError(cause, "Failed to land orchestration task"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },

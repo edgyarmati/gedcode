@@ -3801,6 +3801,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               "dispatch:task.abandon",
             ]);
 
+            const landTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.landTask]({ taskId });
+            assert.deepEqual(landTaskResult, { sequence: 41, alreadyLanded: false });
+
             const requestPmHandoffResult = yield* client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
               projectId,
               mode: "summary",
@@ -3847,6 +3850,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(cancelTaskCommand.createdAt));
       }
 
+      const landTaskCommand = dispatched.find((command) => command.type === "task.land");
+      assert.isDefined(landTaskCommand);
+      if (landTaskCommand?.type === "task.land") {
+        assert.equal(landTaskCommand.taskId, taskId);
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(landTaskCommand.createdAt));
+      }
+
       const clearThreadCommand = dispatched.find((command) => command.type === "thread.clear");
       assert.isDefined(clearThreadCommand);
       if (clearThreadCommand?.type === "thread.clear") {
@@ -3868,6 +3878,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "clearSessionStorage",
         "invalidateRuntime",
       ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("returns a typed websocket rpc error when landing an unknown task", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const taskId = TaskId.make("task-missing-from-landing");
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.landTask]({ taskId }),
+        ).pipe(Effect.result),
+      );
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestrationLandTaskError");
+      assert.equal(result.failure.taskId, taskId);
+      assert.equal(result.failure.reason, "task-not-found");
+      assert.include(result.failure.message, "was not found");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

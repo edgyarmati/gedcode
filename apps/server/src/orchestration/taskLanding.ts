@@ -2,6 +2,7 @@ import {
   type CommandId,
   type DispatchResult,
   type OrchestrationCommand,
+  type OrchestrationDispatchCommandError,
   type TaskId,
 } from "@t3tools/contracts";
 import * as Data from "effect/Data";
@@ -16,12 +17,13 @@ import { withTaskLifecycleLock } from "./taskLifecycleCoordinator.ts";
 type LandOrchestrationTaskError =
   | OrchestrationLandTaskError
   | OrchestrationDispatchError
+  | OrchestrationDispatchCommandError
   | ProjectionRepositoryError
   | PlatformError.PlatformError;
 
 type DispatchLandCommand = (
   command: Extract<OrchestrationCommand, { type: "task.land" }>,
-) => Effect.Effect<DispatchResult, OrchestrationDispatchError>;
+) => Effect.Effect<DispatchResult, OrchestrationDispatchError | OrchestrationDispatchCommandError>;
 
 export class OrchestrationLandTaskError extends Data.TaggedError("OrchestrationLandTaskError")<{
   readonly taskId: TaskId;
