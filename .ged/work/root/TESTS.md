@@ -1,112 +1,96 @@
-# TESTS
+# TESTS - Orchestrator Completion Roadmap
 
-## Focused Tests
+## Test Strategy
 
-### Contracts (schema-only)
+Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
+component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
-- `OrchestrationStageRole` decode accepts `review`/`verify`; `OrchestrationTaskStatus`
-  accepts `reviewing`.
-- Role-selection map decode **rejects** a typo'd / non-role key (e.g. `verfiy`) — no silent
-  default.
-- `task.role-selections.set` command + `task.role-selections-updated` event round-trip;
-  origin restricted to `human`/`client`.
-- Per-role prompt-prefix config + durable stage-history snapshot shape decode.
+## Lifecycle Safety
 
-### Decider / projector / stageResolution
+- Cancel during a long-running worker command: provider receives interrupt, session stops, stage settles,
+  and only then is the worktree removed.
+- Interrupt rejection/timeout: worktree remains, task exposes recovery state, and retry is idempotent.
+- Restart during cancellation: reconciliation completes each remaining step exactly once.
+- Orphaned active stage after restart becomes retryable and no longer holds `currentStageThreadId`.
+- Worktree reaper cannot remove a path owned by another live runtime.
+- Landing event during reactor startup still opens one PR and cleans up once.
 
-- `stage.start` maps `review`→`reviewing`, `verify`→`verifying`;
-  `activeStageRoleForTaskStatus` inverse holds for the new statuses.
-- `review`/`verify` `stage.complete` holds status + clears `currentStageThreadId` (parity
-  with `classify`/`plan`); settlement re-prompts the PM with the bounded result.
-- Model-selection precedence: task override → project per-role → project default (all three
-  layers exercised).
-- **Adversarial**: a `task.role-selections.set` with origin `pm-runtime`/`system` is
-  rejected; single-active-stage invariant still holds with the new roles.
+## Landing and Release
 
-### Persistence
+- PM and client landing operations reject missing/rejected/mismatched land gates.
+- Approved land gate followed by land reaches `landed`, opens or reuses a PR, and records the URL.
+- Repeated land/release dispatch calls are idempotent.
+- Release workflow refuses dirty/unlanded state and records authoritative workflow URL/status.
 
-- Migration creates the stage-history table; repository upserts rows on
-  `stage-started`/`-completed`/`-blocked`; per-task override persists.
-- **Restart replay**: stage history + task overrides reconstruct identically after a
-  projector rebuild.
+## Task Lifecycle
 
-### Prompt-prefix idempotency (regression)
+- Archive hides a terminal task from active board queries without erasing event history.
+- Restore returns an eligible task; invalid restore reports a typed error.
+- Permanent delete uses explicit retention semantics and cascades or tombstones associated stage threads.
+- Repeated create with the same idempotency key returns one task.
+- Supersession links old/new tasks and releases capacity without ambiguity.
 
-- A normal `stage.start` prepends the role prefix once.
-- A **quota-resumed** `stage.start` (reusing the original stage user message) does **not**
-  double-prefix.
-- Restart-recovered re-dispatch does not double-prefix.
+## PM Efficiency and Threads
 
-### PM tools
+- An idle worker causes no periodic PM turns or repeated `inspectStage` calls.
+- Stage settlement, gate resolution, quota recovery, and interrupt outcome each wake the PM once.
+- PM re-entry payload remains bounded with large task and stage histories.
+- Steering reuses the active stage attempt; retry creates a linked attempt.
+- Codex interrupt reaches the provider before the original turn naturally completes.
+- Unsupported live steering reports queued/rejected behavior immediately.
 
-- `handoffWorker` accepts `review`/`verify`; `StageResultBuilder` serializes a `verify`
-  result; PM settlement consumes it exactly once.
+## Task Splitting
 
-### Web
+- Parent/child relationships and child order survive projection rebuild and restart.
+- `splitTask` is atomic and idempotent.
+- Dependencies prevent blocked children from starting and identify the next unblocked child.
+- Parent progress derives from child terminal states.
 
-- Store applies durable stage-history snapshot + streamed updates; selector returns ordered
-  stages per task.
-- Stage-timeline logic renders 5 stages with role + backend + status.
-- Config editors dispatch human-origin updates; role pickers are enum-bound (typo
-  impossible).
-- `orchestrator.setTaskRoleSelections` decodes role-keyed input, dispatches a human-origin
-  `task.role-selections.set` command server-side, and is exposed through `wsRpcClient` +
-  `environmentApi`.
+## Web and Chat
 
-### E2E / durability
+- Forking at a message creates a distinct thread with the intended history boundary.
+- Source thread remains unchanged after fork.
+- Active task detail omits the Plan section until a proposed plan exists; empty `No gates` is omitted;
+  populated sections still render.
+- Composer drafts survive route and Chat/Orchestrator surface switches without leaking between contexts.
+- Project sort/manual order matches between Chat and Orchestrator.
+- Project/task context menus expose only actions valid for the current state.
+- Effective worker permission mode is visible.
 
-- `classify→plan→review→work→verify→land` end-to-end with a per-task backend override and
-  exactly-once prefixing.
-- Server restart mid-stage: pipeline + stage history + overrides survive.
+## Compatibility Checks Requiring Explicit Decisions
 
-## Required Checks
+- Task archive/delete event shape and retention policy.
+- Legacy unknown task types when the validated registry is introduced.
+- Existing persisted `allowFullAccessWorkers=false` overrides when full access becomes the default.
+- Forked thread provider resume behavior across Codex, Claude, and OpenCode.
 
-- `bun fmt`
-- `bun lint`
-- `bun typecheck`
-- `bun run test` (never `bun test`)
-- `bun run build`
+Do not add fallback behavior for these cases without a specific user decision.
 
-## Evidence
+## Required Commands Per Implemented Slice
 
-- 2026-06-23: `cd packages/contracts && bun run test src/orchestration.test.ts`
-  passed (1 file, 44 tests), including `OrchestratorSetTaskRoleSelectionsInput`
-  decode and unknown-role rejection.
-- 2026-06-23: `cd apps/server && bun run test src/server.test.ts` passed (1 file,
-  67 tests), including websocket routing for `orchestrator.setTaskRoleSelections`
-  to a human-origin `task.role-selections.set` command with server-stamped
-  `createdAt`.
-- 2026-06-23: `cd apps/web && bun run test src/rpc/wsRpcClient.test.ts src/localApi.test.ts src/environments/runtime/service.threadSubscriptions.test.ts`
-  passed (3 files, 29 tests), covering typed RPC/client/environment forwarding
-  for `setTaskRoleSelections`.
-- 2026-06-23: `bun fmt` passed.
-- 2026-06-23: `bun lint` passed with existing warnings only.
-- 2026-06-23: `bun typecheck` passed across all 13 packages.
-- 2026-06-23: root `bun run test` passed (13 successful Turbo tasks; server
-  package reported 155 files passed, 1238 tests passed, 1 skipped; web package
-  reported 104 files passed and 1128 tests passed; 8m42s).
-- 2026-06-23: root `bun run build` passed (3 successful Turbo tasks; existing
-  Vite chunk-size and dynamic-import warnings only).
-- 2026-06-22: `cd apps/server && bun run test integration/orchestratorPipeline.integration.test.ts`
-  passed (1 file, 2 tests; 22.23s), covering the full
-  `classify→plan→review→work→verify→land` pipeline, backend precedence,
-  non-human role-selection rejection, exactly-once prefixes across quota
-  block/resume, and restart durability.
-- 2026-06-22: `cd apps/server && bun run test integration/orchestratorPipeline.integration.test.ts integration/providerService.integration.test.ts integration/orchestrationEngine.integration.test.ts`
-  passed (3 files, 17 passed, 1 skipped), covering the fake provider adapter
-  and provider-instance alias harness changes.
-- 2026-06-22: `bun run test src/orchestration.test.ts` in `packages/contracts`
-  passed (1 file, 43 tests).
-- 2026-06-22: focused server regression suite passed:
-  `src/orchestration/decider.task.test.ts`,
-  `src/orchestration/Layers/ProjectionPipeline.test.ts`,
-  `src/persistence/Migrations/041_ProjectionStageHistoryAndRoleOverrides.test.ts`,
-  `src/orchestration/pi/pmTools.test.ts`, and
-  `src/orchestration/StageResultBuilder.test.ts` (5 files, 61 tests).
-- 2026-06-22: `bun fmt` passed.
-- 2026-06-22: `bun lint` passed with existing warnings only.
-- 2026-06-22: `bun typecheck` passed across all 13 packages.
-- 2026-06-22: root `bun run test` passed (13 successful Turbo tasks; server
-  package reported 155 files passed, 1238 tests passed, 1 skipped; 7m18s).
-- 2026-06-22: root `bun run build` passed (3 successful Turbo tasks, 2 cached;
-  existing Vite chunk-size and module deprecation warnings only).
+```sh
+bun fmt
+bun lint
+bun typecheck
+bun run test
+```
+
+Never run `bun test`.
+
+For web interaction slices also run the repository's browser-test command for the affected package. For
+release slices also run `bun run fmt:check` and `bun run release:smoke`.
+
+## Completed Evidence
+
+### ORCH-LC-01 and ORCH-LC-02
+
+- Decider tests reject progression after cancellation reservation and reject direct live-task
+  abandonment outside the cancellation workflow.
+- Provider reactor tests cover a queued worker start racing cancellation and skip provider startup after
+  cancellation or terminal settlement.
+- PM cancellation tests cover concurrent calls, phase checkpoint retries, shutdown failures, final
+  abandonment failures, and terminal-task no-ops.
+- Projection, migration, SQL snapshot, live subscription, and web-store tests cover replay and legacy
+  compatibility for durable cancellation state.
+- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run test`, and
+  `bun run build`.

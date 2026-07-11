@@ -1,56 +1,99 @@
-# SPEC — Driver-based Orchestrator PM (replace pi)
+# SPEC - Orchestrator Completion Roadmap
 
 ## Goal
 
-Replace the pi-based PM brain with a PM that runs on the existing **Codex/Claude drivers**, **read-only
-(enforced)**, with the orchestration tools injected. Keep the event-sourced orchestration core (decider,
-projector, tasks/stages/gates, real-PR landing, worker execution) and the worker provider-instance
-system. Remove pi (pi-provider config PI1–PI6 + the pi PM runtime).
+Finish the Orchestrator/PM control plane so it can drive work reliably from task creation through
+landing, recover from interruption, avoid wasteful polling, and provide the task and chat operations
+needed for daily use.
 
-## Decisions (grill-me, settled)
+This is a phased roadmap. Only one bounded slice should be active at a time unless two slices have
+disjoint write sets and independent verification.
 
-1. **Read-only is HARNESS-ENFORCED** (Claude plan-mode / disallow Write·Edit·Bash; Codex read-only
-   sandbox) PLUS the system prompt — not prompt-only.
-2. **PM reuses the worker provider-instance system**: a Codex/Claude/OpenCode instance + model,
-   per-project + global default — replaces pi `pmModelSelection` + the pi picker. The bottom-of-chat
-   worker picker becomes the correct one.
-3. **Persistent resumable driver session** per project (resume on each human message + each worker-stage
-   settlement) — mirrors pi continuity. Reuse `PmReEntryQueue` + `PmEventProjection` + a session store.
-4. **Full rewrite chosen** (2026-06-29) despite the cost, after the feasibility finding below.
+## Scope
 
-## Feasibility (grounded — the two gaps the rewrite must build)
+### Task lifecycle and reliability
 
-- Drivers: Claude (`provider/Layers/ClaudeAdapter.ts`) + Codex (`provider/acp/AcpSessionRuntime.ts` /
-  `CodexSessionRuntime.ts`). Both support session resume (`resumeCursor`); model switching works (Claude).
-- **GAP 1 — custom-tool injection NOT wired.** Orchestration tools (`pi/pmTools.ts`) are pi `AgentTool`s.
-  Claude SDK manages tools internally (`canUseTool` only approves); Codex/ACP hardcodes `mcpServers: []`.
-  Both CAN take MCP servers in principle → build orchestration-tool injection as an **in-process MCP server**.
-- **GAP 2 — enforced read-only NOT wired.** Claude `runtimeMode` → only `acceptEdits`/`bypassPermissions`
-  (no read-only); Codex no permission model wired. Build a **read-only mode per driver** + read tools.
-- Reusable: `pmTools` (defs), `PmEventProjection`, `PmReEntryQueue`, the orchestration core, the worker
-  provider system. The `PiAgentAdapterShape` is the seam a new `DriverPmAdapter` implements.
-- **Biggest risk:** the MCP injection + enforced read-only behaving correctly on each driver SDK/protocol.
-  → W1 proves it on Claude FIRST before building on top.
+- Gracefully interrupt and settle active workers before abandoning tasks or deleting worktrees.
+- Expose the existing guarded `task.land` transition through PM, MCP, RPC, and UI actions.
+- Add archive/restore and explicit permanent-delete semantics for terminal tasks.
+- Make task creation idempotent and support explicit task supersession.
+- Recover orphaned active stages after restart so tasks can be resumed or retried.
+- Close worktree reaper ownership and startup-subscription races.
+- Default orchestration workers to full write access and remove the obsolete opt-in controls.
 
-## Acceptance criteria
+### PM operation
 
-- The PM runs on a configured worker provider instance (Codex/Claude) + model, **read-only — cannot
-  write/edit/exec (enforced)** — with the orchestration tools available + read/grep/find for comprehension.
-- The PM drives the SAME orchestration (create tasks, hand off planner/worker/verifier on the configured
-  per-stage models, gates, landing) via the orchestration tools.
-- Persistent PM session resumes on human messages + worker settlements (continuity preserved).
-- PM turn failures (quota/rate-limit/auth/errors) **surface in the PM conversation** (no silent freeze).
-- The PM chat composer uses the config-driven PM model; no inert controls.
-- pi is removed (config + runtime + deps); full monorepo gate green.
+- Replace continuous PM polling with event-driven settlement and operator-requested inspection.
+- Route medium-difficulty worker stages to GPT-5.6 Terra at high reasoning and difficult,
+  cross-cutting stages to GPT-5.6 Sol at high reasoning.
+- Make worker reasoning effort an explicit per-role/per-task backend option so PM dispatch can enforce
+  the selected effort instead of relying on provider defaults.
+- Improve PM thread reuse and summaries so related work does not create unnecessary threads or
+  repeatedly reload full histories.
+- Make interrupt and steer commands observable and effective during active Codex turns.
+- Add first-class parent/child task splitting for large requests.
 
-## Non-goals (v1)
+### User experience
 
-- Codex-PM parity may trail Claude-PM (W5) — Claude-first to de-risk.
-- No change to worker execution, the decider/projector, gates, or landing.
+- Add normal-chat thread forking.
+- In an active task detail view, hide the empty Plan section while no proposed plan exists. Also hide
+  the empty `No gates` card when there are no gates.
+- Persist unsent composer drafts when switching between Chat and Orchestrator contexts.
+- Bring Orchestrator project/task sidebars to parity with Chat for context menus, sorting, and manual
+  reordering.
+- Display effective worker permissions and recovery/action status.
 
-## WPs (de-risk ordered — see TASKS.md)
+### Workflow specialization
 
-W1 driver MCP tool-injection + enforced read-only (Claude, foundation/risk) · W2 `DriverPmAdapter`
-(PiAgentAdapterShape) on the Claude session, wired into PmRuntime · W3 PM provider/model = worker
-ModelSelection (contracts + resolver + picker) · W4 surface PM turn errors + PM composer cleanup · W5
-Codex driver parity · W6 remove pi (modules + config + deps).
+- Add supported task types beyond `feature`, beginning with a release workflow.
+- Give release work a dedicated playbook and safe dispatch/status surface instead of treating
+  `release` as an arbitrary feature label.
+
+## Explicitly Deferred
+
+- Server enforcement of canonical pipeline order is intentionally deferred. Existing permissive stage
+  ordering remains unchanged for now.
+- Automatic merging to the default branch remains out of scope. Landing opens or records a gated PR.
+- Bulk implementation of this roadmap is prohibited; slices land incrementally.
+
+## Constraints
+
+- Preserve the append-only orchestration event log. User-facing deletion should be modeled explicitly;
+  do not edit SQLite rows or erase historical events ad hoc.
+- Destructive cleanup must be idempotent and restart-safe.
+- Provider interruption must report requested, acknowledged, timed-out, and failed states.
+- PM correctness must come from server commands and durable state, not prompt wording alone.
+- Worker backend policy is Terra/high for medium work and Sol/high for difficult or high-risk work.
+- Existing user changes and untracked release directories must not be modified.
+- Every user-visible slice updates `CHANGELOG.md` under `## Unreleased`.
+- Required repository checks are `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`. Never run
+  `bun test`.
+
+## Acceptance Criteria
+
+1. Cancelling an active task cannot delete its worktree while its provider session or terminal is still
+   running.
+2. An approved land gate has an explicit, guarded action that reaches `landed` and starts the existing
+   PR-opening path.
+3. Terminal tasks can be archived, restored where valid, and explicitly deleted from active views.
+4. Retried PM task creation returns or supersedes the existing semantic task instead of producing
+   duplicates.
+5. Server restart cannot leave an interrupted stage permanently occupying `currentStageThreadId`.
+6. PM operation is settlement-driven; it does not continuously poll worker threads while nothing has
+   changed.
+7. Stop and steer actions show immediate acknowledgement and accurately report provider outcome.
+8. Large tasks can be represented as a parent with ordered, independently executable child slices.
+9. Normal chat supports thread forking, and unsent drafts survive context switches.
+10. Active task detail omits the Plan section until a proposed plan exists and omits the gates section
+    when there are no gates.
+11. Orchestrator sidebars provide native context menus, sorting, and manual ordering.
+12. Release tasks use a real release playbook and observable dispatch flow.
+
+## Delivery Order
+
+1. Lifecycle safety and landing.
+2. Recovery, idempotency, task retention, and worker access defaults.
+3. Event-driven PM operation and effective interrupt/steer behavior.
+4. Parent/child task splitting.
+5. Chat and sidebar UX.
+6. Release specialization.
