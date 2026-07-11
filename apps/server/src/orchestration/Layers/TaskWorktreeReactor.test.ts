@@ -161,9 +161,13 @@ function makeTerminalTaskEvent(type: "task.landed" | "task.abandoned"): Orchestr
   };
 }
 
-function makeProjectionSnapshotQueryLayer(readModelRef: { current: OrchestrationReadModel }) {
+function makeProjectionSnapshotQueryLayer(
+  readModelRef: { current: OrchestrationReadModel },
+  getCommandReadModel: () => Effect.Effect<OrchestrationReadModel> = () =>
+    Effect.succeed(readModelRef.current),
+) {
   return Layer.succeed(ProjectionSnapshotQuery, {
-    getCommandReadModel: () => Effect.succeed(readModelRef.current),
+    getCommandReadModel,
     getSnapshot: () => Effect.succeed(readModelRef.current),
     getShellSnapshot: () => unsupportedProjectionQuery(),
     getArchivedShellSnapshot: () => unsupportedProjectionQuery(),
@@ -217,6 +221,8 @@ const createdChangeRequest: ChangeRequest = {
 async function createHarness(input: {
   readonly readModel: OrchestrationReadModel;
   readonly eventPubSub?: PubSub.PubSub<OrchestrationEvent>;
+  readonly readEvents?: OrchestrationEngineShape["readEvents"];
+  readonly getCommandReadModel?: () => Effect.Effect<OrchestrationReadModel>;
   readonly reaperIntervalMsOverride?: number;
   readonly useTestClock?: boolean;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
@@ -312,10 +318,10 @@ async function createHarness(input: {
     landingMaxAttemptsOverride: 1,
     landingRetryDelayMsOverride: 1,
   }).pipe(
-    Layer.provide(makeProjectionSnapshotQueryLayer(readModelRef)),
+    Layer.provide(makeProjectionSnapshotQueryLayer(readModelRef, input.getCommandReadModel)),
     Layer.provide(
       Layer.succeed(OrchestrationEngineService, {
-        readEvents: () => Stream.empty,
+        readEvents: input.readEvents ?? (() => Stream.empty),
         dispatch,
         streamDomainEvents: Stream.fromPubSub(eventPubSub),
         streamShellEvents: Stream.empty,
@@ -462,6 +468,54 @@ describe("TaskWorktreeReactor", () => {
       path: worktreePath,
       force: true,
     });
+    expect(harness.vcsProcessRun).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("processes a terminal event committed during startup exactly once", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const startupReadModel = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "working",
+    });
+    const terminalReadModel = {
+      ...makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "abandoned",
+      }),
+      snapshotSequence: 2,
+    };
+    const terminalEvent = makeTerminalTaskEvent("task.abandoned");
+    const readEventCursors: number[] = [];
+    let snapshotCaptured = false;
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: startupReadModel,
+      getCommandReadModel: () => {
+        if (snapshotCaptured) {
+          return Effect.succeed(terminalReadModel);
+        }
+        snapshotCaptured = true;
+        return PubSub.publish(eventPubSub, terminalEvent).pipe(Effect.as(startupReadModel));
+      },
+      readEvents: (fromSequenceExclusive) => {
+        readEventCursors.push(fromSequenceExclusive);
+        return Stream.fromIterable(
+          fromSequenceExclusive < terminalEvent.sequence ? [terminalEvent] : [],
+        );
+      },
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(readEventCursors).toEqual([startupReadModel.snapshotSequence]);
+    expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
     expect(harness.vcsProcessRun).toHaveBeenCalledTimes(1);
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));

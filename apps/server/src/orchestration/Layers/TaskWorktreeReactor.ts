@@ -522,8 +522,9 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
 
     const worker = yield* makeDrainableWorker(processTerminalTaskEventSafely);
 
-    const processPendingLandedTasks = Effect.fn("processPendingLandedTasks")(function* () {
-      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    const processPendingLandedTasks = Effect.fn("processPendingLandedTasks")(function* (
+      readModel: OrchestrationReadModel,
+    ) {
       const contexts = listPendingLandedTaskContexts(readModel);
       yield* Effect.forEach(contexts, processLandedTaskContext, {
         concurrency: 1,
@@ -531,19 +532,21 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       });
     });
 
-    const processPendingLandedTasksSafely = processPendingLandedTasks().pipe(
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) {
-          return Effect.void;
-        }
-        return Effect.logWarning("task worktree startup landing PR processing failed", {
-          cause: Cause.pretty(cause),
-        });
-      }),
-    );
+    const processPendingLandedTasksSafely = (readModel: OrchestrationReadModel) =>
+      processPendingLandedTasks(readModel).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.void;
+          }
+          return Effect.logWarning("task worktree startup landing PR processing failed", {
+            cause: Cause.pretty(cause),
+          });
+        }),
+      );
 
-    const cleanupTerminalTaskWorktrees = Effect.fn("cleanupTerminalTaskWorktrees")(function* () {
-      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    const cleanupTerminalTaskWorktrees = Effect.fn("cleanupTerminalTaskWorktrees")(function* (
+      readModel: OrchestrationReadModel,
+    ) {
       const candidates = listTerminalTaskWorktreeCleanupCandidates(readModel);
       yield* Effect.forEach(candidates, cleanupTaskWorktreeSafely, {
         concurrency: 1,
@@ -551,18 +554,19 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       });
     });
 
-    const cleanupTerminalTaskWorktreesSafely = cleanupSemaphore
-      .withPermits(1)(cleanupTerminalTaskWorktrees())
-      .pipe(
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) {
-            return Effect.void;
-          }
-          return Effect.logWarning("task worktree startup cleanup failed", {
-            cause: Cause.pretty(cause),
-          });
-        }),
-      );
+    const cleanupTerminalTaskWorktreesSafely = (readModel: OrchestrationReadModel) =>
+      cleanupSemaphore
+        .withPermits(1)(cleanupTerminalTaskWorktrees(readModel))
+        .pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.void;
+            }
+            return Effect.logWarning("task worktree startup cleanup failed", {
+              cause: Cause.pretty(cause),
+            });
+          }),
+        );
 
     const readTaskWorktreeEntries = Effect.fn("readTaskWorktreeEntries")(function* (root: string) {
       return yield* fileSystem
@@ -656,15 +660,53 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
 
     const start: TaskWorktreeReactorShape["start"] = Effect.fn("start")(function* () {
-      yield* processPendingLandedTasksSafely;
-      yield* cleanupTerminalTaskWorktreesSafely;
-      yield* Effect.forkScoped(
-        Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-          if (event.type !== "task.landed" && event.type !== "task.abandoned") {
+      // Subscribe before reading the startup snapshot. Events committed while
+      // startup reconciliation is running are then available from both the
+      // durable replay and this buffered live stream, closing the former gap
+      // between the snapshot scan and hot-stream subscription.
+      const liveEvents = yield* Stream.toQueue(orchestrationEngine.streamDomainEvents, {
+        capacity: "unbounded",
+      });
+      const startupReadModelExit = yield* Effect.exit(
+        projectionSnapshotQuery.getCommandReadModel(),
+      );
+      const startupSequence =
+        startupReadModelExit._tag === "Success" ? startupReadModelExit.value.snapshotSequence : 0;
+      let lastTerminalSequence = startupSequence;
+
+      const enqueueTerminalEventOnce = (event: OrchestrationEvent) => {
+        if (
+          (event.type !== "task.landed" && event.type !== "task.abandoned") ||
+          event.sequence <= lastTerminalSequence
+        ) {
+          return Effect.void;
+        }
+        lastTerminalSequence = event.sequence;
+        return worker.enqueue(event);
+      };
+
+      if (startupReadModelExit._tag === "Success") {
+        yield* processPendingLandedTasksSafely(startupReadModelExit.value);
+        yield* cleanupTerminalTaskWorktreesSafely(startupReadModelExit.value);
+      } else {
+        yield* Effect.logWarning("task worktree startup snapshot query failed", {
+          cause: Cause.pretty(startupReadModelExit.cause),
+        });
+      }
+      yield* orchestrationEngine.readEvents(startupSequence).pipe(
+        Stream.runForEach(enqueueTerminalEventOnce),
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
             return Effect.void;
           }
-          return worker.enqueue(event);
+          return Effect.logWarning("task worktree startup event replay failed", {
+            fromSequenceExclusive: startupSequence,
+            cause: Cause.pretty(cause),
+          });
         }),
+      );
+      yield* Effect.forkScoped(
+        Stream.runForEach(Stream.fromQueue(liveEvents), enqueueTerminalEventOnce),
       );
       yield* Effect.forkScoped(
         reapOrphanedTaskWorktreesSafely.pipe(

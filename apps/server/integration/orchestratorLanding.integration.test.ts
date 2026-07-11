@@ -6,6 +6,7 @@ import {
   CommandId,
   EventId,
   GateId,
+  GitCommandError,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -23,7 +24,9 @@ import {
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
@@ -539,6 +542,158 @@ it.live("opens a ready PR after the human-approved land gate and cleans the work
     }),
   );
 });
+
+it.live("processes once when landing races with the startup scan-to-subscribe window", () =>
+  Effect.gen(function* () {
+    const cleanupStarted = yield* Deferred.make<void>();
+    const releaseCleanup = yield* Deferred.make<void>();
+    const removedPaths: string[] = [];
+    const blockerId = taskId("startup-race-blocker");
+    const targetId = taskId("startup-race-target");
+    const { registry, createChangeRequestCalls } = makeSourceControlRegistry();
+
+    yield* Effect.acquireUseRelease(
+      makeOrchestrationIntegrationHarness({
+        provider: CODEX_PROVIDER,
+        startReactors: false,
+        taskWorktreeReactor: {
+          enabled: true,
+          sourceControlProviderRegistry: registry,
+          removeWorktree: (input) =>
+            Effect.gen(function* () {
+              removedPaths.push(input.path);
+              if (input.path.endsWith(String(blockerId))) {
+                yield* Deferred.succeed(cleanupStarted, undefined);
+                yield* Deferred.await(releaseCleanup);
+              }
+              yield* Effect.try({
+                try: () => {
+                  runGit(input.cwd, [
+                    "worktree",
+                    "remove",
+                    ...(input.force ? ["--force"] : []),
+                    input.path,
+                  ]);
+                },
+                catch: (cause) =>
+                  new GitCommandError({
+                    operation: "removeWorktree",
+                    command: "git worktree remove",
+                    cwd: input.cwd,
+                    detail: cause instanceof Error ? cause.message : String(cause),
+                  }),
+              }).pipe(Effect.orDie);
+            }),
+        },
+      }),
+      (harness) =>
+        Effect.gen(function* () {
+          const project = projectId("startup-race");
+          const { task: target, stageThreadId } = yield* seedReviewTask({
+            harness,
+            suffix: "startup-race-target",
+            projectId: project,
+            taskId: targetId,
+            branch: "orchestrator/landing-startup-race-target",
+            title: "Landing startup race target",
+          });
+          assert.ok(target.worktreePath);
+
+          yield* harness.engine
+            .dispatch({
+              type: "task.create",
+              commandId: commandId("startup-race-blocker-create"),
+              taskId: blockerId,
+              projectId: project,
+              taskType: TASK_TYPE,
+              title: "Landing startup race blocker",
+              pmMessageId: null,
+              branch: "orchestrator/landing-startup-race-blocker",
+              createdAt: iso(20),
+            })
+            .pipe(Effect.orDie);
+          const blocker = yield* waitForTask(
+            harness,
+            blockerId,
+            (task) => task.worktreePath !== null,
+            "startup race blocker task",
+          );
+          assert.ok(blocker.worktreePath);
+          ensureGitWorktree({
+            workspaceDir: harness.workspaceDir,
+            branch: blocker.branch!,
+            worktreePath: blocker.worktreePath,
+          });
+          yield* harness.engine
+            .dispatch({
+              type: "task.cancellation.request",
+              commandId: commandId("startup-race-blocker-cancel"),
+              taskId: blockerId,
+              createdAt: iso(21),
+            })
+            .pipe(Effect.orDie);
+          yield* harness.engine
+            .dispatch({
+              type: "task.abandon",
+              commandId: commandId("startup-race-blocker-abandon"),
+              taskId: blockerId,
+              createdAt: iso(22),
+            })
+            .pipe(Effect.orDie);
+          yield* waitForTask(
+            harness,
+            blockerId,
+            (task) => task.status === "abandoned",
+            "abandoned startup race blocker",
+          );
+
+          const startupFiber = yield* Effect.forkChild(harness.startTaskWorktreeReactor);
+          yield* Deferred.await(cleanupStarted);
+
+          yield* approveLandAndDispatch({
+            harness,
+            suffix: "startup-race-target",
+            taskId: targetId,
+            stageThreadId,
+          });
+          yield* waitForTask(
+            harness,
+            targetId,
+            (task) => task.status === "landed",
+            "landed startup race target",
+          );
+
+          yield* Deferred.succeed(releaseCleanup, undefined);
+          yield* Fiber.join(startupFiber);
+          yield* harness.waitForDomainEvent(
+            (event) => event.type === "task.pr-opened" && event.payload.taskId === targetId,
+          );
+          yield* waitForWorktreeRemoved(target.worktreePath);
+          yield* harness.drainReactors;
+
+          const events = yield* readAllEvents(harness);
+          assert.equal(createChangeRequestCalls.length, 1);
+          assert.equal(
+            events.filter(
+              (event) => event.type === "task.pr-opened" && event.payload.taskId === targetId,
+            ).length,
+            1,
+          );
+          assert.equal(
+            removedPaths.filter((removedPath) => removedPath === target.worktreePath).length,
+            1,
+          );
+          assert.equal(
+            harness.landingMocks?.pushCurrentBranchCalls.filter(
+              (call) => call.cwd === target.worktreePath,
+            ).length,
+            1,
+          );
+        }),
+      (harness) => harness.dispose,
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.live("opens a draft PR when project config sets openPrAsDraft", () => {
   const { registry, createChangeRequestCalls } = makeSourceControlRegistry();

@@ -282,6 +282,7 @@ export interface OrchestrationIntegrationHarness {
       timeoutMs?: number,
     ): Effect.Effect<Receipt, never>;
   };
+  readonly startTaskWorktreeReactor: Effect.Effect<void, never>;
   readonly drainReactors: Effect.Effect<void, never>;
   readonly dispose: Effect.Effect<void, never>;
 }
@@ -637,6 +638,9 @@ export const makeOrchestrationIntegrationHarness = (
     const reactor = yield* tryRuntimePromise("load OrchestrationReactor service", () =>
       runtime.runPromise(Effect.service(OrchestrationReactor)),
     ).pipe(Effect.orDie);
+    const taskWorktreeReactor = yield* tryRuntimePromise("load TaskWorktreeReactor service", () =>
+      runtime.runPromise(Effect.service(TaskWorktreeReactor)),
+    ).pipe(Effect.orDie);
     const providerCommandReactor = yield* tryRuntimePromise(
       "load ProviderCommandReactor service",
       () => runtime.runPromise(Effect.service(ProviderCommandReactor)),
@@ -785,6 +789,10 @@ export const makeOrchestrationIntegrationHarness = (
       yield* checkpointReactor.drain;
     });
 
+    const startTaskWorktreeReactor = tryRuntimePromise("start TaskWorktreeReactor", () =>
+      runtime.runPromise(taskWorktreeReactor.start().pipe(Scope.provide(scope))),
+    ).pipe(Effect.orDie);
+
     let disposed = false;
     const dispose = Effect.gen(function* () {
       if (disposed) {
@@ -829,6 +837,7 @@ export const makeOrchestrationIntegrationHarness = (
       waitForDomainEvent,
       waitForPendingApproval,
       waitForReceipt,
+      startTaskWorktreeReactor,
       drainReactors,
       dispose,
     } satisfies OrchestrationIntegrationHarness;
