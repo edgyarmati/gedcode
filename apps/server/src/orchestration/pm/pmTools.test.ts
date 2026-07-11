@@ -886,6 +886,84 @@ it.effect("cancelTask stops an active stage turn, session, and terminals before 
   }),
 );
 
+it.effect("cancelTask is side-effect free for a landed task with an active stage thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const readModel = makeReadModel(
+      [makeTask({ status: "landed", currentStageThreadId: stageThreadId })],
+      [
+        makeThread(stageThreadId, {
+          latestTurn: {
+            turnId,
+            state: "running",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: null,
+            assistantMessageId: null,
+          },
+        }),
+      ],
+    );
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          providerService: {
+            interruptTurn: () => Effect.sync(() => calls.push("interrupt")),
+            stopSession: () => Effect.sync(() => calls.push("stop")),
+          },
+          terminalManager: {
+            close: () => Effect.sync(() => calls.push("close")),
+          },
+        }),
+      ),
+    );
+    const cancelTask = findTool(tools, "cancelTask");
+
+    const result = yield* Effect.promise(() =>
+      cancelTask.execute("tool-cancel-landed", {
+        taskId,
+      }),
+    );
+
+    assert.deepStrictEqual(calls, []);
+    assert.deepStrictEqual(dispatched, []);
+    assert.deepStrictEqual(result.details, { taskId, sequence: 0 });
+  }),
+);
+
+it.effect("cancelTask remains idempotent for an abandoned task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const readModel = makeReadModel([makeTask({ status: "abandoned" })]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          providerService: {
+            interruptTurn: () => Effect.sync(() => calls.push("interrupt")),
+            stopSession: () => Effect.sync(() => calls.push("stop")),
+          },
+          terminalManager: {
+            close: () => Effect.sync(() => calls.push("close")),
+          },
+        }),
+      ),
+    );
+    const cancelTask = findTool(tools, "cancelTask");
+
+    const result = yield* Effect.promise(() =>
+      cancelTask.execute("tool-cancel-abandoned", {
+        taskId,
+      }),
+    );
+
+    assert.deepStrictEqual(calls, []);
+    assert.deepStrictEqual(dispatched, []);
+    assert.deepStrictEqual(result.details, { taskId, sequence: 0 });
+  }),
+);
+
 it.effect("cancelTask does not abandon when terminal shutdown fails", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

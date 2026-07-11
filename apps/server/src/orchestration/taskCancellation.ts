@@ -4,6 +4,7 @@ import {
   OrchestrationDispatchCommandError,
   type DispatchResult,
   type OrchestrationCommand,
+  type OrchestrationTask,
   type TaskId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -62,6 +63,9 @@ const shutdownFailure = (input: {
     cause: Cause.pretty(input.cause),
   });
 
+const isTerminalTaskStatus = (status: OrchestrationTask["status"]): boolean =>
+  status === "landed" || status === "abandoned";
+
 export const cancelOrchestrationTaskWithServices = Effect.fn("cancelOrchestrationTaskWithServices")(
   function* (services: CancelOrchestrationTaskServices, input: CancelOrchestrationTaskInput) {
     const readModel = yield* services.snapshotQuery.getCommandReadModel().pipe(
@@ -76,7 +80,7 @@ export const cancelOrchestrationTaskWithServices = Effect.fn("cancelOrchestratio
       ),
     );
     const task = readModel.tasks.find((entry) => entry.id === input.taskId);
-    if (task?.status === "abandoned") {
+    if (task !== undefined && isTerminalTaskStatus(task.status)) {
       return { sequence: readModel.snapshotSequence };
     }
 

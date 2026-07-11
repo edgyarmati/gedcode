@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Make Orchestrator cancellation side-effect free for landed and abandoned tasks, so terminal task history is never removed after completion.
 - Fix: Orchestrator task cancellation now stops the active worker turn/session and closes stage terminals before dispatching `task.abandon`, surfaces typed shutdown failures without removing the worktree, and clears the abandoned task's active stage pointer in projections.
 - Change: Use `~/.gedcode` as the default app data directory for fresh installs and copy existing default `~/.t3` data there on desktop startup, including the active legacy state directory when `~/.gedcode` already exists from earlier local/dev usage.
 - Change: Treat orchestration as enabled for every project and remove the project enable toggle plus the stage-handoff resource limit from contracts, runtime enforcement, and settings logic.
