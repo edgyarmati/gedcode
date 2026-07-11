@@ -807,6 +807,115 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("interrupts an orphaned active stage through an internal command", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+      });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.interrupt",
+          commandId: asCommandId("cmd-stage-interrupt"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId: asThreadId("thread-stage-work"),
+          reason: "orphaned",
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.stage-interrupted");
+      expect(singleEvent?.payload).toEqual({
+        taskId: asTaskId("task-1"),
+        role: "work",
+        stageThreadId: asThreadId("thread-stage-work"),
+        reason: "orphaned",
+        updatedAt: now,
+      });
+    }),
+  );
+
+  it.effect("rejects orphan interruption for an inactive or mismatched stage", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-active"),
+        stageThreadIds: [asThreadId("thread-stage-active"), asThreadId("thread-stage-old")],
+      });
+
+      const inactiveThread = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.interrupt",
+            commandId: asCommandId("cmd-stage-interrupt-old"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            stageThreadId: asThreadId("thread-stage-old"),
+            reason: "orphaned",
+            createdAt: now,
+          },
+        }),
+      );
+      const mismatchedRole = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.interrupt",
+            commandId: asCommandId("cmd-stage-interrupt-wrong-role"),
+            taskId: asTaskId("task-1"),
+            role: "review",
+            stageThreadId: asThreadId("thread-stage-active"),
+            reason: "orphaned",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(inactiveThread._tag).toBe("Failure");
+      expect(mismatchedRole._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("rejects orphan interruption after task cancellation is requested", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: asThreadId("thread-stage-work"),
+        stageThreadIds: [asThreadId("thread-stage-work")],
+        cancellation: {
+          requestedAt: now,
+          completedPhases: [],
+          failurePhase: null,
+          failureMessage: null,
+          failedAt: null,
+        },
+      });
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.interrupt",
+            commandId: asCommandId("cmd-stage-interrupt-cancelling"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            stageThreadId: asThreadId("thread-stage-work"),
+            reason: "orphaned",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("allows quota resumption until maxRetriesPerStage is exceeded", () =>
     Effect.gen(function* () {
       const readModel = {

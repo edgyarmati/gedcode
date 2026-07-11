@@ -2139,6 +2139,20 @@ function applyEnvironmentOrchestrationEvent(
       });
     }
 
+    case "task.stage-interrupted": {
+      const taskId = String(event.payload.taskId);
+      const withTask = updateTaskState(state, taskId, (task) => ({
+        ...task,
+        status: "blocked" as const,
+        currentStageThreadId: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+      return patchStageHistoryEntry(withTask, taskId, String(event.payload.stageThreadId), {
+        status: "interrupted",
+        endedAt: event.payload.updatedAt,
+      });
+    }
+
     case "task.gate-requested": {
       const existingGate = state.pendingGateById[String(event.payload.gateId)];
       const pendingGate = mapOrchestratorPendingGate(

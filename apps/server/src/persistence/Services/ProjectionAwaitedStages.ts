@@ -4,7 +4,8 @@
  * Owns persistence operations for the `projection_awaited_stages`
  * reconciliation source (migration 034). One row per dispatched-but-unsettled
  * stage: a `task.stage-started` (with a non-null `awaitedTurnId`) opens a row
- * (`awaited`); the matching `task.stage-completed` settles it (`completed`).
+ * (`awaited`); a matching completion, quota block, or orphan interruption
+ * settles it so restart recovery does not rediscover the stage.
  *
  * Projector-owned and derived purely from the `task.*` event log (Plan 018
  * WP-D / WP-H durability barrier) — the PM never writes it directly.
@@ -21,10 +22,16 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 /**
  * Lifecycle of an awaited stage row. `awaited` while the PM is blocked on the
  * worker turn; `completed` once the matching `task.stage-completed` lands;
- * `blocked` when the stage is paused by quota and should no longer be treated
+ * `blocked` when the stage is paused by quota; `interrupted` when restart
+ * recovery settles an orphaned stage. Neither terminal state should be treated
  * as a missing completion settlement.
  */
-export const ProjectionAwaitedStageStatus = Schema.Literals(["awaited", "completed", "blocked"]);
+export const ProjectionAwaitedStageStatus = Schema.Literals([
+  "awaited",
+  "completed",
+  "blocked",
+  "interrupted",
+]);
 export type ProjectionAwaitedStageStatus = typeof ProjectionAwaitedStageStatus.Type;
 
 export const ProjectionAwaitedStage = Schema.Struct({

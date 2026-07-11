@@ -109,14 +109,14 @@ describe("OrchestrationReactor", () => {
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
 
     expect(started).toEqual([
-      "orphan-turn-reconciler",
       "task-cancellation-reconciler",
-      "pm-runtime",
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",
       "thread-deletion-reactor",
       "task-worktree-reactor",
+      "pm-runtime",
+      "orphan-turn-reconciler",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

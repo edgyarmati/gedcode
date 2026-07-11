@@ -2248,6 +2248,52 @@ describe("orchestrator stage history", () => {
     });
   });
 
+  it("settles an orphaned streamed stage as interrupted without adding a quota block", () => {
+    let state = seedProjectAndTask();
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-started",
+        {
+          taskId,
+          role: "work",
+          stageThreadId: workThreadId,
+          awaitedTurnId: TurnId.make("turn-orphaned"),
+          providerInstanceId: codex,
+          model: "gpt-5-codex",
+          updatedAt: "2026-07-11T01:00:00.000Z",
+        },
+        { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+    state = applyOrchestrationEvent(
+      state,
+      makeEvent(
+        "task.stage-interrupted",
+        {
+          taskId,
+          role: "work",
+          stageThreadId: workThreadId,
+          reason: "orphaned",
+          updatedAt: "2026-07-11T01:01:00.000Z",
+        },
+        { sequence: 4, aggregateKind: "task", aggregateId: taskId },
+      ),
+      localEnvironmentId,
+    );
+
+    expect(selectTaskByRef(state, taskRef)).toMatchObject({
+      status: "blocked",
+      currentStageThreadId: null,
+    });
+    expect(selectTaskStageHistoryByRef(state, taskRef)[0]).toMatchObject({
+      status: "interrupted",
+      endedAt: "2026-07-11T01:01:00.000Z",
+    });
+    expect(selectEnvironmentState(state, localEnvironmentId).quotaBlockedStageByTaskId).toEqual({});
+  });
+
   it("seeds stage history from the project snapshot and resets stale rows", () => {
     const seeded = seedProjectAndTask();
     const task = selectTaskByRef(seeded, taskRef);

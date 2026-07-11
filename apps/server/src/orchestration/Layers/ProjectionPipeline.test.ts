@@ -753,6 +753,117 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepEqual(otherRows, [{ activityId: "activity-clear-activities-other" }]);
     }),
   );
+
+  it.effect("projects orphaned stage interruption across task, history, and awaited rows", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const taskId = TaskId.make("task-orphaned-projection");
+      const stageThreadId = ThreadId.make("thread-orphaned-projection");
+      const createdAt = "2026-07-11T02:00:00.000Z";
+      const startedAt = "2026-07-11T02:01:00.000Z";
+      const interruptedAt = "2026-07-11T02:02:00.000Z";
+
+      yield* eventStore.append({
+        type: "task.created",
+        eventId: EventId.make("evt-orphaned-projection-create"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: createdAt,
+        commandId: CommandId.make("cmd-orphaned-projection-create"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-orphaned-projection-create"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId: ProjectId.make("project-orphaned-projection"),
+          taskType: TaskTypeId.make("feature"),
+          title: "Orphaned projection",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.stage-started",
+        eventId: EventId.make("evt-orphaned-projection-start"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: startedAt,
+        commandId: CommandId.make("cmd-orphaned-projection-start"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-orphaned-projection-start"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          awaitedTurnId: TurnId.make("turn-orphaned-projection"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+          updatedAt: startedAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.stage-interrupted",
+        eventId: EventId.make("evt-orphaned-projection-interrupt"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: interruptedAt,
+        commandId: CommandId.make("cmd-orphaned-projection-interrupt"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-orphaned-projection-interrupt"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "work",
+          stageThreadId,
+          reason: "orphaned",
+          updatedAt: interruptedAt,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const taskRows = yield* sql<{
+        readonly status: string;
+        readonly currentStageThreadId: string | null;
+      }>`
+        SELECT status, current_stage_thread_id AS "currentStageThreadId"
+        FROM projection_tasks
+        WHERE task_id = ${taskId}
+      `;
+      assert.deepEqual(taskRows, [{ status: "blocked", currentStageThreadId: null }]);
+
+      const historyRows = yield* sql<{ readonly status: string; readonly endedAt: string | null }>`
+        SELECT status, ended_at AS "endedAt"
+        FROM projection_stage_history
+        WHERE stage_thread_id = ${stageThreadId}
+      `;
+      assert.deepEqual(historyRows, [{ status: "interrupted", endedAt: interruptedAt }]);
+
+      const awaitedRows = yield* sql<{
+        readonly status: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT status, completed_at AS "completedAt"
+        FROM projection_awaited_stages
+        WHERE stage_thread_id = ${stageThreadId}
+      `;
+      assert.deepEqual(awaitedRows, [{ status: "interrupted", completedAt: interruptedAt }]);
+
+      const quotaRows = yield* sql<{ readonly stageThreadId: string }>`
+        SELECT stage_thread_id AS "stageThreadId"
+        FROM projection_quota_blocked_stages
+        WHERE stage_thread_id = ${stageThreadId}
+      `;
+      assert.deepEqual(quotaRows, []);
+    }),
+  );
 });
 
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(

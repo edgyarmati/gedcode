@@ -617,7 +617,12 @@ export const OrchestrationPmQuotaBlock = Schema.Struct({
 });
 export type OrchestrationPmQuotaBlock = typeof OrchestrationPmQuotaBlock.Type;
 
-export const OrchestrationStageHistoryStatus = Schema.Literals(["running", "completed", "blocked"]);
+export const OrchestrationStageHistoryStatus = Schema.Literals([
+  "running",
+  "completed",
+  "blocked",
+  "interrupted",
+]);
 export type OrchestrationStageHistoryStatus = typeof OrchestrationStageHistoryStatus.Type;
 
 export const OrchestrationStageHistoryEntry = Schema.Struct({
@@ -1024,6 +1029,16 @@ const TaskStageBlockCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskStageInterruptCommand = Schema.Struct({
+  type: Schema.Literal("task.stage.interrupt"),
+  commandId: CommandId,
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  role: OrchestrationStageRole,
+  reason: Schema.Literal("orphaned"),
+  createdAt: IsoDateTime,
+});
+
 const TaskGateRequestCommand = Schema.Struct({
   type: Schema.Literal("task.gate.request"),
   commandId: CommandId,
@@ -1254,6 +1269,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadRevertCompleteCommand,
   TaskStageCompleteCommand,
   TaskStageBlockCommand,
+  TaskStageInterruptCommand,
   TaskPrOpenedCommand,
   TaskAbandonCommand,
   TaskCancellationRequestCommand,
@@ -1300,6 +1316,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.stage-started",
   "task.stage-completed",
   "task.stage-blocked",
+  "task.stage-interrupted",
   "task.gate-requested",
   "task.gate-resolved",
   "task.cancellation-requested",
@@ -1570,6 +1587,14 @@ export const TaskStageBlockedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskStageInterruptedPayload = Schema.Struct({
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  reason: Schema.Literal("orphaned"),
+  updatedAt: IsoDateTime,
+});
+
 export const TaskGateRequestedPayload = Schema.Struct({
   taskId: TaskId,
   gateId: GateId,
@@ -1802,6 +1827,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.stage-blocked"),
     payload: TaskStageBlockedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.stage-interrupted"),
+    payload: TaskStageInterruptedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

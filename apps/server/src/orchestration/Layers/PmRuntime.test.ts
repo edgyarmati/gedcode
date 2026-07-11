@@ -106,6 +106,7 @@ const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("thread-stage-1");
 const turnId = TurnId.make("turn-1");
 const quotaBlockedSettlementKey = `${stageThreadId}::quota-blocked`;
+const interruptedSettlementKey = `${stageThreadId}::interrupted`;
 const claudeDriver = ProviderDriverKind.make("claudeAgent");
 const codexDriver = ProviderDriverKind.make("codex");
 const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
@@ -258,6 +259,26 @@ const stageBlockedEvent: OrchestrationEvent = {
     reason: "quota",
     providerInstanceId: ProviderInstanceId.make("codex"),
     resetAt: "2026-06-14T12:00:00.000Z",
+    updatedAt: now,
+  },
+};
+
+const stageInterruptedEvent: OrchestrationEvent = {
+  sequence: 12,
+  eventId: EventId.make("evt-stage-interrupted"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.stage-interrupted",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-stage-interrupted"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-stage-interrupted"),
+  metadata: {},
+  payload: {
+    taskId,
+    role: "work",
+    stageThreadId,
+    reason: "orphaned",
     updatedAt: now,
   },
 };
@@ -2100,6 +2121,42 @@ describe("PmRuntime", () => {
           settlementKey: call.settlementKey,
         })),
         [{ projectId, kind: "stage", settlementKey: quotaBlockedSettlementKey }],
+      );
+    }),
+  );
+
+  it.effect("notifies the PM exactly once when restart recovery interrupts a stage", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageInterruptedEvent, stageInterruptedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(
+        messages[0] ?? "",
+        /worker stage was interrupted during server restart recovery/,
+      );
+      assert.match(messages[0] ?? "", /Retry the same role with a fresh worker handoff/);
+      assert.deepStrictEqual(
+        consumeCalls.map((call) => ({
+          projectId: call.projectId,
+          kind: call.kind,
+          settlementKey: call.settlementKey,
+        })),
+        [{ projectId, kind: "stage", settlementKey: interruptedSettlementKey }],
       );
     }),
   );

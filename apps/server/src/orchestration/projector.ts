@@ -27,6 +27,7 @@ import {
   TaskRoleSelectionsUpdatedPayload,
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
+  TaskStageInterruptedPayload,
   TaskStageStartedPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -1060,6 +1061,29 @@ export function projectEvent(
                   },
           };
         }),
+      );
+
+    case "task.stage-interrupted":
+      return decodeForEvent(TaskStageInterruptedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "blocked",
+            currentStageThreadId: null,
+            updatedAt: payload.updatedAt,
+          }),
+          stageHistory:
+            nextBase.stageHistory[payload.stageThreadId] === undefined
+              ? nextBase.stageHistory
+              : {
+                  ...nextBase.stageHistory,
+                  [payload.stageThreadId]: {
+                    ...nextBase.stageHistory[payload.stageThreadId],
+                    status: "interrupted" as const,
+                    endedAt: payload.updatedAt,
+                  },
+                },
+        })),
       );
 
     case "task.gate-requested":

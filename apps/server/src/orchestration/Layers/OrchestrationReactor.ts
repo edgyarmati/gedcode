@@ -25,14 +25,17 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const pmRuntime = yield* PmRuntime;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
-    yield* orphanTurnReconciler.reconcile();
     yield* taskCancellationReconciler.reconcile();
-    yield* pmRuntime.start();
     yield* providerRuntimeIngestion.start();
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
     yield* taskWorktreeReactor.start();
+    // PM startup can replay a settlement and immediately hand off a retry, so
+    // provider consumers must already be subscribed before the PM starts.
+    yield* pmRuntime.start();
+    // Emit orphan-stage settlements only after the PM subscription is live.
+    yield* orphanTurnReconciler.reconcile();
   });
 
   return {

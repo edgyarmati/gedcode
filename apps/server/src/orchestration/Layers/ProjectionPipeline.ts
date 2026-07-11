@@ -1633,6 +1633,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.stage-interrupted": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "blocked",
+              currentStageThreadId: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.gate-requested": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,
@@ -1872,6 +1888,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "task.stage-interrupted": {
+          const existing = yield* projectionStageHistoryRepository.getByStageThreadId({
+            stageThreadId: event.payload.stageThreadId,
+          });
+          if (Option.isNone(existing)) {
+            return;
+          }
+          yield* projectionStageHistoryRepository.upsert({
+            ...existing.value,
+            status: "interrupted",
+            endedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
         default:
           return;
       }
@@ -1879,8 +1910,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     // Awaited-stages reconciliation source (migration 034). A stage-started
     // with a non-null `awaitedTurnId` opens an `awaited` row; the matching
-    // stage-completed marks it `completed`. Stages started without an awaited
-    // turn (nothing to block on) are not recorded.
+    // stage-completed marks it `completed`; quota blocking and orphan recovery
+    // settle it as `blocked` or `interrupted`. Stages started without an awaited
+    // turn (nothing to reconcile) are not recorded.
     const applyAwaitedStagesProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyAwaitedStagesProjection",
     )(function* (event, _attachmentSideEffects) {
@@ -1928,6 +1960,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionAwaitedStageRepository.upsert({
             ...existing,
             status: "blocked",
+            completedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "task.stage-interrupted": {
+          const rows = yield* projectionAwaitedStageRepository.listByTaskId({
+            taskId: event.payload.taskId,
+          });
+          const existing = rows.find((row) => row.stageThreadId === event.payload.stageThreadId);
+          if (!existing) {
+            return;
+          }
+          yield* projectionAwaitedStageRepository.upsert({
+            ...existing,
+            status: "interrupted",
             completedAt: event.payload.updatedAt,
           });
           return;

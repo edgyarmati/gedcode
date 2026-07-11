@@ -991,6 +991,82 @@ describe("orchestration projector", () => {
     });
   });
 
+  it("settles an orphaned active stage as interrupted without creating a quota block", async () => {
+    const createdAt = "2026-07-11T01:00:00.000Z";
+    const startedAt = "2026-07-11T01:01:00.000Z";
+    const interruptedAt = "2026-07-11T01:02:00.000Z";
+    const events: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "task-orphaned",
+        occurredAt: createdAt,
+        commandId: "cmd-create-orphaned",
+        payload: {
+          taskId: "task-orphaned",
+          projectId: "project-1",
+          taskType: "feature",
+          title: "Orphaned stage",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-orphaned",
+        occurredAt: startedAt,
+        commandId: "cmd-start-orphaned",
+        payload: {
+          taskId: "task-orphaned",
+          role: "work",
+          stageThreadId: "thread-orphaned",
+          awaitedTurnId: "turn-orphaned",
+          providerInstanceId: "codex",
+          model: "gpt-5-codex",
+          updatedAt: startedAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.stage-interrupted",
+        aggregateKind: "task",
+        aggregateId: "task-orphaned",
+        occurredAt: interruptedAt,
+        commandId: "cmd-interrupt-orphaned",
+        payload: {
+          taskId: "task-orphaned",
+          role: "work",
+          stageThreadId: "thread-orphaned",
+          reason: "orphaned",
+          updatedAt: interruptedAt,
+        },
+      }),
+    ];
+
+    let state = createEmptyReadModel(createdAt);
+    for (const event of events) {
+      state = await Effect.runPromise(projectEvent(state, event));
+    }
+
+    expect(state.tasks[0]).toMatchObject({
+      status: "blocked",
+      currentStageThreadId: null,
+      updatedAt: interruptedAt,
+    });
+    expect(state.stageHistory[ThreadId.make("thread-orphaned")]).toMatchObject({
+      status: "interrupted",
+      endedAt: interruptedAt,
+    });
+    expect(state.quotaBlockedStages).toEqual([]);
+  });
+
   it("tracks quota-blocked stages and marks them resumed on the next stage start", async () => {
     const createdAt = "2026-06-20T10:00:00.000Z";
     const workStartedAt = "2026-06-20T10:01:00.000Z";

@@ -71,6 +71,7 @@ import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDelet
 import { TaskWorktreeReactor } from "../src/orchestration/Services/TaskWorktreeReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { OrphanTurnReconciler } from "../src/orchestration/Services/OrphanTurnReconciler.ts";
+import { makeOrphanTurnReconcilerLive } from "../src/orchestration/Layers/OrphanTurnReconciler.ts";
 import { TaskCancellationReconciler } from "../src/orchestration/Services/TaskCancellationReconciler.ts";
 import { makeTaskCancellationReconcilerLive } from "../src/orchestration/Layers/TaskCancellationReconciler.ts";
 import { PmRuntime } from "../src/orchestration/Services/PmRuntime.ts";
@@ -299,6 +300,10 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   readonly realCodex?: boolean;
   readonly rootDir?: string;
   readonly additionalProviderInstances?: ReadonlyArray<ProviderInstanceId>;
+  readonly startReactors?: boolean;
+  readonly orphanTurnReconciler?: {
+    readonly enabled: boolean;
+  };
   readonly taskCancellationReconciler?: {
     readonly enabled: boolean;
   };
@@ -583,16 +588,24 @@ export const makeOrchestrationIntegrationHarness = (
         : Layer.succeed(TaskCancellationReconciler, {
             reconcile: () => Effect.succeed(0),
           });
+    const orphanTurnReconcilerLayer =
+      options?.orphanTurnReconciler?.enabled === true
+        ? makeOrphanTurnReconcilerLive({ maxAttempts: 1, retryDelayMs: 1 }).pipe(
+            Layer.provideMerge(projectionSnapshotQueryLayer),
+            Layer.provideMerge(
+              orchestrationLayer.pipe(Layer.provide(projectionSnapshotQueryLayer)),
+            ),
+            Layer.provideMerge(providerLayer),
+          )
+        : Layer.succeed(OrphanTurnReconciler, {
+            reconcile: () => Effect.succeed(0),
+          });
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(taskCancellationReconcilerLayer),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),
-      Layer.provideMerge(
-        Layer.succeed(OrphanTurnReconciler, {
-          reconcile: () => Effect.succeed(0),
-        }),
-      ),
+      Layer.provideMerge(orphanTurnReconcilerLayer),
       Layer.provideMerge(
         Layer.succeed(ThreadDeletionReactor, {
           start: () => Effect.void,
@@ -657,14 +670,18 @@ export const makeOrchestrationIntegrationHarness = (
     ).pipe(Effect.orDie);
 
     const scope = yield* Scope.make("sequential");
-    yield* tryRuntimePromise("start OrchestrationReactor", () =>
-      runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
-    ).pipe(Effect.orDie);
+    if (options?.startReactors !== false) {
+      yield* tryRuntimePromise("start OrchestrationReactor", () =>
+        runtime.runPromise(reactor.start().pipe(Scope.provide(scope))),
+      ).pipe(Effect.orDie);
+    }
     const receiptHistory = yield* Ref.make<ReadonlyArray<OrchestrationRuntimeReceipt>>([]);
     yield* Stream.runForEach(runtimeReceiptBus.streamEventsForTest, (receipt) =>
       Ref.update(receiptHistory, (history) => [...history, receipt]).pipe(Effect.asVoid),
     ).pipe(Effect.forkIn(scope));
-    yield* Effect.sleep(10);
+    if (options?.startReactors !== false) {
+      yield* Effect.sleep(10);
+    }
 
     const waitForThread: OrchestrationIntegrationHarness["waitForThread"] = (
       threadId,

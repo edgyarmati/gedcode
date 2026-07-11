@@ -115,7 +115,13 @@ import { boundUntrustedContent, scrubSecrets } from "../untrustedContent.ts";
 
 type SettlementEvent = Extract<
   OrchestrationEvent,
-  { type: "task.stage-completed" | "task.stage-blocked" | "task.gate-resolved" }
+  {
+    type:
+      | "task.stage-completed"
+      | "task.stage-blocked"
+      | "task.stage-interrupted"
+      | "task.gate-resolved";
+  }
 >;
 
 type SettlementEnvelope = {
@@ -335,6 +341,7 @@ export const buildPmSystemPrompt = (
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" ||
   event.type === "task.stage-blocked" ||
+  event.type === "task.stage-interrupted" ||
   event.type === "task.gate-resolved";
 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
@@ -342,6 +349,9 @@ const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =
 
 const quotaBlockedStageSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::quota-blocked`;
+
+const interruptedStageSettlementKey = (stageThreadId: ThreadId): string =>
+  `${stageThreadId}::interrupted`;
 
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
@@ -351,7 +361,9 @@ const settlementEventKey = (event: SettlementEvent): string =>
       })
     : event.type === "task.stage-blocked"
       ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
-      : makeGateSettlementKey(event.payload.gateId);
+      : event.type === "task.stage-interrupted"
+        ? interruptedStageSettlementKey(event.payload.stageThreadId)
+        : makeGateSettlementKey(event.payload.gateId);
 
 const findSettlementEvent = (
   events: ReadonlyArray<SettlementEvent>,
@@ -424,6 +436,22 @@ const makeNoPmRuntimeError = (detail: string, cause?: unknown): PmRuntimeError =
     detail,
     ...(cause !== undefined ? { cause } : {}),
   });
+
+const interruptedStageMessage = (input: {
+  readonly event: Extract<SettlementEvent, { type: "task.stage-interrupted" }>;
+  readonly task: OrchestrationTask;
+}): string => {
+  const payload = input.event.payload;
+  return boundUntrustedContent(`A worker stage was interrupted during server restart recovery.
+
+Task: ${input.task.title}
+Task ID: ${input.task.id}
+Stage role: ${payload.role}
+Stage thread ID: ${payload.stageThreadId}
+Reason: the projected active stage had no live provider session.
+
+The stale stage ownership was cleared and the task is blocked. Retry the same role with a fresh worker handoff after checking whether the prior attempt left useful work in the task worktree.`);
+};
 
 type ResolvedPmHarnessConfig = {
   readonly selection: ModelSelection;
@@ -759,6 +787,16 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         } satisfies SettlementEnvelope;
       }
 
+      if (event.type === "task.stage-interrupted") {
+        return {
+          event,
+          ...resolved,
+          kind: "stage" as const,
+          settlementKey: interruptedStageSettlementKey(event.payload.stageThreadId),
+          message: interruptedStageMessage({ event, task: resolved.task }),
+        } satisfies SettlementEnvelope;
+      }
+
       return {
         event,
         ...resolved,
@@ -963,9 +1001,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         const quotaBlockedStageKeys = (input.readModel.quotaBlockedStages ?? [])
           .filter((stage) => stage.status === "blocked" && taskIds.has(String(stage.taskId)))
           .map((stage) => quotaBlockedStageSettlementKey(stage.stageThreadId));
+        const interruptedStageKeys = Object.values(input.readModel.stageHistory)
+          .filter((stage) => stage.status === "interrupted" && taskIds.has(String(stage.taskId)))
+          .map((stage) => interruptedStageSettlementKey(stage.stageThreadId));
 
         return {
-          stageKeys: [...stageKeys, ...quotaBlockedStageKeys],
+          stageKeys: [...stageKeys, ...quotaBlockedStageKeys, ...interruptedStageKeys],
           gateKeys,
         };
       },

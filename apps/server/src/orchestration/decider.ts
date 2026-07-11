@@ -1393,6 +1393,58 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "task.stage.interrupt": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      yield* requireTaskNotCancelling({ command, task });
+
+      if (!task.stageThreadIds.includes(command.stageThreadId)) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not contain stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      if (task.currentStageThreadId !== command.stageThreadId) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not have active stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      const activeRole = activeStageRoleForTaskStatus(task.status);
+      if (activeRole === null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no active stage to interrupt.`,
+        );
+      }
+      if (activeRole !== command.role) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' active stage role '${activeRole}' cannot be interrupted as '${command.role}'.`,
+        );
+      }
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.stage-interrupted",
+        payload: {
+          taskId: command.taskId,
+          role: command.role,
+          stageThreadId: command.stageThreadId,
+          reason: command.reason,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "task.gate.request": {
       const task = yield* requireTask({
         readModel,

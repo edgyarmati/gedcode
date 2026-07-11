@@ -3526,6 +3526,25 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           updatedAt: now,
         },
       };
+      const stageInterruptedEvent: OrchestrationEvent = {
+        sequence: 18,
+        eventId: EventId.make("event-stage-interrupted"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        type: "task.stage-interrupted",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-stage-interrupted"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-stage-interrupted"),
+        metadata: {},
+        payload: {
+          taskId,
+          role: "plan",
+          stageThreadId: ThreadId.make("thread-plan"),
+          reason: "orphaned",
+          updatedAt: now,
+        },
+      };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
       const surfacedMessages: string[] = [];
@@ -3604,6 +3623,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cancellationRequestedEvent,
               cancellationPhaseCompletedEvent,
               cancellationFailedEvent,
+              stageInterruptedEvent,
             ),
           },
           providerService: {
@@ -3689,11 +3709,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
-                Stream.take(6),
+                Stream.take(7),
                 Stream.runCollect,
               ),
             );
-            assert.equal(projectItems.length, 6);
+            assert.equal(projectItems.length, 7);
             const projectSnapshotItem = projectItems[0];
             assert.equal(projectSnapshotItem?.kind, "snapshot");
             if (projectSnapshotItem?.kind === "snapshot") {
@@ -3717,6 +3737,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 "task.cancellation-requested",
                 "task.cancellation-phase-completed",
                 "task.cancellation-failed",
+                "task.stage-interrupted",
               ],
             );
 

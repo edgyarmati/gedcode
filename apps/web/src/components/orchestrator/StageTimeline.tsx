@@ -12,7 +12,7 @@ import { Badge } from "../ui/badge";
 import { selectTaskStageHistoryByRef, useStore, type ScopedTaskRef } from "../../store";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
-type StageStatusVariant = "info" | "success" | "warning";
+type StageStatusVariant = "info" | "success" | "warning" | "destructive";
 
 const STAGE_STATUS_DISPLAY: Record<
   OrchestrationStageHistoryStatus,
@@ -21,6 +21,7 @@ const STAGE_STATUS_DISPLAY: Record<
   running: { label: "Running", variant: "info" },
   completed: { label: "Completed", variant: "success" },
   blocked: { label: "Blocked", variant: "warning" },
+  interrupted: { label: "Interrupted", variant: "destructive" },
 };
 
 export interface StageTimelineRow {

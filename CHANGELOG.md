@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Recover Orchestrator worker stages orphaned by a server restart by durably interrupting the stale attempt, clearing task ownership, notifying the PM exactly once, and allowing a fresh same-role handoff without misreporting completion or quota exhaustion.
 - Fix: Resume durably reserved Orchestrator task cancellations during server startup, skip shutdown phases already checkpointed, and avoid resurrecting orphaned provider sessions merely to interrupt them.
 - Fix: Atomically reserve Orchestrator task cancellation before worker shutdown, serialize cancellation against queued worker startup, durably checkpoint shutdown progress/failures for safe retry, and prevent direct abandonment or task progression from bypassing cleanup.
 - Fix: Make Orchestrator cancellation side-effect free for landed and abandoned tasks, so terminal task history is never removed after completion.

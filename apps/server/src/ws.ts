@@ -162,6 +162,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.stage-started"
       | "task.stage-completed"
       | "task.stage-blocked"
+      | "task.stage-interrupted"
       | "task.gate-requested"
       | "task.gate-resolved"
       | "task.cancellation-requested"
@@ -179,6 +180,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.stage-started" ||
     event.type === "task.stage-completed" ||
     event.type === "task.stage-blocked" ||
+    event.type === "task.stage-interrupted" ||
     event.type === "task.gate-requested" ||
     event.type === "task.gate-resolved" ||
     event.type === "task.cancellation-requested" ||

@@ -42,11 +42,13 @@ describe("buildStageTimelineRows", () => {
       makeEntry({ stageThreadId: ThreadId.make("s-run"), status: "running" }),
       makeEntry({ stageThreadId: ThreadId.make("s-done"), status: "completed" }),
       makeEntry({ stageThreadId: ThreadId.make("s-block"), status: "blocked" }),
+      makeEntry({ stageThreadId: ThreadId.make("s-interrupted"), status: "interrupted" }),
     ]);
     expect(rows.map((row) => [row.status, row.statusVariant])).toEqual([
       ["running", "info"],
       ["completed", "success"],
       ["blocked", "warning"],
+      ["interrupted", "destructive"],
     ]);
   });
 
