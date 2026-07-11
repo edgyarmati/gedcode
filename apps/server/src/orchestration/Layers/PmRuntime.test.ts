@@ -54,6 +54,7 @@ import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
 import { ProviderUnsupportedError } from "../../provider/Errors.ts";
 import type { ClaudeAdapterShape } from "../../provider/Services/ClaudeAdapter.ts";
 import {
@@ -756,6 +757,15 @@ const makeFactoryCaptureLayer = (input?: {
         return input?.runtimeEvents ?? Stream.empty;
       },
     } satisfies ProviderServiceShape),
+    Layer.succeed(TerminalManager, {
+      open: () => Effect.die("TerminalManager.open should not be called"),
+      write: () => Effect.die("TerminalManager.write should not be called"),
+      resize: () => Effect.die("TerminalManager.resize should not be called"),
+      clear: () => Effect.die("TerminalManager.clear should not be called"),
+      restart: () => Effect.die("TerminalManager.restart should not be called"),
+      close: () => Effect.void,
+      subscribe: () => Effect.succeed(() => undefined),
+    } satisfies TerminalManagerShape),
     makeProviderSessionDirectoryLayer(input?.providerSessionDirectory),
     orchestrationServices,
     Layer.succeed(ProviderQuotaStatusRepository, {

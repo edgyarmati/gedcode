@@ -567,6 +567,21 @@ describe("orchestration projector", () => {
       }),
       makeEvent({
         sequence: 5,
+        type: "task.stage-started",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-stage-started",
+        payload: {
+          taskId: "task-cancelled",
+          stageThreadId: "thread-cancelled-stage",
+          role: "work",
+          awaitedTurnId: "turn-work",
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 6,
         type: "task.abandoned",
         aggregateKind: "task",
         aggregateId: "task-cancelled",
@@ -585,6 +600,9 @@ describe("orchestration projector", () => {
     }
 
     expect(readModel.tasks.find((task) => task.id === "task-cancelled")?.status).toBe("abandoned");
+    expect(readModel.tasks.find((task) => task.id === "task-cancelled")?.currentStageThreadId).toBe(
+      null,
+    );
     expect((readModel.pendingGates ?? []).map((gate) => gate.gateId)).toEqual(["gate-other"]);
   });
 

@@ -47,8 +47,10 @@ import { createEmptyReadModel } from "../../orchestration/projector.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
+import { ProviderService, type ProviderServiceShape } from "../Services/ProviderService.ts";
 import {
   buildClaudeReadOnlyToolPolicy,
   makeClaudeAdapter,
@@ -267,6 +269,30 @@ const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
       getThreadShellById: () => Effect.succeed(Option.none()),
       getThreadDetailById: () => Effect.succeed(Option.none()),
     }),
+    Layer.succeed(ProviderService, {
+      startSession: () => Effect.die("ProviderService.startSession should not be called"),
+      sendTurn: () => Effect.die("ProviderService.sendTurn should not be called"),
+      interruptTurn: () => Effect.die("ProviderService.interruptTurn should not be called"),
+      respondToRequest: () => Effect.die("ProviderService.respondToRequest should not be called"),
+      respondToUserInput: () =>
+        Effect.die("ProviderService.respondToUserInput should not be called"),
+      stopSession: () => Effect.die("ProviderService.stopSession should not be called"),
+      listSessions: () => Effect.die("ProviderService.listSessions should not be called"),
+      getCapabilities: () => Effect.die("ProviderService.getCapabilities should not be called"),
+      getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
+      rollbackConversation: () =>
+        Effect.die("ProviderService.rollbackConversation should not be called"),
+      streamEvents: Stream.empty,
+    } satisfies ProviderServiceShape),
+    Layer.succeed(TerminalManager, {
+      open: () => Effect.die("TerminalManager.open should not be called"),
+      write: () => Effect.die("TerminalManager.write should not be called"),
+      resize: () => Effect.die("TerminalManager.resize should not be called"),
+      clear: () => Effect.die("TerminalManager.clear should not be called"),
+      restart: () => Effect.die("TerminalManager.restart should not be called"),
+      close: () => Effect.void,
+      subscribe: () => Effect.succeed(() => undefined),
+    } satisfies TerminalManagerShape),
   );
 };
 

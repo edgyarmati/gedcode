@@ -37,6 +37,7 @@ import {
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
+  OrchestrationCancelTaskError,
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -490,7 +491,7 @@ export const WsOrchestratorSetTaskRoleSelectionsRpc = Rpc.make(
 export const WsOrchestratorCancelTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.cancelTask, {
   payload: OrchestratorRpcSchemas.cancelTask.input,
   success: OrchestratorRpcSchemas.cancelTask.output,
-  error: OrchestrationDispatchCommandError,
+  error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationCancelTaskError]),
 });
 
 export const WsOrchestratorClearPmChatRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.clearPmChat, {

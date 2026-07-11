@@ -2060,6 +2060,16 @@ export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<O
   },
 ) {}
 
+export class OrchestrationCancelTaskError extends Schema.TaggedErrorClass<OrchestrationCancelTaskError>()(
+  "OrchestrationCancelTaskError",
+  {
+    taskId: TaskId,
+    phase: Schema.Literals(["read-task", "interrupt-turn", "stop-session", "close-terminals"]),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
 export class OrchestrationGetTurnDiffError extends Schema.TaggedErrorClass<OrchestrationGetTurnDiffError>()(
   "OrchestrationGetTurnDiffError",
   {

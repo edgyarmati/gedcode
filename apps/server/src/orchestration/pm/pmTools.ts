@@ -3,6 +3,7 @@ import {
   GateId,
   ProviderInstanceId,
   MessageId,
+  OrchestrationCancelTaskError,
   ProjectId,
   TaskId,
   TaskTypeId,
@@ -17,6 +18,7 @@ import {
   type OrchestrationThreadActivityTone,
   type ThreadTokenUsageSnapshot,
 } from "@t3tools/contracts";
+import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
@@ -26,6 +28,9 @@ import * as Option from "effect/Option";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { TerminalManager } from "../../terminal/Services/Manager.ts";
+import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -538,13 +543,37 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const sequence = yield* dispatch({
-            type: "task.abandon",
-            commandId: yield* commandId("cancel-task"),
-            taskId,
-            createdAt: yield* nowIso,
-          });
-          return textResult(`Cancelled task ${taskId}.`, { taskId, sequence });
+          const providerServiceOption = Context.getOption(runtimeContext, ProviderService);
+          if (Option.isNone(providerServiceOption)) {
+            return yield* new OrchestrationCancelTaskError({
+              taskId,
+              phase: "stop-session",
+              message: "ProviderService is unavailable for task cancellation.",
+            });
+          }
+          const terminalManagerOption = Context.getOption(runtimeContext, TerminalManager);
+          if (Option.isNone(terminalManagerOption)) {
+            return yield* new OrchestrationCancelTaskError({
+              taskId,
+              phase: "close-terminals",
+              message: "TerminalManager is unavailable for task cancellation.",
+            });
+          }
+          const result = yield* cancelOrchestrationTaskWithServices(
+            {
+              snapshotQuery,
+              providerService: providerServiceOption.value,
+              terminalManager: terminalManagerOption.value,
+            },
+            {
+              taskId,
+              commandId: commandId("cancel-task"),
+              createdAt: nowIso,
+              dispatch: (command) =>
+                dispatch(command).pipe(Effect.map((sequence) => ({ sequence }))),
+            },
+          );
+          return textResult(`Cancelled task ${taskId}.`, { taskId, sequence: result.sequence });
         }),
       ),
   };

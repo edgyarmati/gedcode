@@ -321,6 +321,8 @@ describe("OrchestrationEngine", () => {
     const { engine } = system;
 
     try {
+      await system.setMaxParallelTasksDefault(1);
+
       await system.run(
         engine.dispatch({
           type: "project.create",

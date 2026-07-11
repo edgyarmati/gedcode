@@ -27,6 +27,7 @@ import {
   TaskId,
   TaskTypeId,
   ThreadId,
+  TurnId,
   WS_METHODS,
   WsRpcGroup,
   EditorId,
@@ -97,6 +98,7 @@ import {
   ProviderRegistry,
   type ProviderRegistryShape,
 } from "./provider/Services/ProviderRegistry.ts";
+import { ProviderService, type ProviderServiceShape } from "./provider/Services/ProviderService.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import { ServerLifecycleEvents, type ServerLifecycleEventsShape } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup, type ServerRuntimeStartupShape } from "./serverRuntimeStartup.ts";
@@ -352,6 +354,7 @@ const buildAppUnderTest = (options?: {
     vcsStatusBroadcaster?: Partial<VcsStatusBroadcaster.VcsStatusBroadcasterShape>;
     projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
+    providerService?: Partial<ProviderServiceShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
     pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
@@ -677,6 +680,25 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(TerminalManager)({
           ...options?.layers?.terminalManager,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(ProviderService)({
+          startSession: () => Effect.die("ProviderService.startSession should not be called"),
+          sendTurn: () => Effect.die("ProviderService.sendTurn should not be called"),
+          interruptTurn: () => Effect.void,
+          respondToRequest: () =>
+            Effect.die("ProviderService.respondToRequest should not be called"),
+          respondToUserInput: () =>
+            Effect.die("ProviderService.respondToUserInput should not be called"),
+          stopSession: () => Effect.void,
+          listSessions: () => Effect.succeed([]),
+          getCapabilities: () => Effect.die("ProviderService.getCapabilities should not be called"),
+          getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
+          rollbackConversation: () =>
+            Effect.die("ProviderService.rollbackConversation should not be called"),
+          streamEvents: Stream.empty,
+          ...options?.layers?.providerService,
         }),
       ),
       Layer.provide(
@@ -3389,11 +3411,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         deletedAt: null,
         pendingPmHandoff: null,
       };
+      const stageThread = {
+        ...pmThread,
+        id: ThreadId.make("thread-plan"),
+        title: "Plan stage",
+        branch: "orchestrator/task-orchestrator",
+        worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        latestTurn: {
+          turnId: TurnId.make("turn-plan"),
+          state: "running" as const,
+          requestedAt: now,
+          startedAt: now,
+          completedAt: null,
+          assistantMessageId: null,
+        },
+      };
       const snapshot: OrchestrationReadModel = {
         snapshotSequence: 12,
         updatedAt: now,
         projects: [project],
-        threads: [pmThread],
+        threads: [pmThread, stageThread],
         tasks: [task],
         pendingGates: [pendingGate],
         quotaBlockedStages: [],
@@ -3447,6 +3484,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const enqueuedMessages: string[] = [];
       const surfacedMessages: string[] = [];
       const runtimeCalls: string[] = [];
+      const cancellationCalls: string[] = [];
       const runtimeProjects: ProjectId[] = [];
       const drainStarted = yield* Deferred.make<void>();
 
@@ -3460,6 +3498,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             dispatch: (command) =>
               Effect.sync(() => {
                 dispatched.push(command);
+                if (command.type === "task.abandon") {
+                  cancellationCalls.push(`dispatch:${command.type}`);
+                }
                 if (command.type === "thread.clear") {
                   runtimeCalls.push("dispatch:thread.clear");
                 } else if (command.type === "thread.pm-handoff.request") {
@@ -3468,6 +3509,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 return { sequence: 41 };
               }),
             streamDomainEvents: Stream.make(taskCreatedEvent, gateRequestedEvent),
+          },
+          providerService: {
+            interruptTurn: (input) =>
+              Effect.sync(() => {
+                cancellationCalls.push(`interrupt:${input.threadId}:${input.turnId}`);
+              }),
+            stopSession: (input) =>
+              Effect.sync(() => {
+                cancellationCalls.push(`stop:${input.threadId}`);
+              }),
+          },
+          terminalManager: {
+            close: (input) =>
+              Effect.sync(() => {
+                cancellationCalls.push(`close:${input.threadId}:${String(input.deleteHistory)}`);
+              }),
           },
           pmProjectRuntimeFactory: {
             getOrCreate: (loadedProject) =>
@@ -3611,6 +3668,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               taskId,
             });
             assert.equal(cancelTaskResult.sequence, 41);
+            assert.deepEqual(cancellationCalls, [
+              "interrupt:thread-plan:turn-plan",
+              "stop:thread-plan",
+              "close:thread-plan:true",
+              "dispatch:task.abandon",
+            ]);
 
             const requestPmHandoffResult = yield* client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
               projectId,

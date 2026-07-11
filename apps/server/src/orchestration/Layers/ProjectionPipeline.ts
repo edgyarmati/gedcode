@@ -1714,6 +1714,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               status: "abandoned",
+              currentStageThreadId: null,
               updatedAt: event.payload.updatedAt,
             });
             return;

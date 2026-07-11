@@ -2217,6 +2217,7 @@ function applyEnvironmentOrchestrationEvent(
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
         status: "abandoned",
+        currentStageThreadId: null,
         updatedAt: event.payload.updatedAt,
       }));
 

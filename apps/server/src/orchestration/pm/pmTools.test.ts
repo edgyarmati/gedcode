@@ -3,13 +3,16 @@ import {
   ProjectId,
   ProviderInstanceId,
   MessageId,
+  OrchestrationCancelTaskError,
   TaskId,
   TaskTypeId,
+  TerminalSessionLookupError,
   ThreadId,
   TurnId,
   type OrchestrationCommand,
   type OrchestrationMessage,
   type OrchestrationReadModel,
+  type ProviderSession,
   type OrchestrationTask,
   type OrchestrationThreadActivity,
   type OrchestrationThread,
@@ -25,6 +28,11 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import {
+  ProviderService,
+  type ProviderServiceShape,
+} from "../../provider/Services/ProviderService.ts";
+import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { createEmptyReadModel } from "../projector.ts";
 import { makePmTools, type PmToolExecutor } from "./pmTools.ts";
@@ -156,6 +164,10 @@ const makeLayer = (
   dispatched: OrchestrationCommand[],
   readModel: OrchestrationReadModel = makeReadModel(),
   threadDetails: ReadonlyMap<ThreadId, OrchestrationThread> | null = null,
+  overrides: {
+    readonly providerService?: Partial<ProviderServiceShape>;
+    readonly terminalManager?: Partial<TerminalManagerShape>;
+  } = {},
 ) =>
   Layer.mergeAll(
     Layer.mock(OrchestrationEngineService)({
@@ -199,6 +211,32 @@ const makeLayer = (
         ).get(threadId);
         return Effect.succeed(thread === undefined ? Option.none() : Option.some(thread));
       },
+    }),
+    Layer.mock(ProviderService)({
+      startSession: () => Effect.die("ProviderService.startSession should not be called"),
+      sendTurn: () => Effect.die("ProviderService.sendTurn should not be called"),
+      interruptTurn: () => Effect.void,
+      respondToRequest: () => Effect.die("ProviderService.respondToRequest should not be called"),
+      respondToUserInput: () =>
+        Effect.die("ProviderService.respondToUserInput should not be called"),
+      stopSession: () => Effect.void,
+      listSessions: () => Effect.succeed([] as ReadonlyArray<ProviderSession>),
+      getCapabilities: () => Effect.die("ProviderService.getCapabilities should not be called"),
+      getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
+      rollbackConversation: () =>
+        Effect.die("ProviderService.rollbackConversation should not be called"),
+      streamEvents: Stream.empty,
+      ...overrides.providerService,
+    }),
+    Layer.mock(TerminalManager)({
+      open: () => Effect.die("TerminalManager.open should not be called"),
+      write: () => Effect.die("TerminalManager.write should not be called"),
+      resize: () => Effect.die("TerminalManager.resize should not be called"),
+      clear: () => Effect.die("TerminalManager.clear should not be called"),
+      restart: () => Effect.die("TerminalManager.restart should not be called"),
+      close: () => Effect.void,
+      subscribe: () => Effect.succeed(() => undefined),
+      ...overrides.terminalManager,
     }),
     NodeServices.layer,
   );
@@ -789,6 +827,99 @@ it.effect("cancelTask dispatches a task.abandon command", () =>
       assert.strictEqual(dispatched[0].taskId, taskId);
     }
     assert.deepStrictEqual(result.details, { taskId, sequence: 1 });
+  }),
+);
+
+it.effect("cancelTask stops an active stage turn, session, and terminals before abandon", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: string[] = [];
+    const readModel = makeReadModel(undefined, [
+      makeThread(stageThreadId, {
+        latestTurn: {
+          turnId,
+          state: "running",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: null,
+          assistantMessageId: null,
+        },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          providerService: {
+            interruptTurn: (input) =>
+              Effect.sync(() => {
+                calls.push(`interrupt:${input.threadId}:${input.turnId}`);
+              }),
+            stopSession: (input) =>
+              Effect.sync(() => {
+                calls.push(`stop:${input.threadId}`);
+              }),
+          },
+          terminalManager: {
+            close: (input) =>
+              Effect.sync(() => {
+                calls.push(`close:${input.threadId}:${String(input.deleteHistory)}`);
+              }),
+          },
+        }),
+      ),
+    );
+    const cancelTask = findTool(tools, "cancelTask");
+
+    yield* Effect.promise(() =>
+      cancelTask.execute("tool-cancel-active", {
+        taskId,
+      }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      `interrupt:${stageThreadId}:${turnId}`,
+      `stop:${stageThreadId}`,
+      `close:${stageThreadId}:true`,
+    ]);
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.abandon");
+  }),
+);
+
+it.effect("cancelTask does not abandon when terminal shutdown fails", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          terminalManager: {
+            close: () =>
+              Effect.fail(
+                new TerminalSessionLookupError({
+                  threadId: stageThreadId,
+                  terminalId: "default",
+                }),
+              ),
+          },
+        }),
+      ),
+    );
+    const cancelTask = findTool(tools, "cancelTask");
+
+    const error = yield* Effect.promise(() =>
+      cancelTask
+        .execute("tool-cancel-failing-terminal", {
+          taskId,
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, OrchestrationCancelTaskError);
+    assert.strictEqual((error as OrchestrationCancelTaskError).phase, "close-terminals");
+    assert.deepStrictEqual(dispatched, []);
   }),
 );
 

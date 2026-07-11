@@ -22,6 +22,7 @@ import {
   type PmHandoffMode,
   type OrchestrationThread,
   ORCHESTRATOR_WS_METHODS,
+  OrchestrationCancelTaskError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   OrchestrationGetFullThreadDiffError,
@@ -53,12 +54,14 @@ import { OrchestrationEngineService } from "./orchestration/Services/Orchestrati
 import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
+import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
+import { ProviderService } from "./provider/Services/ProviderService.ts";
 import { ProviderQuotaStatusRepository } from "./persistence/Services/ProviderQuotaStatus.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
@@ -97,6 +100,7 @@ import {
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isOrchestrationCancelTaskError = Schema.is(OrchestrationCancelTaskError);
 const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
 const isWorkspacePathOutsideRootError = Schema.is(WorkspacePathOutsideRootError);
 
@@ -250,6 +254,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const vcsProvisioning = yield* VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
+      const providerService = yield* ProviderService;
       const providerRegistry = yield* ProviderRegistry;
       const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
@@ -1279,17 +1284,23 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [ORCHESTRATOR_WS_METHODS.cancelTask]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.cancelTask,
-            Effect.all({
-              commandId: serverCommandId("orchestrator-cancel-task"),
-              createdAt: nowIso,
-            }).pipe(
-              Effect.flatMap(({ commandId, createdAt }) =>
-                dispatchNormalizedCommand({
-                  type: "task.abandon",
-                  commandId,
-                  taskId: input.taskId,
-                  createdAt,
-                }),
+            cancelOrchestrationTaskWithServices(
+              { snapshotQuery: projectionSnapshotQuery, providerService, terminalManager },
+              {
+                taskId: input.taskId,
+                commandId: serverCommandId("orchestrator-cancel-task"),
+                createdAt: nowIso.pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to timestamp cancellation command."),
+                  ),
+                ),
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.mapError((cause) =>
+                isOrchestrationCancelTaskError(cause)
+                  ? cause
+                  : toDispatchCommandError(cause, "Failed to cancel orchestration task"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },

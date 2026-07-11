@@ -1168,6 +1168,7 @@ export function projectEvent(
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
             status: "abandoned",
+            currentStageThreadId: null,
             updatedAt: payload.updatedAt,
           }),
           pendingGates: (nextBase.pendingGates ?? []).filter(
