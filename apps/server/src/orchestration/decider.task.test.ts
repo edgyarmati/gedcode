@@ -1647,6 +1647,134 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("rejects task.land while a worker stage is still active", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...(yield* taskReadModel({
+          status: "review",
+          currentStageThreadId: asThreadId("thread-active"),
+          stageThreadIds: [asThreadId("thread-active")],
+        })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:land",
+            stageThreadId: asThreadId("thread-active"),
+            status: "resolved" as const,
+            approvedHash: "sha256:land",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+        ],
+      };
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land",
+            commandId: asCommandId("cmd-land-active"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("rejects task.land when a newer land gate is still pending", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land-old"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:old",
+            stageThreadId: null,
+            status: "resolved" as const,
+            approvedHash: "sha256:old",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+          {
+            gateId: asGateId("gate-land-new"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:new",
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land",
+            commandId: asCommandId("cmd-land-stale-gate"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("rejects task.land when the approved hash does not match the gate content", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:current",
+            stageThreadId: null,
+            status: "resolved" as const,
+            approvedHash: "sha256:stale",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+        ],
+      };
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land",
+            commandId: asCommandId("cmd-land-hash-mismatch"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("serializes cancellation reservation ahead of land", () =>
     Effect.gen(function* () {
       const readModel = {

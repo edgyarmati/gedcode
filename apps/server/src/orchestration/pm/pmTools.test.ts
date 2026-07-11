@@ -249,6 +249,14 @@ const makeLayer = (
                 task.id === command.taskId ? { ...task, status: "abandoned" as const } : task,
               ),
             };
+          } else if (command.type === "task.land") {
+            currentReadModel = {
+              ...currentReadModel,
+              snapshotSequence: dispatched.length,
+              tasks: currentReadModel.tasks.map((task) =>
+                task.id === command.taskId ? { ...task, status: "landed" as const } : task,
+              ),
+            };
           }
           return { sequence: dispatched.length };
         }),
@@ -1052,12 +1060,8 @@ it.effect("concurrent cancelTask calls shut the worker down only once", () =>
     const tools = yield* makePmTools.pipe(
       Effect.provide(
         makeLayer(dispatched, makeReadModel(), null, {
-          providerService: {
-            stopSession: () => Effect.sync(() => calls.push("stop")),
-          },
-          terminalManager: {
-            close: () => Effect.sync(() => calls.push("close")),
-          },
+          providerService: { stopSession: () => Effect.sync(() => calls.push("stop")) },
+          terminalManager: { close: () => Effect.sync(() => calls.push("close")) },
         }),
       ),
     );
@@ -1229,8 +1233,12 @@ it.effect("cancelTask retries an existing durable reservation without reserving 
     const tools = yield* makePmTools.pipe(
       Effect.provide(
         makeLayer(dispatched, readModel, null, {
-          providerService: { stopSession: () => Effect.sync(() => calls.push("stop")) },
-          terminalManager: { close: () => Effect.sync(() => calls.push("close")) },
+          providerService: {
+            stopSession: () => Effect.sync(() => calls.push("stop")),
+          },
+          terminalManager: {
+            close: () => Effect.sync(() => calls.push("close")),
+          },
         }),
       ),
     );
@@ -1351,6 +1359,39 @@ it.effect("requestApproval dispatches a task.gate.request command", () =>
     assert.strictEqual(dispatched[0]?.type, "task.gate.request");
     assert.strictEqual(result.details.taskId, taskId);
     assert.strictEqual(result.details.sequence, 1);
+  }),
+);
+
+it.effect("landTask delegates one task.land command to the guarded landing executor", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel([makeTask({ status: "review", currentStageThreadId: null })]);
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "landTask").execute("tool-land", { taskId }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.land");
+    assert.deepStrictEqual(result.details, { taskId, sequence: 1, alreadyLanded: false });
+    assert.match(result.content[0]?.text ?? "", /Started landing task/);
+  }),
+);
+
+it.effect("landTask is idempotent after the task is already landed", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel([makeTask({ status: "landed", currentStageThreadId: null })]);
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "landTask").execute("tool-land-again", { taskId }),
+    );
+
+    assert.deepStrictEqual(dispatched, []);
+    assert.deepStrictEqual(result.details, { taskId, sequence: 0, alreadyLanded: true });
+    assert.match(result.content[0]?.text ?? "", /already landed/);
   }),
 );
 

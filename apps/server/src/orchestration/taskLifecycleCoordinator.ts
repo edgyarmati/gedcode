@@ -30,10 +30,10 @@ function releaseLockEntry(taskId: TaskId, entry: TaskLockEntry): void {
 }
 
 /**
- * Serializes the two destructive edges of an orchestrator task lifecycle:
- * starting its active worker and cancelling that worker/task. The durable
- * event reservation remains the cross-restart source of truth; this lock
- * closes the in-process check/start and reserve/shutdown races.
+ * Serializes destructive edges of an orchestrator task lifecycle: starting
+ * its active worker, cancelling that worker/task, and landing the task. The
+ * durable event log remains the cross-restart source of truth; this lock
+ * closes their in-process check/action races.
  */
 export function withTaskLifecycleLock<A, E, R>(
   taskId: TaskId,

@@ -1604,17 +1604,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' must be in review before it can land.`,
         );
       }
-      const approvedLandGate = (readModel.pendingGates ?? []).find(
-        (gate) =>
-          gate.taskId === command.taskId &&
-          gate.gate === "land" &&
-          gate.status === "resolved" &&
-          gate.decision === "approved",
-      );
-      if (!approvedLandGate) {
+      if (task.currentStageThreadId !== null) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' cannot land without an approved land gate.`,
+          `Task '${command.taskId}' cannot land while stage '${task.currentStageThreadId}' is active.`,
+        );
+      }
+      const latestLandGate = (readModel.pendingGates ?? []).findLast(
+        (gate) => gate.taskId === command.taskId && gate.gate === "land",
+      );
+      if (
+        latestLandGate === undefined ||
+        latestLandGate.status !== "resolved" ||
+        latestLandGate.decision !== "approved" ||
+        latestLandGate.approvedHash !== latestLandGate.contentHash
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot land without a current, content-matched approved land gate.`,
         );
       }
       return {

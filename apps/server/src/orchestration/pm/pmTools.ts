@@ -31,6 +31,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
+import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -77,6 +78,10 @@ interface InspectStageParameters {
 }
 
 interface CancelTaskParameters {
+  readonly taskId: string;
+}
+
+interface LandTaskParameters {
   readonly taskId: string;
 }
 
@@ -578,6 +583,39 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const landTask: PmToolExecutor<
+    LandTaskParameters,
+    { taskId: string; sequence: number; alreadyLanded: boolean }
+  > = {
+    name: "landTask",
+    label: "Land task",
+    description:
+      "Land a reviewed task after a human-approved land gate. This starts the existing landing workflow; it cannot approve the gate itself.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const { sequence, alreadyLanded } = yield* landOrchestrationTaskWithServices(
+            { snapshotQuery },
+            {
+              taskId,
+              commandId: commandId("land-task"),
+              createdAt: nowIso,
+              dispatch: (command) => engine.dispatch(command),
+            },
+          );
+          return textResult(
+            alreadyLanded ? `Task ${taskId} is already landed.` : `Started landing task ${taskId}.`,
+            {
+              taskId,
+              sequence,
+              alreadyLanded,
+            },
+          );
+        }),
+      ),
+  };
+
   const getTaskLedger: PmToolExecutor<
     GetTaskLedgerParameters,
     { projectId: string; tasks: ReadonlyArray<OrchestrationTask> }
@@ -605,6 +643,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     setTaskBackend,
     inspectStage,
     cancelTask,
+    landTask,
     getTaskLedger,
   ] as const;
 });

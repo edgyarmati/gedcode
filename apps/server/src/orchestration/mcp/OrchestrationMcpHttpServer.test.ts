@@ -94,19 +94,42 @@ describe("OrchestrationMcpHttpServer", () => {
         [...ORCHESTRATION_MCP_TOOL_NAMES],
       );
 
-      const result = await client.callTool({
+      const landTool = tools.tools.find((tool) => tool.name === "landTask");
+      assert.deepStrictEqual(landTool?.inputSchema, {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+        required: ["taskId"],
+        $schema: "http://json-schema.org/draft-07/schema#",
+      });
+
+      const ledgerResult = await client.callTool({
         name: "getTaskLedger",
         arguments: { projectId: "project-1" },
       });
 
-      assert.deepStrictEqual(result.content, [{ type: "text", text: "executed getTaskLedger" }]);
-      assert.deepStrictEqual(result.structuredContent, {
+      assert.deepStrictEqual(ledgerResult.content, [
+        { type: "text", text: "executed getTaskLedger" },
+      ]);
+      assert.deepStrictEqual(ledgerResult.structuredContent, {
         name: "getTaskLedger",
         params: { projectId: "project-1" },
       });
-      assert.equal(calls.length, 1);
+
+      const landResult = await client.callTool({
+        name: "landTask",
+        arguments: { taskId: "task-1" },
+      });
+
+      assert.deepStrictEqual(landResult.content, [{ type: "text", text: "executed landTask" }]);
+      assert.deepStrictEqual(landResult.structuredContent, {
+        name: "landTask",
+        params: { taskId: "task-1" },
+      });
+      assert.equal(calls.length, 2);
       assert.equal(calls[0]?.name, "getTaskLedger");
       assert.match(calls[0]?.toolCallId ?? "", /^mcp:getTaskLedger:/);
+      assert.equal(calls[1]?.name, "landTask");
+      assert.match(calls[1]?.toolCallId ?? "", /^mcp:landTask:/);
       assert.equal(service.endpoint.bearerTokenEnvVar, ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR);
     } finally {
       await client.close();

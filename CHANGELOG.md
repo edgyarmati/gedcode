@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature: Let the Orchestrator PM land a reviewed task through its shared Claude/Codex MCP tool after the latest land gate is content-matched and approved; landing is serialized against worker startup/cancellation and repeated calls are idempotent.
 - Fix: Recover Orchestrator worker stages orphaned by a server restart by durably interrupting the stale attempt, clearing task ownership, notifying the PM exactly once, and allowing a fresh same-role handoff without misreporting completion or quota exhaustion.
 - Fix: Resume durably reserved Orchestrator task cancellations during server startup, skip shutdown phases already checkpointed, and avoid resurrecting orphaned provider sessions merely to interrupt them.
 - Fix: Atomically reserve Orchestrator task cancellation before worker shutdown, serialize cancellation against queued worker startup, durably checkpoint shutdown progress/failures for safe retry, and prevent direct abandonment or task progression from bypassing cleanup.
