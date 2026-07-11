@@ -122,3 +122,17 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   a new same-role handoff.
 - Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
   `bun run test` (server 1,373 passed/1 skipped; web 1,215 passed).
+
+### ORCH-LAND-01
+
+- Decider tests require no active stage and the latest land gate to be resolved, approved, and
+  content-hash matched; an older approval cannot bypass a newer pending gate.
+- Shared landing-executor tests cover first dispatch, already-landed idempotency, concurrent calls
+  collapsing to one command under the lifecycle lock, and typed missing-task failure without dispatch.
+- PM tests prove `landTask` delegates through the shared executor and reports whether landing started or
+  was already complete. Authenticated MCP tests cover tool listing, required input schema, and routing
+  through the same executor registry used by Claude and Codex PM sessions.
+- Existing landing integration coverage still passes for ready/draft PR creation, loud provider failure,
+  worktree cleanup, and reuse of an existing PR URL.
+- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
+  `bun run test` (server 1,381 passed/1 skipped; web 1,215 passed).

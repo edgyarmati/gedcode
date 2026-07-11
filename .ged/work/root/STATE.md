@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-LAND-01` - add a guarded landing actuator to PM tools and MCP.
+- **Active task**: `ORCH-LAND-02` - expose landing through RPC and task-detail UI.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -33,11 +33,17 @@
   task lock so it cannot interrupt a worker that became live during startup.
 - Final `ORCH-LC-04` verification passed on 2026-07-11: `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,373 passed/1 skipped; web 1,215 passed).
+- `ORCH-LAND-01` is complete. The PM and both Claude/Codex MCP transports now expose one shared,
+  lifecycle-locked `landTask` executor. Landing is idempotent, rejects an active worker stage, and only
+  accepts the latest content-matched approved land gate, preventing stale approvals from authorizing a
+  newer task state.
+- Final `ORCH-LAND-01` verification passed on 2026-07-11: `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (server 1,381 passed/1 skipped; web 1,215 passed).
 
 ## Immediate Sequence
 
-1. `ORCH-LAND-01` add guarded PM/MCP landing actuation.
-2. `ORCH-LAND-02` expose landing through RPC and task-detail UI.
+1. `ORCH-LAND-02` expose landing through RPC and task-detail UI.
+2. `ORCH-WT-01` close the TaskWorktreeReactor startup subscription race.
 
 ## Repository State Notes
 
