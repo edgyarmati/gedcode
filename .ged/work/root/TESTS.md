@@ -136,3 +136,18 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   worktree cleanup, and reuse of an existing PR URL.
 - Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
   `bun run test` (server 1,381 passed/1 skipped; web 1,215 passed).
+
+### ORCH-LAND-02
+
+- Contract, client, and server-router tests cover the typed `orchestrator.landTask` request/result and
+  typed missing-task error while delegating through the shared lifecycle-locked executor.
+- Landing integration now drives approved gate -> shared executor -> `task.pr-opened`, retaining ready
+  and draft PR creation, provider-failure, worktree-preservation/cleanup, and existing-PR coverage.
+- Web logic tests mirror the decider's exact review/no-active-stage/content-matched-latest-gate
+  eligibility and prioritize authoritative PR URL/failure state over transient request state.
+- Browser coverage drives the task-detail Land action and verifies monotonic request pending, retryable
+  request failure, PR opening, durable PR-open failure activity, final PR link, and no premature Landed
+  label. Lifecycle actions are mutually disabled and task headers remount by task ID to isolate requests.
+- Repository gates passed on 2026-07-11: focused server/integration/web/browser tests, `bun fmt`,
+  `bun lint`, `bun typecheck`, `bun run build`, and `bun run test` (server 1,382 passed/1 skipped; web
+  1,218 passed).

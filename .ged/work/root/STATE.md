@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-LAND-02` - expose landing through RPC and task-detail UI.
+- **Active task**: `ORCH-WT-01` - close the TaskWorktreeReactor startup subscription race.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -39,11 +39,20 @@
   newer task state.
 - Final `ORCH-LAND-01` verification passed on 2026-07-11: `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,381 passed/1 skipped; web 1,215 passed).
+- `ORCH-LAND-02` is complete. A typed client RPC now delegates to the same guarded landing executor as
+  PM/MCP. Task detail offers landing only for the exact server-valid gate state and distinguishes request
+  pending/error, PR opening/failure, and final PR-link states without contradictory terminal labels.
+- Final `ORCH-LAND-02` verification passed on 2026-07-11: focused server/integration/web/browser tests,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
+  (server 1,382 passed/1 skipped; web 1,218 passed).
+- `ORCH-LAND-03` and `ORCH-LAND-04` record follow-up reliability work discovered during LAND-02: the
+  current aggregate still infers PR-opening/failure outside a first-class task substate, and exhausted PR
+  creation has no explicit retry actuator.
 
 ## Immediate Sequence
 
-1. `ORCH-LAND-02` expose landing through RPC and task-detail UI.
-2. `ORCH-WT-01` close the TaskWorktreeReactor startup subscription race.
+1. `ORCH-WT-01` close the TaskWorktreeReactor startup subscription race.
+2. `ORCH-LAND-03` and `ORCH-LAND-04` make landing outcomes durable and retryable.
 
 ## Repository State Notes
 

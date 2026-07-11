@@ -14,8 +14,10 @@ or explicitly blocked.
 | ORCH-LC-03 | DONE | Reconcile cancellation interrupted by server restart: skip durably completed phases, retry unfinished idempotent phases, and never recover a missing provider session just to interrupt it. | Persistence-backed A/B/C restart integration emits one abandonment; focused tests cover phase skipping, transient retry, terminal cleanup, and a second no-op reconciliation. |
 | ORCH-LC-04 | DONE | Add restart reconciliation for interrupted/orphaned active stages and permit a clean retry. | Restart test leaves no stale active stage and a new handoff succeeds. |
 | ORCH-LAND-01 | DONE | Add guarded `landTask` executor to PM tools and MCP using the existing `task.land` decider invariant. | PM/MCP tests dispatch `task.land` only after approved land gate. |
-| ORCH-LAND-02 | NEXT | Expose landing through RPC and task-detail UI; show pending, PR-opening, failed, and landed states. | Browser/integration test drives approve -> land -> PR URL. |
-| ORCH-WT-01 | TODO | Close TaskWorktreeReactor startup subscription race using sequence-aware replay or periodic pending-land reconciliation. | Event emitted during startup is processed exactly once. |
+| ORCH-LAND-02 | DONE | Expose landing through RPC and task-detail UI; show pending, PR-opening, failed, and landed states. | Browser/integration test drives approve -> land -> PR URL. |
+| ORCH-WT-01 | NEXT | Close TaskWorktreeReactor startup subscription race using sequence-aware replay or periodic pending-land reconciliation. | Event emitted during startup is processed exactly once. |
+| ORCH-LAND-03 | TODO | Add a first-class durable landing substate to the task aggregate/projections so PR-opening, exhausted failure, and completion survive task-only replay without depending on a stage-thread activity. | Restart/rebuild tests reconstruct opening, failed, and completed landing state even when no stage thread exists. |
+| ORCH-LAND-04 | TODO | Add an idempotent PM/MCP/RPC/UI retry actuator for a landed task whose PR-opening attempts were exhausted. | Retry after failure opens or reuses one PR, clears the failure state, and preserves the worktree until success. |
 | ORCH-WT-02 | TODO | Add durable worktree ownership/lease metadata and a grace period before orphan reaping. | A second runtime/database cannot reap an actively owned worktree. |
 
 ## Phase 1 - Task Control and Worker Defaults
