@@ -194,3 +194,17 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: focused contract/server/reactor/integration/web/browser tests,
   `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
   (server 1,397 passed/1 skipped; web 1,219 passed).
+
+### ORCH-WT-02
+
+- Reactor tests cover atomic lease creation from both the startup snapshot and a post-snapshot
+  `task.created` event, periodic renewal, live foreign-lease protection, expiry plus grace, new unleased
+  directory grace, terminal release, deterministic-path validation, and the existing orphan metric.
+- Lease records are stored outside the removable worktree and contain schema-validated version, task,
+  project, canonical worktree path, and renewal time. Malformed or inaccessible metadata fails safe.
+- A persistence-backed integration test starts two runtimes with independent SQLite event stores over
+  one Git workspace. The observer knows the project but not the owner's task and proves its startup
+  orphan scan preserves the leased worktree.
+- Verification passed on 2026-07-12: 23 reactor tests plus the two-database integration test,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
+  (server 1,402 passed/1 skipped; web 1,219 passed).

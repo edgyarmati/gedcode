@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-WT-02` - add durable worktree ownership/lease metadata and a grace period.
+- **Active task**: `ORCH-TASK-01` - define archive, restore, and permanent-delete lifecycle events.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -69,11 +69,19 @@
 - Final `ORCH-LAND-04` verification passed on 2026-07-12: focused contract/decider/projector/reactor/PM,
   real-engine integration, and browser tests; `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,397 passed/1 skipped; web 1,219 passed).
+- `ORCH-WT-02` is complete in commit `4c6210452`. Live tasks now publish atomic ownership leases outside their worktree,
+  renew them before every orphan scan, and establish them both from startup state and post-snapshot task
+  creation. Foreign runtimes fail safe on active, malformed, or unreadable leases and require lease
+  expiry plus a 30-minute grace window before cleanup; terminal cleanup releases the lease.
+- Final `ORCH-WT-02` verification passed on 2026-07-12: 23 focused reactor tests and a real
+  two-runtime/two-database shared-workspace integration test; `bun fmt`, `bun lint` (existing warnings
+  only), `bun typecheck`, `bun run build`, and `bun run test` (server 1,402 passed/1 skipped; web 1,219
+  passed).
 
 ## Immediate Sequence
 
-1. `ORCH-WT-02` add durable worktree ownership/lease metadata and a grace period.
-2. `ORCH-TASK-01` define task archive, restore, and permanent-delete lifecycle events.
+1. `ORCH-TASK-01` define task archive, restore, and permanent-delete lifecycle events.
+2. `ORCH-TASK-02` add PM/MCP/RPC/UI archive/delete actions and task context menus.
 
 ## Repository State Notes
 

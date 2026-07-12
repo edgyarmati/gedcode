@@ -18,13 +18,13 @@ or explicitly blocked.
 | ORCH-WT-01 | DONE | Close TaskWorktreeReactor startup subscription race using sequence-aware replay or periodic pending-land reconciliation. | Event emitted during startup is processed exactly once. |
 | ORCH-LAND-03 | DONE | Add a first-class durable landing substate to the task aggregate/projections so PR-opening, exhausted failure, and completion survive task-only replay without depending on a stage-thread activity. | Restart/rebuild tests reconstruct opening, failed, and completed landing state even when no stage thread exists. |
 | ORCH-LAND-04 | DONE | Add an idempotent PM/MCP/RPC/UI retry actuator for a landed task whose PR-opening attempts were exhausted. | Retry after failure opens or reuses one PR, clears the failure state, and preserves the worktree until success. |
-| ORCH-WT-02 | NEXT | Add durable worktree ownership/lease metadata and a grace period before orphan reaping. | A second runtime/database cannot reap an actively owned worktree. |
+| ORCH-WT-02 | DONE | Add durable worktree ownership/lease metadata and a grace period before orphan reaping. | A second runtime/database cannot reap an actively owned worktree. |
 
 ## Phase 1 - Task Control and Worker Defaults
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-TASK-01 | TODO | Define task archive, restore, and permanent-delete commands/events without erasing the append-only event log. | Contract and replay tests preserve history while excluding archived/deleted tasks from active queries. |
+| ORCH-TASK-01 | NEXT | Define task archive, restore, and permanent-delete commands/events without erasing the append-only event log. | Contract and replay tests preserve history while excluding archived/deleted tasks from active queries. |
 | ORCH-TASK-02 | TODO | Add PM/MCP/RPC/UI task archive/delete actions and rich task-card context menus. | Terminal tasks disappear from active board and can be restored where supported. |
 | ORCH-TASK-03 | TODO | Add stable create-task idempotency keys tied to the originating PM request. | Repeated identical tool calls return one task and one worktree. |
 | ORCH-TASK-04 | TODO | Add explicit supersedes/superseded-by relationships for intentional replacement tasks. | Replacement task links to prior task and board presents one active successor. |
