@@ -24,8 +24,8 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-TASK-01 | NEXT | Define task archive, restore, and permanent-delete commands/events without erasing the append-only event log. | Contract and replay tests preserve history while excluding archived/deleted tasks from active queries. |
-| ORCH-TASK-02 | TODO | Add PM/MCP/RPC/UI task archive/delete actions and rich task-card context menus. | Terminal tasks disappear from active board and can be restored where supported. |
+| ORCH-TASK-01 | DONE | Define task archive, restore, and permanent-delete commands/events without erasing the append-only event log. | Contract and replay tests preserve history while excluding archived/deleted tasks from active queries. |
+| ORCH-TASK-02 | NEXT | Add PM/MCP/RPC/UI task archive/delete actions and rich task-card context menus. | Terminal tasks disappear from active board and can be restored where supported. |
 | ORCH-TASK-03 | TODO | Add stable create-task idempotency keys tied to the originating PM request. | Repeated identical tool calls return one task and one worktree. |
 | ORCH-TASK-04 | TODO | Add explicit supersedes/superseded-by relationships for intentional replacement tasks. | Replacement task links to prior task and board presents one active successor. |
 | ORCH-ACCESS-01 | TODO | Change orchestration worker runtime default to full write access while preserving PM read-only enforcement. | New worker stages resolve to full access by default; PM remains read-only. |

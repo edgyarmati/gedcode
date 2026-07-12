@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-TASK-01` - define archive, restore, and permanent-delete lifecycle events.
+- **Active task**: `ORCH-TASK-02` - expose archive, restore, and permanent-delete lifecycle actions.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -77,11 +77,20 @@
   two-runtime/two-database shared-workspace integration test; `bun fmt`, `bun lint` (existing warnings
   only), `bun typecheck`, `bun run build`, and `bun run test` (server 1,402 passed/1 skipped; web 1,219
   passed).
+- `ORCH-TASK-01` is complete in commit `70720baca`. Settled terminal tasks now support append-only
+  archive, restore, and permanent-delete tombstones. Replay and command state retain full task history,
+  while active SQL/project queries, snapshots, PM ledgers, live web state, and the task board omit
+  archived/deleted tasks. Live, cancelling, incompletely landed, archived, and deleted task transitions
+  are rejected by the decider as appropriate.
+- Final `ORCH-TASK-01` verification passed on 2026-07-12: focused contract, decider, projector, SQL,
+  migration, engine, PM, transport, and web-store tests; `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (server 1,413 passed/1 skipped; web 1,220 passed;
+  contracts 61 passed; all 12 packages successful).
 
 ## Immediate Sequence
 
-1. `ORCH-TASK-01` define task archive, restore, and permanent-delete lifecycle events.
-2. `ORCH-TASK-02` add PM/MCP/RPC/UI archive/delete actions and task context menus.
+1. `ORCH-TASK-02` add PM/MCP/RPC/UI archive/delete actions and task context menus.
+2. `ORCH-TASK-03` add stable create-task idempotency keys tied to the originating PM request.
 
 ## Repository State Notes
 

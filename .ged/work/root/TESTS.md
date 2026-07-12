@@ -208,3 +208,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: 23 reactor tests plus the two-database integration test,
   `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
   (server 1,402 passed/1 skipped; web 1,219 passed).
+
+### ORCH-TASK-01
+
+- Contract, decider, in-memory replay, engine classification, and live-event tests cover append-only
+  archive, restore, and permanent-delete commands/events. Legacy tasks decode with null tombstones.
+- Lifecycle invariants allow only abandoned tasks or fully landed tasks with a recorded pull request;
+  archived tasks reject ordinary commands until restored and deleted tasks reject all later transitions.
+- Migration 48 and SQL projection tests preserve tombstoned rows and full command state while active
+  project queries, public snapshots, PM ledgers, and web state omit archived/deleted tasks.
+- Verification passed on 2026-07-12: focused contract/decider/projector/SQL/migration/engine/PM/web
+  tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
+  `bun run test` (all 12 packages successful; server 1,413 passed/1 skipped, web 1,220 passed,
+  contracts 61 passed).
