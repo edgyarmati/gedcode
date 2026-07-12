@@ -47,10 +47,8 @@ import {
 } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
-import {
-  isDeterministicTaskWorktreePath,
-  makeTaskWorktreeReactorLive,
-} from "./TaskWorktreeReactor.ts";
+import { isDeterministicTaskWorktreePath } from "../taskWorktreeLease.ts";
+import { makeTaskWorktreeReactorLive } from "./TaskWorktreeReactor.ts";
 
 const now = "2026-06-15T09:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -165,6 +163,33 @@ function makeTerminalTaskEvent(
   };
 }
 
+function makeTaskCreatedEvent(): OrchestrationEvent {
+  return {
+    sequence: 2,
+    eventId: EventId.make("evt-task-created"),
+    aggregateKind: "task",
+    aggregateId: taskId,
+    type: "task.created",
+    occurredAt: now,
+    commandId: CommandId.make("cmd-task-created"),
+    causationEventId: null,
+    correlationId: CommandId.make("cmd-task-created"),
+    metadata: {},
+    payload: {
+      taskId,
+      projectId,
+      taskType,
+      title: "Task",
+      branch: "orchestrator/task-1",
+      worktreePath: "/tmp/unused",
+      pmMessageId: null,
+      playbookVersion: "feature@v1",
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
+
 function makeProjectionSnapshotQueryLayer(
   readModelRef: { current: OrchestrationReadModel },
   getCommandReadModel: () => Effect.Effect<OrchestrationReadModel> = () =>
@@ -211,6 +236,10 @@ function taskWorktreePath(workspaceRoot: string, id: string) {
   return path.join(workspaceRoot, ".gedcode", "orchestrator", "tasks", id);
 }
 
+function taskWorktreeLeasePath(workspaceRoot: string, id: string) {
+  return path.join(workspaceRoot, ".gedcode", "orchestrator", "task-worktree-leases", `${id}.json`);
+}
+
 const createdChangeRequest: ChangeRequest = {
   provider: "github",
   number: 42,
@@ -228,6 +257,9 @@ async function createHarness(input: {
   readonly readEvents?: OrchestrationEngineShape["readEvents"];
   readonly getCommandReadModel?: () => Effect.Effect<OrchestrationReadModel>;
   readonly reaperIntervalMsOverride?: number;
+  readonly orphanGracePeriodMsOverride?: number;
+  readonly leaseDurationMsOverride?: number;
+  readonly nowMsOverride?: () => number;
   readonly useTestClock?: boolean;
   readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   readonly sourceControlProvider?: SourceControlProvider.SourceControlProviderShape;
@@ -319,6 +351,9 @@ async function createHarness(input: {
   const metricRegistryLayer = Layer.succeed(Metric.MetricRegistry, metricRegistry);
   const reactorLayer = makeTaskWorktreeReactorLive({
     reaperIntervalMsOverride: input.reaperIntervalMsOverride ?? 60_000,
+    orphanGracePeriodMsOverride: input.orphanGracePeriodMsOverride ?? 0,
+    leaseDurationMsOverride: input.leaseDurationMsOverride ?? 180_000,
+    ...(input.nowMsOverride ? { nowMsOverride: input.nowMsOverride } : {}),
     landingMaxAttemptsOverride: 1,
     landingRetryDelayMsOverride: 1,
   }).pipe(
@@ -950,6 +985,147 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
+  it("writes a lease for a task created after the startup snapshot", async () => {
+    const workspaceRoot = makeEmptyWorkspace();
+    const worktreePath = taskWorktreePath(workspaceRoot, String(taskId));
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const startupReadModel = {
+      ...makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      tasks: [],
+      threads: [],
+    } satisfies OrchestrationReadModel;
+    const harness = await createHarness({ readModel: startupReadModel, eventPubSub });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "working",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTaskCreatedEvent()));
+    await waitFor(() => fs.existsSync(taskWorktreeLeasePath(workspaceRoot, String(taskId))));
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("honors a live filesystem lease written by a separate runtime and database", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    let currentTimeMs = 1_800_000_000_000;
+    const owner = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      leaseDurationMsOverride: 1_000,
+      orphanGracePeriodMsOverride: 500,
+      nowMsOverride: () => currentTimeMs,
+    });
+
+    await owner.runtime.runPromise(owner.reactor.start().pipe(Scope.provide(owner.scope)));
+    const leasePath = taskWorktreeLeasePath(workspaceRoot, String(taskId));
+    await waitFor(() => fs.existsSync(leasePath));
+    const leaseContents = fs.readFileSync(leasePath, "utf8");
+    expect(leaseContents).toContain(`"taskId":"${String(taskId)}"`);
+    expect(leaseContents).toContain(`"projectId":"${String(projectId)}"`);
+    expect(leaseContents).toContain(`"worktreePath":"${worktreePath}"`);
+
+    const foreignReadModel = {
+      ...makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      tasks: [],
+      threads: [],
+    } satisfies OrchestrationReadModel;
+    const observer = await createHarness({
+      readModel: foreignReadModel,
+      leaseDurationMsOverride: 1_000,
+      orphanGracePeriodMsOverride: 500,
+      nowMsOverride: () => currentTimeMs,
+    });
+
+    await observer.runtime.runPromise(observer.reactor.start().pipe(Scope.provide(observer.scope)));
+    await observer.runtime.runPromise(Effect.yieldNow);
+    expect(observer.removeWorktree).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(observer.scope, Exit.void));
+    await observer.runtime.dispose();
+    await Effect.runPromise(Scope.close(owner.scope, Exit.void));
+    await owner.runtime.dispose();
+  });
+
+  it("reaps a foreign worktree only after its lease and grace period expire", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    let currentTimeMs = 1_800_000_000_000;
+    const owner = await createHarness({
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      leaseDurationMsOverride: 1_000,
+      orphanGracePeriodMsOverride: 500,
+      nowMsOverride: () => currentTimeMs,
+    });
+    await owner.runtime.runPromise(owner.reactor.start().pipe(Scope.provide(owner.scope)));
+    await waitFor(() => fs.existsSync(taskWorktreeLeasePath(workspaceRoot, String(taskId))));
+    await Effect.runPromise(Scope.close(owner.scope, Exit.void));
+    await owner.runtime.dispose();
+
+    currentTimeMs += 1_501;
+    const foreignReadModel = {
+      ...makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      tasks: [],
+      threads: [],
+    } satisfies OrchestrationReadModel;
+    const observer = await createHarness({
+      readModel: foreignReadModel,
+      leaseDurationMsOverride: 1_000,
+      orphanGracePeriodMsOverride: 500,
+      nowMsOverride: () => currentTimeMs,
+    });
+
+    await observer.runtime.runPromise(observer.reactor.start().pipe(Scope.provide(observer.scope)));
+    await waitFor(() => observer.removeWorktree.mock.calls.length === 1);
+    expect(observer.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: worktreePath,
+      force: true,
+    });
+    await waitFor(() => !fs.existsSync(taskWorktreeLeasePath(workspaceRoot, String(taskId))));
+
+    await Effect.runPromise(Scope.close(observer.scope, Exit.void));
+    await observer.runtime.dispose();
+  });
+
+  it("gives newly discovered unleased worktrees a grace period before reaping", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const foreignReadModel = {
+      ...makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      tasks: [],
+      threads: [],
+    } satisfies OrchestrationReadModel;
+    const discoveredAtMs = fs.statSync(worktreePath).mtimeMs;
+    let currentTimeMs = discoveredAtMs + 50;
+    const observer = await createHarness({
+      readModel: foreignReadModel,
+      orphanGracePeriodMsOverride: 100,
+      nowMsOverride: () => currentTimeMs,
+    });
+
+    await observer.runtime.runPromise(observer.reactor.start().pipe(Scope.provide(observer.scope)));
+    await observer.runtime.runPromise(Effect.yieldNow);
+    expect(observer.removeWorktree).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(observer.scope, Exit.void));
+    await observer.runtime.dispose();
+
+    currentTimeMs = discoveredAtMs + 101;
+    const expiredObserver = await createHarness({
+      readModel: foreignReadModel,
+      orphanGracePeriodMsOverride: 100,
+      nowMsOverride: () => currentTimeMs,
+    });
+    await expiredObserver.runtime.runPromise(
+      expiredObserver.reactor.start().pipe(Scope.provide(expiredObserver.scope)),
+    );
+    await waitFor(() => expiredObserver.removeWorktree.mock.calls.length === 1);
+
+    await Effect.runPromise(Scope.close(expiredObserver.scope, Exit.void));
+    await expiredObserver.runtime.dispose();
+  });
+
   it("treats a missing task worktree directory as an empty scan", async () => {
     const workspaceRoot = makeEmptyWorkspace();
     const worktreePath = taskWorktreePath(workspaceRoot, String(taskId));
@@ -1013,6 +1189,7 @@ describe("TaskWorktreeReactor", () => {
       readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
       reaperIntervalMsOverride: 10,
       useTestClock: true,
+      nowMsOverride: () => 2_000_000_000_000,
     });
 
     await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));

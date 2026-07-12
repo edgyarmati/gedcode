@@ -35,13 +35,22 @@ import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
+  DEFAULT_ORPHAN_GRACE_PERIOD_MS,
+  expectedTaskWorktreePath,
+  isDeterministicTaskWorktreePath,
+  makeTaskWorktreeLeaseStore,
+  taskOwnsWorktree,
+} from "../taskWorktreeLease.ts";
+import {
   TaskWorktreeReactor,
   type TaskWorktreeReactorShape,
 } from "../Services/TaskWorktreeReactor.ts";
 
-type TerminalTaskEvent = Extract<
+type WorktreeLifecycleEvent = Extract<
   OrchestrationEvent,
-  { type: "task.landed" | "task.landing-retry-requested" | "task.abandoned" }
+  {
+    type: "task.created" | "task.landed" | "task.landing-retry-requested" | "task.abandoned";
+  }
 >;
 
 type CleanupCandidate = {
@@ -53,6 +62,9 @@ type CleanupCandidate = {
 
 export interface TaskWorktreeReactorLiveOptions {
   readonly reaperIntervalMsOverride?: number;
+  readonly orphanGracePeriodMsOverride?: number;
+  readonly leaseDurationMsOverride?: number;
+  readonly nowMsOverride?: () => number;
   readonly landingRetryDelayMsOverride?: number;
   readonly landingMaxAttemptsOverride?: number;
 }
@@ -66,24 +78,6 @@ type LandedTaskContext = {
 class TaskLandingPrError extends Data.TaggedError("TaskLandingPrError")<{
   readonly detail: string;
 }> {}
-
-function expectedTaskWorktreePath(input: {
-  readonly workspaceRoot: string;
-  readonly taskId: string;
-}): string {
-  return path.resolve(input.workspaceRoot, ".gedcode", "orchestrator", "tasks", input.taskId);
-}
-
-export function isDeterministicTaskWorktreePath(input: {
-  readonly workspaceRoot: string;
-  readonly taskId: string;
-  readonly worktreePath: string;
-}): boolean {
-  return (
-    path.resolve(input.worktreePath) ===
-    expectedTaskWorktreePath({ workspaceRoot: input.workspaceRoot, taskId: input.taskId })
-  );
-}
 
 export function listTerminalTaskWorktreeCleanupCandidates(
   readModel: OrchestrationReadModel,
@@ -227,10 +221,45 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       options?.reaperIntervalMsOverride ??
         settings.orchestratorDefaults.worktreeReaperIntervalMinutes * 60_000,
     );
+    const orphanGracePeriodMs = Math.max(
+      0,
+      options?.orphanGracePeriodMsOverride ?? DEFAULT_ORPHAN_GRACE_PERIOD_MS,
+    );
+    const leaseDurationMs = Math.max(1, options?.leaseDurationMsOverride ?? reaperIntervalMs * 3);
+    const leaseStore = yield* makeTaskWorktreeLeaseStore({
+      leaseDurationMs,
+      orphanGracePeriodMs,
+      ...(options?.nowMsOverride ? { nowMsOverride: options.nowMsOverride } : {}),
+    });
     const landingRetryDelayMs = Math.max(1, options?.landingRetryDelayMsOverride ?? 1_000);
     const landingMaxAttempts = Math.max(1, options?.landingMaxAttemptsOverride ?? 3);
     const cleanupSemaphore = yield* Semaphore.make(1);
     const cleanedWorktreePaths = new Set<string>();
+
+    const refreshLiveTaskWorktreeLeases = Effect.fn("refreshLiveTaskWorktreeLeases")(function* (
+      readModel: OrchestrationReadModel,
+    ) {
+      const projectById = new Map(
+        readModel.projects.map((project) => [String(project.id), project]),
+      );
+      yield* Effect.forEach(
+        readModel.tasks,
+        (task) => {
+          const project = projectById.get(String(task.projectId));
+          return project ? leaseStore.renew({ task, project }) : Effect.void;
+        },
+        { concurrency: 1, discard: true },
+      );
+    });
+
+    const refreshLiveTaskWorktreeLeasesSafely = (readModel: OrchestrationReadModel) =>
+      refreshLiveTaskWorktreeLeases(readModel).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("task worktree lease refresh failed", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
 
     const cleanupTaskWorktree = Effect.fn("cleanupTaskWorktree")(function* (
       candidate: CleanupCandidate,
@@ -260,6 +289,17 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         return;
       }
 
+      if (
+        candidate.reason === "orphaned" &&
+        (yield* leaseStore.isOrphanProtected({
+          workspaceRoot: candidate.workspaceRoot,
+          taskId,
+          worktreePath,
+        }))
+      ) {
+        return;
+      }
+
       const exists = yield* fileSystem.exists(worktreePath);
       if (exists) {
         yield* gitWorkflow.removeWorktree({
@@ -278,6 +318,10 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
           reason: candidate.reason,
         });
       }
+      yield* leaseStore.release({
+        workspaceRoot: candidate.workspaceRoot,
+        taskId,
+      });
       yield* vcsProcess.run({
         operation: "TaskWorktreeReactor.pruneWorktrees",
         command: "git",
@@ -536,7 +580,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     });
 
     const resolveCandidate = Effect.fn("resolveTerminalTaskCleanupCandidate")(function* (
-      event: TerminalTaskEvent,
+      event: Exclude<WorktreeLifecycleEvent, { type: "task.created" }>,
     ) {
       const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       return listTerminalTaskWorktreeCleanupCandidates(readModel).find(
@@ -544,9 +588,21 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
     });
 
-    const processTerminalTaskEvent = Effect.fn("processTerminalTaskEvent")(function* (
-      event: TerminalTaskEvent,
+    const processWorktreeLifecycleEvent = Effect.fn("processWorktreeLifecycleEvent")(function* (
+      event: WorktreeLifecycleEvent,
     ) {
+      if (event.type === "task.created") {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const task = readModel.tasks.find((candidate) => candidate.id === event.payload.taskId);
+        if (!task) {
+          return;
+        }
+        const project = readModel.projects.find((candidate) => candidate.id === task.projectId);
+        if (project) {
+          yield* leaseStore.renew({ task, project });
+        }
+        return;
+      }
       if (event.type === "task.landed" || event.type === "task.landing-retry-requested") {
         const context = yield* resolveLandedTaskContext(String(event.payload.taskId));
         if (context) {
@@ -562,8 +618,8 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       yield* cleanupSemaphore.withPermits(1)(cleanupTaskWorktreeSafely(candidate));
     });
 
-    const processTerminalTaskEventSafely = (event: TerminalTaskEvent) =>
-      processTerminalTaskEvent(event).pipe(
+    const processWorktreeLifecycleEventSafely = (event: WorktreeLifecycleEvent) =>
+      processWorktreeLifecycleEvent(event).pipe(
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) {
             return Effect.failCause(cause);
@@ -576,7 +632,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         }),
       );
 
-    const worker = yield* makeDrainableWorker(processTerminalTaskEventSafely);
+    const worker = yield* makeDrainableWorker(processWorktreeLifecycleEventSafely);
 
     const processPendingLandedTasks = Effect.fn("processPendingLandedTasks")(function* (
       readModel: OrchestrationReadModel,
@@ -645,13 +701,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         const entries = yield* readTaskWorktreeEntries(root);
         const projectTasks = readModel.tasks.filter((task) => task.projectId === project.id);
         const liveTaskIds = new Set(
-          projectTasks
-            .filter(
-              (task) =>
-                (task.status !== "landed" && task.status !== "abandoned") ||
-                (task.status === "landed" && task.prUrl === null),
-            )
-            .map((task) => String(task.id)),
+          projectTasks.filter(taskOwnsWorktree).map((task) => String(task.id)),
         );
 
         for (const entry of entries) {
@@ -699,8 +749,16 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       });
     });
 
+    const refreshLeasesAndReapOrphanedTaskWorktrees = Effect.fn(
+      "refreshLeasesAndReapOrphanedTaskWorktrees",
+    )(function* () {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      yield* refreshLiveTaskWorktreeLeases(readModel);
+      yield* reapOrphanedTaskWorktrees();
+    });
+
     const reapOrphanedTaskWorktreesSafely = cleanupSemaphore
-      .withPermits(1)(reapOrphanedTaskWorktrees())
+      .withPermits(1)(refreshLeasesAndReapOrphanedTaskWorktrees())
       .pipe(
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) {
@@ -728,22 +786,24 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
       const startupSequence =
         startupReadModelExit._tag === "Success" ? startupReadModelExit.value.snapshotSequence : 0;
-      let lastTerminalSequence = startupSequence;
+      let lastWorktreeLifecycleSequence = startupSequence;
 
-      const enqueueTerminalEventOnce = (event: OrchestrationEvent) => {
+      const enqueueWorktreeLifecycleEventOnce = (event: OrchestrationEvent) => {
         if (
-          (event.type !== "task.landed" &&
+          (event.type !== "task.created" &&
+            event.type !== "task.landed" &&
             event.type !== "task.landing-retry-requested" &&
             event.type !== "task.abandoned") ||
-          event.sequence <= lastTerminalSequence
+          event.sequence <= lastWorktreeLifecycleSequence
         ) {
           return Effect.void;
         }
-        lastTerminalSequence = event.sequence;
+        lastWorktreeLifecycleSequence = event.sequence;
         return worker.enqueue(event);
       };
 
       if (startupReadModelExit._tag === "Success") {
+        yield* refreshLiveTaskWorktreeLeasesSafely(startupReadModelExit.value);
         yield* processPendingLandedTasksSafely(startupReadModelExit.value);
         yield* cleanupTerminalTaskWorktreesSafely(startupReadModelExit.value);
       } else {
@@ -752,7 +812,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         });
       }
       yield* orchestrationEngine.readEvents(startupSequence).pipe(
-        Stream.runForEach(enqueueTerminalEventOnce),
+        Stream.runForEach(enqueueWorktreeLifecycleEventOnce),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) {
             return Effect.void;
@@ -764,7 +824,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         }),
       );
       yield* Effect.forkScoped(
-        Stream.runForEach(Stream.fromQueue(liveEvents), enqueueTerminalEventOnce),
+        Stream.runForEach(Stream.fromQueue(liveEvents), enqueueWorktreeLifecycleEventOnce),
       );
       yield* Effect.forkScoped(
         reapOrphanedTaskWorktreesSafely.pipe(

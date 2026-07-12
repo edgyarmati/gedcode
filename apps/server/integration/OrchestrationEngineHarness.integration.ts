@@ -300,6 +300,7 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   readonly provider?: ProviderDriverKind;
   readonly realCodex?: boolean;
   readonly rootDir?: string;
+  readonly workspaceDir?: string;
   readonly additionalProviderInstances?: ReadonlyArray<ProviderInstanceId>;
   readonly startReactors?: boolean;
   readonly orphanTurnReconciler?: {
@@ -310,6 +311,9 @@ interface MakeOrchestrationIntegrationHarnessOptions {
   };
   readonly taskWorktreeReactor?: {
     readonly enabled: boolean;
+    readonly reaperIntervalMsOverride?: number;
+    readonly orphanGracePeriodMsOverride?: number;
+    readonly leaseDurationMsOverride?: number;
     readonly sourceControlProviderRegistry?: SourceControlProviderRegistryShape;
     readonly pushCurrentBranch?: GitWorkflowServiceShape["pushCurrentBranch"];
     readonly readRangeContext?: GitWorkflowServiceShape["readRangeContext"];
@@ -352,7 +356,7 @@ export const makeOrchestrationIntegrationHarness = (
       (yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-orchestration-integration-",
       }));
-    const workspaceDir = path.join(rootDir, "workspace");
+    const workspaceDir = options?.workspaceDir ?? path.join(rootDir, "workspace");
     const { stateDir, dbPath } = yield* deriveServerPaths(rootDir, undefined).pipe(
       Effect.provideService(Path.Path, path),
     );
@@ -558,7 +562,17 @@ export const makeOrchestrationIntegrationHarness = (
     const taskWorktreeReactorLayer =
       options?.taskWorktreeReactor?.enabled === true
         ? makeTaskWorktreeReactorLive({
-            reaperIntervalMsOverride: 60_000,
+            reaperIntervalMsOverride:
+              options.taskWorktreeReactor.reaperIntervalMsOverride ?? 60_000,
+            ...(options.taskWorktreeReactor.orphanGracePeriodMsOverride !== undefined
+              ? {
+                  orphanGracePeriodMsOverride:
+                    options.taskWorktreeReactor.orphanGracePeriodMsOverride,
+                }
+              : {}),
+            ...(options.taskWorktreeReactor.leaseDurationMsOverride !== undefined
+              ? { leaseDurationMsOverride: options.taskWorktreeReactor.leaseDurationMsOverride }
+              : {}),
             landingRetryDelayMsOverride: 1,
             landingMaxAttemptsOverride: 1,
           }).pipe(
