@@ -12,6 +12,7 @@ import {
   type OrchestrationMessageRole,
   type GedRoleModelSelections,
   type OrchestrationGateKind,
+  type OrchestrationReadModel,
   type OrchestrationStageRole,
   type OrchestrationTask,
   type OrchestrationThread,
@@ -99,6 +100,26 @@ interface TaskRetentionParameters {
 
 interface GetTaskLedgerParameters {
   readonly projectId: string;
+}
+
+interface PmTaskAttemptSummary {
+  readonly stageThreadId: string;
+  readonly role: OrchestrationStageRole | null;
+  readonly status: string | null;
+  readonly startedAt: string | null;
+  readonly endedAt: string | null;
+}
+
+interface PmTaskSummary {
+  readonly id: string;
+  readonly type: string;
+  readonly title: string;
+  readonly status: string;
+  readonly currentStageThreadId: string | null;
+  readonly attemptCount: number;
+  readonly recentAttempts: ReadonlyArray<PmTaskAttemptSummary>;
+  readonly prUrl: string | null;
+  readonly updatedAt: string;
 }
 
 interface PmToolContent {
@@ -193,6 +214,31 @@ interface InspectStageDetails {
 const MESSAGE_TAIL_LIMIT = 10;
 const ACTIVITY_TAIL_LIMIT = 20;
 const MESSAGE_TEXT_LIMIT = 500;
+const TASK_LEDGER_RECENT_ATTEMPT_LIMIT = 3;
+
+const summarizeTaskForPm = (
+  task: OrchestrationTask,
+  stageHistory: OrchestrationReadModel["stageHistory"],
+): PmTaskSummary => ({
+  id: task.id,
+  type: task.type,
+  title: task.title,
+  status: task.status,
+  currentStageThreadId: task.currentStageThreadId,
+  attemptCount: task.stageThreadIds.length,
+  recentAttempts: task.stageThreadIds.slice(-TASK_LEDGER_RECENT_ATTEMPT_LIMIT).map((threadId) => {
+    const attempt = stageHistory[threadId];
+    return {
+      stageThreadId: threadId,
+      role: attempt?.role ?? null,
+      status: attempt?.status ?? null,
+      startedAt: attempt?.startedAt ?? null,
+      endedAt: attempt?.endedAt ?? null,
+    };
+  }),
+  prUrl: task.prUrl,
+  updatedAt: task.updatedAt,
+});
 
 const truncateMessageText = (text: string): { text: string; truncated: boolean } => {
   if (text.length <= MESSAGE_TEXT_LIMIT) {
@@ -750,11 +796,12 @@ export const makePmToolExecutors = Effect.gen(function* () {
 
   const getTaskLedger: PmToolExecutor<
     GetTaskLedgerParameters,
-    { projectId: string; tasks: ReadonlyArray<OrchestrationTask> }
+    { projectId: string; lastActionCursor: number; tasks: ReadonlyArray<PmTaskSummary> }
   > = {
     name: "getTaskLedger",
     label: "Get task ledger",
-    description: "Read the projected task ledger for a project.",
+    description:
+      "Read bounded task summaries for a project. The response cursor identifies the projected state and each task includes only its three most recent stage attempts.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -764,7 +811,11 @@ export const makePmToolExecutors = Effect.gen(function* () {
             (task) =>
               task.projectId === projectId && task.archivedAt === null && task.deletedAt === null,
           );
-          return textResult(`Found ${tasks.length} task(s).`, { projectId, tasks });
+          return textResult(`Found ${tasks.length} task(s).`, {
+            projectId,
+            lastActionCursor: readModel.snapshotSequence,
+            tasks: tasks.map((task) => summarizeTaskForPm(task, readModel.stageHistory)),
+          });
         }),
       ),
   };

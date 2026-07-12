@@ -134,6 +134,9 @@ type SettlementEnvelope = {
   readonly message: string;
 };
 
+const withLastActionCursor = (message: string, event: SettlementEvent): string =>
+  boundUntrustedContent(`${message}\n\nLast-action cursor: ${event.sequence}`);
+
 type RuntimeCacheEntry = {
   readonly runtime: PmProjectRuntime;
   readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
@@ -168,6 +171,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
     "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
+    "Re-entry messages and task ledgers carry last-action cursors. Treat them as authoritative progress markers; do not reload full worker histories. getTaskLedger returns bounded summaries and only the three most recent attempts per task.",
     pmDecisionPromptLine(driverKind),
     "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
     "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
@@ -775,7 +779,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             stageThreadId: event.payload.stageThreadId,
             awaitedTurnId: event.payload.awaitedTurnId,
           }),
-          message: serializeStageResultToMessage(stageResult),
+          message: withLastActionCursor(serializeStageResultToMessage(stageResult), event),
         } satisfies SettlementEnvelope;
       }
 
@@ -785,7 +789,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           ...resolved,
           kind: "stage" as const,
           settlementKey: quotaBlockedStageSettlementKey(event.payload.stageThreadId),
-          message: quotaBlockedStageMessage({ event, task: resolved.task }),
+          message: withLastActionCursor(
+            quotaBlockedStageMessage({ event, task: resolved.task }),
+            event,
+          ),
         } satisfies SettlementEnvelope;
       }
 
@@ -795,7 +802,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           ...resolved,
           kind: "stage" as const,
           settlementKey: interruptedStageSettlementKey(event.payload.stageThreadId),
-          message: interruptedStageMessage({ event, task: resolved.task }),
+          message: withLastActionCursor(
+            interruptedStageMessage({ event, task: resolved.task }),
+            event,
+          ),
         } satisfies SettlementEnvelope;
       }
 
@@ -804,7 +814,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         ...resolved,
         kind: "gate" as const,
         settlementKey: makeGateSettlementKey(event.payload.gateId),
-        message: gateResultMessage({ event, task: resolved.task }),
+        message: withLastActionCursor(gateResultMessage({ event, task: resolved.task }), event),
       } satisfies SettlementEnvelope;
     });
 

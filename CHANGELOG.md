@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Breaking/Internal: Bound PM task-ledger context by returning compact task summaries with only the three most recent stage attempts instead of full task aggregates. Ledger responses and automatic settlement re-entry now carry last-action cursors so the PM can track progress without re-ingesting growing histories.
 - Internal: Pin the Orchestrator thread reuse policy: each project keeps one deterministic persistent PM thread, steering reuses its selected stage attempt, and every stage start or retry creates a fresh worker thread linked through task stage history.
 - Breaking/Fixed: Orchestrator worker stages now always run with full access, and the global/project `allowFullAccessWorkers` opt-ins have been removed. Legacy persisted keys still decode but are ignored and omitted on save. PM sessions no longer run full-access; they use the existing approval-required policy, which maps Codex PMs to the read-only/on-request sandbox.
 - Fix/UI: Hide the active-task Plan and Gates sections until they contain a proposed plan or gate, removing misleading permanent “No proposed plan yet” and “No gates” cards.

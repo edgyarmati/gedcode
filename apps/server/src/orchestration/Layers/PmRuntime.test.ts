@@ -2091,6 +2091,10 @@ describe("PmRuntime", () => {
       assert.match(messages[0] ?? "", /A detached worker stage completed/);
       assert.notMatch(messages[0] ?? "", /sk-live-secret/);
       assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
+      assert.match(
+        messages[0] ?? "",
+        new RegExp(`Last-action cursor: ${stageCompletedEvent.sequence}`),
+      );
       assert.strictEqual(consumeCalls.length, 1);
     }),
   );
@@ -2117,6 +2121,10 @@ describe("PmRuntime", () => {
       assert.strictEqual(messages.length, 1);
       assert.match(messages[0] ?? "", /A worker stage paused on subscription quota/);
       assert.match(messages[0] ?? "", /Provider instance: codex/);
+      assert.match(
+        messages[0] ?? "",
+        new RegExp(`Last-action cursor: ${stageBlockedEvent.sequence}`),
+      );
       assert.deepStrictEqual(
         consumeCalls.map((call) => ({
           projectId: call.projectId,
@@ -2704,6 +2712,8 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Never poll inspectStage");
     assert.include(prompt, "re-enter you automatically");
     assert.include(prompt, "explicit operator status request");
+    assert.include(prompt, "last-action cursors");
+    assert.include(prompt, "three most recent attempts");
     assert.notInclude(prompt, "Poll inspectStage");
     assert.notInclude(prompt, "READ-ONLY");
     assert.notInclude(prompt, "NO shell");

@@ -1687,8 +1687,55 @@ it.effect("getTaskLedger omits archived and permanently deleted tasks", () =>
     );
 
     assert.deepStrictEqual(
-      result.details.tasks.map((task: OrchestrationTask) => task.id),
+      result.details.tasks.map((task: { id: TaskId }) => task.id),
       [TaskId.make("task-active")],
     );
+  }),
+);
+
+it.effect("getTaskLedger bounds stage history and returns the projection cursor", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const attemptIds = Array.from({ length: 5 }, (_, index) =>
+      ThreadId.make(`thread-attempt-${index + 1}`),
+    );
+    const task = makeTask({ stageThreadIds: attemptIds, currentStageThreadId: attemptIds.at(-1)! });
+    const base = makeReadModel([task]);
+    const readModel: OrchestrationReadModel = {
+      ...base,
+      snapshotSequence: 42,
+      stageHistory: Object.fromEntries(
+        attemptIds.map((stageThreadId, index) => [
+          stageThreadId,
+          {
+            projectId,
+            taskId,
+            stageThreadId,
+            role: "work" as const,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            status: index === 4 ? ("running" as const) : ("completed" as const),
+            startedAt: now,
+            endedAt: index === 4 ? null : now,
+          },
+        ]),
+      ),
+    };
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+    const getTaskLedger = findTool(tools, "getTaskLedger");
+
+    const result = yield* Effect.promise(() =>
+      getTaskLedger.execute("tool-task-ledger-bounded", { projectId }),
+    );
+
+    assert.strictEqual(result.details.lastActionCursor, 42);
+    assert.strictEqual(result.details.tasks[0]?.attemptCount, 5);
+    assert.deepStrictEqual(
+      result.details.tasks[0]?.recentAttempts.map(
+        (attempt: { stageThreadId: string }) => attempt.stageThreadId,
+      ),
+      attemptIds.slice(-3),
+    );
+    assert.ok(!("stageThreadIds" in (result.details.tasks[0] ?? {})));
   }),
 );
