@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: Hide the active-task Plan and Gates sections until they contain a proposed plan or gate, removing misleading permanent “No proposed plan yet” and “No gates” cards.
 - Fix: Make steering an active worker explicit across providers. Codex now uses app-server `turn/steer`, OpenCode reports live steering, Claude reports active-turn queuing, and durable worker activity distinguishes started, steered, queued, and rejected delivery. Codex steering rejection is surfaced without silently falling back to a new turn or interrupt/restart; this requires a Codex app-server version that supports `turn/steer`.
 - Feature/Fixed: Add first-class Orchestrator worker interruption through PM/MCP, RPC, and task detail. Requests are durably acknowledged immediately, active provider turns are interrupted without waiting for the PM turn to finish, and provider-reported interruption/cancellation now settles the stage as interrupted instead of completed.
 - Fix: Stop instructing Orchestrator PMs to poll worker stages. PMs now wait for existing event-driven stage, gate, quota, and interrupt re-entry, and use `inspectStage` only for explicit status requests or one bounded pre-action diagnostic.

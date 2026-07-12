@@ -25,8 +25,14 @@ import {
 } from "../../environmentApi";
 import { __resetLocalApiForTests } from "../../localApi";
 import { initialEnvironmentState, useStore } from "../../store";
+import type { Thread } from "../../types";
 import { SidebarProvider } from "../ui/sidebar";
-import { OrchestratorHomeRoute, TaskHeader } from "./OrchestratorRoutes";
+import {
+  GatePanel,
+  OrchestratorHomeRoute,
+  StageProposedPlan,
+  TaskHeader,
+} from "./OrchestratorRoutes";
 import { TaskBoard } from "./TaskBoard";
 
 const environmentId = EnvironmentId.make("environment-browser");
@@ -122,6 +128,52 @@ it("opens the add-project flow from the orchestrator landing header", async () =
   await trigger.click();
 
   expect(openAddProject).toHaveBeenCalledOnce();
+});
+
+it("omits empty Plan and Gates sections and renders them once populated", async () => {
+  const empty = await render(
+    <>
+      <GatePanel environmentId={environmentId} gates={[]} taskId={taskId} />
+      <StageProposedPlan
+        environmentId={environmentId}
+        project={undefined}
+        stageThread={undefined}
+      />
+    </>,
+  );
+
+  await expect.element(page.getByText("No gates.")).not.toBeInTheDocument();
+  await expect.element(page.getByText("No proposed plan yet.")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Plan", { exact: true })).not.toBeInTheDocument();
+
+  const stageThread = {
+    worktreePath: "/tmp/project",
+    proposedPlans: [
+      {
+        id: "plan-browser",
+        turnId: null,
+        planMarkdown: "## Implemented plan",
+        implementedAt: null,
+        implementationThreadId: null,
+        createdAt: "2026-06-14T00:00:00.000Z",
+        updatedAt: "2026-06-14T00:00:00.000Z",
+      },
+    ],
+  } as unknown as Thread;
+  await empty.rerender(
+    <>
+      <GatePanel environmentId={environmentId} gates={[approvedLandGate]} taskId={taskId} />
+      <StageProposedPlan
+        environmentId={environmentId}
+        project={undefined}
+        stageThread={stageThread}
+      />
+    </>,
+  );
+
+  await expect.element(page.getByText("Gates", { exact: true })).toBeInTheDocument();
+  await expect.element(page.getByRole("heading", { name: "Plan" })).toBeInTheDocument();
+  await expect.element(page.getByText("Implemented plan")).toBeInTheDocument();
 });
 
 it("cancels a non-terminal task from the task header", async () => {

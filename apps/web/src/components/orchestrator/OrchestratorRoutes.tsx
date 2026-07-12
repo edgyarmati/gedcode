@@ -902,7 +902,7 @@ function TaskDetailRail({
   );
 }
 
-function StageProposedPlan({
+export function StageProposedPlan({
   environmentId,
   project,
   stageThread,
@@ -913,12 +913,7 @@ function StageProposedPlan({
 }) {
   const proposedPlan = stageThread?.proposedPlans.at(-1) ?? null;
   if (!proposedPlan) {
-    return (
-      <section className="rounded-lg border border-border bg-card p-4">
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase">Plan</h2>
-        <p className="mt-3 text-sm text-muted-foreground">No proposed plan yet.</p>
-      </section>
-    );
+    return null;
   }
 
   return (
@@ -964,7 +959,7 @@ function TaskDiffPanel({ stageThreadRef }: { stageThreadRef: ScopedThreadRef | n
   );
 }
 
-function GatePanel({
+export function GatePanel({
   environmentId,
   gates,
   taskId,
@@ -974,11 +969,7 @@ function GatePanel({
   taskId: TaskId;
 }) {
   if (gates.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        No gates.
-      </div>
-    );
+    return null;
   }
 
   return (
