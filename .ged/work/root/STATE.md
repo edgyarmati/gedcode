@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-LAND-04` - add an idempotent failed-landing retry actuator.
+- **Active task**: `ORCH-WT-02` - add durable worktree ownership/lease metadata and a grace period.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -62,11 +62,18 @@
   real-engine integration, and web tests; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
   `bun run build`, and two clean `bun run test` runs. The final run had server 1,390 passed/1 skipped and
   web 1,219 passed.
+- `ORCH-LAND-04` is complete in commit `9a30ebdcd`. The shared `landTask` actuator now converts an
+  exhausted durable failure into an explicit retry event, coalesces concurrent/in-progress calls, reuses
+  an existing pull request when present, gives each retry attempt independent failure identity, and
+  exposes the same guarded behavior through PM, MCP, RPC, and task detail.
+- Final `ORCH-LAND-04` verification passed on 2026-07-12: focused contract/decider/projector/reactor/PM,
+  real-engine integration, and browser tests; `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (server 1,397 passed/1 skipped; web 1,219 passed).
 
 ## Immediate Sequence
 
-1. `ORCH-LAND-04` add an idempotent failed-landing retry actuator.
-2. `ORCH-WT-02` add durable worktree ownership/lease metadata and a grace period.
+1. `ORCH-WT-02` add durable worktree ownership/lease metadata and a grace period.
+2. `ORCH-TASK-01` define task archive, restore, and permanent-delete lifecycle events.
 
 ## Repository State Notes
 

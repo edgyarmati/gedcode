@@ -178,3 +178,19 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: focused contract/decider/projector/projection/reactor/integration/web
   tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and two clean
   root `bun run test` passes. The final run had server 1,390 passed/1 skipped and web 1,219 passed.
+
+### ORCH-LAND-04
+
+- Contract, engine classification, decider, and projector tests cover the explicit
+  `task.landing.retry` command and `task.landing-retry-requested` event, including rejection unless the
+  task is landed with an exhausted failure and a retained worktree.
+- Shared executor and PM tests cover first retry dispatch, completed-task idempotency, in-progress
+  coalescing, and accurate operator messages while retaining the existing public RPC result contract.
+- Reactor tests prove failed landings remain stable across startup, explicit retry opens or reuses one
+  pull request, a later failed attempt is not deduplicated against the first, and the worktree is removed
+  only after success.
+- A real-engine integration test drives provider failure -> durable failure -> shared retry actuator ->
+  successful PR creation, and browser coverage verifies the durable Retry landing action and pending UI.
+- Verification passed on 2026-07-12: focused contract/server/reactor/integration/web/browser tests,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
+  (server 1,397 passed/1 skipped; web 1,219 passed).
