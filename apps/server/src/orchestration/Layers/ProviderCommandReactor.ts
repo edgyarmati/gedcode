@@ -4,7 +4,6 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
-  type OrchestrationProjectShell,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -14,7 +13,6 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
-import { resolveAllowFullAccessWorkers } from "@t3tools/shared/orchestrator";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -47,11 +45,10 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import {
-  clampWorkerRuntimeMode,
   installTaskWorktreePushBlockHook,
   makeWorkerProviderEnvironment,
 } from "../workerSafety.ts";
-import { explicitlySetProjectConfig } from "../orchestratorConfigResolution.ts";
+import { ORCHESTRATOR_WORKER_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
@@ -363,16 +360,6 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const resolveWorkerFullAccessOptIn = Effect.fnUntraced(function* (
-    project: OrchestrationProjectShell | undefined,
-  ) {
-    const settings = yield* serverSettingsService.getSettings;
-    return resolveAllowFullAccessWorkers({
-      config: explicitlySetProjectConfig(project?.orchestratorConfig ?? {}),
-      defaults: settings.orchestratorDefaults,
-    });
-  });
-
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -392,11 +379,8 @@ const make = Effect.gen(function* () {
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
-    const allowFullAccessWorkers = isOrchestratorWorker
-      ? yield* resolveWorkerFullAccessOptIn(project)
-      : false;
     const desiredRuntimeMode = isOrchestratorWorker
-      ? clampWorkerRuntimeMode({ requested: thread.runtimeMode, allowFullAccessWorkers })
+      ? ORCHESTRATOR_WORKER_RUNTIME_MODE
       : thread.runtimeMode;
     const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;

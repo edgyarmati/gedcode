@@ -534,7 +534,7 @@ describe("ProviderCommandReactor", () => {
   it("does not promote regular chat threads when full-access workers are globally enabled", async () => {
     const harness = await createHarness({
       serverSettingsOverrides: {
-        orchestratorDefaults: { allowFullAccessWorkers: true },
+        orchestratorDefaults: {},
       },
     });
     const now = "2026-01-01T00:00:00.000Z";
@@ -568,7 +568,7 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
-  it("clamps task worker runtime mode before provider start or restart", async () => {
+  it("keeps task workers full-access before provider start or restart", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -598,7 +598,7 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "approval-required",
+      runtimeMode: "full-access",
     });
 
     const readModelAfterStageStart = await harness.readModel();
@@ -641,14 +641,14 @@ describe("ProviderCommandReactor", () => {
     expect(
       harness.startSession.mock.calls.every((call) => {
         const input = call[1] as { readonly runtimeMode?: string } | undefined;
-        return input?.runtimeMode !== "full-access";
+        return input?.runtimeMode === "full-access";
       }),
     ).toBe(true);
 
     const readModel = await harness.readModel();
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
-    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
   it("starts provider work for a normally active task stage", async () => {
@@ -926,7 +926,7 @@ describe("ProviderCommandReactor", () => {
     );
   });
 
-  it("keeps a full-access worker when the project opts in via allowFullAccessWorkers", async () => {
+  it("keeps orchestrator workers full-access without a project opt-in", async () => {
     const harness = await createHarness({
       orchestratorConfig: {
         enabled: true,
@@ -1014,10 +1014,10 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("starts a full-access worker when the global default opts in", async () => {
+  it("starts a full-access worker without a global opt-in", async () => {
     const harness = await createHarness({
       serverSettingsOverrides: {
-        orchestratorDefaults: { allowFullAccessWorkers: true },
+        orchestratorDefaults: {},
       },
     });
     const now = "2026-01-01T00:00:00.000Z";
@@ -1059,14 +1059,14 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("keeps approval-required workers when the project disables a global opt-in", async () => {
+  it("ignores legacy false opt-ins and keeps workers full-access", async () => {
     const harness = await createHarness({
       orchestratorConfig: {
         enabled: true,
         resourceLimits: { allowFullAccessWorkers: false },
       },
       serverSettingsOverrides: {
-        orchestratorDefaults: { allowFullAccessWorkers: true },
+        orchestratorDefaults: {},
       },
     });
     const now = "2026-01-01T00:00:00.000Z";
@@ -1098,14 +1098,14 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "approval-required",
+      runtimeMode: "full-access",
     });
 
     const readModel = await harness.readModel();
     const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
-    expect(stageThread?.runtimeMode).toBe("approval-required");
-    expect(stageThread?.session?.runtimeMode).toBe("approval-required");
+    expect(stageThread?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
   it("starts task workers with a secret-stripped environment override", async () => {

@@ -116,13 +116,9 @@ export interface OrchestratorGlobalResourceDefaultsDraft {
   readonly maxRetriesPerStage: number;
   readonly pmReconciliationIntervalMs: number;
   readonly worktreeReaperIntervalMinutes: number;
-  readonly allowFullAccessWorkers: boolean;
 }
 
-export type OrchestratorGlobalNumberDefaultKey = Exclude<
-  keyof OrchestratorGlobalResourceDefaultsDraft,
-  "allowFullAccessWorkers"
->;
+export type OrchestratorGlobalNumberDefaultKey = keyof OrchestratorGlobalResourceDefaultsDraft;
 
 const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestratorDefaults;
 
@@ -157,9 +153,6 @@ export function seedOrchestratorGlobalDefaultsDraft(
       worktreeReaperIntervalMinutes:
         defaults.worktreeReaperIntervalMinutes ??
         DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.worktreeReaperIntervalMinutes,
-      allowFullAccessWorkers:
-        defaults.allowFullAccessWorkers ??
-        DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.allowFullAccessWorkers,
     },
   };
 }
@@ -191,7 +184,6 @@ export function buildOrchestratorGlobalDefaultsPatch(
       openPrAsDraft: draft.openPrAsDraft,
       pmModelSelection: draft.pmModelSelection,
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
-      allowFullAccessWorkers: draft.resourceDefaults.allowFullAccessWorkers,
     },
   };
 }

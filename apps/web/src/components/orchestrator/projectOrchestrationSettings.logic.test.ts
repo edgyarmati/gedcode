@@ -66,7 +66,6 @@ describe("seedOrchestrationSettingsDraft", () => {
         maxParallelTasks: null,
         maxParallelWorkers: null,
         maxRetriesPerStage: null,
-        allowFullAccessWorkers: null,
       },
     });
   });
@@ -150,7 +149,6 @@ describe("seedOrchestratorConfigDraft", () => {
         maxParallelTasks: null,
         maxParallelWorkers: null,
         maxRetriesPerStage: null,
-        allowFullAccessWorkers: null,
       },
     });
   });
@@ -176,10 +174,10 @@ describe("seedOrchestratorConfigDraft", () => {
         },
       ],
       resourceLimits: {
+        ...({ allowFullAccessWorkers: false } as Record<string, unknown>),
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
         maxRetriesPerStage: 5,
-        allowFullAccessWorkers: true,
       },
     });
     expect(draft.pmModelSelection).toEqual({
@@ -198,7 +196,11 @@ describe("seedOrchestratorConfigDraft", () => {
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
       maxRetriesPerStage: 5,
-      allowFullAccessWorkers: true,
+    });
+    expect(buildOrchestratorProjectConfig(draft).resourceLimits).toEqual({
+      maxParallelTasks: 2,
+      maxParallelWorkers: 3,
+      maxRetriesPerStage: 5,
     });
   });
 
@@ -218,7 +220,6 @@ describe("seedOrchestratorConfigDraft", () => {
       maxParallelTasks: null,
       maxParallelWorkers: null,
       maxRetriesPerStage: null,
-      allowFullAccessWorkers: null,
     });
   });
 
@@ -252,7 +253,6 @@ describe("seedOrchestratorConfigDraft", () => {
       maxParallelTasks: null,
       maxParallelWorkers: null,
       maxRetriesPerStage: 5,
-      allowFullAccessWorkers: null,
     });
   });
 
@@ -305,7 +305,6 @@ describe("buildOrchestratorProjectConfig", () => {
         maxParallelTasks: null,
         maxParallelWorkers: 3,
         maxRetriesPerStage: null,
-        allowFullAccessWorkers: null,
       },
     };
 
@@ -345,7 +344,6 @@ describe("buildOrchestratorProjectConfig", () => {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
         maxRetriesPerStage: 5,
-        allowFullAccessWorkers: true,
       },
     };
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
@@ -367,7 +365,6 @@ describe("buildOrchestratorProjectConfig", () => {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
         maxRetriesPerStage: 5,
-        allowFullAccessWorkers: true,
       },
     });
   });
@@ -419,7 +416,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         pmModelSelection: pmSelection("openai", "gpt-5-pm"),
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
         openPrAsDraft: true,
-        allowFullAccessWorkers: true,
       }),
     ).toEqual({
       pmModelSelection: pmSelection("openai", "gpt-5-pm"),
@@ -436,7 +432,6 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
         maxRetriesPerStage: 5,
-        allowFullAccessWorkers: true,
       },
     });
   });
@@ -533,7 +528,6 @@ describe("orchestratorConfigDraftsEqual", () => {
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
       maxRetriesPerStage: 5,
-      allowFullAccessWorkers: false,
     },
   });
 

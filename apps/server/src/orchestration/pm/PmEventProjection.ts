@@ -20,6 +20,7 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import type { AgentHarnessEvent, AssistantMessage, TextContent } from "../claude/pmHarness.ts";
 
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
@@ -130,7 +131,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           projectId: input.project.id,
           title: `${input.project.title} PM`,
           modelSelection: input.pmModelSelection,
-          runtimeMode: "full-access",
+          runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: null,
           worktreePath: input.project.workspaceRoot,
@@ -232,7 +233,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           status,
           providerName: input.providerName,
           providerInstanceId: input.pmModelSelection.instanceId,
-          runtimeMode: "full-access",
+          runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
           activeTurnId: status === "running" ? turnId : null,
           lastError: null,
           updatedAt: createdAt,

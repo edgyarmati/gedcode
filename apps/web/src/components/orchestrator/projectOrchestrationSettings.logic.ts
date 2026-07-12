@@ -37,7 +37,6 @@ export interface InheritableOrchestratorResourceLimits {
   readonly maxParallelTasks: number | null;
   readonly maxParallelWorkers: number | null;
   readonly maxRetriesPerStage: number | null;
-  readonly allowFullAccessWorkers: boolean | null;
 }
 
 const decodeOrchestratorGlobalDefaults = Schema.decodeUnknownOption(OrchestratorGlobalDefaults);
@@ -193,10 +192,6 @@ export function seedOrchestratorConfigDraft(
       maxParallelTasks: asPositiveInt(resourceLimits?.maxParallelTasks),
       maxParallelWorkers: asPositiveInt(resourceLimits?.maxParallelWorkers),
       maxRetriesPerStage: asPositiveInt(resourceLimits?.maxRetriesPerStage),
-      allowFullAccessWorkers:
-        typeof resourceLimits?.allowFullAccessWorkers === "boolean"
-          ? resourceLimits.allowFullAccessWorkers
-          : null,
     },
   };
 }
@@ -228,14 +223,7 @@ export function buildOrchestratorProjectConfig(
   }
 
   const resourceLimits = Object.fromEntries(
-    (
-      [
-        "maxParallelTasks",
-        "maxParallelWorkers",
-        "maxRetriesPerStage",
-        "allowFullAccessWorkers",
-      ] as const
-    ).flatMap((key) => {
+    (["maxParallelTasks", "maxParallelWorkers", "maxRetriesPerStage"] as const).flatMap((key) => {
       const value = draft.resourceLimits[key];
       return value === null ? [] : [[key, value]];
     }),
@@ -279,7 +267,6 @@ export function seedOrchestratorInheritedDefaultsDraft(
       maxParallelTasks: normalizedGlobals.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS,
       maxParallelWorkers: normalizedGlobals.maxParallelWorkers ?? DEFAULT_MAX_PARALLEL_WORKERS,
       maxRetriesPerStage: normalizedGlobals.maxRetriesPerStage ?? DEFAULT_MAX_RETRIES_PER_STAGE,
-      allowFullAccessWorkers: normalizedGlobals.allowFullAccessWorkers ?? false,
     },
   };
 }
@@ -335,7 +322,6 @@ export function orchestratorConfigDraftsEqual(
     EDITABLE_ORCHESTRATOR_GATES.every((gate) => left.gatePolicy[gate] === right.gatePolicy[gate]) &&
     left.resourceLimits.maxParallelTasks === right.resourceLimits.maxParallelTasks &&
     left.resourceLimits.maxParallelWorkers === right.resourceLimits.maxParallelWorkers &&
-    left.resourceLimits.maxRetriesPerStage === right.resourceLimits.maxRetriesPerStage &&
-    left.resourceLimits.allowFullAccessWorkers === right.resourceLimits.allowFullAccessWorkers
+    left.resourceLimits.maxRetriesPerStage === right.resourceLimits.maxRetriesPerStage
   );
 }

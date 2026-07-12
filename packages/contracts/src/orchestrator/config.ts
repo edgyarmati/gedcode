@@ -98,15 +98,6 @@ export const DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES = 15;
  * Hard resource limits the decider enforces as invariants (design §7). These
  * are the fail-closed backstops a hallucinated or prompt-injected PM cannot
  * exceed, because the event-sourced engine is the only write path.
- *
- * `allowFullAccessWorkers` is the structural anchor for the runtime-mode clamp
- * (design §7, §13 risk row 4): it **defaults to `false`**, so worker stages can
- * never inherit the confirmed `DEFAULT_RUNTIME_MODE = "full-access"` hole unless
- * a human explicitly opts in. The provider command reactor resolves this flag
- * (the per-project value, falling back to the global default) and feeds it to
- * `clampWorkerRuntimeMode` (`orchestration/workerSafety.ts`), which lowers a
- * `full-access` worker to `auto-accept-edits` whenever the flag is `false`; the
- * contracts invariant test pins the `false` default.
  */
 export const OrchestratorResourceLimits = Schema.Struct({
   maxParallelTasks: PositiveInt.pipe(
@@ -118,9 +109,6 @@ export const OrchestratorResourceLimits = Schema.Struct({
   maxRetriesPerStage: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),
   ),
-  // Human-only opt-in. Defaults to `false` so the runtime-mode clamp (WP-E)
-  // forbids `full-access` workers unless a human deliberately flips this.
-  allowFullAccessWorkers: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type OrchestratorResourceLimits = typeof OrchestratorResourceLimits.Type;
 
@@ -239,9 +227,6 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   worktreeReaperIntervalMinutes: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES)),
   ),
-  // Floor for the runtime-mode clamp. Defaults to `false` so the safe default
-  // holds even before a project sets its own `resourceLimits`.
-  allowFullAccessWorkers: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Landing opens ready PRs by default. Projects may explicitly override this
   // field in their raw sparse config; omitted project values inherit this
   // global floor before falling back to `false`.

@@ -20,6 +20,7 @@ import type { ProviderAdapterShape } from "../../provider/Services/ProviderAdapt
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pm/PmEventProjection.ts";
+import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import type {
   AgentHarnessEvent,
   AgentHarnessResources,
@@ -266,7 +267,7 @@ export const makeDriverPmAdapter = (
         provider: options.driverKind,
         providerInstanceId: options.modelSelection.instanceId,
         status: session.status === "closed" ? "stopped" : "running",
-        runtimeMode: "full-access",
+        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
     }).pipe(
@@ -621,7 +622,7 @@ export const makeDriverPmAdapter = (
         providerInstanceId: selection.instanceId,
         cwd: options.project.workspaceRoot,
         modelSelection: selection,
-        runtimeMode: "full-access",
+        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
         enableOrchestrationTools: true,
         ...(options.systemPrompt !== undefined && options.systemPrompt.length > 0
           ? { systemPromptAppend: options.systemPrompt }
@@ -635,7 +636,7 @@ export const makeDriverPmAdapter = (
         provider: options.driverKind,
         providerInstanceId: selection.instanceId,
         status: "running",
-        runtimeMode: "full-access",
+        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
       return session;

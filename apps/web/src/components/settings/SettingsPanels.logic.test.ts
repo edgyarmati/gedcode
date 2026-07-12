@@ -135,7 +135,6 @@ describe("Orchestrator global defaults settings logic", () => {
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
       openPrAsDraft: true,
-      allowFullAccessWorkers: true,
     });
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
@@ -154,7 +153,6 @@ describe("Orchestrator global defaults settings logic", () => {
       maxRetriesPerStage: 4,
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
-      allowFullAccessWorkers: true,
     });
   });
 
@@ -175,7 +173,6 @@ describe("Orchestrator global defaults settings logic", () => {
         maxRetriesPerStage: 6,
         pmReconciliationIntervalMs: 180_000,
         worktreeReaperIntervalMinutes: 9,
-        allowFullAccessWorkers: false,
       },
       openPrAsDraft: true,
     });
@@ -196,7 +193,6 @@ describe("Orchestrator global defaults settings logic", () => {
       worktreeReaperIntervalMinutes: 9,
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
-      allowFullAccessWorkers: false,
       openPrAsDraft: true,
     });
   });

@@ -66,9 +66,6 @@ export function explicitlySetProjectConfig(
         sparseResourceLimits[key] = resourceLimits[key];
       }
     }
-    if (typeof resourceLimits.allowFullAccessWorkers === "boolean") {
-      sparseResourceLimits.allowFullAccessWorkers = resourceLimits.allowFullAccessWorkers;
-    }
   }
 
   const taskTypes = Array.isArray(raw.taskTypes)

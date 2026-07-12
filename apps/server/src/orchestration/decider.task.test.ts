@@ -369,7 +369,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("starts a stage with approval-required worker runtime by default", () =>
+  it.effect("starts a stage with full-access worker runtime by default", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
 
@@ -396,14 +396,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const threadCreated = events.find((event) => event.type === "thread.created");
       const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
       expect(threadCreated?.payload).toMatchObject({
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
         },
       });
       expect(turnRequested?.payload).toMatchObject({
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
@@ -453,7 +453,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const result = yield* decideOrchestrationCommand({
         readModel,
-        orchestratorDefaults: { allowFullAccessWorkers: true },
+        orchestratorDefaults: {},
         command: {
           type: "task.stage.start",
           commandId: asCommandId("cmd-stage-start-full-access-global"),
@@ -476,7 +476,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("keeps approval-required runtime when the project disables a global opt-in", () =>
+  it.effect("ignores a legacy false worker opt-in and keeps full access", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(
         { status: "review", currentStageThreadId: null },
@@ -489,7 +489,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const result = yield* decideOrchestrationCommand({
         readModel,
-        orchestratorDefaults: { allowFullAccessWorkers: true },
+        orchestratorDefaults: {},
         command: {
           type: "task.stage.start",
           commandId: asCommandId("cmd-stage-start-full-access-project-false"),
@@ -504,10 +504,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const threadCreated = events.find((event) => event.type === "thread.created");
       const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
       expect(threadCreated?.payload).toMatchObject({
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
       });
       expect(turnRequested?.payload).toMatchObject({
-        runtimeMode: "approval-required",
+        runtimeMode: "full-access",
       });
     }),
   );

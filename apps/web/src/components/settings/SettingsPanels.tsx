@@ -973,22 +973,6 @@ export function OrchestratorDefaultsSettingsPanel() {
                     : null}
               </NumberLimitRow>
             ))}
-            <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
-              <span>Allow full-access workers safety opt-in</span>
-              <Switch
-                checked={draft.resourceDefaults.allowFullAccessWorkers}
-                aria-label="Allow full-access workers safety opt-in by default"
-                onCheckedChange={(checked) =>
-                  updateDraft({
-                    ...draft,
-                    resourceDefaults: {
-                      ...draft.resourceDefaults,
-                      allowFullAccessWorkers: Boolean(checked),
-                    },
-                  })
-                }
-              />
-            </label>
           </div>
         </SettingsRow>
       </SettingsSection>

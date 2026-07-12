@@ -13,12 +13,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * LLM-driven PM physically cannot relax its own guardrails. Only a human/client
  * write path reaches this column.
  *
- * The `'{}'` default decodes to a safe-by-default config: every field of
- * `OrchestratorProjectConfig` carries a `withDecodingDefault`
- * (pmModelSelection=null, the single `feature` task type, and
- * resourceLimits.allowFullAccessWorkers=false). So existing project rows that
- * predate this column decode unchanged while preserving the fail-closed worker
- * runtime-mode clamp (WP-E).
+ * The `'{}'` default decodes to the typed sparse project config, so existing
+ * project rows that predate this column remain valid without rewriting the
+ * append-only event log.
  *
  * Mirrors the `032_ProjectionProjectRoleModelSelections` convention
  * (single defaulted JSON `ALTER TABLE ... ADD COLUMN`). DDL-only — no backfill;

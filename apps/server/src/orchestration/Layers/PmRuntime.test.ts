@@ -1327,7 +1327,7 @@ describe("PmRuntime", () => {
               providerInstanceId: claudeInstanceId,
               cwd: project.workspaceRoot,
               modelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
-              runtimeMode: "full-access",
+              runtimeMode: "approval-required",
               enableOrchestrationTools: true,
               systemPromptAppend: buildPmSystemPrompt(project),
             },

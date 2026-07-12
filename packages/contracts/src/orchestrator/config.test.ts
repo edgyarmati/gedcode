@@ -18,37 +18,29 @@ const decodeGlobalDefaults = Schema.decodeUnknownSync(OrchestratorGlobalDefaults
 const encodeGlobalDefaults = Schema.encodeSync(OrchestratorGlobalDefaults);
 const decodeTaskGatePolicy = Schema.decodeUnknownSync(OrchestratorTaskGatePolicy);
 
-describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design §7)", () => {
-  it("defaults allowFullAccessWorkers to false (the runtime-mode clamp anchor)", () => {
-    // Empty config: this is the safe-by-default floor a hallucinated/injected
-    // PM cannot move. If this regresses, the WP-E runtime-mode clamp can be
-    // bypassed via a config that simply omits the flag.
-    const decoded = decodeProjectConfig({});
-    expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(false);
-  });
-
-  it("keeps the false default even when other resourceLimits fields are set", () => {
+describe("OrchestratorProjectConfig — legacy worker access setting", () => {
+  it("decodes and strips the removed project opt-in", () => {
     const decoded = decodeProjectConfig({
       resourceLimits: {
         maxParallelTasks: 2,
         maxParallelWorkers: 3,
         maxRetriesPerStage: 4,
+        allowFullAccessWorkers: false,
       },
     });
     expect(decoded.resourceLimits.maxParallelTasks).toBe(2);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(3);
     expect(decoded.resourceLimits.maxRetriesPerStage).toBe(4);
-    expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(false);
+    expect(decoded.resourceLimits).not.toHaveProperty("allowFullAccessWorkers");
+    expect(encodeProjectConfig(decoded).resourceLimits).not.toHaveProperty(
+      "allowFullAccessWorkers",
+    );
   });
 
-  it("honors an explicit human-set allowFullAccessWorkers=true opt-in", () => {
-    const decoded = decodeProjectConfig({ resourceLimits: { allowFullAccessWorkers: true } });
-    expect(decoded.resourceLimits.allowFullAccessWorkers).toBe(true);
-  });
-
-  it("global defaults also floor allowFullAccessWorkers to false", () => {
-    const decoded = decodeGlobalDefaults({});
-    expect(decoded.allowFullAccessWorkers).toBe(false);
+  it("decodes and strips the removed global opt-in", () => {
+    const decoded = decodeGlobalDefaults({ allowFullAccessWorkers: true });
+    expect(decoded).not.toHaveProperty("allowFullAccessWorkers");
+    expect(encodeGlobalDefaults(decoded)).not.toHaveProperty("allowFullAccessWorkers");
   });
 
   it("defaults PR landing to ready and accepts sparse project draft override", () => {
@@ -98,7 +90,6 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       worktreeReaperIntervalMinutes: 10,
       pmModelSelection: { instanceId: "claudeAgent", model: "claude-sonnet-4-6" },
       defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
-      allowFullAccessWorkers: true,
       openPrAsDraft: true,
     });
 
@@ -115,7 +106,6 @@ describe("OrchestratorProjectConfig — allowFullAccessWorkers invariant (design
       instanceId: "codex_worker",
       model: "gpt-5-worker",
     });
-    expect(reDecoded.allowFullAccessWorkers).toBe(true);
     expect(reDecoded.openPrAsDraft).toBe(true);
   });
 });
@@ -196,7 +186,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
         maxParallelTasks: 2,
         maxParallelWorkers: 2,
         maxRetriesPerStage: 3,
-        allowFullAccessWorkers: true,
       },
       openPrAsDraft: true,
     });
@@ -213,7 +202,6 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.taskTypes[0]?.gatePolicy.work).toBe("auto");
     expect(reDecoded.taskTypes[0]?.gatePolicy.review).toBe("require-approval");
     expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
-    expect(reDecoded.resourceLimits.allowFullAccessWorkers).toBe(true);
     expect(reDecoded.openPrAsDraft).toBe(true);
   });
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clampWorkerRuntimeMode,
   isSensitiveWorkerEnvironmentName,
   makeWorkerProviderEnvironment,
   resolveWorkerStageRuntimeMode,
@@ -36,37 +35,8 @@ describe("worker safety environment", () => {
   });
 });
 
-describe("worker runtime-mode clamp", () => {
-  it("resolves the stage-start mode from the full-access worker opt-in", () => {
-    expect(resolveWorkerStageRuntimeMode({ allowFullAccessWorkers: false })).toBe(
-      "approval-required",
-    );
-    expect(resolveWorkerStageRuntimeMode({ allowFullAccessWorkers: true })).toBe("full-access");
-  });
-
-  it("lowers full-access to auto-accept-edits when the opt-in is off", () => {
-    expect(
-      clampWorkerRuntimeMode({ requested: "full-access", allowFullAccessWorkers: false }),
-    ).toBe("auto-accept-edits");
-  });
-
-  it("promotes worker sessions to full-access when a human opted in", () => {
-    for (const requested of ["approval-required", "auto-accept-edits", "full-access"] as const) {
-      expect(
-        clampWorkerRuntimeMode({
-          requested,
-          allowFullAccessWorkers: true,
-        }),
-      ).toBe("full-access");
-    }
-  });
-
-  it("passes modes below the ceiling through unchanged when the opt-in is off", () => {
-    expect(
-      clampWorkerRuntimeMode({ requested: "approval-required", allowFullAccessWorkers: false }),
-    ).toBe("approval-required");
-    expect(
-      clampWorkerRuntimeMode({ requested: "auto-accept-edits", allowFullAccessWorkers: false }),
-    ).toBe("auto-accept-edits");
+describe("worker runtime mode", () => {
+  it("always starts orchestrator workers with full access", () => {
+    expect(resolveWorkerStageRuntimeMode()).toBe("full-access");
   });
 });

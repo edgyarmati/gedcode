@@ -74,7 +74,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       "verify",
     ]);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
@@ -100,7 +99,6 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       review: "require-approval",
       land: "require-approval",
     });
-    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(false);
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
@@ -113,7 +111,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(reDecoded.orchestratorDefaults).toEqual(decoded.orchestratorDefaults);
   });
 
-  it("honors an explicit human-set allowFullAccessWorkers floor", () => {
+  it("decodes and strips the removed legacy worker access floor", () => {
     const decoded = decodeServerSettings({
       orchestratorDefaults: {
         stages: ["classify", "plan", "work"],
@@ -135,7 +133,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(decoded.orchestratorDefaults.gatePolicy.classify).toBe("auto");
     expect(decoded.orchestratorDefaults.gatePolicy.work).toBe("auto");
     expect(decoded.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
-    expect(decoded.orchestratorDefaults.allowFullAccessWorkers).toBe(true);
+    expect(decoded.orchestratorDefaults).not.toHaveProperty("allowFullAccessWorkers");
+    expect(encodeServerSettings(decoded).orchestratorDefaults).not.toHaveProperty(
+      "allowFullAccessWorkers",
+    );
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toEqual({
       instanceId: "codex_worker",
       model: "gpt-5-worker",

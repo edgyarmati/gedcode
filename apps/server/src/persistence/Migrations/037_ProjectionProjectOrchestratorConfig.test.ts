@@ -53,7 +53,7 @@ layer("037_ProjectionProjectOrchestratorConfig", (it) => {
 
       // The default JSON must decode to the fail-closed worker runtime-mode clamp anchor.
       const config = decodeConfigJson(raw ?? "{}");
-      assert.strictEqual(config.resourceLimits.allowFullAccessWorkers, false);
+      assert.ok(!("allowFullAccessWorkers" in config.resourceLimits));
     }),
   );
 

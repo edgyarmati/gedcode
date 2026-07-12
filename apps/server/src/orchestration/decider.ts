@@ -11,7 +11,6 @@ import {
   type OrchestrationThread,
 } from "@t3tools/contracts";
 import {
-  resolveAllowFullAccessWorkers,
   resolveGatePolicy,
   resolveResourceLimit,
   resolveStages,
@@ -1288,12 +1287,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         role: command.role,
         rolePromptPrefixes: project.rolePromptPrefixes,
       });
-      const workerRuntimeMode = resolveWorkerStageRuntimeMode({
-        allowFullAccessWorkers: resolveAllowFullAccessWorkers({
-          config: projectConfig,
-          defaults: orchestratorDefaults,
-        }),
-      });
+      const workerRuntimeMode = resolveWorkerStageRuntimeMode();
 
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({

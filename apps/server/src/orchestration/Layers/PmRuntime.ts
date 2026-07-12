@@ -83,6 +83,7 @@ import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
+import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { makePmReEntryQueue } from "../pm/PmReEntryQueue.ts";
 import {
@@ -503,7 +504,7 @@ const resetDriverPmSession = (input: {
         provider: input.driverKind,
         providerInstanceId: binding.providerInstanceId,
         status: "stopped",
-        runtimeMode: "full-access",
+        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
         resumeCursor: null,
       })
       .pipe(

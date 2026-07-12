@@ -18,9 +18,7 @@ export type OrchestratorNumericResourceLimitKey =
   | "maxParallelWorkers"
   | "maxRetriesPerStage";
 
-export type OrchestratorResourceLimitKey =
-  | OrchestratorNumericResourceLimitKey
-  | "allowFullAccessWorkers";
+export type OrchestratorResourceLimitKey = OrchestratorNumericResourceLimitKey;
 
 export type OrchestratorResourceLimitProjectConfig = {
   readonly resourceLimits?: Partial<
@@ -71,11 +69,6 @@ export interface ResolveResourceLimitInput {
   readonly config: OrchestratorResourceLimitProjectConfig;
   readonly defaults: OrchestratorResourceLimitGlobalDefaults;
   readonly key: OrchestratorNumericResourceLimitKey;
-}
-
-export interface ResolveAllowFullAccessWorkersInput {
-  readonly config: OrchestratorResourceLimitProjectConfig;
-  readonly defaults: OrchestratorResourceLimitGlobalDefaults;
 }
 
 export interface ResolveResourceLimitsInput {
@@ -156,13 +149,6 @@ export function resolveResourceLimit(input: ResolveResourceLimitInput): number {
   );
 }
 
-export function resolveAllowFullAccessWorkers(input: ResolveAllowFullAccessWorkersInput): boolean {
-  return resolveConfigValue(
-    [input.config.resourceLimits?.allowFullAccessWorkers, input.defaults.allowFullAccessWorkers],
-    false,
-  );
-}
-
 export function resolveResourceLimits(
   input: ResolveResourceLimitsInput,
 ): OrchestratorResourceLimits {
@@ -170,7 +156,6 @@ export function resolveResourceLimits(
     maxParallelTasks: resolveResourceLimit({ ...input, key: "maxParallelTasks" }),
     maxParallelWorkers: resolveResourceLimit({ ...input, key: "maxParallelWorkers" }),
     maxRetriesPerStage: resolveResourceLimit({ ...input, key: "maxRetriesPerStage" }),
-    allowFullAccessWorkers: resolveAllowFullAccessWorkers(input),
   };
 }
 

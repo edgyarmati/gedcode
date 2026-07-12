@@ -158,17 +158,14 @@ function ResourceLimitsSection({
   resourceLimits,
   inheritedResourceLimits,
   onNumberLimitChange,
-  onAllowFullAccessWorkersChange,
 }: {
   resourceLimits: InheritableOrchestratorResourceLimits;
   inheritedResourceLimits: {
     readonly maxParallelTasks: number;
     readonly maxParallelWorkers: number;
     readonly maxRetriesPerStage: number;
-    readonly allowFullAccessWorkers: boolean;
   };
   onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number | null) => void;
-  onAllowFullAccessWorkersChange: (enabled: boolean | null) => void;
 }) {
   return (
     <SettingsSection
@@ -179,7 +176,6 @@ function ResourceLimitsSection({
         resourceLimits={resourceLimits}
         inheritedResourceLimits={inheritedResourceLimits}
         onNumberLimitChange={onNumberLimitChange}
-        onAllowFullAccessWorkersChange={onAllowFullAccessWorkersChange}
       />
     </SettingsSection>
   );
@@ -286,19 +282,6 @@ export function ProjectOrchestrationSettingsDialog({
     },
     [],
   );
-  const handleAllowFullAccessWorkersChange = useCallback((enabled: boolean | null) => {
-    setDraft((current) => ({
-      ...current,
-      orchestratorConfig: {
-        ...current.orchestratorConfig,
-        resourceLimits: {
-          ...current.orchestratorConfig.resourceLimits,
-          allowFullAccessWorkers: enabled,
-        },
-      },
-    }));
-  }, []);
-
   const dirty = !orchestrationSettingsDraftsEqual(draft, seededDraft);
 
   const submit = useCallback(async () => {
@@ -375,7 +358,6 @@ export function ProjectOrchestrationSettingsDialog({
             resourceLimits={draft.orchestratorConfig.resourceLimits}
             inheritedResourceLimits={inheritedDefaults.resourceLimits}
             onNumberLimitChange={handleNumberLimitChange}
-            onAllowFullAccessWorkersChange={handleAllowFullAccessWorkersChange}
           />
           <SettingsSection
             title="Stage backends and prompt prefixes"

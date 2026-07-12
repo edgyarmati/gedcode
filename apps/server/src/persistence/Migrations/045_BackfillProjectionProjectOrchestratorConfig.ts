@@ -21,7 +21,6 @@ const allowedResourceLimitKeys = new Set([
   "maxParallelTasks",
   "maxParallelWorkers",
   "maxRetriesPerStage",
-  "allowFullAccessWorkers",
 ]);
 
 /**

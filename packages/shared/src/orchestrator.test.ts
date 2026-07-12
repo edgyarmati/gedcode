@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   findTaskType,
-  resolveAllowFullAccessWorkers,
   resolveConfigValue,
   resolveGatePolicy,
   resolveOpenPrAsDraft,
@@ -40,7 +39,6 @@ const projectConfig = (
     maxParallelTasks: DEFAULT_MAX_PARALLEL_TASKS,
     maxParallelWorkers: 1,
     maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
-    allowFullAccessWorkers: false,
   },
 });
 
@@ -210,44 +208,16 @@ describe("resolveResourceLimit", () => {
     ).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
   });
 
-  it("prefers project allowFullAccessWorkers over global defaults", () => {
-    expect(
-      resolveAllowFullAccessWorkers({
-        config: { resourceLimits: { allowFullAccessWorkers: false } },
-        defaults: { allowFullAccessWorkers: true },
-      }),
-    ).toBe(false);
-    expect(
-      resolveAllowFullAccessWorkers({
-        config: { resourceLimits: { allowFullAccessWorkers: true } },
-        defaults: { allowFullAccessWorkers: false },
-      }),
-    ).toBe(true);
-    expect(
-      resolveAllowFullAccessWorkers({
-        config: { resourceLimits: {} },
-        defaults: { allowFullAccessWorkers: true },
-      }),
-    ).toBe(true);
-    expect(
-      resolveAllowFullAccessWorkers({
-        config: { resourceLimits: {} },
-        defaults: {},
-      }),
-    ).toBe(false);
-  });
-
   it("resolves the full resource-limits object from project, defaults, and safe constants", () => {
     expect(
       resolveResourceLimits({
-        config: { resourceLimits: { maxParallelTasks: 2, allowFullAccessWorkers: true } },
+        config: { resourceLimits: { maxParallelTasks: 2 } },
         defaults: { maxParallelWorkers: 5 },
       }),
     ).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 5,
       maxRetriesPerStage: DEFAULT_MAX_RETRIES_PER_STAGE,
-      allowFullAccessWorkers: true,
     });
   });
 });

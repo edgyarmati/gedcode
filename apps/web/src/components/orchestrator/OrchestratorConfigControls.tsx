@@ -38,10 +38,7 @@ const PROJECT_RESOURCE_LIMIT_LABELS: Record<ProjectResourceLimitNumberKey, strin
 const USE_GLOBAL_VALUE = "__global__";
 const CUSTOMIZE_VALUE = "__customize__";
 
-export type ProjectResourceLimitNumberKey = Exclude<
-  keyof OrchestratorResourceLimits,
-  "allowFullAccessWorkers"
->;
+export type ProjectResourceLimitNumberKey = keyof OrchestratorResourceLimits;
 
 export function OrchestratorStagesControl({
   optionalStages,
@@ -155,12 +152,10 @@ export function ProjectOrchestratorResourceLimitsControl({
   resourceLimits,
   inheritedResourceLimits,
   onNumberLimitChange,
-  onAllowFullAccessWorkersChange,
 }: {
   resourceLimits: OrchestratorResourceLimits | InheritableOrchestratorResourceLimits;
   inheritedResourceLimits?: OrchestratorResourceLimits;
   onNumberLimitChange: (key: ProjectResourceLimitNumberKey, value: number | null) => void;
-  onAllowFullAccessWorkersChange: (enabled: boolean | null) => void;
 }) {
   const numberKeys = Object.keys(PROJECT_RESOURCE_LIMIT_LABELS) as ProjectResourceLimitNumberKey[];
   return (
@@ -214,52 +209,6 @@ export function ProjectOrchestratorResourceLimitsControl({
           </div>
         );
       })}
-      <div className="grid gap-2 rounded-md border border-border/70 px-3 py-2 text-sm sm:grid-cols-[1fr_10rem_auto] sm:items-center">
-        <span>Allow full-access workers safety opt-in</span>
-        {inheritedResourceLimits !== undefined ? (
-          <Select
-            value={
-              resourceLimits.allowFullAccessWorkers === null ? USE_GLOBAL_VALUE : CUSTOMIZE_VALUE
-            }
-            onValueChange={(value) => {
-              onAllowFullAccessWorkersChange(
-                value === USE_GLOBAL_VALUE
-                  ? null
-                  : (resourceLimits.allowFullAccessWorkers ??
-                      inheritedResourceLimits.allowFullAccessWorkers),
-              );
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Allow full-access workers mode">
-              <SelectValue>
-                {resourceLimits.allowFullAccessWorkers === null
-                  ? `Use global (${inheritedResourceLimits.allowFullAccessWorkers ? "On" : "Off"})`
-                  : "Override"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="start" alignItemWithTrigger={false}>
-              <SelectItem hideIndicator value={USE_GLOBAL_VALUE}>
-                Use global ({inheritedResourceLimits.allowFullAccessWorkers ? "On" : "Off"})
-              </SelectItem>
-              <SelectItem hideIndicator value={CUSTOMIZE_VALUE}>
-                Override
-              </SelectItem>
-            </SelectPopup>
-          </Select>
-        ) : null}
-        <Switch
-          checked={
-            resourceLimits.allowFullAccessWorkers ??
-            inheritedResourceLimits?.allowFullAccessWorkers ??
-            false
-          }
-          disabled={
-            resourceLimits.allowFullAccessWorkers === null && inheritedResourceLimits !== undefined
-          }
-          aria-label="Allow full-access workers safety opt-in"
-          onCheckedChange={(checked) => onAllowFullAccessWorkersChange(Boolean(checked))}
-        />
-      </div>
     </div>
   );
 }
