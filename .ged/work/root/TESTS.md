@@ -82,6 +82,19 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 
 ## Completed Evidence
 
+### ORCH-POLL-01 through ORCH-POLL-03
+
+- Source characterization found no periodic server timer or scheduler for `inspectStage`; the repeated
+  calls came from an explicit PM system-prompt instruction to poll while a worker remained active.
+- The PM prompt now forbids polling or recurring status checks and names settlement, gate, quota, and
+  interrupt events as the authoritative automatic re-entry paths. Prompt tests prevent regression.
+- Existing `inspectStage` tests prove explicit requests return only the latest 10 messages and 20
+  activities, truncate message text at 500 characters, report current turn/elapsed state, and extract
+  only the latest token-usage sample rather than returning a full transcript.
+- Verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and `bun run test` (server 1,416 passed/1 skipped; web 1,221 passed; all 12 packages
+  successful).
+
 ### ORCH-LC-01 and ORCH-LC-02
 
 - Decider tests reject progression after cancellation reservation and reject direct live-task

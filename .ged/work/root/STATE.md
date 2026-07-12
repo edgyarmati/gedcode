@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-POLL-01` - baseline and eliminate token-burning PM polling.
+- **Active task**: `ORCH-INT-01` - add a first-class, immediately acknowledged stage interrupt.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -103,6 +103,13 @@
   receipt/event/read-model test; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
   `bun run build`, and a clean `bun run test` rerun (server 1,416 passed/1 skipped; web 1,221 passed; all
   12 packages successful).
+- `ORCH-POLL-01..03` are complete in commit `e45e81a19`. Characterization found no recurring server
+  timer: the PM system prompt itself instructed the model to poll `inspectStage`. The prompt now forbids
+  recurring inspection and relies on the existing settlement, gate, quota, and interrupt re-entry
+  events. Explicit status inspection remains available through the already-bounded structured digest.
+- Final polling verification passed on 2026-07-12: PM prompt tests and existing bounded-digest tests;
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
+  (server 1,416 passed/1 skipped; web 1,221 passed; all 12 packages successful).
 
 ## July 13 Working Cutoff
 
@@ -114,11 +121,10 @@
 
 ## Immediate Sequence
 
-1. `ORCH-POLL-01` measure idle PM polling and prompt growth.
-2. `ORCH-POLL-02` remove recurring PM turns; wake only on authoritative lifecycle events.
-3. `ORCH-POLL-03` keep explicit bounded status inspection.
-4. `ORCH-INT-01` and `ORCH-INT-02` add responsive interrupt/steer semantics.
-5. `ORCH-EMPTY-01` hide empty Plan/Gates UI, then `ORCH-ACCESS-01..02` fix worker defaults.
+1. `ORCH-INT-01` and `ORCH-INT-02` add responsive interrupt/steer semantics.
+2. `ORCH-EMPTY-01` hide empty Plan/Gates UI.
+3. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays read-only.
+4. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
 
 ## Repository State Notes
 

@@ -36,13 +36,13 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-POLL-01 | NEXT | Instrument PM calls to `inspectStage` and establish a token/call-count baseline for an idle long-running worker. | Test/diagnostic records current poll count and prompt growth. |
-| ORCH-POLL-02 | TODO | Make worker stage settlements, gate resolutions, quota changes, and interrupt outcomes the only automatic PM wake-ups. | Idle worker causes zero recurring PM turns; settlement wakes PM exactly once. |
-| ORCH-POLL-03 | TODO | Keep `inspectStage` as an explicit on-demand action and add a cheap structured status digest for operator requests. | Status request returns bounded data without full thread transcript. |
+| ORCH-POLL-01 | DONE | Instrument PM calls to `inspectStage` and establish a token/call-count baseline for an idle long-running worker. | Characterization found no server timer; the PM prompt explicitly instructed repeated inspection, making each model decision an unbounded source of another call and prompt tail. |
+| ORCH-POLL-02 | DONE | Make worker stage settlements, gate resolutions, quota changes, and interrupt outcomes the only automatic PM wake-ups. | PM prompt forbids polling and identifies the existing authoritative event-driven re-entry paths; runtime prompt tests pin the policy. |
+| ORCH-POLL-03 | DONE | Keep `inspectStage` as an explicit on-demand action and add a cheap structured status digest for operator requests. | Existing focused tests prove status returns fixed message/activity tails, truncated text, elapsed turn state, and latest token usage without a full transcript. |
 | ORCH-PMTH-01 | TODO | Document and test PM thread reuse policy: one persistent PM thread per project; one thread per stage attempt; steering reuses the active attempt; retry creates a linked attempt. | Thread-count tests pin reuse and retry behavior. |
 | ORCH-PMTH-02 | TODO | Add bounded task summaries and last-action cursors so PM re-entry does not repeatedly ingest full task/stage histories. | Re-entry prompt size remains bounded as stage history grows. |
 | ORCH-BACKEND-01 | DEFERRED | Extend project role defaults and `setTaskBackend` to carry validated reasoning effort, then apply Terra/high to medium work and Sol/high to difficult or cross-cutting work. Deferred until after 2026-07-13. | Ledger and stage-start tests prove both model and reasoning effort reach the provider; PM can inspect the effective selection. |
-| ORCH-INT-01 | TODO | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Codex integration observes `turn/interrupt` before the original turn completes. |
+| ORCH-INT-01 | NEXT | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Codex integration observes `turn/interrupt` before the original turn completes. |
 | ORCH-INT-02 | TODO | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or interrupt-and-restart, never silent delay. | Provider-specific tests cover accepted, queued, rejected, and interrupted outcomes. |
 
 ## Phase 3 - Large Task Splitting
