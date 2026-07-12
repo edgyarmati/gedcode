@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-PMTH-01` - pin PM and stage-attempt thread reuse policy.
+- **Active task**: `ORCH-PMTH-02` - bound PM re-entry summaries and history cursors.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -144,6 +144,13 @@
 - Final `ORCH-ACCESS-01/02` verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings
   only), `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages; server 1,421 passed/1
   skipped, web 1,221 passed).
+- `ORCH-PMTH-01` is complete in commit `c967546af`. The documented policy pins one deterministic PM
+  thread per project, one fresh provider thread per stage attempt, steering on the selected existing
+  attempt, and ordered retry linkage through task stage history.
+- Final `ORCH-PMTH-01` verification passed on 2026-07-12: 107 focused policy tests, `bun fmt`, `bun lint`
+  (existing warnings only), an isolated clean `bun typecheck` rerun after a transient parallel tsgo
+  failure, `bun run build`, and `bun run test` (all 12 packages; server 1,423 passed/1 skipped, web 1,221
+  passed).
 
 ## July 13 Working Cutoff
 
@@ -155,8 +162,7 @@
 
 ## Immediate Sequence
 
-1. `ORCH-PMTH-01` pin PM and stage-attempt thread reuse behavior.
-2. `ORCH-PMTH-02` bound PM re-entry summaries and history cursors.
+1. `ORCH-PMTH-02` bound PM re-entry summaries and history cursors.
 
 ## Repository State Notes
 

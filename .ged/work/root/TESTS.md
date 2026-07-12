@@ -308,3 +308,15 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
   `bun run build`, and `bun run test` (all 12 packages successful; server 1,421 passed/1 skipped, web
   1,221 passed).
+
+### ORCH-PMTH-01
+
+- A deterministic identity test proves project title/runtime changes keep `pm:<projectId>` while a
+  different project receives a distinct PM thread.
+- A sequential decider/projector test completes and restarts the same stage role, proving each attempt
+  receives a fresh thread while the task retains both IDs in order and points at the active retry.
+- Existing PM tool coverage proves steering dispatches `thread.turn.start` to the selected current or
+  explicit attempt without creating a stage thread.
+- Verification passed on 2026-07-12: 107 focused tests, `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,423 passed/1
+  skipped, web 1,221 passed).
