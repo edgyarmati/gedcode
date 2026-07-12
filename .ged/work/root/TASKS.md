@@ -28,8 +28,8 @@ or explicitly blocked.
 | ORCH-TASK-02 | DONE | Add PM/MCP/RPC/UI task archive/delete actions and rich task-card context menus. | Terminal tasks disappear from active board and can be restored where supported. |
 | ORCH-TASK-03 | DONE | Add stable create-task idempotency keys tied to the originating PM request. | Repeated identical tool calls return one task and one worktree. |
 | ORCH-TASK-04 | DEFERRED | Add explicit supersedes/superseded-by relationships for intentional replacement tasks. Deferred until after 2026-07-13. | Replacement task links to prior task and board presents one active successor. |
-| ORCH-ACCESS-01 | TODO | Change orchestration worker runtime default to full write access while preserving PM read-only enforcement. | New worker stages resolve to full access by default; PM remains read-only. |
-| ORCH-ACCESS-02 | TODO | Remove global/project full-access opt-in settings and migrate persisted sparse config safely. | Settings UI has no opt-in; legacy config decodes without changing worker result. |
+| ORCH-ACCESS-01 | NEXT | Change orchestration worker runtime default to full write access while preserving PM read-only enforcement. Coupled atomically with ACCESS-02 because the old opt-in clamp would otherwise undo the default. | New worker stages and provider sessions resolve to full access unconditionally; PM uses approval-required/read-only sandbox policy. |
+| ORCH-ACCESS-02 | NEXT | Remove global/project full-access opt-in settings and migrate persisted sparse config safely. Coupled atomically with ACCESS-01. | Settings UI has no opt-in; legacy config decodes but the key is inert and omitted on save. |
 | ORCH-ACCESS-03 | DEFERRED | Show effective runtime permissions in stage history/task detail. Deferred until after 2026-07-13. | Browser test displays the actual resolved worker mode. |
 
 ## Phase 2 - PM Efficiency and Control
@@ -60,7 +60,7 @@ or explicitly blocked.
 | --- | --- | --- | --- |
 | CHAT-FORK-01 | DEFERRED | Define server/RPC thread-fork semantics. Deferred until after 2026-07-13. | Contract/integration tests fork at a selected message without mutating source thread. |
 | CHAT-FORK-02 | DEFERRED | Add normal-chat Fork action to message/thread context menus. Deferred until after 2026-07-13. | Browser test creates and opens a fork. |
-| ORCH-EMPTY-01 | NEXT | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Browser test omits both empty-state cards and renders each section when content appears. |
+| ORCH-EMPTY-01 | DONE | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Chromium test omits both empty-state cards and renders each section when content appears. |
 | UI-DRAFT-01 | DEFERRED | Persist composer drafts across surfaces. Deferred until after 2026-07-13. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DEFERRED | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. Deferred until after 2026-07-13. | Sort setting and drag reorder produce identical persisted order. |
 | UI-SIDEBAR-02 | DEFERRED | Complete remaining rich project/task context-menu polish. Deferred until after 2026-07-13. | Browser tests assert status-sensitive menu items and no native edit menu. |

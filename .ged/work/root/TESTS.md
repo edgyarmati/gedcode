@@ -124,6 +124,15 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
   (server 1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
 
+### ORCH-EMPTY-01
+
+- Chromium coverage first renders empty GatePanel and StageProposedPlan inputs and proves there are no
+  headings or placeholder cards, then rerenders with a gate and proposed plan and proves both populated
+  sections remain visible.
+- Verification passed on 2026-07-12: 11 Chromium interactions, `bun fmt`, `bun lint` (existing warnings
+  only), `bun typecheck`, `bun run build`, and `bun run test` (server 1,424 passed/1 skipped; web 1,221
+  passed; all 12 packages successful).
+
 ### ORCH-LC-01 and ORCH-LC-02
 
 - Decider tests reject progression after cancellation reservation and reject direct live-task

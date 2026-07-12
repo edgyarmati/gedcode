@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-EMPTY-01` - hide empty Plan and Gates sections in active task detail.
+- **Active task**: `ORCH-ACCESS-01/02` - make worker full access unconditional, remove opt-ins, and constrain PM access.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -126,6 +126,16 @@
 - Final `ORCH-INT-02` verification passed on 2026-07-12: 197 focused provider/orchestration tests and
   191 contract tests; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`,
   and `bun run test` (server 1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
+- `ORCH-EMPTY-01` is complete in commit `a817631f6`. Active task detail now omits Plan and Gates
+  entirely until a proposed plan or gate exists; populated rendering is unchanged.
+- Final `ORCH-EMPTY-01` verification passed on 2026-07-12: 11 Chromium interactions, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test` (server
+  1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
+- ACCESS-01 and ACCESS-02 are intentionally one atomic slice: stage creation and provider startup both
+  enforce the old opt-in, so changing only one would produce misleading projections or runtime downgrade.
+  The repository has no strict `read-only` RuntimeMode literal; PM will use existing
+  `approval-required`, which maps Codex to its read-only/on-request sandbox policy, instead of the current
+  full-access PM mode. No compatibility fallback will be added.
 
 ## July 13 Working Cutoff
 
@@ -137,9 +147,8 @@
 
 ## Immediate Sequence
 
-1. `ORCH-EMPTY-01` hide empty Plan/Gates UI.
-2. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays read-only.
-3. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
+1. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays constrained.
+2. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
 
 ## Repository State Notes
 
