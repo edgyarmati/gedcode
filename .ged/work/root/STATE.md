@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-INT-02` - make busy-provider steering explicit and immediate.
+- **Active task**: `ORCH-EMPTY-01` - hide empty Plan and Gates sections in active task detail.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -119,6 +119,13 @@
   web client tests, 10 Chromium interactions, `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,419 passed/1 skipped; web 1,221 passed;
   all 12 packages successful).
+- `ORCH-INT-02` is complete in commit `57eca50f1`. Active Codex turns now use app-server
+  `turn/steer` with `expectedTurnId`; OpenCode reports live steering and Claude reports queuing into the
+  active turn. Provider delivery is persisted as started, steered, or queued activity, while rejection
+  remains explicit. Codex steering never falls back silently to a new turn, interrupt, or restart.
+- Final `ORCH-INT-02` verification passed on 2026-07-12: 197 focused provider/orchestration tests and
+  191 contract tests; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`,
+  and `bun run test` (server 1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
 
 ## July 13 Working Cutoff
 
@@ -130,10 +137,9 @@
 
 ## Immediate Sequence
 
-1. `ORCH-INT-02` make busy-provider steering outcomes explicit and immediate.
-2. `ORCH-EMPTY-01` hide empty Plan/Gates UI.
-3. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays read-only.
-4. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
+1. `ORCH-EMPTY-01` hide empty Plan/Gates UI.
+2. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays read-only.
+3. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
 
 ## Repository State Notes
 

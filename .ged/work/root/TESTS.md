@@ -110,6 +110,20 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   `bun run build`, and `bun run test` (server 1,419 passed/1 skipped; web 1,221 passed; all 12 packages
   successful).
 
+### ORCH-INT-02
+
+- Codex runtime tests assert the exact generated `turn/steer` payload with `expectedTurnId`, active
+  turn reuse, idle `turn/start`, and rejection propagation with zero start/interrupt fallback.
+- Claude and OpenCode tests distinguish active-turn queued and steered delivery. Provider reactor tests
+  prove delivery is persisted as bounded worker activity; existing failure activity remains the explicit
+  rejection path.
+- PM tool output directs the PM to authoritative activity instead of implying that all providers handle
+  a second message identically. The changelog records the required Codex app-server `turn/steer`
+  capability and no compatibility fallback was introduced.
+- Verification passed on 2026-07-12: 197 focused provider/orchestration tests and 191 contract tests;
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
+  (server 1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
+
 ### ORCH-LC-01 and ORCH-LC-02
 
 - Decider tests reject progression after cancellation reservation and reject direct live-task

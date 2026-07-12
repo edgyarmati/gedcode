@@ -43,7 +43,7 @@ or explicitly blocked.
 | ORCH-PMTH-02 | TODO | Add bounded task summaries and last-action cursors so PM re-entry does not repeatedly ingest full task/stage histories. | Re-entry prompt size remains bounded as stage history grows. |
 | ORCH-BACKEND-01 | DEFERRED | Extend project role defaults and `setTaskBackend` to carry validated reasoning effort, then apply Terra/high to medium work and Sol/high to difficult or cross-cutting work. Deferred until after 2026-07-13. | Ledger and stage-start tests prove both model and reasoning effort reach the provider; PM can inspect the effective selection. |
 | ORCH-INT-01 | DONE | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Shared actuator, provider reactor, ingestion, router, client, and browser tests cover immediate durable request plus provider-confirmed interrupted settlement without normal completion. |
-| ORCH-INT-02 | NEXT | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or rejection, never silent delay. | Provider-specific tests cover accepted, queued, and rejected outcomes. No interrupt-and-restart fallback is added without a compatibility decision. |
+| ORCH-INT-02 | DONE | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or rejection, never silent delay. | Codex uses `turn/steer`, OpenCode reports live steering, Claude reports active-turn queuing, and durable activity records started/steered/queued/rejected outcomes without fallback. |
 
 ## Phase 3 - Large Task Splitting
 
@@ -60,7 +60,7 @@ or explicitly blocked.
 | --- | --- | --- | --- |
 | CHAT-FORK-01 | DEFERRED | Define server/RPC thread-fork semantics. Deferred until after 2026-07-13. | Contract/integration tests fork at a selected message without mutating source thread. |
 | CHAT-FORK-02 | DEFERRED | Add normal-chat Fork action to message/thread context menus. Deferred until after 2026-07-13. | Browser test creates and opens a fork. |
-| ORCH-EMPTY-01 | TODO | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Browser test omits both empty-state cards and renders each section when content appears. |
+| ORCH-EMPTY-01 | NEXT | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Browser test omits both empty-state cards and renders each section when content appears. |
 | UI-DRAFT-01 | DEFERRED | Persist composer drafts across surfaces. Deferred until after 2026-07-13. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DEFERRED | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. Deferred until after 2026-07-13. | Sort setting and drag reorder produce identical persisted order. |
 | UI-SIDEBAR-02 | DEFERRED | Complete remaining rich project/task context-menu polish. Deferred until after 2026-07-13. | Browser tests assert status-sensitive menu items and no native edit menu. |
