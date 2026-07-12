@@ -23,6 +23,8 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import type { AgentHarnessEvent, AssistantMessage, TextContent } from "../claude/pmHarness.ts";
 
+// One stable PM conversation per project. Runtime restarts and later re-entry
+// must resume this identity instead of fragmenting project-level context.
 export const pmThreadIdForProject = (project: Pick<OrchestrationProject, "id">): ThreadId =>
   ThreadId.make(`pm:${project.id}`);
 

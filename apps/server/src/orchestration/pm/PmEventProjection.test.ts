@@ -206,6 +206,16 @@ const makeLayer = (
   );
 
 describe("PmEventProjection", () => {
+  it("derives one stable PM thread identity per project", () => {
+    const first = pmThreadIdForProject(project);
+    const afterRestart = pmThreadIdForProject({ id: project.id });
+    const other = pmThreadIdForProject({ id: ProjectId.make("project-2") });
+
+    assert.strictEqual(first, ThreadId.make("pm:project-1"));
+    assert.strictEqual(afterRestart, first);
+    assert.notStrictEqual(other, first);
+  });
+
   it.effect("projects PM user-input request and resolution onto pending-user-input state", () => {
     const commands: OrchestrationCommand[] = [];
     const readModelRef = makeReadModelRef();

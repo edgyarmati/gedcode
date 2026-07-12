@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal: Pin the Orchestrator thread reuse policy: each project keeps one deterministic persistent PM thread, steering reuses its selected stage attempt, and every stage start or retry creates a fresh worker thread linked through task stage history.
 - Breaking/Fixed: Orchestrator worker stages now always run with full access, and the global/project `allowFullAccessWorkers` opt-ins have been removed. Legacy persisted keys still decode but are ignored and omitted on save. PM sessions no longer run full-access; they use the existing approval-required policy, which maps Codex PMs to the read-only/on-request sandbox.
 - Fix/UI: Hide the active-task Plan and Gates sections until they contain a proposed plan or gate, removing misleading permanent “No proposed plan yet” and “No gates” cards.
 - Fix: Make steering an active worker explicit across providers. Codex now uses app-server `turn/steer`, OpenCode reports live steering, Claude reports active-turn queuing, and durable worker activity distinguishes started, steered, queued, and rejected delivery. Codex steering rejection is surfaced without silently falling back to a new turn or interrupt/restart; this requires a Codex app-server version that supports `turn/steer`.

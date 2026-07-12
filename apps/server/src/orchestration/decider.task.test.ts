@@ -476,6 +476,77 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("creates a fresh linked thread for each retry of the same stage role", () =>
+    Effect.gen(function* () {
+      const initial = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const firstResult = yield* decideOrchestrationCommand({
+        readModel: initial,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-attempt-1"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+      const firstEvents = toEvents(firstResult);
+      const firstStage = firstEvents.find((event) => event.type === "task.stage-started");
+      expect(firstStage?.type).toBe("task.stage-started");
+      if (firstStage?.type !== "task.stage-started") return;
+      const firstStageThreadId = (firstStage.payload as { stageThreadId: ThreadId }).stageThreadId;
+
+      let afterFirst = initial;
+      let sequence = initial.snapshotSequence;
+      for (const event of firstEvents) {
+        sequence += 1;
+        afterFirst = yield* projectEvent(afterFirst, withSequence(event, sequence));
+      }
+      const completed = yield* decideOrchestrationCommand({
+        readModel: afterFirst,
+        command: {
+          type: "task.stage.complete",
+          commandId: asCommandId("cmd-stage-attempt-1-complete"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId: firstStageThreadId,
+          awaitedTurnId: null,
+          createdAt: now,
+        },
+      });
+      sequence += 1;
+      const afterCompletion = yield* projectEvent(
+        afterFirst,
+        withSequence(toEvents(completed)[0]!, sequence),
+      );
+      const retryResult = yield* decideOrchestrationCommand({
+        readModel: afterCompletion,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-attempt-2"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          instructions: "Retry the accepted plan.",
+          createdAt: now,
+        },
+      });
+      const retryEvents = toEvents(retryResult);
+      const retryStage = retryEvents.find((event) => event.type === "task.stage-started");
+      expect(retryStage?.type).toBe("task.stage-started");
+      if (retryStage?.type !== "task.stage-started") return;
+      const retryStageThreadId = (retryStage.payload as { stageThreadId: ThreadId }).stageThreadId;
+      expect(retryStageThreadId).not.toBe(firstStageThreadId);
+
+      let afterRetry = afterCompletion;
+      for (const event of retryEvents) {
+        sequence += 1;
+        afterRetry = yield* projectEvent(afterRetry, withSequence(event, sequence));
+      }
+      expect(afterRetry.tasks[0]?.stageThreadIds).toEqual([firstStageThreadId, retryStageThreadId]);
+      expect(afterRetry.tasks[0]?.currentStageThreadId).toBe(retryStageThreadId);
+    }),
+  );
+
   it.effect("ignores a legacy false worker opt-in and keeps full access", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(

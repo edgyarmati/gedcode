@@ -1279,6 +1279,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
 
+      // A stage start is a new attempt, including retries. Never reuse the
+      // prior provider thread: the task projection links ordered attempts via
+      // stageThreadIds/stageHistory, while steering targets an existing thread.
       const crypto = yield* Crypto.Crypto;
       const stageThreadId = ThreadId.make(yield* crypto.randomUUIDv4);
       const messageId = MessageId.make(yield* crypto.randomUUIDv4);
