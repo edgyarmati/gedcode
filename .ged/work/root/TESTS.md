@@ -95,6 +95,21 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   `bun run build`, and `bun run test` (server 1,416 passed/1 skipped; web 1,221 passed; all 12 packages
   successful).
 
+### ORCH-INT-01
+
+- The shared stage-interrupt actuator validates the active running turn under the task lifecycle lock,
+  dispatches one durable `thread.turn.interrupt`, and returns an immediate `requested` result through
+  PM/MCP and typed RPC without depending on the PM finishing its own turn.
+- Provider command reactor coverage proves a persisted request invokes the provider interrupt path;
+  ingestion coverage proves provider `interrupted`/`cancelled` completion emits one operator
+  `task.stage-interrupted`, clears active ownership, blocks the task, and emits no stage-completed event.
+- Router/client tests cover the typed end-to-end method and error surface. Chromium coverage verifies
+  the active-task Stop stage action and its monotonic pending state.
+- Verification passed on 2026-07-12: 217 focused server tests, 72 router tests, 20 client tests, 10
+  Chromium interactions, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and `bun run test` (server 1,419 passed/1 skipped; web 1,221 passed; all 12 packages
+  successful).
+
 ### ORCH-LC-01 and ORCH-LC-02
 
 - Decider tests reject progression after cancellation reservation and reject direct live-task

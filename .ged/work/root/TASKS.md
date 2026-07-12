@@ -42,8 +42,8 @@ or explicitly blocked.
 | ORCH-PMTH-01 | TODO | Document and test PM thread reuse policy: one persistent PM thread per project; one thread per stage attempt; steering reuses the active attempt; retry creates a linked attempt. | Thread-count tests pin reuse and retry behavior. |
 | ORCH-PMTH-02 | TODO | Add bounded task summaries and last-action cursors so PM re-entry does not repeatedly ingest full task/stage histories. | Re-entry prompt size remains bounded as stage history grows. |
 | ORCH-BACKEND-01 | DEFERRED | Extend project role defaults and `setTaskBackend` to carry validated reasoning effort, then apply Terra/high to medium work and Sol/high to difficult or cross-cutting work. Deferred until after 2026-07-13. | Ledger and stage-start tests prove both model and reasoning effort reach the provider; PM can inspect the effective selection. |
-| ORCH-INT-01 | NEXT | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Codex integration observes `turn/interrupt` before the original turn completes. |
-| ORCH-INT-02 | TODO | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or interrupt-and-restart, never silent delay. | Provider-specific tests cover accepted, queued, rejected, and interrupted outcomes. |
+| ORCH-INT-01 | DONE | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Shared actuator, provider reactor, ingestion, router, client, and browser tests cover immediate durable request plus provider-confirmed interrupted settlement without normal completion. |
+| ORCH-INT-02 | NEXT | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or rejection, never silent delay. | Provider-specific tests cover accepted, queued, and rejected outcomes. No interrupt-and-restart fallback is added without a compatibility decision. |
 
 ## Phase 3 - Large Task Splitting
 

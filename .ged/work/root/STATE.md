@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-INT-01` - add a first-class, immediately acknowledged stage interrupt.
+- **Active task**: `ORCH-INT-02` - make busy-provider steering explicit and immediate.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -110,6 +110,15 @@
 - Final polling verification passed on 2026-07-12: PM prompt tests and existing bounded-digest tests;
   `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
   (server 1,416 passed/1 skipped; web 1,221 passed; all 12 packages successful).
+- `ORCH-INT-01` is complete in commit `6a81412fd`. One lifecycle-locked actuator now serves PM/MCP,
+  typed RPC, and task detail. It durably records the interrupt request and acknowledges it immediately;
+  the existing provider reactor sends the provider interrupt without waiting for the PM turn. A later
+  provider `interrupted`/`cancelled` completion settles the task as operator-interrupted instead of
+  flowing through ordinary stage completion and its diff timeout.
+- Final `ORCH-INT-01` verification passed on 2026-07-12: 217 focused server tests, 72 router tests, 20
+  web client tests, 10 Chromium interactions, `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (server 1,419 passed/1 skipped; web 1,221 passed;
+  all 12 packages successful).
 
 ## July 13 Working Cutoff
 
@@ -121,7 +130,7 @@
 
 ## Immediate Sequence
 
-1. `ORCH-INT-01` and `ORCH-INT-02` add responsive interrupt/steer semantics.
+1. `ORCH-INT-02` make busy-provider steering outcomes explicit and immediate.
 2. `ORCH-EMPTY-01` hide empty Plan/Gates UI.
 3. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays read-only.
 4. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
