@@ -64,6 +64,7 @@ or explicitly blocked.
 | UI-DRAFT-01 | DEFERRED | Persist composer drafts across surfaces. Deferred until after 2026-07-13. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DEFERRED | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. Deferred until after 2026-07-13. | Sort setting and drag reorder produce identical persisted order. |
 | UI-SIDEBAR-02 | DEFERRED | Complete remaining rich project/task context-menu polish. Deferred until after 2026-07-13. | Browser tests assert status-sensitive menu items and no native edit menu. |
+| UI-COLLAPSE-01 | NEXT | Make the shared left sidebar collapsible from desktop content headers and restore its existing persisted open state. | Component/browser tests cover collapse, reopen, reload persistence, and unchanged mobile behavior. |
 
 ## Phase 5 - Workflow Specialization
 

@@ -5,6 +5,14 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## UI-COLLAPSE-01
+
+- Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.
+- Component/browser-test the desktop control collapsing and reopening the off-canvas sidebar.
+- Verify the chosen state is written and restored after remount/reload while mobile sheet behavior stays
+  unchanged.
+- Run `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and `bun run test`.
+
 ## Lifecycle Safety
 
 - Cancel during a long-running worker command: provider receives interrupt, session stops, stage settles,

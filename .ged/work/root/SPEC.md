@@ -11,6 +11,14 @@ disjoint write sets and independent verification.
 
 ## Scope
 
+### Collapsible left sidebar
+
+- The shared left sidebar can be collapsed and reopened on desktop from a visible content-header control.
+- Chat, empty-chat, Orchestrator, and Settings surfaces expose the same control; mobile sheet behavior is
+  unchanged.
+- The last expanded/collapsed choice is restored from the existing sidebar-state cookie on reload.
+- Sidebar resizing remains available while expanded.
+
 ### Task lifecycle and reliability
 
 - Gracefully interrupt and settle active workers before abandoning tasks or deleting worktrees.

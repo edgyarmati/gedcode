@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: verify (urgent July 13 scope complete; remaining roadmap items are deferred).
-- **Active task**: none.
+- **Phase**: implement.
+- **Active task**: `UI-COLLAPSE-01` - add a persistent desktop left-sidebar toggle.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -171,7 +171,8 @@
 
 ## Immediate Sequence
 
-1. None in the urgent cutoff scope. Resume deferred items after 2026-07-13 in roadmap priority order.
+1. `UI-COLLAPSE-01` add and verify the persistent desktop left-sidebar toggle requested after the urgent
+   cutoff scope completed.
 
 ## Repository State Notes
 
