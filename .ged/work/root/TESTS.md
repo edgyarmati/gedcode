@@ -234,3 +234,14 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: focused contract/server/PM/MCP/client/store tests, 9/9 affected
   Chromium tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
   `bun run test` (all 12 packages successful; server 1,414 passed/1 skipped, web 1,221 passed).
+
+### ORCH-TASK-03
+
+- PM tests prove canonical whitespace variants of the same project/key/task request derive identical
+  task, command, and PM provenance IDs; changed content keeps the task identity but changes the command.
+- MCP and Claude adapter tests require and route the explicit stable `idempotencyKey`.
+- A real-engine test dispatches the identical create command twice and observes one receipt result, one
+  `task.created` event, and one projected task; a changed-content command for the same task is rejected.
+- Verification passed on 2026-07-12: focused PM/MCP/Claude/engine tests, `bun fmt`, `bun lint` (existing
+  warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (all 12 packages;
+  server 1,416 passed/1 skipped, web 1,221 passed).

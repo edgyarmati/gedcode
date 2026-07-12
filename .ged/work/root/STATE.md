@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-TASK-03` - add stable PM create-task idempotency keys.
+- **Active task**: `ORCH-POLL-01` - baseline and eliminate token-burning PM polling.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -95,11 +95,30 @@
   tests and 9/9 Chromium interactions; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
   `bun run build`, and `bun run test` (server 1,414 passed/1 skipped; web 1,221 passed; all 12 packages
   successful).
+- `ORCH-TASK-03` is complete in commit `879572049`. `createTask` now requires a stable key tied to the
+  originating PM request and logical task. Canonical project/key inputs derive one safe task identity;
+  canonical task content derives the command receipt, so exact retries emit one task event/worktree and
+  changed content under the same key is rejected instead of silently duplicated.
+- Final `ORCH-TASK-03` verification passed on 2026-07-12: PM/MCP/Claude adapter tests and a real-engine
+  receipt/event/read-model test; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and a clean `bun run test` rerun (server 1,416 passed/1 skipped; web 1,221 passed; all
+  12 packages successful).
+
+## July 13 Working Cutoff
+
+- Before/through 2026-07-13, prioritize `ORCH-POLL-01..03`, `ORCH-INT-01..02`, `ORCH-EMPTY-01`,
+  `ORCH-ACCESS-01..02`, and then `ORCH-PMTH-01..02` if time remains.
+- Defer supersession, task splitting, normal-chat fork, composer draft persistence, sidebar/context-menu
+  polish, permission display, reasoning-effort metadata, task-type registry, and release workflow until
+  after 2026-07-13.
 
 ## Immediate Sequence
 
-1. `ORCH-TASK-03` add stable create-task idempotency keys tied to the originating PM request.
-2. `ORCH-TASK-04` add explicit supersession relationships for intentional replacement tasks.
+1. `ORCH-POLL-01` measure idle PM polling and prompt growth.
+2. `ORCH-POLL-02` remove recurring PM turns; wake only on authoritative lifecycle events.
+3. `ORCH-POLL-03` keep explicit bounded status inspection.
+4. `ORCH-INT-01` and `ORCH-INT-02` add responsive interrupt/steer semantics.
+5. `ORCH-EMPTY-01` hide empty Plan/Gates UI, then `ORCH-ACCESS-01..02` fix worker defaults.
 
 ## Repository State Notes
 
