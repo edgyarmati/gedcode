@@ -6,6 +6,7 @@ import {
   SidebarMenuButton,
   SidebarMenuSubButton,
   SidebarProvider,
+  resolveSidebarDefaultOpen,
 } from "./sidebar";
 
 function renderSidebarButton(className?: string) {
@@ -49,5 +50,18 @@ describe("sidebar interactive cursors", () => {
 
     expect(html).toContain('data-slot="sidebar-menu-sub-button"');
     expect(html).toContain("cursor-pointer");
+  });
+});
+
+describe("sidebar persisted state", () => {
+  it("restores an explicit collapsed or expanded cookie", () => {
+    expect(resolveSidebarDefaultOpen("other=value; sidebar_state=false")).toBe(false);
+    expect(resolveSidebarDefaultOpen("sidebar_state=true; other=value")).toBe(true);
+  });
+
+  it("defaults open when the cookie is absent or malformed", () => {
+    expect(resolveSidebarDefaultOpen(undefined)).toBe(true);
+    expect(resolveSidebarDefaultOpen("other=value")).toBe(true);
+    expect(resolveSidebarDefaultOpen("sidebar_state=invalid")).toBe(true);
   });
 });

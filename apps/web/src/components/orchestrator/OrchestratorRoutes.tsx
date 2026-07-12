@@ -149,7 +149,7 @@ function OrchestratorPageChrome({
   return (
     <header className="border-b border-border bg-background/95 px-3 py-2 sm:px-5 sm:py-3">
       <div className="flex min-w-0 items-center gap-3">
-        <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+        <SidebarTrigger className="size-7 shrink-0" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold text-foreground">{title}</h1>
           {description ? (
