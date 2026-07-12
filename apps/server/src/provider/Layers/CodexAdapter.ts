@@ -1571,7 +1571,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })
-      .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
+      .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/send", cause)));
   });
 
   const requireSession = Effect.fn("requireSession")(function* (threadId: ThreadId) {

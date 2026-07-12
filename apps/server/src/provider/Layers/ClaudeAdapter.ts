@@ -3425,6 +3425,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return {
       threadId: context.session.threadId,
       turnId,
+      delivery: steeringTurnState === null ? ("started" as const) : ("queued" as const),
       ...(context.session.resumeCursor !== undefined
         ? { resumeCursor: context.session.resumeCursor }
         : {}),

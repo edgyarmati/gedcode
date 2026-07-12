@@ -46,6 +46,7 @@ import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import {
   type CodexSessionRuntimeOptions,
+  type CodexSessionRuntimeError,
   type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
   type CodexThreadSnapshot,
@@ -138,7 +139,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   getSession = Effect.promise(() => this.startImpl());
 
   sendTurn(input: CodexSessionRuntimeSendTurnInput) {
-    return Effect.promise(() => this.sendTurnImpl(input));
+    return Effect.tryPromise({
+      try: () => this.sendTurnImpl(input),
+      catch: (cause) => cause as CodexSessionRuntimeError,
+    });
   }
 
   interruptTurn(turnId?: TurnId) {
@@ -429,6 +433,40 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         effort: "high",
         serviceTier: "priority",
       });
+    }),
+  );
+
+  it.effect("propagates Codex turn steering rejection as a send request error", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("sess-steer-rejected"),
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      assert.ok(runtime);
+      runtime.sendTurnImpl.mockRejectedValueOnce(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32602,
+          errorMessage: "active turn does not match expectedTurnId",
+        }),
+      );
+
+      const result = yield* adapter
+        .sendTurn({
+          threadId: asThreadId("sess-steer-rejected"),
+          input: "Stop and do this instead",
+          attachments: [],
+        })
+        .pipe(Effect.result);
+
+      assert.equal(result._tag, "Failure");
+      assert.equal(result.failure._tag, "ProviderAdapterRequestError");
+      if (result.failure._tag === "ProviderAdapterRequestError") {
+        assert.equal(result.failure.method, "turn/send");
+        assert.match(result.failure.detail, /expectedTurnId/);
+      }
     }),
   );
 

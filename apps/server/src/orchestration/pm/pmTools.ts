@@ -442,7 +442,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             createdAt: yield* nowIso,
           });
           return textResult(
-            `Sent steering message to ${selectedStageThreadId}; provider behavior matches the human chat path, so active worker turns accept or reject steering according to the target provider.`,
+            `Queued steering request for ${selectedStageThreadId}. The worker activity records whether the provider started a turn, accepted live steering, queued it for the active turn, or rejected the request.`,
             { taskId, stageThreadId: selectedStageThreadId, sequence },
           );
         }),

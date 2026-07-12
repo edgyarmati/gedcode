@@ -3,18 +3,21 @@ import assert from "node:assert/strict";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe, it } from "vitest";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, TurnId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
+import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
 import {
+  buildTurnSteerParams,
   buildTurnStartParams,
   isRecoverableThreadResumeError,
   openCodexThread,
+  requestCodexTurn,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -146,6 +149,114 @@ describe("buildTurnStartParams", () => {
         },
       ],
     });
+  });
+});
+
+describe("Codex turn dispatch", () => {
+  const startParams = Effect.runSync(
+    buildTurnStartParams({
+      threadId: "provider-thread-1",
+      runtimeMode: "full-access",
+      prompt: "Change direction",
+    }),
+  );
+  const steerParams = Effect.runSync(
+    buildTurnSteerParams({
+      threadId: "provider-thread-1",
+      turnId: TurnId.make("turn-active"),
+      prompt: "Change direction",
+      attachments: [{ type: "image", url: "data:image/png;base64,abc" }],
+    }),
+  );
+
+  it("builds the exact generated turn/steer request payload", () => {
+    assert.deepStrictEqual(steerParams, {
+      threadId: "provider-thread-1",
+      expectedTurnId: "turn-active",
+      input: [
+        { type: "text", text: "Change direction" },
+        { type: "image", url: "data:image/png;base64,abc" },
+      ],
+    });
+  });
+
+  it("steers an active turn without starting or interrupting it", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      raw: {
+        request: (method: "turn/start", params: unknown) => {
+          calls.push({ method, params });
+          return Effect.succeed({ turn: { id: "turn-new", items: [], status: "inProgress" } });
+        },
+      },
+      request: (method: "turn/steer", params: EffectCodexSchema.V2TurnSteerParams) => {
+        calls.push({ method, params });
+        return Effect.succeed({ turnId: "turn-active" });
+      },
+    };
+
+    const result = await Effect.runPromise(
+      requestCodexTurn({
+        client,
+        activeTurnId: TurnId.make("turn-active"),
+        startParams,
+        steerParams,
+      }),
+    );
+
+    assert.deepStrictEqual(result, { turnId: "turn-active", delivery: "steered" });
+    assert.deepStrictEqual(calls, [{ method: "turn/steer", params: steerParams }]);
+  });
+
+  it("starts a new turn when the session is idle", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      raw: {
+        request: (method: "turn/start", params: unknown) => {
+          calls.push({ method, params });
+          return Effect.succeed({ turn: { id: "turn-new", items: [], status: "inProgress" } });
+        },
+      },
+      request: (method: "turn/steer", params: EffectCodexSchema.V2TurnSteerParams) => {
+        calls.push({ method, params });
+        return Effect.succeed({ turnId: "turn-active" });
+      },
+    };
+
+    const result = await Effect.runPromise(requestCodexTurn({ client, startParams, steerParams }));
+
+    assert.deepStrictEqual(result, { turnId: "turn-new", delivery: "started" });
+    assert.deepStrictEqual(calls, [{ method: "turn/start", params: startParams }]);
+  });
+
+  it("propagates turn/steer rejection without falling back to turn/start", async () => {
+    const rejection = new CodexErrors.CodexAppServerRequestError({
+      code: -32602,
+      errorMessage: "active turn does not match expectedTurnId",
+    });
+    let startCalls = 0;
+    const client = {
+      raw: {
+        request: () => {
+          startCalls += 1;
+          return Effect.succeed({ turn: { id: "turn-new" } });
+        },
+      },
+      request: () => Effect.fail(rejection),
+    };
+
+    const result = await Effect.runPromise(
+      requestCodexTurn({
+        client,
+        activeTurnId: TurnId.make("turn-active"),
+        startParams,
+        steerParams,
+      }).pipe(Effect.result),
+    );
+
+    assert.equal(result._tag, "Failure");
+    assert.equal(result.failure, rejection);
+    assert.equal(startCalls, 0);
   });
 });
 

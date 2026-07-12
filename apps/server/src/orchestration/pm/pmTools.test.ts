@@ -485,7 +485,7 @@ it.effect("steerStage dispatches thread.turn.start to an explicit stage thread",
     const firstContent = result.content[0];
     assert.strictEqual(firstContent?.type, "text");
     if (firstContent?.type === "text") {
-      assert.match(firstContent.text, /provider behavior matches the human chat path/);
+      assert.match(firstContent.text, /activity records whether the provider/);
     }
   }),
 );

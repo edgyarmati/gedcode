@@ -259,6 +259,40 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const appendTurnDeliveryActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+    readonly delivery: "started" | "steered" | "queued";
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("provider-turn-delivery-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: `provider.turn.${input.delivery}`,
+            summary:
+              input.delivery === "steered"
+                ? "Provider accepted live steering"
+                : input.delivery === "queued"
+                  ? "Provider queued steering for the active turn"
+                  : "Provider started turn",
+            payload: { delivery: input.delivery },
+            turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
     const providerError = isProviderAdapterRequestError(failReason?.error)
@@ -921,7 +955,15 @@ const make = Effect.gen(function* () {
         createdAt: event.payload.createdAt,
       });
 
-      yield* providerService.sendTurn(sendTurnRequest);
+      const result = yield* providerService.sendTurn(sendTurnRequest);
+      if (result.delivery !== undefined) {
+        yield* appendTurnDeliveryActivity({
+          threadId: event.payload.threadId,
+          turnId: result.turnId,
+          delivery: result.delivery,
+          createdAt: event.payload.createdAt,
+        });
+      }
     });
     const guardedStart =
       taskForStageThread === undefined

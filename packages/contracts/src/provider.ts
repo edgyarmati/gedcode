@@ -87,6 +87,7 @@ export type ProviderSendTurnInput = typeof ProviderSendTurnInput.Type;
 export const ProviderTurnStartResult = Schema.Struct({
   threadId: ThreadId,
   turnId: TurnId,
+  delivery: Schema.optional(Schema.Literals(["started", "steered", "queued"])),
   resumeCursor: Schema.optional(Schema.Unknown),
 });
 export type ProviderTurnStartResult = typeof ProviderTurnStartResult.Type;

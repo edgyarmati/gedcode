@@ -1266,6 +1266,7 @@ export function makeOpenCodeAdapter(
       return {
         threadId: input.threadId,
         turnId,
+        delivery: steeringTurnId === undefined ? ("started" as const) : ("steered" as const),
       };
     });
 

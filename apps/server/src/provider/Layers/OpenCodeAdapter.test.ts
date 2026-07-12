@@ -422,6 +422,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           model: "openai/gpt-5",
         },
       });
+      assert.equal(turn.delivery, "started");
+      assert.equal(steeredTurn.delivery, "steered");
       assert.equal(String(steeredTurn.turnId), String(turn.turnId));
 
       const sessions = yield* adapter.listSessions();

@@ -1149,6 +1149,8 @@ describe("ClaudeAdapterLive", () => {
         input: "actually run 15",
         attachments: [],
       });
+      assert.equal(turn.delivery, "started");
+      assert.equal(steeredTurn.delivery, "queued");
       assert.equal(String(steeredTurn.turnId), String(turn.turnId));
 
       harness.query.emit({

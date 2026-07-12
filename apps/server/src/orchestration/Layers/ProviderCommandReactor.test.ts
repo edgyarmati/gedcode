@@ -159,6 +159,7 @@ describe("ProviderCommandReactor", () => {
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly orchestratorConfig?: Record<string, unknown>;
+    readonly turnDelivery?: "started" | "steered" | "queued";
     readonly serverSettingsOverrides?: Parameters<typeof ServerSettingsService.layerTest>[0];
   }) {
     const now = "2026-01-01T00:00:00.000Z";
@@ -237,6 +238,7 @@ describe("ProviderCommandReactor", () => {
       Effect.succeed({
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
+        ...(input?.turnDelivery ? { delivery: input.turnDelivery } : {}),
       }),
     );
     const interruptTurn = vi.fn((_: unknown) => Effect.void);
@@ -478,7 +480,7 @@ describe("ProviderCommandReactor", () => {
   }
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
-    const harness = await createHarness();
+    const harness = await createHarness({ turnDelivery: "started" });
     const now = "2026-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
@@ -500,6 +502,7 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
     expect(harness.startSession.mock.calls[0]?.[0]).toEqual(ThreadId.make("thread-1"));
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
       cwd: harness.projectRoot,
@@ -510,10 +513,22 @@ describe("ProviderCommandReactor", () => {
       runtimeMode: "approval-required",
     });
 
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    let readModel = await harness.readModel();
+    let thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (thread?.activities.some((activity) => activity.kind === "provider.turn.started")) break;
+      await Effect.runPromise(Effect.yieldNow);
+      readModel = await harness.readModel();
+      thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    }
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+    expect(
+      thread?.activities.find((activity) => activity.kind === "provider.turn.started"),
+    ).toMatchObject({
+      summary: "Provider started turn",
+      payload: { delivery: "started" },
+    });
   });
 
   it("does not promote regular chat threads when full-access workers are globally enabled", async () => {
