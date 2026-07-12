@@ -43,6 +43,10 @@ export const ORCHESTRATOR_WS_METHODS = {
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
   cancelTask: "orchestrator.cancelTask",
   landTask: "orchestrator.landTask",
+  listArchivedTasks: "orchestrator.listArchivedTasks",
+  archiveTask: "orchestrator.archiveTask",
+  restoreTask: "orchestrator.restoreTask",
+  deleteTask: "orchestrator.deleteTask",
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
 } as const;
@@ -1609,6 +1613,7 @@ export const TaskArchivedPayload = Schema.Struct({
 
 export const TaskRestoredPayload = Schema.Struct({
   taskId: TaskId,
+  task: OrchestrationTask,
   updatedAt: IsoDateTime,
 });
 
@@ -2115,6 +2120,16 @@ export const OrchestratorLandTaskResult = Schema.Struct({
 });
 export type OrchestratorLandTaskResult = typeof OrchestratorLandTaskResult.Type;
 
+export const OrchestratorListArchivedTasksInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorListArchivedTasksInput = typeof OrchestratorListArchivedTasksInput.Type;
+
+export const OrchestratorTaskRetentionInput = Schema.Struct({
+  taskId: TaskId,
+});
+export type OrchestratorTaskRetentionInput = typeof OrchestratorTaskRetentionInput.Type;
+
 export const OrchestratorClearPmChatInput = Schema.Struct({
   projectId: ProjectId,
 });
@@ -2286,6 +2301,22 @@ export const OrchestratorRpcSchemas = {
   landTask: {
     input: OrchestratorLandTaskInput,
     output: OrchestratorLandTaskResult,
+  },
+  listArchivedTasks: {
+    input: OrchestratorListArchivedTasksInput,
+    output: Schema.Array(OrchestrationTask),
+  },
+  archiveTask: {
+    input: OrchestratorTaskRetentionInput,
+    output: DispatchResult,
+  },
+  restoreTask: {
+    input: OrchestratorTaskRetentionInput,
+    output: DispatchResult,
+  },
+  deleteTask: {
+    input: OrchestratorTaskRetentionInput,
+    output: DispatchResult,
   },
   clearPmChat: {
     input: OrchestratorClearPmChatInput,

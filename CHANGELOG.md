@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature/UI: Expose Orchestrator task archive, restore, and permanent-delete through PM/MCP tools, typed RPC actions, and terminal task-card context menus. Archived tasks have an on-demand board section, restore immediately rehydrates open clients without polling, and permanent deletion requires explicit confirmation.
 - Feature: Add append-only Orchestrator task archive, restore, and permanent-delete tombstones. Retention changes are limited to abandoned tasks or landed tasks with a recorded pull request; active snapshots and PM ledgers omit archived/deleted tasks while replay and command state preserve their full history.
 - Fix: Protect Orchestrator task worktrees from other GedCode runtimes that use a separate database for the same workspace by writing atomic filesystem ownership leases, renewing them while tasks remain live, and requiring both lease expiry and a grace period before orphan cleanup.
 - Feature/UI: Retry exhausted Orchestrator PR-opening failures through the existing guarded `landTask` PM/MCP/RPC action and task-detail button; retries are serialized, reuse an existing open PR when present, preserve the worktree until success, and coalesce repeated requests while landing is in progress.

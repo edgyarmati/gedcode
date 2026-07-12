@@ -85,6 +85,10 @@ interface LandTaskParameters {
   readonly taskId: string;
 }
 
+interface TaskRetentionParameters {
+  readonly taskId: string;
+}
+
 interface GetTaskLedgerParameters {
   readonly projectId: string;
 }
@@ -620,6 +624,59 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const makeTaskRetentionTool = (input: {
+    readonly name: "archiveTask" | "restoreTask" | "deleteTask";
+    readonly label: string;
+    readonly description: string;
+    readonly commandType: "task.archive" | "task.restore" | "task.delete";
+    readonly completedVerb: string;
+  }): PmToolExecutor<TaskRetentionParameters, { taskId: string; sequence: number }> => ({
+    name: input.name,
+    label: input.label,
+    description: input.description,
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const result = yield* engine.dispatch({
+            type: input.commandType,
+            commandId: yield* commandId(input.name),
+            taskId,
+          });
+          return textResult(`${input.completedVerb} task ${taskId}.`, {
+            taskId,
+            sequence: result.sequence,
+          });
+        }),
+      ),
+  });
+
+  const archiveTask = makeTaskRetentionTool({
+    name: "archiveTask",
+    label: "Archive task",
+    description:
+      "Archive a settled abandoned or fully landed task so it no longer appears in the active task ledger. The task can be restored later.",
+    commandType: "task.archive",
+    completedVerb: "Archived",
+  });
+
+  const restoreTask = makeTaskRetentionTool({
+    name: "restoreTask",
+    label: "Restore task",
+    description: "Restore an archived task to the active task ledger.",
+    commandType: "task.restore",
+    completedVerb: "Restored",
+  });
+
+  const deleteTask = makeTaskRetentionTool({
+    name: "deleteTask",
+    label: "Delete task permanently",
+    description:
+      "Permanently hide a settled task with an append-only deletion tombstone. Event history is retained, but the task cannot be restored or changed afterward.",
+    commandType: "task.delete",
+    completedVerb: "Deleted",
+  });
+
   const getTaskLedger: PmToolExecutor<
     GetTaskLedgerParameters,
     { projectId: string; tasks: ReadonlyArray<OrchestrationTask> }
@@ -651,6 +708,9 @@ export const makePmToolExecutors = Effect.gen(function* () {
     inspectStage,
     cancelTask,
     landTask,
+    archiveTask,
+    restoreTask,
+    deleteTask,
     getTaskLedger,
   ] as const;
 });

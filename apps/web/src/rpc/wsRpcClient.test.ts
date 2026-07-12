@@ -125,6 +125,10 @@ describe("wsRpcClient", () => {
         alreadyLanded: false,
       })),
       [ORCHESTRATOR_WS_METHODS.cancelTask]: vi.fn(() => ({ sequence: 10 })),
+      [ORCHESTRATOR_WS_METHODS.listArchivedTasks]: vi.fn(() => []),
+      [ORCHESTRATOR_WS_METHODS.archiveTask]: vi.fn(() => ({ sequence: 12 })),
+      [ORCHESTRATOR_WS_METHODS.restoreTask]: vi.fn(() => ({ sequence: 13 })),
+      [ORCHESTRATOR_WS_METHODS.deleteTask]: vi.fn(() => ({ sequence: 14 })),
       [ORCHESTRATOR_WS_METHODS.clearPmChat]: vi.fn(() => ({ sequence: 9 })),
       [ORCHESTRATOR_WS_METHODS.requestPmHandoff]: vi.fn(() => ({
         accepted: true,
@@ -190,6 +194,10 @@ describe("wsRpcClient", () => {
       sequence: 11,
       alreadyLanded: false,
     });
+    await expect(client.orchestrator.listArchivedTasks({ projectId })).resolves.toEqual([]);
+    await expect(client.orchestrator.archiveTask({ taskId })).resolves.toEqual({ sequence: 12 });
+    await expect(client.orchestrator.restoreTask({ taskId })).resolves.toEqual({ sequence: 13 });
+    await expect(client.orchestrator.deleteTask({ taskId })).resolves.toEqual({ sequence: 14 });
     await expect(client.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 9 });
     await expect(
       client.orchestrator.requestPmHandoff({ projectId, mode: "transcript" }),
@@ -221,6 +229,12 @@ describe("wsRpcClient", () => {
     });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.cancelTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.landTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.listArchivedTasks]).toHaveBeenCalledWith({
+      projectId,
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.archiveTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.restoreTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.deleteTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.clearPmChat]).toHaveBeenCalledWith({
       projectId,
     });

@@ -460,7 +460,27 @@ it.effect("round-trips task archive, restore, and delete commands and events", (
       },
       {
         type: "task.restored" as const,
-        payload: { taskId: "task-1", updatedAt: "2026-01-01T00:02:00.000Z" },
+        payload: {
+          taskId: "task-1",
+          task: {
+            id: "task-1",
+            projectId: "project-1",
+            type: "feature",
+            title: "Restored task",
+            status: "abandoned",
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            stageThreadIds: [],
+            currentStageThreadId: null,
+            playbookVersion: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:02:00.000Z",
+            archivedAt: null,
+            deletedAt: null,
+          },
+          updatedAt: "2026-01-01T00:02:00.000Z",
+        },
       },
       {
         type: "task.deleted" as const,

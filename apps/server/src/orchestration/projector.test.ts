@@ -2088,7 +2088,11 @@ describe("orchestration projector", () => {
           aggregateId: "task-retention",
           occurredAt: restoredAt,
           commandId: "cmd-task-retention-restore",
-          payload: { taskId: "task-retention", updatedAt: restoredAt },
+          payload: {
+            taskId: "task-retention",
+            task: { ...model.tasks[0]!, archivedAt: null, updatedAt: restoredAt },
+            updatedAt: restoredAt,
+          },
         }),
       ),
     );

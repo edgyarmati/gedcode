@@ -123,6 +123,10 @@ const rpcClientMock = {
     setTaskRoleSelections: vi.fn(),
     landTask: vi.fn(),
     cancelTask: vi.fn(),
+    listArchivedTasks: vi.fn(),
+    archiveTask: vi.fn(),
+    restoreTask: vi.fn(),
+    deleteTask: vi.fn(),
     clearPmChat: vi.fn(),
     requestPmHandoff: vi.fn(),
   },
@@ -482,6 +486,10 @@ describe("wsApi", () => {
       alreadyLanded: false,
     });
     rpcClientMock.orchestrator.cancelTask.mockResolvedValue({ sequence: 45 });
+    rpcClientMock.orchestrator.listArchivedTasks.mockResolvedValue([]);
+    rpcClientMock.orchestrator.archiveTask.mockResolvedValue({ sequence: 46 });
+    rpcClientMock.orchestrator.restoreTask.mockResolvedValue({ sequence: 47 });
+    rpcClientMock.orchestrator.deleteTask.mockResolvedValue({ sequence: 48 });
     rpcClientMock.orchestrator.clearPmChat.mockResolvedValue({ sequence: 44 });
     const { createEnvironmentApi } = await import("./environmentApi");
 
@@ -525,6 +533,10 @@ describe("wsApi", () => {
       sequence: 44,
       alreadyLanded: false,
     });
+    await expect(api.orchestrator.listArchivedTasks({ projectId })).resolves.toEqual([]);
+    await expect(api.orchestrator.archiveTask({ taskId })).resolves.toEqual({ sequence: 46 });
+    await expect(api.orchestrator.restoreTask({ taskId })).resolves.toEqual({ sequence: 47 });
+    await expect(api.orchestrator.deleteTask({ taskId })).resolves.toEqual({ sequence: 48 });
     await expect(api.orchestrator.clearPmChat({ projectId })).resolves.toEqual({ sequence: 44 });
 
     expect(rpcClientMock.orchestrator.sendMessage).toHaveBeenCalledWith({
@@ -559,6 +571,10 @@ describe("wsApi", () => {
     });
     expect(rpcClientMock.orchestrator.cancelTask).toHaveBeenCalledWith({ taskId });
     expect(rpcClientMock.orchestrator.landTask).toHaveBeenCalledWith({ taskId });
+    expect(rpcClientMock.orchestrator.listArchivedTasks).toHaveBeenCalledWith({ projectId });
+    expect(rpcClientMock.orchestrator.archiveTask).toHaveBeenCalledWith({ taskId });
+    expect(rpcClientMock.orchestrator.restoreTask).toHaveBeenCalledWith({ taskId });
+    expect(rpcClientMock.orchestrator.deleteTask).toHaveBeenCalledWith({ taskId });
     expect(rpcClientMock.orchestrator.clearPmChat).toHaveBeenCalledWith({ projectId });
 
     unsubscribeProject();

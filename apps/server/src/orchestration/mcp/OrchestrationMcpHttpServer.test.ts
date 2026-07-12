@@ -125,11 +125,21 @@ describe("OrchestrationMcpHttpServer", () => {
         name: "landTask",
         params: { taskId: "task-1" },
       });
-      assert.equal(calls.length, 2);
+      const archiveResult = await client.callTool({
+        name: "archiveTask",
+        arguments: { taskId: "task-1" },
+      });
+      assert.deepStrictEqual(archiveResult.structuredContent, {
+        name: "archiveTask",
+        params: { taskId: "task-1" },
+      });
+      assert.equal(calls.length, 3);
       assert.equal(calls[0]?.name, "getTaskLedger");
       assert.match(calls[0]?.toolCallId ?? "", /^mcp:getTaskLedger:/);
       assert.equal(calls[1]?.name, "landTask");
       assert.match(calls[1]?.toolCallId ?? "", /^mcp:landTask:/);
+      assert.equal(calls[2]?.name, "archiveTask");
+      assert.match(calls[2]?.toolCallId ?? "", /^mcp:archiveTask:/);
       assert.equal(service.endpoint.bearerTokenEnvVar, ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR);
     } finally {
       await client.close();

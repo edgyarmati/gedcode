@@ -64,6 +64,9 @@ import type {
   OrchestratorCancelTaskInput,
   OrchestratorLandTaskInput,
   OrchestratorLandTaskResult,
+  OrchestratorListArchivedTasksInput,
+  OrchestratorTaskRetentionInput,
+  OrchestrationTask,
   OrchestratorClearPmChatInput,
   OrchestratorProjectStreamItem,
   OrchestratorRequestPmHandoffInput,
@@ -601,6 +604,12 @@ export interface EnvironmentApi {
     ) => Promise<{ sequence: number }>;
     cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
     landTask: (input: OrchestratorLandTaskInput) => Promise<OrchestratorLandTaskResult>;
+    listArchivedTasks: (
+      input: OrchestratorListArchivedTasksInput,
+    ) => Promise<ReadonlyArray<OrchestrationTask>>;
+    archiveTask: (input: OrchestratorTaskRetentionInput) => Promise<{ sequence: number }>;
+    restoreTask: (input: OrchestratorTaskRetentionInput) => Promise<{ sequence: number }>;
+    deleteTask: (input: OrchestratorTaskRetentionInput) => Promise<{ sequence: number }>;
     clearPmChat: (input: OrchestratorClearPmChatInput) => Promise<{ sequence: number }>;
     requestPmHandoff: (
       input: OrchestratorRequestPmHandoffInput,

@@ -1173,7 +1173,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           commandId: command.commandId,
         })),
         type: "task.restored",
-        payload: { taskId: command.taskId, updatedAt: occurredAt },
+        payload: {
+          taskId: command.taskId,
+          task: { ...task, archivedAt: null, updatedAt: occurredAt },
+          updatedAt: occurredAt,
+        },
       };
     }
 

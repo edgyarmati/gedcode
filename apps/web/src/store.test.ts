@@ -868,6 +868,24 @@ describe("incremental orchestration updates", () => {
     );
     expect(tasksOf(archived)).toHaveLength(0);
 
+    const restored = applyOrchestrationEvents(
+      archived,
+      [
+        makeEvent(
+          "task.restored",
+          {
+            taskId,
+            task: { ...tasksOf(withTask)[0]!, archivedAt: null, updatedAt: createdAt },
+            updatedAt: createdAt,
+          },
+          { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+    expect(tasksOf(restored)).toHaveLength(1);
+    expect(tasksOf(restored)[0]?.archivedAt).toBeNull();
+
     const deleted = applyOrchestrationEvents(
       withTask,
       [

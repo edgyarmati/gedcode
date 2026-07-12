@@ -15,6 +15,9 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "inspectStage",
   "cancelTask",
   "landTask",
+  "archiveTask",
+  "restoreTask",
+  "deleteTask",
   "getTaskLedger",
 ] as const;
 
@@ -64,6 +67,15 @@ export const mcpInputSchemas = {
     taskId: z.string(),
   },
   landTask: {
+    taskId: z.string(),
+  },
+  archiveTask: {
+    taskId: z.string(),
+  },
+  restoreTask: {
+    taskId: z.string(),
+  },
+  deleteTask: {
     taskId: z.string(),
   },
   getTaskLedger: {

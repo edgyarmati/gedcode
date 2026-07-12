@@ -1354,6 +1354,70 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestrator" },
           ),
+        [ORCHESTRATOR_WS_METHODS.listArchivedTasks]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.listArchivedTasks,
+            projectionSnapshotQuery.getCommandReadModel().pipe(
+              Effect.map((readModel) =>
+                readModel.tasks.filter(
+                  (task) =>
+                    task.projectId === input.projectId &&
+                    task.archivedAt !== null &&
+                    task.deletedAt === null,
+                ),
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to list archived tasks for project ${input.projectId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.archiveTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.archiveTask,
+            serverCommandId("orchestrator-archive-task").pipe(
+              Effect.flatMap((commandId) =>
+                dispatchNormalizedCommand({
+                  type: "task.archive",
+                  commandId,
+                  taskId: input.taskId,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.restoreTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.restoreTask,
+            serverCommandId("orchestrator-restore-task").pipe(
+              Effect.flatMap((commandId) =>
+                dispatchNormalizedCommand({
+                  type: "task.restore",
+                  commandId,
+                  taskId: input.taskId,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.deleteTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.deleteTask,
+            serverCommandId("orchestrator-delete-task").pipe(
+              Effect.flatMap((commandId) =>
+                dispatchNormalizedCommand({
+                  type: "task.delete",
+                  commandId,
+                  taskId: input.taskId,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
         [ORCHESTRATOR_WS_METHODS.clearPmChat]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.clearPmChat,

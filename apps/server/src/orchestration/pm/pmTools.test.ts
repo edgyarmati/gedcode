@@ -1453,6 +1453,26 @@ it.effect("landTask retries an exhausted durable landing failure", () =>
   }),
 );
 
+it.effect("task retention tools dispatch archive, restore, and delete commands", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+
+    for (const [toolName, commandType] of [
+      ["archiveTask", "task.archive"],
+      ["restoreTask", "task.restore"],
+      ["deleteTask", "task.delete"],
+    ] as const) {
+      const result = yield* Effect.promise(() =>
+        findTool(tools, toolName).execute(`tool-${toolName}`, { taskId }),
+      );
+      assert.strictEqual(dispatched.at(-1)?.type, commandType);
+      assert.strictEqual(result.details.taskId, taskId);
+      assert.strictEqual(result.details.sequence, dispatched.length);
+    }
+  }),
+);
+
 it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.set command", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

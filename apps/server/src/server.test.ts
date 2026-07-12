@@ -3807,6 +3807,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             const landTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.landTask]({ taskId });
             assert.deepEqual(landTaskResult, { sequence: 41, alreadyLanded: false });
 
+            const archivedTasks = yield* client[ORCHESTRATOR_WS_METHODS.listArchivedTasks]({
+              projectId,
+            });
+            assert.deepEqual(archivedTasks, []);
+
+            for (const method of [
+              ORCHESTRATOR_WS_METHODS.archiveTask,
+              ORCHESTRATOR_WS_METHODS.restoreTask,
+              ORCHESTRATOR_WS_METHODS.deleteTask,
+            ] as const) {
+              const result = yield* client[method]({ taskId });
+              assert.equal(result.sequence, 41);
+            }
+
             const requestPmHandoffResult = yield* client[ORCHESTRATOR_WS_METHODS.requestPmHandoff]({
               projectId,
               mode: "summary",
@@ -3858,6 +3872,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       if (landTaskCommand?.type === "task.land") {
         assert.equal(landTaskCommand.taskId, taskId);
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(landTaskCommand.createdAt));
+      }
+
+      for (const type of ["task.archive", "task.restore", "task.delete"] as const) {
+        const retentionCommand = dispatched.find((command) => command.type === type);
+        assert.isDefined(retentionCommand);
+        if (retentionCommand?.type === type) {
+          assert.equal(retentionCommand.taskId, taskId);
+        }
       }
 
       const clearThreadCommand = dispatched.find((command) => command.type === "thread.clear");

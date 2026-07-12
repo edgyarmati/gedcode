@@ -28,6 +28,7 @@ import {
   needsYouReasonLabel,
   partitionBoardTasks,
   TaskBoard,
+  terminalTaskContextMenuItems,
   type BoardTaskEntry,
 } from "./TaskBoard";
 import {
@@ -92,6 +93,19 @@ function makeBoardTask(
 }
 
 describe("TaskBoard", () => {
+  it("offers status-sensitive terminal task retention menus", () => {
+    expect(terminalTaskContextMenuItems(false)).toEqual([
+      { id: "copy-task-id", label: "Copy task ID" },
+      { id: "archive-task", label: "Archive task" },
+      { id: "delete-task", label: "Delete task permanently", destructive: true },
+    ]);
+    expect(terminalTaskContextMenuItems(true)).toEqual([
+      { id: "copy-task-id", label: "Copy task ID" },
+      { id: "restore-task", label: "Restore task" },
+      { id: "delete-task", label: "Delete task permanently", destructive: true },
+    ]);
+  });
+
   it("excludes abandoned tasks from the header badge count", () => {
     const markup = renderToStaticMarkup(
       <TaskBoard

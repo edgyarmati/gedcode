@@ -1,5 +1,10 @@
 import { scopeThreadRef } from "@t3tools/client-runtime";
-import { type EnvironmentId, type OrchestrationGateKind, type ProjectId } from "@t3tools/contracts";
+import {
+  type ContextMenuItem,
+  type EnvironmentId,
+  type OrchestrationGateKind,
+  type ProjectId,
+} from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import {
   BanIcon,
@@ -8,12 +13,15 @@ import {
   CircleAlertIcon,
   ClockIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { cn } from "~/lib/utils";
+import { readEnvironmentApi } from "../../environmentApi";
+import { readLocalApi } from "../../localApi";
 import {
   selectPendingGatesForTaskRef,
   selectSidebarThreadSummaryByRef,
@@ -110,6 +118,16 @@ export interface BoardPartition {
   readonly abandoned: readonly OrchestratorTask[];
 }
 
+export function terminalTaskContextMenuItems(archived: boolean): ContextMenuItem<string>[] {
+  return [
+    { id: "copy-task-id", label: "Copy task ID" },
+    archived
+      ? { id: "restore-task", label: "Restore task" }
+      : { id: "archive-task", label: "Archive task" },
+    { id: "delete-task", label: "Delete task permanently", destructive: true },
+  ];
+}
+
 export function partitionBoardTasks(entries: readonly BoardTaskEntry[]): BoardPartition {
   const needsYou: NeedsYouItem[] = [];
   const active: OrchestratorTask[] = [];
@@ -177,6 +195,89 @@ export function TaskBoard({
 }) {
   const [landedExpanded, setLandedExpanded] = useState(false);
   const [abandonedExpanded, setAbandonedExpanded] = useState(false);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [archivedTasks, setArchivedTasks] = useState<OrchestratorTask[]>([]);
+
+  const refreshArchivedTasks = useCallback(async () => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api) {
+      return;
+    }
+    const retained = await api.orchestrator.listArchivedTasks({ projectId });
+    setArchivedTasks(retained.map((task) => Object.assign({ environmentId }, task)));
+  }, [environmentId, projectId]);
+
+  const activeTaskMembership = tasks.map((task) => task.id).join("|");
+  useEffect(() => {
+    void refreshArchivedTasks().catch((error: unknown) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to load archived tasks",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+    });
+  }, [activeTaskMembership, refreshArchivedTasks]);
+
+  const handleTerminalTaskContextMenu = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask, archived: boolean) => {
+      event.preventDefault();
+      void (async () => {
+        const localApi = readLocalApi();
+        const environmentApi = readEnvironmentApi(environmentId);
+        if (!localApi || !environmentApi) {
+          return;
+        }
+        const items = terminalTaskContextMenuItems(archived);
+        const selected = await localApi.contextMenu.show(items, {
+          x: event.clientX,
+          y: event.clientY,
+        });
+        if (selected === "copy-task-id") {
+          await navigator.clipboard.writeText(String(task.id));
+          toastManager.add(stackedThreadToast({ type: "success", title: "Copied task ID" }));
+          return;
+        }
+        if (selected === "delete-task") {
+          const confirmed = window.confirm(
+            `Permanently delete “${task.title}” from the task ledger? Its append-only event history will remain for audit, but the task cannot be restored.`,
+          );
+          if (!confirmed) {
+            return;
+          }
+          await environmentApi.orchestrator.deleteTask({ taskId: task.id });
+        } else if (selected === "archive-task") {
+          await environmentApi.orchestrator.archiveTask({ taskId: task.id });
+        } else if (selected === "restore-task") {
+          await environmentApi.orchestrator.restoreTask({ taskId: task.id });
+        } else {
+          return;
+        }
+        await refreshArchivedTasks();
+        toastManager.add(
+          stackedThreadToast({
+            type: "success",
+            title:
+              selected === "archive-task"
+                ? "Task archived"
+                : selected === "restore-task"
+                  ? "Task restored"
+                  : "Task deleted",
+          }),
+        );
+      })().catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Task lifecycle action failed",
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          }),
+        );
+      });
+    },
+    [environmentId, refreshArchivedTasks],
+  );
 
   // Pending gates live in the store (per task), not on the task object. Project
   // each task's gate kinds down to a stable comma-joined string so the shallow
@@ -207,7 +308,10 @@ export function TaskBoard({
 
   const headerCount = partition.needsYou.length + partition.active.length;
   const isEmpty =
-    headerCount === 0 && partition.landed.length === 0 && partition.abandoned.length === 0;
+    headerCount === 0 &&
+    partition.landed.length === 0 &&
+    partition.abandoned.length === 0 &&
+    archivedTasks.length === 0;
 
   return (
     <aside className="min-h-0 overflow-auto bg-muted/18 px-3 py-3">
@@ -241,6 +345,7 @@ export function TaskBoard({
             onExpandedChange={setLandedExpanded}
             projectId={projectId}
             tasks={partition.landed}
+            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, false)}
           />
         ) : null}
         {partition.abandoned.length > 0 ? (
@@ -250,6 +355,19 @@ export function TaskBoard({
             onExpandedChange={setAbandonedExpanded}
             projectId={projectId}
             tasks={partition.abandoned}
+            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, false)}
+          />
+        ) : null}
+        {archivedTasks.length > 0 ? (
+          <CollapsibleTaskSection
+            countAriaLabel="Archived task count"
+            environmentId={environmentId}
+            expanded={archivedExpanded}
+            label="Archived"
+            onExpandedChange={setArchivedExpanded}
+            projectId={projectId}
+            tasks={archivedTasks}
+            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, true)}
           />
         ) : null}
         {isEmpty ? <p className="px-1 text-xs text-muted-foreground">No tasks yet.</p> : null}
@@ -360,12 +478,14 @@ export function AbandonedTaskBoardSection({
   onExpandedChange,
   projectId,
   tasks,
+  onTaskContextMenu,
 }: {
   environmentId: EnvironmentId;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   projectId: ProjectId;
   tasks: readonly OrchestratorTask[];
+  onTaskContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
 }) {
   return (
     <CollapsibleTaskSection
@@ -376,6 +496,7 @@ export function AbandonedTaskBoardSection({
       onExpandedChange={onExpandedChange}
       projectId={projectId}
       tasks={tasks}
+      {...(onTaskContextMenu ? { onTaskContextMenu } : {})}
     />
   );
 }
@@ -388,6 +509,7 @@ function CollapsibleTaskSection({
   onExpandedChange,
   projectId,
   tasks,
+  onTaskContextMenu,
 }: {
   countAriaLabel: string;
   environmentId: EnvironmentId;
@@ -396,6 +518,7 @@ function CollapsibleTaskSection({
   onExpandedChange: (expanded: boolean) => void;
   projectId: ProjectId;
   tasks: readonly OrchestratorTask[];
+  onTaskContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
 }) {
   return (
     <section className="space-y-2 border-t border-border/70 pt-3">
@@ -429,6 +552,7 @@ function CollapsibleTaskSection({
               environmentId={environmentId}
               projectId={projectId}
               task={task}
+              {...(onTaskContextMenu ? { onContextMenu: onTaskContextMenu } : {})}
             />
           ))}
         </div>
@@ -447,12 +571,14 @@ function TaskCardLink({
   environmentId,
   projectId,
   task,
+  onContextMenu,
 }: {
   children: ReactNode;
   className?: string;
   environmentId: EnvironmentId;
   projectId: ProjectId;
   task: OrchestratorTask;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
 }) {
   return (
     <Link
@@ -463,6 +589,7 @@ function TaskCardLink({
         "block rounded-lg border px-3 py-2 text-card-foreground outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
         className ?? "border-border bg-card hover:border-ring/50 hover:bg-accent/40",
       )}
+      onContextMenu={onContextMenu ? (event) => onContextMenu(event, task) : undefined}
     >
       {children}
     </Link>
@@ -559,13 +686,20 @@ function TerminalTaskCard({
   environmentId,
   projectId,
   task,
+  onContextMenu,
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
   task: OrchestratorTask;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
 }) {
   return (
-    <TaskCardLink environmentId={environmentId} projectId={projectId} task={task}>
+    <TaskCardLink
+      environmentId={environmentId}
+      projectId={projectId}
+      task={task}
+      {...(onContextMenu ? { onContextMenu } : {})}
+    >
       <div className="line-clamp-2 text-sm font-medium text-muted-foreground">{task.title}</div>
     </TaskCardLink>
   );

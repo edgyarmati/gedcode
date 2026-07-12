@@ -3,6 +3,12 @@ import { EnvironmentId, EventId, GateId, ProjectId, TaskId, TaskTypeId } from "@
 import { afterEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import {
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+} from "@tanstack/react-router";
 
 import { useCommandPaletteStore } from "../../commandPaletteStore";
 import {
@@ -13,6 +19,7 @@ import { __resetLocalApiForTests } from "../../localApi";
 import { initialEnvironmentState, useStore } from "../../store";
 import { SidebarProvider } from "../ui/sidebar";
 import { OrchestratorHomeRoute, TaskHeader } from "./OrchestratorRoutes";
+import { TaskBoard } from "./TaskBoard";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
@@ -56,6 +63,23 @@ const approvedLandGate = {
   requestedAt: "2026-06-14T00:01:00.000Z",
   resolvedAt: "2026-06-14T00:02:00.000Z",
 };
+
+function renderTaskBoard(tasks: Parameters<typeof TaskBoard>[0]["tasks"]) {
+  const rootRoute = createRootRoute({
+    component: () => (
+      <TaskBoard
+        environmentId={environmentId}
+        projectId={ProjectId.make("project-browser")}
+        tasks={tasks}
+      />
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute,
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  return render(<RouterProvider router={router} />);
+}
 
 afterEach(async () => {
   __resetEnvironmentApiOverridesForTests();
@@ -115,6 +139,46 @@ it("does not render Cancel task for terminal tasks", async () => {
   render(<TaskHeader task={makeTask("abandoned")} />);
 
   await expect.element(page.getByRole("button", { name: "Cancel task" })).not.toBeInTheDocument();
+});
+
+it("archives a terminal task from its native-style context menu", async () => {
+  const archiveTask = vi.fn(async () => ({ sequence: 2 }));
+  const listArchivedTasks = vi.fn(async () => []);
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { archiveTask, listArchivedTasks },
+  } as unknown as EnvironmentApi);
+
+  renderTaskBoard([makeTask("abandoned")]);
+
+  await page.getByRole("button", { name: /Abandoned/ }).click();
+  await page.getByText("Browser task").click({ button: "right" });
+  (page.getByRole("button", { name: "Archive task" }).element() as HTMLButtonElement).click();
+
+  await expect.poll(() => archiveTask.mock.calls.length).toBe(1);
+  expect(archiveTask).toHaveBeenCalledWith({ taskId });
+});
+
+it("restores an archived task from the archived board section", async () => {
+  const restoreTask = vi.fn(async () => ({ sequence: 3 }));
+  const archivedTask = {
+    ...makeTask("abandoned"),
+    archivedAt: "2026-06-14T00:05:00.000Z",
+  };
+  const listArchivedTasks = vi.fn(async () => [archivedTask]);
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { listArchivedTasks, restoreTask },
+  } as unknown as EnvironmentApi);
+
+  renderTaskBoard([]);
+
+  await expect.element(page.getByRole("button", { name: /Archived/ })).toBeInTheDocument();
+  await expect.element(page.getByText("No tasks yet.")).not.toBeInTheDocument();
+  await page.getByRole("button", { name: /Archived/ }).click();
+  await page.getByText("Browser task").click({ button: "right" });
+  (page.getByRole("button", { name: "Restore task" }).element() as HTMLButtonElement).click();
+
+  await expect.poll(() => restoreTask.mock.calls.length).toBe(1);
+  expect(restoreTask).toHaveBeenCalledWith({ taskId });
 });
 
 it("lands a review task with the current approved gate", async () => {

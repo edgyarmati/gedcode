@@ -2046,9 +2046,7 @@ function applyEnvironmentOrchestrationEvent(
       return removeTaskState(state, String(event.payload.taskId));
 
     case "task.restored":
-      // Restored tasks are reintroduced by the next authoritative snapshot;
-      // the compact restore event intentionally carries no duplicated task body.
-      return state;
+      return writeTaskState(state, mapOrchestratorTask(event.payload.task, environmentId));
 
     case "task.classified":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({

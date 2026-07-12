@@ -501,6 +501,33 @@ export const WsOrchestratorLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.landTa
   error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationLandTaskError]),
 });
 
+export const WsOrchestratorListArchivedTasksRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.listArchivedTasks,
+  {
+    payload: OrchestratorRpcSchemas.listArchivedTasks.input,
+    success: OrchestratorRpcSchemas.listArchivedTasks.output,
+    error: OrchestrationGetSnapshotError,
+  },
+);
+
+export const WsOrchestratorArchiveTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.archiveTask, {
+  payload: OrchestratorRpcSchemas.archiveTask.input,
+  success: OrchestratorRpcSchemas.archiveTask.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorRestoreTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.restoreTask, {
+  payload: OrchestratorRpcSchemas.restoreTask.input,
+  success: OrchestratorRpcSchemas.restoreTask.output,
+  error: OrchestrationDispatchCommandError,
+});
+
+export const WsOrchestratorDeleteTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.deleteTask, {
+  payload: OrchestratorRpcSchemas.deleteTask.input,
+  success: OrchestratorRpcSchemas.deleteTask.output,
+  error: OrchestrationDispatchCommandError,
+});
+
 export const WsOrchestratorClearPmChatRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.clearPmChat, {
   payload: OrchestratorRpcSchemas.clearPmChat.input,
   success: OrchestratorRpcSchemas.clearPmChat.output,
@@ -597,6 +624,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorSetTaskRoleSelectionsRpc,
   WsOrchestratorCancelTaskRpc,
   WsOrchestratorLandTaskRpc,
+  WsOrchestratorListArchivedTasksRpc,
+  WsOrchestratorArchiveTaskRpc,
+  WsOrchestratorRestoreTaskRpc,
+  WsOrchestratorDeleteTaskRpc,
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
 );
