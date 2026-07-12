@@ -585,33 +585,37 @@ export const makePmToolExecutors = Effect.gen(function* () {
 
   const landTask: PmToolExecutor<
     LandTaskParameters,
-    { taskId: string; sequence: number; alreadyLanded: boolean }
+    { taskId: string; sequence: number; alreadyLanded: boolean; alreadyInProgress: boolean }
   > = {
     name: "landTask",
     label: "Land task",
     description:
-      "Land a reviewed task after a human-approved land gate. This starts the existing landing workflow; it cannot approve the gate itself.",
+      "Land a reviewed task after a human-approved land gate, or retry its exhausted PR-opening failure. This starts the existing landing workflow; it cannot approve the gate itself.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const { sequence, alreadyLanded } = yield* landOrchestrationTaskWithServices(
-            { snapshotQuery },
-            {
-              taskId,
-              commandId: commandId("land-task"),
-              createdAt: nowIso,
-              dispatch: (command) => engine.dispatch(command),
-            },
-          );
-          return textResult(
-            alreadyLanded ? `Task ${taskId} is already landed.` : `Started landing task ${taskId}.`,
-            {
-              taskId,
-              sequence,
-              alreadyLanded,
-            },
-          );
+          const { sequence, alreadyLanded, alreadyInProgress } =
+            yield* landOrchestrationTaskWithServices(
+              { snapshotQuery },
+              {
+                taskId,
+                commandId: commandId("land-task"),
+                createdAt: nowIso,
+                dispatch: (command) => engine.dispatch(command),
+              },
+            );
+          const summary = alreadyLanded
+            ? `Task ${taskId} is already landed.`
+            : alreadyInProgress
+              ? `Task ${taskId} landing is already in progress.`
+              : `Started landing task ${taskId}.`;
+          return textResult(summary, {
+            taskId,
+            sequence,
+            alreadyLanded,
+            alreadyInProgress,
+          });
         }),
       ),
   };

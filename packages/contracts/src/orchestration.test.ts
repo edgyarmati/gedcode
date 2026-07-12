@@ -763,6 +763,20 @@ it.effect("round-trips task.pr.open.failed commands through the orchestration co
   }),
 );
 
+it.effect("round-trips task.landing.retry commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.landing.retry",
+      commandId: "cmd-landing-retry",
+      taskId: "task-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.landing.retry");
+  }),
+);
+
 it.effect("round-trips thread.clear commands through the orchestration command union", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationCommand({
@@ -957,6 +971,30 @@ it.effect("round-trips task.pr-open-failed events through the orchestration even
       assert.strictEqual(reDecoded.payload.message, "provider unavailable");
       assert.strictEqual(reDecoded.payload.branchPushed, false);
     }
+  }),
+);
+
+it.effect("round-trips task.landing-retry-requested events through the event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-landing-retry",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.landing-retry-requested",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-landing-retry",
+      causationEventId: null,
+      correlationId: "cmd-landing-retry",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.landing-retry-requested");
   }),
 );
 

@@ -35,6 +35,20 @@ export function deriveTaskLandingPresentation(input: {
   if (task.prUrl !== null) {
     return { kind: "landed", prUrl: task.prUrl };
   }
+  const landingFailure =
+    task.status === "landed"
+      ? input.activities.findLast((activity) => isLandingFailureForTask(activity, task.id))
+      : undefined;
+  const canRequestLanding =
+    task.status === "review" ||
+    (task.status === "landed" &&
+      (task.landing?.status === "failed" || landingFailure !== undefined));
+  if (canRequestLanding && input.requestError) {
+    return { kind: "request-failed", message: input.requestError };
+  }
+  if (canRequestLanding && input.requestPending) {
+    return { kind: "pending" };
+  }
 
   if (task.status === "landed") {
     if (task.landing?.status === "failed") {
@@ -46,22 +60,14 @@ export function deriveTaskLandingPresentation(input: {
     if (task.landing?.status === "opening-pr") {
       return { kind: "opening-pr" };
     }
-    const failure = input.activities.findLast((activity) =>
-      isLandingFailureForTask(activity, task.id),
-    );
-    return failure ? { kind: "failed", message: failure.summary } : { kind: "opening-pr" };
+    return landingFailure
+      ? { kind: "failed", message: landingFailure.summary }
+      : { kind: "opening-pr" };
   }
 
   if (task.status !== "review" || task.currentStageThreadId !== null || task.cancellation != null) {
     return { kind: "unavailable" };
   }
-  if (input.requestError) {
-    return { kind: "request-failed", message: input.requestError };
-  }
-  if (input.requestPending) {
-    return { kind: "pending" };
-  }
-
   const latestLandGate = input.gates.findLast(
     (gate) => gate.taskId === task.id && gate.gate === "land",
   );

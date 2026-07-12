@@ -1375,7 +1375,12 @@ it.effect("landTask delegates one task.land command to the guarded landing execu
 
     assert.strictEqual(dispatched.length, 1);
     assert.strictEqual(dispatched[0]?.type, "task.land");
-    assert.deepStrictEqual(result.details, { taskId, sequence: 1, alreadyLanded: false });
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      sequence: 1,
+      alreadyLanded: false,
+      alreadyInProgress: false,
+    });
     assert.match(result.content[0]?.text ?? "", /Started landing task/);
   }),
 );
@@ -1383,7 +1388,19 @@ it.effect("landTask delegates one task.land command to the guarded landing execu
 it.effect("landTask is idempotent after the task is already landed", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
-    const readModel = makeReadModel([makeTask({ status: "landed", currentStageThreadId: null })]);
+    const readModel = makeReadModel([
+      makeTask({
+        status: "landed",
+        currentStageThreadId: null,
+        prUrl: "https://github.com/acme/repo/pull/42",
+        landing: {
+          status: "completed",
+          failureMessage: null,
+          branchPushed: true,
+          updatedAt: now,
+        },
+      }),
+    ]);
     const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
 
     const result = yield* Effect.promise(() =>
@@ -1391,8 +1408,46 @@ it.effect("landTask is idempotent after the task is already landed", () =>
     );
 
     assert.deepStrictEqual(dispatched, []);
-    assert.deepStrictEqual(result.details, { taskId, sequence: 0, alreadyLanded: true });
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      sequence: 0,
+      alreadyLanded: true,
+      alreadyInProgress: false,
+    });
     assert.match(result.content[0]?.text ?? "", /already landed/);
+  }),
+);
+
+it.effect("landTask retries an exhausted durable landing failure", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel([
+      makeTask({
+        status: "landed",
+        currentStageThreadId: null,
+        landing: {
+          status: "failed",
+          failureMessage: "provider unavailable",
+          branchPushed: false,
+          updatedAt: now,
+        },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "landTask").execute("tool-land-retry", { taskId }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "task.landing.retry");
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      sequence: 1,
+      alreadyLanded: false,
+      alreadyInProgress: false,
+    });
+    assert.match(result.content[0]?.text ?? "", /Started landing task/);
   }),
 );
 

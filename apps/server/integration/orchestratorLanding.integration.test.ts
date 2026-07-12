@@ -773,6 +773,72 @@ it.live("fails loud without a supported provider and leaves the worktree recover
   );
 });
 
+it.live("retries an exhausted landing once through the shared actuator", () => {
+  let prAttempts = 0;
+  const { registry } = makeSourceControlRegistry({
+    createChangeRequest: (request) => {
+      prAttempts += 1;
+      return prAttempts === 1
+        ? Effect.fail(
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "createChangeRequest",
+              detail: "temporary provider outage",
+            }),
+          )
+        : Effect.succeed(makeCreatedChangeRequest(request));
+    },
+  });
+  const id = taskId("retry");
+  return withHarness(registry, (harness) =>
+    Effect.gen(function* () {
+      const { task, stageThreadId } = yield* seedReviewTask({
+        harness,
+        suffix: "retry",
+        projectId: projectId("retry"),
+        taskId: id,
+        branch: "orchestrator/landing-retry",
+        title: "Retry landing PR",
+      });
+      const worktreePath = task.worktreePath;
+      assert.ok(worktreePath);
+
+      yield* approveLandAndDispatch({ harness, suffix: "retry", taskId: id, stageThreadId });
+      yield* waitForTask(
+        harness,
+        id,
+        (entry) => entry.landing?.status === "failed",
+        "exhausted landing failure",
+      );
+
+      const result = yield* landOrchestrationTaskWithServices(
+        { snapshotQuery: harness.snapshotQuery },
+        {
+          taskId: id,
+          commandId: Effect.succeed(commandId("retry-request")),
+          createdAt: Effect.succeed(iso(20)),
+          dispatch: (command) => harness.engine.dispatch(command),
+        },
+      );
+      assert.equal(result.alreadyLanded, false);
+      assert.equal(result.alreadyInProgress, false);
+      yield* harness.waitForDomainEvent(
+        (event) => event.type === "task.pr-opened" && event.payload.taskId === id,
+      );
+      yield* waitForWorktreeRemoved(worktreePath);
+
+      const afterRetry = yield* waitForTask(
+        harness,
+        id,
+        (entry) => entry.landing?.status === "completed",
+        "completed retried landing",
+      );
+      assert.equal(afterRetry.prUrl, fakePrUrl);
+      assert.equal(prAttempts, 2);
+    }),
+  );
+});
+
 it.live("does not open a second PR for a landed task that already has prUrl", () => {
   const { registry, createChangeRequestCalls } = makeSourceControlRegistry();
   const id = taskId("idempotent");

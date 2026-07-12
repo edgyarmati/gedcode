@@ -144,7 +144,9 @@ function makeReadModel(input: {
   };
 }
 
-function makeTerminalTaskEvent(type: "task.landed" | "task.abandoned"): OrchestrationEvent {
+function makeTerminalTaskEvent(
+  type: "task.landed" | "task.landing-retry-requested" | "task.abandoned",
+): OrchestrationEvent {
   return {
     sequence: 2,
     eventId: EventId.make(`evt-${type}`),
@@ -670,6 +672,55 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
+  it("processes an explicit retry event after an exhausted landing failure", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "landed",
+        landing: {
+          status: "failed",
+          failureMessage: "provider unavailable",
+          branchPushed: false,
+          updatedAt: now,
+        },
+      }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+      landing: {
+        status: "opening-pr",
+        failureMessage: null,
+        branchPushed: false,
+        updatedAt: "2026-07-12T01:00:00.000Z",
+      },
+    });
+    await Effect.runPromise(
+      PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landing-retry-requested")),
+    );
+    await waitFor(() => harness.createChangeRequest.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.pushCurrentBranch).toHaveBeenCalledTimes(1);
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "task.pr.opened" }),
+    );
+    expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
   it("fails loud and keeps the worktree when the source-control provider is unsupported", async () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
     const unsupportedProvider = SourceControlProvider.SourceControlProvider.of({
@@ -721,7 +772,7 @@ describe("TaskWorktreeReactor", () => {
     expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "task.pr.open.failed",
-        commandId: CommandId.make("task-landing-failed:task-1"),
+        commandId: CommandId.make(`task-landing-failed:task-1:${now}`),
         branchPushed: false,
       }),
     );

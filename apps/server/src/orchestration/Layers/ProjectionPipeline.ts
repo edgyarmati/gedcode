@@ -1713,6 +1713,26 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.landing-retry-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              landing: {
+                status: "opening-pr",
+                failureMessage: null,
+                branchPushed: false,
+                updatedAt: event.payload.updatedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.cancellation-requested": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,

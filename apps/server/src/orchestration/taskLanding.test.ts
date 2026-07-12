@@ -15,7 +15,10 @@ import { landOrchestrationTaskWithServices, OrchestrationLandTaskError } from ".
 const now = "2026-07-11T00:00:00.000Z";
 const taskId = TaskId.make("task-land");
 
-const makeTask = (status: OrchestrationTask["status"]): OrchestrationTask => ({
+const makeTask = (
+  status: OrchestrationTask["status"],
+  landing: OrchestrationTask["landing"] = null,
+): OrchestrationTask => ({
   id: taskId,
   projectId: ProjectId.make("project-land"),
   type: TaskTypeId.make("feature"),
@@ -28,17 +31,21 @@ const makeTask = (status: OrchestrationTask["status"]): OrchestrationTask => ({
   stageThreadIds: [],
   currentStageThreadId: null,
   cancellation: null,
-  landing: null,
+  landing,
   roleModelSelections: {},
   playbookVersion: null,
   createdAt: now,
   updatedAt: now,
 });
 
-const makeReadModel = (status: OrchestrationTask["status"], sequence = 10) => ({
+const makeReadModel = (
+  status: OrchestrationTask["status"],
+  sequence = 10,
+  landing: OrchestrationTask["landing"] = null,
+) => ({
   ...createEmptyReadModel(now),
   snapshotSequence: sequence,
-  tasks: [makeTask(status)],
+  tasks: [makeTask(status, landing)],
 });
 
 it.effect("dispatches landing once and returns an idempotent result after landing", () =>
@@ -57,7 +64,12 @@ it.effect("dispatches landing once and returns an idempotent result after landin
       dispatch: (command) =>
         Effect.sync(() => {
           commands.push(command.type);
-          readModel = makeReadModel("landed", 11);
+          readModel = makeReadModel("landed", 11, {
+            status: "opening-pr",
+            failureMessage: null,
+            branchPushed: false,
+            updatedAt: now,
+          });
           return { sequence: 11 };
         }),
     });
@@ -65,8 +77,16 @@ it.effect("dispatches landing once and returns an idempotent result after landin
     const first = yield* runLanding;
     const second = yield* runLanding;
 
-    assert.deepStrictEqual(first, { sequence: 11, alreadyLanded: false });
-    assert.deepStrictEqual(second, { sequence: 11, alreadyLanded: true });
+    assert.deepStrictEqual(first, {
+      sequence: 11,
+      alreadyLanded: false,
+      alreadyInProgress: false,
+    });
+    assert.deepStrictEqual(second, {
+      sequence: 11,
+      alreadyLanded: false,
+      alreadyInProgress: true,
+    });
     assert.deepStrictEqual(commands, ["task.land"]);
   }),
 );
@@ -98,7 +118,51 @@ it.effect("serializes concurrent landing attempts into one command", () =>
     });
 
     assert.strictEqual(dispatchCount, 1);
-    assert.deepStrictEqual(results.map((result) => result.alreadyLanded).toSorted(), [false, true]);
+    assert.strictEqual(results.filter((result) => result.alreadyInProgress).length, 1);
+  }),
+);
+
+it.effect("retries one exhausted landing attempt and coalesces repeated requests", () =>
+  Effect.gen(function* () {
+    let readModel: OrchestrationReadModel = makeReadModel("landed", 20, {
+      status: "failed",
+      failureMessage: "provider unavailable",
+      branchPushed: false,
+      updatedAt: now,
+    });
+    const commands: string[] = [];
+    const runLanding = landOrchestrationTaskWithServices(
+      {
+        snapshotQuery: { getCommandReadModel: () => Effect.succeed(readModel) },
+      },
+      {
+        taskId,
+        commandId: Effect.succeed(CommandId.make("cmd-land-retry")),
+        createdAt: Effect.succeed("2026-07-12T01:00:00.000Z"),
+        dispatch: (command) =>
+          Effect.sync(() => {
+            commands.push(command.type);
+            readModel = makeReadModel("landed", 21, {
+              status: "opening-pr",
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: "2026-07-12T01:00:00.000Z",
+            });
+            return { sequence: 21 };
+          }),
+      },
+    );
+
+    const first = yield* runLanding;
+    const second = yield* runLanding;
+
+    assert.deepStrictEqual(commands, ["task.landing.retry"]);
+    assert.deepStrictEqual(first, {
+      sequence: 21,
+      alreadyLanded: false,
+      alreadyInProgress: false,
+    });
+    assert.isTrue(second.alreadyInProgress);
   }),
 );
 

@@ -1097,6 +1097,13 @@ const TaskPrOpenedCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskLandingRetryCommand = Schema.Struct({
+  type: Schema.Literal("task.landing.retry"),
+  commandId: CommandId,
+  taskId: TaskId,
+  createdAt: IsoDateTime,
+});
+
 const TaskPrOpenFailedCommand = Schema.Struct({
   type: Schema.Literal("task.pr.open.failed"),
   commandId: CommandId,
@@ -1298,6 +1305,7 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskStageCompleteCommand,
   TaskStageBlockCommand,
   TaskStageInterruptCommand,
+  TaskLandingRetryCommand,
   TaskPrOpenedCommand,
   TaskPrOpenFailedCommand,
   TaskAbandonCommand,
@@ -1352,6 +1360,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.cancellation-failed",
   "task.cancellation-phase-completed",
   "task.landed",
+  "task.landing-retry-requested",
   "task.pr-opened",
   "task.pr-open-failed",
   "task.abandoned",
@@ -1676,6 +1685,11 @@ export const TaskPrOpenedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskLandingRetryRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskPrOpenFailedPayload = Schema.Struct({
   taskId: TaskId,
   message: TrimmedNonEmptyString,
@@ -1899,6 +1913,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.landed"),
     payload: TaskLandedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.landing-retry-requested"),
+    payload: TaskLandingRetryRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

@@ -2228,6 +2228,18 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
+    case "task.landing-retry-requested":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        landing: {
+          status: "opening-pr",
+          failureMessage: null,
+          branchPushed: false,
+          updatedAt: event.payload.updatedAt,
+        },
+        updatedAt: event.payload.updatedAt,
+      }));
+
     case "task.cancellation-requested":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,

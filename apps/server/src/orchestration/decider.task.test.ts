@@ -1929,6 +1929,75 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("retries only a failed landed task with its worktree retained", () =>
+    Effect.gen(function* () {
+      const failed = yield* taskReadModel({ status: "landed", prUrl: null });
+      const readModel = {
+        ...failed,
+        tasks: [
+          {
+            ...failed.tasks[0]!,
+            landing: {
+              status: "failed" as const,
+              failureMessage: "provider unavailable",
+              branchPushed: false,
+              updatedAt: now,
+            },
+          },
+        ],
+      };
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.landing.retry",
+          commandId: asCommandId("cmd-landing-retry"),
+          taskId: asTaskId("task-1"),
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.landing-retry-requested");
+    }),
+  );
+
+  it.effect("rejects landing retry while opening or after completion", () =>
+    Effect.gen(function* () {
+      for (const landing of [
+        {
+          status: "opening-pr" as const,
+          failureMessage: null,
+          branchPushed: false,
+          updatedAt: now,
+        },
+        {
+          status: "completed" as const,
+          failureMessage: null,
+          branchPushed: true,
+          updatedAt: now,
+        },
+      ]) {
+        const base = yield* taskReadModel({ status: "landed", prUrl: null });
+        const result = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel: {
+              ...base,
+              tasks: [{ ...base.tasks[0]!, landing }],
+            },
+            command: {
+              type: "task.landing.retry",
+              commandId: asCommandId(`cmd-landing-retry-${landing.status}`),
+              taskId: asTaskId("task-1"),
+              createdAt: now,
+            },
+          }),
+        );
+        expect(result._tag).toBe("Failure");
+      }
+    }),
+  );
+
   it.effect("rejects PR-open failure before landing or after a PR exists", () =>
     Effect.gen(function* () {
       for (const readModel of [

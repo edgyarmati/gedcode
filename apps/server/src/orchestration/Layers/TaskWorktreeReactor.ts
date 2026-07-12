@@ -39,7 +39,10 @@ import {
   type TaskWorktreeReactorShape,
 } from "../Services/TaskWorktreeReactor.ts";
 
-type TerminalTaskEvent = Extract<OrchestrationEvent, { type: "task.landed" | "task.abandoned" }>;
+type TerminalTaskEvent = Extract<
+  OrchestrationEvent,
+  { type: "task.landed" | "task.landing-retry-requested" | "task.abandoned" }
+>;
 
 type CleanupCandidate = {
   readonly taskId: string;
@@ -137,8 +140,8 @@ function taskPrOpenFailedCommandId(taskId: string): CommandId {
   return CommandId.make(`task-pr-open-failed:${taskId}`);
 }
 
-function taskLandingFailedCommandId(taskId: string): CommandId {
-  return CommandId.make(`task-landing-failed:${taskId}`);
+function taskLandingFailedCommandId(taskId: string, landingStartedAt: string): CommandId {
+  return CommandId.make(`task-landing-failed:${taskId}:${landingStartedAt}`);
 }
 
 function landingFailureActivityId(taskId: string): EventId {
@@ -367,7 +370,10 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
       yield* orchestrationEngine.dispatch({
         type: "task.pr.open.failed",
-        commandId: taskLandingFailedCommandId(taskId),
+        commandId: taskLandingFailedCommandId(
+          taskId,
+          input.context.task.landing?.updatedAt ?? input.context.task.updatedAt,
+        ),
         taskId: input.context.task.id,
         message: input.detail,
         branchPushed: input.branchPushed,
@@ -541,7 +547,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     const processTerminalTaskEvent = Effect.fn("processTerminalTaskEvent")(function* (
       event: TerminalTaskEvent,
     ) {
-      if (event.type === "task.landed") {
+      if (event.type === "task.landed" || event.type === "task.landing-retry-requested") {
         const context = yield* resolveLandedTaskContext(String(event.payload.taskId));
         if (context) {
           yield* processLandedTaskContext(context);
@@ -726,7 +732,9 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
 
       const enqueueTerminalEventOnce = (event: OrchestrationEvent) => {
         if (
-          (event.type !== "task.landed" && event.type !== "task.abandoned") ||
+          (event.type !== "task.landed" &&
+            event.type !== "task.landing-retry-requested" &&
+            event.type !== "task.abandoned") ||
           event.sequence <= lastTerminalSequence
         ) {
           return Effect.void;

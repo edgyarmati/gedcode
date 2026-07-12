@@ -713,7 +713,7 @@ export function TaskHeader({
       setLandingPending(false);
       setLandingError(null);
     }
-  }, [task.status]);
+  }, [task.landing?.status, task.status]);
   const taskStatusLabel =
     landing.kind === "pending" || landing.kind === "opening-pr"
       ? "Landing"
@@ -740,7 +740,13 @@ export function TaskHeader({
   }, [canCancel, isCancelling, landingPending, task.environmentId, task.id]);
   const landTask = useCallback(async () => {
     const api = readEnvironmentApi(task.environmentId);
-    if (!api || (landing.kind !== "ready" && landing.kind !== "request-failed") || isCancelling) {
+    if (
+      !api ||
+      (landing.kind !== "ready" &&
+        landing.kind !== "request-failed" &&
+        landing.kind !== "failed") ||
+      isCancelling
+    ) {
       return;
     }
     setLandingPending(true);
@@ -772,17 +778,21 @@ export function TaskHeader({
           />
         </div>
         <div className="flex items-center gap-2">
-          {landing.kind === "ready" || landing.kind === "request-failed" ? (
+          {landing.kind === "ready" ||
+          landing.kind === "request-failed" ||
+          landing.kind === "failed" ? (
             <>
-              {landing.kind === "request-failed" ? (
+              {landing.kind === "request-failed" || landing.kind === "failed" ? (
                 <Badge size="lg" title={landing.message} variant="error">
                   <CircleAlertIcon className="size-4" />
-                  Landing request failed
+                  {landing.kind === "failed" ? "Landing failed" : "Landing request failed"}
                 </Badge>
               ) : null}
               <Button disabled={isCancelling} onClick={() => void landTask()} size="sm">
                 <GitPullRequestIcon className="size-4" />
-                {landing.kind === "request-failed" ? "Retry landing" : "Land task"}
+                {landing.kind === "request-failed" || landing.kind === "failed"
+                  ? "Retry landing"
+                  : "Land task"}
               </Button>
             </>
           ) : landing.kind === "pending" ? (
@@ -794,11 +804,6 @@ export function TaskHeader({
             <Badge size="lg" variant="info">
               <LoaderCircleIcon className="size-4 animate-spin" />
               Opening pull request…
-            </Badge>
-          ) : landing.kind === "failed" ? (
-            <Badge size="lg" title={landing.message} variant="error">
-              <CircleAlertIcon className="size-4" />
-              Landing failed
             </Badge>
           ) : null}
           {canCancel ? (

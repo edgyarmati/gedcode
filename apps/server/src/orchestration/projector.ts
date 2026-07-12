@@ -1186,6 +1186,22 @@ export function projectEvent(
         })),
       );
 
+    case "task.landing-retry-requested":
+      return decodeForEvent(TaskLandedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            landing: {
+              status: "opening-pr",
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: payload.updatedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "task.cancellation-requested":
       return decodeForEvent(
         TaskCancellationRequestedPayload,

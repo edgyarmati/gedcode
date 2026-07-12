@@ -1639,6 +1639,39 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "task.landing.retry": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      yield* requireTaskNotCancelling({ command, task });
+      if (
+        task.status !== "landed" ||
+        task.prUrl !== null ||
+        task.worktreePath === null ||
+        task.landing?.status !== "failed"
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have an exhausted landing failure and a retained worktree before landing can be retried.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.landing-retry-requested",
+        payload: {
+          taskId: command.taskId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "task.pr.opened": {
       const task = yield* requireTask({
         readModel,

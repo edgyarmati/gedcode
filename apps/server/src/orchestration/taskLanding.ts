@@ -22,7 +22,7 @@ type LandOrchestrationTaskError =
   | PlatformError.PlatformError;
 
 type DispatchLandCommand = (
-  command: Extract<OrchestrationCommand, { type: "task.land" }>,
+  command: Extract<OrchestrationCommand, { type: "task.land" | "task.landing.retry" }>,
 ) => Effect.Effect<DispatchResult, OrchestrationDispatchError | OrchestrationDispatchCommandError>;
 
 export class OrchestrationLandTaskError extends Data.TaggedError("OrchestrationLandTaskError")<{
@@ -61,7 +61,27 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
           });
         }
         if (task.status === "landed") {
-          return { sequence: readModel.snapshotSequence, alreadyLanded: true };
+          if (task.prUrl !== null || task.landing?.status === "completed") {
+            return {
+              sequence: readModel.snapshotSequence,
+              alreadyLanded: true,
+              alreadyInProgress: false,
+            };
+          }
+          if (task.landing?.status !== "failed") {
+            return {
+              sequence: readModel.snapshotSequence,
+              alreadyLanded: false,
+              alreadyInProgress: true,
+            };
+          }
+          const result = yield* input.dispatch({
+            type: "task.landing.retry",
+            commandId: yield* input.commandId,
+            taskId: input.taskId,
+            createdAt: yield* input.createdAt,
+          });
+          return { ...result, alreadyLanded: false, alreadyInProgress: false };
         }
 
         const result = yield* input.dispatch({
@@ -70,7 +90,7 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
           taskId: input.taskId,
           createdAt: yield* input.createdAt,
         });
-        return { ...result, alreadyLanded: false };
+        return { ...result, alreadyLanded: false, alreadyInProgress: false };
       }),
     );
   },

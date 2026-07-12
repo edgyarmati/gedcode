@@ -78,6 +78,7 @@ describe("classifyOrchestrationCommand", () => {
     ["task.gate.request", "task"],
     ["task.gate.resolve", "task"],
     ["task.land", "task"],
+    ["task.landing.retry", "task"],
     ["task.pr.opened", "task"],
     ["task.pr.open.failed", "task"],
     ["task.abandon", "task"],

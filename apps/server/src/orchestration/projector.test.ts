@@ -1995,6 +1995,23 @@ describe("orchestration projector", () => {
         }),
       ),
     );
+    const afterRetry = await Effect.runPromise(
+      projectEvent(
+        afterPrOpenFailed,
+        makeEvent({
+          sequence: 4,
+          type: "task.landing-retry-requested",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: "2026-06-22T00:00:05.000Z",
+          commandId: "cmd-landing-retry",
+          payload: {
+            taskId: "task-pr",
+            updatedAt: "2026-06-22T00:00:05.000Z",
+          },
+        }),
+      ),
+    );
 
     expect(afterCreate.tasks[0]?.prUrl).toBeNull();
     expect(afterCreate.tasks[0]?.landing).toBeNull();
@@ -2005,6 +2022,11 @@ describe("orchestration projector", () => {
       status: "failed",
       failureMessage: "provider unavailable",
       branchPushed: true,
+    });
+    expect(afterRetry.tasks[0]?.landing).toMatchObject({
+      status: "opening-pr",
+      failureMessage: null,
+      branchPushed: false,
     });
     expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
   });

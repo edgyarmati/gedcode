@@ -152,6 +152,30 @@ it("keeps a failed landing request retryable", async () => {
   await expect.element(page.getByRole("button", { name: "Landing task" })).toBeDisabled();
 });
 
+it("retries a durable exhausted landing failure", async () => {
+  const landTask = vi.fn(async () => ({ sequence: 4, alreadyLanded: false }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { landTask },
+  } as unknown as EnvironmentApi);
+  const task = {
+    ...makeTask("landed"),
+    worktreePath: "/repo/.gedcode/orchestrator/tasks/task-browser",
+    landing: {
+      status: "failed" as const,
+      failureMessage: "provider unavailable",
+      branchPushed: false,
+      updatedAt: "2026-06-14T00:03:00.000Z",
+    },
+  };
+
+  render(<TaskHeader task={task} />);
+  await page.getByRole("button", { name: "Retry landing" }).click();
+
+  await expect.poll(() => landTask.mock.calls.length).toBe(1);
+  expect(landTask).toHaveBeenCalledWith({ taskId });
+  await expect.element(page.getByRole("button", { name: "Landing task" })).toBeDisabled();
+});
+
 it("shows PR opening and durable landing failure without claiming the task is landed", async () => {
   const view = await render(<TaskHeader task={makeTask("landed")} />);
 

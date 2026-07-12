@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature/UI: Retry exhausted Orchestrator PR-opening failures through the existing guarded `landTask` PM/MCP/RPC action and task-detail button; retries are serialized, reuse an existing open PR when present, preserve the worktree until success, and coalesce repeated requests while landing is in progress.
 - Fix/UI: Persist Orchestrator task landing progress, exhausted PR-opening failures, branch-push state, and completion directly on the task projection so failures survive replay without a stage thread, remain visible after restart, and appear in the task board's Needs you section.
 - Fix: Close the Orchestrator task-worktree reactor's startup scan/subscription gap by buffering live events before snapshot capture, replaying durable events after the snapshot cursor, and deduplicating overlap before PR creation and cleanup.
 - Feature/UI: Land approved Orchestrator tasks from task detail through a typed client RPC, with exact gate eligibility, monotonic request progress, retryable request errors, pull-request opening/failure status, and the final PR link.
