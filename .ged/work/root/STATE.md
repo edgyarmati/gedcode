@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-ACCESS-01/02` - make worker full access unconditional, remove opt-ins, and constrain PM access.
+- **Active task**: `ORCH-PMTH-01` - pin PM and stage-attempt thread reuse policy.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -136,6 +136,14 @@
   The repository has no strict `read-only` RuntimeMode literal; PM will use existing
   `approval-required`, which maps Codex to its read-only/on-request sandbox policy, instead of the current
   full-access PM mode. No compatibility fallback will be added.
+- `ORCH-ACCESS-01/02` are complete. Worker stage projections and provider sessions now resolve to one
+  unconditional `full-access` policy, while PM projections, starts, resumes, and resets use the existing
+  `approval-required` policy. Global/project opt-ins were removed from contracts, resolution, persistence
+  allowlists, settings UI, and save paths; legacy keys remain decode-tolerant but inert and are omitted
+  when saved.
+- Final `ORCH-ACCESS-01/02` verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings
+  only), `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages; server 1,421 passed/1
+  skipped, web 1,221 passed).
 
 ## July 13 Working Cutoff
 
@@ -147,8 +155,8 @@
 
 ## Immediate Sequence
 
-1. `ORCH-ACCESS-01..02` make full worker access the reliable default while PM stays constrained.
-2. `ORCH-PMTH-01..02` tighten PM thread reuse and prompt bounds if the core cutoff permits.
+1. `ORCH-PMTH-01` pin PM and stage-attempt thread reuse behavior.
+2. `ORCH-PMTH-02` bound PM re-entry summaries and history cursors.
 
 ## Repository State Notes
 

@@ -296,3 +296,15 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: focused PM/MCP/Claude/engine tests, `bun fmt`, `bun lint` (existing
   warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (all 12 packages;
   server 1,416 passed/1 skipped, web 1,221 passed).
+
+### ORCH-ACCESS-01/02
+
+- Decider and provider-reactor tests prove every new Orchestrator stage projection and actual provider
+  session uses `full-access`, including projects carrying either value of the removed legacy opt-in.
+- PM projection, driver-adapter, and runtime reset tests prove PM threads and sessions consistently use
+  `approval-required`, which maps Codex to its read-only/on-request sandbox policy.
+- Contract, shared resolver, migration, project-settings, and global-settings tests prove the opt-in is
+  absent from current schemas and UI, legacy persisted keys decode without effect, and saves omit them.
+- Verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and `bun run test` (all 12 packages successful; server 1,421 passed/1 skipped, web
+  1,221 passed).
