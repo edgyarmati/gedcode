@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-LAND-03` - add first-class durable landing substates.
+- **Active task**: `ORCH-LAND-04` - add an idempotent failed-landing retry actuator.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -54,11 +54,19 @@
 - Final `ORCH-WT-01` verification passed on 2026-07-11: focused reactor and persistence-backed landing
   race tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
   `bun run test` (server 1,384 passed/1 skipped; web 1,218 passed).
+- `ORCH-LAND-03` is complete in commit `5e52b8859`. Task landing now records durable `opening-pr`,
+  `failed`, and `completed` outcomes across contracts, replay, SQL projections, snapshots, live events,
+  and the web store. Exhausted failures retain actionable detail, branch-push state, and the worktree;
+  startup leaves them stable for the explicit retry actuator instead of retrying implicitly.
+- Final `ORCH-LAND-03` verification passed on 2026-07-12: focused contract/decider/projector/SQL/reactor,
+  real-engine integration, and web tests; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and two clean `bun run test` runs. The final run had server 1,390 passed/1 skipped and
+  web 1,219 passed.
 
 ## Immediate Sequence
 
-1. `ORCH-LAND-03` add durable task-level landing outcomes.
-2. `ORCH-LAND-04` add an idempotent failed-landing retry actuator.
+1. `ORCH-LAND-04` add an idempotent failed-landing retry actuator.
+2. `ORCH-WT-02` add durable worktree ownership/lease metadata and a grace period.
 
 ## Repository State Notes
 

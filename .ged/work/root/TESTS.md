@@ -164,3 +164,17 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   worker without dropping the ongoing hot subscription.
 - Repository gates passed on 2026-07-11: focused reactor/integration tests, `bun fmt`, `bun lint`,
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,384 passed/1 skipped; web 1,218 passed).
+
+### ORCH-LAND-03
+
+- Contract, decider, in-memory projector, SQL projection, snapshot-query, live-event, and web-store tests
+  cover durable `opening-pr`, `failed`, and `completed` task landing metadata plus legacy null defaults.
+- Task-only replay reconstructs all three states without stage-thread activity. Migration 47 preserves
+  legacy rows while adding nullable validated JSON landing state.
+- Reactor and real-engine landing tests prove exhausted provider/git failures persist actionable detail
+  and branch-push state, retain the worktree, and are not retried automatically during startup.
+- Task detail prioritizes durable landing state while retaining the existing activity fallback for older
+  histories; the board keeps PR opening active and routes exhausted failure into Needs you.
+- Verification passed on 2026-07-12: focused contract/decider/projector/projection/reactor/integration/web
+  tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and two clean
+  root `bun run test` passes. The final run had server 1,390 passed/1 skipped and web 1,219 passed.
