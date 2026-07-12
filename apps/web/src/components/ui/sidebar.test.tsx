@@ -7,6 +7,7 @@ import {
   SidebarMenuSubButton,
   SidebarProvider,
   resolveSidebarDefaultOpen,
+  sidebarTitlebarLeftInsetClass,
 } from "./sidebar";
 
 function renderSidebarButton(className?: string) {
@@ -63,5 +64,17 @@ describe("sidebar persisted state", () => {
     expect(resolveSidebarDefaultOpen(undefined)).toBe(true);
     expect(resolveSidebarDefaultOpen("other=value")).toBe(true);
     expect(resolveSidebarDefaultOpen("sidebar_state=invalid")).toBe(true);
+  });
+});
+
+describe("sidebar Electron titlebar inset", () => {
+  it("reserves native window controls only when Electron has a collapsed sidebar", () => {
+    expect(sidebarTitlebarLeftInsetClass({ isElectron: true, sidebarOpen: false })).toContain(
+      "pl-[90px]",
+    );
+    expect(sidebarTitlebarLeftInsetClass({ isElectron: true, sidebarOpen: true })).toBeUndefined();
+    expect(
+      sidebarTitlebarLeftInsetClass({ isElectron: false, sidebarOpen: false }),
+    ).toBeUndefined();
   });
 });

@@ -44,6 +44,15 @@ export function readPersistedSidebarOpen(): boolean {
   return resolveSidebarDefaultOpen(typeof document === "undefined" ? undefined : document.cookie);
 }
 
+export function sidebarTitlebarLeftInsetClass(input: {
+  readonly isElectron: boolean;
+  readonly sidebarOpen: boolean;
+}): string | undefined {
+  return input.isElectron && !input.sidebarOpen
+    ? "pl-[90px] wco:pl-[calc(env(titlebar-area-x)+1em)]"
+    : undefined;
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
   open: boolean;

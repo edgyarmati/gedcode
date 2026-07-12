@@ -11,8 +11,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { Button } from "../components/ui/button";
-import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
+import {
+  sidebarTitlebarLeftInsetClass,
+  SidebarInset,
+  SidebarTrigger,
+  useSidebar,
+} from "../components/ui/sidebar";
 import { isElectron } from "../env";
+import { cn } from "../lib/utils";
 
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
@@ -31,6 +37,7 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 }
 
 function SettingsContentLayout() {
+  const { open: sidebarOpen } = useSidebar();
   const location = useLocation();
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -78,7 +85,12 @@ function SettingsContentLayout() {
         )}
 
         {isElectron && (
-          <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5 wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]">
+          <div
+            className={cn(
+              "drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5 wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
+              sidebarTitlebarLeftInsetClass({ isElectron, sidebarOpen }),
+            )}
+          >
             <SidebarTrigger className="me-2 size-7 shrink-0" />
             <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
               Settings
