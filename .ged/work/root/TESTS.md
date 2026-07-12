@@ -13,6 +13,16 @@ component lifecycle changes require integration coverage; UI interaction changes
   unchanged.
 - Run `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and `bun run test`.
 
+Verification evidence:
+
+- Cookie parser tests cover explicit open/closed values plus absent and malformed defaults.
+- Chromium tests cover desktop collapse/reopen, collapsed-state restoration after remount, and the
+  unchanged mobile sheet path without writing desktop state.
+- The complete browser suite passed 193/193 interactions across 15 files.
+- Repository gates passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1 skipped, web
+  1,223 passed).
+
 ## Lifecycle Safety
 
 - Cancel during a long-running worker command: provider receives interrupt, session stops, stage settles,

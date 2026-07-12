@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: implement.
-- **Active task**: `UI-COLLAPSE-01` - add a persistent desktop left-sidebar toggle.
+- **Phase**: verify (requested sidebar slice complete; remaining roadmap items are deferred).
+- **Active task**: none.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -160,6 +160,13 @@
   passed/1 skipped, web 1,221 passed).
 - All tasks designated urgent through the July 13 cutoff are complete. Remaining `DEFERRED` work stays
   scheduled for after 2026-07-13; canonical pipeline ordering remains explicitly user-deferred.
+- `UI-COLLAPSE-01` is complete in commit `cb4b277c3`. Shared content headers across Chat, empty-chat,
+  Orchestrator, browser Settings, and Electron Settings now expose the desktop off-canvas toggle; the
+  existing persisted cookie restores state and the trigger reflects desktop/mobile expansion correctly.
+- Final `UI-COLLAPSE-01` verification passed on 2026-07-12: focused unit tests, 193/193 Chromium
+  interactions across 15 files, `bun fmt`, `bun lint` (existing warnings only), a clean isolated
+  `bun typecheck` rerun after the known workspace dependency-resolution race, `bun run build`, and
+  `bun run test` (all 12 packages; server 1,424 passed/1 skipped, web 1,223 passed).
 
 ## July 13 Working Cutoff
 
@@ -171,8 +178,7 @@
 
 ## Immediate Sequence
 
-1. `UI-COLLAPSE-01` add and verify the persistent desktop left-sidebar toggle requested after the urgent
-   cutoff scope completed.
+1. None active. Resume deferred items after 2026-07-13 in roadmap priority order.
 
 ## Repository State Notes
 
