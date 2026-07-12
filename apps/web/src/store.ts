@@ -2029,6 +2029,7 @@ function applyEnvironmentOrchestrationEvent(
             stageThreadIds: [],
             currentStageThreadId: null,
             cancellation: null,
+            landing: null,
             roleModelSelections: {},
             playbookVersion: event.payload.playbookVersion,
             createdAt: event.payload.createdAt,
@@ -2218,6 +2219,12 @@ function applyEnvironmentOrchestrationEvent(
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
         status: "landed",
+        landing: {
+          status: "opening-pr",
+          failureMessage: null,
+          branchPushed: false,
+          updatedAt: event.payload.updatedAt,
+        },
         updatedAt: event.payload.updatedAt,
       }));
 
@@ -2272,6 +2279,24 @@ function applyEnvironmentOrchestrationEvent(
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
         prUrl: event.payload.prUrl,
+        landing: {
+          status: "completed",
+          failureMessage: null,
+          branchPushed: true,
+          updatedAt: event.payload.updatedAt,
+        },
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.pr-open-failed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        landing: {
+          status: "failed",
+          failureMessage: event.payload.message,
+          branchPushed: event.payload.branchPushed,
+          updatedAt: event.payload.updatedAt,
+        },
         updatedAt: event.payload.updatedAt,
       }));
 

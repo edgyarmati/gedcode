@@ -743,6 +743,26 @@ it.effect("round-trips task.pr.opened commands through the orchestration command
   }),
 );
 
+it.effect("round-trips task.pr.open.failed commands through the orchestration command union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "task.pr.open.failed",
+      commandId: "cmd-pr-open-failed",
+      taskId: "task-1",
+      message: " provider unavailable ",
+      branchPushed: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reDecoded = yield* decodeOrchestrationCommand(yield* encodeOrchestrationCommand(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr.open.failed");
+    if (reDecoded.type === "task.pr.open.failed") {
+      assert.strictEqual(reDecoded.message, "provider unavailable");
+      assert.strictEqual(reDecoded.branchPushed, true);
+    }
+  }),
+);
+
 it.effect("round-trips thread.clear commands through the orchestration command union", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationCommand({
@@ -910,6 +930,36 @@ it.effect("round-trips task.pr-opened events through the orchestration event uni
   }),
 );
 
+it.effect("round-trips task.pr-open-failed events through the orchestration event union", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-pr-open-failed",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.pr-open-failed",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-pr-open-failed",
+      causationEventId: null,
+      correlationId: "cmd-pr-open-failed",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        message: "provider unavailable",
+        branchPushed: false,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(parsed));
+
+    assert.strictEqual(reDecoded.type, "task.pr-open-failed");
+    if (reDecoded.type === "task.pr-open-failed") {
+      assert.strictEqual(reDecoded.payload.message, "provider unavailable");
+      assert.strictEqual(reDecoded.payload.branchPushed, false);
+    }
+  }),
+);
+
 it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips opened URLs", () =>
   Effect.gen(function* () {
     const decodedDefault = yield* decodeOrchestrationTask({
@@ -928,6 +978,7 @@ it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips o
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(decodedDefault.prUrl, null);
+    assert.strictEqual(decodedDefault.landing, null);
 
     const decodedOpened = yield* decodeOrchestrationTask({
       ...decodedDefault,
@@ -935,6 +986,22 @@ it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips o
     });
     const reDecoded = yield* decodeOrchestrationTask(yield* encodeOrchestrationTask(decodedOpened));
     assert.strictEqual(reDecoded.prUrl, "https://github.com/acme/repo/pull/42");
+
+    const decodedFailed = yield* decodeOrchestrationTask({
+      ...decodedDefault,
+      status: "landed",
+      landing: {
+        status: "failed",
+        failureMessage: "provider unavailable",
+        branchPushed: false,
+        updatedAt: "2026-01-01T00:01:00.000Z",
+      },
+    });
+    const reDecodedFailed = yield* decodeOrchestrationTask(
+      yield* encodeOrchestrationTask(decodedFailed),
+    );
+    assert.strictEqual(reDecodedFailed.landing?.status, "failed");
+    assert.strictEqual(reDecodedFailed.landing?.failureMessage, "provider unavailable");
   }),
 );
 

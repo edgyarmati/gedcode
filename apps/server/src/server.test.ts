@@ -3374,6 +3374,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         stageThreadIds: [ThreadId.make("thread-plan")],
         currentStageThreadId: ThreadId.make("thread-plan"),
         cancellation: null,
+        landing: null,
         playbookVersion: "feature@v1",
         createdAt: now,
         updatedAt: now,

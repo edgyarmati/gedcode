@@ -6,6 +6,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  OrchestrationTaskLanding,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -19,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -47,6 +49,10 @@ const makeProjectionPipelinePrefixedTestLayer = (prefix: string) =>
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
   );
+
+const decodeTaskLandingJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(OrchestrationTaskLanding),
+);
 
 const exists = (filePath: string) =>
   Effect.gen(function* () {
@@ -624,12 +630,21 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       ]);
 
-      const taskRows = yield* sql<{ readonly prUrl: string | null }>`
-        SELECT pr_url AS "prUrl"
+      const taskRows = yield* sql<{
+        readonly prUrl: string | null;
+        readonly landing: string | null;
+      }>`
+        SELECT pr_url AS "prUrl", landing_json AS "landing"
         FROM projection_tasks
         WHERE task_id = ${taskId}
       `;
       assert.strictEqual(taskRows[0]?.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.deepEqual(decodeTaskLandingJson(taskRows[0]?.landing), {
+        status: "completed",
+        failureMessage: null,
+        branchPushed: true,
+        updatedAt: "2026-06-22T00:00:04.000Z",
+      });
     }),
   );
 

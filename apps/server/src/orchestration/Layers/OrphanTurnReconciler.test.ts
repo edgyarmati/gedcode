@@ -129,6 +129,7 @@ function makeTask(input: {
           failedAt: null,
         }
       : null,
+    landing: null,
     playbookVersion: "feature@v1",
     createdAt: now,
     updatedAt: now,

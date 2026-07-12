@@ -23,6 +23,7 @@ import {
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
+  TaskPrOpenFailedPayload,
   TaskPrOpenedPayload,
   TaskRoleSelectionsUpdatedPayload,
   TaskStageBlockedPayload,
@@ -862,6 +863,7 @@ export function projectEvent(
             stageThreadIds: [],
             currentStageThreadId: null,
             cancellation: null,
+            landing: null,
             roleModelSelections: {},
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
@@ -1173,6 +1175,12 @@ export function projectEvent(
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
             status: "landed",
+            landing: {
+              status: "opening-pr",
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: payload.updatedAt,
+            },
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -1259,6 +1267,28 @@ export function projectEvent(
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
             prUrl: payload.prUrl,
+            landing: {
+              status: "completed",
+              failureMessage: null,
+              branchPushed: true,
+              updatedAt: payload.updatedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.pr-open-failed":
+      return decodeForEvent(TaskPrOpenFailedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            landing: {
+              status: "failed",
+              failureMessage: payload.message,
+              branchPushed: payload.branchPushed,
+              updatedAt: payload.updatedAt,
+            },
             updatedAt: payload.updatedAt,
           }),
         })),

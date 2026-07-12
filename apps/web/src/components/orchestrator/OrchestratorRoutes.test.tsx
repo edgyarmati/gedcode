@@ -81,6 +81,7 @@ function makeBoardTask(
     stageThreadIds: [],
     currentStageThreadId: null,
     cancellation: null,
+    landing: null,
     roleModelSelections: {},
     playbookVersion: null,
     createdAt: "2026-06-14T00:00:00.000Z",
@@ -277,11 +278,47 @@ describe("TaskBoard bucketing helpers", () => {
     expect(needsYouReason(entry("blocked", ["land"]))).toEqual({ kind: "gate", gate: "land" });
   });
 
+  it("keeps PR opening active and routes durable landing failure into Needs you", () => {
+    const opening = entry("landed");
+    const failed = entry("landed");
+    const partition = partitionBoardTasks([
+      {
+        ...opening,
+        task: {
+          ...opening.task,
+          landing: {
+            status: "opening-pr",
+            failureMessage: null,
+            branchPushed: false,
+            updatedAt: opening.task.updatedAt,
+          },
+        },
+      },
+      {
+        ...failed,
+        task: {
+          ...failed.task,
+          landing: {
+            status: "failed",
+            failureMessage: "provider unavailable",
+            branchPushed: true,
+            updatedAt: failed.task.updatedAt,
+          },
+        },
+      },
+    ]);
+
+    expect(partition.active).toHaveLength(1);
+    expect(partition.needsYou.map(({ reason }) => reason)).toEqual([{ kind: "landing-failed" }]);
+    expect(partition.landed).toHaveLength(0);
+  });
+
   it("labels needs-you reasons", () => {
     expect(needsYouReasonLabel({ kind: "gate", gate: "plan" })).toBe("Awaiting plan approval");
     expect(needsYouReasonLabel({ kind: "gate", gate: "land" })).toBe("Awaiting land approval");
     expect(needsYouReasonLabel({ kind: "blocked" })).toBe("Blocked");
     expect(needsYouReasonLabel({ kind: "quota" })).toBe("Quota");
+    expect(needsYouReasonLabel({ kind: "landing-failed" })).toBe("Landing failed");
   });
 
   it("maps active statuses to stage-role labels", () => {

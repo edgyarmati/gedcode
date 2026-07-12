@@ -742,6 +742,9 @@ it.live("fails loud without a supported provider and leaves the worktree recover
 
       yield* approveLandAndDispatch({ harness, suffix: "unsupported", taskId: id, stageThreadId });
       yield* harness.waitForDomainEvent(
+        (event) => event.type === "task.pr-open-failed" && event.payload.taskId === id,
+      );
+      yield* harness.waitForDomainEvent(
         (event) =>
           event.type === "thread.activity-appended" &&
           event.payload.activity.kind === "task.landing.pr-open-failed",
@@ -756,6 +759,9 @@ it.live("fails loud without a supported provider and leaves the worktree recover
       const events = yield* readAllEvents(harness);
 
       assert.equal(afterFailure.prUrl, null);
+      assert.equal(afterFailure.landing?.status, "failed");
+      assert.equal(afterFailure.landing?.branchPushed, false);
+      assert.match(afterFailure.landing?.failureMessage ?? "", /unsupported/i);
       assert.equal(existsSync(worktreePath), true);
       assert.deepEqual(harness.landingMocks?.pushCurrentBranchCalls, []);
       assert.deepEqual(harness.landingMocks?.removeWorktreeCalls, []);

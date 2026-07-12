@@ -29,6 +29,7 @@ function makeTask(overrides: Partial<OrchestratorTask> = {}): OrchestratorTask {
     stageThreadIds: [],
     currentStageThreadId: null,
     cancellation: null,
+    landing: null,
     roleModelSelections: {},
     playbookVersion: null,
     createdAt: "2026-07-11T00:00:00.000Z",
@@ -129,6 +130,21 @@ describe("deriveTaskLandingPresentation", () => {
         requestError: "connection reset",
       }),
     ).toEqual({ kind: "unavailable" });
+    expect(
+      deriveTaskLandingPresentation({
+        task: makeTask({
+          status: "landed",
+          landing: {
+            status: "failed",
+            failureMessage: "durable provider failure",
+            branchPushed: true,
+            updatedAt: "2026-07-11T00:04:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+      }),
+    ).toEqual({ kind: "failed", message: "durable provider failure" });
     expect(
       deriveTaskLandingPresentation({
         task: makeTask({ status: "landed" }),

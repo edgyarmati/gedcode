@@ -58,7 +58,8 @@ export function activeStageLabel(status: OrchestratorTask["status"]): string {
 export type NeedsYouReason =
   | { readonly kind: "gate"; readonly gate: OrchestrationGateKind }
   | { readonly kind: "blocked" }
-  | { readonly kind: "quota" };
+  | { readonly kind: "quota" }
+  | { readonly kind: "landing-failed" };
 
 export interface BoardTaskEntry {
   readonly task: OrchestratorTask;
@@ -78,6 +79,9 @@ export function needsYouReason(entry: BoardTaskEntry): NeedsYouReason | null {
   if (entry.task.status === "blocked-on-quota") {
     return { kind: "quota" };
   }
+  if (entry.task.landing?.status === "failed") {
+    return { kind: "landing-failed" };
+  }
   return null;
 }
 
@@ -87,6 +91,8 @@ export function needsYouReasonLabel(reason: NeedsYouReason): string {
       return "Blocked";
     case "quota":
       return "Quota";
+    case "landing-failed":
+      return "Landing failed";
     case "gate":
       return `Awaiting ${reason.gate} approval`;
   }
@@ -117,7 +123,11 @@ export function partitionBoardTasks(entries: readonly BoardTaskEntry[]): BoardPa
     }
     const status = entry.task.status;
     if (status === "landed") {
-      landed.push(entry.task);
+      if (entry.task.landing?.status === "opening-pr") {
+        active.push(entry.task);
+      } else {
+        landed.push(entry.task);
+      }
     } else if (status === "abandoned") {
       abandoned.push(entry.task);
     } else if (ACTIVE_STATUSES.has(status)) {

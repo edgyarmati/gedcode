@@ -37,6 +37,15 @@ export function deriveTaskLandingPresentation(input: {
   }
 
   if (task.status === "landed") {
+    if (task.landing?.status === "failed") {
+      return {
+        kind: "failed",
+        message: task.landing.failureMessage ?? "Pull request creation failed.",
+      };
+    }
+    if (task.landing?.status === "opening-pr") {
+      return { kind: "opening-pr" };
+    }
     const failure = input.activities.findLast((activity) =>
       isLandingFailureForTask(activity, task.id),
     );

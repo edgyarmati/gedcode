@@ -60,6 +60,7 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
     failureMessage: "server exited while stopping the provider",
     failedAt: now,
   },
+  landing: null,
   roleModelSelections: {},
   playbookVersion: "feature@v1",
   createdAt: now,

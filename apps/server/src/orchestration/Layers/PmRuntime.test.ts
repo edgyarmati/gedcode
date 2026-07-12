@@ -152,6 +152,7 @@ const task: OrchestrationTask = {
   pmMessageId: MessageId.make("pm-message-1"),
   stageThreadIds: [stageThreadId],
   currentStageThreadId: null,
+  landing: null,
   playbookVersion: "feature@v1",
   createdAt: now,
   updatedAt: now,

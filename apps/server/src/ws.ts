@@ -177,6 +177,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.cancellation-phase-completed"
       | "task.landed"
       | "task.pr-opened"
+      | "task.pr-open-failed"
       | "task.abandoned";
   }
 > {
@@ -195,6 +196,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.cancellation-phase-completed" ||
     event.type === "task.landed" ||
     event.type === "task.pr-opened" ||
+    event.type === "task.pr-open-failed" ||
     event.type === "task.abandoned"
   );
 }

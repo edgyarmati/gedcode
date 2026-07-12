@@ -117,6 +117,7 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   stageThreadIds: [stageThreadId],
   currentStageThreadId: stageThreadId,
   cancellation: null,
+  landing: null,
   roleModelSelections: {
     plan: {
       instanceId: ProviderInstanceId.make("codex_plan"),

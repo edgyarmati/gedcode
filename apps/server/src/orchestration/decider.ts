@@ -1670,6 +1670,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "task.pr.open.failed": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "landed" || task.prUrl !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be landed without an opened PR before PR failure can be recorded.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.pr-open-failed",
+        payload: {
+          taskId: command.taskId,
+          message: command.message,
+          branchPushed: command.branchPushed,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "task.abandon": {
       const task = yield* requireTask({
         readModel,

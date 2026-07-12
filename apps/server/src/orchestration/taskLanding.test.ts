@@ -28,6 +28,7 @@ const makeTask = (status: OrchestrationTask["status"]): OrchestrationTask => ({
   stageThreadIds: [],
   currentStageThreadId: null,
   cancellation: null,
+  landing: null,
   roleModelSelections: {},
   playbookVersion: null,
   createdAt: now,

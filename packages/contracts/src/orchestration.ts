@@ -504,6 +504,21 @@ export const OrchestrationTaskCancellation = Schema.Struct({
 });
 export type OrchestrationTaskCancellation = typeof OrchestrationTaskCancellation.Type;
 
+export const OrchestrationTaskLandingStatus = Schema.Literals([
+  "opening-pr",
+  "failed",
+  "completed",
+]);
+export type OrchestrationTaskLandingStatus = typeof OrchestrationTaskLandingStatus.Type;
+
+export const OrchestrationTaskLanding = Schema.Struct({
+  status: OrchestrationTaskLandingStatus,
+  failureMessage: Schema.NullOr(TrimmedNonEmptyString),
+  branchPushed: Schema.Boolean,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
+
 /**
  * The task aggregate: one worktree + branch, grouping per-stage worker threads.
  *
@@ -525,6 +540,9 @@ export const OrchestrationTask = Schema.Struct({
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
   cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
+  landing: Schema.NullOr(OrchestrationTaskLanding).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -1079,6 +1097,15 @@ const TaskPrOpenedCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskPrOpenFailedCommand = Schema.Struct({
+  type: Schema.Literal("task.pr.open.failed"),
+  commandId: CommandId,
+  taskId: TaskId,
+  message: TrimmedNonEmptyString,
+  branchPushed: Schema.Boolean,
+  createdAt: IsoDateTime,
+});
+
 const TaskAbandonCommand = Schema.Struct({
   type: Schema.Literal("task.abandon"),
   commandId: CommandId,
@@ -1272,6 +1299,7 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskStageBlockCommand,
   TaskStageInterruptCommand,
   TaskPrOpenedCommand,
+  TaskPrOpenFailedCommand,
   TaskAbandonCommand,
   TaskCancellationRequestCommand,
   TaskCancellationFailCommand,
@@ -1325,6 +1353,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.cancellation-phase-completed",
   "task.landed",
   "task.pr-opened",
+  "task.pr-open-failed",
   "task.abandoned",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
@@ -1647,6 +1676,13 @@ export const TaskPrOpenedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskPrOpenFailedPayload = Schema.Struct({
+  taskId: TaskId,
+  message: TrimmedNonEmptyString,
+  branchPushed: Schema.Boolean,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskAbandonedPayload = Schema.Struct({
   taskId: TaskId,
   updatedAt: IsoDateTime,
@@ -1868,6 +1904,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.pr-opened"),
     payload: TaskPrOpenedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.pr-open-failed"),
+    payload: TaskPrOpenFailedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

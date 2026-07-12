@@ -14,6 +14,7 @@ import {
   OrchestrationStageHistoryEntry,
   OrchestrationTask,
   OrchestrationTaskCancellation,
+  OrchestrationTaskLanding,
   OrchestrationThread,
   PendingPmHandoff,
   ProjectScript,
@@ -123,6 +124,7 @@ const ProjectionTaskDbRowSchema = ProjectionTask.mapFields(
     stageThreadIds: Schema.fromJsonString(Schema.Array(ThreadId)),
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
     cancellation: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskCancellation)),
+    landing: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskLanding)),
   }),
 );
 const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate;
@@ -282,6 +284,7 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     stageThreadIds: row.stageThreadIds,
     currentStageThreadId: row.currentStageThreadId,
     cancellation: row.cancellation,
+    landing: row.landing,
     roleModelSelections: row.roleModelSelections,
     playbookVersion: row.playbookVersion,
     createdAt: row.createdAt,
@@ -664,6 +667,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
           cancellation_json AS "cancellation",
+          landing_json AS "landing",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",

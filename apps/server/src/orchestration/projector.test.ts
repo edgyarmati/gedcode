@@ -1959,9 +1959,53 @@ describe("orchestration projector", () => {
         }),
       ),
     );
+    const afterLanded = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "task.landed",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: openedAt,
+          commandId: "cmd-landed",
+          payload: {
+            taskId: "task-pr",
+            updatedAt: openedAt,
+          },
+        }),
+      ),
+    );
+    const afterPrOpenFailed = await Effect.runPromise(
+      projectEvent(
+        afterLanded,
+        makeEvent({
+          sequence: 3,
+          type: "task.pr-open-failed",
+          aggregateKind: "task",
+          aggregateId: "task-pr",
+          occurredAt: openedAt,
+          commandId: "cmd-pr-open-failed",
+          payload: {
+            taskId: "task-pr",
+            message: "provider unavailable",
+            branchPushed: true,
+            updatedAt: openedAt,
+          },
+        }),
+      ),
+    );
 
     expect(afterCreate.tasks[0]?.prUrl).toBeNull();
+    expect(afterCreate.tasks[0]?.landing).toBeNull();
+    expect(afterLanded.tasks[0]?.landing?.status).toBe("opening-pr");
     expect(afterPrOpened.tasks[0]?.prUrl).toBe("https://github.com/acme/repo/pull/42");
+    expect(afterPrOpened.tasks[0]?.landing?.status).toBe("completed");
+    expect(afterPrOpenFailed.tasks[0]?.landing).toMatchObject({
+      status: "failed",
+      failureMessage: "provider unavailable",
+      branchPushed: true,
+    });
     expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
   });
 });

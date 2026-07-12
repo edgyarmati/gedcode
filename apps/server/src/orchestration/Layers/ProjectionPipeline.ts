@@ -1539,6 +1539,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               stageThreadIds: [],
               currentStageThreadId: null,
               cancellation: null,
+              landing: null,
               roleModelSelections: {},
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
@@ -1701,6 +1702,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               status: "landed",
+              landing: {
+                status: "opening-pr",
+                failureMessage: null,
+                branchPushed: false,
+                updatedAt: event.payload.updatedAt,
+              },
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -1777,6 +1784,32 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               prUrl: event.payload.prUrl,
+              landing: {
+                status: "completed",
+                failureMessage: null,
+                branchPushed: true,
+                updatedAt: event.payload.updatedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.pr-open-failed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              landing: {
+                status: "failed",
+                failureMessage: event.payload.message,
+                branchPushed: event.payload.branchPushed,
+                updatedAt: event.payload.updatedAt,
+              },
               updatedAt: event.payload.updatedAt,
             });
             return;

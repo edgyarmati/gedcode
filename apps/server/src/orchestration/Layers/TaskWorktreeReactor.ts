@@ -19,6 +19,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -112,7 +113,12 @@ function listPendingLandedTaskContexts(
 ): ReadonlyArray<LandedTaskContext> {
   const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
   return readModel.tasks.flatMap((task) => {
-    if (task.status !== "landed" || task.prUrl !== null || task.worktreePath === null) {
+    if (
+      task.status !== "landed" ||
+      task.prUrl !== null ||
+      task.worktreePath === null ||
+      task.landing?.status === "failed"
+    ) {
       return [];
     }
     const project = projectById.get(String(task.projectId));
@@ -129,6 +135,10 @@ function taskPrOpenedCommandId(taskId: string): CommandId {
 
 function taskPrOpenFailedCommandId(taskId: string): CommandId {
   return CommandId.make(`task-pr-open-failed:${taskId}`);
+}
+
+function taskLandingFailedCommandId(taskId: string): CommandId {
+  return CommandId.make(`task-landing-failed:${taskId}`);
 }
 
 function landingFailureActivityId(taskId: string): EventId {
@@ -168,6 +178,21 @@ function createPrBody(input: {
 }
 
 function errorDetail(cause: Cause.Cause<unknown>): string {
+  const failure = Cause.findErrorOption(cause);
+  if (Option.isSome(failure)) {
+    const error = failure.value;
+    if (typeof error === "object" && error !== null) {
+      if ("detail" in error && typeof error.detail === "string" && error.detail.trim() !== "") {
+        return error.detail.trim();
+      }
+      if ("message" in error && typeof error.message === "string" && error.message.trim() !== "") {
+        return error.message.trim();
+      }
+    }
+    if (typeof error === "string" && error.trim() !== "") {
+      return error.trim();
+    }
+  }
   return Cause.pretty(cause)
     .split("\n")
     .map((line) => line.trim())
@@ -333,6 +358,23 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       },
     );
 
+    const recordLandingFailure = Effect.fn("recordLandingFailure")(function* (input: {
+      readonly context: LandedTaskContext;
+      readonly detail: string;
+      readonly branchPushed: boolean;
+    }) {
+      const taskId = String(input.context.task.id);
+      const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+      yield* orchestrationEngine.dispatch({
+        type: "task.pr.open.failed",
+        commandId: taskLandingFailedCommandId(taskId),
+        taskId: input.context.task.id,
+        message: input.detail,
+        branchPushed: input.branchPushed,
+        createdAt,
+      });
+    });
+
     const openTaskPrAndRecord = Effect.fn("openTaskPrAndRecord")(function* (input: {
       readonly context: LandedTaskContext;
       readonly onBranchPushed: Effect.Effect<void, never>;
@@ -460,6 +502,14 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       }
 
       const detail = errorDetail(exit.cause);
+      yield* recordLandingFailure({ context, detail, branchPushed }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("landing PR failure task state update failed", {
+            taskId: String(context.task.id),
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
       yield* appendLandingFailureActivity({ context, detail, branchPushed });
       yield* Effect.logWarning("landing PR open failed; leaving task worktree intact", {
         taskId: String(context.task.id),

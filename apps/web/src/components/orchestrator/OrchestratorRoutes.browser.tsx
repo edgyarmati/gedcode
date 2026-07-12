@@ -33,6 +33,7 @@ const makeTask = (status: "planning" | "review" | "landed" | "abandoned" = "plan
     stageThreadIds: [],
     currentStageThreadId: null,
     cancellation: null,
+    landing: null,
     roleModelSelections: {},
     playbookVersion: null,
     createdAt: "2026-06-14T00:00:00.000Z",

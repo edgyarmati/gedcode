@@ -67,6 +67,7 @@ function makeReadModel(input: {
   readonly worktreePath: string | null;
   readonly taskStatus: OrchestrationReadModel["tasks"][number]["status"];
   readonly prUrl?: string | null;
+  readonly landing?: OrchestrationReadModel["tasks"][number]["landing"];
   readonly openPrAsDraft?: boolean;
 }): OrchestrationReadModel {
   return {
@@ -130,6 +131,7 @@ function makeReadModel(input: {
         pmMessageId: null,
         stageThreadIds: [stageThreadId],
         currentStageThreadId: null,
+        landing: input.landing ?? null,
         playbookVersion: "feature@v1",
         createdAt: now,
         updatedAt: now,
@@ -641,6 +643,33 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
+  it("does not automatically retry an exhausted landing failure during startup", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "landed",
+        landing: {
+          status: "failed",
+          failureMessage: "provider unavailable",
+          branchPushed: false,
+          updatedAt: now,
+        },
+      }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+
+    expect(harness.resolveHandle).not.toHaveBeenCalled();
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
   it("fails loud and keeps the worktree when the source-control provider is unsupported", async () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
     const unsupportedProvider = SourceControlProvider.SourceControlProvider.of({
@@ -683,13 +712,20 @@ describe("TaskWorktreeReactor", () => {
       taskStatus: "landed",
     });
     await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
-    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await waitFor(() => harness.dispatch.mock.calls.length === 2);
     await harness.runtime.runPromise(harness.reactor.drain);
 
     expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
     expect(harness.createChangeRequest).not.toHaveBeenCalled();
     expect(harness.removeWorktree).not.toHaveBeenCalled();
-    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.pr.open.failed",
+        commandId: CommandId.make("task-landing-failed:task-1"),
+        branchPushed: false,
+      }),
+    );
+    expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "thread.activity.append",
         commandId: CommandId.make("task-pr-open-failed:task-1"),
@@ -726,12 +762,18 @@ describe("TaskWorktreeReactor", () => {
       taskStatus: "landed",
     });
     await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
-    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await waitFor(() => harness.dispatch.mock.calls.length === 2);
     await harness.runtime.runPromise(harness.reactor.drain);
 
     expect(harness.createChangeRequest).not.toHaveBeenCalled();
     expect(harness.removeWorktree).not.toHaveBeenCalled();
-    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.pr.open.failed",
+        branchPushed: false,
+      }),
+    );
+    expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "thread.activity.append",
         activity: expect.objectContaining({
@@ -779,12 +821,18 @@ describe("TaskWorktreeReactor", () => {
       taskStatus: "landed",
     });
     await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
-    await waitFor(() => harness.dispatch.mock.calls.length === 1);
+    await waitFor(() => harness.dispatch.mock.calls.length === 2);
     await harness.runtime.runPromise(harness.reactor.drain);
 
     expect(harness.pushCurrentBranch).toHaveBeenCalled();
     expect(harness.removeWorktree).not.toHaveBeenCalled();
-    expect(harness.dispatch.mock.calls[0]?.[0]).toEqual(
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.pr.open.failed",
+        branchPushed: true,
+      }),
+    );
+    expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "thread.activity.append",
         activity: expect.objectContaining({

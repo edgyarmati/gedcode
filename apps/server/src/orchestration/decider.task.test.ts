@@ -1902,6 +1902,60 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("records an exhausted PR-open failure on a landed task", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "landed", prUrl: null });
+
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.pr.open.failed",
+          commandId: asCommandId("cmd-pr-open-failed"),
+          taskId: asTaskId("task-1"),
+          message: "provider unavailable",
+          branchPushed: true,
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.pr-open-failed");
+      expect(singleEvent?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        message: "provider unavailable",
+        branchPushed: true,
+        updatedAt: now,
+      });
+    }),
+  );
+
+  it.effect("rejects PR-open failure before landing or after a PR exists", () =>
+    Effect.gen(function* () {
+      for (const readModel of [
+        yield* taskReadModel({ status: "review", prUrl: null }),
+        yield* taskReadModel({
+          status: "landed",
+          prUrl: "https://github.com/acme/repo/pull/42",
+        }),
+      ]) {
+        const result = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.pr.open.failed",
+              commandId: asCommandId(`cmd-pr-open-failed-${readModel.snapshotSequence}`),
+              taskId: asTaskId("task-1"),
+              message: "provider unavailable",
+              branchPushed: false,
+              createdAt: now,
+            },
+          }),
+        );
+        expect(result._tag).toBe("Failure");
+      }
+    }),
+  );
+
   it.effect("abandons a non-terminal task", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "blocked" });
