@@ -166,6 +166,7 @@ export interface WsRpcClient {
     >;
     readonly landTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.landTask>;
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
+    readonly interruptStage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.interruptStage>;
     readonly listArchivedTasks: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.listArchivedTasks>;
     readonly archiveTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.archiveTask>;
     readonly restoreTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.restoreTask>;
@@ -363,6 +364,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.landTask](input)),
       cancelTask: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
+      interruptStage: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.interruptStage](input)),
       listArchivedTasks: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.listArchivedTasks](input)),
       archiveTask: (input) =>

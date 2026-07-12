@@ -502,6 +502,89 @@ describe("ProviderRuntimeIngestion", () => {
     expect(pmThread?.session ?? null).toBeNull();
   });
 
+  it("settles a provider-interrupted active stage without completing it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-interrupt-project"),
+        projectId: asProjectId("project-1"),
+        orchestratorConfig: {},
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-interrupt-task"),
+        taskId: asTaskId("task-1"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Interrupt provider task",
+        pmMessageId: null,
+        branch: "orchestrator/task-1",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-interrupt-stage"),
+        taskId: asTaskId("task-1"),
+        role: "work",
+        instructions: "Implement until interrupted.",
+        createdAt: now,
+      }),
+    );
+    const runningTask = await waitForTask(
+      harness.readModel,
+      (task) => task.status === "working" && task.currentStageThreadId !== null,
+    );
+    const stageThreadId = runningTask.currentStageThreadId;
+    expect(stageThreadId).not.toBeNull();
+    if (stageThreadId === null) return;
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-interrupt-turn-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: stageThreadId,
+      createdAt: now,
+      turnId: asTurnId("turn-interrupt-stage"),
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) => thread.session?.activeTurnId === "turn-interrupt-stage",
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      stageThreadId,
+    );
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-interrupt-turn-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: stageThreadId,
+      createdAt: now,
+      turnId: asTurnId("turn-interrupt-stage"),
+      payload: { state: "interrupted" },
+    });
+
+    const interruptedTask = await waitForTask(
+      harness.readModel,
+      (task) => task.status === "blocked" && task.currentStageThreadId === null,
+    );
+    expect(interruptedTask.stageThreadIds).toContain(stageThreadId);
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const interrupted = events.filter((event) => event.type === "task.stage-interrupted");
+    expect(interrupted).toHaveLength(1);
+    expect(interrupted[0]?.payload.reason).toBe("operator");
+    expect(events.filter((event) => event.type === "task.stage-completed")).toHaveLength(0);
+  });
+
   it("completes an active stage via the fail-loud diff-wait timeout when no diff is captured", async () => {
     // The immediate task.stage.complete dispatch on turn.completed was replaced
     // (WP-2) by a CheckpointReactor diff-gate plus this fail-loud timeout

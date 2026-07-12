@@ -23,6 +23,7 @@ import {
   type OrchestrationThread,
   ORCHESTRATOR_WS_METHODS,
   OrchestrationCancelTaskError,
+  OrchestrationInterruptStageError,
   OrchestrationLandTaskError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
@@ -56,6 +57,7 @@ import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
+import { interruptOrchestrationStageWithServices } from "./orchestration/stageInterrupt.ts";
 import {
   landOrchestrationTaskWithServices,
   OrchestrationLandTaskError as TaskLandingError,
@@ -106,6 +108,7 @@ import {
 import { respondToAuthError } from "./auth/http.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const isOrchestrationCancelTaskError = Schema.is(OrchestrationCancelTaskError);
+const isOrchestrationInterruptStageError = Schema.is(OrchestrationInterruptStageError);
 const isTaskLandingError = (cause: unknown): cause is TaskLandingError =>
   cause instanceof TaskLandingError;
 const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
@@ -1326,6 +1329,26 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 isOrchestrationCancelTaskError(cause)
                   ? cause
                   : toDispatchCommandError(cause, "Failed to cancel orchestration task"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.interruptStage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.interruptStage,
+            interruptOrchestrationStageWithServices(
+              { snapshotQuery: projectionSnapshotQuery },
+              {
+                taskId: input.taskId,
+                commandId: serverCommandId("orchestrator-interrupt-stage"),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.mapError((cause) =>
+                isOrchestrationInterruptStageError(cause)
+                  ? cause
+                  : toDispatchCommandError(cause, "Failed to interrupt orchestration stage"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },

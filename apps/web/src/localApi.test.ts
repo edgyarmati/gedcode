@@ -123,6 +123,7 @@ const rpcClientMock = {
     setTaskRoleSelections: vi.fn(),
     landTask: vi.fn(),
     cancelTask: vi.fn(),
+    interruptStage: vi.fn(),
     listArchivedTasks: vi.fn(),
     archiveTask: vi.fn(),
     restoreTask: vi.fn(),
@@ -486,6 +487,12 @@ describe("wsApi", () => {
       alreadyLanded: false,
     });
     rpcClientMock.orchestrator.cancelTask.mockResolvedValue({ sequence: 45 });
+    rpcClientMock.orchestrator.interruptStage.mockResolvedValue({
+      taskId: TaskId.make("task-1"),
+      stageThreadId: ThreadId.make("stage-thread-1"),
+      sequence: 49,
+      status: "requested",
+    });
     rpcClientMock.orchestrator.listArchivedTasks.mockResolvedValue([]);
     rpcClientMock.orchestrator.archiveTask.mockResolvedValue({ sequence: 46 });
     rpcClientMock.orchestrator.restoreTask.mockResolvedValue({ sequence: 47 });
@@ -529,6 +536,12 @@ describe("wsApi", () => {
       }),
     ).resolves.toEqual({ sequence: 43 });
     await expect(api.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 45 });
+    await expect(api.orchestrator.interruptStage({ taskId })).resolves.toEqual({
+      taskId,
+      stageThreadId: ThreadId.make("stage-thread-1"),
+      sequence: 49,
+      status: "requested",
+    });
     await expect(api.orchestrator.landTask({ taskId })).resolves.toEqual({
       sequence: 44,
       alreadyLanded: false,
@@ -570,6 +583,7 @@ describe("wsApi", () => {
       },
     });
     expect(rpcClientMock.orchestrator.cancelTask).toHaveBeenCalledWith({ taskId });
+    expect(rpcClientMock.orchestrator.interruptStage).toHaveBeenCalledWith({ taskId });
     expect(rpcClientMock.orchestrator.landTask).toHaveBeenCalledWith({ taskId });
     expect(rpcClientMock.orchestrator.listArchivedTasks).toHaveBeenCalledWith({ projectId });
     expect(rpcClientMock.orchestrator.archiveTask).toHaveBeenCalledWith({ taskId });

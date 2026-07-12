@@ -3789,6 +3789,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             assert.equal(setTaskRoleSelectionsResult.sequence, 41);
 
+            const interruptStageResult = yield* client[ORCHESTRATOR_WS_METHODS.interruptStage]({
+              taskId,
+            });
+            assert.deepEqual(interruptStageResult, {
+              taskId,
+              stageThreadId: ThreadId.make("thread-plan"),
+              sequence: 41,
+              status: "requested",
+            });
+
             const cancelTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.cancelTask]({
               taskId,
             });
@@ -3865,6 +3875,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       if (cancelTaskCommand?.type === "task.abandon") {
         assert.equal(cancelTaskCommand.taskId, taskId);
         assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(cancelTaskCommand.createdAt));
+      }
+      const interruptCommand = dispatched.find(
+        (command) => command.type === "thread.turn.interrupt",
+      );
+      assert.isDefined(interruptCommand);
+      if (interruptCommand?.type === "thread.turn.interrupt") {
+        assert.equal(interruptCommand.threadId, ThreadId.make("thread-plan"));
+        assert.equal(interruptCommand.turnId, TurnId.make("turn-plan"));
       }
 
       const landTaskCommand = dispatched.find((command) => command.type === "task.land");

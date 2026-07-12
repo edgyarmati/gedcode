@@ -164,7 +164,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "For heavier exploration or research that would bog you down, spin up your own native subagents using your built-in agent/Task tool instead of doing it inline. Run several in parallel when useful, and keep only their conclusions in your context.",
     "When a plan is doubtful or a second opinion would help, dispatch a plan-review agent with handoffWorker using the `review` role before committing to the plan.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
-    "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; prefer steering over cancelling and re-handing-off when the same stage can continue.",
+    "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
     "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
     pmDecisionPromptLine(driverKind),
@@ -442,15 +442,16 @@ const interruptedStageMessage = (input: {
   readonly task: OrchestrationTask;
 }): string => {
   const payload = input.event.payload;
-  return boundUntrustedContent(`A worker stage was interrupted during server restart recovery.
+  const operatorInterrupted = payload.reason === "operator";
+  return boundUntrustedContent(`A worker stage was interrupted${operatorInterrupted ? " by an operator" : " during server restart recovery"}.
 
 Task: ${input.task.title}
 Task ID: ${input.task.id}
 Stage role: ${payload.role}
 Stage thread ID: ${payload.stageThreadId}
-Reason: the projected active stage had no live provider session.
+Reason: ${operatorInterrupted ? "the provider confirmed the requested turn interruption" : "the projected active stage had no live provider session"}.
 
-The stale stage ownership was cleared and the task is blocked. Retry the same role with a fresh worker handoff after checking whether the prior attempt left useful work in the task worktree.`);
+The stage ownership was cleared and the task is blocked. Retry the same role with a fresh worker handoff after checking whether the prior attempt left useful work in the task worktree.`);
 };
 
 type ResolvedPmHarnessConfig = {

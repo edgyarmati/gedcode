@@ -1,5 +1,13 @@
 import type { EnvironmentApi } from "@t3tools/contracts";
-import { EnvironmentId, EventId, GateId, ProjectId, TaskId, TaskTypeId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  EventId,
+  GateId,
+  ProjectId,
+  TaskId,
+  TaskTypeId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { afterEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -139,6 +147,31 @@ it("does not render Cancel task for terminal tasks", async () => {
   render(<TaskHeader task={makeTask("abandoned")} />);
 
   await expect.element(page.getByRole("button", { name: "Cancel task" })).not.toBeInTheDocument();
+});
+
+it("interrupts the active worker stage without waiting for the PM", async () => {
+  const interruptStage = vi.fn(async () => ({
+    taskId,
+    stageThreadId: ThreadId.make("stage-browser"),
+    sequence: 2,
+    status: "requested" as const,
+  }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { interruptStage },
+  } as unknown as EnvironmentApi);
+  const task = {
+    ...makeTask("planning"),
+    stageThreadIds: [ThreadId.make("stage-browser")],
+    currentStageThreadId: ThreadId.make("stage-browser"),
+  };
+
+  render(<TaskHeader task={task} />);
+  await page.getByRole("button", { name: "Interrupt active stage" }).click();
+
+  await expect.poll(() => interruptStage.mock.calls.length).toBe(1);
+  expect(interruptStage).toHaveBeenCalledWith({ taskId });
+  await expect.element(page.getByRole("button", { name: "Interrupt active stage" })).toBeDisabled();
+  await expect.element(page.getByText("Stopping…")).toBeInTheDocument();
 });
 
 it("archives a terminal task from its native-style context menu", async () => {

@@ -38,6 +38,7 @@ import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
   OrchestrationCancelTaskError,
+  OrchestrationInterruptStageError,
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   OrchestrationDispatchCommandError,
@@ -495,6 +496,12 @@ export const WsOrchestratorCancelTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.canc
   error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationCancelTaskError]),
 });
 
+export const WsOrchestratorInterruptStageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.interruptStage, {
+  payload: OrchestratorRpcSchemas.interruptStage.input,
+  success: OrchestratorRpcSchemas.interruptStage.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationInterruptStageError]),
+});
+
 export const WsOrchestratorLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.landTask, {
   payload: OrchestratorRpcSchemas.landTask.input,
   success: OrchestratorRpcSchemas.landTask.output,
@@ -623,6 +630,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorResolveGateRpc,
   WsOrchestratorSetTaskRoleSelectionsRpc,
   WsOrchestratorCancelTaskRpc,
+  WsOrchestratorInterruptStageRpc,
   WsOrchestratorLandTaskRpc,
   WsOrchestratorListArchivedTasksRpc,
   WsOrchestratorArchiveTaskRpc,

@@ -62,6 +62,8 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
   OrchestratorCancelTaskInput,
+  OrchestratorInterruptStageInput,
+  OrchestratorInterruptStageResult,
   OrchestratorLandTaskInput,
   OrchestratorLandTaskResult,
   OrchestratorListArchivedTasksInput,
@@ -603,6 +605,9 @@ export interface EnvironmentApi {
       input: OrchestratorSetTaskRoleSelectionsInput,
     ) => Promise<{ sequence: number }>;
     cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
+    interruptStage: (
+      input: OrchestratorInterruptStageInput,
+    ) => Promise<OrchestratorInterruptStageResult>;
     landTask: (input: OrchestratorLandTaskInput) => Promise<OrchestratorLandTaskResult>;
     listArchivedTasks: (
       input: OrchestratorListArchivedTasksInput,

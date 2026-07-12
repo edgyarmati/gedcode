@@ -807,7 +807,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("interrupts an orphaned active stage through an internal command", () =>
+  it.effect("interrupts an orphaned or operator-stopped active stage", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({
         status: "working",
@@ -815,28 +815,30 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         stageThreadIds: [asThreadId("thread-stage-work")],
       });
 
-      const event = yield* decideOrchestrationCommand({
-        readModel,
-        command: {
-          type: "task.stage.interrupt",
-          commandId: asCommandId("cmd-stage-interrupt"),
+      for (const reason of ["orphaned", "operator"] as const) {
+        const event = yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.interrupt",
+            commandId: asCommandId(`cmd-stage-interrupt-${reason}`),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            stageThreadId: asThreadId("thread-stage-work"),
+            reason,
+            createdAt: now,
+          },
+        });
+
+        const singleEvent = Array.isArray(event) ? event[0] : event;
+        expect(singleEvent?.type).toBe("task.stage-interrupted");
+        expect(singleEvent?.payload).toEqual({
           taskId: asTaskId("task-1"),
           role: "work",
           stageThreadId: asThreadId("thread-stage-work"),
-          reason: "orphaned",
-          createdAt: now,
-        },
-      });
-
-      const singleEvent = Array.isArray(event) ? event[0] : event;
-      expect(singleEvent?.type).toBe("task.stage-interrupted");
-      expect(singleEvent?.payload).toEqual({
-        taskId: asTaskId("task-1"),
-        role: "work",
-        stageThreadId: asThreadId("thread-stage-work"),
-        reason: "orphaned",
-        updatedAt: now,
-      });
+          reason,
+          updatedAt: now,
+        });
+      }
     }),
   );
 

@@ -9,6 +9,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   TaskId,
+  ThreadId,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vitest";
 
@@ -113,6 +114,7 @@ describe("wsRpcClient", () => {
   it("routes orchestrator methods through the transport with stable tags", async () => {
     const projectId = ProjectId.make("project-1");
     const taskId = TaskId.make("task-1");
+    const stageThreadId = ThreadId.make("stage-thread-1");
     const gateId = GateId.make("gate-1");
     const protocolClient = {
       [ORCHESTRATOR_WS_METHODS.sendMessage]: vi.fn(() => ({ accepted: true })),
@@ -125,6 +127,12 @@ describe("wsRpcClient", () => {
         alreadyLanded: false,
       })),
       [ORCHESTRATOR_WS_METHODS.cancelTask]: vi.fn(() => ({ sequence: 10 })),
+      [ORCHESTRATOR_WS_METHODS.interruptStage]: vi.fn(() => ({
+        taskId,
+        stageThreadId,
+        sequence: 15,
+        status: "requested" as const,
+      })),
       [ORCHESTRATOR_WS_METHODS.listArchivedTasks]: vi.fn(() => []),
       [ORCHESTRATOR_WS_METHODS.archiveTask]: vi.fn(() => ({ sequence: 12 })),
       [ORCHESTRATOR_WS_METHODS.restoreTask]: vi.fn(() => ({ sequence: 13 })),
@@ -190,6 +198,12 @@ describe("wsRpcClient", () => {
       }),
     ).resolves.toEqual({ sequence: 8 });
     await expect(client.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 10 });
+    await expect(client.orchestrator.interruptStage({ taskId })).resolves.toEqual({
+      taskId,
+      stageThreadId,
+      sequence: 15,
+      status: "requested",
+    });
     await expect(client.orchestrator.landTask({ taskId })).resolves.toEqual({
       sequence: 11,
       alreadyLanded: false,
@@ -228,6 +242,7 @@ describe("wsRpcClient", () => {
       },
     });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.cancelTask]).toHaveBeenCalledWith({ taskId });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.interruptStage]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.landTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.listArchivedTasks]).toHaveBeenCalledWith({
       projectId,

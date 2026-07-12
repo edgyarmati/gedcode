@@ -26,6 +26,7 @@ import {
   GitPullRequestIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
+  SquareIcon,
   Trash2Icon,
   WorkflowIcon,
   XIcon,
@@ -698,6 +699,8 @@ export function TaskHeader({
   task: OrchestratorTask;
 }) {
   const [isCancelling, setIsCancelling] = useState(false);
+  const [interruptPending, setInterruptPending] = useState(false);
+  const [interruptError, setInterruptError] = useState<string | null>(null);
   const [landingPending, setLandingPending] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
   const canCancel = task.status !== "landed" && task.status !== "abandoned";
@@ -714,6 +717,10 @@ export function TaskHeader({
       setLandingError(null);
     }
   }, [task.landing?.status, task.status]);
+  useEffect(() => {
+    setInterruptPending(false);
+    setInterruptError(null);
+  }, [task.currentStageThreadId]);
   const taskStatusLabel =
     landing.kind === "pending" || landing.kind === "opening-pr"
       ? "Landing"
@@ -758,6 +765,20 @@ export function TaskHeader({
       setLandingError(error instanceof Error ? error.message : String(error));
     }
   }, [isCancelling, landing.kind, task.environmentId, task.id]);
+  const interruptStage = useCallback(async () => {
+    const api = readEnvironmentApi(task.environmentId);
+    if (!api || task.currentStageThreadId === null || interruptPending || isCancelling) {
+      return;
+    }
+    setInterruptPending(true);
+    setInterruptError(null);
+    try {
+      await api.orchestrator.interruptStage({ taskId: task.id });
+    } catch (error) {
+      setInterruptPending(false);
+      setInterruptError(error instanceof Error ? error.message : String(error));
+    }
+  }, [interruptPending, isCancelling, task.currentStageThreadId, task.environmentId, task.id]);
 
   return (
     <div className="border-b border-border bg-card/70 p-4">
@@ -778,6 +799,29 @@ export function TaskHeader({
           />
         </div>
         <div className="flex items-center gap-2">
+          {task.currentStageThreadId !== null ? (
+            <Button
+              aria-label="Interrupt active stage"
+              disabled={interruptPending || isCancelling}
+              onClick={() => void interruptStage()}
+              size="sm"
+              title="Stop the active worker turn"
+              variant="destructive"
+            >
+              {interruptPending ? (
+                <LoaderCircleIcon className="size-4 animate-spin" />
+              ) : (
+                <SquareIcon className="size-3 fill-current" />
+              )}
+              {interruptPending ? "Stopping…" : "Stop stage"}
+            </Button>
+          ) : null}
+          {interruptError !== null ? (
+            <Badge size="lg" title={interruptError} variant="error">
+              <CircleAlertIcon className="size-4" />
+              Stop failed
+            </Badge>
+          ) : null}
           {landing.kind === "ready" ||
           landing.kind === "request-failed" ||
           landing.kind === "failed" ? (

@@ -33,6 +33,7 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
+import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -57,6 +58,11 @@ interface HandoffWorkerParameters {
 interface SteerStageParameters {
   readonly taskId: string;
   readonly message: string;
+  readonly stageThreadId?: string;
+}
+
+interface InterruptStageParameters {
+  readonly taskId: string;
   readonly stageThreadId?: string;
 }
 
@@ -443,6 +449,43 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const interruptStage: PmToolExecutor<
+    InterruptStageParameters,
+    {
+      taskId: string;
+      stageThreadId: string;
+      sequence: number;
+      status: "requested";
+    }
+  > = {
+    name: "interruptStage",
+    label: "Interrupt stage",
+    description:
+      "Immediately request interruption of the active worker turn. The durable stage outcome arrives separately after the provider acknowledges interruption.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        interruptOrchestrationStageWithServices(
+          { snapshotQuery },
+          {
+            taskId: TaskId.make(params.taskId),
+            ...(params.stageThreadId === undefined
+              ? {}
+              : { stageThreadId: ThreadId.make(params.stageThreadId) }),
+            commandId: commandId("interrupt-stage"),
+            createdAt: nowIso,
+            dispatch,
+          },
+        ).pipe(
+          Effect.map((details) =>
+            textResult(
+              `Requested interruption of worker ${details.stageThreadId}. Wait for the durable interrupted-stage settlement before retrying or replacing it.`,
+              details,
+            ),
+          ),
+        ),
+      ),
+  };
+
   const requestApproval: PmToolExecutor<
     RequestApprovalParameters,
     { taskId: string; gateId: string; sequence: number }
@@ -731,6 +774,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     createTask,
     handoffWorker,
     steerStage,
+    interruptStage,
     requestApproval,
     setTaskBackend,
     inspectStage,

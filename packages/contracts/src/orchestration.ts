@@ -42,6 +42,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   resolveGate: "orchestrator.resolveGate",
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
   cancelTask: "orchestrator.cancelTask",
+  interruptStage: "orchestrator.interruptStage",
   landTask: "orchestrator.landTask",
   listArchivedTasks: "orchestrator.listArchivedTasks",
   archiveTask: "orchestrator.archiveTask",
@@ -1078,7 +1079,7 @@ const TaskStageInterruptCommand = Schema.Struct({
   taskId: TaskId,
   stageThreadId: ThreadId,
   role: OrchestrationStageRole,
-  reason: Schema.Literal("orphaned"),
+  reason: Schema.Literals(["orphaned", "operator"]),
   createdAt: IsoDateTime,
 });
 
@@ -1678,7 +1679,7 @@ export const TaskStageInterruptedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
-  reason: Schema.Literal("orphaned"),
+  reason: Schema.Literals(["orphaned", "operator"]),
   updatedAt: IsoDateTime,
 });
 
@@ -2109,6 +2110,19 @@ export const OrchestratorCancelTaskInput = Schema.Struct({
 });
 export type OrchestratorCancelTaskInput = typeof OrchestratorCancelTaskInput.Type;
 
+export const OrchestratorInterruptStageInput = Schema.Struct({
+  taskId: TaskId,
+});
+export type OrchestratorInterruptStageInput = typeof OrchestratorInterruptStageInput.Type;
+
+export const OrchestratorInterruptStageResult = Schema.Struct({
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  sequence: NonNegativeInt,
+  status: Schema.Literal("requested"),
+});
+export type OrchestratorInterruptStageResult = typeof OrchestratorInterruptStageResult.Type;
+
 export const OrchestratorLandTaskInput = Schema.Struct({
   taskId: TaskId,
 });
@@ -2298,6 +2312,10 @@ export const OrchestratorRpcSchemas = {
     input: OrchestratorCancelTaskInput,
     output: DispatchResult,
   },
+  interruptStage: {
+    input: OrchestratorInterruptStageInput,
+    output: OrchestratorInterruptStageResult,
+  },
   landTask: {
     input: OrchestratorLandTaskInput,
     output: OrchestratorLandTaskResult,
@@ -2357,6 +2375,20 @@ export class OrchestrationCancelTaskError extends Schema.TaggedErrorClass<Orches
     ]),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationInterruptStageError extends Schema.TaggedErrorClass<OrchestrationInterruptStageError>()(
+  "OrchestrationInterruptStageError",
+  {
+    taskId: TaskId,
+    reason: Schema.Literals([
+      "task-not-found",
+      "no-active-stage",
+      "stage-thread-not-found",
+      "not-running",
+    ]),
+    message: TrimmedNonEmptyString,
   },
 ) {}
 

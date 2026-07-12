@@ -541,6 +541,71 @@ it.effect("steerStage defaults to the latest stage thread", () =>
   }),
 );
 
+it.effect("interruptStage durably requests interruption of the active running stage", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel(
+            [makeTask()],
+            [
+              makeThread(stageThreadId, {
+                latestTurn: {
+                  turnId,
+                  state: "running",
+                  requestedAt: now,
+                  startedAt: now,
+                  completedAt: null,
+                  assistantMessageId: null,
+                },
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    const interruptStage = findTool(tools, "interruptStage");
+
+    const result = yield* Effect.promise(() =>
+      interruptStage.execute("tool-interrupt", { taskId }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0]?.type, "thread.turn.interrupt");
+    if (dispatched[0]?.type === "thread.turn.interrupt") {
+      assert.strictEqual(dispatched[0].threadId, stageThreadId);
+      assert.strictEqual(dispatched[0].turnId, turnId);
+    }
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      stageThreadId,
+      sequence: 1,
+      status: "requested",
+    });
+  }),
+);
+
+it.effect("interruptStage rejects a task without a running active stage", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const interruptStage = findTool(tools, "interruptStage");
+
+    const error = yield* Effect.promise(() =>
+      interruptStage.execute("tool-interrupt-idle", { taskId }).then(
+        () => null,
+        (cause) => cause,
+      ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /no running turn/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
 it.effect("steerStage rejects a missing task", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

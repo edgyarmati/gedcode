@@ -1750,7 +1750,18 @@ const make = Effect.gen(function* () {
           const taskId = taskForStageThread.id;
           const role: OrchestrationStageRole = activeStageRole;
           const stageThreadId = thread.id;
-          if (turnId === undefined) {
+          const completionState = normalizeRuntimeTurnState(event.payload.state);
+          if (completionState === "interrupted" || completionState === "cancelled") {
+            yield* orchestrationEngine.dispatch({
+              type: "task.stage.interrupt",
+              commandId: yield* providerCommandId(event, "task-stage-interrupt"),
+              taskId,
+              role,
+              stageThreadId,
+              reason: "operator",
+              createdAt: now,
+            });
+          } else if (turnId === undefined) {
             // Degenerate completion: no turn id means there is no diff to await,
             // so the CheckpointReactor diff-gate cannot fire. Complete the stage
             // immediately. A fresh command id is fine — there is no competing

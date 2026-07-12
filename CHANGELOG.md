@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature/Fixed: Add first-class Orchestrator worker interruption through PM/MCP, RPC, and task detail. Requests are durably acknowledged immediately, active provider turns are interrupted without waiting for the PM turn to finish, and provider-reported interruption/cancellation now settles the stage as interrupted instead of completed.
 - Fix: Stop instructing Orchestrator PMs to poll worker stages. PMs now wait for existing event-driven stage, gate, quota, and interrupt re-entry, and use `inspectStage` only for explicit status requests or one bounded pre-action diagnostic.
 - Fix: Make PM `createTask` retries idempotent with a required stable request key. Identical retries derive the same safe task ID, command receipt, and PM provenance ID; reusing a key with changed task content keeps the task identity but produces a distinct command that is rejected instead of silently aliasing different work.
 - Feature/UI: Expose Orchestrator task archive, restore, and permanent-delete through PM/MCP tools, typed RPC actions, and terminal task-card context menus. Archived tasks have an on-demand board section, restore immediately rehydrates open clients without polling, and permanent deletion requires explicit confirmation.
