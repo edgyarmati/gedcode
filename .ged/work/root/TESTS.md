@@ -221,3 +221,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
   `bun run test` (all 12 packages successful; server 1,413 passed/1 skipped, web 1,220 passed,
   contracts 61 passed).
+
+### ORCH-TASK-02
+
+- PM and authenticated MCP tests cover archive, restore, and delete tool discovery, schema routing,
+  deterministic command dispatch, and structured results.
+- Typed websocket, client transport, and environment API tests cover archived lookup plus all three
+  lifecycle actions. Restore events include the restored task projection and immediately repopulate the
+  web store without a reconnect or polling loop.
+- Component and Chromium tests cover status-sensitive terminal task menus, archive from the active
+  board, restore from the archived section, and omission of the empty-board message when archives exist.
+- Verification passed on 2026-07-12: focused contract/server/PM/MCP/client/store tests, 9/9 affected
+  Chromium tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
+  `bun run test` (all 12 packages successful; server 1,414 passed/1 skipped, web 1,221 passed).

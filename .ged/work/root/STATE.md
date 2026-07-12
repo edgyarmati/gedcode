@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement.
-- **Active task**: `ORCH-TASK-02` - expose archive, restore, and permanent-delete lifecycle actions.
+- **Active task**: `ORCH-TASK-03` - add stable PM create-task idempotency keys.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -86,11 +86,20 @@
   migration, engine, PM, transport, and web-store tests; `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (server 1,413 passed/1 skipped; web 1,220 passed;
   contracts 61 passed; all 12 packages successful).
+- `ORCH-TASK-02` is complete in commit `ae991db7d`. PM and MCP now expose archive, restore, and
+  permanent-delete tools; typed RPC/client APIs provide the same actions plus archived-task lookup.
+  Terminal task cards expose copy/archive/restore/confirmed-delete context menus, and the board shows
+  archived tasks in a collapsible section. Restore events carry the task projection so open clients
+  rehydrate immediately; archived lookup refreshes only on task membership changes, not stage activity.
+- Final `ORCH-TASK-02` verification passed on 2026-07-12: focused contract/server/PM/MCP/client/store
+  tests and 9/9 Chromium interactions; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
+  `bun run build`, and `bun run test` (server 1,414 passed/1 skipped; web 1,221 passed; all 12 packages
+  successful).
 
 ## Immediate Sequence
 
-1. `ORCH-TASK-02` add PM/MCP/RPC/UI archive/delete actions and task context menus.
-2. `ORCH-TASK-03` add stable create-task idempotency keys tied to the originating PM request.
+1. `ORCH-TASK-03` add stable create-task idempotency keys tied to the originating PM request.
+2. `ORCH-TASK-04` add explicit supersession relationships for intentional replacement tasks.
 
 ## Repository State Notes
 
