@@ -22,6 +22,13 @@ Verification evidence:
 - Repository gates passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
   `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1 skipped, web
   1,223 passed).
+- Manual Electron QA exposed the collapsed control under macOS traffic lights. A shared inset-policy
+  unit test now covers collapsed Electron, expanded Electron, and browser states, and the fix applies to
+  Orchestrator, active Chat, empty Chat, and Settings titlebars.
+- Follow-up gates passed on 2026-07-13: 193/193 Chromium interactions, `bun fmt`, `bun lint` (existing
+  warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (server 1,424
+  passed/1 skipped, web 1,224 passed). One unrelated server-router test flaked on the first full run and
+  then passed 72/72 in isolation.
 
 ## Lifecycle Safety
 

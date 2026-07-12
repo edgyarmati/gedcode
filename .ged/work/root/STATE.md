@@ -167,6 +167,13 @@
   interactions across 15 files, `bun fmt`, `bun lint` (existing warnings only), a clean isolated
   `bun typecheck` rerun after the known workspace dependency-resolution race, `bun run build`, and
   `bun run test` (all 12 packages; server 1,424 passed/1 skipped, web 1,223 passed).
+- Follow-up commit `da576baf0` fixes the macOS traffic-light overlap revealed by manual Electron QA.
+  One shared conditional titlebar inset now protects Orchestrator, active Chat, empty Chat, and Settings
+  only while the Electron sidebar is collapsed; browser and expanded layouts keep their prior spacing.
+- Follow-up verification passed on 2026-07-13: 193/193 Chromium interactions, focused inset policy tests,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and a clean
+  `bun run test` rerun (server 1,424 passed/1 skipped, web 1,224 passed). The first full run had one
+  unrelated server-router flake, which passed 72/72 in isolation before the clean rerun.
 
 ## July 13 Working Cutoff
 
