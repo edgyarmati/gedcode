@@ -334,6 +334,51 @@ const findTool = (tools: ReadonlyArray<PmToolExecutor>, name: string): PmToolExe
   return tool;
 };
 
+it.effect("createTask derives stable task and command identities from its idempotency key", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const createTask = findTool(tools, "createTask");
+    const params = {
+      projectId: "project-1",
+      title: "Implement stable creation",
+      idempotencyKey: "request-42:task-1",
+      taskType: "feature",
+    };
+
+    const first = yield* Effect.promise(() => createTask.execute("tool-create-1", params));
+    const second = yield* Effect.promise(() =>
+      createTask.execute("tool-create-2", {
+        ...params,
+        title: `  ${params.title}  `,
+        idempotencyKey: ` ${params.idempotencyKey} `,
+      }),
+    );
+    const changed = yield* Effect.promise(() =>
+      createTask.execute("tool-create-3", { ...params, title: "Conflicting retry" }),
+    );
+
+    const [firstCommand, secondCommand, changedCommand] = dispatched;
+    assert.strictEqual(firstCommand?.type, "task.create");
+    assert.strictEqual(secondCommand?.type, "task.create");
+    assert.strictEqual(changedCommand?.type, "task.create");
+    if (
+      firstCommand?.type === "task.create" &&
+      secondCommand?.type === "task.create" &&
+      changedCommand?.type === "task.create"
+    ) {
+      assert.strictEqual(firstCommand.taskId, secondCommand.taskId);
+      assert.strictEqual(firstCommand.commandId, secondCommand.commandId);
+      assert.strictEqual(firstCommand.pmMessageId, secondCommand.pmMessageId);
+      assert.strictEqual(firstCommand.taskId, changedCommand.taskId);
+      assert.notStrictEqual(firstCommand.commandId, changedCommand.commandId);
+    }
+    assert.strictEqual(first.details.taskId, second.details.taskId);
+    assert.strictEqual(first.details.taskId, changed.details.taskId);
+    assert.match(first.content[0]?.text ?? "", /Created or reused task/);
+  }),
+);
+
 it.effect("handoffWorker dispatches a guarded task.stage.start command and returns a handle", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

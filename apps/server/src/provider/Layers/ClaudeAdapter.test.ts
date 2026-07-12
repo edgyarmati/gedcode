@@ -528,12 +528,13 @@ describe("ClaudeAdapterLive", () => {
           {
             projectId: "project-1",
             title: "MCP proof task",
+            idempotencyKey: "claude-adapter:mcp-proof-task",
             taskType: "feature",
           },
           {},
         ),
       );
-      assert.match(mcpResult.content[0]?.text ?? "", /^Created task /);
+      assert.match(mcpResult.content[0]?.text ?? "", /^Created or reused task /);
       assert.deepEqual(mcpResult.structuredContent, {
         taskId: dispatched[0]?.type === "task.create" ? dispatched[0].taskId : undefined,
         sequence: 1,

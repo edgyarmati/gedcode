@@ -1119,6 +1119,63 @@ describe("OrchestrationEngine", () => {
     await system.dispose();
   });
 
+  it("deduplicates identical task creation receipts and rejects changed content for the same task", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const createdAt = now();
+    const projectId = asProjectId("project-idempotent-task");
+    const taskId = TaskId.make("pm-stable-task-id");
+    const commandId = CommandId.make("pm:create-task:stable:request");
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-idempotent-task"),
+        projectId,
+        title: "Idempotent Task Project",
+        workspaceRoot: "/tmp/project-idempotent-task",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+
+    const createCommand = {
+      type: "task.create" as const,
+      commandId,
+      taskId,
+      projectId,
+      taskType: TaskTypeId.make("feature"),
+      title: "Stable task",
+      pmMessageId: MessageId.make("pm-create:stable"),
+      branch: null,
+      createdAt,
+    };
+    const first = await system.run(engine.dispatch(createCommand));
+    const second = await system.run(engine.dispatch(createCommand));
+    expect(second).toEqual(first);
+
+    const events = Array.from(await system.run(Stream.runCollect(engine.readEvents(0)))).filter(
+      (event) => event.type === "task.created" && event.aggregateId === taskId,
+    );
+    expect(events).toHaveLength(1);
+    expect((await system.readModel()).tasks.filter((task) => task.id === taskId)).toHaveLength(1);
+
+    await expect(
+      system.run(
+        engine.dispatch({
+          ...createCommand,
+          commandId: CommandId.make("pm:create-task:stable:changed-request"),
+          title: "Changed retry",
+        }),
+      ),
+    ).rejects.toThrow("already exists");
+
+    await system.dispose();
+  });
+
   it("rejects duplicate thread creation", async () => {
     const system = await createOrchestrationSystem();
     const { engine } = system;

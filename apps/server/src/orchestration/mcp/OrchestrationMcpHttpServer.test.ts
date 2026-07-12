@@ -101,6 +101,13 @@ describe("OrchestrationMcpHttpServer", () => {
         required: ["taskId"],
         $schema: "http://json-schema.org/draft-07/schema#",
       });
+      const createTool = tools.tools.find((tool) => tool.name === "createTask");
+      assert.ok(createTool);
+      assert.deepStrictEqual((createTool.inputSchema as { required?: unknown }).required, [
+        "projectId",
+        "title",
+        "idempotencyKey",
+      ]);
 
       const ledgerResult = await client.callTool({
         name: "getTaskLedger",

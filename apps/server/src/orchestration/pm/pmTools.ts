@@ -24,6 +24,7 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { createHash } from "node:crypto";
 
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -36,6 +37,7 @@ import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
 interface CreateTaskParameters {
   readonly projectId: string;
   readonly title: string;
+  readonly idempotencyKey: string;
   readonly taskType?: string;
   readonly branch?: string;
 }
@@ -119,6 +121,29 @@ const latestStageThreadId = (task: OrchestrationTask | undefined): ThreadId | nu
   task?.stageThreadIds.at(-1) ?? null;
 
 const pmMessageId = (toolCallId: string) => MessageId.make(`pm-tool:${toolCallId}`);
+
+function createTaskIdentity(params: CreateTaskParameters): {
+  readonly taskId: TaskId;
+  readonly commandId: CommandId;
+  readonly pmMessageId: MessageId;
+} {
+  const projectId = params.projectId.trim();
+  const idempotencyKey = params.idempotencyKey.trim();
+  const title = params.title.trim();
+  const taskType = params.taskType?.trim() || "feature";
+  const branch = params.branch?.trim() || null;
+  const identityDigest = createHash("sha256")
+    .update(JSON.stringify([projectId, idempotencyKey]), "utf8")
+    .digest("hex");
+  const requestDigest = createHash("sha256")
+    .update(JSON.stringify([projectId, idempotencyKey, title, taskType, branch]), "utf8")
+    .digest("hex");
+  return {
+    taskId: TaskId.make(`pm-${identityDigest.slice(0, 32)}`),
+    commandId: CommandId.make(`pm:create-task:${identityDigest.slice(0, 16)}:${requestDigest}`),
+    pmMessageId: MessageId.make(`pm-create:${identityDigest}`),
+  };
+}
 
 interface InspectStageTurnDigest {
   readonly state: OrchestrationLatestTurn["state"];
@@ -263,7 +288,6 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const commandId = (toolName: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`pm:${toolName}:${uuid}`)));
-  const randomTaskId = crypto.randomUUIDv4.pipe(Effect.map(TaskId.make));
   const randomGateId = crypto.randomUUIDv4.pipe(Effect.map(GateId.make));
 
   const dispatch = (command: Parameters<typeof engine.dispatch>[0]) =>
@@ -272,23 +296,27 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const createTask: PmToolExecutor<CreateTaskParameters, { taskId: string; sequence: number }> = {
     name: "createTask",
     label: "Create task",
-    description: "Create a new orchestrator task for a project.",
-    execute: (toolCallId, params) =>
+    description:
+      "Create or reuse one orchestrator task for a project. Supply a stable idempotencyKey derived from the originating PM request and logical task; reuse that exact key for retries.",
+    execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
-          const taskId = yield* randomTaskId;
+          const identity = createTaskIdentity(params);
           const sequence = yield* dispatch({
             type: "task.create",
-            commandId: yield* commandId("create-task"),
-            taskId,
-            projectId: ProjectId.make(params.projectId),
-            taskType: TaskTypeId.make(params.taskType ?? "feature"),
-            title: params.title,
-            pmMessageId: pmMessageId(toolCallId),
-            branch: params.branch ?? null,
+            commandId: identity.commandId,
+            taskId: identity.taskId,
+            projectId: ProjectId.make(params.projectId.trim()),
+            taskType: TaskTypeId.make(params.taskType?.trim() || "feature"),
+            title: params.title.trim(),
+            pmMessageId: identity.pmMessageId,
+            branch: params.branch?.trim() || null,
             createdAt: yield* nowIso,
           });
-          return textResult(`Created task ${taskId}.`, { taskId, sequence });
+          return textResult(`Created or reused task ${identity.taskId}.`, {
+            taskId: identity.taskId,
+            sequence,
+          });
         }),
       ),
   };
