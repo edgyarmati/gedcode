@@ -38,6 +38,8 @@ const makeTask = (status: "planning" | "review" | "landed" | "abandoned" = "plan
     playbookVersion: null,
     createdAt: "2026-06-14T00:00:00.000Z",
     updatedAt: "2026-06-14T00:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
   }) as const;
 
 const approvedLandGate = {

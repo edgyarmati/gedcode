@@ -36,6 +36,8 @@ const makeTask = (
   playbookVersion: null,
   createdAt: now,
   updatedAt: now,
+  archivedAt: null,
+  deletedAt: null,
 });
 
 const makeReadModel = (

@@ -97,6 +97,25 @@ function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["s
   return status === "landed" || status === "abandoned";
 }
 
+function requireSettledTerminalTask(input: {
+  readonly command: OrchestrationCommand;
+  readonly task: OrchestrationReadModel["tasks"][number];
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (
+    input.task.currentStageThreadId === null &&
+    (input.task.status === "abandoned" ||
+      (input.task.status === "landed" && input.task.prUrl !== null))
+  ) {
+    return Effect.void;
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Task '${input.task.id}' must be abandoned or fully landed with a pull request before '${input.command.type}'.`,
+    ),
+  );
+}
+
 function requireTaskNotCancelling(input: {
   readonly command: OrchestrationCommand;
   readonly task: OrchestrationReadModel["tasks"][number];
@@ -209,6 +228,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   OrchestrationCommandInvariantError | PlatformError.PlatformError,
   Crypto.Crypto
 > {
+  if (
+    "taskId" in command &&
+    command.type !== "task.create" &&
+    command.type !== "task.archive" &&
+    command.type !== "task.restore" &&
+    command.type !== "task.delete"
+  ) {
+    const task = readModel.tasks.find((candidate) => candidate.id === command.taskId);
+    if (task?.deletedAt !== null && task?.deletedAt !== undefined) {
+      return yield* invariantError(
+        command.type,
+        `Task '${command.taskId}' was permanently deleted and cannot process '${command.type}'.`,
+      );
+    }
+    if (task?.archivedAt !== null && task?.archivedAt !== undefined) {
+      return yield* invariantError(
+        command.type,
+        `Task '${command.taskId}' is archived and must be restored before '${command.type}'.`,
+      );
+    }
+  }
+
   switch (command.type) {
     case "project.create": {
       yield* requireProjectAbsent({
@@ -1083,6 +1124,78 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           origin: command.origin,
           updatedAt: command.createdAt,
         },
+      };
+    }
+
+    case "task.archive": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.deletedAt !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' was permanently deleted and cannot be archived.`,
+        );
+      }
+      if (task.archivedAt !== null) {
+        return yield* invariantError(command.type, `Task '${command.taskId}' is already archived.`);
+      }
+      yield* requireSettledTerminalTask({ command, task });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "task.archived",
+        payload: { taskId: command.taskId, archivedAt: occurredAt, updatedAt: occurredAt },
+      };
+    }
+
+    case "task.restore": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.deletedAt !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' was permanently deleted and cannot be restored.`,
+        );
+      }
+      if (task.archivedAt === null) {
+        return yield* invariantError(command.type, `Task '${command.taskId}' is not archived.`);
+      }
+      yield* requireSettledTerminalTask({ command, task });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "task.restored",
+        payload: { taskId: command.taskId, updatedAt: occurredAt },
+      };
+    }
+
+    case "task.delete": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.deletedAt !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is already permanently deleted.`,
+        );
+      }
+      yield* requireSettledTerminalTask({ command, task });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "task.deleted",
+        payload: { taskId: command.taskId, deletedAt: occurredAt, updatedAt: occurredAt },
       };
     }
 

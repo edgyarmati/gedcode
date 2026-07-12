@@ -2034,10 +2034,21 @@ function applyEnvironmentOrchestrationEvent(
             playbookVersion: event.payload.playbookVersion,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
+            archivedAt: null,
+            deletedAt: null,
           },
           environmentId,
         ),
       );
+
+    case "task.archived":
+    case "task.deleted":
+      return removeTaskState(state, String(event.payload.taskId));
+
+    case "task.restored":
+      // Restored tasks are reintroduced by the next authoritative snapshot;
+      // the compact restore event intentionally carries no duplicated task body.
+      return state;
 
     case "task.classified":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({

@@ -1544,6 +1544,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
               updatedAt: event.payload.updatedAt,
+              archivedAt: null,
+              deletedAt: null,
             });
             return;
 
@@ -1574,6 +1576,51 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               roleModelSelections: event.payload.roleModelSelections,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.archived": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              archivedAt: event.payload.archivedAt,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.restored": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              archivedAt: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.deleted": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              deletedAt: event.payload.deletedAt,
               updatedAt: event.payload.updatedAt,
             });
             return;

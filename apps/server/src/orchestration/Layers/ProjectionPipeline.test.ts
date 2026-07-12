@@ -185,6 +185,97 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
+  it.effect("persists task retention tombstones without deleting the task row", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const taskId = TaskId.make("task-retention-projection");
+      const projectId = ProjectId.make("project-retention-projection");
+      const createdAt = "2026-07-12T07:00:00.000Z";
+      const archivedAt = "2026-07-12T07:01:00.000Z";
+      const restoredAt = "2026-07-12T07:02:00.000Z";
+      const deletedAt = "2026-07-12T07:03:00.000Z";
+
+      yield* eventStore.append({
+        type: "task.created",
+        eventId: EventId.make("evt-retention-create"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: createdAt,
+        commandId: CommandId.make("cmd-retention-create"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-retention-create"),
+        metadata: {},
+        payload: {
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Retain this task",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      yield* eventStore.append({
+        type: "task.archived",
+        eventId: EventId.make("evt-retention-archive"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: archivedAt,
+        commandId: CommandId.make("cmd-retention-archive"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-retention-archive"),
+        metadata: {},
+        payload: { taskId, archivedAt, updatedAt: archivedAt },
+      });
+      yield* eventStore.append({
+        type: "task.restored",
+        eventId: EventId.make("evt-retention-restore"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: restoredAt,
+        commandId: CommandId.make("cmd-retention-restore"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-retention-restore"),
+        metadata: {},
+        payload: { taskId, updatedAt: restoredAt },
+      });
+      yield* eventStore.append({
+        type: "task.deleted",
+        eventId: EventId.make("evt-retention-delete"),
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: deletedAt,
+        commandId: CommandId.make("cmd-retention-delete"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-retention-delete"),
+        metadata: {},
+        payload: { taskId, deletedAt, updatedAt: deletedAt },
+      });
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly taskId: string;
+        readonly title: string;
+        readonly archivedAt: string | null;
+        readonly deletedAt: string | null;
+      }>`
+        SELECT
+          task_id AS "taskId",
+          title,
+          archived_at AS "archivedAt",
+          deleted_at AS "deletedAt"
+        FROM projection_tasks
+        WHERE task_id = ${taskId}
+      `;
+      assert.deepEqual(rows, [{ taskId, title: "Retain this task", archivedAt: null, deletedAt }]);
+    }),
+  );
+
   it.effect("projects cancellation progress and ignores failures without a reservation", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;

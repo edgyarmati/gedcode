@@ -289,6 +289,8 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     playbookVersion: row.playbookVersion,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    archivedAt: row.archivedAt,
+    deletedAt: row.deletedAt,
   };
 }
 
@@ -671,7 +673,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          deleted_at AS "deletedAt"
         FROM projection_tasks
         ORDER BY created_at ASC, task_id ASC
       `,
@@ -1414,7 +1418,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 session: sessionsByThread.get(row.threadId) ?? null,
               }));
 
-              const tasks: ReadonlyArray<OrchestrationTask> = taskRows.map(mapTaskRow);
+              const tasks: ReadonlyArray<OrchestrationTask> = taskRows
+                .filter((row) => row.archivedAt === null && row.deletedAt === null)
+                .map(mapTaskRow);
               const pendingGates: ReadonlyArray<OrchestrationPendingGate> = pendingGateRows;
               const quotaBlockedStages: ReadonlyArray<OrchestrationQuotaBlockedStage> =
                 quotaBlockedStageRows;

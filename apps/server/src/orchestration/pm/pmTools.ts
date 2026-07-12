@@ -632,7 +632,10 @@ export const makePmToolExecutors = Effect.gen(function* () {
         Effect.gen(function* () {
           const projectId = ProjectId.make(params.projectId);
           const readModel = yield* snapshotQuery.getCommandReadModel();
-          const tasks = readModel.tasks.filter((task) => task.projectId === projectId);
+          const tasks = readModel.tasks.filter(
+            (task) =>
+              task.projectId === projectId && task.archivedAt === null && task.deletedAt === null,
+          );
           return textResult(`Found ${tasks.length} task(s).`, { projectId, tasks });
         }),
       ),

@@ -451,6 +451,57 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
+  it.effect("keeps archived and deleted tasks out of active snapshots but in command state", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM projection_tasks`;
+      yield* sql`
+        INSERT INTO projection_tasks (
+          task_id,
+          project_id,
+          type,
+          title,
+          status,
+          stage_thread_ids_json,
+          role_model_selections_json,
+          created_at,
+          updated_at,
+          archived_at,
+          deleted_at
+        ) VALUES
+          (
+            'task-active', 'project-1', 'feature', 'Active', 'abandoned', '[]', '{}',
+            '2026-07-12T08:00:00.000Z', '2026-07-12T08:00:00.000Z', NULL, NULL
+          ),
+          (
+            'task-archived', 'project-1', 'feature', 'Archived', 'abandoned', '[]', '{}',
+            '2026-07-12T08:01:00.000Z', '2026-07-12T08:01:00.000Z',
+            '2026-07-12T08:02:00.000Z', NULL
+          ),
+          (
+            'task-deleted', 'project-1', 'feature', 'Deleted', 'abandoned', '[]', '{}',
+            '2026-07-12T08:03:00.000Z', '2026-07-12T08:03:00.000Z',
+            NULL, '2026-07-12T08:04:00.000Z'
+          )
+      `;
+
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      assert.deepStrictEqual(
+        snapshot.tasks.map((task) => task.id),
+        ["task-active"],
+      );
+
+      const commandReadModel = yield* snapshotQuery.getCommandReadModel();
+      assert.deepStrictEqual(
+        commandReadModel.tasks.map((task) => task.id),
+        ["task-active", "task-archived", "task-deleted"],
+      );
+      assert.equal(commandReadModel.tasks[1]?.archivedAt, "2026-07-12T08:02:00.000Z");
+      assert.equal(commandReadModel.tasks[2]?.deletedAt, "2026-07-12T08:04:00.000Z");
+    }),
+  );
+
   it.effect("keeps archived threads out of the main shell snapshot", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;

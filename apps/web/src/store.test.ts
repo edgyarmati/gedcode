@@ -29,6 +29,7 @@ import {
   selectProjectsAcrossEnvironments,
   selectTaskByRef,
   selectTaskStageHistoryByRef,
+  selectTasksForEnvironment,
   selectTasksForProjectRef,
   selectThreadByRef,
   selectThreadExistsByRef,
@@ -250,6 +251,10 @@ function projectsOf(state: AppState) {
 
 function threadsOf(state: AppState) {
   return selectThreadsAcrossEnvironments(state);
+}
+
+function tasksOf(state: AppState) {
+  return selectTasksForEnvironment(state, localEnvironmentId);
 }
 
 function makeEvent<T extends OrchestrationEvent["type"]>(
@@ -824,6 +829,57 @@ describe("incremental orchestration updates", () => {
     expect(gates[0]?.decision).toBe("approved");
     expect(gates[0]?.origin).toBe("human");
     expect(gates[0]?.resolvedAt).toBe("2026-02-27T00:00:04.000Z");
+  });
+
+  it("removes archived and deleted tasks from active client state", () => {
+    const projectId = ProjectId.make("project-retention-store");
+    const taskId = TaskId.make("task-retention-store");
+    const createdAt = "2026-07-12T09:00:00.000Z";
+    const created = makeEvent(
+      "task.created",
+      {
+        taskId,
+        projectId,
+        taskType: TaskTypeId.make("feature"),
+        title: "Retention store",
+        branch: null,
+        worktreePath: null,
+        pmMessageId: null,
+        playbookVersion: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      { sequence: 1, aggregateKind: "task", aggregateId: taskId },
+    );
+    const withTask = applyOrchestrationEvents(makeEmptyState(), [created], localEnvironmentId);
+    expect(tasksOf(withTask)).toHaveLength(1);
+    expect(tasksOf(withTask)[0]).toMatchObject({ archivedAt: null, deletedAt: null });
+
+    const archived = applyOrchestrationEvents(
+      withTask,
+      [
+        makeEvent(
+          "task.archived",
+          { taskId, archivedAt: createdAt, updatedAt: createdAt },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+    expect(tasksOf(archived)).toHaveLength(0);
+
+    const deleted = applyOrchestrationEvents(
+      withTask,
+      [
+        makeEvent(
+          "task.deleted",
+          { taskId, deletedAt: createdAt, updatedAt: createdAt },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+    expect(tasksOf(deleted)).toHaveLength(0);
   });
 
   it("reduces cancellation progress and ignores failures without a reservation", () => {

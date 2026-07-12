@@ -547,6 +547,8 @@ export const OrchestrationTask = Schema.Struct({
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  deletedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type OrchestrationTask = typeof OrchestrationTask.Type;
 
@@ -1007,6 +1009,24 @@ const TaskRoleSelectionsSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskArchiveCommand = Schema.Struct({
+  type: Schema.Literal("task.archive"),
+  commandId: CommandId,
+  taskId: TaskId,
+});
+
+const TaskRestoreCommand = Schema.Struct({
+  type: Schema.Literal("task.restore"),
+  commandId: CommandId,
+  taskId: TaskId,
+});
+
+const TaskDeleteCommand = Schema.Struct({
+  type: Schema.Literal("task.delete"),
+  commandId: CommandId,
+  taskId: TaskId,
+});
+
 /**
  * The handoff command. Internal/PM-dispatchable. The decider (WP-E) pins
  * `runtimeMode` and the role's model from config — they are intentionally **not**
@@ -1164,6 +1184,9 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskCreateCommand,
   TaskClassifyCommand,
   TaskRoleSelectionsSetCommand,
+  TaskArchiveCommand,
+  TaskRestoreCommand,
+  TaskDeleteCommand,
   TaskStageStartCommand,
   TaskGateRequestCommand,
   TaskGateResolveCommand,
@@ -1350,6 +1373,9 @@ export const OrchestrationEventType = Schema.Literals([
   "task.created",
   "task.classified",
   "task.role-selections-updated",
+  "task.archived",
+  "task.restored",
+  "task.deleted",
   "task.stage-started",
   "task.stage-completed",
   "task.stage-blocked",
@@ -1572,6 +1598,23 @@ export const TaskCreatedPayload = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskArchivedPayload = Schema.Struct({
+  taskId: TaskId,
+  archivedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskRestoredPayload = Schema.Struct({
+  taskId: TaskId,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskDeletedPayload = Schema.Struct({
+  taskId: TaskId,
+  deletedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -1863,6 +1906,21 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.role-selections-updated"),
     payload: TaskRoleSelectionsUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.archived"),
+    payload: TaskArchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.restored"),
+    payload: TaskRestoredPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.deleted"),
+    payload: TaskDeletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

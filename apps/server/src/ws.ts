@@ -166,6 +166,9 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.created"
       | "task.classified"
       | "task.role-selections-updated"
+      | "task.archived"
+      | "task.restored"
+      | "task.deleted"
       | "task.stage-started"
       | "task.stage-completed"
       | "task.stage-blocked"
@@ -186,6 +189,9 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.created" ||
     event.type === "task.classified" ||
     event.type === "task.role-selections-updated" ||
+    event.type === "task.archived" ||
+    event.type === "task.restored" ||
+    event.type === "task.deleted" ||
     event.type === "task.stage-started" ||
     event.type === "task.stage-completed" ||
     event.type === "task.stage-blocked" ||

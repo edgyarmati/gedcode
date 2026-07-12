@@ -3378,6 +3378,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         playbookVersion: "feature@v1",
         createdAt: now,
         updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
       };
       const pendingGate = {
         gateId,

@@ -86,6 +86,8 @@ function makeBoardTask(
     playbookVersion: null,
     createdAt: "2026-06-14T00:00:00.000Z",
     updatedAt: "2026-06-14T00:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
   };
 }
 

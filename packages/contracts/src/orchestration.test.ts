@@ -435,6 +435,62 @@ it.effect("decodes thread archived and unarchived events", () =>
   }),
 );
 
+it.effect("round-trips task archive, restore, and delete commands and events", () =>
+  Effect.gen(function* () {
+    for (const type of ["task.archive", "task.restore", "task.delete"] as const) {
+      const command = yield* decodeOrchestrationCommand({
+        type,
+        commandId: `cmd-${type}`,
+        taskId: "task-1",
+      });
+      const reDecoded = yield* decodeOrchestrationCommand(
+        yield* encodeOrchestrationCommand(command),
+      );
+      assert.strictEqual(reDecoded.type, type);
+    }
+
+    const eventInputs = [
+      {
+        type: "task.archived" as const,
+        payload: {
+          taskId: "task-1",
+          archivedAt: "2026-01-01T00:01:00.000Z",
+          updatedAt: "2026-01-01T00:01:00.000Z",
+        },
+      },
+      {
+        type: "task.restored" as const,
+        payload: { taskId: "task-1", updatedAt: "2026-01-01T00:02:00.000Z" },
+      },
+      {
+        type: "task.deleted" as const,
+        payload: {
+          taskId: "task-1",
+          deletedAt: "2026-01-01T00:03:00.000Z",
+          updatedAt: "2026-01-01T00:03:00.000Z",
+        },
+      },
+    ];
+    for (const [index, input] of eventInputs.entries()) {
+      const event = yield* decodeOrchestrationEvent({
+        sequence: index + 1,
+        eventId: `event-retention-${index}`,
+        aggregateKind: "task",
+        aggregateId: "task-1",
+        type: input.type,
+        occurredAt: input.payload.updatedAt,
+        commandId: `cmd-retention-${index}`,
+        causationEventId: null,
+        correlationId: `cmd-retention-${index}`,
+        metadata: {},
+        payload: input.payload,
+      });
+      const reDecoded = yield* decodeOrchestrationEvent(yield* encodeOrchestrationEvent(event));
+      assert.strictEqual(reDecoded.type, input.type);
+    }
+  }),
+);
+
 it.effect("accepts provider-scoped model options in thread.turn.start", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadTurnStartCommand({
@@ -1017,6 +1073,8 @@ it.effect("decodes OrchestrationTask.prUrl with a null default and round-trips o
     });
     assert.strictEqual(decodedDefault.prUrl, null);
     assert.strictEqual(decodedDefault.landing, null);
+    assert.strictEqual(decodedDefault.archivedAt, null);
+    assert.strictEqual(decodedDefault.deletedAt, null);
 
     const decodedOpened = yield* decodeOrchestrationTask({
       ...decodedDefault,

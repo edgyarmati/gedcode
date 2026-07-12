@@ -127,6 +127,8 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   playbookVersion: null,
   createdAt: now,
   updatedAt: now,
+  archivedAt: null,
+  deletedAt: null,
   ...overrides,
 });
 
@@ -1536,5 +1538,27 @@ it.effect("classifyRequest snapshots null when the task type has no playbook", (
       assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("unknown"));
       assert.strictEqual(dispatched[0].playbookVersion, null);
     }
+  }),
+);
+
+it.effect("getTaskLedger omits archived and permanently deleted tasks", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const active = makeTask({ id: TaskId.make("task-active") });
+    const archived = makeTask({ id: TaskId.make("task-archived"), archivedAt: now });
+    const deleted = makeTask({ id: TaskId.make("task-deleted"), deletedAt: now });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel([active, archived, deleted], []))),
+    );
+    const getTaskLedger = findTool(tools, "getTaskLedger");
+
+    const result = yield* Effect.promise(() =>
+      getTaskLedger.execute("tool-task-ledger", { projectId }),
+    );
+
+    assert.deepStrictEqual(
+      result.details.tasks.map((task: OrchestrationTask) => task.id),
+      [TaskId.make("task-active")],
+    );
   }),
 );

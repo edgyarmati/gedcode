@@ -133,6 +133,8 @@ function makeReadModel(input: {
         playbookVersion: "feature@v1",
         createdAt: now,
         updatedAt: now,
+        archivedAt: null,
+        deletedAt: null,
       },
     ],
     pendingGates: [],

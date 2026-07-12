@@ -57,7 +57,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           role_model_selections_json,
           playbook_version,
           created_at,
-          updated_at
+          updated_at,
+          archived_at,
+          deleted_at
         )
         VALUES (
           ${row.taskId},
@@ -76,7 +78,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           ${JSON.stringify(row.roleModelSelections)},
           ${row.playbookVersion},
           ${row.createdAt},
-          ${row.updatedAt}
+          ${row.updatedAt},
+          ${row.archivedAt},
+          ${row.deletedAt}
         )
         ON CONFLICT (task_id)
         DO UPDATE SET
@@ -95,7 +99,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           role_model_selections_json = excluded.role_model_selections_json,
           playbook_version = excluded.playbook_version,
           created_at = excluded.created_at,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          archived_at = excluded.archived_at,
+          deleted_at = excluded.deleted_at
       `,
   });
 
@@ -121,7 +127,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          deleted_at AS "deletedAt"
         FROM projection_tasks
         WHERE task_id = ${taskId}
       `,
@@ -149,9 +157,13 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          deleted_at AS "deletedAt"
         FROM projection_tasks
         WHERE project_id = ${projectId}
+          AND archived_at IS NULL
+          AND deleted_at IS NULL
         ORDER BY created_at ASC, task_id ASC
       `,
   });
@@ -178,7 +190,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          deleted_at AS "deletedAt"
         FROM projection_tasks
         ORDER BY created_at ASC, task_id ASC
       `,

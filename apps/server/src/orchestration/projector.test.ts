@@ -2030,4 +2030,85 @@ describe("orchestration projector", () => {
     });
     expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
   });
+
+  it("replays task archive, restore, and delete tombstones without dropping history", async () => {
+    const createdAt = "2026-07-12T06:00:00.000Z";
+    const archivedAt = "2026-07-12T06:01:00.000Z";
+    const restoredAt = "2026-07-12T06:02:00.000Z";
+    const deletedAt = "2026-07-12T06:03:00.000Z";
+    let model = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(createdAt),
+        makeEvent({
+          sequence: 1,
+          type: "task.created",
+          aggregateKind: "task",
+          aggregateId: "task-retention",
+          occurredAt: createdAt,
+          commandId: "cmd-task-retention-create",
+          payload: {
+            taskId: "task-retention",
+            projectId: "project-1",
+            taskType: "feature",
+            title: "Retain history",
+            branch: "orchestrator/task-retention",
+            worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-retention",
+            pmMessageId: null,
+            playbookVersion: "feature@v1",
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 2,
+          type: "task.archived",
+          aggregateKind: "task",
+          aggregateId: "task-retention",
+          occurredAt: archivedAt,
+          commandId: "cmd-task-retention-archive",
+          payload: { taskId: "task-retention", archivedAt, updatedAt: archivedAt },
+        }),
+      ),
+    );
+    expect(model.tasks[0]?.archivedAt).toBe(archivedAt);
+    expect(model.tasks).toHaveLength(1);
+
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 3,
+          type: "task.restored",
+          aggregateKind: "task",
+          aggregateId: "task-retention",
+          occurredAt: restoredAt,
+          commandId: "cmd-task-retention-restore",
+          payload: { taskId: "task-retention", updatedAt: restoredAt },
+        }),
+      ),
+    );
+    expect(model.tasks[0]?.archivedAt).toBeNull();
+
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 4,
+          type: "task.deleted",
+          aggregateKind: "task",
+          aggregateId: "task-retention",
+          occurredAt: deletedAt,
+          commandId: "cmd-task-retention-delete",
+          payload: { taskId: "task-retention", deletedAt, updatedAt: deletedAt },
+        }),
+      ),
+    );
+    expect(model.tasks[0]?.deletedAt).toBe(deletedAt);
+    expect(model.tasks[0]?.title).toBe("Retain history");
+  });
 });

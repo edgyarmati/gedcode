@@ -65,6 +65,8 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   playbookVersion: "feature@v1",
   createdAt: now,
   updatedAt: now,
+  archivedAt: null,
+  deletedAt: null,
   ...overrides,
 });
 

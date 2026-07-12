@@ -15,17 +15,20 @@ import {
   OrchestrationSession,
   OrchestrationThread,
   TaskAbandonedPayload,
+  TaskArchivedPayload,
   TaskCancellationFailedPayload,
   TaskCancellationPhaseCompletedPayload,
   TaskCancellationRequestedPayload,
   TaskClassifiedPayload,
   TaskCreatedPayload,
+  TaskDeletedPayload,
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
   TaskPrOpenFailedPayload,
   TaskPrOpenedPayload,
   TaskRoleSelectionsUpdatedPayload,
+  TaskRestoredPayload,
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
   TaskStageInterruptedPayload,
@@ -868,6 +871,8 @@ export function projectEvent(
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
+            archivedAt: null,
+            deletedAt: null,
           };
           return {
             ...nextBase,
@@ -904,6 +909,39 @@ export function projectEvent(
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
             roleModelSelections: payload.roleModelSelections,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.archived":
+      return decodeForEvent(TaskArchivedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            archivedAt: payload.archivedAt,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.restored":
+      return decodeForEvent(TaskRestoredPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            archivedAt: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.deleted":
+      return decodeForEvent(TaskDeletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            deletedAt: payload.deletedAt,
             updatedAt: payload.updatedAt,
           }),
         })),

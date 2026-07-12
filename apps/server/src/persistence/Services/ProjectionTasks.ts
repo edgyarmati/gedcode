@@ -48,6 +48,8 @@ export const ProjectionTask = Schema.Struct({
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime),
+  deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionTask = typeof ProjectionTask.Type;
 

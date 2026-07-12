@@ -2074,4 +2074,113 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       expect(result._tag).toBe("Failure");
     }),
   );
+
+  it.effect("archives, restores, and tombstones a fully landed task", () =>
+    Effect.gen(function* () {
+      const landed = yield* taskReadModel({
+        status: "landed",
+        prUrl: "https://github.com/acme/repo/pull/42",
+        landing: {
+          status: "completed",
+          failureMessage: null,
+          branchPushed: true,
+          updatedAt: now,
+        },
+      });
+      const archivedEvent = yield* decideOrchestrationCommand({
+        readModel: landed,
+        command: {
+          type: "task.archive",
+          commandId: asCommandId("cmd-task-archive"),
+          taskId: asTaskId("task-1"),
+        },
+      });
+      const archivedSingle = toEvents(archivedEvent)[0]!;
+      expect(archivedSingle.type).toBe("task.archived");
+      const archived = yield* projectEvent(landed, withSequence(archivedSingle, 3));
+
+      const restoredEvent = yield* decideOrchestrationCommand({
+        readModel: archived,
+        command: {
+          type: "task.restore",
+          commandId: asCommandId("cmd-task-restore"),
+          taskId: asTaskId("task-1"),
+        },
+      });
+      const restoredSingle = toEvents(restoredEvent)[0]!;
+      expect(restoredSingle.type).toBe("task.restored");
+      const restored = yield* projectEvent(archived, withSequence(restoredSingle, 4));
+
+      const deletedEvent = yield* decideOrchestrationCommand({
+        readModel: restored,
+        command: {
+          type: "task.delete",
+          commandId: asCommandId("cmd-task-delete"),
+          taskId: asTaskId("task-1"),
+        },
+      });
+      expect(toEvents(deletedEvent)[0]?.type).toBe("task.deleted");
+    }),
+  );
+
+  it.effect("rejects retention changes until the task is fully settled", () =>
+    Effect.gen(function* () {
+      for (const readModel of [
+        yield* taskReadModel({ status: "working" }),
+        yield* taskReadModel({
+          status: "landed",
+          prUrl: null,
+          landing: {
+            status: "failed",
+            failureMessage: "provider unavailable",
+            branchPushed: true,
+            updatedAt: now,
+          },
+        }),
+      ]) {
+        for (const type of ["task.archive", "task.delete"] as const) {
+          const result = yield* Effect.exit(
+            decideOrchestrationCommand({
+              readModel,
+              command: {
+                type,
+                commandId: asCommandId(`cmd-reject-${type}`),
+                taskId: asTaskId("task-1"),
+              },
+            }),
+          );
+          expect(result._tag).toBe("Failure");
+        }
+      }
+    }),
+  );
+
+  it.effect("blocks normal task commands after archive or permanent deletion", () =>
+    Effect.gen(function* () {
+      for (const retention of [
+        { archivedAt: now, deletedAt: null },
+        { archivedAt: null, deletedAt: now },
+      ]) {
+        const readModel = yield* taskReadModel({
+          status: "landed",
+          prUrl: "https://github.com/acme/repo/pull/42",
+          ...retention,
+        });
+        const result = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.classify",
+              commandId: asCommandId("cmd-classify-retained"),
+              taskId: asTaskId("task-1"),
+              taskType: asTaskTypeId("feature"),
+              playbookVersion: "feature@v1",
+              createdAt: now,
+            },
+          }),
+        );
+        expect(result._tag).toBe("Failure");
+      }
+    }),
+  );
 });

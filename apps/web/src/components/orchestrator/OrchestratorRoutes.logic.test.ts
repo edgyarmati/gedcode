@@ -34,6 +34,8 @@ function makeTask(overrides: Partial<OrchestratorTask> = {}): OrchestratorTask {
     playbookVersion: null,
     createdAt: "2026-07-11T00:00:00.000Z",
     updatedAt: "2026-07-11T00:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
     ...overrides,
   };
 }
