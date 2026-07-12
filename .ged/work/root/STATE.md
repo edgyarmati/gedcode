@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: implement.
-- **Active task**: `ORCH-PMTH-02` - bound PM re-entry summaries and history cursors.
+- **Phase**: verify (urgent July 13 scope complete; remaining roadmap items are deferred).
+- **Active task**: none.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -151,6 +151,15 @@
   (existing warnings only), an isolated clean `bun typecheck` rerun after a transient parallel tsgo
   failure, `bun run build`, and `bun run test` (all 12 packages; server 1,423 passed/1 skipped, web 1,221
   passed).
+- `ORCH-PMTH-02` is complete in commit `c32a8317b`. PM task-ledger results now contain compact task
+  summaries, total attempt counts, and at most three recent attempt records instead of unbounded task
+  aggregates. Ledger snapshots and automatic stage/gate re-entry messages carry last-action cursors.
+- Final `ORCH-PMTH-02` verification passed on 2026-07-12: 75 focused PM runtime/tool tests, `bun fmt`,
+  `bun lint` (existing warnings only), a clean isolated `bun typecheck` rerun after the known workspace
+  dependency-resolution race, `bun run build`, and `bun run test` (all 12 packages; server 1,424
+  passed/1 skipped, web 1,221 passed).
+- All tasks designated urgent through the July 13 cutoff are complete. Remaining `DEFERRED` work stays
+  scheduled for after 2026-07-13; canonical pipeline ordering remains explicitly user-deferred.
 
 ## July 13 Working Cutoff
 
@@ -162,7 +171,7 @@
 
 ## Immediate Sequence
 
-1. `ORCH-PMTH-02` bound PM re-entry summaries and history cursors.
+1. None in the urgent cutoff scope. Resume deferred items after 2026-07-13 in roadmap priority order.
 
 ## Repository State Notes
 

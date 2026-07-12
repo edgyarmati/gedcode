@@ -320,3 +320,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: 107 focused tests, `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,423 passed/1
   skipped, web 1,221 passed).
+
+### ORCH-PMTH-02
+
+- PM tool coverage builds a task with five historical attempts and proves the ledger returns the total
+  count but only the newest three summaries, omits the unbounded `stageThreadIds` array, and reports the
+  projection snapshot sequence as `lastActionCursor`.
+- PM runtime coverage proves completed and quota-blocked settlement prompts include their durable event
+  sequence as a last-action cursor after the existing secret scrub and length bound.
+- System-prompt coverage directs the PM to trust cursors and bounded summaries instead of reloading full
+  worker histories.
+- Verification passed on 2026-07-12: 75 focused tests, `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1
+  skipped, web 1,221 passed).
