@@ -29,6 +29,11 @@ Verification evidence:
   warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (server 1,424
   passed/1 skipped, web 1,224 passed). One unrelated server-router test flaked on the first full run and
   then passed 72/72 in isolation.
+- A second manual screenshot showed responsive `sm:px-5` winning over the base inset. The regression
+  test now checks computed desktop padding with both class sets present and requires exactly 90px.
+- Final responsive follow-up gates passed on 2026-07-13: 194/194 Chromium interactions, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test` (server
+  1,424 passed/1 skipped, web 1,224 passed; all 12 packages successful).
 
 ## Lifecycle Safety
 

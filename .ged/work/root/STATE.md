@@ -174,6 +174,12 @@
   `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and a clean
   `bun run test` rerun (server 1,424 passed/1 skipped, web 1,224 passed). The first full run had one
   unrelated server-router flake, which passed 72/72 in isolation before the clean rerun.
+- Responsive follow-up commit `8c5422ce1` prevents `sm:px-*` header utilities from overriding the
+  collapsed Electron inset. A Chromium computed-style test combines the real responsive padding with
+  the shared rule and confirms 90px of macOS window-control clearance at desktop width.
+- Responsive follow-up verification passed on 2026-07-13: 194/194 Chromium interactions, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test` (server
+  1,424 passed/1 skipped, web 1,224 passed; all 12 packages successful).
 
 ## July 13 Working Cutoff
 
