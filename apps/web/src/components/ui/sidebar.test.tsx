@@ -70,7 +70,7 @@ describe("sidebar persisted state", () => {
 describe("sidebar Electron titlebar inset", () => {
   it("reserves native window controls only when Electron has a collapsed sidebar", () => {
     expect(sidebarTitlebarLeftInsetClass({ isElectron: true, sidebarOpen: false })).toContain(
-      "pl-[90px]",
+      "sm:pl-[90px]",
     );
     expect(sidebarTitlebarLeftInsetClass({ isElectron: true, sidebarOpen: true })).toBeUndefined();
     expect(

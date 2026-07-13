@@ -49,7 +49,7 @@ export function sidebarTitlebarLeftInsetClass(input: {
   readonly sidebarOpen: boolean;
 }): string | undefined {
   return input.isElectron && !input.sidebarOpen
-    ? "pl-[90px] wco:pl-[calc(env(titlebar-area-x)+1em)]"
+    ? "pl-[90px] sm:pl-[90px] wco:pl-[calc(env(titlebar-area-x)+1em)] wco:sm:pl-[calc(env(titlebar-area-x)+1em)]"
     : undefined;
 }
 

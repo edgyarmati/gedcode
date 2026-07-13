@@ -4,7 +4,14 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
-import { readPersistedSidebarOpen, Sidebar, SidebarProvider, SidebarTrigger } from "./sidebar";
+import { cn } from "../../lib/utils";
+import {
+  readPersistedSidebarOpen,
+  sidebarTitlebarLeftInsetClass,
+  Sidebar,
+  SidebarProvider,
+  SidebarTrigger,
+} from "./sidebar";
 
 function SidebarHarness({ defaultOpen = true }: { defaultOpen?: boolean }) {
   return (
@@ -68,4 +75,21 @@ it("restores the collapsed choice after remount", async () => {
     .element(page.getByRole("button", { name: "Toggle Sidebar" }))
     .toHaveAttribute("aria-expanded", "false");
   await second.unmount();
+});
+
+it("keeps the macOS titlebar inset ahead of responsive header padding", async () => {
+  const screen = await render(
+    <div
+      className={cn(
+        "px-3 sm:px-5",
+        sidebarTitlebarLeftInsetClass({ isElectron: true, sidebarOpen: false }),
+      )}
+      data-testid="electron-titlebar"
+    />,
+  );
+
+  expect(getComputedStyle(page.getByTestId("electron-titlebar").element()).paddingLeft).toBe(
+    "90px",
+  );
+  await screen.unmount();
 });
