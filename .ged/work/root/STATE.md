@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-REL-01` — add the registered release task type and its dedicated playbook,
-  with provenance that requires a fully landed feature task.
+- **Active task**: `ORCH-REL-02` — add one guarded, idempotent release-dispatch actuator with durable
+  authoritative progress for PM and UI consumers.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -13,6 +13,14 @@
 
 ## Current Progress
 
+- `ORCH-REL-01` is complete in commit `a50cea68e`. The registry now installs a dedicated release
+  playbook and every PM runtime receives all registered task-type skills. Release creation records its
+  source through the durable dependency projection and requires exactly one visible, fully landed
+  feature task with a recorded pull request in the same project. Classification and worker startup
+  revalidate that provenance, including replayed tasks, and release tasks cannot be split children.
+- Final `ORCH-REL-01` verification passed on 2026-07-15: 149 focused registry/playbook/decider/PM
+  tests, all 190 contract tests, the full server suite (1,449 passed/1 skipped), `bun fmt`, `bun lint`
+  (existing warnings only), and `bun typecheck`.
 - `ORCH-TYPE-01` is complete in commit `a7b960f0f`. Task-type config now carries extensible ids for
   durable replay while one server-owned registry defines installed types and their built-in playbooks.
   Project config writes, PM create/split/classify operations, and authoritative decider boundaries all
