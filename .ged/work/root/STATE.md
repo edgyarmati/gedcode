@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `UI-DRAFT-01` — preserve composer drafts across Chat and Orchestrator navigation.
+- **Active task**: `UI-SIDEBAR-01` — reuse Chat project sorting and manual ordering in Orchestrator.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +12,13 @@
 
 ## Current Progress
 
+- `UI-DRAFT-01` is complete in commit `a254a128d`. The PM composer now uses the existing persisted,
+  debounced composer-draft store under the deterministic environment-scoped PM thread identity. Drafts
+  survive route/surface unmounts, remain isolated per project, do not collide with interactive question
+  answers, and clear only after a successful send.
+- Final `UI-DRAFT-01` verification passed on 2026-07-14: 44 focused unit tests, 6 focused Chromium
+  interactions, the full web suite (1,229/1,229), `bun fmt`, `bun lint` (existing warnings only), and
+  `bun typecheck`. The first Chromium launch timed out before connecting; the clean retry passed.
 - `ORCH-SPLIT-04` is complete in commit `18e58d664`. The task board now removes child tasks from
   duplicate top-level buckets, orders them deterministically beneath one collapsible parent, summarizes
   aggregate completion, derives the group bucket from child lifecycle state, and bubbles child gates or

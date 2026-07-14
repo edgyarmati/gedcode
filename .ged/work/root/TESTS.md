@@ -195,6 +195,16 @@ Verification evidence:
 - Project/task context menus expose only actions valid for the current state.
 - Effective worker permission mode is visible.
 
+### UI-DRAFT-01
+
+- PM composer browser coverage types an unsent draft, unmounts the Orchestrator surface, proves another
+  project remains empty, remounts the original project, and observes the exact restored text before a
+  successful send clears it.
+- Shared PM-thread helper coverage pins stable draft identity, while existing composer-store coverage
+  continues to verify debounced persistence and normal Chat draft behavior.
+- Verification passed on 2026-07-14: 44 focused unit tests, 6 focused Chromium interactions, the full
+  web suite (1,229/1,229), `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`.
+
 ## Compatibility Checks Requiring Explicit Decisions
 
 - Task archive/delete event shape and retention policy.
