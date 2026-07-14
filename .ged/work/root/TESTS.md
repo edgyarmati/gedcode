@@ -173,6 +173,17 @@ Verification evidence:
   was an existing five-second MessagesTimeline timing flake that passed 12/12 alone. The full web suite
   passed 1,226/1,226 with a 15-second timeout budget.
 
+### ORCH-SPLIT-04
+
+- Pure grouping tests prove children appear beneath one visible parent in declared child order, a child
+  blocker or gate promotes the whole group to Needs you, and mixed landed/abandoned children classify
+  the completed group without leaving a permanently active parent card.
+- Chromium coverage proves children are absent while collapsed, appear in deterministic order after
+  expansion, and existing archived/terminal context-menu flows remain operational.
+- Verification passed on 2026-07-14: 40 focused unit tests, 13 focused Chromium interactions,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, the complete web suite
+  (1,228/1,228), and the complete Chromium suite (196/196).
+
 ## Web and Chat
 
 - Forking at a message creates a distinct thread with the intended history boundary.

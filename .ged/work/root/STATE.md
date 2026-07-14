@@ -1,15 +1,24 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-SPLIT-04` — group ordered child tasks beneath their parent on the board.
+- **Active task**: `UI-DRAFT-01` — preserve composer drafts across Chat and Orchestrator navigation.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
+- **Needs user decision**: `CHAT-FORK-01/02` provider-native resume versus a fresh provider session
+  initialized from copied message history. No compatibility fallback will be invented.
 - **Worker policy**: GPT-5.6 Terra/high for medium work; GPT-5.6 Sol/high for difficult or
   cross-cutting work. `setTaskBackend` now carries the complete provider selection, including effort.
 
 ## Current Progress
 
+- `ORCH-SPLIT-04` is complete in commit `18e58d664`. The task board now removes child tasks from
+  duplicate top-level buckets, orders them deterministically beneath one collapsible parent, summarizes
+  aggregate completion, derives the group bucket from child lifecycle state, and bubbles child gates or
+  blockers into Needs you. Standalone archived and terminal actions remain unchanged.
+- Final `ORCH-SPLIT-04` verification passed on 2026-07-14: 40 focused rendering/partition tests, 13
+  focused Chromium interactions, `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`.
+  The complete web suite passed 1,228/1,228 and all 196 Chromium interactions passed.
 - `ORCH-SPLIT-03` is complete in commit `329d3bb4a`. PM policy and the built-in feature playbook now
   distinguish genuinely oversized work from small edits, require two to eight independently verifiable
   ordered children, and use the existing plan gate to approve the complete child graph before one

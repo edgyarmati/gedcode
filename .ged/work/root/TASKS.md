@@ -54,16 +54,16 @@ or explicitly blocked.
 | ORCH-SPLIT-01 | DONE | Add parent task ID, child order, and aggregate progress to contracts/projection/persistence. | Replay reconstructs parent/children and deterministic order. |
 | ORCH-SPLIT-02 | DONE | Add atomic `splitTask` PM tool that creates bounded children with acceptance criteria and dependencies. | Partial failure creates no orphan child set; retry is idempotent. |
 | ORCH-SPLIT-03 | DONE | Teach PM policy to split work when scope exceeds one focused work stage. | PM test produces bounded children and the plan gate covers their structure without a new gate type. |
-| ORCH-SPLIT-04 | NEXT | Group child tasks under their parent in the board. | Browser test covers collapsed/expanded parent and ordered children. |
+| ORCH-SPLIT-04 | DONE | Group child tasks under their parent in the board. | Browser test covers collapsed/expanded parent and ordered children. |
 
 ## Phase 4 - Chat and Orchestrator UX
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| CHAT-FORK-01 | DEFERRED | Define server/RPC thread-fork semantics. Deferred until after 2026-07-13. | Contract/integration tests fork at a selected message without mutating source thread. |
-| CHAT-FORK-02 | DEFERRED | Add normal-chat Fork action to message/thread context menus. Deferred until after 2026-07-13. | Browser test creates and opens a fork. |
+| CHAT-FORK-01 | BLOCKED | Define server/RPC thread-fork semantics. Needs an explicit compatibility decision: resume provider-native state or start a fresh provider session from copied history. | Contract/integration tests fork at a selected message without mutating source thread. |
+| CHAT-FORK-02 | BLOCKED | Add normal-chat Fork action to message/thread context menus after CHAT-FORK-01 semantics are decided. | Browser test creates and opens a fork. |
 | ORCH-EMPTY-01 | DONE | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Chromium test omits both empty-state cards and renders each section when content appears. |
-| UI-DRAFT-01 | DEFERRED | Persist composer drafts across surfaces. Deferred until after 2026-07-13. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
+| UI-DRAFT-01 | NEXT | Persist composer drafts across surfaces. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DEFERRED | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. Deferred until after 2026-07-13. | Sort setting and drag reorder produce identical persisted order. |
 | UI-SIDEBAR-02 | DEFERRED | Complete remaining rich project/task context-menu polish. Deferred until after 2026-07-13. | Browser tests assert status-sensitive menu items and no native edit menu. |
 | UI-COLLAPSE-01 | DONE | Make the shared left sidebar collapsible from desktop content headers and restore its existing persisted open state. | Component/browser tests cover collapse, reopen, reload persistence, and unchanged mobile behavior. |
