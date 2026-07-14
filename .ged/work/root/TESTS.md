@@ -149,6 +149,18 @@ Verification evidence:
 - Verification passed on 2026-07-14: 121 focused tests, all 189 contract tests, `bun fmt`, `bun lint`
   (existing warnings only), `bun typecheck`, and the full server suite (1,432 passed/1 skipped).
 
+### ORCH-SPLIT-02
+
+- Decider coverage proves bounded, atomic child creation; validates criteria and earlier-sibling-only
+  dependencies; rejects blocked stage starts; and permits the next child after its dependency lands.
+- Engine and PM coverage prove deterministic command/child identities make exact retries idempotent,
+  invalid splits emit no partial child set, and ledgers distinguish runnable from blocked children.
+- Projection, migration, and worktree-reactor coverage preserve criteria/dependencies and remove the
+  converted parent's obsolete worktree after the parent becomes a task container.
+- Verification passed on 2026-07-14: 216 focused tests, all 189 contract tests, the full server suite
+  (1,439 passed/1 skipped), `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and the
+  complete 12-package `bun run test --output-logs=errors-only` gate.
+
 ## Web and Chat
 
 - Forking at a message creates a distinct thread with the intended history boundary.

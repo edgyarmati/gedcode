@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-SPLIT-02` — add one atomic, idempotent PM task-splitting command.
+- **Active task**: `ORCH-SPLIT-03` — teach PM policy when and how to split oversized work.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -10,6 +10,14 @@
 
 ## Current Progress
 
+- `ORCH-SPLIT-02` is complete in commit `9d7e9c06d`. One idempotent `task.split` command converts a
+  top-level inactive parent into a container and creates two to eight ordered children atomically.
+  Children retain bounded acceptance criteria and explicit acyclic dependencies; blocked children
+  cannot start, while PM ledgers identify their blockers and next runnable siblings. PM and MCP expose
+  the shared actuator, SQL/replay preserve split details, and parent worktree cleanup is event-driven.
+- Final `ORCH-SPLIT-02` verification passed on 2026-07-14: 216 focused tests, 189 contract tests, the
+  full server suite (1,439 passed/1 skipped), `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, and the complete 12-package `bun run test --output-logs=errors-only` gate.
 - `ORCH-SPLIT-01` is complete in commit `9acb70191`. Task creation and durable events carry an
   optional top-level parent and zero-based sibling order; the decider rejects partial, cross-project,
   nested, hidden-parent, and duplicate-order relationships. Replay and SQL projections derive parent
