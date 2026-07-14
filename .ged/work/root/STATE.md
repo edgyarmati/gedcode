@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-ACCESS-03` — show the effective worker runtime permission mode in stage
-  history/task detail.
+- **Active task**: `ORCH-BACKEND-01` — carry validated reasoning effort through role defaults,
+  task overrides, stage resolution, and provider startup.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +12,15 @@
 
 ## Current Progress
 
+- `ORCH-ACCESS-03` is complete in commit `b43e9b751`. Stage-start events now stamp the resolved worker
+  runtime mode, durable stage history and SQL snapshots preserve it, migration 50 backfills older
+  attempts from their actual stage threads, and task detail renders Full access, Approval required, or
+  Auto-accept edits per attempt.
+- Final `ORCH-ACCESS-03` verification passed on 2026-07-14: 118 focused server tests, 5 UI logic tests,
+  and 12 Chromium interactions; `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`.
+  All ten unaffected workspace packages passed; package-isolated full gates passed web 1,226/1,226 and
+  server 1,428/1,429 with one skipped. Parallel root attempts exposed only existing five-second timing
+  flakes, all of which passed in isolation.
 - `ORCH-TASK-04` is complete in commit `7dc1593e4`. `createTask` accepts an optional settled
   predecessor and durably links successor/predecessor in both directions. The decider rejects active,
   hidden, cross-project, and already-replaced predecessors; replay, SQL projection, restart snapshots,
@@ -217,9 +226,9 @@
 
 ## Immediate Sequence
 
-1. `ORCH-ACCESS-03` effective permission display.
-2. `ORCH-BACKEND-01` reasoning-effort metadata and routing.
-3. `ORCH-SPLIT-01..04` parent/child task splitting.
+1. `ORCH-BACKEND-01` reasoning-effort metadata and routing.
+2. `ORCH-SPLIT-01..04` parent/child task splitting.
+3. `CHAT-FORK-01..02` normal-chat thread forking.
 
 ## Repository State Notes
 

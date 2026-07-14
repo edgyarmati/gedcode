@@ -54,6 +54,19 @@ Verification evidence:
   `bun lint` (existing warnings only), `bun typecheck`, and all 12 workspace test packages. The server
   package passed 1,427 tests with 1 skipped.
 
+## ORCH-ACCESS-03
+
+- Stage-start decider coverage proves the resolved worker runtime mode is stamped beside the effective
+  backend/model; replay and SQL projections retain it through stage settlement.
+- Migration coverage backfills an older stage attempt from its actual stage thread instead of assuming
+  a permission level.
+- Timeline logic covers every runtime-mode label and unknown legacy data; Chromium task-detail coverage
+  displays the recorded Full access mode.
+- Verification passed on 2026-07-14: 118 focused server tests, 5 UI logic tests, 12 Chromium
+  interactions, `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`. Ten unaffected
+  workspace packages passed in the root run; isolated full suites passed web 1,226/1,226 and server
+  1,428/1,429 with one skipped after parallel root runs exposed unrelated five-second timing flakes.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.
