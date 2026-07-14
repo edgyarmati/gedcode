@@ -1011,6 +1011,7 @@ const TaskCreateCommand = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+  dependsOnTaskIds: Schema.optionalKey(Schema.Array(TaskId)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   createdAt: IsoDateTime,
 });

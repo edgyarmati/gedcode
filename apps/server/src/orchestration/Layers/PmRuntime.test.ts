@@ -1224,7 +1224,7 @@ describe("PmRuntime", () => {
     ),
   );
 
-  it.effect("constructs the PM adapter with the built-in feature playbook skill", () =>
+  it.effect("constructs the PM adapter with all registered task-type playbooks", () =>
     Effect.gen(function* () {
       const captured: DriverPmAdapterOptions[] = [];
       const resourceCalls: AgentHarnessResources[] = [];
@@ -1237,10 +1237,12 @@ describe("PmRuntime", () => {
       }).pipe(Effect.scoped, Effect.provide(makeFactoryCaptureLayer()));
 
       const resolved = defaultPlaybookLoader.resolve("feature");
+      const release = defaultPlaybookLoader.resolve("release");
       assert.ok(resolved);
+      assert.ok(release);
       assert.strictEqual(captured.length, 1);
       assert.strictEqual(resourceCalls.length, 1);
-      assert.deepStrictEqual(resourceCalls[0]?.skills, [resolved.skill]);
+      assert.deepStrictEqual(resourceCalls[0]?.skills, [resolved.skill, release.skill]);
       assert.strictEqual(resourceCalls[0]?.skills?.[0]?.name, resolved.skill.name);
       assert.strictEqual(resourceCalls[0]?.skills?.[0]?.description, resolved.skill.description);
     }),

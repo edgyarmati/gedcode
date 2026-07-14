@@ -413,6 +413,31 @@ it.effect("createTask rejects an unregistered task type before dispatch", () =>
   }),
 );
 
+it.effect("createTask carries release provenance into the durable dependency", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const createTask = findTool(tools, "createTask");
+
+    yield* Effect.promise(() =>
+      createTask.execute("tool-create-release", {
+        projectId: "project-1",
+        title: "Release landed feature",
+        idempotencyKey: "release:task-1",
+        taskType: "release",
+        releaseSourceTaskId: "task-1",
+      }),
+    );
+
+    const command = dispatched[0];
+    assert.strictEqual(command?.type, "task.create");
+    if (command?.type === "task.create") {
+      assert.strictEqual(command.taskType, TaskTypeId.make("release"));
+      assert.deepStrictEqual(command.dependsOnTaskIds, [TaskId.make("task-1")]);
+    }
+  }),
+);
+
 it.effect("splitTask derives stable children and resolves dependencies by earlier child key", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

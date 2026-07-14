@@ -80,6 +80,7 @@ import {
 } from "../Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
+import { defaultTaskTypeRegistry } from "../TaskTypeRegistry.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
@@ -172,6 +173,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
     "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
     "Reuse an existing task whenever possible. When replacement is intentional, settle the old task first and pass its id as createTask.supersedesTaskId so the ledger records one explicit successor instead of unrelated duplicates.",
+    "Create a release task only for one fully landed feature task, using taskType `release` and createTask.releaseSourceTaskId. Never use a generic feature task or an unlanded worktree as a release substitute, and never publish outside the guarded release actuator.",
     "During planning, split a task only when its implementation cannot be completed and verified as one focused work stage—for example, when it spans independently shippable subsystems, requires ordered migrations, or has acceptance criteria that should be verified separately. Do not split merely to parallelize small edits.",
     "For an oversized task, make the proposed plan describe 2-8 ordered child slices, each with a narrow title, explicit acceptance criteria, and dependencies only on earlier child keys. Request the ordinary plan gate against that complete proposed plan; the one plan approval covers the child structure, so do not invent or request a separate split gate.",
     "After that plan gate is approved and the parent has no active stage, call splitTask exactly once with a stable idempotency key and the approved child structure. Then start only children whose blockedByTaskIds ledger field is empty; independent unblocked children may run in parallel within resource limits.",
@@ -1431,15 +1433,12 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           serverSettings,
           providerAdapterRegistry,
         });
-        const config = resolveProjectConfig(project);
         const pmModelSelection = harnessConfig.selection;
         const providerAdapter = yield* resolveDriverPmAdapter(
           harnessConfig,
           providerAdapterRegistry,
         );
-        const resources = resolvePmHarnessResources(
-          config.taskTypes.map((taskType) => taskType.id),
-        );
+        const resources = resolvePmHarnessResources(defaultTaskTypeRegistry.ids());
         const pmThreadId = pmThreadIdForProject(project);
         const pendingPmThread = yield* projectionSnapshotQuery
           .getThreadDetailById(pmThreadId)

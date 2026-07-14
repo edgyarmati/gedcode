@@ -128,6 +128,55 @@ function requireRegisteredTaskType(input: {
       );
 }
 
+function requireReleaseSource(input: {
+  readonly command: OrchestrationCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly projectId: OrchestrationProject["id"];
+  readonly taskTypeId: string;
+  readonly dependsOnTaskIds: ReadonlyArray<OrchestrationReadModel["tasks"][number]["id"]>;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.taskTypeId !== "release") {
+    return Effect.void;
+  }
+  if (input.dependsOnTaskIds.length !== 1) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        "A release task must identify exactly one landed feature task as releaseSourceTaskId.",
+      ),
+    );
+  }
+  const sourceTaskId = input.dependsOnTaskIds[0]!;
+  const source = input.readModel.tasks.find((task) => task.id === sourceTaskId);
+  if (source === undefined) {
+    return Effect.fail(
+      invariantError(input.command.type, `Release source task '${sourceTaskId}' does not exist.`),
+    );
+  }
+  if (source.projectId !== input.projectId) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        `Release source task '${sourceTaskId}' belongs to a different project.`,
+      ),
+    );
+  }
+  if (source.archivedAt !== null || source.deletedAt !== null) {
+    return Effect.fail(
+      invariantError(input.command.type, `Release source task '${sourceTaskId}' must be visible.`),
+    );
+  }
+  if (source.type !== "feature" || source.status !== "landed" || source.prUrl === null) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        `Release source task '${sourceTaskId}' must be a fully landed feature task with a pull request.`,
+      ),
+    );
+  }
+  return Effect.void;
+}
+
 function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
   return status === "landed" || status === "abandoned";
 }
@@ -1068,6 +1117,19 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
+      if (command.taskType !== "release" && (command.dependsOnTaskIds?.length ?? 0) > 0) {
+        return yield* invariantError(
+          command.type,
+          "Only release tasks may set dependencies directly at task creation.",
+        );
+      }
+      yield* requireReleaseSource({
+        command,
+        readModel,
+        projectId: command.projectId,
+        taskTypeId: command.taskType,
+        dependsOnTaskIds: command.dependsOnTaskIds ?? [],
+      });
       yield* requireTaskAbsent({
         readModel,
         command,
@@ -1189,6 +1251,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           pmMessageId: command.pmMessageId,
           parentTaskId: command.parentTaskId ?? null,
           childOrder: command.childOrder ?? null,
+          dependsOnTaskIds: command.dependsOnTaskIds ?? [],
           supersedesTaskId: command.supersedesTaskId ?? null,
           playbookVersion: null,
           createdAt: command.createdAt,
@@ -1240,6 +1303,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       }
       for (const [index, child] of command.children.entries()) {
         yield* requireRegisteredTaskType({ command, taskTypeId: child.taskType });
+        if (child.taskType === "release") {
+          return yield* invariantError(
+            command.type,
+            "Release tasks cannot be split children; create one with releaseSourceTaskId after its feature source lands.",
+          );
+        }
         yield* requireTaskAbsent({ readModel, command, taskId: child.taskId });
         if (child.acceptanceCriteria.length === 0 || child.acceptanceCriteria.length > 12) {
           return yield* invariantError(
@@ -1344,6 +1413,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
+      yield* requireReleaseSource({
+        command,
+        readModel,
+        projectId: task.projectId,
+        taskTypeId: command.taskType,
+        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
+      });
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -1505,6 +1581,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
+      yield* requireReleaseSource({
+        command,
+        readModel,
+        projectId: task.projectId,
+        taskTypeId: task.type,
+        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
+      });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const allowedStages = resolveStages({
         config: projectConfig,

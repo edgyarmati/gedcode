@@ -14,7 +14,21 @@ describe("TaskTypeRegistry", () => {
       feature.playbook.filePath,
       "/__builtin__/orchestration/playbooks/feature/SKILL.md",
     );
-    assert.deepStrictEqual(defaultTaskTypeRegistry.ids(), [TaskTypeId.make("feature")]);
+    assert.deepStrictEqual(defaultTaskTypeRegistry.ids(), [
+      TaskTypeId.make("feature"),
+      TaskTypeId.make("release"),
+    ]);
+  });
+
+  it("registers release with a dedicated playbook", () => {
+    const release = defaultTaskTypeRegistry.get("release");
+
+    assert.ok(release);
+    assert.match(release.playbook.text, /# Orchestrating a release task/);
+    assert.strictEqual(
+      release.playbook.filePath,
+      "/__builtin__/orchestration/playbooks/release/SKILL.md",
+    );
   });
 
   it("rejects duplicate registrations", () => {

@@ -48,3 +48,42 @@ missing, the task is not done — loop back (within the handoff budget) or surfa
 - If the human asks to skip a stage (e.g. "skip review"), respect it; the stages enabled for this
   project bound what you can run.
 `;
+
+export const BUILT_IN_RELEASE_PLAYBOOK_TEXT = `---
+name: release-orchestration
+description: How to prepare and verify a release from one fully landed feature task without publishing it prematurely.
+---
+
+# Orchestrating a release task
+
+A release task packages one fully landed feature task for guarded release dispatch. It is not a
+generic feature, a replacement task, or a way to continue work on an unlanded branch.
+
+## Provenance
+
+- Create the task with task type \`release\` and \`releaseSourceTaskId\` set to the feature task being
+  released.
+- The source must belong to the same project, have task type \`feature\`, and be fully landed with its
+  pull request recorded. If it is not, stop and finish or land the feature first.
+- Preserve that source relationship throughout planning and verification. Never substitute an
+  unrelated branch or worktree.
+
+## Pipeline
+
+Default flow: classify → plan → work → verify → ⟨land gate⟩ → land.
+
+- **classify** — Confirm the release source and summarize the exact landed change being released.
+- **plan** — Identify version/changelog changes, build and packaging gates, artifact verification, and
+  the eventual guarded dispatch target. Do not dispatch or publish during planning.
+- **review** (optional) — Use for signing, migration, compatibility, or multi-platform risk.
+- **work** — Prepare release metadata and reproducible artifacts only. Publishing remains a separate
+  guarded operation.
+- **verify** — Run the release preflight and prove artifacts correspond to the landed source.
+- **land** — Land release-preparation changes after human approval. Landing is not release dispatch.
+
+## Definition of done
+
+The source feature is fully landed; release metadata and artifacts are reproducible; required gates
+pass; verification ties the artifacts to the source; and no publish/dispatch side effect occurred
+outside the guarded release actuator.
+`;

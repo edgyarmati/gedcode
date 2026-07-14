@@ -1,6 +1,9 @@
 import { TaskTypeId, type TaskTypeId as TaskTypeIdValue } from "@t3tools/contracts";
 
-import { BUILT_IN_FEATURE_PLAYBOOK_TEXT } from "./builtInPlaybooks.ts";
+import {
+  BUILT_IN_FEATURE_PLAYBOOK_TEXT,
+  BUILT_IN_RELEASE_PLAYBOOK_TEXT,
+} from "./builtInPlaybooks.ts";
 
 export interface BuiltInTaskTypePlaybook {
   readonly text: string;
@@ -46,6 +49,13 @@ export const defaultTaskTypeRegistry = new TaskTypeRegistry([
     playbook: {
       text: BUILT_IN_FEATURE_PLAYBOOK_TEXT,
       filePath: "/__builtin__/orchestration/playbooks/feature/SKILL.md",
+    },
+  },
+  {
+    id: TaskTypeId.make("release"),
+    playbook: {
+      text: BUILT_IN_RELEASE_PLAYBOOK_TEXT,
+      filePath: "/__builtin__/orchestration/playbooks/release/SKILL.md",
     },
   },
 ]);

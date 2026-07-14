@@ -46,6 +46,7 @@ interface CreateTaskParameters {
   readonly taskType?: string;
   readonly branch?: string;
   readonly supersedesTaskId?: string;
+  readonly releaseSourceTaskId?: string;
 }
 
 interface SplitTaskChildParameters {
@@ -188,12 +189,21 @@ function createTaskIdentity(params: CreateTaskParameters): {
   const taskType = params.taskType?.trim() || "feature";
   const branch = params.branch?.trim() || null;
   const supersedesTaskId = params.supersedesTaskId?.trim() || null;
+  const releaseSourceTaskId = params.releaseSourceTaskId?.trim() || null;
   const identityDigest = createHash("sha256")
     .update(JSON.stringify([projectId, idempotencyKey]), "utf8")
     .digest("hex");
   const requestDigest = createHash("sha256")
     .update(
-      JSON.stringify([projectId, idempotencyKey, title, taskType, branch, supersedesTaskId]),
+      JSON.stringify([
+        projectId,
+        idempotencyKey,
+        title,
+        taskType,
+        branch,
+        supersedesTaskId,
+        releaseSourceTaskId,
+      ]),
       "utf8",
     )
     .digest("hex");
@@ -444,7 +454,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "createTask",
     label: "Create task",
     description:
-      "Create or reuse one orchestrator task for a project. Supply a stable idempotencyKey derived from the originating PM request and logical task; reuse that exact key for retries. Set supersedesTaskId only when intentionally replacing one settled terminal task.",
+      "Create or reuse one orchestrator task for a project. Supply a stable idempotencyKey derived from the originating PM request and logical task; reuse that exact key for retries. Set supersedesTaskId only when intentionally replacing one settled terminal task. A release task must set releaseSourceTaskId to one fully landed feature task in the same project.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -459,6 +469,9 @@ export const makePmToolExecutors = Effect.gen(function* () {
             title: params.title.trim(),
             pmMessageId: identity.pmMessageId,
             branch: params.branch?.trim() || null,
+            dependsOnTaskIds: params.releaseSourceTaskId
+              ? [TaskId.make(params.releaseSourceTaskId.trim())]
+              : [],
             supersedesTaskId: params.supersedesTaskId
               ? TaskId.make(params.supersedesTaskId.trim())
               : null,

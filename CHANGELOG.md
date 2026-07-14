@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature: Register a dedicated Orchestrator `release` task type and built-in release-preparation
+  playbook. Release tasks require durable provenance to exactly one visible, fully landed feature task
+  in the same project; PM creation, replayed worker dispatch, and classification reject missing or
+  premature sources, and publishing remains reserved for the guarded release actuator.
+
 - Internal/Fix: Replace implicit feature-only task-type handling with a server-owned registry. Task
   config remains replay-compatible and extensible, while project writes, PM tools, task creation,
   splitting, classification, worker startup, and gate resolution reject unknown task types instead of

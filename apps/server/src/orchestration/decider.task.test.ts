@@ -65,7 +65,9 @@ function makeProjectCreatedEvent(input?: {
   };
 }
 
-function makeTaskCreatedEvent(input?: { readonly sequence?: number }): OrchestrationEvent {
+function makeTaskCreatedEvent(input?: {
+  readonly sequence?: number;
+}): Extract<OrchestrationEvent, { type: "task.created" }> {
   return {
     sequence: input?.sequence ?? 2,
     eventId: asEventId(`evt-task-${input?.sequence ?? 2}`),
@@ -199,6 +201,88 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       if (error._tag === "OrchestrationCommandInvariantError") {
         expect(error.detail).toContain("Unknown orchestration task type 'unknown'");
       }
+    }),
+  );
+
+  it.effect("creates a release task only from one fully landed feature source", () =>
+    Effect.gen(function* () {
+      const landed = yield* taskReadModel({
+        status: "landed",
+        prUrl: "https://github.com/example/repo/pull/1",
+        currentStageThreadId: null,
+      });
+      const release = yield* decideOrchestrationCommand({
+        readModel: landed,
+        command: {
+          type: "task.create",
+          commandId: asCommandId("cmd-create-release"),
+          taskId: asTaskId("task-release"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("release"),
+          title: "Release landed feature",
+          pmMessageId: null,
+          branch: null,
+          dependsOnTaskIds: [asTaskId("task-1")],
+          createdAt: now,
+        },
+      });
+
+      const event = Array.isArray(release) ? release[0] : release;
+      expect(event?.type).toBe("task.created");
+      expect(event?.payload).toMatchObject({
+        taskType: "release",
+        dependsOnTaskIds: ["task-1"],
+      });
+
+      const unlanded = yield* taskReadModel({ status: "working", currentStageThreadId: null });
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel: unlanded,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-release-too-early"),
+            taskId: asTaskId("task-release-early"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("release"),
+            title: "Premature release",
+            pmMessageId: null,
+            branch: null,
+            dependsOnTaskIds: [asTaskId("task-1")],
+            createdAt: now,
+          },
+        }),
+      );
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("must be a fully landed feature task");
+      }
+
+      const legacyReleaseEvent = makeTaskCreatedEvent({ sequence: 3 });
+      const withPrematureRelease = yield* projectEvent(unlanded, {
+        ...legacyReleaseEvent,
+        eventId: asEventId("evt-premature-release"),
+        aggregateId: asTaskId("task-release-replayed"),
+        payload: {
+          ...legacyReleaseEvent.payload,
+          taskId: asTaskId("task-release-replayed"),
+          taskType: asTaskTypeId("release"),
+          dependsOnTaskIds: [asTaskId("task-1")],
+        },
+      });
+      const dispatchError = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel: withPrematureRelease,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-start-premature-release"),
+            taskId: asTaskId("task-release-replayed"),
+            role: "work",
+            instructions: "Dispatch the release",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(dispatchError._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

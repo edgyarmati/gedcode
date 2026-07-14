@@ -36,6 +36,15 @@ describe("PlaybookLoader", () => {
     assert.strictEqual(first.playbookVersion, second.playbookVersion);
   });
 
+  it("resolves the registered release playbook", () => {
+    const release = new PlaybookLoader().resolve("release");
+
+    assert.ok(release);
+    assert.strictEqual(release.frontmatter.name, "release-orchestration");
+    assert.match(release.body, /fully landed feature task/);
+    assert.match(release.playbookVersion, /^builtin:[0-9a-f]{12}$/);
+  });
+
   it("returns none for unknown task types without throwing", () => {
     const loader = new PlaybookLoader();
 

@@ -40,6 +40,7 @@ export const mcpInputSchemas = {
     taskType: z.string().optional(),
     branch: z.string().optional(),
     supersedesTaskId: z.string().optional(),
+    releaseSourceTaskId: z.string().optional(),
   },
   splitTask: {
     parentTaskId: z.string().trim().min(1),
