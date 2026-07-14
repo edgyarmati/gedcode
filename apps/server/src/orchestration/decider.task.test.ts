@@ -175,6 +175,70 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("creates ordered children only for a visible top-level parent", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel();
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.create",
+          commandId: asCommandId("cmd-create-child"),
+          taskId: asTaskId("task-child"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Child",
+          pmMessageId: null,
+          branch: null,
+          parentTaskId: asTaskId("task-1"),
+          childOrder: 0,
+          createdAt: now,
+        },
+      });
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.payload).toMatchObject({ parentTaskId: "task-1", childOrder: 0 });
+
+      const withChild = yield* applyEvents(readModel, toEvents(event));
+      const duplicateOrder = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: withChild,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-duplicate-child-order"),
+            taskId: asTaskId("task-child-duplicate"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Duplicate child order",
+            pmMessageId: null,
+            branch: null,
+            parentTaskId: asTaskId("task-1"),
+            childOrder: 0,
+            createdAt: now,
+          },
+        }),
+      );
+      expect(duplicateOrder._tag).toBe("Failure");
+
+      const missingOrder = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-child-without-order"),
+            taskId: asTaskId("task-child-invalid"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Invalid child",
+            pmMessageId: null,
+            branch: null,
+            parentTaskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(missingOrder._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("creates an intentional replacement only for one settled terminal predecessor", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "abandoned" });

@@ -105,7 +105,38 @@ function updateTask(
   taskId: TaskId,
   patch: TaskPatch,
 ): OrchestrationTask[] {
-  return tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
+  return withAggregateTaskProgress(
+    tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task)),
+  );
+}
+
+function withAggregateTaskProgress(tasks: ReadonlyArray<OrchestrationTask>): OrchestrationTask[] {
+  const progressByParent = new Map<
+    TaskId,
+    { total: number; terminal: number; landed: number; abandoned: number }
+  >();
+  for (const child of tasks) {
+    if (child.parentTaskId === undefined || child.parentTaskId === null) continue;
+    const progress = progressByParent.get(child.parentTaskId) ?? {
+      total: 0,
+      terminal: 0,
+      landed: 0,
+      abandoned: 0,
+    };
+    progress.total += 1;
+    if (child.status === "landed" || child.status === "abandoned") progress.terminal += 1;
+    if (child.status === "landed") progress.landed += 1;
+    if (child.status === "abandoned") progress.abandoned += 1;
+    progressByParent.set(child.parentTaskId, progress);
+  }
+  return tasks.map((task) => {
+    const aggregateProgress = progressByParent.get(task.id);
+    if (aggregateProgress === undefined) return task;
+    return {
+      ...task,
+      aggregateProgress,
+    };
+  });
 }
 
 function updatePendingGate(
@@ -873,6 +904,9 @@ export function projectEvent(
             pmMessageId: payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            parentTaskId: payload.parentTaskId ?? null,
+            childOrder: payload.childOrder ?? null,
+            aggregateProgress: null,
             supersedesTaskId: payload.supersedesTaskId ?? null,
             supersededByTaskId: null,
             cancellation: null,
@@ -886,18 +920,20 @@ export function projectEvent(
           };
           return {
             ...nextBase,
-            tasks: (existing
-              ? nextBase.tasks.map((entry) => (entry.id === payload.taskId ? task : entry))
-              : [...nextBase.tasks, task]
-            ).map((entry) =>
-              payload.supersedesTaskId !== undefined &&
-              payload.supersedesTaskId !== null &&
-              entry.id === payload.supersedesTaskId
-                ? Object.assign({}, entry, {
-                    supersededByTaskId: payload.taskId,
-                    updatedAt: payload.updatedAt,
-                  })
-                : entry,
+            tasks: withAggregateTaskProgress(
+              (existing
+                ? nextBase.tasks.map((entry) => (entry.id === payload.taskId ? task : entry))
+                : [...nextBase.tasks, task]
+              ).map((entry) =>
+                payload.supersedesTaskId !== undefined &&
+                payload.supersedesTaskId !== null &&
+                entry.id === payload.supersedesTaskId
+                  ? Object.assign({}, entry, {
+                      supersededByTaskId: payload.taskId,
+                      updatedAt: payload.updatedAt,
+                    })
+                  : entry,
+              ),
             ),
           };
         }),

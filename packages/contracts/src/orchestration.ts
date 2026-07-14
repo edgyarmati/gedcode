@@ -524,6 +524,14 @@ export const OrchestrationTaskLanding = Schema.Struct({
 });
 export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
 
+export const OrchestrationTaskAggregateProgress = Schema.Struct({
+  total: NonNegativeInt,
+  terminal: NonNegativeInt,
+  landed: NonNegativeInt,
+  abandoned: NonNegativeInt,
+});
+export type OrchestrationTaskAggregateProgress = typeof OrchestrationTaskAggregateProgress.Type;
+
 /**
  * The task aggregate: one worktree + branch, grouping per-stage worker threads.
  *
@@ -544,6 +552,9 @@ export const OrchestrationTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
+  childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+  aggregateProgress: Schema.optionalKey(Schema.NullOr(OrchestrationTaskAggregateProgress)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   supersededByTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
@@ -996,6 +1007,8 @@ const TaskCreateCommand = Schema.Struct({
   title: TrimmedNonEmptyString,
   pmMessageId: Schema.NullOr(MessageId),
   branch: Schema.NullOr(TrimmedNonEmptyString),
+  parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
+  childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   createdAt: IsoDateTime,
 });
@@ -1605,6 +1618,8 @@ export const TaskCreatedPayload = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   pmMessageId: Schema.NullOr(MessageId),
+  parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
+  childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,

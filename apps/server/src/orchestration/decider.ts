@@ -1044,6 +1044,52 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           );
         }
       }
+      const parentTaskId = command.parentTaskId;
+      const childOrder = command.childOrder;
+      const hasParent = parentTaskId !== undefined && parentTaskId !== null;
+      const hasChildOrder = childOrder !== undefined && childOrder !== null;
+      if (hasParent !== hasChildOrder) {
+        return yield* invariantError(
+          command.type,
+          "Child tasks must provide parentTaskId and childOrder together.",
+        );
+      }
+      if (
+        parentTaskId !== undefined &&
+        parentTaskId !== null &&
+        childOrder !== undefined &&
+        childOrder !== null
+      ) {
+        const parentTask = yield* requireTask({
+          readModel,
+          command,
+          taskId: parentTaskId,
+        });
+        if (parentTask.projectId !== command.projectId) {
+          return yield* invariantError(
+            command.type,
+            `Parent task '${parentTaskId}' belongs to a different project.`,
+          );
+        }
+        if (parentTask.archivedAt !== null || parentTask.deletedAt !== null) {
+          return yield* invariantError(
+            command.type,
+            `Parent task '${parentTaskId}' must be visible before adding children.`,
+          );
+        }
+        if (parentTask.parentTaskId !== undefined && parentTask.parentTaskId !== null) {
+          return yield* invariantError(command.type, "Nested child tasks are not supported.");
+        }
+        const duplicateOrder = readModel.tasks.find(
+          (task) => task.parentTaskId === parentTaskId && task.childOrder === childOrder,
+        );
+        if (duplicateOrder !== undefined) {
+          return yield* invariantError(
+            command.type,
+            `Parent task '${parentTaskId}' already has child order ${childOrder}.`,
+          );
+        }
+      }
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const maxParallelTasks = resolveResourceLimit({
         config: projectConfig,
@@ -1080,6 +1126,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             taskId: String(command.taskId),
           }),
           pmMessageId: command.pmMessageId,
+          parentTaskId: command.parentTaskId ?? null,
+          childOrder: command.childOrder ?? null,
           supersedesTaskId: command.supersedesTaskId ?? null,
           playbookVersion: null,
           createdAt: command.createdAt,

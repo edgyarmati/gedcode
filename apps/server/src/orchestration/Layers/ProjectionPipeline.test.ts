@@ -6,6 +6,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  OrchestrationTaskAggregateProgress,
   OrchestrationTaskLanding,
   TaskId,
   TaskTypeId,
@@ -52,6 +53,9 @@ const makeProjectionPipelinePrefixedTestLayer = (prefix: string) =>
 
 const decodeTaskLandingJson = Schema.decodeUnknownSync(
   Schema.fromJsonString(OrchestrationTaskLanding),
+);
+const decodeTaskAggregateProgressJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(OrchestrationTaskAggregateProgress),
 );
 
 const exists = (filePath: string) =>
@@ -295,6 +299,93 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         WHERE task_id = ${taskId}
       `;
       assert.deepEqual(rows, [{ taskId, title: "Retain this task", archivedAt: null, deletedAt }]);
+    }),
+  );
+
+  it.effect("persists ordered child relationships and refreshes parent progress", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = "2026-07-14T08:00:00.000Z";
+      const projectId = ProjectId.make("project-split-projection");
+      const parentTaskId = TaskId.make("task-split-parent");
+      const childTaskIds = [TaskId.make("task-split-child-a"), TaskId.make("task-split-child-b")];
+
+      for (const [index, taskId] of [parentTaskId, ...childTaskIds].entries()) {
+        const childOrder = index === 0 ? null : index - 1;
+        yield* eventStore.append({
+          type: "task.created",
+          eventId: EventId.make(`evt-split-create-${index}`),
+          aggregateKind: "task",
+          aggregateId: taskId,
+          occurredAt: createdAt,
+          commandId: CommandId.make(`cmd-split-create-${index}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-split-create-${index}`),
+          metadata: {},
+          payload: {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: `Split task ${index}`,
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            parentTaskId: childOrder === null ? null : parentTaskId,
+            childOrder,
+            playbookVersion: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+      }
+      yield* eventStore.append({
+        type: "task.abandoned",
+        eventId: EventId.make("evt-split-abandon-child"),
+        aggregateKind: "task",
+        aggregateId: childTaskIds[0]!,
+        occurredAt: createdAt,
+        commandId: CommandId.make("cmd-split-abandon-child"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-split-abandon-child"),
+        metadata: {},
+        payload: { taskId: childTaskIds[0]!, updatedAt: createdAt },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const children = yield* sql<{
+        readonly taskId: string;
+        readonly parentTaskId: string | null;
+        readonly childOrder: number | null;
+      }>`
+        SELECT
+          task_id AS "taskId",
+          parent_task_id AS "parentTaskId",
+          child_order AS "childOrder"
+        FROM projection_tasks
+        WHERE parent_task_id = ${parentTaskId}
+        ORDER BY child_order ASC
+      `;
+      assert.deepEqual(
+        children.map((child) => [child.taskId, child.parentTaskId, child.childOrder]),
+        [
+          ["task-split-child-a", "task-split-parent", 0],
+          ["task-split-child-b", "task-split-parent", 1],
+        ],
+      );
+      const parents = yield* sql<{ readonly aggregateProgress: string | null }>`
+        SELECT aggregate_progress_json AS "aggregateProgress"
+        FROM projection_tasks
+        WHERE task_id = ${parentTaskId}
+      `;
+      assert.deepEqual(decodeTaskAggregateProgressJson(parents[0]?.aggregateProgress ?? ""), {
+        total: 2,
+        terminal: 1,
+        landed: 0,
+        abandoned: 1,
+      });
     }),
   );
 

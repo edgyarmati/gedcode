@@ -1,5 +1,6 @@
 import {
   GedRoleModelSelections,
+  OrchestrationTaskAggregateProgress,
   OrchestrationTaskCancellation,
   OrchestrationTaskLanding,
   ThreadId,
@@ -27,6 +28,7 @@ const ProjectionTaskDbRow = ProjectionTask.mapFields(
   Struct.assign({
     stageThreadIds: Schema.fromJsonString(Schema.Array(ThreadId)),
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
+    aggregateProgress: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskAggregateProgress)),
     cancellation: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskCancellation)),
     landing: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskLanding)),
   }),
@@ -52,6 +54,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id,
           stage_thread_ids_json,
           current_stage_thread_id,
+          parent_task_id,
+          child_order,
+          aggregate_progress_json,
           supersedes_task_id,
           superseded_by_task_id,
           cancellation_json,
@@ -75,6 +80,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           ${row.pmMessageId},
           ${JSON.stringify(row.stageThreadIds)},
           ${row.currentStageThreadId},
+          ${row.parentTaskId},
+          ${row.childOrder},
+          ${row.aggregateProgress === null ? null : JSON.stringify(row.aggregateProgress)},
           ${row.supersedesTaskId},
           ${row.supersededByTaskId},
           ${row.cancellation === null ? null : JSON.stringify(row.cancellation)},
@@ -98,6 +106,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id = excluded.pm_message_id,
           stage_thread_ids_json = excluded.stage_thread_ids_json,
           current_stage_thread_id = excluded.current_stage_thread_id,
+          parent_task_id = excluded.parent_task_id,
+          child_order = excluded.child_order,
+          aggregate_progress_json = excluded.aggregate_progress_json,
           supersedes_task_id = excluded.supersedes_task_id,
           superseded_by_task_id = excluded.superseded_by_task_id,
           cancellation_json = excluded.cancellation_json,
@@ -128,6 +139,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          parent_task_id AS "parentTaskId",
+          child_order AS "childOrder",
+          aggregate_progress_json AS "aggregateProgress",
           supersedes_task_id AS "supersedesTaskId",
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
@@ -160,6 +174,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          parent_task_id AS "parentTaskId",
+          child_order AS "childOrder",
+          aggregate_progress_json AS "aggregateProgress",
           supersedes_task_id AS "supersedesTaskId",
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
@@ -195,6 +212,9 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           pm_message_id AS "pmMessageId",
           stage_thread_ids_json AS "stageThreadIds",
           current_stage_thread_id AS "currentStageThreadId",
+          parent_task_id AS "parentTaskId",
+          child_order AS "childOrder",
+          aggregate_progress_json AS "aggregateProgress",
           supersedes_task_id AS "supersedesTaskId",
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
@@ -211,9 +231,33 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
   });
 
   const upsert: ProjectionTaskRepositoryShape["upsert"] = (row) =>
-    upsertProjectionTaskRow(row).pipe(
-      Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.upsert:query")),
-    );
+    Effect.gen(function* () {
+      yield* upsertProjectionTaskRow(row);
+      const refreshAggregateProgress = (taskId: ProjectionTask["taskId"]) =>
+        sql`
+          UPDATE projection_tasks
+          SET aggregate_progress_json = (
+            SELECT json_object(
+              'total', COUNT(*),
+              'terminal', SUM(CASE WHEN status IN ('landed', 'abandoned') THEN 1 ELSE 0 END),
+              'landed', SUM(CASE WHEN status = 'landed' THEN 1 ELSE 0 END),
+              'abandoned', SUM(CASE WHEN status = 'abandoned' THEN 1 ELSE 0 END)
+            )
+            FROM projection_tasks AS children
+            WHERE children.parent_task_id = ${taskId}
+          )
+          WHERE task_id = ${taskId}
+            AND EXISTS (
+              SELECT 1
+              FROM projection_tasks AS children
+              WHERE children.parent_task_id = ${taskId}
+            )
+        `;
+      yield* refreshAggregateProgress(row.taskId);
+      if (row.parentTaskId !== null && row.parentTaskId !== row.taskId) {
+        yield* refreshAggregateProgress(row.parentTaskId);
+      }
+    }).pipe(Effect.mapError(toPersistenceSqlError("ProjectionTaskRepository.upsert:query")));
 
   const getById: ProjectionTaskRepositoryShape["getById"] = (input) =>
     getProjectionTaskRow(input).pipe(

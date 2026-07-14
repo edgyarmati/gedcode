@@ -2168,4 +2168,65 @@ describe("orchestration projector", () => {
     expect(model.tasks.find((task) => task.id === "task-old")?.supersededByTaskId).toBe("task-new");
     expect(model.tasks.find((task) => task.id === "task-new")?.supersedesTaskId).toBe("task-old");
   });
+
+  it("replays ordered children and derives parent terminal progress", async () => {
+    const createdAt = "2026-07-14T07:00:00.000Z";
+    const taskCreated = (taskId: string, parentTaskId: string | null, childOrder: number | null) =>
+      makeEvent({
+        sequence: childOrder === null ? 1 : childOrder + 2,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: taskId,
+        occurredAt: createdAt,
+        commandId: `cmd-${taskId}`,
+        payload: {
+          taskId,
+          projectId: "project-1",
+          taskType: "feature",
+          title: taskId,
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          parentTaskId,
+          childOrder,
+          playbookVersion: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+
+    let model = createEmptyReadModel(createdAt);
+    model = await Effect.runPromise(projectEvent(model, taskCreated("task-parent", null, null)));
+    model = await Effect.runPromise(
+      projectEvent(model, taskCreated("task-child-b", "task-parent", 1)),
+    );
+    model = await Effect.runPromise(
+      projectEvent(model, taskCreated("task-child-a", "task-parent", 0)),
+    );
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 4,
+          type: "task.abandoned",
+          aggregateKind: "task",
+          aggregateId: "task-child-a",
+          occurredAt: createdAt,
+          commandId: "cmd-abandon-child-a",
+          payload: { taskId: "task-child-a", updatedAt: createdAt },
+        }),
+      ),
+    );
+
+    const children = model.tasks
+      .filter((task) => task.parentTaskId === "task-parent")
+      .toSorted((left, right) => (left.childOrder ?? 0) - (right.childOrder ?? 0));
+    expect(children.map((task) => task.id)).toEqual(["task-child-a", "task-child-b"]);
+    expect(model.tasks.find((task) => task.id === "task-parent")?.aggregateProgress).toEqual({
+      total: 2,
+      terminal: 1,
+      landed: 0,
+      abandoned: 1,
+    });
+  });
 });
