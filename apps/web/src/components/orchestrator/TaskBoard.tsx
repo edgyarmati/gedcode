@@ -111,6 +111,24 @@ export interface NeedsYouItem {
   readonly reason: NeedsYouReason;
 }
 
+export interface BoardTaskGroup {
+  readonly parent: BoardTaskEntry;
+  readonly children: readonly BoardTaskEntry[];
+}
+
+export interface NeedsYouGroupItem {
+  readonly group: BoardTaskGroup;
+  readonly reason: NeedsYouReason;
+  readonly attentionTaskId: OrchestratorTask["id"];
+}
+
+export interface BoardGroupPartition {
+  readonly needsYou: readonly NeedsYouGroupItem[];
+  readonly active: readonly BoardTaskGroup[];
+  readonly landed: readonly BoardTaskGroup[];
+  readonly abandoned: readonly BoardTaskGroup[];
+}
+
 export interface BoardPartition {
   readonly needsYou: readonly NeedsYouItem[];
   readonly active: readonly OrchestratorTask[];
@@ -152,6 +170,108 @@ export function partitionBoardTasks(entries: readonly BoardTaskEntry[]): BoardPa
       active.push(entry.task);
     }
   }
+  return { needsYou, active, landed, abandoned };
+}
+
+function compareChildEntries(left: BoardTaskEntry, right: BoardTaskEntry): number {
+  const leftOrder = left.task.childOrder ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.task.childOrder ?? Number.MAX_SAFE_INTEGER;
+  return (
+    leftOrder - rightOrder ||
+    left.task.createdAt.localeCompare(right.task.createdAt) ||
+    String(left.task.id).localeCompare(String(right.task.id))
+  );
+}
+
+export function groupBoardTaskEntries(
+  entries: readonly BoardTaskEntry[],
+): readonly BoardTaskGroup[] {
+  const taskIds = new Set(entries.map((entry) => String(entry.task.id)));
+  const childrenByParentId = new Map<string, BoardTaskEntry[]>();
+  for (const entry of entries) {
+    const parentTaskId = entry.task.parentTaskId ?? null;
+    if (parentTaskId === null || !taskIds.has(String(parentTaskId))) {
+      continue;
+    }
+    const children = childrenByParentId.get(String(parentTaskId)) ?? [];
+    children.push(entry);
+    childrenByParentId.set(String(parentTaskId), children);
+  }
+
+  return entries
+    .filter((entry) => {
+      const parentTaskId = entry.task.parentTaskId ?? null;
+      return parentTaskId === null || !taskIds.has(String(parentTaskId));
+    })
+    .map((parent) => ({
+      parent,
+      children: (childrenByParentId.get(String(parent.task.id)) ?? []).toSorted(
+        compareChildEntries,
+      ),
+    }));
+}
+
+function isActiveBoardTask(task: OrchestratorTask): boolean {
+  return (
+    ACTIVE_STATUSES.has(task.status) ||
+    (task.status === "landed" && task.landing?.status === "opening-pr")
+  );
+}
+
+export function partitionBoardTaskGroups(groups: readonly BoardTaskGroup[]): BoardGroupPartition {
+  const needsYou: NeedsYouGroupItem[] = [];
+  const active: BoardTaskGroup[] = [];
+  const landed: BoardTaskGroup[] = [];
+  const abandoned: BoardTaskGroup[] = [];
+
+  for (const group of groups) {
+    const members = [group.parent, ...group.children];
+    const attention = members
+      .map((entry) => ({ entry, reason: needsYouReason(entry) }))
+      .find(
+        (candidate): candidate is { entry: BoardTaskEntry; reason: NeedsYouReason } =>
+          candidate.reason !== null,
+      );
+    if (attention) {
+      needsYou.push({
+        group,
+        reason: attention.reason,
+        attentionTaskId: attention.entry.task.id,
+      });
+      continue;
+    }
+
+    if (group.children.length === 0) {
+      const status = group.parent.task.status;
+      if (status === "landed" && group.parent.task.landing?.status !== "opening-pr") {
+        landed.push(group);
+      } else if (status === "abandoned") {
+        abandoned.push(group);
+      } else if (isActiveBoardTask(group.parent.task)) {
+        active.push(group);
+      }
+      continue;
+    }
+
+    if (group.children.some((child) => isActiveBoardTask(child.task))) {
+      active.push(group);
+      continue;
+    }
+    if (group.children.every((child) => child.task.status === "landed")) {
+      landed.push(group);
+      continue;
+    }
+    if (
+      group.children.every(
+        (child) => child.task.status === "landed" || child.task.status === "abandoned",
+      )
+    ) {
+      abandoned.push(group);
+      continue;
+    }
+    active.push(group);
+  }
+
   return { needsYou, active, landed, abandoned };
 }
 
@@ -303,7 +423,7 @@ export function TaskBoard({
         pendingGateKinds: joined ? (joined.split(",") as OrchestrationGateKind[]) : [],
       };
     });
-    return partitionBoardTasks(entries);
+    return partitionBoardTaskGroups(groupBoardTaskEntries(entries));
   }, [pendingGateKindsByTaskId, tasks]);
 
   const headerCount = partition.needsYou.length + partition.active.length;
@@ -349,9 +469,11 @@ export function TaskBoard({
           />
         ) : null}
         {partition.abandoned.length > 0 ? (
-          <AbandonedTaskBoardSection
+          <CollapsibleTaskSection
+            countAriaLabel="Abandoned task count"
             environmentId={environmentId}
             expanded={abandonedExpanded}
+            label="Abandoned"
             onExpandedChange={setAbandonedExpanded}
             projectId={projectId}
             tasks={partition.abandoned}
@@ -366,7 +488,10 @@ export function TaskBoard({
             label="Archived"
             onExpandedChange={setArchivedExpanded}
             projectId={projectId}
-            tasks={archivedTasks}
+            tasks={archivedTasks.map((task) => ({
+              parent: { task, pendingGateKinds: [] },
+              children: [],
+            }))}
             onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, true)}
           />
         ) : null}
@@ -416,7 +541,7 @@ function NeedsYouSection({
   projectId,
 }: {
   environmentId: EnvironmentId;
-  items: readonly NeedsYouItem[];
+  items: readonly NeedsYouGroupItem[];
   projectId: ProjectId;
 }) {
   return (
@@ -430,13 +555,15 @@ function NeedsYouSection({
         Needs you
       </SectionHeading>
       <div className="space-y-2">
-        {items.map(({ entry, reason }) => (
-          <NeedsYouCard
-            key={entry.task.id}
+        {items.map(({ attentionTaskId, group, reason }) => (
+          <TaskGroupCard
+            key={group.parent.task.id}
+            attentionTaskId={attentionTaskId}
             environmentId={environmentId}
+            group={group}
             projectId={projectId}
             reason={reason}
-            task={entry.task}
+            tone="attention"
           />
         ))}
       </div>
@@ -451,7 +578,7 @@ function ActiveSection({
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
-  tasks: readonly OrchestratorTask[];
+  tasks: readonly BoardTaskGroup[];
 }) {
   return (
     <section className="space-y-2">
@@ -459,12 +586,13 @@ function ActiveSection({
         Active
       </SectionHeading>
       <div className="space-y-2">
-        {tasks.map((task) => (
-          <ActiveTaskCard
-            key={task.id}
+        {tasks.map((group) => (
+          <TaskGroupCard
+            key={group.parent.task.id}
             environmentId={environmentId}
+            group={group}
             projectId={projectId}
-            task={task}
+            tone="active"
           />
         ))}
       </div>
@@ -495,7 +623,10 @@ export function AbandonedTaskBoardSection({
       label="Abandoned"
       onExpandedChange={onExpandedChange}
       projectId={projectId}
-      tasks={tasks}
+      tasks={tasks.map((task) => ({
+        parent: { task, pendingGateKinds: [] },
+        children: [],
+      }))}
       {...(onTaskContextMenu ? { onTaskContextMenu } : {})}
     />
   );
@@ -517,7 +648,7 @@ function CollapsibleTaskSection({
   label: string;
   onExpandedChange: (expanded: boolean) => void;
   projectId: ProjectId;
-  tasks: readonly OrchestratorTask[];
+  tasks: readonly BoardTaskGroup[];
   onTaskContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
 }) {
   return (
@@ -546,13 +677,16 @@ function CollapsibleTaskSection({
       </Button>
       {expanded ? (
         <div className="space-y-2">
-          {tasks.map((task) => (
-            <TerminalTaskCard
-              key={task.id}
+          {tasks.map((group) => (
+            <TaskGroupCard
+              key={group.parent.task.id}
               environmentId={environmentId}
+              group={group}
               projectId={projectId}
-              task={task}
-              {...(onTaskContextMenu ? { onContextMenu: onTaskContextMenu } : {})}
+              tone="terminal"
+              {...(onTaskContextMenu && group.children.length === 0
+                ? { onContextMenu: onTaskContextMenu }
+                : {})}
             />
           ))}
         </div>
@@ -564,6 +698,171 @@ function CollapsibleTaskSection({
 // ---------------------------------------------------------------------------
 // Cards
 // ---------------------------------------------------------------------------
+
+function taskGroupProgress(group: BoardTaskGroup): {
+  readonly total: number;
+  readonly terminal: number;
+  readonly landed: number;
+} {
+  const projected = group.parent.task.aggregateProgress;
+  if (projected) {
+    return projected;
+  }
+  return {
+    total: group.children.length,
+    terminal: group.children.filter(
+      (child) => child.task.status === "landed" || child.task.status === "abandoned",
+    ).length,
+    landed: group.children.filter((child) => child.task.status === "landed").length,
+  };
+}
+
+function TaskGroupCard({
+  attentionTaskId,
+  environmentId,
+  group,
+  onContextMenu,
+  projectId,
+  reason,
+  tone,
+}: {
+  attentionTaskId?: OrchestratorTask["id"];
+  environmentId: EnvironmentId;
+  group: BoardTaskGroup;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
+  projectId: ProjectId;
+  reason?: NeedsYouReason;
+  tone: "attention" | "active" | "terminal";
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const parent = group.parent.task;
+
+  if (group.children.length === 0) {
+    if (tone === "attention" && reason) {
+      return (
+        <NeedsYouCard
+          environmentId={environmentId}
+          projectId={projectId}
+          reason={reason}
+          task={parent}
+        />
+      );
+    }
+    if (tone === "active") {
+      return <ActiveTaskCard environmentId={environmentId} projectId={projectId} task={parent} />;
+    }
+    return (
+      <TerminalTaskCard
+        environmentId={environmentId}
+        projectId={projectId}
+        task={parent}
+        {...(onContextMenu ? { onContextMenu } : {})}
+      />
+    );
+  }
+
+  const progress = taskGroupProgress(group);
+  const toggleLabel = `${expanded ? "Collapse" : "Expand"} ${parent.title} children`;
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border bg-card text-card-foreground",
+        tone === "attention"
+          ? "border-warning/30 bg-warning/8 dark:bg-warning/16"
+          : "border-border",
+      )}
+    >
+      <div className="flex items-stretch">
+        <Button
+          aria-expanded={expanded}
+          aria-label={toggleLabel}
+          className="h-auto shrink-0 rounded-none px-2 text-muted-foreground"
+          onClick={() => setExpanded(!expanded)}
+          size="icon-sm"
+          title={toggleLabel}
+          variant="ghost"
+        >
+          {expanded ? (
+            <ChevronDownIcon className="size-3.5" />
+          ) : (
+            <ChevronRightIcon className="size-3.5" />
+          )}
+        </Button>
+        <Link
+          className="min-w-0 flex-1 px-1 py-2 pr-3 outline-hidden hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          params={{ environmentId, projectId, taskId: parent.id }}
+          title={parent.title}
+          to="/orch/$environmentId/$projectId/tasks/$taskId"
+        >
+          <div className="line-clamp-2 text-sm font-medium">{parent.title}</div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Badge size="sm" variant="outline">
+              {progress.terminal}/{progress.total} complete
+            </Badge>
+            {tone === "attention" && reason ? (
+              <Badge size="sm" variant="warning">
+                <NeedsYouReasonIcon reason={reason} />
+                {attentionTaskId === parent.id
+                  ? needsYouReasonLabel(reason)
+                  : "Child needs attention"}
+              </Badge>
+            ) : null}
+            {progress.total > 0 && progress.landed === progress.total ? (
+              <Badge size="sm" variant="secondary">
+                All landed
+              </Badge>
+            ) : null}
+          </div>
+        </Link>
+      </div>
+      {expanded ? (
+        <ol className="space-y-2 border-t border-border/70 bg-muted/15 px-2 py-2">
+          {group.children.map((child, index) => (
+            <li key={child.task.id} className="relative pl-4">
+              <span
+                aria-hidden="true"
+                className="absolute top-3 left-0 text-[10px] tabular-nums text-muted-foreground"
+              >
+                {index + 1}
+              </span>
+              <GroupedChildTaskCard
+                entry={child}
+                environmentId={environmentId}
+                projectId={projectId}
+              />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
+function GroupedChildTaskCard({
+  entry,
+  environmentId,
+  projectId,
+}: {
+  entry: BoardTaskEntry;
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+}) {
+  const reason = needsYouReason(entry);
+  if (reason) {
+    return (
+      <NeedsYouCard
+        environmentId={environmentId}
+        projectId={projectId}
+        reason={reason}
+        task={entry.task}
+      />
+    );
+  }
+  if (isActiveBoardTask(entry.task)) {
+    return <ActiveTaskCard environmentId={environmentId} projectId={projectId} task={entry.task} />;
+  }
+  return <TerminalTaskCard environmentId={environmentId} projectId={projectId} task={entry.task} />;
+}
 
 function TaskCardLink({
   children,

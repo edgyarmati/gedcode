@@ -24,8 +24,10 @@ import {
   AbandonedTaskBoardSection,
   activeStageLabel,
   formatElapsed,
+  groupBoardTaskEntries,
   needsYouReason,
   needsYouReasonLabel,
+  partitionBoardTaskGroups,
   partitionBoardTasks,
   TaskBoard,
   terminalTaskContextMenuItems,
@@ -306,6 +308,72 @@ describe("TaskBoard bucketing helpers", () => {
 
     expect(partition.active.map((task) => task.id)).toEqual([successor.task.id]);
     expect(partition.abandoned.map((task) => task.id)).toEqual([predecessor.task.id]);
+  });
+
+  it("groups children beneath their visible parent in deterministic child order", () => {
+    const parent = entry("planning");
+    const later = entry("working");
+    const earlier = entry("landed");
+    const groups = groupBoardTaskEntries([
+      {
+        ...later,
+        task: { ...later.task, parentTaskId: parent.task.id, childOrder: 1 },
+      },
+      parent,
+      {
+        ...earlier,
+        task: { ...earlier.task, parentTaskId: parent.task.id, childOrder: 0 },
+      },
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.parent.task.id).toBe(parent.task.id);
+    expect(groups[0]?.children.map((child) => child.task.id)).toEqual([
+      earlier.task.id,
+      later.task.id,
+    ]);
+  });
+
+  it("surfaces child attention through one parent group and classifies completed groups", () => {
+    const parent = entry("planning");
+    const blocked = entry("blocked");
+    const working = entry("working");
+    const attentionGroup = groupBoardTaskEntries([
+      parent,
+      {
+        ...blocked,
+        task: { ...blocked.task, parentTaskId: parent.task.id, childOrder: 0 },
+      },
+      {
+        ...working,
+        task: { ...working.task, parentTaskId: parent.task.id, childOrder: 1 },
+      },
+    ]);
+    const attentionPartition = partitionBoardTaskGroups(attentionGroup);
+
+    expect(attentionPartition.needsYou).toHaveLength(1);
+    expect(attentionPartition.needsYou[0]?.group.parent.task.id).toBe(parent.task.id);
+    expect(attentionPartition.needsYou[0]?.attentionTaskId).toBe(blocked.task.id);
+    expect(attentionPartition.active).toHaveLength(0);
+
+    const landed = entry("landed");
+    const abandoned = entry("abandoned");
+    const completedPartition = partitionBoardTaskGroups(
+      groupBoardTaskEntries([
+        parent,
+        {
+          ...landed,
+          task: { ...landed.task, parentTaskId: parent.task.id, childOrder: 0 },
+        },
+        {
+          ...abandoned,
+          task: { ...abandoned.task, parentTaskId: parent.task.id, childOrder: 1 },
+        },
+      ]),
+    );
+
+    expect(completedPartition.abandoned).toHaveLength(1);
+    expect(completedPartition.active).toHaveLength(0);
   });
 
   it("prefers a pending gate reason over a blocked status", () => {

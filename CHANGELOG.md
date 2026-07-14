@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature: Group split Orchestrator tasks beneath one collapsible parent board card, preserve declared
+  child order, summarize aggregate progress, and surface child attention without duplicate top-level
+  cards.
+
 - Improvement: Teach the Orchestrator PM to split only genuinely oversized work into bounded,
   independently verifiable children after the existing plan gate approves their complete structure.
 

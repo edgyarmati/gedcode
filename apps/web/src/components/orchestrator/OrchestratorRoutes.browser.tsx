@@ -299,6 +299,49 @@ it("restores an archived task from the archived board section", async () => {
   expect(restoreTask).toHaveBeenCalledWith({ taskId });
 });
 
+it("expands a split parent to show children in their declared order", async () => {
+  const parentId = TaskId.make("task-split-parent");
+  const firstChildId = TaskId.make("task-split-first");
+  const secondChildId = TaskId.make("task-split-second");
+  const parent = {
+    ...makeTask("planning"),
+    id: parentId,
+    title: "Split parent",
+    aggregateProgress: { total: 2, terminal: 1, landed: 1, abandoned: 0 },
+  };
+  const firstChild = {
+    ...makeTask("landed"),
+    id: firstChildId,
+    title: "First child",
+    parentTaskId: parentId,
+    childOrder: 0,
+  };
+  const secondChild = {
+    ...makeTask("planning"),
+    id: secondChildId,
+    title: "Second child",
+    parentTaskId: parentId,
+    childOrder: 1,
+  };
+
+  renderTaskBoard([secondChild, parent, firstChild]);
+
+  await expect.element(page.getByText("Split parent")).toBeInTheDocument();
+  await expect.element(page.getByText("First child")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Second child")).not.toBeInTheDocument();
+
+  const expand = page.getByRole("button", { name: "Expand Split parent children" });
+  await expect.element(expand).toHaveAttribute("aria-expanded", "false");
+  await expand.click();
+
+  await expect
+    .element(page.getByRole("button", { name: "Collapse Split parent children" }))
+    .toHaveAttribute("aria-expanded", "true");
+  const first = page.getByText("First child").element();
+  const second = page.getByText("Second child").element();
+  expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+});
+
 it("lands a review task with the current approved gate", async () => {
   const landTask = vi.fn(async () => ({ sequence: 2, alreadyLanded: false }));
   __setEnvironmentApiOverrideForTests(environmentId, {
