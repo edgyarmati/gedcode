@@ -65,6 +65,14 @@ export const mcpInputSchemas = {
     role: stageRole,
     instanceId: z.string(),
     model: z.string(),
+    options: z
+      .array(
+        z.object({
+          id: z.string().trim().min(1),
+          value: z.union([z.string().trim().min(1), z.boolean()]),
+        }),
+      )
+      .optional(),
   },
   inspectStage: {
     taskId: z.string(),

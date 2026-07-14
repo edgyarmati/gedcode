@@ -2718,6 +2718,9 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "explicit operator status request");
     assert.include(prompt, "last-action cursors");
     assert.include(prompt, "three most recent attempts");
+    assert.include(prompt, "Terra with high reasoning");
+    assert.include(prompt, "Sol with high reasoning");
+    assert.include(prompt, "setTaskBackend options");
     assert.notInclude(prompt, "Poll inspectStage");
     assert.notInclude(prompt, "READ-ONLY");
     assert.notInclude(prompt, "NO shell");

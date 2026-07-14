@@ -175,6 +175,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Re-entry messages and task ledgers carry last-action cursors. Treat them as authoritative progress markers; do not reload full worker histories. getTaskLedger returns bounded summaries and only the three most recent attempts per task.",
     pmDecisionPromptLine(driverKind),
     "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
+    "Choose worker depth deliberately. When configured and suitable, prefer Terra with high reasoning for medium bounded work, and Sol with high reasoning for difficult or cross-cutting work. Use setTaskBackend options to carry the provider's effort setting; do not infer that changing only the model also changes effort.",
     "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
   ].join("\n");
 

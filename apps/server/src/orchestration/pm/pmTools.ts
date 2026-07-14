@@ -11,6 +11,7 @@ import {
   type OrchestrationLatestTurn,
   type OrchestrationMessageRole,
   type GedRoleModelSelections,
+  type ProviderOptionSelection,
   type OrchestrationGateKind,
   type OrchestrationReadModel,
   type OrchestrationStageRole,
@@ -80,6 +81,7 @@ interface SetTaskBackendParameters {
   readonly role: OrchestrationStageRole;
   readonly instanceId: string;
   readonly model: string;
+  readonly options?: ReadonlyArray<ProviderOptionSelection>;
 }
 
 interface InspectStageParameters {
@@ -119,6 +121,7 @@ interface PmTaskSummary {
   readonly currentStageThreadId: string | null;
   readonly supersedesTaskId: string | null;
   readonly supersededByTaskId: string | null;
+  readonly roleModelSelections: GedRoleModelSelections;
   readonly attemptCount: number;
   readonly recentAttempts: ReadonlyArray<PmTaskAttemptSummary>;
   readonly prUrl: string | null;
@@ -234,6 +237,7 @@ const summarizeTaskForPm = (
   currentStageThreadId: task.currentStageThreadId,
   supersedesTaskId: task.supersedesTaskId ?? null,
   supersededByTaskId: task.supersededByTaskId ?? null,
+  roleModelSelections: task.roleModelSelections ?? {},
   attemptCount: task.stageThreadIds.length,
   recentAttempts: task.stageThreadIds.slice(-TASK_LEDGER_RECENT_ATTEMPT_LIMIT).map((threadId) => {
     const attempt = stageHistory[threadId];
@@ -583,7 +587,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "setTaskBackend",
     label: "Set task backend",
     description:
-      "Change which provider/model a task stage role runs on when asked. This overrides the project's per-role default for that task only.",
+      "Change which provider/model/options a task stage role runs on when asked. This overrides the project's per-role default for that task only; pass the provider's reasoning-effort option when selecting effort.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -596,6 +600,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             [role]: {
               instanceId: ProviderInstanceId.make(params.instanceId),
               model: params.model,
+              ...(params.options === undefined ? {} : { options: [...params.options] }),
             },
           };
           const sequence = yield* dispatch({

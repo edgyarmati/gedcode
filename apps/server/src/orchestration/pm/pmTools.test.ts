@@ -1604,6 +1604,7 @@ it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.se
         role: "work",
         instanceId: "codex_work",
         model: "gpt-5-work",
+        options: [{ id: "reasoningEffort", value: "high" }],
       }),
     );
 
@@ -1619,6 +1620,7 @@ it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.se
         work: {
           instanceId: ProviderInstanceId.make("codex_work"),
           model: "gpt-5-work",
+          options: [{ id: "reasoningEffort", value: "high" }],
         },
       });
     }
@@ -1739,6 +1741,7 @@ it.effect("getTaskLedger bounds stage history and returns the projection cursor"
 
     assert.strictEqual(result.details.lastActionCursor, 42);
     assert.strictEqual(result.details.tasks[0]?.attemptCount, 5);
+    assert.deepStrictEqual(result.details.tasks[0]?.roleModelSelections, task.roleModelSelections);
     assert.deepStrictEqual(
       result.details.tasks[0]?.recentAttempts.map(
         (attempt: { stageThreadId: string }) => attempt.stageThreadId,
