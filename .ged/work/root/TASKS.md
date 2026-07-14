@@ -51,8 +51,8 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-SPLIT-01 | NEXT | Add parent task ID, child order, and aggregate progress to contracts/projection/persistence. | Replay reconstructs parent/children and deterministic order. |
-| ORCH-SPLIT-02 | DEFERRED | Add atomic `splitTask` PM tool that creates bounded children with acceptance criteria and dependencies. Deferred until after 2026-07-13. | Partial failure creates no orphan child set; retry is idempotent. |
+| ORCH-SPLIT-01 | DONE | Add parent task ID, child order, and aggregate progress to contracts/projection/persistence. | Replay reconstructs parent/children and deterministic order. |
+| ORCH-SPLIT-02 | NEXT | Add atomic `splitTask` PM tool that creates bounded children with acceptance criteria and dependencies. | Partial failure creates no orphan child set; retry is idempotent. |
 | ORCH-SPLIT-03 | DEFERRED | Teach PM policy to split work when scope exceeds one focused work stage. Deferred until after 2026-07-13. | PM test produces bounded children and the plan gate covers their structure without a new gate type. |
 | ORCH-SPLIT-04 | DEFERRED | Group child tasks under their parent in the board. Deferred until after 2026-07-13. | Browser test covers collapsed/expanded parent and ordered children. |
 

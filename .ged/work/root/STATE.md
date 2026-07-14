@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-SPLIT-01` — add durable parent/child task structure and aggregate progress.
+- **Active task**: `ORCH-SPLIT-02` — add one atomic, idempotent PM task-splitting command.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -10,6 +10,13 @@
 
 ## Current Progress
 
+- `ORCH-SPLIT-01` is complete in commit `9acb70191`. Task creation and durable events carry an
+  optional top-level parent and zero-based sibling order; the decider rejects partial, cross-project,
+  nested, hidden-parent, and duplicate-order relationships. Replay and SQL projections derive parent
+  totals and landed/abandoned terminal progress, and migration 51 preserves unique sibling order.
+- Final `ORCH-SPLIT-01` verification passed on 2026-07-14: 121 focused hierarchy/restart tests, all
+  189 contract tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and the full
+  server suite (1,432 passed/1 skipped).
 - `ORCH-BACKEND-01` is complete in commit `65dd541ac`. The PM and MCP backend override accepts
   validated provider options alongside instance/model, task ledgers expose effective per-role
   selections, and PM policy explicitly routes configured Terra/high medium work and Sol/high difficult

@@ -138,6 +138,17 @@ Verification evidence:
 - Dependencies prevent blocked children from starting and identify the next unblocked child.
 - Parent progress derives from child terminal states.
 
+### ORCH-SPLIT-01
+
+- Decider coverage accepts only paired parent/order fields, visible same-project top-level parents,
+  and unique sibling positions.
+- In-memory replay reconstructs deliberately out-of-insertion-order children and derives parent
+  terminal, landed, and abandoned totals after child state changes.
+- Migration and SQL projection tests preserve nullable hierarchy fields, enforce unique sibling order,
+  and refresh serialized parent progress during projection rebuild; snapshot tests decode the new rows.
+- Verification passed on 2026-07-14: 121 focused tests, all 189 contract tests, `bun fmt`, `bun lint`
+  (existing warnings only), `bun typecheck`, and the full server suite (1,432 passed/1 skipped).
+
 ## Web and Chat
 
 - Forking at a message creates a distinct thread with the intended history boundary.
