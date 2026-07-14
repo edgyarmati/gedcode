@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed; PM startup reliability is first).
-- **Active task**: `ORCH-TASK-04` — add explicit supersession relationships for intentional task
-  replacement.
+- **Active task**: `ORCH-PMBOOT-02` — make requested skills usable by Claude PMs and remove impossible
+  native-subagent guidance before proceeding to task supersession.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.

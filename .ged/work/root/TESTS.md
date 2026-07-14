@@ -25,6 +25,14 @@ Verification evidence:
   `bun typecheck`, and `bun run test` across all 12 packages. The sandboxed test attempt was invalid
   because loopback binds returned `EPERM`; the unsandboxed rerun passed.
 
+## ORCH-PMBOOT-02
+
+- Extend the Claude read-only policy test to prove `Skill` is available without approval while
+  `Task`, `Agent`, shell, and mutation tools remain denied.
+- Pin PM prompt guidance to bounded `createTask`/`handoffWorker` exploration instead of native
+  subagents that are intentionally absent from the constrained PM surface.
+- Run the focused provider/runtime tests and all required repository gates.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.
