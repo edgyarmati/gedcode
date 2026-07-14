@@ -4,6 +4,7 @@ import {
   EventId,
   GateId,
   ProjectId,
+  ProviderInstanceId,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -34,6 +35,7 @@ import {
   TaskHeader,
 } from "./OrchestratorRoutes";
 import { TaskBoard } from "./TaskBoard";
+import { StageTimeline } from "./StageTimeline";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
@@ -174,6 +176,37 @@ it("omits empty Plan and Gates sections and renders them once populated", async 
   await expect.element(page.getByText("Gates", { exact: true })).toBeInTheDocument();
   await expect.element(page.getByRole("heading", { name: "Plan" })).toBeInTheDocument();
   await expect.element(page.getByText("Implemented plan")).toBeInTheDocument();
+});
+
+it("shows the effective worker permission mode in stage history", async () => {
+  const stageThreadId = ThreadId.make("stage-permissions-browser");
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        stageHistoryByTaskId: {
+          [taskId]: {
+            [stageThreadId]: {
+              projectId: ProjectId.make("project-browser"),
+              taskId,
+              stageThreadId,
+              role: "work",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6",
+              runtimeMode: "full-access",
+              status: "running",
+              startedAt: "2026-07-14T00:00:00.000Z",
+              endedAt: null,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  await render(<StageTimeline environmentId={environmentId} taskId={taskId} />);
+  await expect.element(page.getByText("Full access", { exact: true })).toBeInTheDocument();
+  await expect.element(page.getByText("codex · gpt-5.6", { exact: true })).toBeInTheDocument();
 });
 
 it("cancels a non-terminal task from the task header", async () => {

@@ -462,6 +462,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         "thread.turn-start-requested",
       ]);
       const threadCreated = events.find((event) => event.type === "thread.created");
+      const stageStarted = events.find((event) => event.type === "task.stage-started");
       const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
       expect(threadCreated?.payload).toMatchObject({
         runtimeMode: "full-access",
@@ -470,6 +471,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           model: "gpt-5-codex",
         },
       });
+      expect(stageStarted?.payload).toMatchObject({ runtimeMode: "full-access" });
       expect(turnRequested?.payload).toMatchObject({
         runtimeMode: "full-access",
         modelSelection: {

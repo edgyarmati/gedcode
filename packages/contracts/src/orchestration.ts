@@ -660,6 +660,7 @@ export const OrchestrationStageHistoryEntry = Schema.Struct({
   role: OrchestrationStageRole,
   providerInstanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
+  runtimeMode: Schema.optionalKey(Schema.NullOr(RuntimeMode)),
   status: OrchestrationStageHistoryStatus,
   startedAt: IsoDateTime,
   endedAt: Schema.NullOr(IsoDateTime),
@@ -1654,6 +1655,7 @@ export const TaskStageStartedPayload = Schema.Struct({
   // to re-deriving the selection from config when they are absent.
   providerInstanceId: Schema.optional(ProviderInstanceId),
   model: Schema.optional(TrimmedNonEmptyString),
+  runtimeMode: Schema.optional(RuntimeMode),
   updatedAt: IsoDateTime,
 });
 

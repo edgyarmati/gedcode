@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Show each Orchestrator stage attempt's effective worker permission mode in task history, backed by the mode resolved at stage start and preserved through event replay and SQL snapshots.
 - Feature/UI: Record intentional Orchestrator task replacements as durable `supersedes`/`superseded by` links. PM task creation accepts a settled predecessor, rejects active, hidden, cross-project, or already-replaced predecessors, keeps the relationship through replay and SQL snapshots, and labels replacement state on the task board.
 - Fix: Prevent newly started Claude Orchestrator PM turns from stalling on invisible shell approval requests. PM sessions now opt into the enforced read-only Claude policy, which permits built-in file/search, skill-loading, and orchestration tools without approval while immediately denying shell, mutation, and native-agent tools; the PM prompt now accurately delegates heavier exploration through bounded worker handoffs.
 - Feature/UI: Make the shared left sidebar collapsible from visible desktop content-header controls across Chat, Orchestrator, empty-chat, and Settings surfaces. The existing off-canvas transition remains resizable while open, shows the correct open/closed icon, restores the last state from its persisted cookie after reload, and reserves the macOS window-control area whenever collapsing exposes an Electron titlebar.

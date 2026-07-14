@@ -32,6 +32,7 @@ export interface StageTimelineRow {
   readonly statusLabel: string;
   readonly statusVariant: StageStatusVariant;
   readonly backendLabel: string;
+  readonly permissionLabel: string;
   readonly startedAt: string;
   readonly endedAt: string | null;
 }
@@ -53,6 +54,14 @@ export function buildStageTimelineRows(
       statusLabel: statusDisplay.label,
       statusVariant: statusDisplay.variant,
       backendLabel: `${String(entry.providerInstanceId)} · ${entry.model}`,
+      permissionLabel:
+        entry.runtimeMode === "full-access"
+          ? "Full access"
+          : entry.runtimeMode === "auto-accept-edits"
+            ? "Auto-accept edits"
+            : entry.runtimeMode === "approval-required"
+              ? "Approval required"
+              : "Permission unknown",
       startedAt: entry.startedAt,
       endedAt: entry.endedAt,
     };
@@ -101,6 +110,7 @@ export function StageTimeline({
               <div className="flex min-w-0 flex-col">
                 <span className="text-sm font-medium">{row.roleLabel}</span>
                 <span className="truncate text-xs text-muted-foreground">{row.backendLabel}</span>
+                <span className="text-xs text-muted-foreground">{row.permissionLabel}</span>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {startedLabel === null ? null : (

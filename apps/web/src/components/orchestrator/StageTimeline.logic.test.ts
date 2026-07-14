@@ -34,7 +34,24 @@ describe("buildStageTimelineRows", () => {
       statusLabel: "Completed",
       statusVariant: "success",
       backendLabel: "codex_work · gpt-5-codex",
+      permissionLabel: "Permission unknown",
     });
+  });
+
+  it("labels the effective runtime permission recorded for each stage attempt", () => {
+    const rows = buildStageTimelineRows([
+      makeEntry({ runtimeMode: "full-access" }),
+      makeEntry({
+        stageThreadId: ThreadId.make("stage-approval"),
+        runtimeMode: "approval-required",
+      }),
+      makeEntry({ stageThreadId: ThreadId.make("stage-edits"), runtimeMode: "auto-accept-edits" }),
+    ]);
+    expect(rows.map((row) => row.permissionLabel)).toEqual([
+      "Full access",
+      "Approval required",
+      "Auto-accept edits",
+    ]);
   });
 
   it("maps each stage status to its variant", () => {

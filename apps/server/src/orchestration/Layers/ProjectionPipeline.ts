@@ -1964,9 +1964,26 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             role: event.payload.role,
             providerInstanceId,
             model,
+            ...(event.payload.runtimeMode === undefined
+              ? {}
+              : { runtimeMode: event.payload.runtimeMode }),
             status: "running",
             startedAt: event.payload.updatedAt,
             endedAt: null,
+          });
+          return;
+        }
+
+        case "thread.created": {
+          const existing = yield* projectionStageHistoryRepository.getByStageThreadId({
+            stageThreadId: event.payload.threadId,
+          });
+          if (Option.isNone(existing)) {
+            return;
+          }
+          yield* projectionStageHistoryRepository.upsert({
+            ...existing.value,
+            runtimeMode: event.payload.runtimeMode,
           });
           return;
         }

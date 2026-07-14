@@ -59,6 +59,7 @@ import Migration0046 from "./Migrations/046_ProjectionTaskCancellation.ts";
 import Migration0047 from "./Migrations/047_ProjectionTaskLanding.ts";
 import Migration0048 from "./Migrations/048_ProjectionTaskRetention.ts";
 import Migration0049 from "./Migrations/049_ProjectionTaskSupersession.ts";
+import Migration0050 from "./Migrations/050_ProjectionStageRuntimeMode.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
 import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
 import Migration0045 from "./Migrations/045_BackfillProjectionProjectOrchestratorConfig.ts";
@@ -123,6 +124,7 @@ export const migrationEntries = [
   [47, "ProjectionTaskLanding", Migration0047],
   [48, "ProjectionTaskRetention", Migration0048],
   [49, "ProjectionTaskSupersession", Migration0049],
+  [50, "ProjectionStageRuntimeMode", Migration0050],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

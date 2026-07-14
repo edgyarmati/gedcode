@@ -391,11 +391,19 @@ export function projectEvent(
           "thread",
         );
         const existing = nextBase.threads.find((entry) => entry.id === thread.id);
+        const stage = nextBase.stageHistory[thread.id];
         return {
           ...nextBase,
           threads: existing
             ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
             : [...nextBase.threads, thread],
+          stageHistory:
+            stage === undefined
+              ? nextBase.stageHistory
+              : {
+                  ...nextBase.stageHistory,
+                  [thread.id]: { ...stage, runtimeMode: payload.runtimeMode },
+                },
         };
       });
 
@@ -1032,6 +1040,9 @@ export function projectEvent(
                       role: payload.role,
                       providerInstanceId,
                       model,
+                      ...(payload.runtimeMode === undefined
+                        ? {}
+                        : { runtimeMode: payload.runtimeMode }),
                       status: "running",
                       startedAt: payload.updatedAt,
                       endedAt: null,

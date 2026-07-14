@@ -28,6 +28,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role,
           provider_instance_id,
           model,
+          runtime_mode,
           status,
           started_at,
           ended_at
@@ -39,6 +40,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           ${row.role},
           ${row.providerInstanceId},
           ${row.model},
+          ${row.runtimeMode ?? null},
           ${row.status},
           ${row.startedAt},
           ${row.endedAt}
@@ -50,6 +52,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role = excluded.role,
           provider_instance_id = excluded.provider_instance_id,
           model = excluded.model,
+          runtime_mode = excluded.runtime_mode,
           status = excluded.status,
           started_at = excluded.started_at,
           ended_at = excluded.ended_at
@@ -68,6 +71,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role,
           provider_instance_id AS "providerInstanceId",
           model,
+          runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -88,6 +92,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role,
           provider_instance_id AS "providerInstanceId",
           model,
+          runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -109,6 +114,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role,
           provider_instance_id AS "providerInstanceId",
           model,
+          runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -130,6 +136,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           role,
           provider_instance_id AS "providerInstanceId",
           model,
+          runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"

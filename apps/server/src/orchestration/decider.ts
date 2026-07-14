@@ -1340,6 +1340,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           awaitedTurnId: null,
           providerInstanceId: modelSelection.instanceId,
           model: modelSelection.model,
+          runtimeMode: workerRuntimeMode,
           updatedAt: command.createdAt,
         },
       };
