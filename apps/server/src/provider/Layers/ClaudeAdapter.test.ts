@@ -452,8 +452,9 @@ describe("ClaudeAdapterLive", () => {
     const policy = buildClaudeReadOnlyToolPolicy({ enableOrchestrationTools: true });
 
     assert.equal(policy.permissionMode, "default");
-    assert.deepEqual(policy.tools, ["Read", "Grep", "Glob"]);
+    assert.deepEqual(policy.tools, ["Read", "Grep", "Glob", "Skill"]);
     assert.ok(policy.allowedTools?.includes("Read"));
+    assert.ok(policy.allowedTools?.includes("Skill"));
     assert.ok(policy.allowedTools?.includes(orchestrationMcpToolId("createTask")));
     assert.ok(policy.disallowedTools?.includes("Write"));
     assert.ok(policy.disallowedTools?.includes("Edit"));
@@ -490,7 +491,7 @@ describe("ClaudeAdapterLive", () => {
         append: "You are the orchestrator PM.",
       });
       assert.equal(createInput.options.allowDangerouslySkipPermissions, undefined);
-      assert.deepEqual(createInput.options.tools, ["Read", "Grep", "Glob"]);
+      assert.deepEqual(createInput.options.tools, ["Read", "Grep", "Glob", "Skill"]);
       assert.ok(createInput.options.allowedTools?.includes(orchestrationMcpToolId("createTask")));
       assert.ok(createInput.options.disallowedTools?.includes("Write"));
       assert.ok(createInput.options.disallowedTools?.includes("Edit"));
@@ -560,6 +561,18 @@ describe("ClaudeAdapterLive", () => {
       );
       assert.equal(readDecision.behavior, "allow");
 
+      const skillDecision = yield* Effect.promise(() =>
+        canUseTool(
+          "Skill",
+          { skill: "grill-me" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-skill",
+          },
+        ),
+      );
+      assert.equal(skillDecision.behavior, "allow");
+
       const writeDecision = yield* Effect.promise(() =>
         canUseTool(
           "Write",
@@ -583,6 +596,18 @@ describe("ClaudeAdapterLive", () => {
         ),
       );
       assert.equal(bashDecision.behavior, "deny");
+
+      const agentDecision = yield* Effect.promise(() =>
+        canUseTool(
+          "Agent",
+          { prompt: "Explore the project" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-agent",
+          },
+        ),
+      );
+      assert.equal(agentDecision.behavior, "deny");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -103,7 +103,7 @@ type ClaudeToolResultStreamKind = Extract<
 >;
 type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
 
-export const CLAUDE_READ_ONLY_BUILTIN_TOOLS = ["Read", "Grep", "Glob"] as const;
+export const CLAUDE_READ_ONLY_BUILTIN_TOOLS = ["Read", "Grep", "Glob", "Skill"] as const;
 
 export const CLAUDE_READ_ONLY_DISALLOWED_TOOLS = [
   "Bash",

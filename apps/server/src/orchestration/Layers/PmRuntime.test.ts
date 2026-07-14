@@ -2705,8 +2705,10 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "/tmp/project");
     assert.include(prompt, "never ask the human for a project id");
     // Delegation framing: the PM orchestrates and never does the work itself.
-    assert.include(prompt, "orchestration plus read/search tool access");
+    assert.include(prompt, "orchestration, skill-loading, and read/search tool access");
     assert.include(prompt, "built-in read and search tools");
+    assert.include(prompt, "createTask and handoffWorker");
+    assert.notInclude(prompt, "native subagents");
     assert.notInclude(prompt, "short read-only commands");
     assert.include(prompt, "Never implement product changes yourself");
     assert.include(prompt, "handoffWorker");
