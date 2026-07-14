@@ -1,17 +1,24 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-BACKEND-01` — carry validated reasoning effort through role defaults,
-  task overrides, stage resolution, and provider startup.
+- **Active task**: `ORCH-SPLIT-01` — add durable parent/child task structure and aggregate progress.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
 - **Worker policy**: GPT-5.6 Terra/high for medium work; GPT-5.6 Sol/high for difficult or
-  cross-cutting work. Current `setTaskBackend` can enforce the model but not reasoning effort;
-  `ORCH-BACKEND-01` tracks that gap.
+  cross-cutting work. `setTaskBackend` now carries the complete provider selection, including effort.
 
 ## Current Progress
 
+- `ORCH-BACKEND-01` is complete in commit `65dd541ac`. The PM and MCP backend override accepts
+  validated provider options alongside instance/model, task ledgers expose effective per-role
+  selections, and PM policy explicitly routes configured Terra/high medium work and Sol/high difficult
+  or cross-cutting work without assuming model changes imply effort changes.
+- Final `ORCH-BACKEND-01` verification passed on 2026-07-14: 85 focused server tests, `bun fmt`,
+  `bun lint` (existing warnings only), and `bun typecheck`. The full isolated server suite passed
+  1,428 tests with one skipped; the socket-dependent scripts package passed 74 tests outside the
+  sandbox. The root parallel run was cancelled only because those socket tests cannot bind under the
+  managed sandbox.
 - `ORCH-ACCESS-03` is complete in commit `b43e9b751`. Stage-start events now stamp the resolved worker
   runtime mode, durable stage history and SQL snapshots preserve it, migration 50 backfills older
   attempts from their actual stage threads, and task detail renders Full access, Approval required, or
@@ -226,9 +233,9 @@
 
 ## Immediate Sequence
 
-1. `ORCH-BACKEND-01` reasoning-effort metadata and routing.
-2. `ORCH-SPLIT-01..04` parent/child task splitting.
-3. `CHAT-FORK-01..02` normal-chat thread forking.
+1. `ORCH-SPLIT-01..04` parent/child task splitting.
+2. `CHAT-FORK-01..02` normal-chat thread forking.
+3. `UI-DRAFT-01` preserve composer drafts across Orchestrator navigation.
 
 ## Repository State Notes
 

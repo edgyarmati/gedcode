@@ -425,3 +425,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-12: 75 focused tests, `bun fmt`, `bun lint` (existing warnings only),
   `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1
   skipped, web 1,221 passed).
+
+### ORCH-BACKEND-01
+
+- PM and MCP tests prove `setTaskBackend` accepts non-empty provider option identifiers/values and
+  dispatches the complete instance, model, and reasoning-effort selection in one role override event.
+- Ledger tests prove the effective per-role selection remains inspectable, while existing stage-start
+  coverage proves selection options survive resolution into thread creation, turn start, and provider
+  startup.
+- System-prompt coverage pins the configured Terra/high policy for medium bounded work and Sol/high for
+  difficult or cross-cutting work without treating model and effort as implicitly coupled.
+- Verification passed on 2026-07-14: 85 focused server tests, `bun fmt`, `bun lint` (existing warnings
+  only), `bun typecheck`, the full server suite (1,428 passed/1 skipped), and the socket-dependent
+  scripts package (74 passed outside the managed sandbox).

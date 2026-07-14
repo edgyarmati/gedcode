@@ -43,7 +43,7 @@ or explicitly blocked.
 | ORCH-POLL-03 | DONE | Keep `inspectStage` as an explicit on-demand action and add a cheap structured status digest for operator requests. | Existing focused tests prove status returns fixed message/activity tails, truncated text, elapsed turn state, and latest token usage without a full transcript. |
 | ORCH-PMTH-01 | DONE | Document and test PM thread reuse policy: one persistent PM thread per project; one thread per stage attempt; steering reuses the active attempt; retry creates a linked attempt. | Thread-count tests pin reuse and retry behavior. |
 | ORCH-PMTH-02 | DONE | Add bounded task summaries and last-action cursors so PM re-entry does not repeatedly ingest full task/stage histories. | Re-entry prompt size remains bounded as stage history grows. |
-| ORCH-BACKEND-01 | NEXT | Extend project role defaults and `setTaskBackend` to carry validated reasoning effort, then apply Terra/high to medium work and Sol/high to difficult or cross-cutting work. | Ledger and stage-start tests prove both model and reasoning effort reach the provider; PM can inspect the effective selection. |
+| ORCH-BACKEND-01 | DONE | Extend project role defaults and `setTaskBackend` to carry validated reasoning effort, then apply Terra/high to medium work and Sol/high to difficult or cross-cutting work. | Ledger and stage-start tests prove both model and reasoning effort reach the provider; PM can inspect the effective selection. |
 | ORCH-INT-01 | DONE | Add first-class `interruptStage` PM/MCP/RPC action with immediate requested acknowledgement and durable outcome. | Shared actuator, provider reactor, ingestion, router, client, and browser tests cover immediate durable request plus provider-confirmed interrupted settlement without normal completion. |
 | ORCH-INT-02 | DONE | Define steer semantics while a provider is busy: immediate provider steer when supported; otherwise explicit queue or rejection, never silent delay. | Codex uses `turn/steer`, OpenCode reports live steering, Claude reports active-turn queuing, and durable activity records started/steered/queued/rejected outcomes without fallback. |
 
@@ -51,7 +51,7 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-SPLIT-01 | DEFERRED | Add parent task ID, child order, and aggregate progress to contracts/projection/persistence. Deferred until after 2026-07-13. | Replay reconstructs parent/children and deterministic order. |
+| ORCH-SPLIT-01 | NEXT | Add parent task ID, child order, and aggregate progress to contracts/projection/persistence. | Replay reconstructs parent/children and deterministic order. |
 | ORCH-SPLIT-02 | DEFERRED | Add atomic `splitTask` PM tool that creates bounded children with acceptance criteria and dependencies. Deferred until after 2026-07-13. | Partial failure creates no orphan child set; retry is idempotent. |
 | ORCH-SPLIT-03 | DEFERRED | Teach PM policy to split work when scope exceeds one focused work stage. Deferred until after 2026-07-13. | PM test produces bounded children and the plan gate covers their structure without a new gate type. |
 | ORCH-SPLIT-04 | DEFERRED | Group child tasks under their parent in the board. Deferred until after 2026-07-13. | Browser test covers collapsed/expanded parent and ordered children. |
