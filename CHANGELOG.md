@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Share project sorting between Chat and Orchestrator, including the same persisted sort mode,
+  last-message and creation-time ordering, and manual drag order across environment-scoped projects.
+
 - Fix: Persist unsent Orchestrator PM composer text per environment and project so navigation between
   Chat, Orchestrator, projects, and task routes no longer discards or cross-contaminates drafts.
 

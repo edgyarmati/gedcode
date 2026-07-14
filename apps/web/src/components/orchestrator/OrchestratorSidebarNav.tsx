@@ -1,9 +1,23 @@
 import { scopedProjectKey, scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime";
-import { type ContextMenuItem, type OrchestrationGateKind } from "@t3tools/contracts";
+import { ProjectId, type ContextMenuItem, type OrchestrationGateKind } from "@t3tools/contracts";
+import type { SidebarProjectSortOrder } from "@t3tools/contracts/settings";
 import { Link, useParams } from "@tanstack/react-router";
-import { CircleAlertIcon, FolderPlusIcon } from "lucide-react";
-import { memo, useCallback, useMemo, useState, type MouseEvent } from "react";
+import { ArrowUpDownIcon, CircleAlertIcon, FolderPlusIcon, GripVerticalIcon } from "lucide-react";
+import { memo, useCallback, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
+import {
+  DndContext,
+  PointerSensor,
+  closestCorners,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
@@ -17,14 +31,25 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   selectPendingGatesForTaskRef,
   selectProjectsAcrossEnvironments,
+  selectSidebarThreadsAcrossEnvironments,
   selectSidebarThreadSummaryByRef,
   selectTasksForProjectRef,
   useStore,
 } from "../../store";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
+import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
+import { getProjectOrderKey } from "../../logicalProject";
 import type { Project } from "../../types";
+import { useUiStateStore } from "../../uiStateStore";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
+import {
+  orderItemsByPreferredIds,
+  SIDEBAR_PROJECT_SORT_LABELS,
+  sortProjectsForSidebar,
+} from "../Sidebar.logic";
+import { isOrchestratorManagedThread } from "../../lib/orchestratorThreads";
 import { ProjectOrchestrationSettingsDialog } from "./ProjectOrchestrationSettingsDialog";
 import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./TaskBoard";
 
@@ -35,6 +60,11 @@ import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./Task
 // when any of the project's stage threads has a live session.
 export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const reorderProjects = useUiStateStore((store) => store.reorderProjects);
+  const projectSortOrder = useSettings((settings) => settings.sidebarProjectSortOrder);
+  const { updateSettings } = useUpdateSettings();
   const openAddProject = useCommandPaletteStore((store) => store.openAddProject);
   const [orchestrationSettingsTarget, setOrchestrationSettingsTarget] = useState<Project | null>(
     null,
@@ -46,6 +76,58 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
         ? `${params.environmentId}:${params.projectId}`
         : null,
   });
+  const manuallyOrderedProjects = useMemo(
+    () =>
+      orderItemsByPreferredIds({
+        items: projects,
+        preferredIds: projectOrder,
+        getId: getProjectOrderKey,
+      }),
+    [projectOrder, projects],
+  );
+  const sortedProjects = useMemo(() => {
+    const projectByScopedKey = new Map(
+      manuallyOrderedProjects.map((project) => {
+        const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+        return [key, project] as const;
+      }),
+    );
+    const sortableProjects = manuallyOrderedProjects.map((project) =>
+      Object.assign({}, project, {
+        id: scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+      }),
+    );
+    const sortableThreads = sidebarThreads
+      .filter((thread) => thread.archivedAt === null && !isOrchestratorManagedThread(thread))
+      .map((thread) =>
+        Object.assign({}, thread, {
+          projectId: scopedProjectKey(
+            scopeProjectRef(thread.environmentId, thread.projectId),
+          ) as ProjectId,
+        }),
+      );
+    return sortProjectsForSidebar(sortableProjects, sortableThreads, projectSortOrder).flatMap(
+      (project) => {
+        const resolved = projectByScopedKey.get(project.id);
+        return resolved ? [resolved] : [];
+      },
+    );
+  }, [manuallyOrderedProjects, projectSortOrder, sidebarThreads]);
+  const isManualSorting = projectSortOrder === "manual";
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+  }, []);
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (!isManualSorting || !event.over || event.active.id === event.over.id) {
+        return;
+      }
+      reorderProjects([String(event.active.id)], [String(event.over.id)]);
+    },
+    [isManualSorting, reorderProjects],
+  );
 
   return (
     <>
@@ -55,37 +137,58 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
               Projects
             </span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label="Add project"
-                    data-testid="orchestrator-sidebar-add-project-trigger"
-                    className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={openAddProject}
-                  />
-                }
-              >
-                <FolderPlusIcon className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipPopup side="right">Add project</TooltipPopup>
-            </Tooltip>
+            <div className="flex items-center gap-1">
+              <OrchestratorProjectSortMenu
+                sortOrder={projectSortOrder}
+                onSortOrderChange={(sortOrder) => {
+                  updateSettings({ sidebarProjectSortOrder: sortOrder });
+                }}
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Add project"
+                      data-testid="orchestrator-sidebar-add-project-trigger"
+                      className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                      onClick={openAddProject}
+                    />
+                  }
+                >
+                  <FolderPlusIcon className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipPopup side="right">Add project</TooltipPopup>
+              </Tooltip>
+            </div>
           </div>
-          <SidebarMenu>
-            {projects.map((project) => {
-              const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
-              return (
-                <OrchestratorSidebarProjectRow
-                  key={key}
-                  project={project}
-                  isActive={activeProjectKey === key}
-                  onOpenOrchestrationSettings={setOrchestrationSettingsTarget}
-                />
-              );
-            })}
-          </SidebarMenu>
-          {projects.length === 0 ? (
+          <DndContext
+            collisionDetection={collisionDetection}
+            modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+            onDragEnd={handleDragEnd}
+            sensors={sensors}
+          >
+            <SortableContext
+              items={sortedProjects.map(getProjectOrderKey)}
+              strategy={verticalListSortingStrategy}
+            >
+              <SidebarMenu>
+                {sortedProjects.map((project) => {
+                  const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
+                  return (
+                    <OrchestratorSidebarProjectRow
+                      key={key}
+                      project={project}
+                      isActive={activeProjectKey === key}
+                      isManualSorting={isManualSorting}
+                      onOpenOrchestrationSettings={setOrchestrationSettingsTarget}
+                    />
+                  );
+                })}
+              </SidebarMenu>
+            </SortableContext>
+          </DndContext>
+          {sortedProjects.length === 0 ? (
             <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
               No projects yet
             </div>
@@ -100,15 +203,67 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   );
 });
 
+function OrchestratorProjectSortMenu({
+  onSortOrderChange,
+  sortOrder,
+}: {
+  onSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
+  sortOrder: SidebarProjectSortOrder;
+}) {
+  return (
+    <Menu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              aria-label="Sort Orchestrator projects"
+              className="inline-flex size-5 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+            />
+          }
+        >
+          <ArrowUpDownIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="right">Sort projects</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="end" className="min-w-44" side="bottom">
+        <MenuGroup>
+          <MenuRadioGroup
+            value={sortOrder}
+            onValueChange={(value) => onSortOrderChange(value as SidebarProjectSortOrder)}
+          >
+            {(
+              Object.entries(SIDEBAR_PROJECT_SORT_LABELS) as Array<
+                [SidebarProjectSortOrder, string]
+              >
+            ).map(([value, label]) => (
+              <MenuRadioItem className="min-h-7 py-1 text-xs" key={value} value={value}>
+                {label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRow({
   project,
   isActive,
+  isManualSorting,
   onOpenOrchestrationSettings,
 }: {
   project: Project;
   isActive: boolean;
+  isManualSorting: boolean;
   onOpenOrchestrationSettings: (project: Project) => void;
 }) {
+  const sortable = useSortable({ id: getProjectOrderKey(project), disabled: !isManualSorting });
+  const sortableStyle: CSSProperties = {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition,
+    opacity: sortable.isDragging ? 0.65 : 1,
+  };
   const environmentId = project.environmentId;
   const projectId = project.id;
   const projectRef = useMemo(
@@ -202,7 +357,7 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
   );
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem ref={sortable.setNodeRef} style={sortableStyle}>
       <SidebarMenuButton
         size="sm"
         isActive={isActive}
@@ -216,6 +371,17 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
         }
         className="gap-2 px-2 py-1.5 text-left hover:bg-accent"
       >
+        {isManualSorting ? (
+          <span
+            aria-label={`Drag ${project.name}`}
+            className="flex size-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground active:cursor-grabbing"
+            ref={sortable.setActivatorNodeRef}
+            {...sortable.attributes}
+            {...sortable.listeners}
+          >
+            <GripVerticalIcon className="size-3" />
+          </span>
+        ) : null}
         <ProjectFavicon environmentId={environmentId} cwd={project.cwd} />
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">
           {project.name}

@@ -13,18 +13,24 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { useCommandPaletteStore } from "../../commandPaletteStore";
+import { CLIENT_SETTINGS_STORAGE_KEY } from "../../clientPersistenceStorage";
+import { getClientSettings } from "../../hooks/useSettings";
+import { __resetLocalApiForTests } from "../../localApi";
+import { getProjectOrderKey } from "../../logicalProject";
 import { initialEnvironmentState, useStore } from "../../store";
 import type { OrchestratorTask, SidebarThreadSummary } from "../../types";
+import { useUiStateStore } from "../../uiStateStore";
 import { SidebarProvider } from "../ui/sidebar";
 import { OrchestratorSidebarNav } from "./OrchestratorSidebarNav";
 
 const environmentId = EnvironmentId.make("env-sidebar");
 const projectId = ProjectId.make("proj-sidebar");
+const secondProjectId = ProjectId.make("proj-sidebar-second");
 const blockedTaskId = TaskId.make("task-blocked");
 const runningTaskId = TaskId.make("task-running");
 const runningStageThreadId = ThreadId.make("thread-running-stage");
@@ -129,6 +135,78 @@ function seedStore(): void {
   });
 }
 
+function seedSortableProjects(): void {
+  const latestActivityThreadId = ThreadId.make("thread-latest-activity");
+  const newestProjectThreadId = ThreadId.make("thread-newest-project");
+  const latestActivityProject = {
+    id: projectId,
+    environmentId,
+    name: "Latest activity",
+    cwd: "/tmp/latest-activity",
+    defaultModelSelection: {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+    },
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    scripts: [],
+  };
+  const newestProject = {
+    ...latestActivityProject,
+    id: secondProjectId,
+    name: "Newest project",
+    cwd: "/tmp/newest-project",
+    createdAt: "2026-07-03T00:00:00.000Z",
+    updatedAt: "2026-07-03T00:00:00.000Z",
+  };
+  const summary = (input: {
+    id: ThreadId;
+    projectId: ProjectId;
+    createdAt: string;
+    latestUserMessageAt: string;
+  }): SidebarThreadSummary =>
+    ({
+      ...makeRunningSummary(),
+      ...input,
+      session: null,
+      title: String(input.id),
+      latestUserMessageAt: input.latestUserMessageAt,
+    }) as SidebarThreadSummary;
+
+  useStore.setState({
+    activeEnvironmentId: environmentId,
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        projectIds: [projectId, secondProjectId],
+        projectById: {
+          [projectId]: latestActivityProject,
+          [secondProjectId]: newestProject,
+        },
+        threadIds: [latestActivityThreadId, newestProjectThreadId],
+        sidebarThreadSummaryById: {
+          [latestActivityThreadId]: summary({
+            id: latestActivityThreadId,
+            projectId,
+            createdAt: "2026-07-01T00:00:00.000Z",
+            latestUserMessageAt: "2026-07-05T00:00:00.000Z",
+          }),
+          [newestProjectThreadId]: summary({
+            id: newestProjectThreadId,
+            projectId: secondProjectId,
+            createdAt: "2026-07-03T00:00:00.000Z",
+            latestUserMessageAt: "2026-07-04T00:00:00.000Z",
+          }),
+        },
+        bootstrapComplete: true,
+      },
+    },
+  });
+  useUiStateStore.setState({
+    projectOrder: [getProjectOrderKey(newestProject), getProjectOrderKey(latestActivityProject)],
+  });
+}
+
 function renderNav() {
   const rootRoute = createRootRoute({
     component: () => (
@@ -151,13 +229,21 @@ function renderNav() {
   return render(<RouterProvider router={router} />);
 }
 
-afterEach(() => {
+beforeEach(async () => {
+  window.localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
+  await __resetLocalApiForTests();
+});
+
+afterEach(async () => {
   useStore.setState({ activeEnvironmentId: null, environmentStateById: {} });
+  useUiStateStore.setState({ projectOrder: [] });
   useCommandPaletteStore.setState({
     open: false,
     openIntent: null,
     openAddProject: realOpenAddProject,
   });
+  window.localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
+  await __resetLocalApiForTests();
 });
 
 it("renders a project row with needs-attention and active counts and a running pulse", async () => {
@@ -187,4 +273,27 @@ it("opens the add-project flow from the orchestrator sidebar", async () => {
   await trigger.click();
 
   expect(openAddProject).toHaveBeenCalledOnce();
+});
+
+it("shares project sort settings and persisted manual order with Chat", async () => {
+  seedSortableProjects();
+  renderNav();
+
+  await expect.element(page.getByText("Latest activity")).toBeInTheDocument();
+  await expect.element(page.getByText("Newest project")).toBeInTheDocument();
+  const latestActivity = page.getByText("Latest activity").element();
+  const newestProject = page.getByText("Newest project").element();
+  expect(
+    latestActivity.compareDocumentPosition(newestProject) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+
+  await page.getByRole("button", { name: "Sort Orchestrator projects" }).click();
+  await page.getByRole("menuitemradio", { name: "Manual" }).click();
+
+  await expect.element(page.getByLabelText("Drag Latest activity")).toBeInTheDocument();
+  await expect.element(page.getByLabelText("Drag Newest project")).toBeInTheDocument();
+  expect(
+    newestProject.compareDocumentPosition(latestActivity) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(getClientSettings().sidebarProjectSortOrder).toBe("manual");
 });
