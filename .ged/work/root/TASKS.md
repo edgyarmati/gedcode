@@ -27,10 +27,10 @@ or explicitly blocked.
 | ORCH-TASK-01 | DONE | Define task archive, restore, and permanent-delete commands/events without erasing the append-only event log. | Contract and replay tests preserve history while excluding archived/deleted tasks from active queries. |
 | ORCH-TASK-02 | DONE | Add PM/MCP/RPC/UI task archive/delete actions and rich task-card context menus. | Terminal tasks disappear from active board and can be restored where supported. |
 | ORCH-TASK-03 | DONE | Add stable create-task idempotency keys tied to the originating PM request. | Repeated identical tool calls return one task and one worktree. |
-| ORCH-TASK-04 | NEXT | Add explicit supersedes/superseded-by relationships for intentional replacement tasks. | Replacement task links to prior task and board presents one active successor. |
+| ORCH-TASK-04 | DONE | Add explicit supersedes/superseded-by relationships for intentional replacement tasks. | Replacement task links to prior task and board presents one active successor. |
 | ORCH-ACCESS-01 | DONE | Change orchestration worker runtime default to full write access while preserving PM read-only enforcement. Coupled atomically with ACCESS-02 because the old opt-in clamp would otherwise undo the default. | New worker stages and provider sessions resolve to full access unconditionally; PM uses approval-required/read-only sandbox policy. |
 | ORCH-ACCESS-02 | DONE | Remove global/project full-access opt-in settings and migrate persisted sparse config safely. Coupled atomically with ACCESS-01. | Settings UI has no opt-in; legacy config decodes but the key is inert and omitted on save. |
-| ORCH-ACCESS-03 | DEFERRED | Show effective runtime permissions in stage history/task detail. Deferred until after 2026-07-13. | Browser test displays the actual resolved worker mode. |
+| ORCH-ACCESS-03 | NEXT | Show effective runtime permissions in stage history/task detail. | Browser test displays the actual resolved worker mode. |
 
 ## Phase 2 - PM Efficiency and Control
 

@@ -42,6 +42,18 @@ Verification evidence:
   packages. One unrelated `effect-acp` timing test failed on the first full run and passed 9/9 in
   isolation before the clean rerun.
 
+## ORCH-TASK-04
+
+- Decider coverage accepts one visible, settled, same-project predecessor and rejects active or
+  already-replaced predecessors.
+- Replay coverage reconstructs both `supersedesTaskId` and `supersededByTaskId`; migration and SQL
+  snapshot coverage retain the links across restart.
+- PM tool coverage proves the predecessor participates in command content identity while retaining the
+  same stable task identity, and board coverage proves only the successor is active.
+- Verification passed on 2026-07-14: 157 focused server tests, 38 focused web tests, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck`, and all 12 workspace test packages. The server
+  package passed 1,427 tests with 1 skipped.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.

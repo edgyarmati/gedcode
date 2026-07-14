@@ -1,8 +1,8 @@
 # State
 
-- **Phase**: implement (post-July-13 roadmap resumed; PM startup reliability is first).
-- **Active task**: `ORCH-TASK-04` — add explicit supersession relationships for intentional task
-  replacement.
+- **Phase**: implement (post-July-13 roadmap resumed).
+- **Active task**: `ORCH-ACCESS-03` — show the effective worker runtime permission mode in stage
+  history/task detail.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +12,14 @@
 
 ## Current Progress
 
+- `ORCH-TASK-04` is complete in commit `7dc1593e4`. `createTask` accepts an optional settled
+  predecessor and durably links successor/predecessor in both directions. The decider rejects active,
+  hidden, cross-project, and already-replaced predecessors; replay, SQL projection, restart snapshots,
+  PM ledgers, MCP input, and the task board retain and expose the relationship.
+- Final `ORCH-TASK-04` verification passed on 2026-07-14: 157 focused server tests and 38 focused web
+  tests; `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and all 12 workspace test
+  packages. The server package passed 1,427 tests with 1 skipped; an error-only full run was stopped
+  after hiding long-running Git integration progress, then the visible server rerun completed cleanly.
 - `ORCH-PMBOOT-02` is complete. Claude's constrained PM surface now exposes the read-only `Skill`
   loader while continuing to deny Bash, writes, Task, and Agent immediately. The PM prompt delegates
   heavier exploration through bounded `createTask`/`handoffWorker` stages instead of unavailable native
@@ -176,8 +184,8 @@
   `bun lint` (existing warnings only), a clean isolated `bun typecheck` rerun after the known workspace
   dependency-resolution race, `bun run build`, and `bun run test` (all 12 packages; server 1,424
   passed/1 skipped, web 1,221 passed).
-- All tasks designated urgent through the July 13 cutoff are complete. Remaining `DEFERRED` work stays
-  scheduled for after 2026-07-13; canonical pipeline ordering remains explicitly user-deferred.
+- All tasks designated urgent through the July 13 cutoff are complete. Post-cutoff work has resumed in
+  roadmap order; canonical pipeline ordering remains explicitly user-deferred.
 - `UI-COLLAPSE-01` is complete in commit `cb4b277c3`. Shared content headers across Chat, empty-chat,
   Orchestrator, browser Settings, and Electron Settings now expose the desktop off-canvas toggle; the
   existing persisted cookie restores state and the trigger reflects desktop/mobile expansion correctly.
@@ -209,7 +217,9 @@
 
 ## Immediate Sequence
 
-1. None active. Resume deferred items after 2026-07-13 in roadmap priority order.
+1. `ORCH-ACCESS-03` effective permission display.
+2. `ORCH-BACKEND-01` reasoning-effort metadata and routing.
+3. `ORCH-SPLIT-01..04` parent/child task splitting.
 
 ## Repository State Notes
 
