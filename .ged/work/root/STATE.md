@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed; PM startup reliability is first).
-- **Active task**: `ORCH-PMBOOT-02` — make requested skills usable by Claude PMs and remove impossible
-  native-subagent guidance before proceeding to task supersession.
+- **Active task**: `ORCH-TASK-04` — add explicit supersession relationships for intentional task
+  replacement.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +12,14 @@
 
 ## Current Progress
 
+- `ORCH-PMBOOT-02` is complete. Claude's constrained PM surface now exposes the read-only `Skill`
+  loader while continuing to deny Bash, writes, Task, and Agent immediately. The PM prompt delegates
+  heavier exploration through bounded `createTask`/`handoffWorker` stages instead of unavailable native
+  subagents.
+- Final `ORCH-PMBOOT-02` verification passed on 2026-07-14: 97 focused provider/runtime tests,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and a clean `bun run test
+  --output-logs=errors-only` across all 12 packages. One unrelated `effect-acp` timing test failed on the
+  first full run, then passed 9/9 in isolation before the clean rerun.
 - `ORCH-PMBOOT-01` is complete. Live diagnostics of the `loc-speach` PM proved its first Claude turn
   opened two `command_execution_approval` requests for read-only Bash exploration and stalled because
   the PM surface cannot resolve approvals. Claude PM sessions now opt into the adapter's explicit

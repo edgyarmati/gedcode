@@ -33,6 +33,15 @@ Verification evidence:
   subagents that are intentionally absent from the constrained PM surface.
 - Run the focused provider/runtime tests and all required repository gates.
 
+Verification evidence:
+
+- Claude adapter and PM runtime tests passed 97/97, covering Skill allow, Agent/Bash/write deny, the
+  unchanged orchestration MCP surface, and bounded worker-handoff prompt guidance.
+- Repository gates passed on 2026-07-14: `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, and the clean full `bun run test --output-logs=errors-only` rerun across all 12
+  packages. One unrelated `effect-acp` timing test failed on the first full run and passed 9/9 in
+  isolation before the clean rerun.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.
