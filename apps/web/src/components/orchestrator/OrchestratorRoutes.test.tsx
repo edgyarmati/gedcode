@@ -290,6 +290,24 @@ describe("TaskBoard bucketing helpers", () => {
     expect(partition.abandoned).toHaveLength(1);
   });
 
+  it("presents one active successor while retaining its superseded predecessor", () => {
+    const predecessor = entry("abandoned");
+    const successor = entry("working");
+    const partition = partitionBoardTasks([
+      {
+        ...predecessor,
+        task: { ...predecessor.task, supersededByTaskId: successor.task.id },
+      },
+      {
+        ...successor,
+        task: { ...successor.task, supersedesTaskId: predecessor.task.id },
+      },
+    ]);
+
+    expect(partition.active.map((task) => task.id)).toEqual([successor.task.id]);
+    expect(partition.abandoned.map((task) => task.id)).toEqual([predecessor.task.id]);
+  });
+
   it("prefers a pending gate reason over a blocked status", () => {
     expect(needsYouReason(entry("blocked", ["land"]))).toEqual({ kind: "gate", gate: "land" });
   });

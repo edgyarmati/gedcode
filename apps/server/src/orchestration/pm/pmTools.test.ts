@@ -357,11 +357,15 @@ it.effect("createTask derives stable task and command identities from its idempo
     const changed = yield* Effect.promise(() =>
       createTask.execute("tool-create-3", { ...params, title: "Conflicting retry" }),
     );
+    const replacement = yield* Effect.promise(() =>
+      createTask.execute("tool-create-4", { ...params, supersedesTaskId: "task-old" }),
+    );
 
-    const [firstCommand, secondCommand, changedCommand] = dispatched;
+    const [firstCommand, secondCommand, changedCommand, replacementCommand] = dispatched;
     assert.strictEqual(firstCommand?.type, "task.create");
     assert.strictEqual(secondCommand?.type, "task.create");
     assert.strictEqual(changedCommand?.type, "task.create");
+    assert.strictEqual(replacementCommand?.type, "task.create");
     if (
       firstCommand?.type === "task.create" &&
       secondCommand?.type === "task.create" &&
@@ -375,6 +379,11 @@ it.effect("createTask derives stable task and command identities from its idempo
     }
     assert.strictEqual(first.details.taskId, second.details.taskId);
     assert.strictEqual(first.details.taskId, changed.details.taskId);
+    assert.strictEqual(first.details.taskId, replacement.details.taskId);
+    if (replacementCommand?.type === "task.create") {
+      assert.strictEqual(replacementCommand.supersedesTaskId, "task-old");
+      assert.notStrictEqual(replacementCommand.commandId, firstCommand?.commandId);
+    }
     assert.match(first.content[0]?.text ?? "", /Created or reused task/);
   }),
 );

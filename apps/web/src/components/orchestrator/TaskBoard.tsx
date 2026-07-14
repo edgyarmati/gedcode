@@ -671,6 +671,11 @@ function ActiveTaskCard({
         <Badge size="sm" variant="outline">
           {activeStageLabel(task.status)}
         </Badge>
+        {task.supersedesTaskId ? (
+          <Badge size="sm" variant="secondary">
+            Replacement
+          </Badge>
+        ) : null}
         {runningStartedAt ? <RunningElapsed startedAt={runningStartedAt} /> : null}
         {model ? (
           <Badge size="sm" variant="secondary">
@@ -701,6 +706,9 @@ function TerminalTaskCard({
       {...(onContextMenu ? { onContextMenu } : {})}
     >
       <div className="line-clamp-2 text-sm font-medium text-muted-foreground">{task.title}</div>
+      {task.supersededByTaskId ? (
+        <div className="mt-1 text-[11px] text-muted-foreground">Superseded</div>
+      ) : null}
     </TaskCardLink>
   );
 }

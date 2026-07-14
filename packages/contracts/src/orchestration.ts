@@ -544,6 +544,8 @@ export const OrchestrationTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
+  supersededByTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
   landing: Schema.NullOr(OrchestrationTaskLanding).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -993,6 +995,7 @@ const TaskCreateCommand = Schema.Struct({
   title: TrimmedNonEmptyString,
   pmMessageId: Schema.NullOr(MessageId),
   branch: Schema.NullOr(TrimmedNonEmptyString),
+  supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   createdAt: IsoDateTime,
 });
 
@@ -1601,6 +1604,7 @@ export const TaskCreatedPayload = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   pmMessageId: Schema.NullOr(MessageId),
+  supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

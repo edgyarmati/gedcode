@@ -42,6 +42,7 @@ interface CreateTaskParameters {
   readonly idempotencyKey: string;
   readonly taskType?: string;
   readonly branch?: string;
+  readonly supersedesTaskId?: string;
 }
 
 interface ClassifyRequestParameters {
@@ -116,6 +117,8 @@ interface PmTaskSummary {
   readonly title: string;
   readonly status: string;
   readonly currentStageThreadId: string | null;
+  readonly supersedesTaskId: string | null;
+  readonly supersededByTaskId: string | null;
   readonly attemptCount: number;
   readonly recentAttempts: ReadonlyArray<PmTaskAttemptSummary>;
   readonly prUrl: string | null;
@@ -159,11 +162,15 @@ function createTaskIdentity(params: CreateTaskParameters): {
   const title = params.title.trim();
   const taskType = params.taskType?.trim() || "feature";
   const branch = params.branch?.trim() || null;
+  const supersedesTaskId = params.supersedesTaskId?.trim() || null;
   const identityDigest = createHash("sha256")
     .update(JSON.stringify([projectId, idempotencyKey]), "utf8")
     .digest("hex");
   const requestDigest = createHash("sha256")
-    .update(JSON.stringify([projectId, idempotencyKey, title, taskType, branch]), "utf8")
+    .update(
+      JSON.stringify([projectId, idempotencyKey, title, taskType, branch, supersedesTaskId]),
+      "utf8",
+    )
     .digest("hex");
   return {
     taskId: TaskId.make(`pm-${identityDigest.slice(0, 32)}`),
@@ -225,6 +232,8 @@ const summarizeTaskForPm = (
   title: task.title,
   status: task.status,
   currentStageThreadId: task.currentStageThreadId,
+  supersedesTaskId: task.supersedesTaskId ?? null,
+  supersededByTaskId: task.supersededByTaskId ?? null,
   attemptCount: task.stageThreadIds.length,
   recentAttempts: task.stageThreadIds.slice(-TASK_LEDGER_RECENT_ATTEMPT_LIMIT).map((threadId) => {
     const attempt = stageHistory[threadId];
@@ -349,7 +358,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "createTask",
     label: "Create task",
     description:
-      "Create or reuse one orchestrator task for a project. Supply a stable idempotencyKey derived from the originating PM request and logical task; reuse that exact key for retries.",
+      "Create or reuse one orchestrator task for a project. Supply a stable idempotencyKey derived from the originating PM request and logical task; reuse that exact key for retries. Set supersedesTaskId only when intentionally replacing one settled terminal task.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -363,6 +372,9 @@ export const makePmToolExecutors = Effect.gen(function* () {
             title: params.title.trim(),
             pmMessageId: identity.pmMessageId,
             branch: params.branch?.trim() || null,
+            supersedesTaskId: params.supersedesTaskId
+              ? TaskId.make(params.supersedesTaskId.trim())
+              : null,
             createdAt: yield* nowIso,
           });
           return textResult(`Created or reused task ${identity.taskId}.`, {

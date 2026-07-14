@@ -2115,4 +2115,57 @@ describe("orchestration projector", () => {
     expect(model.tasks[0]?.deletedAt).toBe(deletedAt);
     expect(model.tasks[0]?.title).toBe("Retain history");
   });
+
+  it("replays replacement creation into bidirectional task relationships", async () => {
+    const createdAt = "2026-07-14T06:00:00.000Z";
+    const predecessorEvent = makeEvent({
+      sequence: 1,
+      type: "task.created",
+      aggregateKind: "task",
+      aggregateId: "task-old",
+      occurredAt: createdAt,
+      commandId: "cmd-task-old",
+      payload: {
+        taskId: "task-old",
+        projectId: "project-1",
+        taskType: "feature",
+        title: "Old task",
+        branch: null,
+        worktreePath: null,
+        pmMessageId: null,
+        playbookVersion: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    });
+    const successorEvent = makeEvent({
+      sequence: 2,
+      type: "task.created",
+      aggregateKind: "task",
+      aggregateId: "task-new",
+      occurredAt: createdAt,
+      commandId: "cmd-task-new",
+      payload: {
+        taskId: "task-new",
+        projectId: "project-1",
+        taskType: "feature",
+        title: "New task",
+        branch: null,
+        worktreePath: null,
+        pmMessageId: null,
+        supersedesTaskId: "task-old",
+        playbookVersion: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    });
+
+    const predecessor = await Effect.runPromise(
+      projectEvent(createEmptyReadModel(createdAt), predecessorEvent),
+    );
+    const model = await Effect.runPromise(projectEvent(predecessor, successorEvent));
+
+    expect(model.tasks.find((task) => task.id === "task-old")?.supersededByTaskId).toBe("task-new");
+    expect(model.tasks.find((task) => task.id === "task-new")?.supersedesTaskId).toBe("task-old");
+  });
 });

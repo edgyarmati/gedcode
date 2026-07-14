@@ -42,6 +42,8 @@ export const ProjectionTask = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   stageThreadIds: Schema.Array(ThreadId),
   currentStageThreadId: Schema.NullOr(ThreadId),
+  supersedesTaskId: Schema.NullOr(TaskId),
+  supersededByTaskId: Schema.NullOr(TaskId),
   cancellation: Schema.NullOr(OrchestrationTaskCancellation),
   landing: Schema.NullOr(OrchestrationTaskLanding),
   roleModelSelections: GedRoleModelSelections,

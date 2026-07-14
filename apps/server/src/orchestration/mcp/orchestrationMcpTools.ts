@@ -38,6 +38,7 @@ export const mcpInputSchemas = {
     idempotencyKey: z.string().trim().min(1),
     taskType: z.string().optional(),
     branch: z.string().optional(),
+    supersedesTaskId: z.string().optional(),
   },
   handoffWorker: {
     taskId: z.string(),

@@ -865,6 +865,8 @@ export function projectEvent(
             pmMessageId: payload.pmMessageId,
             stageThreadIds: [],
             currentStageThreadId: null,
+            supersedesTaskId: payload.supersedesTaskId ?? null,
+            supersededByTaskId: null,
             cancellation: null,
             landing: null,
             roleModelSelections: {},
@@ -876,9 +878,19 @@ export function projectEvent(
           };
           return {
             ...nextBase,
-            tasks: existing
+            tasks: (existing
               ? nextBase.tasks.map((entry) => (entry.id === payload.taskId ? task : entry))
-              : [...nextBase.tasks, task],
+              : [...nextBase.tasks, task]
+            ).map((entry) =>
+              payload.supersedesTaskId !== undefined &&
+              payload.supersedesTaskId !== null &&
+              entry.id === payload.supersedesTaskId
+                ? Object.assign({}, entry, {
+                    supersededByTaskId: payload.taskId,
+                    updatedAt: payload.updatedAt,
+                  })
+                : entry,
+            ),
           };
         }),
       );

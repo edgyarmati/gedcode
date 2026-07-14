@@ -1538,6 +1538,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               pmMessageId: event.payload.pmMessageId,
               stageThreadIds: [],
               currentStageThreadId: null,
+              supersedesTaskId: event.payload.supersedesTaskId ?? null,
+              supersededByTaskId: null,
               cancellation: null,
               landing: null,
               roleModelSelections: {},
@@ -1547,6 +1549,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               archivedAt: null,
               deletedAt: null,
             });
+            if (event.payload.supersedesTaskId) {
+              const predecessor = yield* projectionTaskRepository.getById({
+                taskId: event.payload.supersedesTaskId,
+              });
+              if (Option.isSome(predecessor)) {
+                yield* projectionTaskRepository.upsert({
+                  ...predecessor.value,
+                  supersededByTaskId: event.payload.taskId,
+                  updatedAt: event.payload.updatedAt,
+                });
+              }
+            }
             return;
 
           case "task.classified": {

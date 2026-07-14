@@ -171,6 +171,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
     "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
+    "Reuse an existing task whenever possible. When replacement is intentional, settle the old task first and pass its id as createTask.supersedesTaskId so the ledger records one explicit successor instead of unrelated duplicates.",
     "Re-entry messages and task ledgers carry last-action cursors. Treat them as authoritative progress markers; do not reload full worker histories. getTaskLedger returns bounded summaries and only the three most recent attempts per task.",
     pmDecisionPromptLine(driverKind),
     "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",

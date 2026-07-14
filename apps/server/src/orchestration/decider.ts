@@ -1012,6 +1012,38 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskId: command.taskId,
       });
+      const supersededTask =
+        command.supersedesTaskId === undefined || command.supersedesTaskId === null
+          ? null
+          : yield* requireTask({
+              readModel,
+              command,
+              taskId: command.supersedesTaskId,
+            });
+      if (supersededTask !== null) {
+        if (supersededTask.projectId !== command.projectId) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.supersedesTaskId}' belongs to a different project.`,
+          );
+        }
+        if (supersededTask.archivedAt !== null || supersededTask.deletedAt !== null) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.supersedesTaskId}' must be visible before it can be superseded.`,
+          );
+        }
+        yield* requireSettledTerminalTask({ command, task: supersededTask });
+        if (
+          supersededTask.supersededByTaskId !== undefined &&
+          supersededTask.supersededByTaskId !== null
+        ) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.supersedesTaskId}' is already superseded by '${supersededTask.supersededByTaskId}'.`,
+          );
+        }
+      }
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const maxParallelTasks = resolveResourceLimit({
         config: projectConfig,
@@ -1048,6 +1080,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             taskId: String(command.taskId),
           }),
           pmMessageId: command.pmMessageId,
+          supersedesTaskId: command.supersedesTaskId ?? null,
           playbookVersion: null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,

@@ -175,6 +175,74 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("creates an intentional replacement only for one settled terminal predecessor", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "abandoned" });
+      const event = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.create",
+          commandId: asCommandId("cmd-create-replacement"),
+          taskId: asTaskId("task-2"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("feature"),
+          title: "Replacement",
+          pmMessageId: null,
+          branch: null,
+          supersedesTaskId: asTaskId("task-1"),
+          createdAt: now,
+        },
+      });
+
+      const singleEvent = Array.isArray(event) ? event[0] : event;
+      expect(singleEvent?.type).toBe("task.created");
+      expect(singleEvent?.payload).toMatchObject({ supersedesTaskId: "task-1" });
+
+      const activePredecessor = yield* taskReadModel({ status: "working" });
+      const rejected = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: activePredecessor,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-invalid-replacement"),
+            taskId: asTaskId("task-3"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Invalid replacement",
+            pmMessageId: null,
+            branch: null,
+            supersedesTaskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(rejected._tag).toBe("Failure");
+
+      const alreadyReplaced = yield* taskReadModel({
+        status: "abandoned",
+        supersededByTaskId: asTaskId("task-existing-successor"),
+      });
+      const duplicateSuccessor = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: alreadyReplaced,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-duplicate-successor"),
+            taskId: asTaskId("task-4"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("feature"),
+            title: "Duplicate successor",
+            pmMessageId: null,
+            branch: null,
+            supersedesTaskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(duplicateSuccessor._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("rejects task creation when active task worktrees meet the project cap", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(
