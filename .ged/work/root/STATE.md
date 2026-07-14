@@ -1,7 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `UI-SIDEBAR-01` — reuse Chat project sorting and manual ordering in Orchestrator.
+- **Active task**: `ORCH-TYPE-01` — replace the implicit feature-only task type with a validated
+  registry, preserving legacy feature replay while rejecting unknown types.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +13,15 @@
 
 ## Current Progress
 
+- `UI-SIDEBAR-01` is complete in commit `a63565d44`. Chat and Orchestrator now read and write the
+  same persisted project sort preference and physical project order. The Orchestrator sidebar supports
+  last-user-message, created-at, and manual modes; manual mode exposes environment-safe drag handles
+  and reorders through the existing persisted UI-state operation.
+- Final `UI-SIDEBAR-01` verification passed on 2026-07-15: 85 focused sorting/order unit tests, 3
+  focused Chromium interactions, the full web suite (1,229/1,229), all 198 Chromium interactions,
+  `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`. The required root test run
+  completed 11 of 12 packages; the unchanged server Vitest process was stopped after remaining alive
+  without output for more than nine minutes.
 - `UI-DRAFT-01` is complete in commit `a254a128d`. The PM composer now uses the existing persisted,
   debounced composer-draft store under the deterministic environment-scoped PM thread identity. Drafts
   survive route/surface unmounts, remain isolated per project, do not collide with interactive question

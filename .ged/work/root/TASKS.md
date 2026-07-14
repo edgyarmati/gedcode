@@ -64,17 +64,17 @@ or explicitly blocked.
 | CHAT-FORK-02 | BLOCKED | Add normal-chat Fork action to message/thread context menus after CHAT-FORK-01 semantics are decided. | Browser test creates and opens a fork. |
 | ORCH-EMPTY-01 | DONE | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Chromium test omits both empty-state cards and renders each section when content appears. |
 | UI-DRAFT-01 | DONE | Persist composer drafts across surfaces. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
-| UI-SIDEBAR-01 | NEXT | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. | Sort setting and drag reorder produce identical persisted order. |
-| UI-SIDEBAR-02 | DEFERRED | Complete remaining rich project/task context-menu polish. Deferred until after 2026-07-13. | Browser tests assert status-sensitive menu items and no native edit menu. |
+| UI-SIDEBAR-01 | DONE | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. | Sort setting and drag reorder produce identical persisted order. |
+| UI-SIDEBAR-02 | TODO | Complete remaining rich project/task context-menu polish. | Browser tests assert status-sensitive menu items and no native edit menu. |
 | UI-COLLAPSE-01 | DONE | Make the shared left sidebar collapsible from desktop content headers and restore its existing persisted open state. | Component/browser tests cover collapse, reopen, reload persistence, and unchanged mobile behavior. |
 
 ## Phase 5 - Workflow Specialization
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-TYPE-01 | DEFERRED | Replace the single literal `feature` task-type config with a validated registry. Deferred until after 2026-07-13. | Legacy `feature` config replays; unknown task type is rejected instead of silently using feature stages. |
-| ORCH-REL-01 | DEFERRED | Add a release task type/playbook. Deferred until after 2026-07-13. | Release task receives a non-null release playbook and cannot dispatch from an unlanded feature worktree. |
-| ORCH-REL-02 | DEFERRED | Add guarded release dispatch. Deferred until after 2026-07-13. | Duplicate dispatch is prevented; UI/PM receives authoritative workflow state. |
+| ORCH-TYPE-01 | NEXT | Replace the single literal `feature` task-type config with a validated registry. | Legacy `feature` config replays; unknown task type is rejected instead of silently using feature stages. |
+| ORCH-REL-01 | TODO | Add a release task type/playbook. | Release task receives a non-null release playbook and cannot dispatch from an unlanded feature worktree. |
+| ORCH-REL-02 | TODO | Add guarded release dispatch. | Duplicate dispatch is prevented; UI/PM receives authoritative workflow state. |
 
 ## Deferred
 
