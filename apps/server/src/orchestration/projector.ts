@@ -33,6 +33,7 @@ import {
   TaskStageCompletedPayload,
   TaskStageInterruptedPayload,
   TaskStageStartedPayload,
+  TaskSplitPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -907,6 +908,8 @@ export function projectEvent(
             parentTaskId: payload.parentTaskId ?? null,
             childOrder: payload.childOrder ?? null,
             aggregateProgress: null,
+            acceptanceCriteria: payload.acceptanceCriteria ?? [],
+            dependsOnTaskIds: payload.dependsOnTaskIds ?? [],
             supersedesTaskId: payload.supersedesTaskId ?? null,
             supersededByTaskId: null,
             cancellation: null,
@@ -949,6 +952,18 @@ export function projectEvent(
             status: "classified",
             type: payload.taskType,
             playbookVersion: payload.playbookVersion,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.split":
+      return decodeForEvent(TaskSplitPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            branch: null,
+            worktreePath: null,
             updatedAt: payload.updatedAt,
           }),
         })),

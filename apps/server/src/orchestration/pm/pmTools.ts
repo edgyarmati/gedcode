@@ -16,6 +16,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationStageRole,
   type OrchestrationTask,
+  type OrchestrationTaskSplitChild,
   type OrchestrationThread,
   type OrchestrationThreadActivityTone,
   type ThreadTokenUsageSnapshot,
@@ -44,6 +45,20 @@ interface CreateTaskParameters {
   readonly taskType?: string;
   readonly branch?: string;
   readonly supersedesTaskId?: string;
+}
+
+interface SplitTaskChildParameters {
+  readonly key: string;
+  readonly title: string;
+  readonly taskType?: string;
+  readonly acceptanceCriteria: ReadonlyArray<string>;
+  readonly dependsOnKeys?: ReadonlyArray<string>;
+}
+
+interface SplitTaskParameters {
+  readonly parentTaskId: string;
+  readonly idempotencyKey: string;
+  readonly children: ReadonlyArray<SplitTaskChildParameters>;
 }
 
 interface ClassifyRequestParameters {
@@ -122,6 +137,12 @@ interface PmTaskSummary {
   readonly supersedesTaskId: string | null;
   readonly supersededByTaskId: string | null;
   readonly roleModelSelections: GedRoleModelSelections;
+  readonly parentTaskId: string | null;
+  readonly childOrder: number | null;
+  readonly aggregateProgress: OrchestrationTask["aggregateProgress"];
+  readonly acceptanceCriteria: ReadonlyArray<string>;
+  readonly dependsOnTaskIds: ReadonlyArray<string>;
+  readonly blockedByTaskIds: ReadonlyArray<string>;
   readonly attemptCount: number;
   readonly recentAttempts: ReadonlyArray<PmTaskAttemptSummary>;
   readonly prUrl: string | null;
@@ -182,6 +203,43 @@ function createTaskIdentity(params: CreateTaskParameters): {
   };
 }
 
+function splitTaskIdentity(params: SplitTaskParameters): {
+  readonly commandId: CommandId;
+  readonly childIdsByKey: ReadonlyMap<string, TaskId>;
+} {
+  const parentTaskId = params.parentTaskId.trim();
+  const idempotencyKey = params.idempotencyKey.trim();
+  const childIdsByKey = new Map(
+    params.children.map((child) => {
+      const key = child.key.trim();
+      const digest = createHash("sha256")
+        .update(JSON.stringify([parentTaskId, idempotencyKey, key]), "utf8")
+        .digest("hex");
+      return [key, TaskId.make(`pm-split-${digest.slice(0, 32)}`)] as const;
+    }),
+  );
+  const requestDigest = createHash("sha256")
+    .update(
+      JSON.stringify([
+        parentTaskId,
+        idempotencyKey,
+        params.children.map((child) => [
+          child.key.trim(),
+          child.title.trim(),
+          child.taskType?.trim() || "feature",
+          child.acceptanceCriteria.map((criterion) => criterion.trim()),
+          (child.dependsOnKeys ?? []).map((key) => key.trim()),
+        ]),
+      ]),
+      "utf8",
+    )
+    .digest("hex");
+  return {
+    commandId: CommandId.make(`pm:split-task:${requestDigest}`),
+    childIdsByKey,
+  };
+}
+
 interface InspectStageTurnDigest {
   readonly state: OrchestrationLatestTurn["state"];
   readonly requestedAt: string;
@@ -228,7 +286,7 @@ const TASK_LEDGER_RECENT_ATTEMPT_LIMIT = 3;
 
 const summarizeTaskForPm = (
   task: OrchestrationTask,
-  stageHistory: OrchestrationReadModel["stageHistory"],
+  readModel: OrchestrationReadModel,
 ): PmTaskSummary => ({
   id: task.id,
   type: task.type,
@@ -238,9 +296,18 @@ const summarizeTaskForPm = (
   supersedesTaskId: task.supersedesTaskId ?? null,
   supersededByTaskId: task.supersededByTaskId ?? null,
   roleModelSelections: task.roleModelSelections ?? {},
+  parentTaskId: task.parentTaskId ?? null,
+  childOrder: task.childOrder ?? null,
+  aggregateProgress: task.aggregateProgress ?? null,
+  acceptanceCriteria: task.acceptanceCriteria ?? [],
+  dependsOnTaskIds: task.dependsOnTaskIds ?? [],
+  blockedByTaskIds: (task.dependsOnTaskIds ?? []).filter((dependencyId) => {
+    const dependency = readModel.tasks.find((candidate) => candidate.id === dependencyId);
+    return dependency === undefined || dependency.status !== "landed";
+  }),
   attemptCount: task.stageThreadIds.length,
   recentAttempts: task.stageThreadIds.slice(-TASK_LEDGER_RECENT_ATTEMPT_LIMIT).map((threadId) => {
-    const attempt = stageHistory[threadId];
+    const attempt = readModel.stageHistory[threadId];
     return {
       stageThreadId: threadId,
       role: attempt?.role ?? null,
@@ -383,6 +450,66 @@ export const makePmToolExecutors = Effect.gen(function* () {
           });
           return textResult(`Created or reused task ${identity.taskId}.`, {
             taskId: identity.taskId,
+            sequence,
+          });
+        }),
+      ),
+  };
+
+  const splitTask: PmToolExecutor<
+    SplitTaskParameters,
+    { parentTaskId: string; childTaskIds: ReadonlyArray<string>; sequence: number }
+  > = {
+    name: "splitTask",
+    label: "Split task",
+    description:
+      "Atomically split one inactive parent into 2-8 ordered child tasks. Supply a stable idempotencyKey, a unique key per child, explicit acceptance criteria, and dependencies by earlier child key. Reuse the exact request for retries.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const identity = splitTaskIdentity(params);
+          if (identity.childIdsByKey.size !== params.children.length) {
+            return yield* new PmToolExecutionError({ detail: "Split child keys must be unique." });
+          }
+          const children: OrchestrationTaskSplitChild[] = [];
+          for (const child of params.children) {
+            const key = child.key.trim();
+            const taskId = identity.childIdsByKey.get(key);
+            if (taskId === undefined) {
+              return yield* new PmToolExecutionError({
+                detail: `Could not derive an identity for split child '${key}'.`,
+              });
+            }
+            const dependsOnTaskIds: TaskId[] = [];
+            for (const dependencyKeyValue of child.dependsOnKeys ?? []) {
+              const dependencyKey = dependencyKeyValue.trim();
+              const dependencyTaskId = identity.childIdsByKey.get(dependencyKey);
+              if (dependencyTaskId === undefined) {
+                return yield* new PmToolExecutionError({
+                  detail: `Split child '${key}' references unknown dependency key '${dependencyKey}'.`,
+                });
+              }
+              dependsOnTaskIds.push(dependencyTaskId);
+            }
+            children.push({
+              taskId,
+              taskType: TaskTypeId.make(child.taskType?.trim() || "feature"),
+              title: child.title.trim(),
+              acceptanceCriteria: child.acceptanceCriteria.map((criterion) => criterion.trim()),
+              dependsOnTaskIds,
+            });
+          }
+          const parentTaskId = TaskId.make(params.parentTaskId.trim());
+          const sequence = yield* dispatch({
+            type: "task.split",
+            commandId: identity.commandId,
+            taskId: parentTaskId,
+            children,
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Split task ${parentTaskId} into ${children.length} children.`, {
+            parentTaskId,
+            childTaskIds: children.map((child) => child.taskId),
             sequence,
           });
         }),
@@ -831,7 +958,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
           return textResult(`Found ${tasks.length} task(s).`, {
             projectId,
             lastActionCursor: readModel.snapshotSequence,
-            tasks: tasks.map((task) => summarizeTaskForPm(task, readModel.stageHistory)),
+            tasks: tasks.map((task) => summarizeTaskForPm(task, readModel)),
           });
         }),
       ),
@@ -840,6 +967,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
   return [
     classifyRequest,
     createTask,
+    splitTask,
     handoffWorker,
     steerStage,
     interruptStage,

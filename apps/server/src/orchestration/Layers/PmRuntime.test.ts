@@ -2721,6 +2721,8 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Terra with high reasoning");
     assert.include(prompt, "Sol with high reasoning");
     assert.include(prompt, "setTaskBackend options");
+    assert.include(prompt, "splitTask");
+    assert.include(prompt, "blockedByTaskIds");
     assert.notInclude(prompt, "Poll inspectStage");
     assert.notInclude(prompt, "READ-ONLY");
     assert.notInclude(prompt, "NO shell");

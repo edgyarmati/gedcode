@@ -555,6 +555,8 @@ export const OrchestrationTask = Schema.Struct({
   parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
   aggregateProgress: Schema.optionalKey(Schema.NullOr(OrchestrationTaskAggregateProgress)),
+  acceptanceCriteria: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  dependsOnTaskIds: Schema.optionalKey(Schema.Array(TaskId)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   supersededByTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
@@ -1013,6 +1015,23 @@ const TaskCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const OrchestrationTaskSplitChild = Schema.Struct({
+  taskId: TaskId,
+  taskType: TaskTypeId,
+  title: TrimmedNonEmptyString,
+  acceptanceCriteria: Schema.Array(TrimmedNonEmptyString),
+  dependsOnTaskIds: Schema.Array(TaskId),
+});
+export type OrchestrationTaskSplitChild = typeof OrchestrationTaskSplitChild.Type;
+
+const TaskSplitCommand = Schema.Struct({
+  type: Schema.Literal("task.split"),
+  commandId: CommandId,
+  taskId: TaskId,
+  children: Schema.Array(OrchestrationTaskSplitChild),
+  createdAt: IsoDateTime,
+});
+
 const TaskClassifyCommand = Schema.Struct({
   type: Schema.Literal("task.classify"),
   commandId: CommandId,
@@ -1357,6 +1376,7 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskCancellationRequestCommand,
   TaskCancellationFailCommand,
   TaskCancellationPhaseCompleteCommand,
+  TaskSplitCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1393,6 +1413,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.turn-diff-completed",
   "thread.activity-appended",
   "task.created",
+  "task.split",
   "task.classified",
   "task.role-selections-updated",
   "task.archived",
@@ -1620,9 +1641,16 @@ export const TaskCreatedPayload = Schema.Struct({
   pmMessageId: Schema.NullOr(MessageId),
   parentTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   childOrder: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
+  acceptanceCriteria: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  dependsOnTaskIds: Schema.optionalKey(Schema.Array(TaskId)),
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskSplitPayload = Schema.Struct({
+  taskId: TaskId,
   updatedAt: IsoDateTime,
 });
 
@@ -1923,6 +1951,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.created"),
     payload: TaskCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.split"),
+    payload: TaskSplitPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

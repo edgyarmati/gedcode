@@ -1541,6 +1541,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               parentTaskId: event.payload.parentTaskId ?? null,
               childOrder: event.payload.childOrder ?? null,
               aggregateProgress: null,
+              acceptanceCriteria: event.payload.acceptanceCriteria ?? [],
+              dependsOnTaskIds: event.payload.dependsOnTaskIds ?? [],
               supersedesTaskId: event.payload.supersedesTaskId ?? null,
               supersededByTaskId: null,
               cancellation: null,
@@ -1578,6 +1580,20 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               status: "classified",
               type: event.payload.taskType,
               playbookVersion: event.payload.playbookVersion,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.split": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              branch: null,
+              worktreePath: null,
               updatedAt: event.payload.updatedAt,
             });
             return;

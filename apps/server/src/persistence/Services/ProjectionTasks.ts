@@ -47,6 +47,8 @@ export const ProjectionTask = Schema.Struct({
   parentTaskId: Schema.NullOr(TaskId),
   childOrder: Schema.NullOr(NonNegativeInt),
   aggregateProgress: Schema.NullOr(OrchestrationTaskAggregateProgress),
+  acceptanceCriteria: Schema.Array(TrimmedNonEmptyString),
+  dependsOnTaskIds: Schema.Array(TaskId),
   supersedesTaskId: Schema.NullOr(TaskId),
   supersededByTaskId: Schema.NullOr(TaskId),
   cancellation: Schema.NullOr(OrchestrationTaskCancellation),

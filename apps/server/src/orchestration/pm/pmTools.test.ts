@@ -388,6 +388,47 @@ it.effect("createTask derives stable task and command identities from its idempo
   }),
 );
 
+it.effect("splitTask derives stable children and resolves dependencies by earlier child key", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const splitTask = findTool(tools, "splitTask");
+    const params = {
+      parentTaskId: "task-parent",
+      idempotencyKey: "request-42:split-1",
+      children: [
+        {
+          key: "contracts",
+          title: "Add contracts",
+          acceptanceCriteria: ["Contracts decode"],
+        },
+        {
+          key: "runtime",
+          title: "Add runtime",
+          acceptanceCriteria: ["Runtime passes integration tests"],
+          dependsOnKeys: ["contracts"],
+        },
+      ],
+    };
+
+    const first = yield* Effect.promise(() => splitTask.execute("tool-split-1", params));
+    const second = yield* Effect.promise(() => splitTask.execute("tool-split-2", params));
+    const [firstCommand, secondCommand] = dispatched;
+    assert.strictEqual(firstCommand?.type, "task.split");
+    assert.strictEqual(secondCommand?.type, "task.split");
+    if (firstCommand?.type === "task.split" && secondCommand?.type === "task.split") {
+      assert.strictEqual(firstCommand.commandId, secondCommand.commandId);
+      assert.deepStrictEqual(firstCommand.children, secondCommand.children);
+      assert.ok(firstCommand.children[0]);
+      assert.deepStrictEqual(firstCommand.children[1]?.dependsOnTaskIds, [
+        firstCommand.children[0].taskId,
+      ]);
+      assert.deepStrictEqual(firstCommand.children[0]?.acceptanceCriteria, ["Contracts decode"]);
+    }
+    assert.deepStrictEqual(first.details.childTaskIds, second.details.childTaskIds);
+  }),
+);
+
 it.effect("handoffWorker dispatches a guarded task.stage.start command and returns a handle", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
@@ -1749,5 +1790,50 @@ it.effect("getTaskLedger bounds stage history and returns the projection cursor"
       attemptIds.slice(-3),
     );
     assert.ok(!("stageThreadIds" in (result.details.tasks[0] ?? {})));
+  }),
+);
+
+it.effect("getTaskLedger identifies dependency-blocked and runnable children", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const parentId = TaskId.make("task-parent");
+    const childAId = TaskId.make("task-child-a");
+    const childBId = TaskId.make("task-child-b");
+    const parent = makeTask({ id: parentId, stageThreadIds: [], currentStageThreadId: null });
+    const childA = makeTask({
+      id: childAId,
+      parentTaskId: parentId,
+      childOrder: 0,
+      stageThreadIds: [],
+      currentStageThreadId: null,
+    });
+    const childB = makeTask({
+      id: childBId,
+      parentTaskId: parentId,
+      childOrder: 1,
+      acceptanceCriteria: ["B passes"],
+      dependsOnTaskIds: [childAId],
+      stageThreadIds: [],
+      currentStageThreadId: null,
+    });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel([parent, childA, childB], []))),
+    );
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "getTaskLedger").execute("tool-ledger-dependencies", { projectId }),
+    );
+
+    const summaries = result.details.tasks as ReadonlyArray<{
+      id: string;
+      blockedByTaskIds: ReadonlyArray<string>;
+      acceptanceCriteria: ReadonlyArray<string>;
+    }>;
+    assert.deepStrictEqual(summaries.find((task) => task.id === childAId)?.blockedByTaskIds, []);
+    assert.deepStrictEqual(summaries.find((task) => task.id === childBId)?.blockedByTaskIds, [
+      childAId,
+    ]);
+    assert.deepStrictEqual(summaries.find((task) => task.id === childBId)?.acceptanceCriteria, [
+      "B passes",
+    ]);
   }),
 );

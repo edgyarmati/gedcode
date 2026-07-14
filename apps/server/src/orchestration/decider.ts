@@ -1136,6 +1136,138 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "task.split": {
+      const parent = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task: parent });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: parent.projectId,
+      });
+      yield* requireOrchestratorConfig({ command, project });
+      if (parent.parentTaskId !== undefined && parent.parentTaskId !== null) {
+        return yield* invariantError(command.type, "Nested child tasks are not supported.");
+      }
+      if (parent.archivedAt !== null || parent.deletedAt !== null) {
+        return yield* invariantError(
+          command.type,
+          "The parent task must be visible before splitting.",
+        );
+      }
+      if (parent.status === "landed" || parent.status === "abandoned") {
+        return yield* invariantError(command.type, "A terminal task cannot be split.");
+      }
+      if (parent.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          "Stop the active parent stage before splitting.",
+        );
+      }
+      if (readModel.tasks.some((task) => task.parentTaskId === parent.id)) {
+        return yield* invariantError(command.type, "The parent task has already been split.");
+      }
+      if (command.children.length < 2 || command.children.length > 8) {
+        return yield* invariantError(
+          command.type,
+          "A split must contain between 2 and 8 children.",
+        );
+      }
+
+      const childIds = new Set(command.children.map((child) => String(child.taskId)));
+      if (childIds.size !== command.children.length) {
+        return yield* invariantError(command.type, "Split child task ids must be unique.");
+      }
+      for (const [index, child] of command.children.entries()) {
+        yield* requireTaskAbsent({ readModel, command, taskId: child.taskId });
+        if (child.acceptanceCriteria.length === 0 || child.acceptanceCriteria.length > 12) {
+          return yield* invariantError(
+            command.type,
+            `Child '${child.taskId}' must have between 1 and 12 acceptance criteria.`,
+          );
+        }
+        const earlierChildIds = new Set(
+          command.children.slice(0, index).map((candidate) => String(candidate.taskId)),
+        );
+        const dependencyIds = new Set(child.dependsOnTaskIds.map(String));
+        if (dependencyIds.size !== child.dependsOnTaskIds.length) {
+          return yield* invariantError(
+            command.type,
+            `Child '${child.taskId}' has duplicate dependencies.`,
+          );
+        }
+        for (const dependencyId of dependencyIds) {
+          if (!childIds.has(dependencyId) || !earlierChildIds.has(dependencyId)) {
+            return yield* invariantError(
+              command.type,
+              `Child '${child.taskId}' may depend only on earlier children in the same split.`,
+            );
+          }
+        }
+      }
+
+      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
+      const maxParallelTasks = resolveResourceLimit({
+        config: projectConfig,
+        defaults: orchestratorDefaults,
+        key: "maxParallelTasks",
+      });
+      const activeTaskWorktrees = countActiveTaskWorktrees({
+        readModel,
+        projectId: project.id,
+      });
+      if (Math.max(0, activeTaskWorktrees - 1) + command.children.length > maxParallelTasks) {
+        return yield* invariantError(
+          command.type,
+          `Splitting into ${command.children.length} children would exceed the maxParallelTasks limit (${maxParallelTasks}).`,
+        );
+      }
+
+      const splitEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: parent.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.split" as const,
+        payload: { taskId: parent.id, updatedAt: command.createdAt },
+      };
+      const childEvents = yield* Effect.forEach(command.children, (child, childOrder) =>
+        Effect.gen(function* () {
+          return {
+            ...(yield* withEventBase({
+              aggregateKind: "task",
+              aggregateId: child.taskId,
+              occurredAt: command.createdAt,
+              commandId: command.commandId,
+            })),
+            type: "task.created" as const,
+            payload: {
+              taskId: child.taskId,
+              projectId: parent.projectId,
+              taskType: child.taskType,
+              title: child.title,
+              branch: `orchestrator/${String(child.taskId)}`,
+              worktreePath: taskWorktreePath({
+                workspaceRoot: project.workspaceRoot,
+                taskId: String(child.taskId),
+              }),
+              pmMessageId: parent.pmMessageId,
+              parentTaskId: parent.id,
+              childOrder,
+              acceptanceCriteria: child.acceptanceCriteria,
+              dependsOnTaskIds: child.dependsOnTaskIds,
+              supersedesTaskId: null,
+              playbookVersion: null,
+              createdAt: command.createdAt,
+              updatedAt: command.createdAt,
+            },
+          };
+        }),
+      );
+      return [splitEvent, ...childEvents];
+    }
+
     case "task.classify": {
       const task = yield* requireTask({
         readModel,
@@ -1290,6 +1422,19 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         taskId: command.taskId,
       });
       yield* requireTaskNotCancelling({ command, task });
+      if (readModel.tasks.some((candidate) => candidate.parentTaskId === task.id)) {
+        return yield* invariantError(command.type, "A split parent cannot run worker stages.");
+      }
+      const blockingDependencyId = (task.dependsOnTaskIds ?? []).find((dependencyId) => {
+        const dependency = readModel.tasks.find((candidate) => candidate.id === dependencyId);
+        return dependency === undefined || dependency.status !== "landed";
+      });
+      if (blockingDependencyId !== undefined) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' is blocked until dependency '${blockingDependencyId}' lands.`,
+        );
+      }
       const project = yield* requireProject({
         readModel,
         command,

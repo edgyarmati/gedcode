@@ -192,6 +192,22 @@ function makeTaskCreatedEvent(): OrchestrationEvent {
   };
 }
 
+function makeTaskSplitEvent(): OrchestrationEvent {
+  return {
+    sequence: 2,
+    eventId: EventId.make("evt-task-split"),
+    aggregateKind: "task",
+    aggregateId: taskId,
+    type: "task.split",
+    occurredAt: now,
+    commandId: CommandId.make("cmd-task-split"),
+    causationEventId: null,
+    correlationId: CommandId.make("cmd-task-split"),
+    metadata: {},
+    payload: { taskId, updatedAt: now },
+  };
+}
+
 function makeProjectionSnapshotQueryLayer(
   readModelRef: { current: OrchestrationReadModel },
   getCommandReadModel: () => Effect.Effect<OrchestrationReadModel> = () =>
@@ -510,6 +526,34 @@ describe("TaskWorktreeReactor", () => {
       force: true,
     });
     expect(harness.vcsProcessRun).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("cleans the former parent worktree when a task becomes a split container", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "draft" }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath: null,
+      taskStatus: "draft",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTaskSplitEvent()));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.removeWorktree).toHaveBeenCalledWith({
+      cwd: workspaceRoot,
+      path: worktreePath,
+      force: true,
+    });
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

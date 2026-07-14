@@ -8,6 +8,7 @@ export const ORCHESTRATION_MCP_SERVER_NAME = "t3_orchestrator";
 export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "classifyRequest",
   "createTask",
+  "splitTask",
   "handoffWorker",
   "steerStage",
   "interruptStage",
@@ -39,6 +40,22 @@ export const mcpInputSchemas = {
     taskType: z.string().optional(),
     branch: z.string().optional(),
     supersedesTaskId: z.string().optional(),
+  },
+  splitTask: {
+    parentTaskId: z.string().trim().min(1),
+    idempotencyKey: z.string().trim().min(1),
+    children: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1),
+          title: z.string().trim().min(1),
+          taskType: z.string().trim().min(1).optional(),
+          acceptanceCriteria: z.array(z.string().trim().min(1)).min(1).max(12),
+          dependsOnKeys: z.array(z.string().trim().min(1)).optional(),
+        }),
+      )
+      .min(2)
+      .max(8),
   },
   handoffWorker: {
     taskId: z.string(),

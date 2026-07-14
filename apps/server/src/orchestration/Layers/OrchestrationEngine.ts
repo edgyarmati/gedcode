@@ -105,6 +105,7 @@ export function classifyOrchestrationCommand(
     case "project.delete":
       return "project";
     case "task.create":
+    case "task.split":
     case "task.classify":
     case "task.role-selections.set":
     case "task.archive":
@@ -174,6 +175,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
         aggregateId: command.projectId,
       };
     case "task.create":
+    case "task.split":
     case "task.classify":
     case "task.role-selections.set":
     case "task.archive":

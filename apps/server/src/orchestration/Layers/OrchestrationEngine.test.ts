@@ -1176,6 +1176,110 @@ describe("OrchestrationEngine", () => {
     await system.dispose();
   });
 
+  it("commits every split child atomically and deduplicates exact retries", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const createdAt = now();
+    const projectId = asProjectId("project-atomic-split");
+    const parentTaskId = TaskId.make("task-atomic-split-parent");
+    const childA = TaskId.make("task-atomic-split-a");
+    const childB = TaskId.make("task-atomic-split-b");
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-atomic-split"),
+        projectId,
+        title: "Atomic Split Project",
+        workspaceRoot: "/tmp/project-atomic-split",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        orchestratorConfig: { maxParallelTasks: 4 },
+        createdAt,
+      }),
+    );
+    const parentCreated = await system.run(
+      engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-create-atomic-split-parent"),
+        taskId: parentTaskId,
+        projectId,
+        taskType: TaskTypeId.make("feature"),
+        title: "Parent",
+        pmMessageId: null,
+        branch: null,
+        createdAt,
+      }),
+    );
+
+    const splitCommand = {
+      type: "task.split" as const,
+      commandId: CommandId.make("cmd-atomic-split"),
+      taskId: parentTaskId,
+      children: [
+        {
+          taskId: childA,
+          taskType: TaskTypeId.make("feature"),
+          title: "Child A",
+          acceptanceCriteria: ["A passes"],
+          dependsOnTaskIds: [],
+        },
+        {
+          taskId: childB,
+          taskType: TaskTypeId.make("feature"),
+          title: "Child B",
+          acceptanceCriteria: ["B passes"],
+          dependsOnTaskIds: [childA],
+        },
+      ],
+      createdAt,
+    };
+    await expect(
+      system.run(
+        engine.dispatch({
+          ...splitCommand,
+          commandId: CommandId.make("cmd-invalid-atomic-split"),
+          children: [
+            splitCommand.children[0]!,
+            {
+              ...splitCommand.children[1]!,
+              taskId: TaskId.make("task-invalid-split-child"),
+              dependsOnTaskIds: [TaskId.make("task-missing-dependency")],
+            },
+          ],
+        }),
+      ),
+    ).rejects.toThrow();
+    const afterInvalid = Array.from(
+      await system.run(Stream.runCollect(engine.readEvents(parentCreated.sequence))),
+    );
+    expect(afterInvalid).toHaveLength(0);
+
+    const first = await system.run(engine.dispatch(splitCommand));
+    const retry = await system.run(engine.dispatch(splitCommand));
+    expect(retry).toEqual(first);
+
+    const events = Array.from(await system.run(Stream.runCollect(engine.readEvents(0)))).filter(
+      (event) => event.type === "task.created" && event.payload.parentTaskId === parentTaskId,
+    );
+    expect(events).toHaveLength(2);
+    const readModel = await system.readModel();
+    const children = readModel.tasks.filter((task) => task.parentTaskId === parentTaskId);
+    expect(children).toHaveLength(2);
+    expect(children[1]).toMatchObject({
+      acceptanceCriteria: ["B passes"],
+      dependsOnTaskIds: [childA],
+    });
+    expect(readModel.tasks.find((task) => task.id === parentTaskId)).toMatchObject({
+      branch: null,
+      worktreePath: null,
+    });
+
+    await system.dispose();
+  });
+
   it("rejects duplicate thread creation", async () => {
     const system = await createOrchestrationSystem();
     const { engine } = system;

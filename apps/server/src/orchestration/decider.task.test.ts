@@ -239,6 +239,110 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("atomically plans a bounded split and enforces child dependency order", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ currentStageThreadId: null });
+      const command = {
+        type: "task.split" as const,
+        commandId: asCommandId("cmd-split-task"),
+        taskId: asTaskId("task-1"),
+        children: [
+          {
+            taskId: asTaskId("task-child-a"),
+            taskType: asTaskTypeId("feature"),
+            title: "Child A",
+            acceptanceCriteria: ["A is complete"],
+            dependsOnTaskIds: [],
+          },
+          {
+            taskId: asTaskId("task-child-b"),
+            taskType: asTaskTypeId("feature"),
+            title: "Child B",
+            acceptanceCriteria: ["B is complete"],
+            dependsOnTaskIds: [asTaskId("task-child-a")],
+          },
+        ],
+        createdAt: now,
+      };
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: { maxParallelTasks: 4 },
+        command,
+      });
+      const events = toEvents(result);
+      expect(events).toHaveLength(3);
+      expect(events.map((event) => event.type)).toEqual([
+        "task.split",
+        "task.created",
+        "task.created",
+      ]);
+      expect(events[2]?.payload).toMatchObject({
+        parentTaskId: "task-1",
+        childOrder: 1,
+        acceptanceCriteria: ["B is complete"],
+        dependsOnTaskIds: ["task-child-a"],
+      });
+
+      const invalidDependency = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: { maxParallelTasks: 4 },
+          command: {
+            ...command,
+            commandId: asCommandId("cmd-split-task-invalid-dependency"),
+            children: [
+              { ...command.children[0]!, dependsOnTaskIds: [asTaskId("task-child-b")] },
+              command.children[1]!,
+            ],
+          },
+        }),
+      );
+      expect(invalidDependency._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("blocks child stage startup until every dependency has landed", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({
+        id: asTaskId("task-child-b"),
+        parentTaskId: asTaskId("task-parent"),
+        childOrder: 1,
+        dependsOnTaskIds: [asTaskId("task-child-a")],
+        currentStageThreadId: null,
+        status: "draft",
+      });
+      const dependency = {
+        ...readModel.tasks[0]!,
+        id: asTaskId("task-child-a"),
+        childOrder: 0,
+        dependsOnTaskIds: [],
+        status: "working" as const,
+      };
+      const withDependency = { ...readModel, tasks: [dependency, readModel.tasks[0]!] };
+      const command = {
+        type: "task.stage.start" as const,
+        commandId: asCommandId("cmd-start-dependent-child"),
+        taskId: asTaskId("task-child-b"),
+        role: "classify" as const,
+        instructions: "Classify the child.",
+        createdAt: now,
+      };
+      const blocked = yield* Effect.exit(
+        decideOrchestrationCommand({ readModel: withDependency, command }),
+      );
+      expect(blocked._tag).toBe("Failure");
+
+      const unblocked = yield* decideOrchestrationCommand({
+        readModel: {
+          ...withDependency,
+          tasks: [{ ...dependency, status: "landed" as const }, readModel.tasks[0]!],
+        },
+        command,
+      });
+      expect(toEvents(unblocked).map((event) => event.type)).toContain("task.stage-started");
+    }),
+  );
+
   it.effect("creates an intentional replacement only for one settled terminal predecessor", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "abandoned" });

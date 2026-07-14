@@ -49,7 +49,12 @@ import {
 type WorktreeLifecycleEvent = Extract<
   OrchestrationEvent,
   {
-    type: "task.created" | "task.landed" | "task.landing-retry-requested" | "task.abandoned";
+    type:
+      | "task.created"
+      | "task.split"
+      | "task.landed"
+      | "task.landing-retry-requested"
+      | "task.abandoned";
   }
 >;
 
@@ -57,7 +62,7 @@ type CleanupCandidate = {
   readonly taskId: string;
   readonly worktreePath: string | null;
   readonly workspaceRoot: string;
-  readonly reason: "terminal" | "orphaned";
+  readonly reason: "terminal" | "orphaned" | "split";
 };
 
 export interface TaskWorktreeReactorLiveOptions {
@@ -580,7 +585,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     });
 
     const resolveCandidate = Effect.fn("resolveTerminalTaskCleanupCandidate")(function* (
-      event: Exclude<WorktreeLifecycleEvent, { type: "task.created" }>,
+      event: Exclude<WorktreeLifecycleEvent, { type: "task.created" | "task.split" }>,
     ) {
       const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       return listTerminalTaskWorktreeCleanupCandidates(readModel).find(
@@ -600,6 +605,25 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         const project = readModel.projects.find((candidate) => candidate.id === task.projectId);
         if (project) {
           yield* leaseStore.renew({ task, project });
+        }
+        return;
+      }
+      if (event.type === "task.split") {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const task = readModel.tasks.find((candidate) => candidate.id === event.payload.taskId);
+        const project = readModel.projects.find((candidate) => candidate.id === task?.projectId);
+        if (task !== undefined && project !== undefined) {
+          yield* cleanupSemaphore.withPermits(1)(
+            cleanupTaskWorktreeSafely({
+              taskId: String(task.id),
+              worktreePath: expectedTaskWorktreePath({
+                workspaceRoot: project.workspaceRoot,
+                taskId: String(task.id),
+              }),
+              workspaceRoot: project.workspaceRoot,
+              reason: "split",
+            }),
+          );
         }
         return;
       }
@@ -791,6 +815,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       const enqueueWorktreeLifecycleEventOnce = (event: OrchestrationEvent) => {
         if (
           (event.type !== "task.created" &&
+            event.type !== "task.split" &&
             event.type !== "task.landed" &&
             event.type !== "task.landing-retry-requested" &&
             event.type !== "task.abandoned") ||
