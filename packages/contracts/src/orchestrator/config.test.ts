@@ -125,6 +125,12 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(feature?.gatePolicy.land).toBe("require-approval");
   });
 
+  it("decodes non-feature ids for server-side registry validation", () => {
+    const decoded = decodeProjectConfig({ taskTypes: [{ id: "release" }] });
+
+    expect(decoded.taskTypes[0]?.id).toBe("release");
+  });
+
   it("defaults the resource limits to the safe constants", () => {
     const decoded = decodeProjectConfig({});
     expect(decoded.resourceLimits.maxParallelTasks).toBe(DEFAULT_MAX_PARALLEL_TASKS);

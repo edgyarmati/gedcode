@@ -2,7 +2,7 @@ import { OrchestratorPlaybookFrontmatter } from "@t3tools/contracts";
 import { createHash } from "node:crypto";
 import * as Schema from "effect/Schema";
 
-import { BUILT_IN_FEATURE_PLAYBOOK_TEXT } from "./builtInPlaybooks.ts";
+import { defaultTaskTypeRegistry } from "./TaskTypeRegistry.ts";
 
 export type PlaybookSourceEntry = {
   readonly text: string;
@@ -37,13 +37,7 @@ const decodeFrontmatter = Schema.decodeUnknownSync(OrchestratorPlaybookFrontmatt
 
 export const builtInPlaybookSource: PlaybookSource = {
   id: "builtin",
-  resolve: (taskTypeId) =>
-    taskTypeId === "feature"
-      ? {
-          text: BUILT_IN_FEATURE_PLAYBOOK_TEXT,
-          filePath: "/__builtin__/orchestration/playbooks/feature/SKILL.md",
-        }
-      : undefined,
+  resolve: (taskTypeId) => defaultTaskTypeRegistry.get(taskTypeId)?.playbook,
 };
 
 export class PlaybookLoader {

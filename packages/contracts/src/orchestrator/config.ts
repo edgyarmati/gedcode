@@ -3,7 +3,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
-import { PositiveInt } from "../baseSchemas.ts";
+import { PositiveInt, TrimmedNonEmptyString } from "../baseSchemas.ts";
 import {
   ModelSelection,
   ORCHESTRATION_STAGE_ROLES,
@@ -69,12 +69,13 @@ export const OrchestratorTaskGatePolicy = Schema.Struct({
 export type OrchestratorTaskGatePolicy = typeof OrchestratorTaskGatePolicy.Type;
 
 /**
- * One configurable task type. The slice ships a single type — `feature` —
- * whose default stages use the full canonical pipeline. Per-type config may
- * opt out of optional stages such as `review` and `verify`.
+ * One configurable task type. The schema preserves the branded task-type id;
+ * the server-owned registry decides which ids are installed and rejects
+ * unknown ids at command boundaries. Keeping registry policy out of contracts
+ * lets new task types be added without weakening event replay.
  */
 export const OrchestratorTaskType = Schema.Struct({
-  id: Schema.Literal("feature"),
+  id: TrimmedNonEmptyString,
   /**
    * Locked invariant: the stage list follows canonical order
    * `classify → plan → [review] → work → [verify] → land`; `classify`/`plan`/

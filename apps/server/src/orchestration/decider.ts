@@ -23,6 +23,7 @@ import type * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
+import { defaultTaskTypeRegistry } from "./TaskTypeRegistry.ts";
 import {
   listThreadsByProjectId,
   requireProject,
@@ -86,10 +87,45 @@ function requireOrchestratorConfig(input: {
   readonly project: OrchestrationProject;
 }): Effect.Effect<OrchestratorProjectConfig, OrchestrationCommandInvariantError> {
   const config = decodeOrchestratorConfig(input.project.orchestratorConfig ?? {});
-  if (Option.isSome(config)) {
-    return Effect.succeed(config.value);
+  if (Option.isNone(config)) {
+    return Effect.succeed(defaultOrchestratorConfig);
   }
-  return Effect.succeed(defaultOrchestratorConfig);
+  const configuredIds = new Set<string>();
+  for (const taskType of config.value.taskTypes) {
+    const taskTypeId = String(taskType.id);
+    if (!defaultTaskTypeRegistry.has(taskTypeId)) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Unknown orchestration task type '${taskTypeId}'. Registered task types: ${defaultTaskTypeRegistry.ids().join(", ")}.`,
+        ),
+      );
+    }
+    if (configuredIds.has(taskTypeId)) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Orchestrator config contains duplicate task type '${taskTypeId}'.`,
+        ),
+      );
+    }
+    configuredIds.add(taskTypeId);
+  }
+  return Effect.succeed(config.value);
+}
+
+function requireRegisteredTaskType(input: {
+  readonly command: OrchestrationCommand;
+  readonly taskTypeId: string;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  return defaultTaskTypeRegistry.has(input.taskTypeId)
+    ? Effect.void
+    : Effect.fail(
+        invariantError(
+          input.command.type,
+          `Unknown orchestration task type '${input.taskTypeId}'. Registered task types: ${defaultTaskTypeRegistry.ids().join(", ")}.`,
+        ),
+      );
 }
 
 function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
@@ -256,6 +292,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
+      if (command.orchestratorConfig !== undefined) {
+        yield* requireOrchestratorConfig({
+          command,
+          project: {
+            id: command.projectId,
+            title: command.title,
+            workspaceRoot: command.workspaceRoot,
+            defaultModelSelection: command.defaultModelSelection ?? null,
+            roleModelSelections: command.roleModelSelections ?? {},
+            rolePromptPrefixes: command.rolePromptPrefixes ?? {},
+            orchestratorConfig: command.orchestratorConfig,
+            scripts: [],
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+            deletedAt: null,
+          },
+        });
+      }
 
       return {
         ...(yield* withEventBase({
@@ -281,11 +335,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "project.meta.update": {
-      yield* requireProject({
+      const project = yield* requireProject({
         readModel,
         command,
         projectId: command.projectId,
       });
+      if (command.orchestratorConfig !== undefined) {
+        yield* requireOrchestratorConfig({
+          command,
+          project: { ...project, orchestratorConfig: command.orchestratorConfig },
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1007,6 +1067,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: command.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
+      yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
       yield* requireTaskAbsent({
         readModel,
         command,
@@ -1178,6 +1239,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(command.type, "Split child task ids must be unique.");
       }
       for (const [index, child] of command.children.entries()) {
+        yield* requireRegisteredTaskType({ command, taskTypeId: child.taskType });
         yield* requireTaskAbsent({ readModel, command, taskId: child.taskId });
         if (child.acceptanceCriteria.length === 0 || child.acceptanceCriteria.length > 12) {
           return yield* invariantError(
@@ -1281,6 +1343,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
+      yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -1441,6 +1504,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
+      yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const allowedStages = resolveStages({
         config: projectConfig,
@@ -1799,6 +1863,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
+      yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const gatePolicy = resolveGatePolicy({
         config: projectConfig,

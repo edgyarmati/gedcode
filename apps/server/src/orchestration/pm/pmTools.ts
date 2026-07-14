@@ -30,6 +30,7 @@ import * as Option from "effect/Option";
 import { createHash } from "node:crypto";
 
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
+import { defaultTaskTypeRegistry } from "../TaskTypeRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -410,6 +411,20 @@ class PmToolExecutionError extends Data.TaggedError("PmToolExecutionError")<{
   }
 }
 
+function registeredTaskTypeId(
+  requestedTaskType: string | undefined,
+): Effect.Effect<TaskTypeId, PmToolExecutionError> {
+  const taskTypeId = requestedTaskType?.trim() || "feature";
+  const definition = defaultTaskTypeRegistry.get(taskTypeId);
+  return definition === undefined
+    ? Effect.fail(
+        new PmToolExecutionError({
+          detail: `Unknown orchestration task type '${taskTypeId}'. Registered task types: ${defaultTaskTypeRegistry.ids().join(", ")}.`,
+        }),
+      )
+    : Effect.succeed(definition.id);
+}
+
 export const makePmToolExecutors = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const snapshotQuery = yield* ProjectionSnapshotQuery;
@@ -434,12 +449,13 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const identity = createTaskIdentity(params);
+          const taskType = yield* registeredTaskTypeId(params.taskType);
           const sequence = yield* dispatch({
             type: "task.create",
             commandId: identity.commandId,
             taskId: identity.taskId,
             projectId: ProjectId.make(params.projectId.trim()),
-            taskType: TaskTypeId.make(params.taskType?.trim() || "feature"),
+            taskType,
             title: params.title.trim(),
             pmMessageId: identity.pmMessageId,
             branch: params.branch?.trim() || null,
@@ -493,7 +509,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             }
             children.push({
               taskId,
-              taskType: TaskTypeId.make(child.taskType?.trim() || "feature"),
+              taskType: yield* registeredTaskTypeId(child.taskType),
               title: child.title.trim(),
               acceptanceCriteria: child.acceptanceCriteria.map((criterion) => criterion.trim()),
               dependsOnTaskIds,
@@ -527,13 +543,13 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const taskType = params.taskType ?? "feature";
+          const taskType = yield* registeredTaskTypeId(params.taskType);
           const resolvedPlaybook = defaultPlaybookLoader.resolve(taskType);
           const sequence = yield* dispatch({
             type: "task.classify",
             commandId: yield* commandId("classify-request"),
             taskId,
-            taskType: TaskTypeId.make(taskType),
+            taskType,
             playbookVersion: resolvedPlaybook?.playbookVersion ?? null,
             createdAt: yield* nowIso,
           });

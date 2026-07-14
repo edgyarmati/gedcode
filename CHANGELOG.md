@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Internal/Fix: Replace implicit feature-only task-type handling with a server-owned registry. Task
+  config remains replay-compatible and extensible, while project writes, PM tools, task creation,
+  splitting, classification, worker startup, and gate resolution reject unknown task types instead of
+  silently inheriting the feature workflow.
+
 - UI: Share project sorting between Chat and Orchestrator, including the same persisted sort mode,
   last-message and creation-time ordering, and manual drag order across environment-scoped projects.
 

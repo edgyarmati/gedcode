@@ -175,6 +175,55 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("rejects task creation for an unregistered task type", () =>
+    Effect.gen(function* () {
+      const readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.create",
+            commandId: asCommandId("cmd-create-unknown-task"),
+            taskId: asTaskId("task-unknown"),
+            projectId: asProjectId("project-1"),
+            taskType: asTaskTypeId("unknown"),
+            title: "Unknown task",
+            pmMessageId: null,
+            branch: null,
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("Unknown orchestration task type 'unknown'");
+      }
+    }),
+  );
+
+  it.effect("rejects project task-type config that is not installed in the registry", () =>
+    Effect.gen(function* () {
+      const readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "project.meta.update",
+            commandId: asCommandId("cmd-configure-unknown-task-type"),
+            projectId: asProjectId("project-1"),
+            orchestratorConfig: { taskTypes: [{ id: "unknown" }] },
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("Unknown orchestration task type 'unknown'");
+      }
+    }),
+  );
+
   it.effect("creates ordered children only for a visible top-level parent", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel();
@@ -298,6 +347,22 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         }),
       );
       expect(invalidDependency._tag).toBe("Failure");
+
+      const unknownType = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: { maxParallelTasks: 4 },
+          command: {
+            ...command,
+            commandId: asCommandId("cmd-split-task-unknown-type"),
+            children: [
+              { ...command.children[0]!, taskType: asTaskTypeId("unknown") },
+              command.children[1]!,
+            ],
+          },
+        }),
+      );
+      expect(unknownType._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

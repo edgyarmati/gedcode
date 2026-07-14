@@ -388,6 +388,31 @@ it.effect("createTask derives stable task and command identities from its idempo
   }),
 );
 
+it.effect("createTask rejects an unregistered task type before dispatch", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const createTask = findTool(tools, "createTask");
+
+    const error = yield* Effect.promise(async () => {
+      try {
+        await createTask.execute("tool-create-unknown", {
+          projectId: "project-1",
+          title: "Unknown task",
+          idempotencyKey: "request-unknown",
+          taskType: "unknown",
+        });
+        return null;
+      } catch (cause) {
+        return cause;
+      }
+    });
+
+    assert.match(String(error), /Unknown orchestration task type 'unknown'/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
 it.effect("splitTask derives stable children and resolves dependencies by earlier child key", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
@@ -1701,25 +1726,28 @@ it.effect("classifyRequest snapshots the resolved built-in playbook version", ()
   }),
 );
 
-it.effect("classifyRequest snapshots null when the task type has no playbook", () =>
+it.effect("classifyRequest rejects a task type missing from the registry", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
     const classifyRequest = findTool(tools, "classifyRequest");
 
-    yield* Effect.promise(() =>
-      classifyRequest.execute("tool-classify-unknown", {
-        taskId,
-        taskType: "unknown",
-        playbookVersion: "pm-supplied-version",
-      }),
-    );
+    const outcome = yield* Effect.promise(async () => {
+      try {
+        await classifyRequest.execute("tool-classify-unknown", {
+          taskId,
+          taskType: "unknown",
+          playbookVersion: "pm-supplied-version",
+        });
+        return { rejected: false as const, error: null };
+      } catch (error) {
+        return { rejected: true as const, error };
+      }
+    });
 
-    assert.strictEqual(dispatched[0]?.type, "task.classify");
-    if (dispatched[0]?.type === "task.classify") {
-      assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("unknown"));
-      assert.strictEqual(dispatched[0].playbookVersion, null);
-    }
+    assert.strictEqual(outcome.rejected, true);
+    assert.match(String(outcome.error), /Unknown orchestration task type 'unknown'/);
+    assert.strictEqual(dispatched.length, 0);
   }),
 );
 
