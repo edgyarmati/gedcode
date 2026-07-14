@@ -1,7 +1,8 @@
 # State
 
-- **Phase**: verify (requested sidebar slice complete; remaining roadmap items are deferred).
-- **Active task**: none.
+- **Phase**: implement (post-July-13 roadmap resumed; PM startup reliability is first).
+- **Active task**: `ORCH-PMBOOT-01` — prevent invisible provider approvals from deadlocking a newly
+  started PM turn.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.

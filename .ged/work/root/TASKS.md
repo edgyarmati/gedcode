@@ -36,6 +36,7 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
+| ORCH-PMBOOT-01 | NEXT | Prevent PM startup deadlock by applying the provider's explicit read-only session policy and aligning the PM prompt with its actually available exploration tools. | Claude adapter/runtime tests prove PM sessions auto-allow read/search tools, deny mutating tools without opening approval requests, and still expose orchestration MCP tools. |
 | ORCH-POLL-01 | DONE | Instrument PM calls to `inspectStage` and establish a token/call-count baseline for an idle long-running worker. | Characterization found no server timer; the PM prompt explicitly instructed repeated inspection, making each model decision an unbounded source of another call and prompt tail. |
 | ORCH-POLL-02 | DONE | Make worker stage settlements, gate resolutions, quota changes, and interrupt outcomes the only automatic PM wake-ups. | PM prompt forbids polling and identifies the existing authoritative event-driven re-entry paths; runtime prompt tests pin the policy. |
 | ORCH-POLL-03 | DONE | Keep `inspectStage` as an explicit on-demand action and add a cheap structured status digest for operator requests. | Existing focused tests prove status returns fixed message/activity tails, truncated text, elapsed turn state, and latest token usage without a full transcript. |

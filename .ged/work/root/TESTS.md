@@ -5,6 +5,16 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## ORCH-PMBOOT-01
+
+- Reproduce from the live `loc-speach` PM log: Claude starts normally, emits two read-only Bash tool
+  calls, opens `command_execution_approval` requests, and never receives a decision because the PM
+  surface has no approval actuator.
+- Add focused provider/runtime coverage proving PM sessions opt into the explicit Claude read-only
+  policy, auto-allow built-in file/search tools, deny mutating tools immediately, and retain
+  orchestration MCP access.
+- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test` before marking the slice complete.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.

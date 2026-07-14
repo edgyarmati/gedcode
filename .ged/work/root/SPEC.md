@@ -31,6 +31,8 @@ disjoint write sets and independent verification.
 
 ### PM operation
 
+- Start PM provider sessions with an enforceable read-only policy that permits built-in file/search
+  exploration without opening invisible approval requests.
 - Replace continuous PM polling with event-driven settlement and operator-requested inspection.
 - Route medium-difficulty worker stages to GPT-5.6 Terra at high reasoning and difficult,
   cross-cutting stages to GPT-5.6 Sol at high reasoning.
@@ -79,23 +81,25 @@ disjoint write sets and independent verification.
 
 ## Acceptance Criteria
 
-1. Cancelling an active task cannot delete its worktree while its provider session or terminal is still
+1. A newly started PM can inspect its project and reach an orchestration decision without stalling on
+   an approval request that the PM surface cannot resolve.
+2. Cancelling an active task cannot delete its worktree while its provider session or terminal is still
    running.
-2. An approved land gate has an explicit, guarded action that reaches `landed` and starts the existing
+3. An approved land gate has an explicit, guarded action that reaches `landed` and starts the existing
    PR-opening path.
-3. Terminal tasks can be archived, restored where valid, and explicitly deleted from active views.
-4. Retried PM task creation returns or supersedes the existing semantic task instead of producing
+4. Terminal tasks can be archived, restored where valid, and explicitly deleted from active views.
+5. Retried PM task creation returns or supersedes the existing semantic task instead of producing
    duplicates.
-5. Server restart cannot leave an interrupted stage permanently occupying `currentStageThreadId`.
-6. PM operation is settlement-driven; it does not continuously poll worker threads while nothing has
+6. Server restart cannot leave an interrupted stage permanently occupying `currentStageThreadId`.
+7. PM operation is settlement-driven; it does not continuously poll worker threads while nothing has
    changed.
-7. Stop and steer actions show immediate acknowledgement and accurately report provider outcome.
-8. Large tasks can be represented as a parent with ordered, independently executable child slices.
-9. Normal chat supports thread forking, and unsent drafts survive context switches.
-10. Active task detail omits the Plan section until a proposed plan exists and omits the gates section
+8. Stop and steer actions show immediate acknowledgement and accurately report provider outcome.
+9. Large tasks can be represented as a parent with ordered, independently executable child slices.
+10. Normal chat supports thread forking, and unsent drafts survive context switches.
+11. Active task detail omits the Plan section until a proposed plan exists and omits the gates section
     when there are no gates.
-11. Orchestrator sidebars provide native context menus, sorting, and manual ordering.
-12. Release tasks use a real release playbook and observable dispatch flow.
+12. Orchestrator sidebars provide native context menus, sorting, and manual ordering.
+13. Release tasks use a real release playbook and observable dispatch flow.
 
 ## Delivery Order
 
