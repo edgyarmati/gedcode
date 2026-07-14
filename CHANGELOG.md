@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improvement: Teach the Orchestrator PM to split only genuinely oversized work into bounded,
+  independently verifiable children after the existing plan gate approves their complete structure.
+
 - Feature: Add an atomic, idempotent Orchestrator `splitTask` operation for 2-8 ordered child slices with explicit acceptance criteria and acyclic earlier-child dependencies. Dependent workers cannot start before prerequisites land, and PM ledgers identify blocked children.
 - Feature: Persist ordered parent/child Orchestrator task relationships and derive each parent task's terminal, landed, and abandoned child progress consistently through event replay and SQL projection rebuilds.
 - Feature: Let the Orchestrator PM set validated provider options, including reasoning effort, alongside per-role worker backend overrides. Task ledgers expose the effective role selections, stage startup forwards the complete selection to providers, and PM policy distinguishes Terra/high medium work from Sol/high difficult or cross-cutting work when those backends are configured.

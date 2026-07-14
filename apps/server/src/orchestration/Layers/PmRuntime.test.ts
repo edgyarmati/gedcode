@@ -2722,6 +2722,13 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Sol with high reasoning");
     assert.include(prompt, "setTaskBackend options");
     assert.include(prompt, "splitTask");
+    assert.include(prompt, "cannot be completed and verified as one focused work stage");
+    assert.include(prompt, "2-8 ordered child slices");
+    assert.include(prompt, "ordinary plan gate");
+    assert.include(prompt, "one plan approval covers the child structure");
+    assert.include(prompt, "do not invent or request a separate split gate");
+    assert.include(prompt, "stable idempotency key");
+    assert.include(prompt, "independent unblocked children may run in parallel");
     assert.include(prompt, "blockedByTaskIds");
     assert.notInclude(prompt, "Poll inspectStage");
     assert.notInclude(prompt, "READ-ONLY");
