@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-SPLIT-03` — teach PM policy when and how to split oversized work.
+- **Active task**: `ORCH-SPLIT-04` — group ordered child tasks beneath their parent on the board.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -10,6 +10,16 @@
 
 ## Current Progress
 
+- `ORCH-SPLIT-03` is complete in commit `329d3bb4a`. PM policy and the built-in feature playbook now
+  distinguish genuinely oversized work from small edits, require two to eight independently verifiable
+  ordered children, and use the existing plan gate to approve the complete child graph before one
+  idempotent split. Scheduling is limited to unblocked children without a new gate type or pipeline
+  enforcement.
+- Final `ORCH-SPLIT-03` verification passed on 2026-07-14: 37 focused PM/playbook tests, `bun fmt`,
+  `bun lint` (existing warnings only), and `bun typecheck`. The serialized workspace run passed nine
+  package suites, including server, and exposed only the existing five-second MessagesTimeline timing
+  flake; that test passed 12/12 in isolation and the complete web suite passed 1,226/1,226 with a
+  15-second timeout budget.
 - `ORCH-SPLIT-02` is complete in commit `9d7e9c06d`. One idempotent `task.split` command converts a
   top-level inactive parent into a container and creates two to eight ordered children atomically.
   Children retain bounded acceptance criteria and explicit acyclic dependencies; blocked children

@@ -161,6 +161,18 @@ Verification evidence:
   (1,439 passed/1 skipped), `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and the
   complete 12-package `bun run test --output-logs=errors-only` gate.
 
+### ORCH-SPLIT-03
+
+- PM prompt and built-in playbook tests pin the one-focused-stage decision boundary, bounded 2-8 child
+  graph, narrow acceptance criteria, earlier-child dependencies, stable idempotency, and unblocked-only
+  scheduling.
+- Policy explicitly routes the complete child graph through the ordinary plan gate and forbids a new
+  split gate; canonical pipeline ordering remains intentionally unenforced.
+- Verification passed on 2026-07-14: 37 focused tests, `bun fmt`, `bun lint` (existing warnings only),
+  and `bun typecheck`. Nine serialized workspace packages including server passed; the sole root failure
+  was an existing five-second MessagesTimeline timing flake that passed 12/12 alone. The full web suite
+  passed 1,226/1,226 with a 15-second timeout budget.
+
 ## Web and Chat
 
 - Forking at a message creates a distinct thread with the intended history boundary.
