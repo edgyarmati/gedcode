@@ -433,12 +433,12 @@ describe("DriverPmAdapter", () => {
           cwd: project.workspaceRoot,
           modelSelection,
           runtimeMode: "approval-required",
+          readOnly: true,
           enableOrchestrationTools: true,
           systemPromptAppend: "PM system prompt",
           resumeCursor: persistedResumeCursor,
         },
       ]);
-      assert.strictEqual("readOnly" in startInputs[0]!, false);
       assert.deepStrictEqual(
         upserts.map((binding) => binding.resumeCursor),
         [{ resume: "resume-active" }, { resume: "resume-after-turn" }],

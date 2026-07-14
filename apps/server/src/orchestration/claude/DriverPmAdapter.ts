@@ -623,6 +623,7 @@ export const makeDriverPmAdapter = (
         cwd: options.project.workspaceRoot,
         modelSelection: selection,
         runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+        ...(options.driverKind === "claudeAgent" ? { readOnly: true } : {}),
         enableOrchestrationTools: true,
         ...(options.systemPrompt !== undefined && options.systemPrompt.length > 0
           ? { systemPromptAppend: options.systemPrompt }

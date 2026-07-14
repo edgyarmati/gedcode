@@ -1328,11 +1328,11 @@ describe("PmRuntime", () => {
               cwd: project.workspaceRoot,
               modelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
               runtimeMode: "approval-required",
+              readOnly: true,
               enableOrchestrationTools: true,
               systemPromptAppend: buildPmSystemPrompt(project),
             },
           ]);
-          assert.strictEqual("readOnly" in startInputs[0]!, false);
           assert.deepStrictEqual(
             dispatchCalls
               .map((command) => command.type)
@@ -2705,7 +2705,9 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "/tmp/project");
     assert.include(prompt, "never ask the human for a project id");
     // Delegation framing: the PM orchestrates and never does the work itself.
-    assert.include(prompt, "full tool access");
+    assert.include(prompt, "orchestration plus read/search tool access");
+    assert.include(prompt, "built-in read and search tools");
+    assert.notInclude(prompt, "short read-only commands");
     assert.include(prompt, "Never implement product changes yourself");
     assert.include(prompt, "handoffWorker");
     assert.include(prompt, "steerStage");
