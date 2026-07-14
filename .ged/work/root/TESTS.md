@@ -15,6 +15,16 @@ component lifecycle changes require integration coverage; UI interaction changes
   orchestration MCP access.
 - Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test` before marking the slice complete.
 
+Verification evidence:
+
+- The live provider log and projection snapshot reproduced the deadlock: the PM turn started normally,
+  surfaced two Bash tool starts, opened two unresolved `command_execution_approval` requests, and
+  produced no later assistant result.
+- Focused Claude adapter, driver-PM adapter, and PM runtime coverage passed: 107/107 tests.
+- Repository gates passed on 2026-07-14: `bun fmt`, `bun lint` (existing warnings only),
+  `bun typecheck`, and `bun run test` across all 12 packages. The sandboxed test attempt was invalid
+  because loopback binds returned `EPERM`; the unsandboxed rerun passed.
+
 ## UI-COLLAPSE-01
 
 - Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.

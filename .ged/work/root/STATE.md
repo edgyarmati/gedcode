@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed; PM startup reliability is first).
-- **Active task**: `ORCH-PMBOOT-01` — prevent invisible provider approvals from deadlocking a newly
-  started PM turn.
+- **Active task**: `ORCH-TASK-04` — add explicit supersession relationships for intentional task
+  replacement.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +12,15 @@
 
 ## Current Progress
 
+- `ORCH-PMBOOT-01` is complete. Live diagnostics of the `loc-speach` PM proved its first Claude turn
+  opened two `command_execution_approval` requests for read-only Bash exploration and stalled because
+  the PM surface cannot resolve approvals. Claude PM sessions now opt into the adapter's explicit
+  read-only policy, which auto-allows built-in read/search and orchestration MCP tools while denying
+  shell/write tools immediately. The PM prompt accurately describes the constrained surface.
+- Final `ORCH-PMBOOT-01` verification passed on 2026-07-14: 107 focused provider/runtime tests,
+  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and `bun run test` across all 12
+  packages. The first sandboxed full run failed only where tests could not bind loopback ports; the
+  required unsandboxed rerun passed.
 - Planning artifacts refreshed for the Orchestrator completion roadmap on 2026-07-10.
 - All prior orchestration tasks are terminal/abandoned, but remain in the ledger because task deletion is
   not implemented.
