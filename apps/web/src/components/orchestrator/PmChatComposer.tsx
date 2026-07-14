@@ -9,14 +9,17 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import { ProviderDriverKind } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ArrowUpIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
+import { useComposerDraftStore, useComposerThreadDraft } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import { useEnvironmentApiAvailable } from "../../hooks/useEnvironmentApiAvailable";
 import { useSettings } from "../../hooks/useSettings";
 import { newCommandId } from "../../lib/utils";
+import { pmThreadIdForProject } from "../../lib/orchestratorThreads";
 import { getAppModelOptionsForInstance, type AppModelOption } from "../../modelSelection";
 import {
   buildPendingUserInputAnswers,
@@ -241,7 +244,12 @@ export function PmChatComposer({
   const serverConfig = useServerConfig();
   const settings = useSettings();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [message, setMessage] = useState("");
+  const composerDraftTarget = useMemo(
+    () => scopeThreadRef(environmentId, pmThreadIdForProject(projectId)),
+    [environmentId, projectId],
+  );
+  const draftPrompt = useComposerThreadDraft(composerDraftTarget).prompt;
+  const setComposerDraftPrompt = useComposerDraftStore((state) => state.setPrompt);
   const [submitting, setSubmitting] = useState(false);
   const [savingPmModelSelection, setSavingPmModelSelection] = useState(false);
   const [pendingHarnessSwitch, setPendingHarnessSwitch] = useState<{
@@ -327,6 +335,7 @@ export function PmChatComposer({
   const isAnsweringUserInput =
     activePendingUserInput !== null &&
     respondingRequestIds.includes(activePendingUserInput.requestId);
+  const message = activePendingProgress ? activePendingProgress.customAnswer : draftPrompt;
   const trimmedMessage = message.trim();
   const canSend = activePendingProgress
     ? environmentAvailable &&
@@ -335,13 +344,6 @@ export function PmChatComposer({
       !isAnsweringUserInput &&
       activePendingProgress.canAdvance
     : environmentAvailable && !savingPmModelSelection && !submitting && trimmedMessage.length > 0;
-
-  useEffect(() => {
-    if (!activePendingProgress) {
-      return;
-    }
-    setMessage(activePendingProgress.customAnswer);
-  }, [activePendingProgress, activePendingUserInput?.requestId]);
 
   const respondToActivePendingUserInput = useCallback(
     async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
@@ -364,7 +366,6 @@ export function PmChatComposer({
           }),
         })
         .then(() => {
-          setMessage("");
           setPendingUserInputAnswersByRequestId((existing) => {
             const { [requestId]: _removed, ...remaining } = existing;
             return remaining;
@@ -401,12 +402,7 @@ export function PmChatComposer({
       ...existing,
       [activePendingUserInput.requestId]: nextQuestionIndex,
     }));
-    const nextQuestion = activePendingUserInput.questions[nextQuestionIndex];
-    setMessage(
-      nextQuestion ? (activePendingDraftAnswers[nextQuestion.id]?.customAnswer ?? "") : "",
-    );
   }, [
-    activePendingDraftAnswers,
     activePendingProgress,
     activePendingResolvedAnswers,
     activePendingUserInput,
@@ -436,7 +432,6 @@ export function PmChatComposer({
           },
         };
       });
-      setMessage("");
       textareaRef.current?.focus();
     },
     [activePendingUserInput],
@@ -483,7 +478,7 @@ export function PmChatComposer({
       void api.orchestrator
         .sendMessage({ projectId, message: trimmedMessage })
         .then(() => {
-          setMessage("");
+          setComposerDraftPrompt(composerDraftTarget, "");
           textareaRef.current?.focus();
         })
         .catch((sendError) => {
@@ -497,8 +492,10 @@ export function PmChatComposer({
       activePendingProgress,
       advanceActivePendingUserInput,
       canSend,
+      composerDraftTarget,
       environmentId,
       projectId,
+      setComposerDraftPrompt,
       trimmedMessage,
     ],
   );
@@ -682,8 +679,11 @@ export function PmChatComposer({
             className="min-w-0 flex-1"
             disabled={savingPmModelSelection || submitting || isAnsweringUserInput}
             onChange={(event) => {
-              setMessage(event.currentTarget.value);
-              setActivePendingUserInputCustomAnswer(event.currentTarget.value);
+              if (activePendingProgress) {
+                setActivePendingUserInputCustomAnswer(event.currentTarget.value);
+              } else {
+                setComposerDraftPrompt(composerDraftTarget, event.currentTarget.value);
+              }
             }}
             onKeyDown={handleKeyDown}
             placeholder={

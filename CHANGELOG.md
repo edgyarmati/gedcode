@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Persist unsent Orchestrator PM composer text per environment and project so navigation between
+  Chat, Orchestrator, projects, and task routes no longer discards or cross-contaminates drafts.
+
 - Feature: Group split Orchestrator tasks beneath one collapsible parent board card, preserve declared
   child order, summarize aggregate progress, and surface child attention without duplicate top-level
   cards.

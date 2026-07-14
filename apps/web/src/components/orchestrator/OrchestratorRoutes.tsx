@@ -81,7 +81,7 @@ import {
 } from "../../store";
 import { deriveTimelineEntries, deriveWorkLogEntries } from "../../session-logic";
 import { buildThreadRouteParams } from "../../threadRoutes";
-import { isOrchestratorManagedThread } from "../../lib/orchestratorThreads";
+import { isOrchestratorManagedThread, pmThreadIdForProject } from "../../lib/orchestratorThreads";
 import type { OrchestratorPendingGate, OrchestratorTask, Project, Thread } from "../../types";
 import { useSettings } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
@@ -134,10 +134,6 @@ function toProjectId(value: string): ProjectId {
 
 function toTaskId(value: string): TaskId {
   return TaskId.make(value);
-}
-
-function pmThreadIdForProject(projectId: ProjectId): ThreadId {
-  return ThreadId.make(`pm:${projectId}`);
 }
 
 function stageThreadIdForTask(task: OrchestratorTask): ThreadId | null {

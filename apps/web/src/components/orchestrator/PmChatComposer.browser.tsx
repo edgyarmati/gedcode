@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+import { useComposerDraftStore } from "../../composerDraftStore";
 import {
   __resetEnvironmentApiOverridesForTests,
   __setEnvironmentApiOverrideForTests,
@@ -195,6 +196,60 @@ describe("PmChatComposer model picker", () => {
     __resetEnvironmentApiOverridesForTests();
     resetServerStateForTests();
     resetAppAtomRegistryForTests();
+    useComposerDraftStore.setState({ draftsByThreadKey: {} });
+  });
+
+  it("preserves an unsent PM draft across route unmounts without leaking between projects", async () => {
+    const sendMessage = vi.fn(async () => ({ accepted: true as const }));
+    __setEnvironmentApiOverrideForTests(environmentId, {
+      orchestration: { dispatchCommand: vi.fn() },
+      orchestrator: { sendMessage },
+    } as unknown as EnvironmentApi);
+    setServerConfigSnapshot(serverConfig);
+
+    const first = await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={project}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+    await page.getByRole("textbox", { name: "Message PM" }).fill("keep this PM draft");
+    await first.unmount();
+
+    const otherProjectId = ProjectId.make("project-other");
+    const other = await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={{ ...project, id: otherProjectId }}
+          projectId={otherProjectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+    await expect.element(page.getByRole("textbox", { name: "Message PM" })).toHaveValue("");
+    await other.unmount();
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          environmentId={environmentId}
+          project={project}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+    const restored = page.getByRole("textbox", { name: "Message PM" });
+    await expect.element(restored).toHaveValue("keep this PM draft");
+
+    await page.getByRole("button", { name: "Send PM message" }).click();
+    await expect.poll(() => sendMessage.mock.calls.length).toBe(1);
+    await expect.element(restored).toHaveValue("");
   });
 
   it("offers Claude and Codex PM models, excludes unsupported drivers, and persists same-driver picks", async () => {

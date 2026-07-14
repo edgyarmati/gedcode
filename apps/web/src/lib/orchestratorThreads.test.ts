@@ -4,9 +4,15 @@ import {
   isOrchestratorManagedThread,
   isOrchestratorStageBranch,
   isPmThreadId,
+  pmThreadIdForProject,
 } from "./orchestratorThreads";
+import { ProjectId } from "@t3tools/contracts";
 
 describe("orchestrator thread detection", () => {
+  it("derives the stable PM thread id for a project", () => {
+    expect(pmThreadIdForProject(ProjectId.make("project-1"))).toBe("pm:project-1");
+  });
+
   it("flags PM chat threads by their `pm:` id prefix", () => {
     expect(isPmThreadId("pm:project-1")).toBe(true);
     expect(isPmThreadId("thread-123")).toBe(false);

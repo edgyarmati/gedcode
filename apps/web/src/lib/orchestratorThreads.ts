@@ -1,3 +1,5 @@
+import { type ProjectId, ThreadId } from "@t3tools/contracts";
+
 // Orchestrator-owned threads must not appear in the normal chat thread list;
 // they are reached from the orchestrator workspace / task detail view instead.
 //
@@ -9,6 +11,10 @@
 //     by the orchestrator decider (`orchestrator/<taskId>`)
 const PM_THREAD_ID_PREFIX = "pm:";
 const ORCHESTRATOR_STAGE_BRANCH_PREFIX = "orchestrator/";
+
+export function pmThreadIdForProject(projectId: ProjectId): ThreadId {
+  return ThreadId.make(`${PM_THREAD_ID_PREFIX}${projectId}`);
+}
 
 export interface OrchestratorManagedThreadFields {
   readonly id: string;
