@@ -5,6 +5,19 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## ORCH-REL-02
+
+- Contract, decider, replay, SQL projection, and migration tests cover the durable dispatching,
+  dispatched, and failed lifecycle plus exact content-hash approval matching.
+- Actuator tests prove concurrent duplicate calls invoke GitHub Actions once, parameter normalization is
+  deterministic, and a dirty repository is rejected before either durable reservation or remote work.
+- PM/MCP coverage exposes separate approval and dispatch tools; web rendering coverage shows in-progress,
+  failed, and authoritative workflow-link states.
+- Verification passed on 2026-07-15: focused server/web/shared/contract tests, `bun fmt`, `bun
+  fmt:check`, `bun lint` (existing warnings only), `bun typecheck`, `bun run release:smoke`, and the
+  complete 12-package `bun run test` gate. The server suite passed 1,454 tests with one skipped; web
+  passed 1,230, shared 146, contracts 190, and all remaining packages passed.
+
 ## ORCH-PMBOOT-01
 
 - Reproduce from the live `loc-speach` PM log: Claude starts normally, emits two read-only Bash tool

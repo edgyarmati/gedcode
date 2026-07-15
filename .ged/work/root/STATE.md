@@ -1,8 +1,7 @@
 # State
 
 - **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `ORCH-REL-02` — add one guarded, idempotent release-dispatch actuator with durable
-  authoritative progress for PM and UI consumers.
+- **Active task**: `UI-SIDEBAR-02` — complete the remaining rich project/task context-menu polish.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -13,6 +12,14 @@
 
 ## Current Progress
 
+- `ORCH-REL-02` is complete. Release publishing now requires a content-matched human approval and a
+  clean project root before reserving one durable dispatch attempt. The lifecycle lock and persisted
+  dispatching state prevent concurrent or post-crash automatic duplicates; success/failure survives
+  replay and SQL restart, and PM plus task detail expose the authoritative state and workflow URL.
+- Final `ORCH-REL-02` verification passed on 2026-07-15: focused server/web/shared/contract tests,
+  `bun fmt`, `bun fmt:check`, `bun lint` (existing warnings only), `bun typecheck`, `bun run
+  release:smoke`, and the complete 12-package `bun run test` gate. The server suite passed 1,454 tests
+  with one skipped; all 12 packages passed.
 - `ORCH-REL-01` is complete in commit `a50cea68e`. The registry now installs a dedicated release
   playbook and every PM runtime receives all registered task-type skills. Release creation records its
   source through the durable dependency projection and requires exactly one visible, fully landed
