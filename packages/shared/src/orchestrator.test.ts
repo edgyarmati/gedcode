@@ -153,6 +153,17 @@ describe("resolveGatePolicy", () => {
       }),
     ).toBe("require-approval");
   });
+
+  it("always requires approval for release even if malformed defaults say auto", () => {
+    expect(
+      resolveGatePolicy({
+        config: { taskTypes: [] },
+        defaults: { gatePolicy: { release: "auto" } },
+        taskTypeId: "release",
+        gate: "release",
+      }),
+    ).toBe("require-approval");
+  });
 });
 
 describe("resolveStages", () => {

@@ -129,7 +129,7 @@ export function resolveStages(input: ResolveStagesInput): ReadonlyArray<Orchestr
 }
 
 export function resolveGatePolicy(input: ResolveGatePolicyInput): OrchestratorGatePolicy {
-  if (input.gate === "land") {
+  if (input.gate === "land" || input.gate === "release") {
     return "require-approval";
   }
 

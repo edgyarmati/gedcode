@@ -3,6 +3,7 @@ import {
   OrchestrationTaskAggregateProgress,
   OrchestrationTaskCancellation,
   OrchestrationTaskLanding,
+  OrchestrationReleaseDispatch,
   ThreadId,
 } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -33,6 +34,7 @@ const ProjectionTaskDbRow = ProjectionTask.mapFields(
     dependsOnTaskIds: Schema.fromJsonString(ProjectionTask.fields.dependsOnTaskIds),
     cancellation: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskCancellation)),
     landing: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskLanding)),
+    releaseDispatch: Schema.NullOr(Schema.fromJsonString(OrchestrationReleaseDispatch)),
   }),
 );
 type ProjectionTaskDbRow = typeof ProjectionTaskDbRow.Type;
@@ -65,6 +67,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           superseded_by_task_id,
           cancellation_json,
           landing_json,
+          release_dispatch_json,
           role_model_selections_json,
           playbook_version,
           created_at,
@@ -93,6 +96,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           ${row.supersededByTaskId},
           ${row.cancellation === null ? null : JSON.stringify(row.cancellation)},
           ${row.landing === null ? null : JSON.stringify(row.landing)},
+          ${row.releaseDispatch === null ? null : JSON.stringify(row.releaseDispatch)},
           ${JSON.stringify(row.roleModelSelections)},
           ${row.playbookVersion},
           ${row.createdAt},
@@ -121,6 +125,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           superseded_by_task_id = excluded.superseded_by_task_id,
           cancellation_json = excluded.cancellation_json,
           landing_json = excluded.landing_json,
+          release_dispatch_json = excluded.release_dispatch_json,
           role_model_selections_json = excluded.role_model_selections_json,
           playbook_version = excluded.playbook_version,
           created_at = excluded.created_at,
@@ -156,6 +161,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
           landing_json AS "landing",
+          release_dispatch_json AS "releaseDispatch",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
@@ -193,6 +199,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
           landing_json AS "landing",
+          release_dispatch_json AS "releaseDispatch",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",
@@ -233,6 +240,7 @@ const makeProjectionTaskRepository = Effect.gen(function* () {
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
           landing_json AS "landing",
+          release_dispatch_json AS "releaseDispatch",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",

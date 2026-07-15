@@ -34,8 +34,8 @@ import {
  * Per-gate policy for task gates. `require-approval` means a
  * human/client-origin `task.gate.resolve` is required (the decider rejects
  * PM-runtime origin — WP-E); `auto` lets the engine resolve the gate without a
- * human. The `land` gate is hard-pinned to `require-approval` (design §7) — the
- * slice never auto-merges to main.
+ * human. Publishing gates are hard-pinned to `require-approval` (design §7) —
+ * the slice never auto-merges to main or publishes a release.
  */
 export const OrchestratorGatePolicy = Schema.Literals(["auto", "require-approval"]);
 export type OrchestratorGatePolicy = typeof OrchestratorGatePolicy.Type;
@@ -65,6 +65,7 @@ export const OrchestratorTaskGatePolicy = Schema.Struct({
   land: OrchestratorLandGatePolicy.pipe(
     Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
   ),
+  release: Schema.optionalKey(OrchestratorLandGatePolicy),
 });
 export type OrchestratorTaskGatePolicy = typeof OrchestratorTaskGatePolicy.Type;
 

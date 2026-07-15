@@ -46,6 +46,7 @@ const gatePolicyKeys = [
   "work",
   "review",
   "land",
+  "release",
 ] as const satisfies ReadonlyArray<OrchestrationGateKind>;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

@@ -1547,6 +1547,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               supersededByTaskId: null,
               cancellation: null,
               landing: null,
+              releaseDispatch: null,
               roleModelSelections: {},
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
@@ -1806,6 +1807,53 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 status: "opening-pr",
                 failureMessage: null,
                 branchPushed: false,
+                updatedAt: event.payload.updatedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.release-dispatch-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              releaseDispatch: {
+                status: "dispatching",
+                workflow: event.payload.workflow,
+                ref: event.payload.ref,
+                inputs: event.payload.inputs,
+                contentHash: event.payload.contentHash,
+                workflowUrl: null,
+                failureMessage: null,
+                requestedAt: event.payload.requestedAt,
+                updatedAt: event.payload.updatedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.release-dispatched":
+          case "task.release-dispatch-failed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow) || existingRow.value.releaseDispatch === null) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              releaseDispatch: {
+                ...existingRow.value.releaseDispatch,
+                status: event.type === "task.release-dispatched" ? "dispatched" : "failed",
+                workflowUrl:
+                  event.type === "task.release-dispatched"
+                    ? event.payload.workflowUrl
+                    : existingRow.value.releaseDispatch.workflowUrl,
+                failureMessage:
+                  event.type === "task.release-dispatch-failed" ? event.payload.message : null,
                 updatedAt: event.payload.updatedAt,
               },
               updatedAt: event.payload.updatedAt,

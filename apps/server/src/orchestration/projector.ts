@@ -27,6 +27,9 @@ import {
   TaskLandedPayload,
   TaskPrOpenFailedPayload,
   TaskPrOpenedPayload,
+  TaskReleaseDispatchFailedPayload,
+  TaskReleaseDispatchRequestedPayload,
+  TaskReleaseDispatchedPayload,
   TaskRoleSelectionsUpdatedPayload,
   TaskRestoredPayload,
   TaskStageBlockedPayload,
@@ -914,6 +917,7 @@ export function projectEvent(
             supersededByTaskId: null,
             cancellation: null,
             landing: null,
+            releaseDispatch: null,
             roleModelSelections: {},
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
@@ -1312,6 +1316,85 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
           }),
         })),
+      );
+
+    case "task.release-dispatch-requested":
+      return decodeForEvent(
+        TaskReleaseDispatchRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            releaseDispatch: {
+              status: "dispatching",
+              workflow: payload.workflow,
+              ref: payload.ref,
+              inputs: payload.inputs,
+              contentHash: payload.contentHash,
+              workflowUrl: null,
+              failureMessage: null,
+              requestedAt: payload.requestedAt,
+              updatedAt: payload.updatedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.release-dispatched":
+      return decodeForEvent(
+        TaskReleaseDispatchedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          return task?.releaseDispatch == null
+            ? nextBase
+            : {
+                ...nextBase,
+                tasks: updateTask(nextBase.tasks, payload.taskId, {
+                  releaseDispatch: {
+                    ...task.releaseDispatch,
+                    status: "dispatched",
+                    workflowUrl: payload.workflowUrl,
+                    failureMessage: null,
+                    updatedAt: payload.updatedAt,
+                  },
+                  updatedAt: payload.updatedAt,
+                }),
+              };
+        }),
+      );
+
+    case "task.release-dispatch-failed":
+      return decodeForEvent(
+        TaskReleaseDispatchFailedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          return task?.releaseDispatch == null
+            ? nextBase
+            : {
+                ...nextBase,
+                tasks: updateTask(nextBase.tasks, payload.taskId, {
+                  releaseDispatch: {
+                    ...task.releaseDispatch,
+                    status: "failed",
+                    failureMessage: payload.message,
+                    updatedAt: payload.updatedAt,
+                  },
+                  updatedAt: payload.updatedAt,
+                }),
+              };
+        }),
       );
 
     case "task.cancellation-requested":

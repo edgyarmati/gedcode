@@ -119,6 +119,9 @@ export function classifyOrchestrationCommand(
     case "task.gate.resolve":
     case "task.land":
     case "task.landing.retry":
+    case "task.release.dispatch.request":
+    case "task.release.dispatch.complete":
+    case "task.release.dispatch.fail":
     case "task.pr.opened":
     case "task.pr.open.failed":
     case "task.abandon":
@@ -189,6 +192,9 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.gate.resolve":
     case "task.land":
     case "task.landing.retry":
+    case "task.release.dispatch.request":
+    case "task.release.dispatch.complete":
+    case "task.release.dispatch.fail":
     case "task.pr.opened":
     case "task.pr.open.failed":
     case "task.abandon":

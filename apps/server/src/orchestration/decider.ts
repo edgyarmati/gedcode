@@ -1947,6 +1947,21 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
+      if (command.gate === "release") {
+        if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
+          return yield* invariantError(
+            command.type,
+            "Release approval requires a fully landed release task with a pull request.",
+          );
+        }
+        yield* requireReleaseSource({
+          command,
+          readModel,
+          projectId: task.projectId,
+          taskTypeId: task.type,
+          dependsOnTaskIds: task.dependsOnTaskIds ?? [],
+        });
+      }
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const gatePolicy = resolveGatePolicy({
         config: projectConfig,
@@ -1972,7 +1987,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
 
-      if (gatePolicy !== "auto" || command.gate === "land") {
+      if (gatePolicy !== "auto" || command.gate === "land" || command.gate === "release") {
         return [gateRequestedEvent];
       }
 
@@ -2052,6 +2067,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(
           command.type,
           `Land gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
+        );
+      }
+      if (
+        command.gate === "release" &&
+        (task.type !== "release" || task.status !== "landed" || task.prUrl === null)
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Release gate '${command.gateId}' is not pending for a fully landed release task.`,
         );
       }
       return {
@@ -2158,6 +2182,104 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           taskId: command.taskId,
           updatedAt: command.createdAt,
         },
+      };
+    }
+
+    case "task.release.dispatch.request": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be a fully landed release task before dispatch.`,
+        );
+      }
+      if (task.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot dispatch while a worker stage is active.`,
+        );
+      }
+      yield* requireReleaseSource({
+        command,
+        readModel,
+        projectId: task.projectId,
+        taskTypeId: task.type,
+        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
+      });
+      if (task.releaseDispatch !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' already has an authoritative release dispatch attempt.`,
+        );
+      }
+      const latestReleaseGate = (readModel.pendingGates ?? []).findLast(
+        (gate) => gate.taskId === command.taskId && gate.gate === "release",
+      );
+      if (
+        latestReleaseGate === undefined ||
+        latestReleaseGate.status !== "resolved" ||
+        latestReleaseGate.decision !== "approved" ||
+        latestReleaseGate.approvedHash !== command.contentHash ||
+        latestReleaseGate.contentHash !== command.contentHash
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot dispatch without a content-matched approved release gate.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.release-dispatch-requested",
+        payload: {
+          taskId: command.taskId,
+          workflow: command.workflow,
+          ref: command.ref,
+          inputs: command.inputs,
+          contentHash: command.contentHash,
+          requestedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.release.dispatch.complete":
+    case "task.release.dispatch.fail": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      if (task.releaseDispatch?.status !== "dispatching") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' has no in-progress release dispatch.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type:
+          command.type === "task.release.dispatch.complete"
+            ? "task.release-dispatched"
+            : "task.release-dispatch-failed",
+        payload:
+          command.type === "task.release.dispatch.complete"
+            ? {
+                taskId: command.taskId,
+                workflowUrl: command.workflowUrl,
+                updatedAt: command.createdAt,
+              }
+            : {
+                taskId: command.taskId,
+                message: command.message,
+                updatedAt: command.createdAt,
+              },
       };
     }
 

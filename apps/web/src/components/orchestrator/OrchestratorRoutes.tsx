@@ -873,6 +873,33 @@ export function TaskHeader({
             </Button>
           ) : null}
           {landing.kind === "landed" ? <TaskPrLink prUrl={landing.prUrl} /> : null}
+          {task.releaseDispatch?.status === "dispatching" ? (
+            <Badge size="lg" variant="info">
+              <LoaderCircleIcon className="size-4 animate-spin" />
+              Dispatching release…
+            </Badge>
+          ) : task.releaseDispatch?.status === "failed" ? (
+            <Badge
+              size="lg"
+              title={task.releaseDispatch.failureMessage ?? undefined}
+              variant="error"
+            >
+              <CircleAlertIcon className="size-4" />
+              Release dispatch failed
+            </Badge>
+          ) : task.releaseDispatch?.status === "dispatched" &&
+            task.releaseDispatch.workflowUrl !== null ? (
+            <Button
+              render={
+                <a href={task.releaseDispatch.workflowUrl} target="_blank" rel="noreferrer" />
+              }
+              size="xs"
+              variant="outline"
+            >
+              <WorkflowIcon className="size-3.5" />
+              View release workflow
+            </Button>
+          ) : null}
         </div>
       </div>
       {task.worktreePath ? (

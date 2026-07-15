@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature/UI: Guard release-task publishing behind a content-matched human approval and one
+  lifecycle-locked GitHub Actions dispatch. Dirty repositories are refused before any reservation,
+  repeated calls cannot dispatch twice, and durable dispatching/dispatched/failed state plus the
+  authoritative workflow URL survives replay and is visible to the PM and task detail.
+
 - Feature: Register a dedicated Orchestrator `release` task type and built-in release-preparation
   playbook. Release tasks require durable provenance to exactly one visible, fully landed feature task
   in the same project; PM creation, replayed worker dispatch, and classification reject missing or

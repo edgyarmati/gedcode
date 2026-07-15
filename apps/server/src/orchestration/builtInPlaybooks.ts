@@ -70,7 +70,7 @@ generic feature, a replacement task, or a way to continue work on an unlanded br
 
 ## Pipeline
 
-Default flow: classify → plan → work → verify → ⟨land gate⟩ → land.
+Default flow: classify → plan → work → verify → ⟨land gate⟩ → land → ⟨release gate⟩ → dispatch.
 
 - **classify** — Confirm the release source and summarize the exact landed change being released.
 - **plan** — Identify version/changelog changes, build and packaging gates, artifact verification, and
@@ -80,10 +80,14 @@ Default flow: classify → plan → work → verify → ⟨land gate⟩ → land
   guarded operation.
 - **verify** — Run the release preflight and prove artifacts correspond to the landed source.
 - **land** — Land release-preparation changes after human approval. Landing is not release dispatch.
+- **release** — Call \`requestReleaseApproval\` with the exact workflow, ref, and inputs. Only after
+  human approval, call \`dispatchRelease\` with those unchanged parameters. Never retry a recorded
+  dispatch attempt automatically; inspect its authoritative status and workflow URL instead.
 
 ## Definition of done
 
 The source feature is fully landed; release metadata and artifacts are reproducible; required gates
 pass; verification ties the artifacts to the source; and no publish/dispatch side effect occurred
-outside the guarded release actuator.
+outside the guarded release actuator. A requested dispatch has one durable terminal status and is
+never duplicated by a repeated PM call.
 `;

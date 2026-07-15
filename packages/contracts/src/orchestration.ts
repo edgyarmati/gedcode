@@ -524,6 +524,26 @@ export const OrchestrationTaskLanding = Schema.Struct({
 });
 export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
 
+export const OrchestrationReleaseDispatchStatus = Schema.Literals([
+  "dispatching",
+  "dispatched",
+  "failed",
+]);
+export type OrchestrationReleaseDispatchStatus = typeof OrchestrationReleaseDispatchStatus.Type;
+
+export const OrchestrationReleaseDispatch = Schema.Struct({
+  status: OrchestrationReleaseDispatchStatus,
+  workflow: TrimmedNonEmptyString,
+  ref: TrimmedNonEmptyString,
+  inputs: Schema.Record(TrimmedNonEmptyString, Schema.String),
+  contentHash: TrimmedNonEmptyString,
+  workflowUrl: Schema.NullOr(TrimmedNonEmptyString),
+  failureMessage: Schema.NullOr(TrimmedNonEmptyString),
+  requestedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationReleaseDispatch = typeof OrchestrationReleaseDispatch.Type;
+
 export const OrchestrationTaskAggregateProgress = Schema.Struct({
   total: NonNegativeInt,
   terminal: NonNegativeInt,
@@ -563,6 +583,7 @@ export const OrchestrationTask = Schema.Struct({
   landing: Schema.NullOr(OrchestrationTaskLanding).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  releaseDispatch: Schema.optionalKey(Schema.NullOr(OrchestrationReleaseDispatch)),
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -573,8 +594,8 @@ export const OrchestrationTask = Schema.Struct({
 export type OrchestrationTask = typeof OrchestrationTask.Type;
 
 /**
- * The gates that can guard a task. `plan` and `land` are the slice's gates;
- * `land` is hard-pinned to require approval. Closed so config + the decider's
+ * The gates that can guard a task. Publishing gates (`land` and `release`) are
+ * hard-pinned to require approval. Closed so config + the decider's
  * `requireGateSatisfied` invariant are exhaustiveness-checked together.
  */
 export const OrchestrationGateKind = Schema.Literals([
@@ -583,6 +604,7 @@ export const OrchestrationGateKind = Schema.Literals([
   "work",
   "review",
   "land",
+  "release",
 ]);
 export type OrchestrationGateKind = typeof OrchestrationGateKind.Type;
 
@@ -1166,6 +1188,33 @@ const TaskLandingRetryCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskReleaseDispatchRequestCommand = Schema.Struct({
+  type: Schema.Literal("task.release.dispatch.request"),
+  commandId: CommandId,
+  taskId: TaskId,
+  workflow: TrimmedNonEmptyString,
+  ref: TrimmedNonEmptyString,
+  inputs: Schema.Record(TrimmedNonEmptyString, Schema.String),
+  contentHash: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskReleaseDispatchCompleteCommand = Schema.Struct({
+  type: Schema.Literal("task.release.dispatch.complete"),
+  commandId: CommandId,
+  taskId: TaskId,
+  workflowUrl: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskReleaseDispatchFailCommand = Schema.Struct({
+  type: Schema.Literal("task.release.dispatch.fail"),
+  commandId: CommandId,
+  taskId: TaskId,
+  message: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
 const TaskPrOpenFailedCommand = Schema.Struct({
   type: Schema.Literal("task.pr.open.failed"),
   commandId: CommandId,
@@ -1371,6 +1420,9 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskStageBlockCommand,
   TaskStageInterruptCommand,
   TaskLandingRetryCommand,
+  TaskReleaseDispatchRequestCommand,
+  TaskReleaseDispatchCompleteCommand,
+  TaskReleaseDispatchFailCommand,
   TaskPrOpenedCommand,
   TaskPrOpenFailedCommand,
   TaskAbandonCommand,
@@ -1431,6 +1483,9 @@ export const OrchestrationEventType = Schema.Literals([
   "task.cancellation-phase-completed",
   "task.landed",
   "task.landing-retry-requested",
+  "task.release-dispatch-requested",
+  "task.release-dispatched",
+  "task.release-dispatch-failed",
   "task.pr-opened",
   "task.pr-open-failed",
   "task.abandoned",
@@ -1789,6 +1844,28 @@ export const TaskLandingRetryRequestedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskReleaseDispatchRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  workflow: TrimmedNonEmptyString,
+  ref: TrimmedNonEmptyString,
+  inputs: Schema.Record(TrimmedNonEmptyString, Schema.String),
+  contentHash: TrimmedNonEmptyString,
+  requestedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskReleaseDispatchedPayload = Schema.Struct({
+  taskId: TaskId,
+  workflowUrl: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskReleaseDispatchFailedPayload = Schema.Struct({
+  taskId: TaskId,
+  message: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskPrOpenFailedPayload = Schema.Struct({
   taskId: TaskId,
   message: TrimmedNonEmptyString,
@@ -2037,6 +2114,21 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.landing-retry-requested"),
     payload: TaskLandingRetryRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.release-dispatch-requested"),
+    payload: TaskReleaseDispatchRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.release-dispatched"),
+    payload: TaskReleaseDispatchedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.release-dispatch-failed"),
+    payload: TaskReleaseDispatchFailedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

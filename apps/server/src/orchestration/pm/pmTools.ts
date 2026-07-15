@@ -38,6 +38,9 @@ import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
 import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
+import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
+import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
+import { VcsProcess } from "../../vcs/VcsProcess.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -114,6 +117,13 @@ interface LandTaskParameters {
   readonly taskId: string;
 }
 
+interface ReleaseParameters {
+  readonly taskId: string;
+  readonly workflow: string;
+  readonly ref: string;
+  readonly inputs?: Readonly<Record<string, string>>;
+}
+
 interface TaskRetentionParameters {
   readonly taskId: string;
 }
@@ -148,6 +158,7 @@ interface PmTaskSummary {
   readonly attemptCount: number;
   readonly recentAttempts: ReadonlyArray<PmTaskAttemptSummary>;
   readonly prUrl: string | null;
+  readonly releaseDispatch: OrchestrationTask["releaseDispatch"];
   readonly updatedAt: string;
 }
 
@@ -328,6 +339,7 @@ const summarizeTaskForPm = (
     };
   }),
   prUrl: task.prUrl,
+  releaseDispatch: task.releaseDispatch,
   updatedAt: task.updatedAt,
 });
 
@@ -914,6 +926,82 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const requestReleaseApproval: PmToolExecutor<
+    ReleaseParameters,
+    { taskId: string; gateId: string; sequence: number; contentHash: string }
+  > = {
+    name: "requestReleaseApproval",
+    label: "Request release approval",
+    description:
+      "Open the mandatory human approval gate for exact GitHub Actions workflow dispatch parameters. Reuse the same workflow, ref, and inputs with dispatchRelease after approval.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const gateId = yield* randomGateId;
+          const contentHash = releaseDispatchContentHash({
+            workflow: params.workflow,
+            ref: params.ref,
+            inputs: params.inputs ?? {},
+          });
+          const sequence = yield* dispatch({
+            type: "task.gate.request",
+            commandId: yield* commandId("request-release-approval"),
+            taskId,
+            gateId,
+            gate: "release",
+            contentHash,
+            stageThreadId: null,
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Requested release approval ${gateId}.`, {
+            taskId,
+            gateId,
+            sequence,
+            contentHash,
+          });
+        }),
+      ),
+  };
+
+  const dispatchRelease: PmToolExecutor<ReleaseParameters, unknown> = {
+    name: "dispatchRelease",
+    label: "Dispatch release",
+    description:
+      "Dispatch the exact human-approved GitHub Actions workflow once. Refuses dirty repositories and returns the durable authoritative dispatch status and workflow URL.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const github = Context.getOption(runtimeContext, GitHubCli);
+          const process = Context.getOption(runtimeContext, VcsProcess);
+          if (Option.isNone(github) || Option.isNone(process)) {
+            return yield* new PmToolExecutionError({
+              detail: "GitHub release dispatch services are unavailable.",
+            });
+          }
+          const result = yield* dispatchReleaseWithServices(
+            { snapshotQuery, github: github.value, process: process.value },
+            {
+              taskId,
+              workflow: params.workflow,
+              ref: params.ref,
+              inputs: params.inputs ?? {},
+              commandId,
+              createdAt: nowIso,
+              dispatch: (command) => engine.dispatch(command),
+            },
+          );
+          return textResult(
+            result.alreadyRequested
+              ? `Release dispatch for task ${taskId} was already requested.`
+              : `Dispatched release workflow for task ${taskId}.`,
+            result,
+          );
+        }),
+      ),
+  };
+
   const makeTaskRetentionTool = (input: {
     readonly name: "archiveTask" | "restoreTask" | "deleteTask";
     readonly label: string;
@@ -1005,6 +1093,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
     inspectStage,
     cancelTask,
     landTask,
+    requestReleaseApproval,
+    dispatchRelease,
     archiveTask,
     restoreTask,
     deleteTask,

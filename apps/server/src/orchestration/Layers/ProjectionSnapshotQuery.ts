@@ -16,6 +16,7 @@ import {
   OrchestrationTaskAggregateProgress,
   OrchestrationTaskCancellation,
   OrchestrationTaskLanding,
+  OrchestrationReleaseDispatch,
   OrchestrationThread,
   PendingPmHandoff,
   ProjectScript,
@@ -129,6 +130,7 @@ const ProjectionTaskDbRowSchema = ProjectionTask.mapFields(
     dependsOnTaskIds: Schema.fromJsonString(ProjectionTask.fields.dependsOnTaskIds),
     cancellation: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskCancellation)),
     landing: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskLanding)),
+    releaseDispatch: Schema.NullOr(Schema.fromJsonString(OrchestrationReleaseDispatch)),
   }),
 );
 const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate;
@@ -296,6 +298,7 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     supersededByTaskId: row.supersededByTaskId,
     cancellation: row.cancellation,
     landing: row.landing,
+    releaseDispatch: row.releaseDispatch,
     roleModelSelections: row.roleModelSelections,
     playbookVersion: row.playbookVersion,
     createdAt: row.createdAt,
@@ -688,6 +691,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           superseded_by_task_id AS "supersededByTaskId",
           cancellation_json AS "cancellation",
           landing_json AS "landing",
+          release_dispatch_json AS "releaseDispatch",
           role_model_selections_json AS "roleModelSelections",
           playbook_version AS "playbookVersion",
           created_at AS "createdAt",

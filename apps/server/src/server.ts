@@ -189,6 +189,8 @@ const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunnerLive),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
+  // PM release tools execute the guarded GitHub Actions dispatch directly.
+  Layer.provideMerge(GitHubCli.layer),
   Layer.provideMerge(TextGeneration.layer),
 );
 

@@ -41,7 +41,7 @@ import {
   runPmHarnessSwitchAction,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
-import { OrchestratorHomeRoute, PmChatEmptyState } from "./OrchestratorRoutes";
+import { OrchestratorHomeRoute, PmChatEmptyState, TaskHeader } from "./OrchestratorRoutes";
 
 type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children?: ReactNode;
@@ -543,6 +543,36 @@ describe("TaskPrLink", () => {
 
     expect(confirm).toHaveBeenCalledOnce();
     expect(cancelTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("release dispatch presentation", () => {
+  it("links to the authoritative workflow URL after dispatch", () => {
+    const task = makeBoardTask("task-release", "landed", "Release") as OrchestratorTask;
+    const markup = renderToStaticMarkup(
+      <TaskHeader
+        task={{
+          ...task,
+          type: TaskTypeId.make("release"),
+          prUrl: "https://github.com/acme/project/pull/42",
+          releaseDispatch: {
+            status: "dispatched",
+            workflow: "release.yml",
+            ref: "main",
+            inputs: { version: "1.2.3" },
+            contentHash: "release-hash",
+            workflowUrl: "https://github.com/acme/project/actions/workflows/release.yml",
+            failureMessage: null,
+            requestedAt: "2026-07-15T00:00:00.000Z",
+            updatedAt: "2026-07-15T00:00:01.000Z",
+          },
+        }}
+      />,
+    );
+    expect(markup).toContain("View release workflow");
+    expect(markup).toContain(
+      'href="https://github.com/acme/project/actions/workflows/release.yml"',
+    );
   });
 });
 

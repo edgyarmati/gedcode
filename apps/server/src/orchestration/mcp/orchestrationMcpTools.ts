@@ -17,6 +17,8 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "inspectStage",
   "cancelTask",
   "landTask",
+  "requestReleaseApproval",
+  "dispatchRelease",
   "archiveTask",
   "restoreTask",
   "deleteTask",
@@ -74,7 +76,7 @@ export const mcpInputSchemas = {
   },
   requestApproval: {
     taskId: z.string(),
-    gate: z.enum(["plan", "land"]),
+    gate: z.enum(["plan", "land", "release"]),
     contentHash: z.string(),
     stageThreadId: z.string().optional(),
   },
@@ -101,6 +103,18 @@ export const mcpInputSchemas = {
   },
   landTask: {
     taskId: z.string(),
+  },
+  requestReleaseApproval: {
+    taskId: z.string(),
+    workflow: z.string().trim().min(1),
+    ref: z.string().trim().min(1),
+    inputs: z.record(z.string(), z.string()).optional(),
+  },
+  dispatchRelease: {
+    taskId: z.string(),
+    workflow: z.string().trim().min(1),
+    ref: z.string().trim().min(1),
+    inputs: z.record(z.string(), z.string()).optional(),
   },
   archiveTask: {
     taskId: z.string(),

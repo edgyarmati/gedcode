@@ -286,6 +286,123 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("requires a content-matched release gate and prevents duplicate dispatch", () =>
+    Effect.gen(function* () {
+      const source = yield* taskReadModel({
+        status: "landed",
+        prUrl: "https://github.com/example/repo/pull/1",
+        currentStageThreadId: null,
+      });
+      const withRelease = yield* projectEvent(source, {
+        sequence: 3,
+        eventId: asEventId("evt-release-task"),
+        aggregateKind: "task",
+        aggregateId: asTaskId("task-release"),
+        type: "task.created",
+        occurredAt: now,
+        commandId: asCommandId("cmd-release-task"),
+        causationEventId: null,
+        correlationId: asCommandId("cmd-release-task"),
+        metadata: {},
+        payload: {
+          taskId: asTaskId("task-release"),
+          projectId: asProjectId("project-1"),
+          taskType: asTaskTypeId("release"),
+          title: "Release feature",
+          branch: "orchestrator/task-release",
+          worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-release",
+          pmMessageId: null,
+          playbookVersion: "release@v1",
+          dependsOnTaskIds: [asTaskId("task-1")],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const ready: OrchestrationReadModel = {
+        ...withRelease,
+        tasks: withRelease.tasks.map((task) =>
+          task.id === asTaskId("task-release")
+            ? Object.assign({}, task, {
+                status: "landed" as const,
+                prUrl: "https://github.com/example/repo/pull/2",
+              })
+            : task,
+        ),
+      };
+      const gateRequest = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: ready,
+          command: {
+            type: "task.gate.request",
+            commandId: asCommandId("cmd-release-gate"),
+            taskId: asTaskId("task-release"),
+            gateId: asGateId("gate-release"),
+            gate: "release",
+            contentHash: "release-hash",
+            stageThreadId: null,
+            createdAt: now,
+          },
+        }),
+      );
+      expect(gateRequest.map((event) => event.type)).toEqual(["task.gate-requested"]);
+      const pending = yield* applyEvents(ready, gateRequest);
+      const gateResolution = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: pending,
+          command: {
+            type: "task.gate.resolve",
+            commandId: asCommandId("cmd-release-approve"),
+            taskId: asTaskId("task-release"),
+            gateId: asGateId("gate-release"),
+            gate: "release",
+            approvedHash: "release-hash",
+            decision: "approved",
+            origin: "human",
+            createdAt: now,
+          },
+        }),
+      );
+      const approved = yield* applyEvents(pending, gateResolution);
+      const dispatch = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: approved,
+          command: {
+            type: "task.release.dispatch.request",
+            commandId: asCommandId("cmd-release-dispatch"),
+            taskId: asTaskId("task-release"),
+            workflow: "release.yml",
+            ref: "main",
+            inputs: { version: "1.2.3" },
+            contentHash: "release-hash",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(dispatch[0]?.type).toBe("task.release-dispatch-requested");
+      const dispatching = yield* applyEvents(approved, dispatch);
+      expect(
+        dispatching.tasks.find((task) => task.id === asTaskId("task-release"))?.releaseDispatch
+          ?.status,
+      ).toBe("dispatching");
+      const duplicate = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel: dispatching,
+          command: {
+            type: "task.release.dispatch.request",
+            commandId: asCommandId("cmd-release-dispatch-again"),
+            taskId: asTaskId("task-release"),
+            workflow: "release.yml",
+            ref: "main",
+            inputs: { version: "1.2.3" },
+            contentHash: "release-hash",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(duplicate._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+
   it.effect("rejects project task-type config that is not installed in the registry", () =>
     Effect.gen(function* () {
       const readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
