@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- UI: Complete Orchestrator context menus across project and task sidebars. Project rows now offer
+  rename, orchestration settings, path copy, and state-guarded removal; task cards expose only the
+  lifecycle actions valid for active, cancelling, terminal, or archived state, including cancellation
+  directly from active cards.
+
 - Feature/UI: Guard release-task publishing behind a content-matched human approval and one
   lifecycle-locked GitHub Actions dispatch. Dirty repositories are refused before any reservation,
   repeated calls cannot dispatch twice, and durable dispatching/dispatched/failed state plus the

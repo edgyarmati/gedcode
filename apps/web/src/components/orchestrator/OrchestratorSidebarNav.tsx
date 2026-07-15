@@ -39,7 +39,9 @@ import {
 import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
+import { readEnvironmentApi } from "../../environmentApi";
 import { getProjectOrderKey } from "../../logicalProject";
+import { newCommandId } from "../../lib/utils";
 import type { Project } from "../../types";
 import { useUiStateStore } from "../../uiStateStore";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -52,6 +54,31 @@ import {
 import { isOrchestratorManagedThread } from "../../lib/orchestratorThreads";
 import { ProjectOrchestrationSettingsDialog } from "./ProjectOrchestrationSettingsDialog";
 import { type BoardTaskEntry, isStageRunning, partitionBoardTasks } from "./TaskBoard";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
+
+export function orchestratorProjectContextMenuItems(canRemove: boolean): ContextMenuItem<string>[] {
+  return [
+    { id: "rename-project", label: "Rename project" },
+    { id: "orchestration-settings", label: "Orchestration settings…" },
+    { id: "copy-path", label: "Copy Project Path" },
+    {
+      id: "remove-project",
+      label: "Remove project",
+      destructive: true,
+      ...(!canRemove ? { disabled: true } : {}),
+    },
+  ];
+}
 
 // Orchestrator-mode sidebar content. Replaces the chat thread list with a
 // project list where each row carries compact task signals so the operator can
@@ -69,6 +96,8 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
   const [orchestrationSettingsTarget, setOrchestrationSettingsTarget] = useState<Project | null>(
     null,
   );
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
   const activeProjectKey = useParams({
     strict: false,
     select: (params) =>
@@ -113,6 +142,15 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
       },
     );
   }, [manuallyOrderedProjects, projectSortOrder, sidebarThreads]);
+  const projectKeysWithThreads = useMemo(
+    () =>
+      new Set(
+        sidebarThreads.map((thread) =>
+          scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
+        ),
+      ),
+    [sidebarThreads],
+  );
   const isManualSorting = projectSortOrder === "manual";
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const collisionDetection = useCallback<CollisionDetection>((args) => {
@@ -128,6 +166,48 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
     },
     [isManualSorting, reorderProjects],
   );
+  const closeRenameDialog = useCallback(() => {
+    setRenameTarget(null);
+    setRenameTitle("");
+  }, []);
+  const openRenameDialog = useCallback((project: Project) => {
+    setRenameTarget(project);
+    setRenameTitle(project.name);
+  }, []);
+  const submitRename = useCallback(async () => {
+    if (!renameTarget) return;
+    const title = renameTitle.trim();
+    if (title.length === 0) {
+      toastManager.add({ type: "warning", title: "Project title cannot be empty" });
+      return;
+    }
+    if (title === renameTarget.name) {
+      closeRenameDialog();
+      return;
+    }
+    const api = readEnvironmentApi(renameTarget.environmentId);
+    if (!api) {
+      toastManager.add({ type: "error", title: "Project API unavailable" });
+      return;
+    }
+    try {
+      await api.orchestration.dispatchCommand({
+        type: "project.meta.update",
+        commandId: newCommandId(),
+        projectId: renameTarget.id,
+        title,
+      });
+      closeRenameDialog();
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to rename project",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+    }
+  }, [closeRenameDialog, renameTarget, renameTitle]);
 
   return (
     <>
@@ -178,10 +258,12 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
                   return (
                     <OrchestratorSidebarProjectRow
                       key={key}
+                      hasThreads={projectKeysWithThreads.has(key)}
                       project={project}
                       isActive={activeProjectKey === key}
                       isManualSorting={isManualSorting}
                       onOpenOrchestrationSettings={setOrchestrationSettingsTarget}
+                      onRenameProject={openRenameDialog}
                     />
                   );
                 })}
@@ -199,6 +281,45 @@ export const OrchestratorSidebarNav = memo(function OrchestratorSidebarNav() {
         target={orchestrationSettingsTarget}
         onClose={() => setOrchestrationSettingsTarget(null)}
       />
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) closeRenameDialog();
+        }}
+      >
+        <DialogPopup className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Rename project</DialogTitle>
+            <DialogDescription>
+              {renameTarget
+                ? `Update the title for ${renameTarget.cwd}.`
+                : "Update the project title."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-foreground">Project title</span>
+              <Input
+                aria-label="Project title"
+                value={renameTitle}
+                onChange={(event) => setRenameTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submitRename();
+                  }
+                }}
+              />
+            </div>
+          </DialogPanel>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeRenameDialog}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitRename()}>Save</Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </>
   );
 });
@@ -249,14 +370,18 @@ function OrchestratorProjectSortMenu({
 
 const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRow({
   project,
+  hasThreads,
   isActive,
   isManualSorting,
   onOpenOrchestrationSettings,
+  onRenameProject,
 }: {
   project: Project;
+  hasThreads: boolean;
   isActive: boolean;
   isManualSorting: boolean;
   onOpenOrchestrationSettings: (project: Project) => void;
+  onRenameProject: (project: Project) => void;
 }) {
   const sortable = useSortable({ id: getProjectOrderKey(project), disabled: !isManualSorting });
   const sortableStyle: CSSProperties = {
@@ -322,18 +447,18 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
         if (!api) {
           return;
         }
-        const openSettingsId = "orchestration-settings";
-        const copyPathId = "copy-path";
-        const items: ContextMenuItem<string>[] = [
-          { id: openSettingsId, label: "Orchestration settings…" },
-          { id: copyPathId, label: "Copy Project Path" },
-        ];
+        const canRemove = tasks.length === 0 && !hasThreads;
+        const items = orchestratorProjectContextMenuItems(canRemove);
         const clicked = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
-        if (clicked === openSettingsId) {
+        if (clicked === "rename-project") {
+          onRenameProject(project);
+          return;
+        }
+        if (clicked === "orchestration-settings") {
           onOpenOrchestrationSettings(project);
           return;
         }
-        if (clicked === copyPathId) {
+        if (clicked === "copy-path") {
           await navigator.clipboard.writeText(project.cwd);
           toastManager.add(
             stackedThreadToast({
@@ -342,6 +467,24 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
               description: project.cwd,
             }),
           );
+          return;
+        }
+        if (clicked === "remove-project" && canRemove) {
+          const confirmed = await api.dialogs.confirm(
+            [
+              `Remove project “${project.name}”?`,
+              `Path: ${project.cwd}`,
+              "This removes only this project entry.",
+            ].join("\n"),
+          );
+          if (!confirmed) return;
+          const environmentApi = readEnvironmentApi(environmentId);
+          if (!environmentApi) throw new Error("Project API unavailable.");
+          await environmentApi.orchestration.dispatchCommand({
+            type: "project.delete",
+            commandId: newCommandId(),
+            projectId,
+          });
         }
       })().catch((error: unknown) => {
         toastManager.add(
@@ -353,7 +496,15 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
         );
       });
     },
-    [onOpenOrchestrationSettings, project],
+    [
+      environmentId,
+      hasThreads,
+      onOpenOrchestrationSettings,
+      onRenameProject,
+      project,
+      projectId,
+      tasks.length,
+    ],
   );
 
   return (

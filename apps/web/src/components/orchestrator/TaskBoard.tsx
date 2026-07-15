@@ -136,14 +136,29 @@ export interface BoardPartition {
   readonly abandoned: readonly OrchestratorTask[];
 }
 
-export function terminalTaskContextMenuItems(archived: boolean): ContextMenuItem<string>[] {
-  return [
-    { id: "copy-task-id", label: "Copy task ID" },
-    archived
-      ? { id: "restore-task", label: "Restore task" }
-      : { id: "archive-task", label: "Archive task" },
-    { id: "delete-task", label: "Delete task permanently", destructive: true },
-  ];
+export function taskContextMenuItems(
+  task: Pick<OrchestratorTask, "status" | "cancellation">,
+  archived: boolean,
+): ContextMenuItem<string>[] {
+  const items: ContextMenuItem<string>[] = [{ id: "copy-task-id", label: "Copy task ID" }];
+  if (archived) {
+    items.push(
+      { id: "restore-task", label: "Restore task" },
+      { id: "delete-task", label: "Delete task permanently", destructive: true },
+    );
+    return items;
+  }
+  if (task.status === "landed" || task.status === "abandoned") {
+    items.push(
+      { id: "archive-task", label: "Archive task" },
+      { id: "delete-task", label: "Delete task permanently", destructive: true },
+    );
+    return items;
+  }
+  if (task.cancellation == null) {
+    items.push({ id: "cancel-task", label: "Cancel task", destructive: true });
+  }
+  return items;
 }
 
 export function partitionBoardTasks(entries: readonly BoardTaskEntry[]): BoardPartition {
@@ -340,7 +355,7 @@ export function TaskBoard({
     });
   }, [activeTaskMembership, refreshArchivedTasks]);
 
-  const handleTerminalTaskContextMenu = useCallback(
+  const handleTaskContextMenu = useCallback(
     (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask, archived: boolean) => {
       event.preventDefault();
       void (async () => {
@@ -349,7 +364,7 @@ export function TaskBoard({
         if (!localApi || !environmentApi) {
           return;
         }
-        const items = terminalTaskContextMenuItems(archived);
+        const items = taskContextMenuItems(task, archived);
         const selected = await localApi.contextMenu.show(items, {
           x: event.clientX,
           y: event.clientY,
@@ -359,7 +374,9 @@ export function TaskBoard({
           toastManager.add(stackedThreadToast({ type: "success", title: "Copied task ID" }));
           return;
         }
-        if (selected === "delete-task") {
+        if (selected === "cancel-task") {
+          await environmentApi.orchestrator.cancelTask({ taskId: task.id });
+        } else if (selected === "delete-task") {
           const confirmed = window.confirm(
             `Permanently delete “${task.title}” from the task ledger? Its append-only event history will remain for audit, but the task cannot be restored.`,
           );
@@ -374,23 +391,27 @@ export function TaskBoard({
         } else {
           return;
         }
-        await refreshArchivedTasks();
+        if (selected !== "cancel-task") {
+          await refreshArchivedTasks();
+        }
         toastManager.add(
           stackedThreadToast({
             type: "success",
             title:
-              selected === "archive-task"
-                ? "Task archived"
-                : selected === "restore-task"
-                  ? "Task restored"
-                  : "Task deleted",
+              selected === "cancel-task"
+                ? "Task cancellation requested"
+                : selected === "archive-task"
+                  ? "Task archived"
+                  : selected === "restore-task"
+                    ? "Task restored"
+                    : "Task deleted",
           }),
         );
       })().catch((error: unknown) => {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Task lifecycle action failed",
+            title: "Task context action failed",
             description: error instanceof Error ? error.message : "An unexpected error occurred.",
           }),
         );
@@ -446,12 +467,14 @@ export function TaskBoard({
           <NeedsYouSection
             environmentId={environmentId}
             items={partition.needsYou}
+            onTaskContextMenu={(event, task) => handleTaskContextMenu(event, task, false)}
             projectId={projectId}
           />
         ) : null}
         {partition.active.length > 0 ? (
           <ActiveSection
             environmentId={environmentId}
+            onTaskContextMenu={(event, task) => handleTaskContextMenu(event, task, false)}
             projectId={projectId}
             tasks={partition.active}
           />
@@ -465,7 +488,7 @@ export function TaskBoard({
             onExpandedChange={setLandedExpanded}
             projectId={projectId}
             tasks={partition.landed}
-            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, false)}
+            onTaskContextMenu={(event, task) => handleTaskContextMenu(event, task, false)}
           />
         ) : null}
         {partition.abandoned.length > 0 ? (
@@ -477,7 +500,7 @@ export function TaskBoard({
             onExpandedChange={setAbandonedExpanded}
             projectId={projectId}
             tasks={partition.abandoned}
-            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, false)}
+            onTaskContextMenu={(event, task) => handleTaskContextMenu(event, task, false)}
           />
         ) : null}
         {archivedTasks.length > 0 ? (
@@ -492,7 +515,7 @@ export function TaskBoard({
               parent: { task, pendingGateKinds: [] },
               children: [],
             }))}
-            onTaskContextMenu={(event, task) => handleTerminalTaskContextMenu(event, task, true)}
+            onTaskContextMenu={(event, task) => handleTaskContextMenu(event, task, true)}
           />
         ) : null}
         {isEmpty ? <p className="px-1 text-xs text-muted-foreground">No tasks yet.</p> : null}
@@ -538,10 +561,12 @@ function SectionHeading({
 function NeedsYouSection({
   environmentId,
   items,
+  onTaskContextMenu,
   projectId,
 }: {
   environmentId: EnvironmentId;
   items: readonly NeedsYouGroupItem[];
+  onTaskContextMenu: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
   projectId: ProjectId;
 }) {
   return (
@@ -561,6 +586,7 @@ function NeedsYouSection({
             attentionTaskId={attentionTaskId}
             environmentId={environmentId}
             group={group}
+            onContextMenu={onTaskContextMenu}
             projectId={projectId}
             reason={reason}
             tone="attention"
@@ -573,10 +599,12 @@ function NeedsYouSection({
 
 function ActiveSection({
   environmentId,
+  onTaskContextMenu,
   projectId,
   tasks,
 }: {
   environmentId: EnvironmentId;
+  onTaskContextMenu: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
   projectId: ProjectId;
   tasks: readonly BoardTaskGroup[];
 }) {
@@ -591,6 +619,7 @@ function ActiveSection({
             key={group.parent.task.id}
             environmentId={environmentId}
             group={group}
+            onContextMenu={onTaskContextMenu}
             projectId={projectId}
             tone="active"
           />
@@ -684,9 +713,7 @@ function CollapsibleTaskSection({
               group={group}
               projectId={projectId}
               tone="terminal"
-              {...(onTaskContextMenu && group.children.length === 0
-                ? { onContextMenu: onTaskContextMenu }
-                : {})}
+              {...(onTaskContextMenu ? { onContextMenu: onTaskContextMenu } : {})}
             />
           ))}
         </div>
@@ -745,11 +772,19 @@ function TaskGroupCard({
           projectId={projectId}
           reason={reason}
           task={parent}
+          {...(onContextMenu ? { onContextMenu } : {})}
         />
       );
     }
     if (tone === "active") {
-      return <ActiveTaskCard environmentId={environmentId} projectId={projectId} task={parent} />;
+      return (
+        <ActiveTaskCard
+          environmentId={environmentId}
+          projectId={projectId}
+          task={parent}
+          {...(onContextMenu ? { onContextMenu } : {})}
+        />
+      );
     }
     return (
       <TerminalTaskCard
@@ -793,6 +828,7 @@ function TaskGroupCard({
           params={{ environmentId, projectId, taskId: parent.id }}
           title={parent.title}
           to="/orch/$environmentId/$projectId/tasks/$taskId"
+          onContextMenu={onContextMenu ? (event) => onContextMenu(event, parent) : undefined}
         >
           <div className="line-clamp-2 text-sm font-medium">{parent.title}</div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -829,6 +865,7 @@ function TaskGroupCard({
                 entry={child}
                 environmentId={environmentId}
                 projectId={projectId}
+                {...(onContextMenu ? { onContextMenu } : {})}
               />
             </li>
           ))}
@@ -841,10 +878,12 @@ function TaskGroupCard({
 function GroupedChildTaskCard({
   entry,
   environmentId,
+  onContextMenu,
   projectId,
 }: {
   entry: BoardTaskEntry;
   environmentId: EnvironmentId;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
   projectId: ProjectId;
 }) {
   const reason = needsYouReason(entry);
@@ -855,13 +894,28 @@ function GroupedChildTaskCard({
         projectId={projectId}
         reason={reason}
         task={entry.task}
+        {...(onContextMenu ? { onContextMenu } : {})}
       />
     );
   }
   if (isActiveBoardTask(entry.task)) {
-    return <ActiveTaskCard environmentId={environmentId} projectId={projectId} task={entry.task} />;
+    return (
+      <ActiveTaskCard
+        environmentId={environmentId}
+        projectId={projectId}
+        task={entry.task}
+        {...(onContextMenu ? { onContextMenu } : {})}
+      />
+    );
   }
-  return <TerminalTaskCard environmentId={environmentId} projectId={projectId} task={entry.task} />;
+  return (
+    <TerminalTaskCard
+      environmentId={environmentId}
+      projectId={projectId}
+      task={entry.task}
+      {...(onContextMenu ? { onContextMenu } : {})}
+    />
+  );
 }
 
 function TaskCardLink({
@@ -897,11 +951,13 @@ function TaskCardLink({
 
 function NeedsYouCard({
   environmentId,
+  onContextMenu,
   projectId,
   reason,
   task,
 }: {
   environmentId: EnvironmentId;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
   projectId: ProjectId;
   reason: NeedsYouReason;
   task: OrchestratorTask;
@@ -912,6 +968,7 @@ function NeedsYouCard({
       projectId={projectId}
       task={task}
       className="border-warning/30 bg-warning/8 hover:border-warning/55 hover:bg-warning/12 dark:bg-warning/16 dark:hover:bg-warning/20"
+      {...(onContextMenu ? { onContextMenu } : {})}
     >
       <div className="line-clamp-2 text-sm font-medium">{task.title}</div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -936,10 +993,12 @@ function NeedsYouReasonIcon({ reason }: { reason: NeedsYouReason }) {
 
 function ActiveTaskCard({
   environmentId,
+  onContextMenu,
   projectId,
   task,
 }: {
   environmentId: EnvironmentId;
+  onContextMenu?: (event: MouseEvent<HTMLAnchorElement>, task: OrchestratorTask) => void;
   projectId: ProjectId;
   task: OrchestratorTask;
 }) {
@@ -961,7 +1020,12 @@ function ActiveTaskCard({
   const model = shell?.modelSelection.model ?? null;
 
   return (
-    <TaskCardLink environmentId={environmentId} projectId={projectId} task={task}>
+    <TaskCardLink
+      environmentId={environmentId}
+      projectId={projectId}
+      task={task}
+      {...(onContextMenu ? { onContextMenu } : {})}
+    >
       <div className="flex items-start gap-2">
         {running ? <LivePulse /> : null}
         <div className="line-clamp-2 text-sm font-medium">{task.title}</div>

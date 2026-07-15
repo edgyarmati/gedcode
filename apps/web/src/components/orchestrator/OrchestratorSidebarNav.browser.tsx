@@ -5,6 +5,7 @@ import {
   TaskId,
   TaskTypeId,
   ThreadId,
+  type EnvironmentApi,
 } from "@t3tools/contracts";
 import {
   RouterProvider,
@@ -20,6 +21,10 @@ import { render } from "vitest-browser-react";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { CLIENT_SETTINGS_STORAGE_KEY } from "../../clientPersistenceStorage";
 import { getClientSettings } from "../../hooks/useSettings";
+import {
+  __resetEnvironmentApiOverridesForTests,
+  __setEnvironmentApiOverrideForTests,
+} from "../../environmentApi";
 import { __resetLocalApiForTests } from "../../localApi";
 import { getProjectOrderKey } from "../../logicalProject";
 import { initialEnvironmentState, useStore } from "../../store";
@@ -235,6 +240,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  __resetEnvironmentApiOverridesForTests();
   useStore.setState({ activeEnvironmentId: null, environmentStateById: {} });
   useUiStateStore.setState({ projectOrder: [] });
   useCommandPaletteStore.setState({
@@ -244,6 +250,31 @@ afterEach(async () => {
   });
   window.localStorage.removeItem(CLIENT_SETTINGS_STORAGE_KEY);
   await __resetLocalApiForTests();
+});
+
+it("uses a custom project menu and renames through the environment command API", async () => {
+  const dispatchCommand = vi.fn(async (_command: unknown) => ({ sequence: 2 }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestration: { dispatchCommand },
+  } as unknown as EnvironmentApi);
+  seedStore();
+  renderNav();
+
+  await page.getByTestId(`orchestrator-project-row-${projectId}`).click({ button: "right" });
+  await expect.element(page.getByRole("button", { name: "Rename project" })).toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Remove project" })).toBeDisabled();
+  (page.getByRole("button", { name: "Rename project" }).element() as HTMLButtonElement).click();
+
+  const title = page.getByRole("textbox", { name: "Project title" });
+  await title.fill("Renamed project");
+  title.element().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+  await expect.poll(() => dispatchCommand.mock.calls.length).toBe(1);
+  expect(dispatchCommand.mock.calls[0]?.[0]).toMatchObject({
+    type: "project.meta.update",
+    projectId,
+    title: "Renamed project",
+  });
 });
 
 it("renders a project row with needs-attention and active counts and a running pulse", async () => {

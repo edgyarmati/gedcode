@@ -276,6 +276,24 @@ it("archives a terminal task from its native-style context menu", async () => {
   expect(archiveTask).toHaveBeenCalledWith({ taskId });
 });
 
+it("offers cancellation but not retention actions for an active task context menu", async () => {
+  const cancelTask = vi.fn(async () => ({ sequence: 2, status: "requested" as const }));
+  const listArchivedTasks = vi.fn(async () => []);
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { cancelTask, listArchivedTasks },
+  } as unknown as EnvironmentApi);
+
+  renderTaskBoard([makeTask("planning")]);
+
+  await page.getByText("Browser task").click({ button: "right" });
+  await expect.element(page.getByRole("button", { name: "Cancel task" })).toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Archive task" })).not.toBeInTheDocument();
+  (page.getByRole("button", { name: "Cancel task" }).element() as HTMLButtonElement).click();
+
+  await expect.poll(() => cancelTask.mock.calls.length).toBe(1);
+  expect(cancelTask).toHaveBeenCalledWith({ taskId });
+});
+
 it("restores an archived task from the archived board section", async () => {
   const restoreTask = vi.fn(async () => ({ sequence: 3 }));
   const archivedTask = {

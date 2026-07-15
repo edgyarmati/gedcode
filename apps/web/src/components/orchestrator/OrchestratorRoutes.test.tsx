@@ -18,7 +18,10 @@ import type { ProviderInstanceEntry } from "../../providerInstances";
 import { useStore } from "../../store";
 import type { OrchestratorTask, Project, Thread } from "../../types";
 import { SidebarProvider } from "../ui/sidebar";
-import { OrchestratorSidebarNav } from "./OrchestratorSidebarNav";
+import {
+  OrchestratorSidebarNav,
+  orchestratorProjectContextMenuItems,
+} from "./OrchestratorSidebarNav";
 import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
 import {
   AbandonedTaskBoardSection,
@@ -30,7 +33,7 @@ import {
   partitionBoardTaskGroups,
   partitionBoardTasks,
   TaskBoard,
-  terminalTaskContextMenuItems,
+  taskContextMenuItems,
   type BoardTaskEntry,
 } from "./TaskBoard";
 import {
@@ -95,17 +98,38 @@ function makeBoardTask(
 }
 
 describe("TaskBoard", () => {
-  it("offers status-sensitive terminal task retention menus", () => {
-    expect(terminalTaskContextMenuItems(false)).toEqual([
+  it("offers only lifecycle-valid task context-menu actions", () => {
+    expect(taskContextMenuItems(makeBoardTask("active", "working", "Active"), false)).toEqual([
       { id: "copy-task-id", label: "Copy task ID" },
-      { id: "archive-task", label: "Archive task" },
-      { id: "delete-task", label: "Delete task permanently", destructive: true },
+      { id: "cancel-task", label: "Cancel task", destructive: true },
     ]);
-    expect(terminalTaskContextMenuItems(true)).toEqual([
+    expect(taskContextMenuItems(makeBoardTask("terminal", "abandoned", "Terminal"), false)).toEqual(
+      [
+        { id: "copy-task-id", label: "Copy task ID" },
+        { id: "archive-task", label: "Archive task" },
+        { id: "delete-task", label: "Delete task permanently", destructive: true },
+      ],
+    );
+    expect(taskContextMenuItems(makeBoardTask("archived", "abandoned", "Archived"), true)).toEqual([
       { id: "copy-task-id", label: "Copy task ID" },
       { id: "restore-task", label: "Restore task" },
       { id: "delete-task", label: "Delete task permanently", destructive: true },
     ]);
+    expect(
+      taskContextMenuItems(
+        {
+          ...makeBoardTask("cancelling", "working", "Cancelling"),
+          cancellation: {
+            requestedAt: "2026-07-15T00:00:00.000Z",
+            completedPhases: [],
+            failurePhase: null,
+            failureMessage: null,
+            failedAt: null,
+          },
+        },
+        false,
+      ),
+    ).toEqual([{ id: "copy-task-id", label: "Copy task ID" }]);
   });
 
   it("excludes abandoned tasks from the header badge count", () => {
@@ -257,6 +281,22 @@ describe("TaskBoard", () => {
     expect(markup).not.toContain("Landed task two");
     // Header badge counts only needs-you + active (the single working task).
     expect(markup).toContain('aria-label="Board task count">1</span>');
+  });
+});
+
+describe("Orchestrator project context menu", () => {
+  it("disables removal while the project still owns work", () => {
+    expect(orchestratorProjectContextMenuItems(false)).toEqual([
+      { id: "rename-project", label: "Rename project" },
+      { id: "orchestration-settings", label: "Orchestration settings…" },
+      { id: "copy-path", label: "Copy Project Path" },
+      { id: "remove-project", label: "Remove project", destructive: true, disabled: true },
+    ]);
+    expect(orchestratorProjectContextMenuItems(true).at(-1)).toEqual({
+      id: "remove-project",
+      label: "Remove project",
+      destructive: true,
+    });
   });
 });
 
