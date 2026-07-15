@@ -18,6 +18,18 @@ component lifecycle changes require integration coverage; UI interaction changes
   complete 12-package `bun run test` gate. The server suite passed 1,454 tests with one skipped; web
   passed 1,230, shared 146, contracts 190, and all remaining packages passed.
 
+## UI-SIDEBAR-02
+
+- Pure menu tests prove active tasks offer cancel, cancellation-in-progress offers no conflicting
+  action, terminal tasks offer archive/delete, and archived tasks offer restore/delete.
+- Chromium coverage right-clicks real project and task rows through the browser fallback menu, proves
+  invalid actions are absent or disabled, renames through `project.meta.update`, and requests active
+  task cancellation through the typed Orchestrator API.
+- Verification passed on 2026-07-15: 42 focused unit tests, 18 focused Chromium interactions, the full
+  web suite (1,231/1,231), all 200 Chromium interactions, `bun fmt`, `bun lint` (existing warnings
+  only), `bun typecheck`, `bun run build`, and the complete 12-package `bun run test` gate. The server
+  suite passed 1,454 tests with one skipped.
+
 ## ORCH-PMBOOT-01
 
 - Reproduce from the live `loc-speach` PM log: Claude starts normally, emits two read-only Bash tool

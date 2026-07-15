@@ -65,7 +65,7 @@ or explicitly blocked.
 | ORCH-EMPTY-01 | DONE | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Chromium test omits both empty-state cards and renders each section when content appears. |
 | UI-DRAFT-01 | DONE | Persist composer drafts across surfaces. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DONE | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. | Sort setting and drag reorder produce identical persisted order. |
-| UI-SIDEBAR-02 | NEXT | Complete remaining rich project/task context-menu polish. | Browser tests assert status-sensitive menu items and no native edit menu. |
+| UI-SIDEBAR-02 | DONE | Complete remaining rich project/task context-menu polish. | Browser tests assert status-sensitive menu items and no native edit menu. |
 | UI-COLLAPSE-01 | DONE | Make the shared left sidebar collapsible from desktop content headers and restore its existing persisted open state. | Component/browser tests cover collapse, reopen, reload persistence, and unchanged mobile behavior. |
 
 ## Phase 5 - Workflow Specialization

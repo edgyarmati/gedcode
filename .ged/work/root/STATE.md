@@ -1,7 +1,8 @@
 # State
 
-- **Phase**: implement (post-July-13 roadmap resumed).
-- **Active task**: `UI-SIDEBAR-02` — complete the remaining rich project/task context-menu polish.
+- **Phase**: checkpoint — all autonomously implementable roadmap slices are complete.
+- **Active task**: none. Remaining work is either explicitly deferred or requires a user compatibility
+  decision.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
@@ -12,6 +13,14 @@
 
 ## Current Progress
 
+- `UI-SIDEBAR-02` is complete. Orchestrator project rows now use the app-native context menu for
+  rename, orchestration settings, path copy, and guarded removal. Every task card, including active,
+  attention, grouped-child, terminal, and archived cards, exposes only actions valid for its durable
+  lifecycle state; active cancellation uses the existing typed actuator.
+- Final `UI-SIDEBAR-02` verification passed on 2026-07-15: 42 focused unit tests, 18 focused Chromium
+  interactions, the full web suite (1,231/1,231), all 200 Chromium interactions, `bun fmt`, `bun lint`
+  (existing warnings only), `bun typecheck`, `bun run build`, and the complete 12-package `bun run
+  test` gate. The server suite passed 1,454 tests with one skipped.
 - `ORCH-REL-02` is complete. Release publishing now requires a content-matched human approval and a
   clean project root before reserving one durable dispatch attempt. The lifecycle lock and persisted
   dispatching state prevent concurrent or post-crash automatic duplicates; success/failure survives
@@ -304,11 +313,10 @@
   polish, permission display, reasoning-effort metadata, task-type registry, and release workflow until
   after 2026-07-13.
 
-## Immediate Sequence
+## Remaining Work
 
-1. `ORCH-SPLIT-01..04` parent/child task splitting.
-2. `CHAT-FORK-01..02` normal-chat thread forking.
-3. `UI-DRAFT-01` preserve composer drafts across Orchestrator navigation.
+1. `CHAT-FORK-01/02` remains blocked on the explicit provider-session compatibility decision above.
+2. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 
