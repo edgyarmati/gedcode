@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { scopeThreadRef } from "@t3tools/client-runtime";
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { DraftId } from "./composerDraftStore";
 
 import {
   buildDraftThreadRouteParams,
+  resolveProjectChatRouteTarget,
   buildThreadRouteParams,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
@@ -63,5 +64,22 @@ describe("threadRoutes", () => {
       kind: "draft",
       draftId: "draft-1",
     });
+  });
+
+  it("prefers an unsent project draft over the latest server thread", () => {
+    const draftId = DraftId.make("draft-unsent");
+    const threadRef = scopeThreadRef(
+      EnvironmentId.make("environment-1"),
+      ThreadId.make("thread-1"),
+    );
+    expect(resolveProjectChatRouteTarget({ draftId, threadRef })).toEqual({
+      kind: "draft",
+      draftId,
+    });
+    expect(resolveProjectChatRouteTarget({ draftId: null, threadRef })).toEqual({
+      kind: "server",
+      threadRef,
+    });
+    expect(resolveProjectChatRouteTarget({ draftId: null, threadRef: null })).toBeNull();
   });
 });

@@ -785,6 +785,41 @@ describe("composerDraftStore project draft thread mapping", () => {
     });
   });
 
+  it("returns the newest active draft when multiple logical checkouts target one project", () => {
+    const store = useComposerDraftStore.getState();
+    store.setLogicalProjectDraftThreadId("checkout-old", projectRef, draftId, {
+      threadId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    store.setLogicalProjectDraftThreadId("checkout-new", projectRef, otherDraftId, {
+      threadId: otherThreadId,
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toMatchObject({
+      draftId: otherDraftId,
+      threadId: otherThreadId,
+    });
+  });
+
+  it("prefers an unsent draft over a newer empty checkout draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.setLogicalProjectDraftThreadId("checkout-with-content", projectRef, draftId, {
+      threadId,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    store.setPrompt(draftId, "unfinished message");
+    store.setLogicalProjectDraftThreadId("checkout-empty", projectRef, otherDraftId, {
+      threadId: otherThreadId,
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
+
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toMatchObject({
+      draftId,
+      threadId,
+    });
+  });
+
   it("clears only matching project draft mapping entries", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

@@ -2064,6 +2064,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           return get().getDraftSessionByProjectRef(projectRef);
         },
         getDraftSessionByProjectRef: (projectRef) => {
+          let newestMatch: ProjectDraftSession | null = null;
+          let newestMatchHasContent = false;
           for (const [draftId, draftThread] of Object.entries(get().draftThreadsByThreadKey)) {
             if (isDraftThreadPromoting(draftThread)) {
               continue;
@@ -2072,10 +2074,27 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               draftThread.projectId === projectRef.projectId &&
               draftThread.environmentId === projectRef.environmentId
             ) {
-              return toProjectDraftSession(DraftId.make(draftId), draftThread);
+              const candidate = toProjectDraftSession(DraftId.make(draftId), draftThread);
+              const composerDraft = get().draftsByThreadKey[draftId];
+              const candidateHasContent =
+                composerDraft !== undefined &&
+                (composerDraft.prompt.length > 0 ||
+                  composerDraft.images.length > 0 ||
+                  composerDraft.persistedAttachments.length > 0 ||
+                  composerDraft.terminalContexts.length > 0 ||
+                  composerDraft.queuedMessages.length > 0);
+              if (
+                newestMatch === null ||
+                (candidateHasContent && !newestMatchHasContent) ||
+                (candidateHasContent === newestMatchHasContent &&
+                  candidate.createdAt >= newestMatch.createdAt)
+              ) {
+                newestMatch = candidate;
+                newestMatchHasContent = candidateHasContent;
+              }
             }
           }
-          return null;
+          return newestMatch;
         },
         getDraftSession: (draftId) => get().draftThreadsByThreadKey[draftId] ?? null,
         getDraftSessionByRef: (threadRef) => {

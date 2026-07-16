@@ -58,6 +58,7 @@ import {
 } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
 import { isElectron } from "../../env";
 import {
@@ -80,7 +81,11 @@ import {
   type ScopedTaskRef,
 } from "../../store";
 import { deriveTimelineEntries, deriveWorkLogEntries } from "../../session-logic";
-import { buildThreadRouteParams } from "../../threadRoutes";
+import {
+  buildDraftThreadRouteParams,
+  buildThreadRouteParams,
+  resolveProjectChatRouteTarget,
+} from "../../threadRoutes";
 import { isOrchestratorManagedThread, pmThreadIdForProject } from "../../lib/orchestratorThreads";
 import type { OrchestratorPendingGate, OrchestratorTask, Project, Thread } from "../../types";
 import { useSettings } from "../../hooks/useSettings";
@@ -249,6 +254,9 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
   const setBoardCollapsed = useUiStateStore((state) => state.setOrchestratorBoardCollapsed);
   const setLastOrchestratorProject = useUiStateStore((state) => state.setLastOrchestratorProject);
   const navigate = useNavigate();
+  const projectDraftId = useComposerDraftStore(
+    (state) => state.getDraftThreadByProjectRef(projectRef)?.draftId ?? null,
+  );
 
   // Remember this workspace so the sidebar "Orchestrator" toggle returns here.
   useEffect(() => {
@@ -276,15 +284,26 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
   });
 
   const handleOpenInChat = useCallback(() => {
-    if (chatThreadId) {
+    const target = resolveProjectChatRouteTarget({
+      draftId: projectDraftId,
+      threadRef: chatThreadId ? scopeThreadRef(environmentId, chatThreadId) : null,
+    });
+    if (target?.kind === "draft") {
+      void navigate({
+        to: "/draft/$draftId",
+        params: buildDraftThreadRouteParams(target.draftId),
+      });
+      return;
+    }
+    if (target?.kind === "server") {
       void navigate({
         to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(environmentId, chatThreadId)),
+        params: buildThreadRouteParams(target.threadRef),
       });
       return;
     }
     void navigate({ to: "/" });
-  }, [chatThreadId, environmentId, navigate]);
+  }, [chatThreadId, environmentId, navigate, projectDraftId]);
 
   useEffect(() => {
     return retainOrchestratorProjectSubscription(environmentId, projectId);

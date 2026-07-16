@@ -12,6 +12,16 @@ export type ThreadRouteTarget =
       draftId: DraftId;
     };
 
+export function resolveProjectChatRouteTarget(input: {
+  readonly draftId: DraftId | null;
+  readonly threadRef: ScopedThreadRef | null;
+}): ThreadRouteTarget | null {
+  if (input.draftId !== null) {
+    return { kind: "draft", draftId: input.draftId };
+  }
+  return input.threadRef === null ? null : { kind: "server", threadRef: input.threadRef };
+}
+
 export function buildThreadRouteParams(ref: ScopedThreadRef): {
   environmentId: EnvironmentId;
   threadId: ThreadId;

@@ -95,6 +95,7 @@ import { retainThreadDetailSubscription } from "../environments/runtime/service"
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
+  buildDraftThreadRouteParams,
   buildThreadRouteParams,
   resolveThreadRouteRef,
   resolveThreadRouteTarget,
@@ -2574,6 +2575,23 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       setOpenMobile(false);
     }
     if (!nextMode) {
+      if (lastOrchestratorProject) {
+        const projectDraft = useComposerDraftStore
+          .getState()
+          .getDraftThreadByProjectRef(
+            scopeProjectRef(
+              lastOrchestratorProject.environmentId,
+              lastOrchestratorProject.projectId,
+            ),
+          );
+        if (projectDraft) {
+          void navigate({
+            to: "/draft/$draftId",
+            params: buildDraftThreadRouteParams(projectDraft.draftId),
+          });
+          return;
+        }
+      }
       void navigate({ to: "/" });
       return;
     }
