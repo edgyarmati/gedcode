@@ -1,5 +1,34 @@
 # TESTS - Orchestrator Completion Roadmap
 
+## ORCH-APPROVAL-01
+
+- Codex worker startup and resumed turns use workspace-write/on-request plus `auto_review`.
+- Codex PM sessions remain read-only and user-reviewed, while private orchestration MCP calls retain
+  their narrow trusted-server approval.
+- Claude and OpenCode worker startup remains full access.
+- Verification passed on 2026-07-16: 87 focused Codex runtime/adapter/provider-reactor tests, `bun
+  fmt`, `bun lint` (existing warnings only), all 12 typecheck packages, and the complete socket-enabled
+  `bun run test --output-logs=errors-only` gate with all 12 package tasks successful in 10m26s.
+
+## ORCH-APPROVAL-02
+
+- `item/permissions/requestApproval` exposes the requested permission subset and maps PM decisions to
+  turn/session grants or an empty denied subset.
+- Denied/timed-out/aborted `item/autoApprovalReview/completed` notifications become pending requests
+  with bounded rationale/action detail; approval sends the exact original assessment through
+  `thread/approveGuardianDeniedAction`.
+- Approved auto-reviews create no manual request; stale or duplicate responses fail closed.
+
+## ORCH-APPROVAL-03
+
+- Approval attention advances the durable PM cursor and produces one bounded re-entry message per
+  request across live delivery, crash recovery, and reconciliation.
+- PM inspection returns only pending requests for the named task and includes stage role plus relevant
+  command/path/network/risk details.
+- PM response rejects foreign, resolved, non-stage, and stale requests and dispatches the existing
+  provider approval response for a valid request.
+- Required gates: `bun fmt`, `bun lint`, `bun typecheck`, and socket-enabled `bun run test`.
+
 ## ORCH-PMBOOT-03
 
 - Configuration coverage proves only GedCode's injected `t3_orchestrator` MCP server bypasses

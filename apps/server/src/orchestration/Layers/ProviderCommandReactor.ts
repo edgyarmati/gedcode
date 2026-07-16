@@ -382,9 +382,6 @@ const make = Effect.gen(function* () {
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
-    const desiredRuntimeMode = isOrchestratorWorker
-      ? ORCHESTRATOR_WORKER_RUNTIME_MODE
-      : thread.runtimeMode;
     const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
@@ -452,6 +449,15 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
+    const usesCodexWorkerAutoReview = isOrchestratorWorker && preferredProvider === "codex";
+    const desiredRuntimeMode = usesCodexWorkerAutoReview
+      ? ("auto-accept-edits" as const)
+      : isOrchestratorWorker
+        ? ORCHESTRATOR_WORKER_RUNTIME_MODE
+        : thread.runtimeMode;
+    const desiredApprovalReviewer = usesCodexWorkerAutoReview
+      ? ("auto-review" as const)
+      : undefined;
     if (isOrchestratorWorker) {
       const quotaState = yield* providerQuotaStatusRepository.isInstanceQuotaBlocked({
         providerInstanceId: desiredInstanceId,
@@ -558,6 +564,7 @@ const make = Effect.gen(function* () {
             modelSelection: desiredModelSelection,
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
             runtimeMode: desiredRuntimeMode,
+            ...(desiredApprovalReviewer ? { approvalReviewer: desiredApprovalReviewer } : {}),
             ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
           });
           return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;

@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Changed Codex orchestration workers from unrestricted full access to workspace-scoped writes with
+  Codex automatic approval review. Claude and OpenCode workers remain full access, while PM and
+  normal-chat permission behavior is unchanged.
+
 - Fixed Codex-backed project managers rejecting their own trusted orchestration ledger and task
   lifecycle calls behind an invisible approval prompt. GedCode now approves only its private,
   bearer-authenticated loopback orchestration MCP server while retaining the PM's read-only sandbox

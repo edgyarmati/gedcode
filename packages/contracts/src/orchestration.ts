@@ -66,6 +66,8 @@ export const ProviderApprovalPolicy = Schema.Literals([
   "never",
 ]);
 export type ProviderApprovalPolicy = typeof ProviderApprovalPolicy.Type;
+export const ProviderApprovalReviewer = Schema.Literals(["user", "auto-review"]);
+export type ProviderApprovalReviewer = typeof ProviderApprovalReviewer.Type;
 export const ProviderSandboxMode = Schema.Literals([
   "read-only",
   "workspace-write",

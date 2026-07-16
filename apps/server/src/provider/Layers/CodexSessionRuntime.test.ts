@@ -87,6 +87,7 @@ describe("buildTurnStartParams", () => {
       buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "auto-accept-edits",
+        approvalReviewer: "auto-review",
         prompt: "Implement it",
         model: "gpt-5.3-codex",
         interactionMode: "default",
@@ -102,6 +103,7 @@ describe("buildTurnStartParams", () => {
     assert.deepStrictEqual(params, {
       threadId: "provider-thread-1",
       approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
       sandboxPolicy: {
         type: "workspaceWrite",
       },
@@ -469,6 +471,51 @@ describe("openCodexThread", () => {
           approvalPolicy: "untrusted",
           sandbox: "read-only",
           developerInstructions: "Use the orchestration rules.",
+        },
+      },
+    ]);
+  });
+
+  it("applies auto-review when resuming a workspace-write thread", async () => {
+    const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+    const client = {
+      request: <M extends "thread/start" | "thread/resume">(
+        method: M,
+        payload: CodexRpc.ClientRequestParamsByMethod[M],
+      ) => {
+        calls.push({ method, payload });
+        return Effect.succeed(
+          makeThreadOpenResponse(
+            "auto-reviewed-thread",
+          ) as CodexRpc.ClientRequestResponsesByMethod[M],
+        );
+      },
+    };
+
+    await Effect.runPromise(
+      openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "auto-accept-edits",
+        approvalReviewer: "auto-review",
+        cwd: "/tmp/project",
+        requestedModel: undefined,
+        serviceTier: undefined,
+        systemPromptAppend: undefined,
+        config: undefined,
+        resumeThreadId: "provider-thread-1",
+      }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      {
+        method: "thread/resume",
+        payload: {
+          threadId: "provider-thread-1",
+          cwd: "/tmp/project",
+          approvalPolicy: "on-request",
+          approvalsReviewer: "auto_review",
+          sandbox: "workspace-write",
         },
       },
     ]);

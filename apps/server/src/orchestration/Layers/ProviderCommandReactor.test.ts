@@ -219,6 +219,12 @@ describe("ProviderCommandReactor", () => {
             : "full-access",
         ...(typeof input === "object" &&
         input !== null &&
+        "approvalReviewer" in input &&
+        (input.approvalReviewer === "user" || input.approvalReviewer === "auto-review")
+          ? { approvalReviewer: input.approvalReviewer }
+          : {}),
+        ...(typeof input === "object" &&
+        input !== null &&
         "cwd" in input &&
         typeof input.cwd === "string"
           ? { cwd: input.cwd }
@@ -569,7 +575,7 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
-  it("keeps task workers full-access before provider start or restart", async () => {
+  it("keeps Codex task workers workspace-scoped with auto-review before start or restart", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -599,7 +605,8 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "full-access",
+      runtimeMode: "auto-accept-edits",
+      approvalReviewer: "auto-review",
     });
 
     const readModelAfterStageStart = await harness.readModel();
@@ -642,14 +649,14 @@ describe("ProviderCommandReactor", () => {
     expect(
       harness.startSession.mock.calls.every((call) => {
         const input = call[1] as { readonly runtimeMode?: string } | undefined;
-        return input?.runtimeMode === "full-access";
+        return input?.runtimeMode === "auto-accept-edits";
       }),
     ).toBe(true);
 
     const readModel = await harness.readModel();
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
-    expect(stageThread?.session?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
   });
 
   it("starts provider work for a normally active task stage", async () => {
@@ -927,8 +934,12 @@ describe("ProviderCommandReactor", () => {
     );
   });
 
-  it("keeps orchestrator workers full-access without a project opt-in", async () => {
+  it("keeps Claude orchestrator workers full-access without a project opt-in", async () => {
     const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
       orchestratorConfig: {
         enabled: true,
         resourceLimits: { allowFullAccessWorkers: true },
@@ -1015,7 +1026,7 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("starts a full-access worker without a global opt-in", async () => {
+  it("starts a Codex auto-reviewed workspace worker without a global opt-in", async () => {
     const harness = await createHarness({
       serverSettingsOverrides: {
         orchestratorDefaults: {},
@@ -1050,18 +1061,23 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "full-access",
+      runtimeMode: "auto-accept-edits",
+      approvalReviewer: "auto-review",
     });
 
     const readModel = await harness.readModel();
     const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
-    expect(stageThread?.session?.runtimeMode).toBe("full-access");
+    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
   });
 
-  it("ignores legacy false opt-ins and keeps workers full-access", async () => {
+  it("ignores legacy false opt-ins and keeps OpenCode workers full-access", async () => {
     const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("opencode"),
+        model: "opencode/default",
+      },
       orchestratorConfig: {
         enabled: true,
         resourceLimits: { allowFullAccessWorkers: false },

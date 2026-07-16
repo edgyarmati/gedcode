@@ -1,8 +1,8 @@
 # State
 
-- **Phase**: checkpoint — all non-deferred roadmap slices and the Codex PM permission repair are
-  implemented and verified.
-- **Active task**: none; only the explicitly deferred pipeline-order item remains.
+- **Phase**: implement — Codex worker auto-review and PM fallback approval control.
+- **Active task**: `ORCH-APPROVAL-02` — bridge granular Codex permission requests and denied
+  auto-reviews into the existing approval lifecycle with an exact upstream override actuator.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -41,8 +41,18 @@
   picker drops provider options when instance/model changes and exposes no thinking control.
 - **Artifact audit**: distinguish workspace `.ged/` memory, workspace `.gedcode/orchestrator/` runtime
   worktrees/leases/hooks, and user `~/.gedcode/` application state in one lifecycle guide.
+- **Worker approval decision**: Codex orchestration workers use workspace-write/on-request with
+  `auto_review`. The owning PM is the fallback authority for forwarded manual requests and denied
+  auto-reviews. The PM must inspect untrusted request details and grant the minimum necessary access;
+  Claude and OpenCode workers retain full access.
 
 ## Current Progress
+
+- `ORCH-APPROVAL-01` is complete. Provider sessions now retain an explicit approval reviewer. Codex
+  orchestration workers start and resume with workspace-write/on-request plus `auto_review`, including
+  every turn override; Claude and OpenCode workers remain full access, and normal-chat/PM policies are
+  unchanged. All 87 focused tests pass, as do formatting, lint (existing warnings only), all 12
+  typecheck packages, and the complete 12-package test gate in 10m26s.
 
 - `ORCH-PMBOOT-03` is complete. Provider logs reproduced `getTaskLedger` and `cancelTask` entering
   `waitingOnApproval` and failing immediately as `user rejected MCP tool call` without any human

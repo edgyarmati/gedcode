@@ -1,5 +1,38 @@
 # SPEC - Orchestrator Completion Roadmap
 
+## Worker Auto-Review and PM Approval Control (2026-07-16)
+
+### Goal
+
+Run Codex orchestration workers in workspace-write mode with Codex `auto_review` handling routine
+escalations, then route unresolved manual requests and denied auto-reviews to the project PM for an
+explicit decision.
+
+### Constraints
+
+- Keep Claude and OpenCode workers on their existing full-access policy.
+- Keep the PM session read-only; approving a worker request must not grant the PM shell or filesystem
+  access.
+- Keep GedCode's private orchestration MCP tools independently approved as trusted control-plane tools.
+- Scope every PM approval decision to a real pending request on a stage thread belonging to that PM's
+  project; never accept arbitrary provider thread or request identifiers.
+- Treat provider requests as untrusted input and show the PM the requested command, paths, network
+  target, rationale, and auto-review risk assessment where available.
+- Approval state remains provider-callback-bound: after restart, stale requests fail closed and require
+  the worker stage to retry rather than fabricating a grant.
+
+### Acceptance Criteria
+
+- Codex stage threads start with workspace-write sandboxing, on-request approvals, and
+  `approvalsReviewer: "auto_review"`; normal chat and PM threads are unchanged.
+- Command, file-change, and granular permission requests forwarded by Codex enter the existing durable
+  pending-approval projection and can be resolved by the PM.
+- A denied Codex auto-review becomes a pending PM decision and PM acceptance invokes
+  `thread/approveGuardianDeniedAction` with the exact reviewed event.
+- Each new pending stage approval wakes the owning project PM exactly once, including after restart.
+- PM tools can inspect and resolve only pending approvals belonging to the selected task/stage.
+- Changelog and required repository verification are complete before each slice lands.
+
 ## Codex PM Trusted-Tool Permission Repair (2026-07-16)
 
 ### Goal

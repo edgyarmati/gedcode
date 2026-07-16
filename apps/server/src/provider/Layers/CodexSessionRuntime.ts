@@ -6,6 +6,7 @@ import {
   ProviderItemId,
   type ProviderInstanceId,
   type ProviderApprovalDecision,
+  type ProviderApprovalReviewer,
   type ProviderEvent,
   type ProviderInteractionMode,
   type ProviderRequestKind,
@@ -101,6 +102,7 @@ export interface CodexSessionRuntimeOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly systemPromptAppend?: string;
@@ -289,6 +291,7 @@ function runtimeModeToThreadConfig(input: RuntimeMode): {
 function buildThreadStartParams(input: {
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly systemPromptAppend: string | undefined;
@@ -299,6 +302,9 @@ function buildThreadStartParams(input: {
     cwd: input.cwd,
     approvalPolicy: config.approvalPolicy,
     sandbox: config.sandbox,
+    ...(input.approvalReviewer
+      ? { approvalsReviewer: input.approvalReviewer === "auto-review" ? "auto_review" : "user" }
+      : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.systemPromptAppend ? { developerInstructions: input.systemPromptAppend } : {}),
@@ -351,6 +357,7 @@ function buildCodexCollaborationMode(input: {
 export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
+  readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "image";
@@ -387,6 +394,9 @@ export function buildTurnStartParams(input: {
     input: turnInput,
     approvalPolicy: config.approvalPolicy,
     sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
+    ...(input.approvalReviewer
+      ? { approvalsReviewer: input.approvalReviewer === "auto-review" ? "auto_review" : "user" }
+      : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -499,6 +509,7 @@ export const openCodexThread = (input: {
   readonly client: CodexThreadOpenClient;
   readonly threadId: ThreadId;
   readonly runtimeMode: RuntimeMode;
+  readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly cwd: string;
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
@@ -510,6 +521,7 @@ export const openCodexThread = (input: {
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
     runtimeMode: input.runtimeMode,
+    ...(input.approvalReviewer ? { approvalReviewer: input.approvalReviewer } : {}),
     model: input.requestedModel,
     serviceTier: input.serviceTier,
     systemPromptAppend: input.systemPromptAppend,
@@ -836,6 +848,7 @@ export const makeCodexSessionRuntime = (
       ...(options.providerInstanceId ? { providerInstanceId: options.providerInstanceId } : {}),
       status: "connecting",
       runtimeMode: options.runtimeMode,
+      ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
       cwd: options.cwd,
       ...(options.model ? { model: options.model } : {}),
       threadId: options.threadId,
@@ -1271,6 +1284,7 @@ export const makeCodexSessionRuntime = (
         client,
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
+        ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
         cwd: options.cwd,
         requestedModel,
         serviceTier: options.serviceTier,
@@ -1335,6 +1349,7 @@ export const makeCodexSessionRuntime = (
           const startParams = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
+            ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),
             ...(normalizedModel ? { model: normalizedModel } : {}),
