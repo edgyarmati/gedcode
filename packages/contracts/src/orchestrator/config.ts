@@ -44,22 +44,11 @@ export const OrchestratorLandGatePolicy = Schema.Literal("require-approval");
 export type OrchestratorLandGatePolicy = typeof OrchestratorLandGatePolicy.Type;
 
 /**
- * Gate policy for a task type. `classify`, `plan`, `work`, and `review` may be
- * `auto` or `require-approval`. `land` is hard-pinned to `require-approval`.
- * Every gate defaults to `require-approval` so a config that omits gate policy
- * is safe-by-default.
+ * Gate policy for a task type. Plan approval may be automatic or human-gated;
+ * publishing gates stay hard-pinned to human approval.
  */
 export const OrchestratorTaskGatePolicy = Schema.Struct({
-  classify: OrchestratorGatePolicy.pipe(
-    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
-  ),
   plan: OrchestratorGatePolicy.pipe(
-    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
-  ),
-  work: OrchestratorGatePolicy.pipe(
-    Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
-  ),
-  review: OrchestratorGatePolicy.pipe(
     Schema.withDecodingDefault(Effect.succeed("require-approval" as const)),
   ),
   land: OrchestratorLandGatePolicy.pipe(
@@ -78,10 +67,8 @@ export type OrchestratorTaskGatePolicy = typeof OrchestratorTaskGatePolicy.Type;
 export const OrchestratorTaskType = Schema.Struct({
   id: TrimmedNonEmptyString,
   /**
-   * Locked invariant: the stage list follows canonical order
-   * `classify → plan → [review] → work → [verify] → land`; `classify`/`plan`/
-   * `work` are mandatory, `review` and `verify` are individually optional,
-   * `land` is terminal. Reordering / free composition is out of scope.
+   * The enabled worker-role set. Stage execution order remains PM-controlled;
+   * landing separately requires fresh verification after the latest work.
    */
   stages: Schema.Array(OrchestrationStageRole).pipe(
     Schema.withDecodingDefault(Effect.succeed(ORCHESTRATION_STAGE_ROLES)),

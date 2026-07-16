@@ -63,24 +63,18 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
 
   it("global defaults include the full stage set and require-approval gate policy", () => {
     const decoded = decodeGlobalDefaults({});
-    expect(decoded.stages).toEqual(["classify", "plan", "review", "work", "verify"]);
+    expect(decoded.stages).toEqual(["plan", "work", "verify"]);
     expect(decoded.gatePolicy).toEqual({
-      classify: "require-approval",
       plan: "require-approval",
-      work: "require-approval",
-      review: "require-approval",
       land: "require-approval",
     });
   });
 
   it("round-trips global stage, gate, and resource defaults", () => {
     const decoded = decodeGlobalDefaults({
-      stages: ["classify", "plan", "work"],
+      stages: ["plan", "work"],
       gatePolicy: {
-        classify: "auto",
         plan: "require-approval",
-        work: "auto",
-        review: "require-approval",
         land: "require-approval",
       },
       maxParallelTasks: 3,
@@ -96,7 +90,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
     const reDecoded = decodeGlobalDefaults(encodeGlobalDefaults(decoded));
 
     expect(reDecoded).toEqual(decoded);
-    expect(reDecoded.stages).toEqual(["classify", "plan", "work"]);
+    expect(reDecoded.stages).toEqual(["plan", "work"]);
     expect(reDecoded.gatePolicy.land).toBe("require-approval");
     expect(reDecoded.pmModelSelection).toEqual({
       instanceId: "claudeAgent",
@@ -117,11 +111,8 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(decoded.taskTypes).toHaveLength(1);
     const feature = decoded.taskTypes[0];
     expect(feature?.id).toBe("feature");
-    expect(feature?.stages).toEqual(["classify", "plan", "review", "work", "verify"]);
-    expect(feature?.gatePolicy.classify).toBe("require-approval");
+    expect(feature?.stages).toEqual(["plan", "work", "verify"]);
     expect(feature?.gatePolicy.plan).toBe("require-approval");
-    expect(feature?.gatePolicy.work).toBe("require-approval");
-    expect(feature?.gatePolicy.review).toBe("require-approval");
     expect(feature?.gatePolicy.land).toBe("require-approval");
   });
 
@@ -144,19 +135,13 @@ describe("OrchestratorTaskGatePolicy", () => {
     expect(() => decodeTaskGatePolicy({ land: "auto" })).toThrow();
   });
 
-  it("accepts per-gate auto and require-approval policy before land", () => {
+  it("accepts automatic plan approval while keeping land human-gated", () => {
     const decoded = decodeTaskGatePolicy({
-      classify: "auto",
-      plan: "require-approval",
-      work: "auto",
-      review: "require-approval",
+      plan: "auto",
       land: "require-approval",
     });
 
-    expect(decoded.classify).toBe("auto");
-    expect(decoded.plan).toBe("require-approval");
-    expect(decoded.work).toBe("auto");
-    expect(decoded.review).toBe("require-approval");
+    expect(decoded.plan).toBe("auto");
     expect(decoded.land).toBe("require-approval");
   });
 });
@@ -178,12 +163,9 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
       taskTypes: [
         {
           id: "feature",
-          stages: ["classify", "plan", "work"],
+          stages: ["plan", "work", "verify"],
           gatePolicy: {
-            classify: "require-approval",
             plan: "auto",
-            work: "auto",
-            review: "require-approval",
             land: "require-approval",
           },
         },
@@ -203,10 +185,7 @@ describe("OrchestratorProjectConfig — schema round-trip (encode/decode)", () =
     expect(reDecoded.pmModelSelection?.instanceId).toBe("claudeAgent");
     expect(reDecoded.pmModelSelection?.model).toBe("claude-opus-4-8");
     expect(reDecoded.pmModelSelection?.options).toEqual([{ id: "contextWindow", value: "1m" }]);
-    expect(reDecoded.taskTypes[0]?.gatePolicy.classify).toBe("require-approval");
     expect(reDecoded.taskTypes[0]?.gatePolicy.plan).toBe("auto");
-    expect(reDecoded.taskTypes[0]?.gatePolicy.work).toBe("auto");
-    expect(reDecoded.taskTypes[0]?.gatePolicy.review).toBe("require-approval");
     expect(reDecoded.resourceLimits.maxRetriesPerStage).toBe(3);
     expect(reDecoded.openPrAsDraft).toBe(true);
   });

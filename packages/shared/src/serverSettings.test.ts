@@ -200,7 +200,7 @@ describe("serverSettings helpers", () => {
       ...DEFAULT_SERVER_SETTINGS,
       orchestratorDefaults: {
         ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-        stages: ["classify", "plan", "review", "work", "verify"] as const,
+        stages: ["plan", "work", "verify"] as const,
       },
     };
 
@@ -208,7 +208,7 @@ describe("serverSettings helpers", () => {
       applyServerSettingsPatch(current, {
         orchestratorDefaults: {
           ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-          stages: ["classify", "plan", "work"],
+          stages: ["plan", "work"],
           gatePolicy: {
             ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
             plan: "auto",
@@ -218,7 +218,7 @@ describe("serverSettings helpers", () => {
       }).orchestratorDefaults,
     ).toEqual({
       ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-      stages: ["classify", "plan", "work"],
+      stages: ["plan", "work"],
       gatePolicy: {
         ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy,
         plan: "auto",

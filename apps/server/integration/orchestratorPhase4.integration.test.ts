@@ -60,12 +60,9 @@ const PHASE4_CONFIG: Record<string, unknown> = {
   taskTypes: [
     {
       id: "feature",
-      stages: ["classify", "plan", "work", "verify"],
+      stages: ["plan", "work", "verify"],
       gatePolicy: {
-        classify: "require-approval",
         plan: "auto",
-        work: "require-approval",
-        review: "require-approval",
         land: "require-approval",
       },
     },
@@ -473,33 +470,6 @@ function setPmWorkBackend(input: {
   });
 }
 
-function assertReviewStageRejected(input: {
-  readonly harness: OrchestrationIntegrationHarness;
-  readonly createdAt: string;
-}): Effect.Effect<void, never> {
-  return Effect.gen(function* () {
-    const stageCommandId = commandId("stage-start-review-disabled");
-    const result = yield* Effect.exit(
-      input.harness.engine.dispatch({
-        type: "task.stage.start",
-        commandId: stageCommandId,
-        taskId: TASK_ID,
-        role: "review",
-        instructions: "Review should be disabled by the Phase 4 config.",
-        createdAt: input.createdAt,
-      }),
-    );
-    assert.equal(Exit.isFailure(result), true);
-    const events = yield* readAllEvents(input.harness);
-    assert.equal(
-      events.some(
-        (event) => event.type === "task.stage-started" && event.commandId === stageCommandId,
-      ),
-      false,
-    );
-  });
-}
-
 function requestHumanLandGateAndLand(input: {
   readonly harness: OrchestrationIntegrationHarness;
   readonly stageThreadId: ThreadId;
@@ -591,18 +561,6 @@ it.live(
         yield* seedPhase4ProjectAndTask(harness);
         yield* classifyWithBuiltInPlaybook({ harness, createdAt: iso(2) });
 
-        const classifyStage = yield* startStage({
-          harness,
-          role: "classify",
-          suffix: "classify",
-          instructions: "Classify this task.",
-          response: successfulTurnResponse("classify", iso(3)),
-          expectedInstanceId: DEFAULT_INSTANCE,
-          createdAt: iso(3),
-        });
-        assert.equal(classifyStage.stageStarted.payload.providerInstanceId, DEFAULT_INSTANCE);
-        yield* completeStage({ harness, expectedStatus: "classified" });
-
         const planStage = yield* startStage({
           harness,
           role: "plan",
@@ -621,7 +579,6 @@ it.live(
           createdAt: iso(5),
         });
 
-        yield* assertReviewStageRejected({ harness, createdAt: iso(6) });
         yield* setPmWorkBackend({ harness, createdAt: iso(7) });
 
         const workStage = yield* startStage({
@@ -714,8 +671,6 @@ it.live(
               );
               assert.equal(planGate?.status, "resolved");
               assert.equal(planGate?.origin, "system");
-
-              yield* assertReviewStageRejected({ harness: restarted, createdAt: iso(24) });
 
               const workStage = yield* startStage({
                 harness: restarted,

@@ -125,19 +125,12 @@ const DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS = DEFAULT_UNIFIED_SETTINGS.orchestrat
 export function seedOrchestratorGlobalDefaultsDraft(
   defaults: OrchestratorGlobalDefaults,
 ): OrchestratorGlobalDefaultsDraft {
-  const stageSet = new Set(defaults.stages);
   return {
     pmModelSelection: defaults.pmModelSelection ?? null,
     defaultWorkerModelSelection: defaults.defaultWorkerModelSelection ?? null,
-    optionalStages: {
-      review: stageSet.has("review"),
-      verify: stageSet.has("verify"),
-    },
+    optionalStages: {},
     gatePolicy: {
-      classify: defaults.gatePolicy.classify,
       plan: defaults.gatePolicy.plan,
-      work: defaults.gatePolicy.work,
-      review: defaults.gatePolicy.review,
     },
     openPrAsDraft: defaults.openPrAsDraft ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.openPrAsDraft,
     resourceDefaults: {
@@ -170,10 +163,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
     orchestratorDefaults: {
       stages: CANONICAL_ORCHESTRATOR_STAGE_ORDER.filter((stage) => stageSet.has(stage)),
       gatePolicy: {
-        classify: draft.gatePolicy.classify,
         plan: draft.gatePolicy.plan,
-        work: draft.gatePolicy.work,
-        review: draft.gatePolicy.review,
         land: "require-approval",
       },
       maxParallelTasks: draft.resourceDefaults.maxParallelTasks,

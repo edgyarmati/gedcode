@@ -128,7 +128,7 @@ function withStageHistory(
   readModel: OrchestrationReadModel,
   stages: ReadonlyArray<{
     readonly threadId: string;
-    readonly role: "classify" | "plan" | "review" | "work" | "verify";
+    readonly role: "plan" | "work" | "verify";
     readonly status?: "running" | "completed" | "blocked" | "interrupted";
     readonly startedAt: string;
     readonly endedAt: string | null;
@@ -656,8 +656,8 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         type: "task.stage.start" as const,
         commandId: asCommandId("cmd-start-dependent-child"),
         taskId: asTaskId("task-child-b"),
-        role: "classify" as const,
-        instructions: "Classify the child.",
+        role: "plan" as const,
+        instructions: "Plan the child.",
         createdAt: now,
       };
       const blocked = yield* Effect.exit(
@@ -1176,7 +1176,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             taskTypes: [
               {
                 id: "feature",
-                stages: ["classify", "plan", "work", "verify"],
+                stages: ["plan", "work"],
               },
             ],
           },
@@ -1188,10 +1188,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           readModel,
           command: {
             type: "task.stage.start",
-            commandId: asCommandId("cmd-stage-start-disabled-review"),
+            commandId: asCommandId("cmd-stage-start-disabled-verify"),
             taskId: asTaskId("task-1"),
-            role: "review",
-            instructions: "Review the accepted plan.",
+            role: "verify",
+            instructions: "Verify the implementation.",
             createdAt: now,
           },
         }),
@@ -1199,7 +1199,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
       if (error._tag === "OrchestrationCommandInvariantError") {
-        expect(error.detail).toBe("Stage role 'review' is not enabled for task type 'feature'.");
+        expect(error.detail).toBe("Stage role 'verify' is not enabled for task type 'feature'.");
       }
     }),
   );
@@ -1215,14 +1215,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         decideOrchestrationCommand({
           readModel,
           orchestratorDefaults: {
-            stages: ["classify", "plan", "work", "verify"],
+            stages: ["plan", "work"],
           },
           command: {
             type: "task.stage.start",
             commandId: asCommandId("cmd-stage-start-global-reject-review"),
             taskId: asTaskId("task-1"),
-            role: "review",
-            instructions: "Review the accepted plan.",
+            role: "verify",
+            instructions: "Verify the implementation.",
             createdAt: now,
           },
         }),
@@ -1232,14 +1232,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const accepted = yield* decideOrchestrationCommand({
         readModel,
         orchestratorDefaults: {
-          stages: ["classify", "plan", "review", "work", "verify"],
+          stages: ["plan", "work", "verify"],
         },
         command: {
           type: "task.stage.start",
           commandId: asCommandId("cmd-stage-start-global-allow-review"),
           taskId: asTaskId("task-1"),
-          role: "review",
-          instructions: "Review the accepted plan.",
+          role: "verify",
+          instructions: "Verify the implementation.",
           createdAt: now,
         },
       });
@@ -1257,7 +1257,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             taskTypes: [
               {
                 id: "feature",
-                stages: ["classify", "plan", "work", "verify"],
+                stages: ["plan", "work"],
               },
             ],
           },
@@ -1268,14 +1268,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         decideOrchestrationCommand({
           readModel,
           orchestratorDefaults: {
-            stages: ["classify", "plan", "review", "work", "verify"],
+            stages: ["plan", "work", "verify"],
           },
           command: {
             type: "task.stage.start",
             commandId: asCommandId("cmd-stage-start-project-reject-review"),
             taskId: asTaskId("task-1"),
-            role: "review",
-            instructions: "Review the accepted plan.",
+            role: "verify",
+            instructions: "Verify the implementation.",
             createdAt: now,
           },
         }),
@@ -1532,7 +1532,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             type: "task.stage.interrupt",
             commandId: asCommandId("cmd-stage-interrupt-wrong-role"),
             taskId: asTaskId("task-1"),
-            role: "review",
+            role: "verify",
             stageThreadId: asThreadId("thread-stage-active"),
             reason: "orphaned",
             createdAt: now,
@@ -1983,12 +1983,9 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             taskTypes: [
               {
                 id: "feature",
-                stages: ["classify", "plan", "work", "verify"],
+                stages: ["plan", "work"],
                 gatePolicy: {
-                  classify: "require-approval",
                   plan: "require-approval",
-                  work: "require-approval",
-                  review: "require-approval",
                   land: "require-approval",
                 },
               },
@@ -2003,7 +2000,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
       );
       const globals = {
-        stages: ["classify", "plan", "review", "work", "verify"],
+        stages: ["plan", "work", "verify"],
         gatePolicy: {
           plan: "auto",
           land: "require-approval",
@@ -2041,8 +2038,8 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             type: "task.stage.start",
             commandId: asCommandId("cmd-stage-start-fully-configured"),
             taskId: asTaskId("task-1"),
-            role: "review",
-            instructions: "Review the accepted plan.",
+            role: "verify",
+            instructions: "Verify the implementation.",
             createdAt: now,
           },
         }),
@@ -2269,12 +2266,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             role: "verify",
             startedAt: "2026-06-14T09:11:00.000Z",
             endedAt: "2026-06-14T09:20:00.000Z",
-          },
-          {
-            threadId: "thread-stage-review-completed",
-            role: "review",
-            startedAt: "2026-06-14T09:21:00.000Z",
-            endedAt: "2026-06-14T09:30:00.000Z",
           },
         ]),
         pendingGates: [

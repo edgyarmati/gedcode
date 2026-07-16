@@ -445,7 +445,6 @@ function seedProjectAndTask(
         workspaceRoot: harness.workspaceDir,
         defaultModelSelection: DEFAULT_SELECTION,
         roleModelSelections: {
-          review: PROJECT_SELECTION,
           work: PROJECT_SELECTION,
         },
         rolePromptPrefixes: {
@@ -515,25 +514,6 @@ it.live(
           })
           .pipe(Effect.orDie);
 
-        const classifyStage = yield* startStage({
-          harness,
-          role: "classify",
-          suffix: "classify",
-          instructions: "Classify this task.",
-          response: successfulTurnResponse("classify", iso(5)),
-          expectedInstanceId: DEFAULT_INSTANCE,
-          createdAt: iso(5),
-        });
-        assert.equal(classifyStage.stageStarted.payload.providerInstanceId, DEFAULT_INSTANCE);
-        yield* completeStage({
-          harness,
-          role: "classify",
-          stageThreadId: classifyStage.stageStarted.payload.stageThreadId,
-          suffix: "classify",
-          createdAt: iso(6),
-          expectedStatus: "classified",
-        });
-
         const planStage = yield* startStage({
           harness,
           role: "plan",
@@ -553,31 +533,12 @@ it.live(
           expectedStatus: "planning",
         });
 
-        const reviewStage = yield* startStage({
-          harness,
-          role: "review",
-          suffix: "review",
-          instructions: "Review the plan before the human gate.",
-          response: successfulTurnResponse("review", iso(9)),
-          expectedInstanceId: PROJECT_INSTANCE,
-          createdAt: iso(9),
-        });
-        assert.equal(reviewStage.stageStarted.payload.providerInstanceId, PROJECT_INSTANCE);
-        yield* completeStage({
-          harness,
-          role: "review",
-          stageThreadId: reviewStage.stageStarted.payload.stageThreadId,
-          suffix: "review",
-          createdAt: iso(10),
-          expectedStatus: "reviewing",
-        });
-
         yield* requestAndApproveGate({
           harness,
           gate: "plan",
           gateId: gateId("plan"),
           contentHash: "sha256:p7-plan",
-          stageThreadId: reviewStage.stageStarted.payload.stageThreadId,
+          stageThreadId: planStage.stageStarted.payload.stageThreadId,
           suffix: "plan",
           requestedAt: iso(11),
           resolvedAt: iso(12),
@@ -681,9 +642,7 @@ it.live(
           "landed",
         );
         assert.deepEqual(landedTask.stageThreadIds, [
-          classifyStage.stageStarted.payload.stageThreadId,
           planStage.stageStarted.payload.stageThreadId,
-          reviewStage.stageStarted.payload.stageThreadId,
           blockedWorkStage.stageStarted.payload.stageThreadId,
           resumedWorkStage.stageStarted.payload.stageThreadId,
           verifyStage.stageStarted.payload.stageThreadId,

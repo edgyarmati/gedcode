@@ -2080,13 +2080,9 @@ function applyEnvironmentOrchestrationEvent(
         const status =
           event.payload.role === "plan"
             ? ("planning" as const)
-            : event.payload.role === "review"
-              ? ("reviewing" as const)
-              : event.payload.role === "work"
-                ? ("working" as const)
-                : event.payload.role === "verify"
-                  ? ("verifying" as const)
-                  : ("classified" as const);
+            : event.payload.role === "work"
+              ? ("working" as const)
+              : ("verifying" as const);
         return {
           ...task,
           status,

@@ -141,7 +141,7 @@ export const ModelSelection = ModelSelectionSource.pipe(
 );
 export type ModelSelection = typeof ModelSelection.Type;
 
-export const ORCHESTRATION_STAGE_ROLES = ["classify", "plan", "review", "work", "verify"] as const;
+export const ORCHESTRATION_STAGE_ROLES = ["plan", "work", "verify"] as const;
 
 /**
  * Stage role within a task pipeline. Closed so every runtime mapping and UI
@@ -155,9 +155,7 @@ const ORCHESTRATION_STAGE_ROLE_SET = new Set<string>(ORCHESTRATION_STAGE_ROLES);
 const makeStageRoleKeyedMap = <Value extends Schema.Top>(valueSchema: Value) => {
   const source = Schema.Record(Schema.String, valueSchema);
   const target = Schema.Struct({
-    classify: Schema.optionalKey(valueSchema),
     plan: Schema.optionalKey(valueSchema),
-    review: Schema.optionalKey(valueSchema),
     work: Schema.optionalKey(valueSchema),
     verify: Schema.optionalKey(valueSchema),
   });
@@ -600,14 +598,7 @@ export type OrchestrationTask = typeof OrchestrationTask.Type;
  * hard-pinned to require approval. Closed so config + the decider's
  * `requireGateSatisfied` invariant are exhaustiveness-checked together.
  */
-export const OrchestrationGateKind = Schema.Literals([
-  "classify",
-  "plan",
-  "work",
-  "review",
-  "land",
-  "release",
-]);
+export const OrchestrationGateKind = Schema.Literals(["plan", "land", "release"]);
 export type OrchestrationGateKind = typeof OrchestrationGateKind.Type;
 
 /**

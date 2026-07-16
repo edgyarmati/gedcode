@@ -23,20 +23,13 @@ export function resolveStageModelSelection(input: {
 
 export function taskStatusForStageRole(
   role: OrchestrationStageRole,
-): Extract<
-  OrchestrationTask["status"],
-  "classified" | "planning" | "reviewing" | "working" | "verifying"
-> {
+): Extract<OrchestrationTask["status"], "planning" | "working" | "verifying"> {
   switch (role) {
     case "plan":
       return "planning";
-    case "review":
-      return "reviewing";
     case "work":
       return "working";
     case "verify":
       return "verifying";
-    case "classify":
-      return "classified";
   }
 }

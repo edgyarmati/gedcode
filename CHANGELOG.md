@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Breaking change: Simplify Orchestrator workers to `plan`, `work`, and `verify`. The PM now owns task
+  classification and lifecycle control directly; plan critique is another bounded plan attempt and
+  post-work review belongs to verification. Removed `classify`/`review` role values have no aliases or
+  migration because the unreleased app has no user task ledger.
+
 - Documentation: Add an artifact lifecycle and privacy guide distinguishing agent-authored `.ged/`
   workflow memory, app-managed workspace `.gedcode/` task worktrees, and durable user `~/.gedcode/`
   application state. Link it from the GED default setting and remove stale managed-subagent claims.

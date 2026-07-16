@@ -54,6 +54,10 @@ component lifecycle changes require integration coverage; UI interaction changes
 
 - Contract, playbook, PM-tool, and projection tests pin the reviewed PM/worker responsibility boundary
   and reject removed or unknown role keys without compatibility aliases.
+- `ORCH-ROLES-01` verification passes 301 focused contract/shared/server/web tests, `bun fmt`, `bun
+  lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete socket-enabled
+  12-package `bun run test --output-logs=errors-only` gate in 11m43s. The first sandboxed full run failed
+  only because loopback test ports were denied with `EPERM`; the permitted rerun passed cleanly.
 - Picker logic and Chromium tests cover provider instance, model, supported effort options, inheritance,
   task override, and cleanup of options invalidated by a backend/model change.
 

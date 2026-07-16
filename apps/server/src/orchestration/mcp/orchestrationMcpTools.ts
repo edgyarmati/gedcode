@@ -27,7 +27,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
 
 export type OrchestrationMcpToolName = (typeof ORCHESTRATION_MCP_TOOL_NAMES)[number];
 
-const stageRole = z.enum(["classify", "plan", "review", "work", "verify"]);
+const stageRole = z.enum(["plan", "work", "verify"]);
 
 export const mcpInputSchemas = {
   classifyRequest: {

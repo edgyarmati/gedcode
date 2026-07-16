@@ -119,12 +119,9 @@ describe("Orchestrator global defaults settings logic", () => {
   it("seeds the settings-panel draft from global defaults", () => {
     const draft = seedOrchestratorGlobalDefaultsDraft({
       ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
-      stages: ["classify", "plan", "work"],
+      stages: ["plan", "work", "verify"],
       gatePolicy: {
-        classify: "auto",
         plan: "require-approval",
-        work: "auto",
-        review: "require-approval",
         land: "require-approval",
       },
       maxParallelTasks: 2,
@@ -139,12 +136,9 @@ describe("Orchestrator global defaults settings logic", () => {
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
     expect(draft.defaultWorkerModelSelection).toEqual(workerModelSelection);
-    expect(draft.optionalStages).toEqual({ review: false, verify: false });
+    expect(draft.optionalStages).toEqual({});
     expect(draft.gatePolicy).toEqual({
-      classify: "auto",
       plan: "require-approval",
-      work: "auto",
-      review: "require-approval",
     });
     expect(draft.openPrAsDraft).toBe(true);
     expect(draft.resourceDefaults).toEqual({
@@ -160,12 +154,9 @@ describe("Orchestrator global defaults settings logic", () => {
     const patch = buildOrchestratorGlobalDefaultsPatch({
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
-      optionalStages: { review: false, verify: true },
+      optionalStages: {},
       gatePolicy: {
-        classify: "auto",
         plan: "auto",
-        work: "require-approval",
-        review: "auto",
       },
       resourceDefaults: {
         maxParallelTasks: 4,
@@ -178,12 +169,9 @@ describe("Orchestrator global defaults settings logic", () => {
     });
 
     expect(patch.orchestratorDefaults).toEqual({
-      stages: ["classify", "plan", "work", "verify"],
+      stages: ["plan", "work", "verify"],
       gatePolicy: {
-        classify: "auto",
         plan: "auto",
-        work: "require-approval",
-        review: "auto",
         land: "require-approval",
       },
       maxParallelTasks: 4,

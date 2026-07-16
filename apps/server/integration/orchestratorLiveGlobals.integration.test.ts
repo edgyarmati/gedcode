@@ -465,7 +465,7 @@ it.live(
       Effect.gen(function* () {
         yield* updateGlobalDefaults(harness, (current) => ({
           ...current,
-          stages: ["classify", "plan", "work", "verify"],
+          stages: ["plan", "work"],
         }));
 
         const inheritedStageTask = taskId("stage-inherited");
@@ -481,9 +481,9 @@ it.live(
         });
         yield* assertStageRejected({
           harness,
-          suffix: "stage-inherited-review",
+          suffix: "stage-inherited-verify",
           taskId: inheritedStageTask,
-          role: "review",
+          role: "verify",
           createdAt: iso(11),
         });
 
@@ -497,7 +497,7 @@ it.live(
             taskTypes: [
               {
                 id: "feature",
-                stages: ["classify", "plan", "review", "work", "verify"],
+                stages: ["plan", "work", "verify"],
               },
             ],
           },
@@ -505,9 +505,9 @@ it.live(
         });
         yield* startAndCompleteStage({
           harness,
-          suffix: "stage-explicit-review",
+          suffix: "stage-explicit-verify",
           taskId: explicitStageTask,
-          role: "review",
+          role: "verify",
           createdAt: iso(13),
         });
       }),

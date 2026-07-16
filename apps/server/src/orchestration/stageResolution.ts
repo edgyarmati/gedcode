@@ -128,12 +128,8 @@ export function activeStageRoleForTaskStatus(
   status: OrchestrationTaskView["status"],
 ): OrchestrationStageRole | null {
   switch (status) {
-    case "classified":
-      return "classify";
     case "planning":
       return "plan";
-    case "reviewing":
-      return "review";
     case "working":
       return "work";
     case "verifying":

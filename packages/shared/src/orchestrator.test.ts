@@ -19,12 +19,9 @@ import {
 
 const featureTaskType = {
   id: "feature",
-  stages: ["classify", "plan", "work"],
+  stages: ["plan", "work", "verify"],
   gatePolicy: {
-    classify: "require-approval",
     plan: "auto",
-    work: "require-approval",
-    review: "auto",
     land: "require-approval",
   },
 } as const satisfies OrchestratorTaskType;
@@ -91,9 +88,9 @@ describe("resolveGatePolicy", () => {
     expect(
       resolveGatePolicy({
         config: { taskTypes: [{ id: "feature", gatePolicy: {} }] },
-        defaults: { gatePolicy: { review: "auto" } },
+        defaults: { gatePolicy: { plan: "auto" } },
         taskTypeId: "feature",
-        gate: "review",
+        gate: "plan",
       }),
     ).toBe("auto");
   });
@@ -101,15 +98,15 @@ describe("resolveGatePolicy", () => {
   it("prefers project gate policy over global defaults", () => {
     expect(
       resolveGatePolicy({
-        config: { taskTypes: [{ id: "feature", gatePolicy: { review: "require-approval" } }] },
-        defaults: { gatePolicy: { review: "auto" } },
+        config: { taskTypes: [{ id: "feature", gatePolicy: { plan: "require-approval" } }] },
+        defaults: { gatePolicy: { plan: "auto" } },
         taskTypeId: "feature",
-        gate: "review",
+        gate: "plan",
       }),
     ).toBe("require-approval");
   });
 
-  it("falls back to require-approval for a missing gate policy entry", () => {
+  it("falls back to require-approval for a missing optional gate policy entry", () => {
     const sparseGateConfig = projectConfig([
       {
         ...featureTaskType,
@@ -121,7 +118,7 @@ describe("resolveGatePolicy", () => {
       resolveGatePolicy({
         config: sparseGateConfig,
         taskTypeId: "feature",
-        gate: "review",
+        gate: "release",
       }),
     ).toBe("require-approval");
   });
@@ -171,20 +168,20 @@ describe("resolveStages", () => {
     expect(
       resolveStages({
         config: { taskTypes: [] },
-        defaults: { stages: ["classify", "plan", "work", "verify"] },
+        defaults: { stages: ["plan", "work", "verify"] },
         taskTypeId: "feature",
       }),
-    ).toEqual(["classify", "plan", "work", "verify"]);
+    ).toEqual(["plan", "work", "verify"]);
   });
 
   it("prefers project stages over global defaults", () => {
     expect(
       resolveStages({
-        config: { taskTypes: [{ id: "feature", stages: ["classify", "plan", "work"] }] },
-        defaults: { stages: ["classify", "plan", "review", "work", "verify"] },
+        config: { taskTypes: [{ id: "feature", stages: ["plan", "work"] }] },
+        defaults: { stages: ["plan", "work", "verify"] },
         taskTypeId: "feature",
       }),
-    ).toEqual(["classify", "plan", "work"]);
+    ).toEqual(["plan", "work"]);
   });
 });
 

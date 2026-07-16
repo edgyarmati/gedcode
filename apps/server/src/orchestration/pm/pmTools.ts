@@ -590,7 +590,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "handoffWorker",
     label: "Handoff worker",
     description:
-      "Start a detached worker stage for a task. Use classify for task typing, plan for implementation planning, review for pre-work plan critique, work for implementation, and verify for post-work validation before landing.",
+      "Start a detached worker stage for a task. Use plan for bounded technical exploration, implementation planning, or a second plan critique; work for implementation; and verify for independent post-work validation before landing. Task typing is owned by classifyRequest, not a worker.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {

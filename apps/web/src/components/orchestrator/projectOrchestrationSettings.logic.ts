@@ -14,16 +14,10 @@ import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export const MANDATORY_ORCHESTRATOR_STAGES = ["classify", "plan", "work"] as const;
-export const OPTIONAL_ORCHESTRATOR_STAGES = ["review", "verify"] as const;
-export const EDITABLE_ORCHESTRATOR_GATES = ["classify", "plan", "work", "review"] as const;
-export const CANONICAL_ORCHESTRATOR_STAGE_ORDER = [
-  "classify",
-  "plan",
-  "review",
-  "work",
-  "verify",
-] as const satisfies ReadonlyArray<OrchestrationStageRole>;
+export const MANDATORY_ORCHESTRATOR_STAGES = ["plan", "work", "verify"] as const;
+export const OPTIONAL_ORCHESTRATOR_STAGES = [] as const;
+export const EDITABLE_ORCHESTRATOR_GATES = ["plan"] as const;
+export const CANONICAL_ORCHESTRATOR_STAGE_ORDER = ORCHESTRATION_STAGE_ROLES;
 
 export type OptionalOrchestratorStage = (typeof OPTIONAL_ORCHESTRATOR_STAGES)[number];
 export type EditableOrchestratorGate = (typeof EDITABLE_ORCHESTRATOR_GATES)[number];
@@ -175,18 +169,9 @@ export function seedOrchestratorConfigDraft(
   return {
     pmModelSelection: asModelSelection(raw.pmModelSelection),
     openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
-    optionalStages:
-      explicitStages === null
-        ? null
-        : {
-            review: explicitStages.has("review"),
-            verify: explicitStages.has("verify"),
-          },
+    optionalStages: explicitStages === null ? null : {},
     gatePolicy: {
-      classify: asGatePolicy(gatePolicy?.classify),
       plan: asGatePolicy(gatePolicy?.plan),
-      work: asGatePolicy(gatePolicy?.work),
-      review: asGatePolicy(gatePolicy?.review),
     },
     resourceLimits: {
       maxParallelTasks: asPositiveInt(resourceLimits?.maxParallelTasks),
@@ -248,19 +233,12 @@ export function seedOrchestratorInheritedDefaultsDraft(
   readonly resourceLimits: OrchestratorResourceLimits;
 } {
   const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
-  const stageSet = new Set(normalizedGlobals.stages);
   return {
     pmModelSelection: normalizedGlobals.pmModelSelection,
     defaultWorkerModelSelection: normalizedGlobals.defaultWorkerModelSelection,
-    optionalStages: {
-      review: stageSet.has("review"),
-      verify: stageSet.has("verify"),
-    },
+    optionalStages: {},
     gatePolicy: {
-      classify: normalizedGlobals.gatePolicy.classify,
       plan: normalizedGlobals.gatePolicy.plan,
-      work: normalizedGlobals.gatePolicy.work,
-      review: normalizedGlobals.gatePolicy.review,
     },
     openPrAsDraft: normalizedGlobals.openPrAsDraft,
     resourceLimits: {

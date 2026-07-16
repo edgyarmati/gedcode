@@ -26,10 +26,10 @@ const makeEntry = (
 
 describe("buildStageTimelineRows", () => {
   it("labels the role, formats the backend, and maps status to a badge variant", () => {
-    const [row] = buildStageTimelineRows([makeEntry({ role: "review", status: "completed" })]);
+    const [row] = buildStageTimelineRows([makeEntry({ role: "verify", status: "completed" })]);
     expect(row).toMatchObject({
-      role: "review",
-      roleLabel: "Review",
+      role: "verify",
+      roleLabel: "Verify",
       status: "completed",
       statusLabel: "Completed",
       statusVariant: "success",

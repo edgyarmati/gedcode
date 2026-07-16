@@ -1156,23 +1156,25 @@ it.effect("decodes legacy OrchestrationTask values without cancellation metadata
   }),
 );
 
-it.effect("accepts review and verify stage roles plus reviewing task status", () =>
+it.effect("accepts retained plan/work/verify stage roles and rejects removed roles", () =>
   Effect.gen(function* () {
-    const review = yield* decodeStageRole("review");
+    const plan = yield* decodeStageRole("plan");
+    const work = yield* decodeStageRole("work");
     const verify = yield* decodeStageRole("verify");
-    const reviewing = yield* decodeTaskStatus("reviewing");
+    const removed = yield* Effect.exit(decodeStageRole("review"));
 
-    assert.strictEqual(review, "review");
+    assert.strictEqual(plan, "plan");
+    assert.strictEqual(work, "work");
     assert.strictEqual(verify, "verify");
-    assert.strictEqual(reviewing, "reviewing");
+    assert.strictEqual(removed._tag, "Failure");
   }),
 );
 
 it.effect("role model selections are keyed only by known stage roles", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeRoleModelSelections({
-      review: {
-        instanceId: "codex_review",
+      plan: {
+        instanceId: "codex_plan",
         model: "gpt-5.2",
       },
       verify: {
@@ -1181,7 +1183,7 @@ it.effect("role model selections are keyed only by known stage roles", () =>
       },
     });
 
-    assert.strictEqual(parsed.review?.instanceId, ProviderInstanceId.make("codex_review"));
+    assert.strictEqual(parsed.plan?.instanceId, ProviderInstanceId.make("codex_plan"));
     assert.strictEqual(parsed.verify?.instanceId, ProviderInstanceId.make("claudeAgent"));
 
     const result = yield* Effect.exit(
@@ -1199,11 +1201,11 @@ it.effect("role model selections are keyed only by known stage roles", () =>
 it.effect("role prompt prefixes are keyed only by known stage roles", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeRolePromptPrefixes({
-      review: "Focus on plan defects.",
+      plan: "Focus on plan defects.",
       verify: "Run targeted verification before reporting success.",
     });
 
-    assert.strictEqual(parsed.review, "Focus on plan defects.");
+    assert.strictEqual(parsed.plan, "Focus on plan defects.");
     assert.strictEqual(parsed.verify, "Run targeted verification before reporting success.");
 
     const result = yield* Effect.exit(
@@ -1222,8 +1224,8 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
       commandId: "cmd-role-selections",
       taskId: "task-1",
       roleModelSelections: {
-        review: {
-          instanceId: "codex_review",
+        verify: {
+          instanceId: "codex_verify",
           model: "gpt-5.2",
         },
       },
@@ -1246,8 +1248,8 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
       payload: {
         taskId: "task-1",
         roleModelSelections: {
-          review: {
-            instanceId: "codex_review",
+          verify: {
+            instanceId: "codex_verify",
             model: "gpt-5.2",
           },
         },

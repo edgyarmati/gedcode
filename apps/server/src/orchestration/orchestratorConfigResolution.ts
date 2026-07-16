@@ -41,10 +41,7 @@ const numericResourceLimitKeys = [
 ] as const satisfies ReadonlyArray<keyof OrchestratorResourceLimits>;
 
 const gatePolicyKeys = [
-  "classify",
   "plan",
-  "work",
-  "review",
   "land",
   "release",
 ] as const satisfies ReadonlyArray<OrchestrationGateKind>;

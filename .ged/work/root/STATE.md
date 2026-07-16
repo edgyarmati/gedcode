@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `ORCH-ROLES-01` PM/worker responsibility and retained-role decision.
+- **Active task**: `ORCH-ROLES-02` complete per-worker harness/model/reasoning pickers.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -27,10 +27,12 @@
   capture the full send context into durable FIFO items. Turn settlement drains one item at a time with
   stable command identity; Steer bypasses the wait. Turning queueing off changes future sends only and
   never silently flushes existing items.
+- **Worker-role decision**: retain only `plan`, `work`, and `verify`. The PM owns intake, task typing,
+  splitting, scheduling, gates, backend selection, lifecycle control, landing, and release dispatch.
+  Classification remains a PM actuator; plan critique is another plan attempt; post-work review is
+  verification. There are no compatibility aliases because no user task ledger exists.
 - **Role-settings audit**: project/task settings already carry provider instance plus model, but the
-  picker drops provider options when instance/model changes and exposes no thinking control. Review the
-  classify/plan/review/work/verify taxonomy before changing it because the PM now owns intake, typing,
-  splitting, scheduling, gates, landing, and release dispatch.
+  picker drops provider options when instance/model changes and exposes no thinking control.
 - **Artifact audit**: distinguish workspace `.ged/` memory, workspace `.gedcode/orchestrator/` runtime
   worktrees/leases/hooks, and user `~/.gedcode/` application state in one lifecycle guide.
 
@@ -409,9 +411,8 @@
 
 ## Remaining Work
 
-1. `ORCH-ROLES-01` decides and applies the retained worker-role taxonomy.
-2. `ORCH-ROLES-02` adds complete provider/model/reasoning pickers per retained role.
-3. `ORCH-ORDER-01` remains deferred by the user.
+1. `ORCH-ROLES-02` adds complete provider/model/reasoning pickers per retained role.
+2. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 

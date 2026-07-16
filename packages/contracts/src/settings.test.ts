@@ -78,13 +78,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 
 describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("defaults the nested orchestrator block with a safe-by-default floor", () => {
-    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual([
-      "classify",
-      "plan",
-      "review",
-      "work",
-      "verify",
-    ]);
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.stages).toEqual(["plan", "work", "verify"]);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(2);
@@ -97,18 +91,9 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     // STOP-condition anchor: nesting the new optional defaults block must not
     // break existing settings that predate the key.
     const decoded = decodeServerSettings({});
-    expect(decoded.orchestratorDefaults.stages).toEqual([
-      "classify",
-      "plan",
-      "review",
-      "work",
-      "verify",
-    ]);
+    expect(decoded.orchestratorDefaults.stages).toEqual(["plan", "work", "verify"]);
     expect(decoded.orchestratorDefaults.gatePolicy).toEqual({
-      classify: "require-approval",
       plan: "require-approval",
-      work: "require-approval",
-      review: "require-approval",
       land: "require-approval",
     });
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
@@ -126,12 +111,9 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("decodes and strips the removed legacy worker access floor", () => {
     const decoded = decodeServerSettings({
       orchestratorDefaults: {
-        stages: ["classify", "plan", "work"],
+        stages: ["plan", "work", "verify"],
         gatePolicy: {
-          classify: "auto",
           plan: "require-approval",
-          work: "auto",
-          review: "require-approval",
           land: "require-approval",
         },
         allowFullAccessWorkers: true,
@@ -141,9 +123,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         worktreeReaperIntervalMinutes: 2,
       },
     });
-    expect(decoded.orchestratorDefaults.stages).toEqual(["classify", "plan", "work"]);
-    expect(decoded.orchestratorDefaults.gatePolicy.classify).toBe("auto");
-    expect(decoded.orchestratorDefaults.gatePolicy.work).toBe("auto");
+    expect(decoded.orchestratorDefaults.stages).toEqual(["plan", "work", "verify"]);
     expect(decoded.orchestratorDefaults.gatePolicy.land).toBe("require-approval");
     expect(decoded.orchestratorDefaults).not.toHaveProperty("allowFullAccessWorkers");
     expect(encodeServerSettings(decoded).orchestratorDefaults).not.toHaveProperty(
@@ -161,12 +141,9 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
   it("accepts orchestratorDefaults via the settings patch", () => {
     const patch = decodeServerSettingsPatch({
       orchestratorDefaults: {
-        stages: ["classify", "plan", "review", "work"],
+        stages: ["plan", "work", "verify"],
         gatePolicy: {
-          classify: "require-approval",
           plan: "auto",
-          work: "auto",
-          review: "require-approval",
           land: "require-approval",
         },
         maxParallelTasks: 3,
@@ -177,7 +154,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         worktreeReaperIntervalMinutes: 10,
       },
     });
-    expect(patch.orchestratorDefaults?.stages).toEqual(["classify", "plan", "review", "work"]);
+    expect(patch.orchestratorDefaults?.stages).toEqual(["plan", "work", "verify"]);
     expect(patch.orchestratorDefaults?.gatePolicy.plan).toBe("auto");
     expect(patch.orchestratorDefaults?.gatePolicy.land).toBe("require-approval");
     expect(patch.orchestratorDefaults?.maxParallelTasks).toBe(3);
