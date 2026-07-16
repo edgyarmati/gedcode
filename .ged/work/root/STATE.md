@@ -1,8 +1,8 @@
 # State
 
-- **Phase**: release — the corrected v0.3.0 publication path is locally verified.
-- **Active task**: `RELEASE-0.3.0-01` is awaiting the corrected release workflow. `ORCH-ORDER-01`
-  remains explicitly deferred.
+- **Phase**: complete — v0.3.0 is published and all non-deferred roadmap work is verified.
+- **Active task**: none. `RELEASE-0.3.0-01` is complete and `ORCH-ORDER-01` remains explicitly
+  deferred.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -60,6 +60,10 @@
   creates generated notes from the resolved previous tag, and safely reconciles retry uploads and
   metadata. Four focused tests pass, as do `bun fmt`, `bun lint` (existing warnings only), all 12
   typecheck packages, and the complete socket-enabled 12-package test gate in 10m41s.
+  Corrected workflow `29542547098` then passed clean-runner preflight, all three platform builds,
+  GitHub release publication, and stable finalization. Public release `v0.3.0` targets `d5d223a98`,
+  carries macOS DMG/ZIP, Linux AppImage, Windows EXE, blockmaps, and stable/nightly updater manifests;
+  bot commit `d35ddad8f` finalized package versions on `main`.
 
 - `CHAT-DEFAULT-01` is complete. Fresh Codex chats now resolve to GPT-5.6 Sol with medium reasoning
   and Standard service. The existing global sticky composer state remains authoritative after any

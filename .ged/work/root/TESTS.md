@@ -782,3 +782,8 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   packages, and the complete socket-enabled `bun run test --output-logs=errors-only` gate passed all
   12 packages in 10m41s. A sandboxed first attempt was discarded because the existing mock update
   server tests could not bind a local port; the permitted rerun passed.
+- Corrected GitHub Actions workflow `29542547098` passed preflight, Linux x64, macOS arm64, Windows
+  x64, publication, and finalization. `v0.3.0` is public, non-draft, non-prerelease, targets verified
+  commit `d5d223a98`, and exposes uploaded DMG, ZIP, AppImage, EXE, blockmap, and updater-manifest
+  assets with GitHub-recorded SHA-256 digests. Finalization commit `d35ddad8f` set all release package
+  versions to `0.3.0` on `main`.
