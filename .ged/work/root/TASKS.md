@@ -1,5 +1,11 @@
 # TASKS - Orchestrator Completion Roadmap
 
+## Codex PM Trusted-Tool Permission Repair
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| ORCH-PMBOOT-03 | DONE | Prevent Codex PM requests to the private `t3_orchestrator` MCP server from being rejected by the invisible approval gate while retaining the PM's read-only sandbox and approval controls for every other tool surface. | Focused config/adapter/runtime tests pin the trusted-server exception and unchanged global PM sandbox; the provider-log reproduction is resolved by Codex's server-scoped `default_tools_approval_mode`. |
+
 ## Startup Compatibility Repair
 
 | ID | Status | Slice | Verification |

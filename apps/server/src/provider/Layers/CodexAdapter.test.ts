@@ -394,6 +394,7 @@ validationLayer("CodexAdapterLive validation", (it) => {
           t3_orchestrator: {
             url: orchestrationMcpEndpoint.url,
             bearer_token_env_var: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+            default_tools_approval_mode: "approve",
           },
         },
       });

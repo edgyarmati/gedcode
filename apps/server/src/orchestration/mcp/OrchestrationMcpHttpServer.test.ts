@@ -9,6 +9,7 @@ import { describe, it } from "vitest";
 import type { PmToolExecutor } from "../pm/pmTools.ts";
 import {
   ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+  makeCodexMcpServerConfig,
   startOrchestrationMcpHttpServer,
 } from "./OrchestrationMcpHttpServer.ts";
 import { ORCHESTRATION_MCP_TOOL_NAMES } from "./orchestrationMcpTools.ts";
@@ -56,6 +57,25 @@ function postWithoutBearer(url: string): Promise<number> {
 }
 
 describe("OrchestrationMcpHttpServer", () => {
+  it("marks only the private orchestration MCP tools as approved for headless PM use", () => {
+    assert.deepStrictEqual(
+      makeCodexMcpServerConfig({
+        url: "http://127.0.0.1:4321/mcp/orchestration",
+        bearerToken: "secret",
+        bearerTokenEnvVar: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+      }),
+      {
+        mcp_servers: {
+          t3_orchestrator: {
+            url: "http://127.0.0.1:4321/mcp/orchestration",
+            bearer_token_env_var: ORCHESTRATION_MCP_BEARER_TOKEN_ENV_VAR,
+            default_tools_approval_mode: "approve",
+          },
+        },
+      },
+    );
+  });
+
   it("returns 401 without the bearer token", async () => {
     const { executors } = makeMockExecutors();
     const service = await startOrchestrationMcpHttpServer({

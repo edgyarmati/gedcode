@@ -1,6 +1,6 @@
 # State
 
-- **Phase**: checkpoint — all non-deferred roadmap slices and the startup compatibility repair are
+- **Phase**: checkpoint — all non-deferred roadmap slices and the Codex PM permission repair are
   implemented and verified.
 - **Active task**: none; only the explicitly deferred pipeline-order item remains.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
@@ -43,6 +43,15 @@
   worktrees/leases/hooks, and user `~/.gedcode/` application state in one lifecycle guide.
 
 ## Current Progress
+
+- `ORCH-PMBOOT-03` is complete. Provider logs reproduced `getTaskLedger` and `cancelTask` entering
+  `waitingOnApproval` and failing immediately as `user rejected MCP tool call` without any human
+  interaction. GedCode now emits Codex's server-scoped `default_tools_approval_mode: "approve"` only
+  for its loopback, random-bearer-authenticated `t3_orchestrator` MCP server. The PM retains its global
+  `untrusted` approval policy and read-only filesystem sandbox, so shell, file changes, and unrelated
+  MCP servers receive no broader authority. All 45 focused tests pass, as do `bun fmt`, `bun lint`
+  (existing warnings only), all 12 typecheck packages, and the complete 12-package test gate in
+  10m30s.
 
 - `ORCH-ROLES-03` is implemented. Migration 54 removes only retired `classify`/`review` keys from
   projected project model/prompt settings and task model overrides, preserves already-current JSON,

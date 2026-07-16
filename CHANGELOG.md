@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed Codex-backed project managers rejecting their own trusted orchestration ledger and task
+  lifecycle calls behind an invisible approval prompt. GedCode now approves only its private,
+  bearer-authenticated loopback orchestration MCP server while retaining the PM's read-only sandbox
+  and normal approval policy for every other tool surface.
+
 - Fix: Repair startup after the Orchestrator worker-role reduction by removing retired `classify` and
   `review` keys from persisted project/task role settings. Current writes remain strict, while
   historical append-only events decode without reintroducing the removed roles.

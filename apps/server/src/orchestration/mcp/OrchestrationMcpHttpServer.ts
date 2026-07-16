@@ -45,6 +45,10 @@ export const makeCodexMcpServerConfig = (
     [ORCHESTRATION_MCP_SERVER_NAME]: {
       url: endpoint.url,
       bearer_token_env_var: endpoint.bearerTokenEnvVar,
+      // This server is created by GedCode on loopback for the current process and protected by a
+      // random bearer token. PM sessions have no approval UI, so leaving the Codex MCP default at
+      // `prompt` turns every lifecycle request into an immediate synthetic rejection.
+      default_tools_approval_mode: "approve",
     },
   },
 });

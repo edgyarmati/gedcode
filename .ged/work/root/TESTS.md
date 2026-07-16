@@ -1,5 +1,18 @@
 # TESTS - Orchestrator Completion Roadmap
 
+## ORCH-PMBOOT-03
+
+- Configuration coverage proves only GedCode's injected `t3_orchestrator` MCP server bypasses
+  interactive approval.
+- Codex adapter/runtime coverage proves PM sessions retain their read-only sandbox and do not broaden
+  approval behavior for shell, file-change, or unrelated MCP operations.
+- The provider-log reproduction showed `getTaskLedger` and `cancelTask` entering `waitingOnApproval`
+  and immediately reporting a synthetic user rejection. Codex 0.142.5 supports the emitted
+  server-scoped approval default, so those private calls no longer enter the unhandled prompt path.
+- Verification passed on 2026-07-16: 45 focused MCP/adapter/runtime tests, `bun fmt`, `bun lint`
+  (existing warnings only), all 12 typecheck packages, and the complete socket-enabled `bun run test
+  --output-logs=errors-only` gate with all 12 package tasks successful in 10m30s.
+
 ## ORCH-ROLES-03
 
 - Run migrations through the previous version, seed project and task projection JSON containing

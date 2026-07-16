@@ -1,5 +1,25 @@
 # SPEC - Orchestrator Completion Roadmap
 
+## Codex PM Trusted-Tool Permission Repair (2026-07-16)
+
+### Goal
+
+Allow a Codex-backed PM to invoke GedCode's private `t3_orchestrator` MCP ledger and lifecycle tools
+without an approval prompt that the PM surface cannot display or resolve.
+
+### Constraints
+
+- Keep the PM filesystem sandbox read-only and do not auto-approve shell commands, file changes,
+  network escalation, or third-party MCP servers.
+- Trust only the loopback, bearer-authenticated orchestration MCP server injected by GedCode.
+- Preserve the existing provider-independent PM tool surface and task lifecycle guards.
+
+### Acceptance Criteria
+
+- Codex PM ledger and cancellation calls do not enter `waitingOnApproval` or fail as user-rejected.
+- The generated Codex configuration scopes the no-approval behavior to `t3_orchestrator`.
+- PM runtime tests continue to prove the global read-only sandbox and non-orchestration approval policy.
+
 ## Startup Compatibility Repair (2026-07-16)
 
 ### Goal
