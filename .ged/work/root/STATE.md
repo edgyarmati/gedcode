@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: plan — the normal-chat fork roadmap is complete; newly requested follow-ups are next.
-- **Active task**: none until the queued-message roadmap slice is recorded.
+- **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
+- **Active task**: `CHAT-QUEUE-01` persisted per-thread queue state and operations.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -23,6 +23,16 @@
   role models, or start managed child sessions. Provider-native subagent use is model/runtime-owned.
 - **Worker policy**: GPT-5.6 Terra/high for medium work; GPT-5.6 Sol/high for difficult or
   cross-cutting work. `setTaskBackend` now carries the complete provider selection, including effort.
+- **Queue decision**: normal-chat queueing is per-thread and enabled by default. Active-turn sends
+  capture the full send context into durable FIFO items. Turn settlement drains one item at a time with
+  stable command identity; Steer bypasses the wait. Turning queueing off changes future sends only and
+  never silently flushes existing items.
+- **Role-settings audit**: project/task settings already carry provider instance plus model, but the
+  picker drops provider options when instance/model changes and exposes no thinking control. Review the
+  classify/plan/review/work/verify taxonomy before changing it because the PM now owns intake, typing,
+  splitting, scheduling, gates, landing, and release dispatch.
+- **Artifact audit**: distinguish workspace `.ged/` memory, workspace `.gedcode/orchestrator/` runtime
+  worktrees/leases/hooks, and user `~/.gedcode/` application state in one lifecycle guide.
 
 ## Current Progress
 
@@ -368,10 +378,12 @@
 
 ## Remaining Work
 
-1. Commit `CHAT-FORK-02` atomically.
-2. Plan the newly requested queued-message controls, artifact lifecycle documentation, and per-worker
-   harness/model/thinking settings as separate bounded slices.
-3. `ORCH-ORDER-01` remains deferred by the user.
+1. `CHAT-QUEUE-01` adds the persisted queue contract and store operations without changing send/UI
+   behavior.
+2. `CHAT-QUEUE-02` adds idempotent queue/steer dispatch and one-at-a-time draining.
+3. `CHAT-QUEUE-03` adds the reference queue controls and compact/browser coverage.
+4. `DOC-ARTIFACTS-01` and `ORCH-ROLES-01..02` follow as separate commits.
+5. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 

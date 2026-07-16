@@ -5,6 +5,28 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## CHAT-QUEUE-01..03
+
+- Draft-store schema tests persist per-thread queue order, stable command/message identities, captured
+  model options and modes, persisted image data, terminal contexts, and the default-on queue preference.
+- Dispatch logic tests hold active-turn sends locally, drain one item only after settlement, retain a
+  failed/unacknowledged item, and retry with the same command ID so server idempotency prevents duplicate
+  turns. Queue-off sends exercise existing provider steer/queued delivery behavior.
+- Chromium coverage reproduces the reference queue rows and verifies Steer, Delete, inline Edit, Turn
+  off queueing, pending/error states, keyboard/accessibility behavior, and compact layout.
+
+## DOC-ARTIFACTS-01
+
+- A source/path audit ties every documented directory to its actual creator and cleanup code.
+- Documentation checks and a focused UI test prove the artifact guide is reachable from GED help.
+
+## ORCH-ROLES-01..02
+
+- Contract, playbook, PM-tool, and projection tests pin the reviewed PM/worker responsibility boundary
+  and reject removed or unknown role keys without compatibility aliases.
+- Picker logic and Chromium tests cover provider instance, model, supported effort options, inheritance,
+  task override, and cleanup of options invalidated by a backend/model change.
+
 ## CHAT-FORK-02
 
 - Static timeline coverage proves exactly one terminal completed assistant message receives the action,

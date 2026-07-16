@@ -47,6 +47,14 @@ disjoint write sets and independent verification.
 
 ### User experience
 
+- While a normal-chat turn is active, sending captures a durable per-thread FIFO queue item instead of
+  dropping or immediately steering the message. Queue items retain the selected backend/model options,
+  GED/runtime modes, images, and terminal context used when composed.
+- A settled turn drains exactly one queued item with a stable command/message identity; retries after
+  reconnect are idempotent. Remaining items wait for the resulting turn to settle.
+- Queued rows expose **Steer**, **Delete**, and a context menu with **Edit message** and **Turn off
+  queueing**. Steering sends that item immediately; disabling queueing affects future sends in that
+  thread and leaves existing queued items intact.
 - Add **Continue in new task** to completed assistant messages in normal chat. Codex forks provider
   state natively and rolls back only the new fork to the selected turn; older-message forks and
   providers without native support initialize a fresh session from copied visible history. Forking
@@ -60,6 +68,23 @@ disjoint write sets and independent verification.
 - Bring Orchestrator project/task sidebars to parity with Chat for context menus, sorting, and manual
   reordering.
 - Display effective worker permissions and recovery/action status.
+
+### Worker configuration and taxonomy
+
+- Review the worker-stage vocabulary now that the PM owns intake, task typing, splitting, scheduling,
+  gates, landing, and release dispatch. Document which roles remain worker handoffs before changing the
+  stage registry or playbooks.
+- For every retained worker role, project and task overrides expose provider instance (harness), model,
+  and supported thinking/reasoning level. Changing instance or model preserves valid option selections
+  and removes options unsupported by the new model.
+
+### Artifact lifecycle documentation
+
+- Document workspace-local `.ged/` workflow memory separately from workspace-local `.gedcode/`
+  orchestrator worktrees/leases/hooks and user-level `~/.gedcode/` settings, database, logs, and SSH
+  state.
+- For each artifact, state its creator, creation trigger, lifetime, cleanup owner, and whether it is safe
+  to commit or delete. Link the guide from GED help/settings where users encounter the workflow.
 
 ### Workflow specialization
 
@@ -115,6 +140,12 @@ disjoint write sets and independent verification.
     or requiring provider-native subagents.
 16. **Continue in new task** appears only on completed assistant messages, opens the fork, preserves the
     source thread, and clearly states that current filesystem state is retained.
+17. Messages submitted during an active normal-chat turn appear in a durable FIFO queue; each can be
+    steered, edited, or deleted, and automatic draining cannot duplicate a provider turn after retry.
+18. Every retained orchestrator worker role can select harness, model, and supported thinking level at
+    project and task scope, with the effective inherited selection visible.
+19. A user-facing artifact guide distinguishes `.ged/`, project `.gedcode/`, and `~/.gedcode/` by
+    location, creation time, ownership, retention, and deletion safety.
 
 ## Delivery Order
 
@@ -124,3 +155,4 @@ disjoint write sets and independent verification.
 4. Parent/child task splitting.
 5. Chat and sidebar UX.
 6. Release specialization.
+7. Queued normal-chat messages, artifact documentation, and reviewed worker-role configuration.
