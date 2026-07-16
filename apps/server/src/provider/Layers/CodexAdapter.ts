@@ -295,6 +295,10 @@ function toRequestTypeFromMethod(method: string): CanonicalRequestType {
       return "file_read_approval";
     case "item/fileChange/requestApproval":
       return "file_change_approval";
+    case "item/permissions/requestApproval":
+      return "permissions_approval";
+    case "item/autoApprovalReview/requestApproval":
+      return "auto_review_approval";
     case "applyPatchApproval":
       return "apply_patch_approval";
     case "execCommandApproval":
@@ -318,6 +322,10 @@ function toRequestTypeFromKind(kind: ProviderRequestKind | undefined): Canonical
       return "file_read_approval";
     case "file-change":
       return "file_change_approval";
+    case "permissions":
+      return "permissions_approval";
+    case "auto-review":
+      return "auto_review_approval";
     default:
       return "unknown";
   }
@@ -545,6 +553,28 @@ function mapToRuntimeEvents(
             event.payload,
           );
           return payload?.reason ?? undefined;
+        }
+        case "item/permissions/requestApproval": {
+          const payload = readPayload(
+            EffectCodexSchema.ServerRequest__PermissionsRequestApprovalParams,
+            event.payload,
+          );
+          return payload?.reason ?? "Codex requested additional filesystem or network permissions";
+        }
+        case "item/autoApprovalReview/requestApproval": {
+          const payload = readPayload(
+            EffectCodexSchema.V2ItemGuardianApprovalReviewCompletedNotification,
+            event.payload,
+          );
+          if (!payload) return undefined;
+          const action = JSON.stringify(payload.action);
+          const assessment = [
+            `Auto-review ${payload.review.status}`,
+            payload.review.riskLevel ? `risk ${payload.review.riskLevel}` : undefined,
+            payload.review.rationale ?? undefined,
+            action,
+          ].filter((part): part is string => Boolean(part));
+          return assessment.join(": ");
         }
         case "applyPatchApproval": {
           const payload = readPayload(

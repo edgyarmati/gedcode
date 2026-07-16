@@ -1107,6 +1107,81 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("maps granular permission and denied auto-review requests to canonical approvals", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-permissions-requested"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/permissions/requestApproval",
+        requestId: ApprovalRequestId.make("req-permissions-1"),
+        requestKind: "permissions",
+        turnId: asTurnId("turn-1"),
+        payload: {
+          cwd: "/tmp/project",
+          itemId: "item-permissions-1",
+          permissions: { fileSystem: { write: ["/tmp/project"] } },
+          reason: "Write generated files",
+          startedAtMs: 1,
+          threadId: "provider-thread-1",
+          turnId: "turn-1",
+        },
+      } satisfies ProviderEvent);
+      yield* runtime.emit({
+        id: asEventId("evt-auto-review-denied"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        method: "item/autoApprovalReview/requestApproval",
+        requestId: ApprovalRequestId.make("review-1"),
+        requestKind: "auto-review",
+        turnId: asTurnId("turn-1"),
+        itemId: ProviderItemId.make("item-command-1"),
+        payload: {
+          action: {
+            type: "command",
+            command: "git push origin main",
+            cwd: "/tmp/project",
+            source: "shell",
+          },
+          completedAtMs: 2,
+          decisionSource: "agent",
+          review: {
+            status: "denied",
+            riskLevel: "high",
+            rationale: "Push requires explicit authorization.",
+          },
+          reviewId: "review-1",
+          startedAtMs: 1,
+          targetItemId: "item-command-1",
+          threadId: "provider-thread-1",
+          turnId: "turn-1",
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      assert.equal(events[0]?.type, "request.opened");
+      assert.equal(events[1]?.type, "request.opened");
+      if (events[0]?.type === "request.opened") {
+        assert.equal(events[0].payload.requestType, "permissions_approval");
+        assert.equal(events[0].payload.detail, "Write generated files");
+      }
+      if (events[1]?.type === "request.opened") {
+        assert.equal(events[1].payload.requestType, "auto_review_approval");
+        assert.match(events[1].payload.detail ?? "", /risk high/);
+        assert.match(events[1].payload.detail ?? "", /git push origin main/);
+      }
+    }),
+  );
+
   it.effect(
     "maps requestUserInput requests and answered notifications to canonical user-input events",
     () =>

@@ -18,6 +18,10 @@
   with bounded rationale/action detail; approval sends the exact original assessment through
   `thread/approveGuardianDeniedAction`.
 - Approved auto-reviews create no manual request; stale or duplicate responses fail closed.
+- Verification passed on 2026-07-16: 95 focused Codex runtime/adapter/ingestion tests, `bun fmt`,
+  `bun lint` (existing warnings only), all 12 typecheck packages after the known TypeScript-Go
+  workspace resolver race cleared on retry, and the complete socket-enabled `bun run test
+  --output-logs=errors-only` gate with all 12 package tasks successful in 10m29s.
 
 ## ORCH-APPROVAL-03
 

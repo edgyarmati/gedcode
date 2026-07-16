@@ -207,7 +207,8 @@ export class CodexSessionRuntimeThreadIdMissingError extends Schema.TaggedErrorC
   }
 }
 
-interface PendingApproval {
+interface ProviderRequestPendingApproval {
+  readonly type: "provider-request";
   readonly requestId: ApprovalRequestId;
   readonly jsonRpcId: string;
   readonly requestKind: ProviderRequestKind;
@@ -215,6 +216,17 @@ interface PendingApproval {
   readonly itemId: ProviderItemId | undefined;
   readonly decision: Deferred.Deferred<ProviderApprovalDecision>;
 }
+
+interface AutoReviewPendingApproval {
+  readonly type: "auto-review";
+  readonly requestId: ApprovalRequestId;
+  readonly requestKind: "auto-review";
+  readonly turnId: TurnId | undefined;
+  readonly itemId: ProviderItemId | undefined;
+  readonly event: EffectCodexSchema.V2ItemGuardianApprovalReviewCompletedNotification;
+}
+
+type PendingApproval = ProviderRequestPendingApproval | AutoReviewPendingApproval;
 
 interface ApprovalCorrelation {
   readonly requestId: ApprovalRequestId;
@@ -431,6 +443,46 @@ export function buildTurnSteerParams(input: {
   }).pipe(
     Effect.mapError((error) => toProtocolParseError("Invalid turn/steer request payload", error)),
   );
+}
+
+export function permissionResponseForDecision(
+  requested: EffectCodexSchema.PermissionsRequestApprovalParams["permissions"],
+  decision: ProviderApprovalDecision,
+): EffectCodexSchema.PermissionsRequestApprovalResponse {
+  if (decision === "accept" || decision === "acceptForSession") {
+    return {
+      permissions: requested,
+      scope: decision === "acceptForSession" ? "session" : "turn",
+    };
+  }
+  return {
+    permissions: {},
+    scope: "turn",
+  };
+}
+
+interface GuardianDeniedApprovalClient {
+  readonly request: (
+    method: "thread/approveGuardianDeniedAction",
+    params: EffectCodexSchema.V2ThreadApproveGuardianDeniedActionParams,
+  ) => Effect.Effect<unknown, CodexErrors.CodexAppServerError>;
+}
+
+export function resolveGuardianDeniedAction(input: {
+  readonly client: GuardianDeniedApprovalClient;
+  readonly providerThreadId: string;
+  readonly event: EffectCodexSchema.V2ItemGuardianApprovalReviewCompletedNotification;
+  readonly decision: ProviderApprovalDecision;
+}): Effect.Effect<void, CodexErrors.CodexAppServerError> {
+  if (input.decision !== "accept" && input.decision !== "acceptForSession") {
+    return Effect.void;
+  }
+  return input.client
+    .request("thread/approveGuardianDeniedAction", {
+      threadId: input.providerThreadId,
+      event: input.event,
+    })
+    .pipe(Effect.asVoid);
 }
 
 interface CodexTurnRequestClient {
@@ -884,7 +936,9 @@ export const makeCodexSessionRuntime = (
           Effect.forEach(
             Array.from(pendingApprovals.values()),
             (pendingApproval) =>
-              Deferred.succeed(pendingApproval.decision, decision).pipe(Effect.ignore),
+              pendingApproval.type === "provider-request"
+                ? Deferred.succeed(pendingApproval.decision, decision).pipe(Effect.ignore)
+                : Effect.void,
             { discard: true },
           ),
         ),
@@ -924,6 +978,45 @@ export const makeCodexSessionRuntime = (
         let requestKind: ProviderRequestKind | undefined;
         let turnId = childParentTurnId ?? route.turnId;
         let itemId = route.itemId;
+
+        if (
+          notification.method === "item/autoApprovalReview/completed" &&
+          (notification.params.review.status === "denied" ||
+            notification.params.review.status === "timedOut" ||
+            notification.params.review.status === "aborted")
+        ) {
+          const review = notification.params;
+          const reviewRequestId = ApprovalRequestId.make(review.reviewId);
+          const reviewTurnId = TurnId.make(review.turnId);
+          const reviewItemId = review.targetItemId
+            ? ProviderItemId.make(review.targetItemId)
+            : undefined;
+          const alreadyPending = (yield* Ref.get(pendingApprovalsRef)).has(reviewRequestId);
+          if (!alreadyPending) {
+            yield* Ref.update(pendingApprovalsRef, (current) => {
+              const next = new Map(current);
+              next.set(reviewRequestId, {
+                type: "auto-review",
+                requestId: reviewRequestId,
+                requestKind: "auto-review",
+                turnId: reviewTurnId,
+                itemId: reviewItemId,
+                event: review,
+              });
+              return next;
+            });
+            yield* emitEvent({
+              kind: "request",
+              threadId: options.threadId,
+              method: "item/autoApprovalReview/requestApproval",
+              requestId: reviewRequestId,
+              requestKind: "auto-review",
+              turnId: reviewTurnId,
+              ...(reviewItemId ? { itemId: reviewItemId } : {}),
+              payload: review,
+            });
+          }
+        }
 
         if (notification.method === "serverRequest/resolved") {
           const rawRequestId =
@@ -1037,6 +1130,7 @@ export const makeCodexSessionRuntime = (
         yield* Ref.update(pendingApprovalsRef, (current) => {
           const next = new Map(current);
           next.set(requestId, {
+            type: "provider-request",
             requestId,
             jsonRpcId: payload.approvalId ?? payload.itemId,
             requestKind: "command",
@@ -1093,6 +1187,7 @@ export const makeCodexSessionRuntime = (
         yield* Ref.update(pendingApprovalsRef, (current) => {
           const next = new Map(current);
           next.set(requestId, {
+            type: "provider-request",
             requestId,
             jsonRpcId: payload.itemId,
             requestKind: "file-change",
@@ -1136,6 +1231,61 @@ export const makeCodexSessionRuntime = (
         return {
           decision: resolved,
         } satisfies EffectCodexSchema.FileChangeRequestApprovalResponse;
+      }),
+    );
+
+    yield* client.handleServerRequest("item/permissions/requestApproval", (payload) =>
+      Effect.gen(function* () {
+        const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
+        const turnId = TurnId.make(payload.turnId);
+        const itemId = ProviderItemId.make(payload.itemId);
+        const decision = yield* Deferred.make<ProviderApprovalDecision>();
+
+        yield* Ref.update(pendingApprovalsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            type: "provider-request",
+            requestId,
+            jsonRpcId: payload.itemId,
+            requestKind: "permissions",
+            turnId,
+            itemId,
+            decision,
+          });
+          return next;
+        });
+        yield* Ref.update(approvalCorrelationsRef, (current) => {
+          const next = new Map(current);
+          next.set(payload.itemId, {
+            requestId,
+            requestKind: "permissions",
+            turnId,
+            itemId,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "item/permissions/requestApproval",
+          requestId,
+          requestKind: "permissions",
+          turnId,
+          itemId,
+          payload,
+        });
+
+        const resolved = yield* Deferred.await(decision).pipe(
+          Effect.ensuring(
+            Ref.update(pendingApprovalsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+        return permissionResponseForDecision(payload.permissions, resolved);
       }),
     );
 
@@ -1434,12 +1584,22 @@ export const makeCodexSessionRuntime = (
               requestId,
             });
           }
+          if (pending.type === "auto-review") {
+            const providerThreadId = yield* readProviderThreadId;
+            yield* resolveGuardianDeniedAction({
+              client,
+              providerThreadId,
+              event: pending.event,
+              decision,
+            });
+          } else {
+            yield* Deferred.succeed(pending.decision, decision);
+          }
           yield* Ref.update(pendingApprovalsRef, (current) => {
             const next = new Map(current);
             next.delete(requestId);
             return next;
           });
-          yield* Deferred.succeed(pending.decision, decision);
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,

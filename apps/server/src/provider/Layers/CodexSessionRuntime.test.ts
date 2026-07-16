@@ -17,7 +17,9 @@ import {
   buildTurnStartParams,
   isRecoverableThreadResumeError,
   openCodexThread,
+  permissionResponseForDecision,
   requestCodexTurn,
+  resolveGuardianDeniedAction,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -151,6 +153,92 @@ describe("buildTurnStartParams", () => {
         },
       ],
     });
+  });
+});
+
+describe("Codex approval bridging", () => {
+  const requestedPermissions = {
+    fileSystem: { write: ["/tmp/project"] },
+    network: { enabled: true },
+  } as const;
+
+  it("grants exactly the requested permissions for a turn or session", () => {
+    assert.deepStrictEqual(permissionResponseForDecision(requestedPermissions, "accept"), {
+      permissions: requestedPermissions,
+      scope: "turn",
+    });
+    assert.deepStrictEqual(
+      permissionResponseForDecision(requestedPermissions, "acceptForSession"),
+      {
+        permissions: requestedPermissions,
+        scope: "session",
+      },
+    );
+  });
+
+  it("returns an empty grant when the PM declines or cancels", () => {
+    assert.deepStrictEqual(permissionResponseForDecision(requestedPermissions, "decline"), {
+      permissions: {},
+      scope: "turn",
+    });
+    assert.deepStrictEqual(permissionResponseForDecision(requestedPermissions, "cancel"), {
+      permissions: {},
+      scope: "turn",
+    });
+  });
+
+  it("sends the exact denied review event upstream only when accepted", async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const client = {
+      request: (method: "thread/approveGuardianDeniedAction", params: unknown) => {
+        calls.push({ method, params });
+        return Effect.succeed({});
+      },
+    };
+    const event = {
+      action: {
+        type: "command" as const,
+        command: "git push origin main",
+        cwd: "/tmp/project",
+        source: "shell" as const,
+      },
+      completedAtMs: 2,
+      decisionSource: "agent" as const,
+      review: {
+        status: "denied" as const,
+        riskLevel: "high" as const,
+        rationale: "Push requires explicit authorization.",
+      },
+      reviewId: "review-1",
+      startedAtMs: 1,
+      targetItemId: "item-1",
+      threadId: "provider-thread-1",
+      turnId: "turn-1",
+    };
+
+    await Effect.runPromise(
+      resolveGuardianDeniedAction({
+        client,
+        providerThreadId: "provider-thread-1",
+        event,
+        decision: "accept",
+      }),
+    );
+    await Effect.runPromise(
+      resolveGuardianDeniedAction({
+        client,
+        providerThreadId: "provider-thread-1",
+        event,
+        decision: "decline",
+      }),
+    );
+
+    assert.deepStrictEqual(calls, [
+      {
+        method: "thread/approveGuardianDeniedAction",
+        params: { threadId: "provider-thread-1", event },
+      },
+    ]);
   });
 });
 

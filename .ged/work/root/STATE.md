@@ -1,8 +1,8 @@
 # State
 
 - **Phase**: implement — Codex worker auto-review and PM fallback approval control.
-- **Active task**: `ORCH-APPROVAL-02` — bridge granular Codex permission requests and denied
-  auto-reviews into the existing approval lifecycle with an exact upstream override actuator.
+- **Active task**: `ORCH-APPROVAL-03` — wake the owning PM durably and expose scoped inspection and
+  response tools for pending worker approvals.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -53,6 +53,13 @@
   every turn override; Claude and OpenCode workers remain full access, and normal-chat/PM policies are
   unchanged. All 87 focused tests pass, as do formatting, lint (existing warnings only), all 12
   typecheck packages, and the complete 12-package test gate in 10m26s.
+- `ORCH-APPROVAL-02` is complete. Codex granular permission callbacks now enter the shared approval
+  lifecycle and grant only the requested subset for the turn/session; decline and cancel return an
+  empty grant. Denied, timed-out, or aborted auto-reviews become pending approval requests carrying
+  the original action and risk rationale. PM acceptance invokes `thread/approveGuardianDeniedAction`
+  with that exact event; other decisions do not broaden access. All 95 focused tests pass, as do
+  formatting, lint (existing warnings only), all 12 typecheck packages after retrying the known
+  resolver race, and the complete 12-package test gate in 10m29s.
 
 - `ORCH-PMBOOT-03` is complete. Provider logs reproduced `getTaskLedger` and `cancelTask` entering
   `waitingOnApproval` and failing immediately as `user rejected MCP tool call` without any human
