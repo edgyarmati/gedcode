@@ -60,6 +60,11 @@ component lifecycle changes require integration coverage; UI interaction changes
   only because loopback test ports were denied with `EPERM`; the permitted rerun passed cleanly.
 - Picker logic and Chromium tests cover provider instance, model, supported effort options, inheritance,
   task override, and cleanup of options invalidated by a backend/model change.
+- `ORCH-ROLES-02` focused verification passes picker reconciliation unit tests, four Chromium
+  interactions covering harness/model/reasoning and typed task override persistence, all 1,230 web unit
+  tests, and all 213 web Chromium interactions. `bun fmt`, `bun lint` (existing warnings only), and
+  `bun typecheck` pass. The final socket-enabled `bun run test --output-logs=errors-only` checkpoint
+  passes all 12 workspace packages in 10m56s.
 
 ## CHAT-FORK-02
 

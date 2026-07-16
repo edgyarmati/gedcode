@@ -2,7 +2,10 @@ import {
   ProviderInstanceId,
   type ModelSelection,
   type OrchestrationStageRole,
+  type ProviderOptionSelection,
 } from "@t3tools/contracts";
+import { getComposerProviderState } from "../chat/composerProviderState";
+import { TraitsPicker } from "../chat/TraitsPicker";
 import { useCallback } from "react";
 
 import { type ProviderInstanceEntry } from "../../providerInstances";
@@ -14,12 +17,38 @@ import { STAGE_ROLE_LABELS } from "./stageRoles";
 // override the resolved project/role selection).
 export const USE_DEFAULT_VALUE = "__default__";
 
+interface PickerModelOption {
+  readonly slug: string;
+  readonly name: string;
+  readonly shortName?: string | undefined;
+}
+
+export function reconcileBackendSelection(input: {
+  readonly current: ModelSelection | null;
+  readonly entry: ProviderInstanceEntry;
+  readonly model: string;
+}): ModelSelection {
+  const options = getComposerProviderState({
+    provider: input.entry.driverKind,
+    model: input.model,
+    models: input.entry.models,
+    prompt: "",
+    modelOptions: input.current?.options,
+  }).modelOptionsForDispatch;
+  return {
+    instanceId: input.entry.instanceId,
+    model: input.model,
+    ...(options && options.length > 0 ? { options } : {}),
+  };
+}
+
 export function backendLabel(
   selection: ModelSelection,
   entry: ProviderInstanceEntry | undefined,
 ): string {
   const instanceLabel = entry?.displayName ?? String(selection.instanceId);
-  return `${instanceLabel} · ${selection.model}`;
+  const optionValues = selection.options?.map((option) => String(option.value)) ?? [];
+  return [instanceLabel, selection.model, ...optionValues].join(" · ");
 }
 
 export function formatDefaultBackendLabel(input: {
@@ -38,6 +67,7 @@ export function BackendModelPicker({
   unsetOptionLabel,
   backendAriaLabel,
   modelAriaLabel,
+  modelOptionsByInstance,
   onSelectionChange,
 }: {
   selection: ModelSelection | null;
@@ -46,6 +76,9 @@ export function BackendModelPicker({
   unsetOptionLabel: string;
   backendAriaLabel: string;
   modelAriaLabel: string;
+  modelOptionsByInstance?:
+    | ReadonlyMap<ProviderInstanceId, ReadonlyArray<PickerModelOption>>
+    | undefined;
   onSelectionChange: (next: ModelSelection | null) => void;
 }) {
   const selectedEntry = selection
@@ -63,14 +96,23 @@ export function BackendModelPicker({
       }
       const instanceId = ProviderInstanceId.make(value);
       const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
+      if (!entry) {
+        return;
+      }
       // Preserve the model when re-selecting the same instance; otherwise adopt
       // the instance's first model. Instances without models can't form a valid
       // selection, so leave the role on its current value.
-      const model = selection?.instanceId === instanceId ? selection.model : entry?.models[0]?.slug;
+      const model = selection?.instanceId === instanceId ? selection.model : entry.models[0]?.slug;
       if (model === undefined) {
         return;
       }
-      onSelectionChange({ instanceId, model });
+      onSelectionChange(
+        reconcileBackendSelection({
+          current: selection,
+          entry,
+          model,
+        }),
+      );
     },
     [instanceEntries, onSelectionChange, selection],
   );
@@ -80,16 +122,41 @@ export function BackendModelPicker({
       if (!selection || value === null) {
         return;
       }
-      onSelectionChange({ instanceId: selection.instanceId, model: value });
+      if (!selectedEntry) {
+        return;
+      }
+      onSelectionChange(
+        reconcileBackendSelection({
+          current: selection,
+          entry: selectedEntry,
+          model: value,
+        }),
+      );
+    },
+    [onSelectionChange, selectedEntry, selection],
+  );
+
+  const handleModelOptionsChange = useCallback(
+    (options: ReadonlyArray<ProviderOptionSelection> | undefined) => {
+      if (!selection) {
+        return;
+      }
+      onSelectionChange({
+        instanceId: selection.instanceId,
+        model: selection.model,
+        ...(options && options.length > 0 ? { options } : {}),
+      });
     },
     [onSelectionChange, selection],
   );
 
-  const modelOptions = selectedEntry?.models ?? [];
+  const modelOptions = selection
+    ? (modelOptionsByInstance?.get(selection.instanceId) ?? selectedEntry?.models ?? [])
+    : [];
   const modelInOptions = modelOptions.some((model) => model.slug === selection?.model);
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
       <Select
         value={selection ? String(selection.instanceId) : USE_DEFAULT_VALUE}
         onValueChange={handleInstanceChange}
@@ -133,6 +200,20 @@ export function BackendModelPicker({
           </SelectPopup>
         </Select>
       ) : null}
+      {selection && selectedEntry ? (
+        <TraitsPicker
+          provider={selectedEntry.driverKind}
+          models={selectedEntry.models}
+          model={selection.model}
+          prompt=""
+          onPromptChange={() => {}}
+          modelOptions={selection.options}
+          allowPromptInjectedEffort={false}
+          triggerVariant="outline"
+          triggerClassName="w-full sm:w-auto"
+          onModelOptionsChange={handleModelOptionsChange}
+        />
+      ) : null}
     </div>
   );
 }
@@ -146,12 +227,16 @@ export function RoleBackendPicker({
   role,
   selection,
   instanceEntries,
+  modelOptionsByInstance,
   defaultSelection,
   onSelectionChange,
 }: {
   role: OrchestrationStageRole;
   selection: ModelSelection | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+  modelOptionsByInstance?:
+    | ReadonlyMap<ProviderInstanceId, ReadonlyArray<PickerModelOption>>
+    | undefined;
   defaultSelection: ModelSelection | null;
   onSelectionChange: (role: OrchestrationStageRole, next: ModelSelection | null) => void;
 }) {
@@ -171,9 +256,10 @@ export function RoleBackendPicker({
     <BackendModelPicker
       selection={selection}
       instanceEntries={instanceEntries}
+      modelOptionsByInstance={modelOptionsByInstance}
       unsetLabel={defaultOptionLabel}
       unsetOptionLabel={defaultOptionLabel}
-      backendAriaLabel={`${STAGE_ROLE_LABELS[role]} backend`}
+      backendAriaLabel={`${STAGE_ROLE_LABELS[role]} harness`}
       modelAriaLabel={`${STAGE_ROLE_LABELS[role]} model`}
       onSelectionChange={handleSelectionChange}
     />

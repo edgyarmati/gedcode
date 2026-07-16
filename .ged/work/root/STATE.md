@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `ORCH-ROLES-02` complete per-worker harness/model/reasoning pickers.
+- **Phase**: checkpoint — all non-deferred roadmap slices are implemented.
+- **Active task**: none; only the explicitly deferred pipeline-order item remains.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -38,6 +38,10 @@
 
 ## Current Progress
 
+- `ORCH-ROLES-02` is implemented. Project settings and the task detail rail now share one per-role
+  harness/model/traits picker for `plan`, `work`, and `verify`. Model-dependent provider options are
+  reconciled on harness/model changes, valid reasoning values survive, stale values are removed, and
+  task overrides persist through `setTaskRoleSelections`.
 - `DOC-ARTIFACTS-01` is implemented. The new artifact lifecycle guide distinguishes agent-authored
   workspace `.ged/` memory, app-managed workspace `.gedcode/` Orchestrator worktrees/leases, and
   durable user `~/.gedcode/` application state. It records creation triggers, contents, retention,
@@ -411,8 +415,7 @@
 
 ## Remaining Work
 
-1. `ORCH-ROLES-02` adds complete provider/model/reasoning pickers per retained role.
-2. `ORCH-ORDER-01` remains deferred by the user.
+1. `ORCH-ORDER-01` remains explicitly deferred by the user; no other roadmap work is outstanding.
 
 ## Repository State Notes
 

@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature: Let Orchestrator projects and individual tasks choose a provider harness, model, and
+  supported thinking/reasoning level independently for each `plan`, `work`, and `verify` worker. The
+  shared picker includes configured custom models, preserves still-valid provider options across
+  harness/model changes, removes stale options, shows effective inherited selections, and persists
+  task overrides through the existing typed RPC.
+
 - Breaking change: Simplify Orchestrator workers to `plan`, `work`, and `verify`. The PM now owns task
   classification and lifecycle control directly; plan critique is another bounded plan attempt and
   post-work review belongs to verification. Removed `classify`/`review` role values have no aliases or

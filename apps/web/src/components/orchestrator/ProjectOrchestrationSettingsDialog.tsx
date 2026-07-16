@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { readEnvironmentApi } from "../../environmentApi";
 import { useSettings } from "../../hooks/useSettings";
 import { newCommandId } from "../../lib/utils";
+import { getAppModelOptionsForInstance, type AppModelOption } from "../../modelSelection";
 import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
@@ -87,6 +88,7 @@ function RoleConfigRow({
   selection,
   prefix,
   instanceEntries,
+  modelOptionsByInstance,
   defaultSelection,
   onSelectionChange,
   onPrefixChange,
@@ -95,6 +97,7 @@ function RoleConfigRow({
   selection: ModelSelection | null;
   prefix: string;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+  modelOptionsByInstance: ReadonlyMap<ModelSelection["instanceId"], ReadonlyArray<AppModelOption>>;
   defaultSelection: ModelSelection | null;
   onSelectionChange: (role: OrchestrationStageRole, next: ModelSelection | null) => void;
   onPrefixChange: (role: OrchestrationStageRole, next: string) => void;
@@ -106,6 +109,7 @@ function RoleConfigRow({
         role={role}
         selection={selection}
         instanceEntries={instanceEntries}
+        modelOptionsByInstance={modelOptionsByInstance}
         defaultSelection={defaultSelection}
         onSelectionChange={onSelectionChange}
       />
@@ -123,11 +127,13 @@ function RoleConfigRow({
 function PmModelSection({
   selection,
   instanceEntries,
+  modelOptionsByInstance,
   defaultSelection,
   onSelectionChange,
 }: {
   selection: ModelSelection | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
+  modelOptionsByInstance: ReadonlyMap<ModelSelection["instanceId"], ReadonlyArray<AppModelOption>>;
   defaultSelection: ModelSelection | null;
   onSelectionChange: (next: ModelSelection | null) => void;
 }) {
@@ -140,13 +146,17 @@ function PmModelSection({
     : "Use global default";
 
   return (
-    <SettingsSection title="PM model" description="Provider instance and model used by the PM.">
+    <SettingsSection
+      title="PM harness and model"
+      description="Provider harness, model, and supported thinking level used by the PM."
+    >
       <BackendModelPicker
         selection={selection}
         instanceEntries={instanceEntries}
+        modelOptionsByInstance={modelOptionsByInstance}
         unsetLabel="Use global default"
         unsetOptionLabel={unsetOptionLabel}
-        backendAriaLabel="PM backend"
+        backendAriaLabel="PM harness"
         modelAriaLabel="PM model"
         onSelectionChange={onSelectionChange}
       />
@@ -215,7 +225,8 @@ export function ProjectOrchestrationSettingsDialog({
   target: ProjectOrchestrationSettingsTarget | null;
   onClose: () => void;
 }) {
-  const orchestratorDefaults = useSettings((settings) => settings.orchestratorDefaults);
+  const settings = useSettings();
+  const orchestratorDefaults = settings.orchestratorDefaults;
   const inheritedDefaults = useMemo(
     () => seedOrchestratorInheritedDefaultsDraft(orchestratorDefaults),
     [orchestratorDefaults],
@@ -225,6 +236,13 @@ export function ProjectOrchestrationSettingsDialog({
     () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
     [serverProviders],
   );
+  const modelOptionsByInstance = useMemo(() => {
+    const options = new Map<ModelSelection["instanceId"], ReadonlyArray<AppModelOption>>();
+    for (const entry of instanceEntries) {
+      options.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+    }
+    return options;
+  }, [instanceEntries, settings]);
 
   const seededDraft = useMemo<OrchestrationSettingsDraft>(
     () =>
@@ -346,6 +364,7 @@ export function ProjectOrchestrationSettingsDialog({
           <PmModelSection
             selection={draft.orchestratorConfig.pmModelSelection}
             instanceEntries={instanceEntries}
+            modelOptionsByInstance={modelOptionsByInstance}
             defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
           />
@@ -360,8 +379,8 @@ export function ProjectOrchestrationSettingsDialog({
             onNumberLimitChange={handleNumberLimitChange}
           />
           <SettingsSection
-            title="Stage backends and prompt prefixes"
-            description="Roles left on the project default inherit it."
+            title="Worker harnesses and prompt prefixes"
+            description="Choose a harness, model, and supported thinking level per worker. Roles left on the project default inherit it."
           >
             <div className="space-y-3">
               {ORCHESTRATION_STAGE_ROLES.map((role) => (
@@ -371,6 +390,7 @@ export function ProjectOrchestrationSettingsDialog({
                   selection={draft.roleSelections[role]}
                   prefix={draft.rolePrefixes[role]}
                   instanceEntries={instanceEntries}
+                  modelOptionsByInstance={modelOptionsByInstance}
                   defaultSelection={
                     target
                       ? resolveRoleDefaultSelection(target, {

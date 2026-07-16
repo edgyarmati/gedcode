@@ -101,6 +101,7 @@ import {
 import { PmChatComposer } from "./PmChatComposer";
 import { TaskBoard } from "./TaskBoard";
 import { TaskPrLink } from "./TaskPrLink";
+import { TaskRoleBackendSettings } from "./TaskRoleBackendSettings";
 
 // Re-exported so existing imports (e.g. tests) keep resolving from this module.
 export { AbandonedTaskBoardSection, TaskBoard } from "./TaskBoard";
@@ -690,6 +691,7 @@ export function OrchestratorTaskRoute(props: {
             project={project}
             stageThread={stageThread}
             stageThreadRef={stageThreadRef}
+            task={task}
             taskId={taskId}
           />
         </aside>
@@ -915,6 +917,7 @@ function TaskDetailRail({
   project,
   stageThread,
   stageThreadRef,
+  task,
   taskId,
 }: {
   environmentId: EnvironmentId;
@@ -922,10 +925,14 @@ function TaskDetailRail({
   project: Project | undefined;
   stageThread: Thread | undefined;
   stageThreadRef: ScopedThreadRef | null;
+  task: OrchestratorTask | undefined;
   taskId: TaskId;
 }) {
   return (
     <div className="space-y-4">
+      {task ? (
+        <TaskRoleBackendSettings environmentId={environmentId} project={project} task={task} />
+      ) : null}
       <StageTimeline environmentId={environmentId} taskId={taskId} />
       <GatePanel environmentId={environmentId} gates={gates} taskId={taskId} />
       <StageProposedPlan
