@@ -197,6 +197,7 @@ function makeProviderServiceLayer(getLiveSessions: () => ReadonlyArray<ProviderS
     getCapabilities: () => unsupported(),
     getInstanceInfo: () => unsupported(),
     rollbackConversation: () => unsupported(),
+    forkConversation: () => unsupported(),
     streamEvents: Stream.empty,
   } satisfies ProviderServiceShape);
 }

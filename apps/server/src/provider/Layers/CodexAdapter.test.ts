@@ -114,6 +114,14 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
       }),
   );
 
+  public readonly forkThreadImpl = vi.fn(
+    (): Promise<CodexThreadSnapshot> =>
+      Promise.resolve({
+        threadId: "provider-thread-forked",
+        turns: [],
+      }),
+  );
+
   public readonly respondToRequestImpl = vi.fn(
     (_requestId: ApprovalRequestId, _decision: ProviderApprovalDecision): Promise<void> =>
       Promise.resolve(undefined),
@@ -154,6 +162,8 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   rollbackThread(numTurns: number) {
     return Effect.promise(() => this.rollbackThreadImpl(numTurns));
   }
+
+  forkThread = Effect.promise(() => this.forkThreadImpl());
 
   respondToRequest(requestId: ApprovalRequestId, decision: ProviderApprovalDecision) {
     return Effect.promise(() => this.respondToRequestImpl(requestId, decision));
@@ -318,6 +328,35 @@ validationLayer("CodexAdapterLive validation", (it) => {
         validationRuntimeFactory.factory.mock.calls[0]?.[0].systemPromptAppend,
         "Use the orchestrator PM rules.",
       );
+    }),
+  );
+
+  it.effect("forks the native Codex thread and resumes it in the target session", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+      const sourceThreadId = asThreadId("thread-fork-source");
+      const targetThreadId = asThreadId("thread-fork-target");
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: sourceThreadId,
+        runtimeMode: "full-access",
+      });
+      const sourceRuntime = validationRuntimeFactory.lastRuntime;
+      assert.ok(sourceRuntime);
+
+      const target = yield* adapter.forkThread!(sourceThreadId, {
+        provider: ProviderDriverKind.make("codex"),
+        threadId: targetThreadId,
+        runtimeMode: "full-access",
+      });
+
+      assert.equal(sourceRuntime.forkThreadImpl.mock.calls.length, 1);
+      assert.equal(target.threadId, targetThreadId);
+      assert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[1]?.[0].resumeCursor, {
+        threadId: "provider-thread-forked",
+      });
     }),
   );
 

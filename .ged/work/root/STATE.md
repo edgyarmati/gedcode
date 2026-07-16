@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
-- **Active task**: `CHAT-FORK-01` typed server/RPC fork operation and provider semantics.
+- **Active task**: `CHAT-FORK-02` completed-assistant message action and navigation.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -26,6 +26,15 @@
 
 ## Current Progress
 
+- `CHAT-FORK-01` is complete. The typed RPC creates an atomic event-sourced target task from a
+  completed assistant-message boundary. Codex uses native `thread/fork` and rolls back only the new
+  provider thread for earlier boundaries; other providers continue in a fresh session from copied
+  visible history. Both paths leave the source untouched and retain the current filesystem state.
+- Final `CHAT-FORK-01` verification passed on 2026-07-16: 63 focused contract tests and 106 focused
+  server contract/decider/provider/reactor tests, `bun fmt`, `bun lint` (existing warnings only), `bun
+  typecheck` across all 12 packages, and a clean socket-enabled `bun run test
+  --output-logs=errors-only` rerun with all 12 package tasks successful in 10m31s. The first full run
+  had one unrelated bootstrap-auth server-router flake, which passed immediately in isolation.
 - `CHAT-GED-02` is complete. Normal chat composers expose a persisted Normal/GED selector on desktop
   and compact layouts, explain the lightweight workflow in a tooltip/menu description, and propagate
   the choice through thread creation, metadata updates, and every turn-start path. New drafts use a
@@ -352,9 +361,9 @@
 
 ## Remaining Work
 
-1. `CHAT-GED-01/02` restores lightweight GED prompt mode and its normal-chat composer plumbing.
-2. `CHAT-FORK-01/02` adds the resolved hybrid provider-native/copied-history fork behavior and UI.
-3. `ORCH-ORDER-01` remains deferred by the user.
+1. `CHAT-FORK-02` adds the completed-assistant message action and navigation UI for the verified fork
+   operation.
+2. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 

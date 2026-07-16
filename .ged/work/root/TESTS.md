@@ -5,6 +5,22 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## CHAT-FORK-01
+
+- Contract coverage pins the source-message input plus explicit provider-native/copied-history strategy
+  and current-filesystem result semantics.
+- Decider and service coverage prove only the selected visible prefix is copied atomically, the source
+  projection remains unchanged, active turns are rejected, native Codex forks roll back only the new
+  target, and unsupported providers do not receive native fork calls.
+- Provider coverage proves Codex resumes the native fork under the new thread id and ProviderService
+  routes through the source instance while persisting the target binding.
+- Reactor coverage proves a copied-history target starts a fresh provider session with the selected
+  transcript and current-filesystem warning, while stored source history remains unchanged.
+- Verification passed on 2026-07-16: 63 focused contract tests, 106 focused server tests, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and a clean full
+  socket-enabled `bun run test --output-logs=errors-only` rerun with all 12 package tasks successful in
+  10m31s. The first full run's unrelated bootstrap-auth router flake passed immediately in isolation.
+
 ## CHAT-GED-02
 
 - Settings schema coverage proves the global default is GED-on and accepts an explicit Normal default

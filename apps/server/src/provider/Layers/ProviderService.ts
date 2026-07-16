@@ -980,6 +980,53 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
+  const forkConversation: ProviderServiceShape["forkConversation"] = Effect.fn("forkConversation")(
+    function* (input) {
+      const target = yield* decodeInputOrValidationError({
+        operation: "ProviderService.forkConversation",
+        schema: ProviderSessionStartInput,
+        payload: input.target,
+      });
+      const routed = yield* resolveRoutableSession({
+        threadId: input.sourceThreadId,
+        operation: "ProviderService.forkConversation",
+        allowRecovery: true,
+      });
+      if (routed.adapter.capabilities.threadFork !== "native" || !routed.adapter.forkThread) {
+        return yield* toValidationError(
+          "ProviderService.forkConversation",
+          `Provider '${routed.adapter.provider}' does not support native thread forks.`,
+        );
+      }
+      if (
+        target.providerInstanceId !== undefined &&
+        target.providerInstanceId !== routed.instanceId
+      ) {
+        return yield* toValidationError(
+          "ProviderService.forkConversation",
+          `Fork target provider instance '${target.providerInstanceId}' does not match source instance '${routed.instanceId}'.`,
+        );
+      }
+      const session = yield* routed.adapter.forkThread(input.sourceThreadId, {
+        ...target,
+        provider: routed.adapter.provider,
+        providerInstanceId: routed.instanceId,
+      });
+      const sessionWithInstance = {
+        ...session,
+        providerInstanceId: routed.instanceId,
+      };
+      yield* stopStaleSessionsForThread({
+        threadId: target.threadId,
+        currentInstanceId: routed.instanceId,
+      });
+      yield* upsertSessionBinding(sessionWithInstance, target.threadId, {
+        modelSelection: target.modelSelection,
+      });
+      return sessionWithInstance;
+    },
+  );
+
   return {
     startSession,
     sendTurn,
@@ -991,6 +1038,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,
+    forkConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
     // independently receive all runtime events.

@@ -27,6 +27,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
+  forkThread: "orchestration.forkThread",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   replayEvents: "orchestration.replayEvents",
@@ -1321,6 +1322,17 @@ const ThreadSessionSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadForkCommand = Schema.Struct({
+  type: Schema.Literal("thread.fork"),
+  commandId: CommandId,
+  sourceThreadId: ThreadId,
+  sourceMessageId: MessageId,
+  targetThreadId: ThreadId,
+  targetMessageIds: Schema.Array(MessageId),
+  session: Schema.optionalKey(OrchestrationSession),
+  createdAt: IsoDateTime,
+});
+
 const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   type: Schema.Literal("thread.message.assistant.delta"),
   commandId: CommandId,
@@ -1412,6 +1424,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadForkCommand,
   ThreadSessionSetCommand,
   ThreadMessageUserAppendCommand,
   ThreadMessageAssistantDeltaCommand,
@@ -2383,6 +2396,20 @@ export const DispatchResult = Schema.Struct({
 });
 export type DispatchResult = typeof DispatchResult.Type;
 
+export const OrchestrationForkThreadInput = Schema.Struct({
+  sourceThreadId: ThreadId,
+  sourceMessageId: MessageId,
+});
+export type OrchestrationForkThreadInput = typeof OrchestrationForkThreadInput.Type;
+
+export const OrchestrationForkThreadResult = Schema.Struct({
+  threadId: ThreadId,
+  strategy: Schema.Literals(["provider-native", "copied-history"]),
+  filesystem: Schema.Literal("current-state"),
+  sequence: NonNegativeInt,
+});
+export type OrchestrationForkThreadResult = typeof OrchestrationForkThreadResult.Type;
+
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({
     threadId: ThreadId,
@@ -2417,6 +2444,10 @@ export const OrchestrationRpcSchemas = {
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
+  },
+  forkThread: {
+    input: OrchestrationForkThreadInput,
+    output: OrchestrationForkThreadResult,
   },
   getTurnDiff: {
     input: OrchestrationGetTurnDiffInput,
@@ -2514,6 +2545,24 @@ export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<Orche
 export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<OrchestrationDispatchCommandError>()(
   "OrchestrationDispatchCommandError",
   {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationForkThreadError extends Schema.TaggedErrorClass<OrchestrationForkThreadError>()(
+  "OrchestrationForkThreadError",
+  {
+    sourceThreadId: ThreadId,
+    sourceMessageId: MessageId,
+    reason: Schema.Literals([
+      "thread-not-found",
+      "message-not-found",
+      "invalid-boundary",
+      "thread-busy",
+      "provider-fork-failed",
+      "dispatch-failed",
+    ]),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
   },

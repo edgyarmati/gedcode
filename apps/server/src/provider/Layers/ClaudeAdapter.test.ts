@@ -282,6 +282,7 @@ const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
       getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
       rollbackConversation: () =>
         Effect.die("ProviderService.rollbackConversation should not be called"),
+      forkConversation: () => Effect.die("ProviderService.forkConversation should not be called"),
       streamEvents: Stream.empty,
     } satisfies ProviderServiceShape),
     Layer.succeed(TerminalManager, {

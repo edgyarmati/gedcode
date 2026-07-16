@@ -3,6 +3,7 @@ import {
   CommandId,
   EventId,
   type ModelSelection,
+  type MessageId,
   type OrchestrationEvent,
   ProviderDriverKind,
   type ProjectId,
@@ -52,6 +53,7 @@ import { ORCHESTRATOR_WORKER_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts
 import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 import { applyGedChatWorkflowPrompt } from "../chatGedPrompt.ts";
+import { prependCopiedForkHistory } from "../chatForkPrompt.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -662,6 +664,7 @@ const make = Effect.gen(function* () {
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
+    readonly messageId: MessageId;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
@@ -683,9 +686,17 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
+    const messageIndex = thread.messages.findIndex((message) => message.id === input.messageId);
+    const providerMessage =
+      thread.session === null && messageIndex > 0
+        ? prependCopiedForkHistory({
+            history: thread.messages.slice(0, messageIndex),
+            message: input.messageText,
+          })
+        : input.messageText;
     const normalizedInput = toNonEmptyProviderInput(
       applyGedChatWorkflowPrompt({
-        message: input.messageText,
+        message: providerMessage,
         enabled: input.gedWorkflowEnabled ?? thread.gedWorkflowEnabled ?? true,
       }),
     );
@@ -937,6 +948,7 @@ const make = Effect.gen(function* () {
 
       const sendTurnRequest = yield* buildSendTurnRequestForThread({
         threadId: event.payload.threadId,
+        messageId: message.id,
         messageText: message.text,
         ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
         ...(event.payload.modelSelection !== undefined

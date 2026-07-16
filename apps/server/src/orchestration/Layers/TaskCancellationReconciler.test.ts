@@ -217,6 +217,7 @@ function makeRuntime(input: {
       getCapabilities: unsupportedCall,
       getInstanceInfo: unsupportedCall,
       rollbackConversation: unsupportedCall,
+      forkConversation: unsupportedCall,
       streamEvents: Stream.empty,
     } satisfies ProviderServiceShape),
     Layer.succeed(TerminalManager, {

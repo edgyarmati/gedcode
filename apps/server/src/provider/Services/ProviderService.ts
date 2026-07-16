@@ -105,6 +105,11 @@ export interface ProviderServiceShape {
     readonly numTurns: number;
   }) => Effect.Effect<void, ProviderServiceError>;
 
+  readonly forkConversation: (input: {
+    readonly sourceThreadId: ThreadId;
+    readonly target: ProviderSessionStartInput;
+  }) => Effect.Effect<ProviderSession, ProviderServiceError>;
+
   /**
    * Canonical provider runtime event stream.
    *

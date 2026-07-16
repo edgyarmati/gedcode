@@ -147,6 +147,7 @@ export function classifyOrchestrationCommand(
     case "thread.revert.complete":
       return "turn";
     case "thread.create":
+    case "thread.fork":
     case "thread.delete":
     case "thread.archive":
     case "thread.unarchive":
@@ -204,6 +205,11 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "task",
         aggregateId: command.taskId,
+      };
+    case "thread.fork":
+      return {
+        aggregateKind: "thread",
+        aggregateId: command.targetThreadId,
       };
     default:
       return {

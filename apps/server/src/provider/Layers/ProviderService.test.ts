@@ -195,6 +195,13 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.succeed({ threadId, turns: [] }),
   );
 
+  const forkThread = vi.fn((_sourceThreadId: ThreadId, target: ProviderSessionStartInput) =>
+    startSession({
+      ...target,
+      resumeCursor: { threadId: `fork-${String(target.threadId)}` },
+    }),
+  );
+
   const stopAll = vi.fn(
     (): Effect.Effect<void, ProviderAdapterError> =>
       Effect.sync(() => {
@@ -206,6 +213,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     provider,
     capabilities: {
       sessionModelSwitch: "in-session",
+      threadFork: provider === CODEX_DRIVER ? "native" : "copied-history",
     },
     startSession,
     sendTurn,
@@ -217,6 +225,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    ...(provider === CODEX_DRIVER ? { forkThread } : {}),
     stopAll,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
@@ -252,6 +261,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     hasSession,
     readThread,
     rollbackThread,
+    forkThread,
     stopAll,
   };
 }
@@ -542,6 +552,49 @@ it.effect("ProviderServiceLive rejects new sessions for disabled custom instance
 );
 
 const routing = makeProviderServiceLayer();
+
+routing.layer("ProviderService native thread fork routing", (it) => {
+  it.effect(
+    "routes a native fork through the source instance and persists the target binding",
+    () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        const directory = yield* ProviderSessionDirectory;
+        const source = asThreadId("fork-source");
+        const target = asThreadId("fork-target");
+
+        yield* provider.startSession(source, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId: source,
+          cwd: "/tmp/project",
+          runtimeMode: "full-access",
+        });
+        routing.codex.forkThread.mockClear();
+
+        const session = yield* provider.forkConversation({
+          sourceThreadId: source,
+          target: {
+            threadId: target,
+            provider: CODEX_DRIVER,
+            providerInstanceId: codexInstanceId,
+            cwd: "/tmp/project",
+            runtimeMode: "full-access",
+          },
+        });
+
+        assert.equal(session.threadId, target);
+        assert.equal(session.providerInstanceId, codexInstanceId);
+        assert.equal(routing.codex.forkThread.mock.calls.length, 1);
+        assert.equal(routing.codex.forkThread.mock.calls[0]?.[0], source);
+        const binding = yield* directory.getBinding(target);
+        assert.equal(Option.isSome(binding), true);
+        if (Option.isSome(binding)) {
+          assert.equal(binding.value.providerInstanceId, codexInstanceId);
+        }
+      }),
+  );
+});
 
 it.effect("ProviderServiceLive writes canonical events to the emitting thread segment", () =>
   Effect.gen(function* () {

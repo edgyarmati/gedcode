@@ -359,6 +359,7 @@ describe("ProviderCommandReactor", () => {
         });
       },
       rollbackConversation: () => unsupported(),
+      forkConversation: () => unsupported(),
       get streamEvents() {
         return Stream.fromPubSub(runtimeEventPubSub);
       },
@@ -1662,6 +1663,93 @@ describe("ProviderCommandReactor", () => {
     const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
     expect(request.input).toBe("keep this prompt unchanged");
     expect((await harness.readModel()).threads[0]?.gedWorkflowEnabled).toBe(false);
+  });
+
+  it("prepends copied fork history only when the fresh target session sends its first turn", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const sourceThreadId = ThreadId.make("thread-1");
+    const targetThreadId = ThreadId.make("thread-fork-copy");
+    const assistantMessageId = asMessageId("assistant-fork-source");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-fork-normal-mode"),
+        threadId: sourceThreadId,
+        gedWorkflowEnabled: false,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.message.user.append",
+        commandId: CommandId.make("cmd-fork-source-user"),
+        threadId: sourceThreadId,
+        messageId: asMessageId("user-fork-source"),
+        text: "Original request",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.message.assistant.delta",
+        commandId: CommandId.make("cmd-fork-source-assistant-delta"),
+        threadId: sourceThreadId,
+        messageId: assistantMessageId,
+        delta: "Original answer",
+        turnId: TurnId.make("turn-fork-source"),
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.message.assistant.complete",
+        commandId: CommandId.make("cmd-fork-source-assistant-complete"),
+        threadId: sourceThreadId,
+        messageId: assistantMessageId,
+        turnId: TurnId.make("turn-fork-source"),
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make("cmd-fork-copy"),
+        sourceThreadId,
+        sourceMessageId: assistantMessageId,
+        targetThreadId,
+        targetMessageIds: [asMessageId("copy-user"), asMessageId("copy-assistant")],
+        createdAt: now,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-fork-target-turn"),
+        threadId: targetThreadId,
+        message: {
+          messageId: asMessageId("fork-target-user"),
+          role: "user",
+          text: "Take another direction",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    expect(request.input).toContain("<forked_conversation_history>");
+    expect(request.input).toContain("Original request");
+    expect(request.input).toContain("Original answer");
+    expect(request.input).toContain("The filesystem is the current filesystem state");
+    expect(request.input).toContain("<new_user_message>\nTake another direction");
+    expect(
+      (await harness.readModel()).threads.find((thread) => thread.id === sourceThreadId)?.messages,
+    ).toHaveLength(2);
   });
 
   it("preserves the active session model when in-session model switching is unsupported", async () => {

@@ -11,6 +11,8 @@ import {
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
+  OrchestrationForkThreadInput,
+  OrchestrationForkThreadResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
   OrchestrationGateResolutionOrigin,
@@ -37,6 +39,8 @@ import { ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
+const decodeForkThreadInput = Schema.decodeUnknownEffect(OrchestrationForkThreadInput);
+const decodeForkThreadResult = Schema.decodeUnknownEffect(OrchestrationForkThreadResult);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
@@ -1463,5 +1467,38 @@ it.effect("ModelSelection rejects malformed instance ids", () =>
       }),
     );
     assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("thread fork RPC contracts expose explicit strategy and filesystem semantics", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeForkThreadInput({
+      sourceThreadId: "source-thread",
+      sourceMessageId: "assistant-message",
+    });
+    const result = yield* decodeForkThreadResult({
+      threadId: "target-thread",
+      strategy: "provider-native",
+      filesystem: "current-state",
+      sequence: 12,
+    });
+
+    assert.strictEqual(input.sourceThreadId, ThreadId.make("source-thread"));
+    assert.strictEqual(result.strategy, "provider-native");
+    assert.strictEqual(result.filesystem, "current-state");
+  }),
+);
+
+it.effect("thread fork RPC result rejects implicit filesystem rollback semantics", () =>
+  Effect.gen(function* () {
+    const exit = yield* Effect.exit(
+      decodeForkThreadResult({
+        threadId: "target-thread",
+        strategy: "copied-history",
+        filesystem: "selected-message-state",
+        sequence: 12,
+      }),
+    );
+    assert.strictEqual(exit._tag, "Failure");
   }),
 );

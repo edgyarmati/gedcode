@@ -16,6 +16,7 @@ import {
   AuthSessionId,
   CommandId,
   EventId,
+  MessageId,
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -26,6 +27,7 @@ import {
   OrchestrationInterruptStageError,
   OrchestrationLandTaskError,
   OrchestrationDispatchCommandError,
+  OrchestrationForkThreadError,
   type OrchestrationEvent,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
@@ -58,6 +60,7 @@ import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnap
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
 import { interruptOrchestrationStageWithServices } from "./orchestration/stageInterrupt.ts";
+import { forkOrchestrationThreadWithServices } from "./orchestration/threadFork.ts";
 import {
   landOrchestrationTaskWithServices,
   OrchestrationLandTaskError as TaskLandingError,
@@ -951,6 +954,56 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               ),
             ),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.forkThread]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.forkThread,
+            forkOrchestrationThreadWithServices(
+              {
+                snapshotQuery: projectionSnapshotQuery,
+                providerService,
+              },
+              {
+                newThreadId: crypto.randomUUIDv4.pipe(
+                  Effect.map(ThreadId.make),
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationForkThreadError({
+                        ...input,
+                        reason: "dispatch-failed",
+                        message: "Failed to generate a forked task identifier.",
+                        cause,
+                      }),
+                  ),
+                ),
+                newMessageId: crypto.randomUUIDv4.pipe(
+                  Effect.map(MessageId.make),
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationForkThreadError({
+                        ...input,
+                        reason: "dispatch-failed",
+                        message: "Failed to generate a forked message identifier.",
+                        cause,
+                      }),
+                  ),
+                ),
+                commandId: serverCommandId("thread-fork").pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationForkThreadError({
+                        ...input,
+                        reason: "dispatch-failed",
+                        message: "Failed to generate a fork command identifier.",
+                        cause,
+                      }),
+                  ),
+                ),
+                createdAt: nowIso,
+                dispatch: orchestrationEngine.dispatch,
+              },
+              input,
+            ),
           ),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
           observeRpcEffect(

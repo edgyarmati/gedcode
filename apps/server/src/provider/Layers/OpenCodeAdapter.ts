@@ -1434,6 +1434,7 @@ export function makeOpenCodeAdapter(
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
+        threadFork: "copied-history",
       },
       startSession,
       sendTurn,

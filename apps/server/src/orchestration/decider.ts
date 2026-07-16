@@ -550,6 +550,113 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.fork": {
+      const source = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.sourceThreadId,
+      });
+      yield* requireThreadAbsent({
+        readModel,
+        command,
+        threadId: command.targetThreadId,
+      });
+      if (source.latestTurn?.state === "running") {
+        return yield* invariantError(
+          command.type,
+          `Thread '${source.id}' has a running turn and cannot be forked.`,
+        );
+      }
+      const boundaryIndex = source.messages.findIndex(
+        (message) => message.id === command.sourceMessageId,
+      );
+      const boundary = boundaryIndex < 0 ? undefined : source.messages[boundaryIndex];
+      if (boundary === undefined || boundary.role !== "assistant" || boundary.streaming) {
+        return yield* invariantError(
+          command.type,
+          `Message '${command.sourceMessageId}' must be a completed assistant message in thread '${source.id}'.`,
+        );
+      }
+      const sourceMessages = source.messages.slice(0, boundaryIndex + 1);
+      if (command.targetMessageIds.length !== sourceMessages.length) {
+        return yield* invariantError(
+          command.type,
+          `Fork target message id count must match the ${sourceMessages.length} visible source messages.`,
+        );
+      }
+      if (new Set(command.targetMessageIds).size !== command.targetMessageIds.length) {
+        return yield* invariantError(command.type, "Fork target message ids must be unique.");
+      }
+      if (command.session !== undefined && command.session.threadId !== command.targetThreadId) {
+        return yield* invariantError(
+          command.type,
+          `Forked provider session must belong to target thread '${command.targetThreadId}'.`,
+        );
+      }
+
+      const createdEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.targetThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.created" as const,
+        payload: {
+          threadId: command.targetThreadId,
+          projectId: source.projectId,
+          title: source.title,
+          modelSelection: source.modelSelection,
+          gedWorkflowEnabled: source.gedWorkflowEnabled ?? true,
+          runtimeMode: source.runtimeMode,
+          interactionMode: source.interactionMode,
+          branch: source.branch,
+          worktreePath: source.worktreePath,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const messageEvents: PlannedOrchestrationEvent[] = [];
+      let previousEventId = createdEvent.eventId;
+      for (const [index, message] of sourceMessages.entries()) {
+        const messageEvent = {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.targetThreadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          causationEventId: previousEventId,
+          type: "thread.message-sent" as const,
+          payload: {
+            ...message,
+            threadId: command.targetThreadId,
+            messageId: command.targetMessageIds[index]!,
+          },
+        };
+        messageEvents.push(messageEvent);
+        previousEventId = messageEvent.eventId;
+      }
+      if (command.session === undefined) {
+        return [createdEvent, ...messageEvents];
+      }
+      const sessionEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.targetThreadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: messageEvents.at(-1)?.eventId ?? createdEvent.eventId,
+        type: "thread.session-set" as const,
+        payload: {
+          threadId: command.targetThreadId,
+          session: command.session,
+        },
+      };
+      return [createdEvent, ...messageEvents, sessionEvent];
+    }
+
     case "thread.delete": {
       yield* requireThread({
         readModel,

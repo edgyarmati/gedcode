@@ -30,6 +30,7 @@ export interface ProviderAdapterCapabilities {
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  readonly threadFork?: "native" | "copied-history";
 }
 
 export interface ProviderThreadTurnSnapshot {
@@ -113,6 +114,11 @@ export interface ProviderAdapterShape<TError> {
     threadId: ThreadId,
     numTurns: number,
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
+
+  readonly forkThread?: (
+    sourceThreadId: ThreadId,
+    target: ProviderSessionStartInput,
+  ) => Effect.Effect<ProviderSession, TError>;
 
   /**
    * Stop all sessions owned by this adapter.

@@ -1634,6 +1634,21 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     );
   };
 
+  const forkThread: NonNullable<CodexAdapterShape["forkThread"]> = (sourceThreadId, target) =>
+    requireSession(sourceThreadId).pipe(
+      Effect.flatMap((sourceSession) =>
+        sourceSession.runtime.forkThread.pipe(
+          Effect.mapError((cause) => mapCodexRuntimeError(sourceThreadId, "thread/fork", cause)),
+        ),
+      ),
+      Effect.flatMap((snapshot) =>
+        startSession({
+          ...target,
+          resumeCursor: { threadId: snapshot.threadId },
+        }),
+      ),
+    );
+
   const respondToRequest: CodexAdapterShape["respondToRequest"] = (threadId, requestId, decision) =>
     requireSession(threadId).pipe(
       Effect.flatMap((session) => session.runtime.respondToRequest(requestId, decision)),
@@ -1715,12 +1730,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      threadFork: "native",
     },
     startSession,
     sendTurn,
     interruptTurn,
     readThread,
     rollbackThread,
+    forkThread,
     respondToRequest,
     respondToUserInput,
     stopSession,

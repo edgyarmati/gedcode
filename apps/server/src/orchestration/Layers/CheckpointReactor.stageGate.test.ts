@@ -124,6 +124,7 @@ function createProviderServiceHarness() {
         },
       }),
     rollbackConversation: () => Effect.void,
+    forkConversation: () => Effect.die("ProviderService.forkConversation should not be called"),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);
     },
