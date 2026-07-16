@@ -64,6 +64,7 @@ Allow the role-reduced build to start against application state written before `
 
 - Preserve `plan`, `work`, and `verify` model selections and prompt prefixes exactly.
 - Remove only obsolete `classify` and `review` keys from projected project and task JSON.
+- Remove only obsolete `classify` and `review` rows from the derived stage-history projection.
 - Do not mutate the append-only orchestration event log or add runtime aliases for removed roles.
 - Keep historical project and role-selection events replayable by dropping only those retired keys at
   the persisted-event decoding boundary.
@@ -77,6 +78,8 @@ Allow the role-reduced build to start against application state written before `
 - Invalid JSON is not silently replaced or hidden.
 - A database carrying the reproduced legacy project settings completes migration and can be decoded
   by the current projection schemas.
+- Current `plan`, `work`, and `verify` stage history survives migration while incompatible retired
+  stage-history rows no longer prevent startup.
 - Historical events carrying the retired keys replay to current-role payloads; unrelated unknown role
   keys remain rejected.
 

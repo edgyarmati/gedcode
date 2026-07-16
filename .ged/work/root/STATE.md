@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: verified — Codex worker auto-review and PM fallback approval control complete.
-- **Active task**: none; `ORCH-APPROVAL-01..03` are complete.
+- **Phase**: verified — all urgent release-candidate roadmap work is complete.
+- **Active task**: none. Only the user-deferred `ORCH-ORDER-01` remains.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -46,6 +46,17 @@
   Claude and OpenCode workers retain full access.
 
 ## Current Progress
+
+- `CHAT-DRAFT-01` is complete. The global Chat toggle and project **Open in Chat** action prefer an
+  unsent project draft over completed server threads. When multiple checkout drafts exist, actual
+  unsent content wins over newer empty sessions. All 78 focused route/store tests pass, and desktop
+  Computer Use confirmed both navigation paths restore the exact typed composer value. Formatting,
+  lint, all 12 typecheck packages, the production build, and the complete 12-package test gate pass.
+- `ORCH-ROLES-04` is complete. Migration 55 removes only retired `classify`/`review` rows from the
+  derived stage-history projection while preserving current stage history, tasks, threads, and the
+  append-only event store. Migration tests pass 4/4, and the previously crashing dev database migrated,
+  reached backend-ready, and created the desktop window. The complete repository test gate passes all
+  12 packages in 10m47s.
 
 - `ORCH-APPROVAL-01` is complete. Provider sessions now retain an explicit approval reviewer. Codex
   orchestration workers start and resume with workspace-write/on-request plus `auto_review`, including

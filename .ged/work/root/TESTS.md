@@ -74,6 +74,25 @@ Verification evidence:
 - Final repository gates pass: `bun fmt`, `bun lint` (existing warnings only), all 12 `bun typecheck`
   packages, and all 12 `bun run test --output-logs=errors-only` packages in 10m21s.
 
+## ORCH-ROLES-04
+
+- Migration 55 coverage seeds every historical role and proves only `classify`/`review` rows are
+  removed while `plan`/`work`/`verify` rows remain unchanged; migration 54 and 55 tests pass 4/4.
+- The dev desktop applied migration 55 to the database that previously crashed strict stage-history
+  decoding, then reached `backend ready` and created its main window.
+- Final verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck packages,
+  the production build, and the complete 12-package test gate in 10m47s.
+
+## CHAT-DRAFT-01
+
+- Route tests prove an unsent project draft takes precedence over the newest server thread. Draft-store
+  tests prove the newest empty checkout draft is used only when no checkout has unsent content.
+- All 78 focused route/store tests pass. Desktop Computer Use typed
+  `draft-preservation-final-smoke`, switched to Orchestrator, and confirmed both the global **Chat**
+  toggle and project **Open in Chat** restored the same draft route and exact composer value.
+- Final verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck packages,
+  the production build, and the complete 12-package test gate in 10m47s.
+
 ## Test Strategy
 
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-

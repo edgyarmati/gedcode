@@ -16,9 +16,14 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   bearer-authenticated loopback orchestration MCP server while retaining the PM's read-only sandbox
   and normal approval policy for every other tool surface.
 
+- Fixed unsent normal-chat drafts disappearing from view when switching to Orchestrator and back.
+  The Chat toggle and a project's **Open in Chat** action now return to that project's existing draft
+  before selecting a completed server thread or the empty chat home.
+
 - Fix: Repair startup after the Orchestrator worker-role reduction by removing retired `classify` and
-  `review` keys from persisted project/task role settings. Current writes remain strict, while
-  historical append-only events decode without reintroducing the removed roles.
+  `review` keys from persisted project/task role settings and their incompatible derived
+  stage-history rows. Current writes remain strict, while historical append-only events remain
+  untouched.
 
 ## 0.3.0-nightly.20260716.1
 
