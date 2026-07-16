@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `CHAT-QUEUE-02` idempotent queue/steer dispatch and one-at-a-time draining.
+- **Active task**: `CHAT-QUEUE-03` queued-message controls and responsive rendering.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -36,6 +36,15 @@
 
 ## Current Progress
 
+- `CHAT-QUEUE-02` is implemented. Active normal-chat turns capture sends into the queue by default;
+  ready settlement drains only the head using its stable command/message IDs, captured model options,
+  modes, text, and attachments. Queue-off sends use the existing provider steer path without wedging
+  local new-turn acknowledgement. Interrupted `dispatching` items retry idempotently; failures persist
+  their error and stop automatic retry until an explicit edit/steer action. All 74 queue/store tests,
+  web typecheck, and 3 focused full-Chat Chromium flows pass. Final verification also passed `bun
+  fmt`, `bun lint` (existing warnings only), all 12 typecheck packages, the complete web unit suite
+  (1,241/1,241), all 83 ChatView Chromium interactions, and the complete 12-package repository test
+  gate in 10m26s.
 - `CHAT-QUEUE-01` is implemented. Composer draft storage v7 now persists environment-scoped FIFO queue
   items with stable command/message IDs, exact backend options and modes, dispatching retry state, and
   data-URL attachments. Queue edit/delete/status/preference operations preserve identity and order;
@@ -384,9 +393,7 @@
 
 ## Remaining Work
 
-1. Commit verified `CHAT-QUEUE-01` atomically; it intentionally changes no send/UI behavior.
-2. `CHAT-QUEUE-02` adds idempotent queue/steer dispatch and one-at-a-time draining.
-3. `CHAT-QUEUE-03` adds the reference queue controls and compact/browser coverage.
+1. `CHAT-QUEUE-03` adds the reference queue controls and compact/browser coverage.
 4. `DOC-ARTIFACTS-01` and `ORCH-ROLES-01..02` follow as separate commits.
 5. `ORCH-ORDER-01` remains deferred by the user.
 

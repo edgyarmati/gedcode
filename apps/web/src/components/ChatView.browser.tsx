@@ -2,11 +2,12 @@
 import "../index.css";
 
 import {
+  CommandId,
   EventId,
   ORCHESTRATION_WS_METHODS,
   EnvironmentId,
   type EnvironmentApi,
-  type MessageId,
+  MessageId,
   type OrchestrationReadModel,
   type ProjectId,
   ProviderDriverKind,
@@ -3954,6 +3955,164 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       expect(getComputedStyle(stopButton).cursor).toBe("pointer");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("queues an active-turn submission and drains it once after the thread settles", async () => {
+    const turnStarts: NormalizedWsRpcRequestBody[] = [];
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-queue-drain" as MessageId,
+        targetText: "queue drain target",
+        sessionStatus: "running",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          if (body.type === "thread.turn.start") {
+            turnStarts.push(body);
+          }
+          return { sequence: fixture.snapshot.snapshotSequence + 1 };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "queued follow up");
+      await waitForComposerText("queued follow up");
+      await pressComposerKey("Enter");
+
+      let queuedCommandId = "";
+      let queuedMessageId = "";
+      await vi.waitFor(() => {
+        const queued = composerDraftFor(THREAD_KEY)?.queuedMessages ?? [];
+        expect(queued).toHaveLength(1);
+        expect(queued[0]).toMatchObject({ text: "queued follow up", status: "queued" });
+        queuedCommandId = String(queued[0]?.commandId ?? "");
+        queuedMessageId = String(queued[0]?.messageId ?? "");
+        expect(turnStarts).toHaveLength(0);
+      });
+
+      fixture.snapshot = updateThreadSessionInSnapshot(fixture.snapshot, THREAD_ID, {
+        threadId: THREAD_ID,
+        status: "ready",
+        providerName: "codex",
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: isoAt(2_000),
+      });
+      sendShellThreadUpsert(THREAD_ID);
+
+      await vi.waitFor(() => {
+        expect(turnStarts).toHaveLength(1);
+        expect(turnStarts[0]).toMatchObject({
+          type: "thread.turn.start",
+          commandId: queuedCommandId,
+          message: {
+            messageId: queuedMessageId,
+            text: "queued follow up",
+          },
+        });
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("sends an active-turn submission directly when queueing is disabled", async () => {
+    const turnStarts: NormalizedWsRpcRequestBody[] = [];
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-direct-steer" as MessageId,
+        targetText: "direct steer target",
+        sessionStatus: "running",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          if (body.type === "thread.turn.start") {
+            turnStarts.push(body);
+          }
+          return { sequence: fixture.snapshot.snapshotSequence + 1 };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().setQueueingEnabled(THREAD_REF, false);
+      useComposerDraftStore.getState().setPrompt(THREAD_REF, "steer immediately");
+      await waitForComposerText("steer immediately");
+      await pressComposerKey("Enter");
+
+      await vi.waitFor(() => {
+        expect(turnStarts).toHaveLength(1);
+        expect(turnStarts[0]).toMatchObject({
+          type: "thread.turn.start",
+          message: { text: "steer immediately" },
+        });
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("persists one failed drain without retrying it in a hot loop", async () => {
+    let turnStartAttempts = 0;
+    let retriedCommandId = "";
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-queue-failure" as MessageId,
+        targetText: "queue failure target",
+      }),
+    });
+
+    try {
+      __setEnvironmentApiOverrideForTests(
+        LOCAL_ENVIRONMENT_ID,
+        createMockEnvironmentApi({
+          browse: async () => ({ parentPath: "/repo", entries: [] }),
+          dispatchCommand: async (command) => {
+            if (command.type === "thread.turn.start") {
+              turnStartAttempts += 1;
+              retriedCommandId = String(command.commandId);
+              __resetEnvironmentApiOverridesForTests();
+              throw new Error("Environment disconnected");
+            }
+            return { sequence: fixture.snapshot.snapshotSequence + 1 };
+          },
+        }),
+      );
+      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
+        id: "queue-failed-browser",
+        commandId: CommandId.make("command-queue-failed-browser"),
+        messageId: MessageId.make("message-queue-failed-browser"),
+        text: "retry me explicitly",
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+        gedWorkflowEnabled: true,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: isoAt(2_100),
+        status: "dispatching",
+      });
+
+      await vi.waitFor(() => {
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages[0]).toMatchObject({
+          id: "queue-failed-browser",
+          status: "failed",
+          error: "Environment disconnected",
+        });
+      });
+      await vi.waitFor(() => expect(turnStartAttempts).toBe(1));
+      expect(retriedCommandId).toBe("command-queue-failed-browser");
     } finally {
       await mounted.cleanup();
     }

@@ -127,6 +127,7 @@ import {
 } from "../environments/runtime";
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
+  type ComposerQueuedMessage,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   useComposerDraftStore,
@@ -181,6 +182,11 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
+import {
+  canAutoDrainQueuedMessage,
+  queuedMessageAttachmentsForTurn,
+  shouldQueueComposerSubmission,
+} from "./chatQueue.logic";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { Button } from "./ui/button";
@@ -199,6 +205,7 @@ const EMPTY_PROPOSED_PLANS: Thread["proposedPlans"] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const EMPTY_QUEUED_MESSAGES: ComposerQueuedMessage[] = [];
 type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -654,6 +661,12 @@ export default function ChatView(props: ChatViewProps) {
   const composerGedWorkflowEnabled = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.gedWorkflowEnabled ?? null,
   );
+  const composerQueuedMessages = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.queuedMessages ?? EMPTY_QUEUED_MESSAGES,
+  );
+  const composerQueueingEnabled = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.queueingEnabled ?? true,
+  );
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
@@ -671,6 +684,12 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setGedWorkflowEnabled,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
+  const enqueueComposerMessage = useComposerDraftStore((store) => store.enqueueMessage);
+  const removeComposerQueuedMessage = useComposerDraftStore((store) => store.removeQueuedMessage);
+  const setComposerQueuedMessageStatus = useComposerDraftStore(
+    (store) => store.setQueuedMessageStatus,
+  );
+  const failComposerQueuedMessage = useComposerDraftStore((store) => store.failQueuedMessage);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
     (store) => store.getDraftSessionByLogicalProjectKey,
@@ -739,6 +758,7 @@ export default function ChatView(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const queuedDispatchInFlightRef = useRef<string | null>(null);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   const terminalState = useTerminalStateStore((state) =>
@@ -2236,6 +2256,117 @@ export default function ChatView(props: ChatViewProps) {
     [environmentId, serverThread],
   );
 
+  const dispatchQueuedMessage = useCallback(
+    async (message: ComposerQueuedMessage, mode: "drain" | "steer"): Promise<boolean> => {
+      if (
+        !isServerThread ||
+        !activeThread ||
+        queuedDispatchInFlightRef.current !== null ||
+        sendInFlightRef.current
+      ) {
+        return false;
+      }
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) {
+        return false;
+      }
+
+      const tracksNewTurn = mode === "drain" || phase !== "running";
+      queuedDispatchInFlightRef.current = message.id;
+      setComposerQueuedMessageStatus(composerDraftTarget, message.id, "dispatching");
+      if (tracksNewTurn) {
+        beginLocalDispatch({ preparingWorktree: false });
+      }
+      try {
+        await persistThreadSettingsForNextTurn({
+          threadId: activeThread.id,
+          createdAt: message.createdAt,
+          modelSelection: message.modelSelection,
+          gedWorkflowEnabled: message.gedWorkflowEnabled,
+          runtimeMode: message.runtimeMode,
+          interactionMode: message.interactionMode,
+        });
+        await api.orchestration.dispatchCommand({
+          type: "thread.turn.start",
+          commandId: message.commandId,
+          threadId: activeThread.id,
+          message: {
+            messageId: message.messageId,
+            role: "user",
+            text: message.text,
+            attachments: queuedMessageAttachmentsForTurn(message),
+          },
+          modelSelection: message.modelSelection,
+          gedWorkflowEnabled: message.gedWorkflowEnabled,
+          runtimeMode: message.runtimeMode,
+          interactionMode: message.interactionMode,
+          createdAt: message.createdAt,
+        });
+        removeComposerQueuedMessage(composerDraftTarget, message.id);
+        return true;
+      } catch (error) {
+        const detail =
+          error instanceof Error ? error.message : "The queued message could not be sent.";
+        failComposerQueuedMessage(composerDraftTarget, message.id, detail);
+        if (tracksNewTurn) {
+          resetLocalDispatch();
+        }
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: mode === "steer" ? "Could not steer message" : "Could not send queued message",
+            description: detail,
+          }),
+        );
+        return false;
+      } finally {
+        queuedDispatchInFlightRef.current = null;
+      }
+    },
+    [
+      activeThread,
+      beginLocalDispatch,
+      composerDraftTarget,
+      failComposerQueuedMessage,
+      isServerThread,
+      persistThreadSettingsForNextTurn,
+      phase,
+      removeComposerQueuedMessage,
+      resetLocalDispatch,
+      setComposerQueuedMessageStatus,
+    ],
+  );
+
+  const queuedMessageHead = composerQueuedMessages[0];
+  useEffect(() => {
+    if (
+      !canAutoDrainQueuedMessage({
+        isServerThread,
+        phase,
+        isSendBusy,
+        isConnecting,
+        environmentUnavailable: activeEnvironmentUnavailable,
+        hasPendingApproval: activePendingApproval !== null,
+        hasPendingUserInput: activePendingUserInput !== null,
+        head: queuedMessageHead,
+      }) ||
+      !queuedMessageHead
+    ) {
+      return;
+    }
+    void dispatchQueuedMessage(queuedMessageHead, "drain");
+  }, [
+    activeEnvironmentUnavailable,
+    activePendingApproval,
+    activePendingUserInput,
+    dispatchQueuedMessage,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    phase,
+    queuedMessageHead,
+  ]);
+
   // Scroll helpers — LegendList handles auto-scroll via maintainScrollAtEnd.
   const scrollToEnd = useCallback((animated = false) => {
     legendListRef.current?.scrollToEnd?.({ animated });
@@ -2739,7 +2870,6 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     sendInFlightRef.current = true;
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -2756,15 +2886,79 @@ export default function ChatView(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
     });
-    const turnAttachmentsPromise = Promise.all(
+    const persistedAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
+        id: image.id,
         name: image.name,
         mimeType: image.mimeType,
         sizeBytes: image.sizeBytes,
         dataUrl: await readFileAsDataUrl(image.file),
       })),
     );
+    const turnAttachmentsPromise = persistedAttachmentsPromise.then((attachments) =>
+      attachments.map(({ name, mimeType, sizeBytes, dataUrl }) => ({
+        type: "image" as const,
+        name,
+        mimeType,
+        sizeBytes,
+        dataUrl,
+      })),
+    );
+    if (
+      shouldQueueComposerSubmission({
+        isServerThread,
+        phase,
+        queueingEnabled: composerQueueingEnabled,
+      })
+    ) {
+      try {
+        const attachments = await persistedAttachmentsPromise;
+        enqueueComposerMessage(composerDraftTarget, {
+          id: String(messageIdForSend),
+          commandId: newCommandId(),
+          messageId: messageIdForSend,
+          text: outgoingMessageText,
+          attachments,
+          modelSelection: ctxSelectedModelSelection,
+          gedWorkflowEnabled,
+          runtimeMode,
+          interactionMode,
+          createdAt: messageCreatedAt,
+          status: "queued",
+        });
+        setThreadError(threadIdForSend, null);
+        if (expiredTerminalContextCount > 0) {
+          const toastCopy = buildExpiredTerminalContextToastCopy(
+            expiredTerminalContextCount,
+            "omitted",
+          );
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: toastCopy.title,
+              description: toastCopy.description,
+            }),
+          );
+        }
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        for (const image of composerImagesSnapshot) {
+          revokeBlobPreviewUrl(image.previewUrl);
+        }
+      } catch (error) {
+        setThreadError(
+          threadIdForSend,
+          error instanceof Error ? error.message : "Failed to queue message.",
+        );
+      } finally {
+        sendInFlightRef.current = false;
+      }
+      return;
+    }
+    if (phase !== "running") {
+      beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
+    }
     const optimisticAttachments = composerImagesSnapshot.map((image) => ({
       type: "image" as const,
       id: image.id,
@@ -2889,7 +3083,9 @@ export default function ChatView(props: ChatViewProps) {
                 : {}),
             }
           : undefined;
-      beginLocalDispatch({ preparingWorktree: false });
+      if (phase !== "running") {
+        beginLocalDispatch({ preparingWorktree: false });
+      }
       await api.orchestration.dispatchCommand({
         type: "thread.turn.start",
         commandId: newCommandId(),

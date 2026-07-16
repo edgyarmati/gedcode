@@ -89,7 +89,8 @@ export const ComposerQueuedMessage = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   createdAt: Schema.String,
-  status: Schema.Literals(["queued", "dispatching"]),
+  status: Schema.Literals(["queued", "dispatching", "failed"]),
+  error: Schema.optionalKey(Schema.String),
 });
 export type ComposerQueuedMessage = typeof ComposerQueuedMessage.Type;
 const isComposerQueuedMessage = Schema.is(ComposerQueuedMessage);
@@ -438,6 +439,7 @@ interface ComposerDraftStoreState {
     queueItemId: string,
     status: ComposerQueuedMessage["status"],
   ) => void;
+  failQueuedMessage: (threadRef: ComposerThreadTarget, queueItemId: string, error: string) => void;
   setQueueingEnabled: (threadRef: ComposerThreadTarget, enabled: boolean) => void;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
 }
@@ -3042,7 +3044,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               return state;
             }
             const queuedMessages = [...current.queuedMessages];
-            queuedMessages[messageIndex] = { ...message, text };
+            const { error: _previousError, ...editableMessage } = message;
+            queuedMessages[messageIndex] = {
+              ...editableMessage,
+              text,
+              status: "queued",
+            };
             return {
               draftsByThreadKey: {
                 ...state.draftsByThreadKey,
@@ -3095,7 +3102,40 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               return state;
             }
             const queuedMessages = [...current.queuedMessages];
-            queuedMessages[messageIndex] = { ...message, status };
+            const { error: _previousError, ...statusMessage } = message;
+            queuedMessages[messageIndex] = { ...statusMessage, status };
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...current, queuedMessages },
+              },
+            };
+          });
+        },
+        failQueuedMessage: (threadRef, queueItemId, error) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          const normalizedError = error.trim();
+          if (threadKey.length === 0 || queueItemId.length === 0 || normalizedError.length === 0) {
+            return;
+          }
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) {
+              return state;
+            }
+            const messageIndex = current.queuedMessages.findIndex(
+              (message) => message.id === queueItemId,
+            );
+            const message = current.queuedMessages[messageIndex];
+            if (!message) {
+              return state;
+            }
+            const queuedMessages = [...current.queuedMessages];
+            queuedMessages[messageIndex] = {
+              ...message,
+              status: "failed",
+              error: normalizedError,
+            };
             return {
               draftsByThreadKey: {
                 ...state.draftsByThreadKey,

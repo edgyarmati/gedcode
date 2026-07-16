@@ -385,6 +385,7 @@ describe("composerDraftStore queued messages", () => {
     useComposerDraftStore.getState().editQueuedMessage(threadRef, "first", "edited first");
     useComposerDraftStore.getState().editQueuedMessage(threadRef, "second", "   ");
     useComposerDraftStore.getState().setQueuedMessageStatus(threadRef, "first", "dispatching");
+    useComposerDraftStore.getState().failQueuedMessage(threadRef, "second", "Network offline");
 
     const edited = useComposerDraftStore.getState().getComposerDraft(threadRef)?.queuedMessages;
     expect(edited?.map((message) => message.id)).toEqual(["first", "second"]);
@@ -394,7 +395,16 @@ describe("composerDraftStore queued messages", () => {
       text: "edited first",
       status: "dispatching",
     });
-    expect(edited?.[1]?.text).toBe("queued second");
+    expect(edited?.[1]).toMatchObject({
+      text: "queued second",
+      status: "failed",
+      error: "Network offline",
+    });
+
+    useComposerDraftStore.getState().editQueuedMessage(threadRef, "second", "retry second");
+    const retried = useComposerDraftStore.getState().getComposerDraft(threadRef)?.queuedMessages[1];
+    expect(retried).toEqual(expect.objectContaining({ text: "retry second", status: "queued" }));
+    expect(retried).not.toHaveProperty("error");
 
     useComposerDraftStore.getState().removeQueuedMessage(threadRef, "first");
     expect(

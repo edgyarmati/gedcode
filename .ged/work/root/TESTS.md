@@ -18,6 +18,14 @@ component lifecycle changes require integration coverage; UI interaction changes
 - Dispatch logic tests hold active-turn sends locally, drain one item only after settlement, retain a
   failed/unacknowledged item, and retry with the same command ID so server idempotency prevents duplicate
   turns. Queue-off sends exercise existing provider steer/queued delivery behavior.
+- `CHAT-QUEUE-02` focused verification passes 74 queue/store tests and 3 full-Chat Chromium flows.
+  The browser flows prove active-turn submission makes no immediate turn-start call, settlement drains
+  it once with the captured IDs, queue-off submits immediately to the existing steer path, and a
+  persisted `dispatching` retry uses the same command ID then settles as `failed` without hot-looping.
+  The complete web unit suite passes 1,241/1,241 and all 83 ChatView Chromium interactions pass.
+  Final checkpoint verification passes `bun fmt`, `bun lint` (existing warnings only), all 12
+  typecheck packages, and the complete 12-package `bun run test --output-logs=errors-only` gate in
+  10m26s.
 - Chromium coverage reproduces the reference queue rows and verifies Steer, Delete, inline Edit, Turn
   off queueing, pending/error states, keyboard/accessibility behavior, and compact layout.
 
