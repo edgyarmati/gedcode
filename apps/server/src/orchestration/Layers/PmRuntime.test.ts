@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   CommandId,
   EventId,
   MessageId,
@@ -39,6 +40,8 @@ import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiff
 import { ServerConfig } from "../../config.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
+import type { ProjectionPendingApproval } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import {
   ProviderQuotaStatusRepository,
   type ProviderQuotaStatusRow,
@@ -244,6 +247,36 @@ const stageCompletedEvent: OrchestrationEvent = {
   },
 };
 
+const approvalRequestId = ApprovalRequestId.make("approval-worker-1");
+const approvalRequestedEvent: OrchestrationEvent = {
+  sequence: 11,
+  eventId: EventId.make("evt-approval-requested"),
+  aggregateKind: "thread",
+  aggregateId: stageThreadId,
+  type: "thread.activity-appended",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-approval-requested"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-approval-requested"),
+  metadata: {},
+  payload: {
+    threadId: stageThreadId,
+    activity: {
+      id: EventId.make("activity-approval-requested"),
+      tone: "approval",
+      kind: "approval.requested",
+      summary: "Permission approval requested",
+      payload: {
+        requestId: approvalRequestId,
+        requestKind: "permissions",
+        detail: "Write build output; OPENAI_API_KEY=sk-live-secret",
+      },
+      turnId,
+      createdAt: now,
+    },
+  },
+};
+
 const stageBlockedEvent: OrchestrationEvent = {
   sequence: 11,
   eventId: EventId.make("evt-stage-blocked"),
@@ -439,6 +472,7 @@ const makeLayer = (input: {
   readonly consumeCalls: ConsumePmSettlementInput[];
   readonly markActedCalls?: MarkPmSettlementActedInput[];
   readonly pendingSettlements?: PmConsumedSettlement[];
+  readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
   readonly cursorByProject?: Map<string, number>;
   readonly readEventCursors?: number[];
   readonly commandReadModel?: OrchestrationReadModel;
@@ -587,6 +621,28 @@ const makeLayer = (input: {
               }
             }
           }),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionPendingApprovalRepository, {
+        upsert: () => Effect.void,
+        listByThreadId: ({ threadId }) =>
+          Effect.succeed(
+            (input.pendingApprovals ?? []).filter((approval) => approval.threadId === threadId),
+          ),
+        getByRequestId: ({ requestId }) =>
+          Effect.succeed(
+            Option.fromUndefinedOr(
+              (input.pendingApprovals ?? []).find((approval) => approval.requestId === requestId),
+            ),
+          ),
+        deleteByRequestId: () => Effect.void,
+        countPendingByThreadId: ({ threadId }) =>
+          Effect.succeed(
+            (input.pendingApprovals ?? []).filter(
+              (approval) => approval.threadId === threadId && approval.status === "pending",
+            ).length,
+          ),
       }),
     ),
     Layer.provide(
@@ -2099,6 +2155,83 @@ describe("PmRuntime", () => {
         new RegExp(`Last-action cursor: ${stageCompletedEvent.sequence}`),
       );
       assert.strictEqual(consumeCalls.length, 1);
+    }),
+  );
+
+  it.effect("re-enters the PM exactly once for a pending worker permission request", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [approvalRequestedEvent, approvalRequestedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        pendingApprovals: [
+          {
+            requestId: approvalRequestId,
+            threadId: stageThreadId,
+            turnId,
+            status: "pending",
+            decision: null,
+            createdAt: now,
+            resolvedAt: null,
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /Worker permission request for task/);
+      assert.match(messages[0] ?? "", /Request: permissions \(approval-worker-1\)/);
+      assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
+      assert.notMatch(messages[0] ?? "", /sk-live-secret/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "approval", settlementKey: approvalRequestId }],
+      );
+    }),
+  );
+
+  it.effect("does not re-enter the PM for an approval already resolved in projection", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [approvalRequestedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        pendingApprovals: [
+          {
+            requestId: approvalRequestId,
+            threadId: stageThreadId,
+            turnId,
+            status: "resolved",
+            decision: "decline",
+            createdAt: now,
+            resolvedAt: now,
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.isEmpty(messages);
+      assert.isEmpty(consumeCalls);
     }),
   );
 

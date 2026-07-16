@@ -25,6 +25,7 @@ import * as Stream from "effect/Stream";
 import { CheckpointDiffQuery } from "../checkpointing/Services/CheckpointDiffQuery.ts";
 import { ProjectionAwaitedStageRepository } from "../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProjectionPendingApprovalRepository } from "../persistence/Services/ProjectionPendingApprovals.ts";
 import { ProviderQuotaStatusRepository } from "../persistence/Services/ProviderQuotaStatus.ts";
 import {
   PmRuntimeStateRepository,
@@ -245,6 +246,15 @@ function makePmRuntimeLayer(input: {
             return true;
           }),
         markActed: () => Effect.void,
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProjectionPendingApprovalRepository, {
+        upsert: () => Effect.void,
+        listByThreadId: () => Effect.succeed([]),
+        getByRequestId: () => Effect.succeed(Option.none()),
+        deleteByRequestId: () => Effect.void,
+        countPendingByThreadId: () => Effect.succeed(0),
       }),
     ),
     Layer.provide(

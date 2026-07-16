@@ -46,6 +46,7 @@ import {
 import { createEmptyReadModel } from "../../orchestration/projector.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
@@ -232,6 +233,13 @@ function makeHarness(config?: {
 const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
   const readModel = createEmptyReadModel("2026-06-29T00:00:00.000Z");
   return Layer.mergeAll(
+    Layer.succeed(ProjectionPendingApprovalRepository, {
+      upsert: () => Effect.void,
+      listByThreadId: () => Effect.succeed([]),
+      getByRequestId: () => Effect.succeed(Option.none()),
+      deleteByRequestId: () => Effect.void,
+      countPendingByThreadId: () => Effect.succeed(0),
+    }),
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
       dispatch: (command) =>

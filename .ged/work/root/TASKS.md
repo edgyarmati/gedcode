@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | ORCH-APPROVAL-01 | DONE | Add an explicit provider approval-reviewer selection and start only Codex orchestration workers in workspace-write/on-request `auto_review`; retain full access for Claude/OpenCode workers and read-only/user-reviewed PM sessions. | Contract, Codex runtime, adapter, and provider-reactor tests pin the exact thread/turn parameters and provider-specific worker policy. |
 | ORCH-APPROVAL-02 | DONE | Bridge Codex granular permission requests and denied auto-review notifications into the existing provider approval lifecycle; accepting a denied review calls `thread/approveGuardianDeniedAction` with the original event. | Runtime/adapter tests cover request details, accept/session/decline mapping, denied-review override, cleanup, and fail-closed stale requests. |
-| ORCH-APPROVAL-03 | NEXT | Add durable exactly-once PM re-entry for stage approval attention plus scoped PM/MCP tools to inspect and resolve a task's pending worker approvals. | PM runtime restart tests prove one wake-up; PM/MCP tests reject foreign/stale requests and forward valid decisions; prompt tests require least-privilege review. |
+| ORCH-APPROVAL-03 | DONE | Add durable exactly-once PM re-entry for stage approval attention plus scoped PM/MCP tools to inspect and resolve a task's pending worker approvals. | PM runtime restart tests prove one wake-up; PM/MCP tests reject foreign/stale requests and forward valid decisions; prompt tests require least-privilege review. |
 
 ## Codex PM Trusted-Tool Permission Repair
 

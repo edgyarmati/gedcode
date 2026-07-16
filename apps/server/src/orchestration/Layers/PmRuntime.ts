@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   EventId,
   CommandId,
   OrchestratorProjectConfig,
@@ -49,6 +50,7 @@ import {
 } from "../../observability/Metrics.ts";
 import { ProjectionAwaitedStageRepository } from "../../persistence/Services/ProjectionAwaitedStages.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
+import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import {
   defaultOkQuotaState,
   ProviderQuotaStatusRepository,
@@ -122,7 +124,8 @@ type SettlementEvent = Extract<
       | "task.stage-completed"
       | "task.stage-blocked"
       | "task.stage-interrupted"
-      | "task.gate-resolved";
+      | "task.gate-resolved"
+      | "thread.activity-appended";
   }
 >;
 
@@ -130,7 +133,7 @@ type SettlementEnvelope = {
   readonly event: SettlementEvent;
   readonly project: OrchestrationProject;
   readonly task: OrchestrationTask;
-  readonly kind: "stage" | "gate";
+  readonly kind: "stage" | "gate" | "approval";
   readonly settlementKey: string;
   readonly message: string;
 };
@@ -170,7 +173,8 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "When a plan is doubtful or a second opinion would help, dispatch another bounded `plan` worker attempt with explicit critique instructions before committing to the plan.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
-    "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
+    "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, worker permission requests, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
+    "When a worker permission request re-enters you, use listPendingStageApprovals for the task and resolve it with respondToStageApproval. Approve only access that is necessary for the delegated task and consistent with its instructions. Prefer accept for a single action; use acceptForSession only for a stable, repeated, narrowly scoped need. Decline unrelated, destructive, secret-bearing, or scope-expanding access. Ask the human only when the requested authority is genuinely ambiguous or exceeds the task they assigned.",
     "Use your tools to create tasks, hand off stages, inspect ledgers, and request human approval gates; do not claim a stage is done until the relevant worker settlement is present.",
     "Reuse an existing task whenever possible. When replacement is intentional, settle the old task first and pass its id as createTask.supersedesTaskId so the ledger records one explicit successor instead of unrelated duplicates.",
     "Create a release task only for one fully landed feature task, using taskType `release` and createTask.releaseSourceTaskId. After release preparation itself lands, call requestReleaseApproval with the exact GitHub Actions workflow/ref/inputs, wait for human approval, then call dispatchRelease once with unchanged parameters. Treat the returned releaseDispatch status and workflow URL as authoritative; never retry a recorded attempt automatically or publish outside this actuator.",
@@ -350,14 +354,24 @@ export const buildPmSystemPrompt = (
     pmSystemPrompt(driverKind),
   ].join("\n");
 
+const isApprovalRequestEvent = (
+  event: OrchestrationEvent,
+): event is Extract<SettlementEvent, { type: "thread.activity-appended" }> =>
+  event.type === "thread.activity-appended" && event.payload.activity.kind === "approval.requested";
+
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
   event.type === "task.stage-completed" ||
   event.type === "task.stage-blocked" ||
   event.type === "task.stage-interrupted" ||
-  event.type === "task.gate-resolved";
+  event.type === "task.gate-resolved" ||
+  isApprovalRequestEvent(event);
 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
-  event.type === "task.gate-resolved" ? "gate" : "stage";
+  event.type === "task.gate-resolved"
+    ? "gate"
+    : event.type === "thread.activity-appended"
+      ? "approval"
+      : "stage";
 
 const quotaBlockedStageSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::quota-blocked`;
@@ -375,7 +389,21 @@ const settlementEventKey = (event: SettlementEvent): string =>
       ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
       : event.type === "task.stage-interrupted"
         ? interruptedStageSettlementKey(event.payload.stageThreadId)
-        : makeGateSettlementKey(event.payload.gateId);
+        : event.type === "task.gate-resolved"
+          ? makeGateSettlementKey(event.payload.gateId)
+          : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
+
+const approvalRequestIdFromEvent = (
+  event: Extract<SettlementEvent, { type: "thread.activity-appended" }>,
+): string | null => {
+  const payload = event.payload.activity.payload;
+  if (typeof payload !== "object" || payload === null || !("requestId" in payload)) {
+    return null;
+  }
+  return typeof payload.requestId === "string" && payload.requestId.length > 0
+    ? payload.requestId
+    : null;
+};
 
 const findSettlementEvent = (
   events: ReadonlyArray<SettlementEvent>,
@@ -658,6 +686,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const checkpointDiffQuery = yield* CheckpointDiffQuery;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
     const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
+    const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
     const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
@@ -686,6 +715,18 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       }
       return { task, project };
     });
+
+    const resolveStageThreadTaskProject = Effect.fn("PmRuntime.resolveStageThreadTaskProject")(
+      function* (stageThreadId: ThreadId) {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const task = readModel.tasks.find((entry) => entry.stageThreadIds.includes(stageThreadId));
+        if (!task) {
+          return null;
+        }
+        const project = readModel.projects.find((entry) => entry.id === task.projectId);
+        return project ? { task, project } : null;
+      },
+    );
 
     const latestAssistantTextForStage = Effect.fn("PmRuntime.latestAssistantTextForStage")(
       function* (event: Extract<SettlementEvent, { type: "task.stage-completed" }>) {
@@ -761,9 +802,47 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const makeSettlementEnvelope = Effect.fn("PmRuntime.makeSettlementEnvelope")(function* (
       event: SettlementEvent,
     ) {
-      const resolved = yield* resolveTaskProject(event.payload.taskId);
+      const resolved =
+        event.type === "thread.activity-appended"
+          ? yield* resolveStageThreadTaskProject(event.payload.threadId)
+          : yield* resolveTaskProject(event.payload.taskId);
       if (resolved === null) {
         return null;
+      }
+
+      if (event.type === "thread.activity-appended") {
+        const requestId = approvalRequestIdFromEvent(event);
+        if (requestId === null) {
+          return null;
+        }
+        const projected = yield* projectionPendingApprovalRepository.getByRequestId({
+          requestId: ApprovalRequestId.make(requestId),
+        });
+        if (Option.isSome(projected) && projected.value.status !== "pending") {
+          return null;
+        }
+        const payload = event.payload.activity.payload as Record<string, unknown>;
+        const requestKind =
+          typeof payload.requestKind === "string" ? payload.requestKind : "unknown";
+        const detail = typeof payload.detail === "string" ? payload.detail : "No detail supplied.";
+        const stageRole =
+          (yield* projectionSnapshotQuery.getCommandReadModel()).stageHistory[
+            event.payload.threadId
+          ]?.role ?? "worker";
+        const message = [
+          `Worker permission request for task "${resolved.task.title}" (${resolved.task.id}).`,
+          `Stage: ${stageRole} (${event.payload.threadId}).`,
+          `Request: ${requestKind} (${requestId}).`,
+          `Detail: ${boundUntrustedContent(scrubSecrets(detail))}`,
+          "Inspect the task's pending approvals, decide using least privilege, and respond. Do not wait for the human unless this request exceeds or is ambiguous under the task's delegated authority.",
+        ].join("\n");
+        return {
+          event,
+          ...resolved,
+          kind: "approval" as const,
+          settlementKey: requestId,
+          message: withLastActionCursor(message, event),
+        } satisfies SettlementEnvelope;
       }
 
       if (event.type === "task.stage-completed") {
@@ -984,7 +1063,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           }
           return Effect.logWarning("PM runtime failed to process settlement event", {
             eventType: event.type,
-            taskId: String(event.payload.taskId),
+            taskId:
+              event.type === "thread.activity-appended" ? undefined : String(event.payload.taskId),
+            threadId:
+              event.type === "thread.activity-appended"
+                ? String(event.payload.threadId)
+                : undefined,
             sequence: event.sequence,
             cause: Cause.pretty(cause),
           });
@@ -1023,10 +1107,20 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         const interruptedStageKeys = Object.values(input.readModel.stageHistory)
           .filter((stage) => stage.status === "interrupted" && taskIds.has(String(stage.taskId)))
           .map((stage) => interruptedStageSettlementKey(stage.stageThreadId));
+        const approvalRows = yield* Effect.forEach(
+          tasks.flatMap((task) => task.stageThreadIds),
+          (threadId) => projectionPendingApprovalRepository.listByThreadId({ threadId }),
+          { concurrency: 1 },
+        );
+        const approvalKeys = approvalRows
+          .flat()
+          .filter((approval) => approval.status === "pending")
+          .map((approval) => String(approval.requestId));
 
         return {
           stageKeys: [...stageKeys, ...quotaBlockedStageKeys, ...interruptedStageKeys],
           gateKeys,
+          approvalKeys,
         };
       },
     );
@@ -1042,7 +1136,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         readModel: input.readModel,
         project: input.project,
       });
-      const [consumedStages, consumedGates] = yield* Effect.all(
+      const [consumedStages, consumedGates, consumedApprovals] = yield* Effect.all(
         [
           pmRuntimeStateRepository.listConsumedSettlements({
             projectId: input.project.id,
@@ -1052,6 +1146,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             projectId: input.project.id,
             kind: "gate",
           }),
+          pmRuntimeStateRepository.listConsumedSettlements({
+            projectId: input.project.id,
+            kind: "approval",
+          }),
         ],
         { concurrency: 1 },
       );
@@ -1059,6 +1157,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         consumedStages.map((settlement) => settlement.settlementKey),
       );
       const consumedGateKeys = new Set(consumedGates.map((settlement) => settlement.settlementKey));
+      const consumedApprovalKeys = new Set(
+        consumedApprovals.map((settlement) => settlement.settlementKey),
+      );
       let reprocessedCount = 0;
 
       const processKey = (
@@ -1090,6 +1191,11 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         concurrency: 1,
         discard: true,
       });
+      yield* Effect.forEach(
+        keys.approvalKeys,
+        (key) => processKey("approval", consumedApprovalKeys, key),
+        { concurrency: 1, discard: true },
+      );
 
       return reprocessedCount;
     });

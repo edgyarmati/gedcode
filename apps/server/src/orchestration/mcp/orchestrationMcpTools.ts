@@ -15,6 +15,8 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "requestApproval",
   "setTaskBackend",
   "inspectStage",
+  "listPendingStageApprovals",
+  "respondToStageApproval",
   "cancelTask",
   "landTask",
   "requestReleaseApproval",
@@ -97,6 +99,14 @@ export const mcpInputSchemas = {
   inspectStage: {
     taskId: z.string(),
     stageThreadId: z.string().optional(),
+  },
+  listPendingStageApprovals: {
+    taskId: z.string(),
+  },
+  respondToStageApproval: {
+    taskId: z.string(),
+    requestId: z.string(),
+    decision: z.enum(["accept", "acceptForSession", "decline", "cancel"]),
   },
   cancelTask: {
     taskId: z.string(),

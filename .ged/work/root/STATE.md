@@ -1,8 +1,7 @@
 # State
 
-- **Phase**: implement — Codex worker auto-review and PM fallback approval control.
-- **Active task**: `ORCH-APPROVAL-03` — wake the owning PM durably and expose scoped inspection and
-  response tools for pending worker approvals.
+- **Phase**: verified — Codex worker auto-review and PM fallback approval control complete.
+- **Active task**: none; `ORCH-APPROVAL-01..03` are complete.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -60,6 +59,13 @@
   with that exact event; other decisions do not broaden access. All 95 focused tests pass, as do
   formatting, lint (existing warnings only), all 12 typecheck packages after retrying the known
   resolver race, and the complete 12-package test gate in 10m29s.
+- `ORCH-APPROVAL-03` is complete. Worker permission requests now use the PM runtime's durable
+  consumed/acted ledger for exactly-once re-entry and restart reconciliation. The PM can list only
+  pending approvals belonging to the named task's stage threads and resolve them through the existing
+  provider response command; foreign and resolved requests fail closed. Re-entry details are bounded
+  and secret-scrubbed, and the PM prompt requires least-privilege decisions. All 87 focused PM
+  runtime/tool/MCP tests pass, including the socket-bound HTTP test, as do formatting, lint (existing
+  warnings only), all 12 typecheck packages, and the complete 12-package test gate in 10m28s.
 
 - `ORCH-PMBOOT-03` is complete. Provider logs reproduced `getTaskLedger` and `cancelTask` entering
   `waitingOnApproval` and failing immediately as `user rejected MCP tool call` without any human

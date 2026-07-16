@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   EventId,
   ProjectId,
   ProviderInstanceId,
@@ -29,6 +30,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
+import type { ProjectionPendingApproval } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import {
   ProviderService,
   type ProviderServiceShape,
@@ -174,10 +177,31 @@ const makeLayer = (
     readonly terminalManager?: Partial<TerminalManagerShape>;
     readonly afterCancellationRequest?: OrchestrationReadModel;
     readonly failDispatchFor?: ReadonlySet<OrchestrationCommand["type"]>;
+    readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
   } = {},
 ) => {
   let currentReadModel = readModel;
   return Layer.mergeAll(
+    Layer.succeed(ProjectionPendingApprovalRepository, {
+      upsert: () => Effect.void,
+      listByThreadId: ({ threadId }) =>
+        Effect.succeed(
+          (overrides.pendingApprovals ?? []).filter((row) => row.threadId === threadId),
+        ),
+      getByRequestId: ({ requestId }) =>
+        Effect.succeed(
+          Option.fromUndefinedOr(
+            (overrides.pendingApprovals ?? []).find((row) => row.requestId === requestId),
+          ),
+        ),
+      deleteByRequestId: () => Effect.void,
+      countPendingByThreadId: ({ threadId }) =>
+        Effect.succeed(
+          (overrides.pendingApprovals ?? []).filter(
+            (row) => row.threadId === threadId && row.status === "pending",
+          ).length,
+        ),
+    }),
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
       dispatch: (command) =>
@@ -1103,6 +1127,150 @@ it.effect("inspectStage rejects when the selected stage thread detail row is mis
 
     assert.instanceOf(error, Error);
     assert.match(error.message, /Stage thread 'stage-thread-1' was not found/);
+  }),
+);
+
+it.effect("lists and resolves a pending approval owned by the task stage", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const requestId = ApprovalRequestId.make("approval-1");
+    const thread = makeThread(stageThreadId, {
+      activities: [
+        makeActivity(1, {
+          kind: "approval.requested",
+          tone: "approval",
+          payload: {
+            requestId,
+            requestKind: "permissions",
+            detail: "Write generated files under /tmp/build",
+          },
+        }),
+      ],
+    });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          withStageHistory(makeReadModel([makeTask()], [thread]), stageThreadId, "work"),
+          null,
+          {
+            pendingApprovals: [
+              {
+                requestId,
+                threadId: stageThreadId,
+                turnId,
+                status: "pending",
+                decision: null,
+                createdAt: now,
+                resolvedAt: null,
+              },
+            ],
+          },
+        ),
+      ),
+    );
+    const listApprovals = findTool(tools, "listPendingStageApprovals");
+    const respond = findTool(tools, "respondToStageApproval");
+
+    const listed = yield* Effect.promise(() =>
+      listApprovals.execute("tool-list-approvals", { taskId }),
+    );
+    assert.deepStrictEqual(listed.details.approvals, [
+      {
+        requestId,
+        stageThreadId,
+        stageRole: "work",
+        turnId,
+        requestKind: "permissions",
+        detail: "Write generated files under /tmp/build",
+        createdAt: now,
+      },
+    ]);
+
+    yield* Effect.promise(() =>
+      respond.execute("tool-respond-approval", {
+        taskId,
+        requestId,
+        decision: "accept",
+      }),
+    );
+    assert.deepInclude(dispatched.at(-1), {
+      type: "thread.approval.respond",
+      threadId: stageThreadId,
+      requestId,
+      decision: "accept",
+    });
+  }),
+);
+
+it.effect("rejects a pending approval owned by a different task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const requestId = ApprovalRequestId.make("approval-foreign");
+    const foreignThreadId = ThreadId.make("foreign-stage");
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          pendingApprovals: [
+            {
+              requestId,
+              threadId: foreignThreadId,
+              turnId,
+              status: "pending",
+              decision: null,
+              createdAt: now,
+              resolvedAt: null,
+            },
+          ],
+        }),
+      ),
+    );
+    const respond = findTool(tools, "respondToStageApproval");
+    const error = yield* Effect.promise(() =>
+      respond.execute("tool-respond-foreign", { taskId, requestId, decision: "accept" }).then(
+        () => null,
+        (cause) => cause,
+      ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /does not belong to task/);
+    assert.isEmpty(dispatched);
+  }),
+);
+
+it.effect("rejects an approval that was already resolved", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const requestId = ApprovalRequestId.make("approval-resolved");
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel(), null, {
+          pendingApprovals: [
+            {
+              requestId,
+              threadId: stageThreadId,
+              turnId,
+              status: "resolved",
+              decision: "decline",
+              createdAt: now,
+              resolvedAt: now,
+            },
+          ],
+        }),
+      ),
+    );
+    const respond = findTool(tools, "respondToStageApproval");
+    const error = yield* Effect.promise(() =>
+      respond.execute("tool-respond-resolved", { taskId, requestId, decision: "accept" }).then(
+        () => null,
+        (cause) => cause,
+      ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /is not pending/);
+    assert.isEmpty(dispatched);
   }),
 );
 

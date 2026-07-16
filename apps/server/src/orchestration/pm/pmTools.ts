@@ -1,4 +1,5 @@
 import {
+  ApprovalRequestId,
   CommandId,
   GateId,
   ProviderInstanceId,
@@ -12,6 +13,7 @@ import {
   type OrchestrationMessageRole,
   type GedRoleModelSelections,
   type ProviderOptionSelection,
+  type ProviderApprovalDecision,
   type OrchestrationGateKind,
   type OrchestrationReadModel,
   type OrchestrationStageRole,
@@ -33,6 +35,7 @@ import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { defaultTaskTypeRegistry } from "../TaskTypeRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
@@ -107,6 +110,26 @@ interface SetTaskBackendParameters {
 interface InspectStageParameters {
   readonly taskId: string;
   readonly stageThreadId?: string;
+}
+
+interface ListPendingStageApprovalsParameters {
+  readonly taskId: string;
+}
+
+interface RespondToStageApprovalParameters {
+  readonly taskId: string;
+  readonly requestId: string;
+  readonly decision: ProviderApprovalDecision;
+}
+
+interface PendingStageApprovalSummary {
+  readonly requestId: string;
+  readonly stageThreadId: string;
+  readonly stageRole: OrchestrationStageRole | null;
+  readonly turnId: string | null;
+  readonly requestKind: string | null;
+  readonly detail: string | null;
+  readonly createdAt: string;
 }
 
 interface CancelTaskParameters {
@@ -450,6 +473,7 @@ function registeredTaskTypeId(
 export const makePmToolExecutors = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const snapshotQuery = yield* ProjectionSnapshotQuery;
+  const pendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
   const crypto = yield* Crypto.Crypto;
   const runtimeContext = yield* Effect.context<never>();
   const runPromise = Effect.runPromiseWith(runtimeContext);
@@ -845,6 +869,117 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const listPendingStageApprovals: PmToolExecutor<
+    ListPendingStageApprovalsParameters,
+    { taskId: string; approvals: ReadonlyArray<PendingStageApprovalSummary> }
+  > = {
+    name: "listPendingStageApprovals",
+    label: "List pending worker approvals",
+    description:
+      "List unresolved provider permission requests for worker stage threads owned by one task. Use this after a permission-request re-entry instead of polling.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId);
+          if (!task) {
+            return yield* new PmToolExecutionError({ detail: `Task '${taskId}' was not found.` });
+          }
+          const rows = (yield* Effect.forEach(
+            task.stageThreadIds,
+            (threadId) => pendingApprovalRepository.listByThreadId({ threadId }),
+            { concurrency: 1 },
+          ))
+            .flat()
+            .filter((row) => row.status === "pending");
+          const approvals = yield* Effect.forEach(rows, (row) =>
+            Effect.gen(function* () {
+              const thread = yield* snapshotQuery
+                .getThreadDetailById(row.threadId)
+                .pipe(Effect.map(Option.getOrNull));
+              const activity = thread?.activities.findLast((candidate) => {
+                if (candidate.kind !== "approval.requested") return false;
+                const payload = candidate.payload;
+                return (
+                  typeof payload === "object" &&
+                  payload !== null &&
+                  "requestId" in payload &&
+                  payload.requestId === row.requestId
+                );
+              });
+              const payload =
+                typeof activity?.payload === "object" && activity.payload !== null
+                  ? (activity.payload as Record<string, unknown>)
+                  : null;
+              return {
+                requestId: row.requestId,
+                stageThreadId: row.threadId,
+                stageRole: readModel.stageHistory[row.threadId]?.role ?? null,
+                turnId: row.turnId,
+                requestKind: typeof payload?.requestKind === "string" ? payload.requestKind : null,
+                detail: typeof payload?.detail === "string" ? payload.detail : null,
+                createdAt: row.createdAt,
+              } satisfies PendingStageApprovalSummary;
+            }),
+          );
+          return textResult(`Found ${approvals.length} pending worker approval(s).`, {
+            taskId,
+            approvals,
+          });
+        }),
+      ),
+  };
+
+  const respondToStageApproval: PmToolExecutor<
+    RespondToStageApprovalParameters,
+    { taskId: string; requestId: string; decision: ProviderApprovalDecision; sequence: number }
+  > = {
+    name: "respondToStageApproval",
+    label: "Resolve worker approval",
+    description:
+      "Resolve one still-pending worker permission request owned by the specified task. Apply least privilege: prefer one-action accept, reserve acceptForSession for a stable repeated need, and decline unrelated or scope-expanding access.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const requestId = ApprovalRequestId.make(params.requestId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId);
+          if (!task) {
+            return yield* new PmToolExecutionError({ detail: `Task '${taskId}' was not found.` });
+          }
+          const pending = yield* pendingApprovalRepository
+            .getByRequestId({ requestId })
+            .pipe(Effect.map(Option.getOrNull));
+          if (pending === null || pending.status !== "pending") {
+            return yield* new PmToolExecutionError({
+              detail: `Approval request '${requestId}' is not pending.`,
+            });
+          }
+          if (!task.stageThreadIds.includes(pending.threadId)) {
+            return yield* new PmToolExecutionError({
+              detail: `Approval request '${requestId}' does not belong to task '${taskId}'.`,
+            });
+          }
+          const sequence = yield* dispatch({
+            type: "thread.approval.respond",
+            commandId: yield* commandId("respond-stage-approval"),
+            threadId: pending.threadId,
+            requestId,
+            decision: params.decision,
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Resolved worker approval ${requestId} with ${params.decision}.`, {
+            taskId,
+            requestId,
+            decision: params.decision,
+            sequence,
+          });
+        }),
+      ),
+  };
+
   const cancelTask: PmToolExecutor<CancelTaskParameters, { taskId: string; sequence: number }> = {
     name: "cancelTask",
     label: "Cancel task",
@@ -1091,6 +1226,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
     requestApproval,
     setTaskBackend,
     inspectStage,
+    listPendingStageApprovals,
+    respondToStageApproval,
     cancelTask,
     landTask,
     requestReleaseApproval,

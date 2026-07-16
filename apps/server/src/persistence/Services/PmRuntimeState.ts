@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
-export const PmConsumedSettlementKind = Schema.Literals(["stage", "gate"]);
+export const PmConsumedSettlementKind = Schema.Literals(["stage", "gate", "approval"]);
 export type PmConsumedSettlementKind = typeof PmConsumedSettlementKind.Type;
 
 export const PmConsumedSettlementConsumptionStatus = Schema.Literals(["pending", "acted"]);

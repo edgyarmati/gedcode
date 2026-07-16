@@ -31,7 +31,10 @@
   command/path/network/risk details.
 - PM response rejects foreign, resolved, non-stage, and stale requests and dispatches the existing
   provider approval response for a valid request.
-- Required gates: `bun fmt`, `bun lint`, `bun typecheck`, and socket-enabled `bun run test`.
+- Verification passed on 2026-07-16: 87 focused PM runtime/tool/MCP tests, including socket-bound MCP
+  HTTP coverage; `bun fmt`; `bun lint` (existing warnings only); all 12 typecheck packages; and the
+  complete socket-enabled `bun run test --output-logs=errors-only` gate with all 12 package tasks
+  successful in 10m28s.
 
 ## ORCH-PMBOOT-03
 
