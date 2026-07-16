@@ -152,7 +152,10 @@ export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
 
 const ORCHESTRATION_STAGE_ROLE_SET = new Set<string>(ORCHESTRATION_STAGE_ROLES);
 
-const makeStageRoleKeyedMap = <Value extends Schema.Top>(valueSchema: Value) => {
+const makeStageRoleKeyedMap = <Value extends Schema.Top>(
+  valueSchema: Value,
+  ignoredDecodeKeys: ReadonlySet<string> = new Set(),
+) => {
   const source = Schema.Record(Schema.String, valueSchema);
   const target = Schema.Struct({
     plan: Schema.optionalKey(valueSchema),
@@ -165,7 +168,7 @@ const makeStageRoleKeyedMap = <Value extends Schema.Top>(valueSchema: Value) => 
       SchemaTransformation.transformOrFail({
         decode: (value: Record<string, unknown>) => {
           const unknownKeys = Object.keys(value).filter(
-            (key) => !ORCHESTRATION_STAGE_ROLE_SET.has(key),
+            (key) => !ORCHESTRATION_STAGE_ROLE_SET.has(key) && !ignoredDecodeKeys.has(key),
           );
           if (unknownKeys.length > 0) {
             return Effect.fail(
@@ -174,7 +177,11 @@ const makeStageRoleKeyedMap = <Value extends Schema.Top>(valueSchema: Value) => 
               }),
             );
           }
-          return Effect.succeed(value as typeof target.Type);
+          return Effect.succeed(
+            Object.fromEntries(
+              Object.entries(value).filter(([key]) => ORCHESTRATION_STAGE_ROLE_SET.has(key)),
+            ) as typeof target.Type,
+          );
         },
         encode: (value) => Effect.succeed(value as typeof source.Type),
       }) as never,
@@ -191,6 +198,19 @@ export const GedRolePromptPrefixes = makeStageRoleKeyedMap(TrimmedNonEmptyString
   Schema.withDecodingDefault(Effect.succeed({})),
 );
 export type GedRolePromptPrefixes = typeof GedRolePromptPrefixes.Type;
+
+// Historical events are immutable. Their retired role keys are discarded only
+// while decoding persisted event payloads; current command/read-model schemas
+// above remain strict and reject every unknown role.
+const LEGACY_ORCHESTRATION_STAGE_ROLE_KEYS = new Set(["classify", "review"]);
+const PersistedGedRoleModelSelections = makeStageRoleKeyedMap(
+  ModelSelection,
+  LEGACY_ORCHESTRATION_STAGE_ROLE_KEYS,
+);
+const PersistedGedRolePromptPrefixes = makeStageRoleKeyedMap(
+  TrimmedNonEmptyString,
+  LEGACY_ORCHESTRATION_STAGE_ROLE_KEYS,
+);
 
 export const RuntimeMode = Schema.Literals([
   "approval-required",
@@ -1513,8 +1533,8 @@ export const ProjectCreatedPayload = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
-  roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
-  rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
+  roleModelSelections: Schema.optionalKey(PersistedGedRoleModelSelections),
+  rolePromptPrefixes: Schema.optionalKey(PersistedGedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
@@ -1527,8 +1547,8 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
-  roleModelSelections: Schema.optional(GedRoleModelSelections),
-  rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
+  roleModelSelections: Schema.optional(PersistedGedRoleModelSelections),
+  rolePromptPrefixes: Schema.optional(PersistedGedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
@@ -1751,7 +1771,7 @@ export const TaskClassifiedPayload = Schema.Struct({
 
 export const TaskRoleSelectionsUpdatedPayload = Schema.Struct({
   taskId: TaskId,
-  roleModelSelections: GedRoleModelSelections,
+  roleModelSelections: PersistedGedRoleModelSelections,
   origin: OrchestrationTaskRoleSelectionOrigin,
   updatedAt: IsoDateTime,
 });

@@ -1281,6 +1281,72 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
   }),
 );
 
+it.effect("drops retired role keys only while decoding historical events", () =>
+  Effect.gen(function* () {
+    const projectEvent = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "evt-project-legacy-roles",
+      aggregateKind: "project",
+      aggregateId: "project-1",
+      type: "project.meta-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-project-legacy-roles",
+      causationEventId: null,
+      correlationId: "cmd-project-legacy-roles",
+      metadata: {},
+      payload: {
+        projectId: "project-1",
+        roleModelSelections: {
+          classify: { instanceId: "codex", model: "gpt-old" },
+          work: { instanceId: "codex", model: "gpt-work" },
+          review: { instanceId: "claudeAgent", model: "claude-old" },
+        },
+        rolePromptPrefixes: {
+          classify: "Classify",
+          verify: "Verify",
+          review: "Review",
+        },
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    if (projectEvent.type !== "project.meta-updated") {
+      return assert.fail("expected project.meta-updated");
+    }
+    assert.deepStrictEqual(Object.keys(projectEvent.payload.roleModelSelections ?? {}), ["work"]);
+    assert.strictEqual(projectEvent.payload.roleModelSelections?.work?.instanceId, "codex");
+    assert.strictEqual(projectEvent.payload.roleModelSelections?.work?.model, "gpt-work");
+    assert.deepStrictEqual(projectEvent.payload.rolePromptPrefixes, { verify: "Verify" });
+
+    const taskEvent = yield* decodeOrchestrationEvent({
+      sequence: 2,
+      eventId: "evt-task-legacy-roles",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      type: "task.role-selections-updated",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-task-legacy-roles",
+      causationEventId: null,
+      correlationId: "cmd-task-legacy-roles",
+      metadata: {},
+      payload: {
+        taskId: "task-1",
+        roleModelSelections: {
+          review: { instanceId: "claudeAgent", model: "claude-old" },
+          verify: { instanceId: "codex", model: "gpt-verify" },
+        },
+        origin: "client",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    if (taskEvent.type !== "task.role-selections-updated") {
+      return assert.fail("expected task.role-selections-updated");
+    }
+    assert.deepStrictEqual(Object.keys(taskEvent.payload.roleModelSelections), ["verify"]);
+    assert.strictEqual(taskEvent.payload.roleModelSelections.verify?.instanceId, "codex");
+    assert.strictEqual(taskEvent.payload.roleModelSelections.verify?.model, "gpt-verify");
+  }),
+);
+
 it.effect("decodes system gate-resolution origin for internal engine decisions", () =>
   Effect.gen(function* () {
     const origin = yield* decodeGateResolutionOrigin("system");

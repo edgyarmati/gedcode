@@ -1,14 +1,20 @@
 # State
 
-- **Phase**: checkpoint — all non-deferred roadmap slices are implemented.
+- **Phase**: checkpoint — all non-deferred roadmap slices and the startup compatibility repair are
+  implemented and verified.
 - **Active task**: none; only the explicitly deferred pipeline-order item remains.
+- **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
+  that existing project settings can retain removed `classify`/`review` keys even when no user task
+  ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
+
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
   skipped and the PM model can choose their order. Add only a narrow landing invariant requiring a
   successfully completed verification stage newer than the latest successfully completed work stage.
   Unrelated stages may occur between verification and landing. Apply this uniformly to every task;
-  there are no existing user tasks to grandfather and no compatibility fallback should be retained.
+  no task-order compatibility fallback should be retained. The approved role-settings migration is
+  separate and repairs startup decoding of existing project/task configuration only.
 - **Chat-fork decision**: use hybrid semantics. Codex uses a provider-native fork and rolls back only
   the new fork to the selected completed turn; the source remains untouched. Earlier-message forks or
   providers without native support use a fresh provider session initialized from copied visible history.
@@ -37,6 +43,15 @@
   worktrees/leases/hooks, and user `~/.gedcode/` application state in one lifecycle guide.
 
 ## Current Progress
+
+- `ORCH-ROLES-03` is implemented. Migration 54 removes only retired `classify`/`review` keys from
+  projected project model/prompt settings and task model overrides, preserves already-current JSON,
+  and fails loudly on malformed state. Historical project and role-selection events normalize the
+  same retired keys only at their persisted-event decoding boundary, keeping current commands and
+  read models strict. A migrated copy of the live `~/.gedcode/userdata/state.sqlite` decoded fully and
+  let installed Nightly reach backend-ready and create its main window. Focused migration tests pass
+  3/3, contract tests pass 64/64, `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck
+  packages, and the complete 12-package test gate pass in 10m21s.
 
 - `ORCH-ROLES-02` is implemented. Project settings and the task detail rail now share one per-role
   harness/model/traits picker for `plan`, `work`, and `verify`. Model-dependent provider options are

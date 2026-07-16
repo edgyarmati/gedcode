@@ -1,5 +1,30 @@
 # TESTS - Orchestrator Completion Roadmap
 
+## ORCH-ROLES-03
+
+- Run migrations through the previous version, seed project and task projection JSON containing
+  legacy `classify`/`review` keys plus current-role values, then run the new migration.
+- Decode migrated rows with current `GedRoleModelSelections`/`GedRolePromptPrefixes` schemas and
+  verify only obsolete keys were removed.
+- Prove already-current rows are unchanged and malformed JSON makes migration fail rather than
+  silently discarding persisted state.
+- Decode historical project/task events carrying `classify`/`review`, prove the retired values are
+  dropped, and retain strict rejection for unknown keys on current command/read-model schemas.
+- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`.
+
+Verification evidence:
+
+- Migration coverage passes 3/3: exact legacy project/task keys are removed, retained selections and
+  prefixes decode through current schemas, current JSON remains byte-for-byte unchanged, and malformed
+  JSON fails without replacement.
+- Contract coverage passes 64/64 and proves immutable historical project/task events drop only
+  `classify`/`review`; strict current role-map and command tests continue rejecting unknown keys.
+- Migration 54 ran successfully against a copy of the live application database. Every migrated
+  project/task role-setting row decoded with current schemas, and the installed Nightly reached
+  `backend ready` and `main window created` against that isolated copy.
+- Final repository gates pass: `bun fmt`, `bun lint` (existing warnings only), all 12 `bun typecheck`
+  packages, and all 12 `bun run test --output-logs=errors-only` packages in 10m21s.
+
 ## Test Strategy
 
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-

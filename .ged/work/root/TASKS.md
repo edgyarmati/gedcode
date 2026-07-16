@@ -1,5 +1,11 @@
 # TASKS - Orchestrator Completion Roadmap
 
+## Startup Compatibility Repair
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| ORCH-ROLES-03 | DONE | Add a one-time projection migration that removes obsolete `classify`/`review` role settings from projects and tasks without weakening current schemas or rewriting events; normalize those keys only when immutable historical events are decoded. | Migration tests reproduce the installed-app crash, preserve retained values, reject malformed JSON, and prove current projection decoding succeeds; contract tests prove replay compatibility without weakening current commands. |
+
 Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`.
 
 Only the first `NEXT` slice is active. Promote another slice only after the current slice is verified

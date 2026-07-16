@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Repair startup after the Orchestrator worker-role reduction by removing retired `classify` and
+  `review` keys from persisted project/task role settings. Current writes remain strict, while
+  historical append-only events decode without reintroducing the removed roles.
+
 ## 0.3.0-nightly.20260716.1
 
 - Feature: Let Orchestrator projects and individual tasks choose a provider harness, model, and

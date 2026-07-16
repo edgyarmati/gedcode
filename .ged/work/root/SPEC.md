@@ -1,5 +1,32 @@
 # SPEC - Orchestrator Completion Roadmap
 
+## Startup Compatibility Repair (2026-07-16)
+
+### Goal
+
+Allow the role-reduced build to start against application state written before `classify` and
+`review` worker roles were removed.
+
+### Constraints
+
+- Preserve `plan`, `work`, and `verify` model selections and prompt prefixes exactly.
+- Remove only obsolete `classify` and `review` keys from projected project and task JSON.
+- Do not mutate the append-only orchestration event log or add runtime aliases for removed roles.
+- Keep historical project and role-selection events replayable by dropping only those retired keys at
+  the persisted-event decoding boundary.
+- Keep current writes strict: newly submitted unknown role keys must still be rejected.
+
+### Acceptance Criteria
+
+- Startup migrations convert affected project and task projection rows into values accepted by the
+  current role-map schemas.
+- Rows containing only current roles remain byte-for-byte unchanged.
+- Invalid JSON is not silently replaced or hidden.
+- A database carrying the reproduced legacy project settings completes migration and can be decoded
+  by the current projection schemas.
+- Historical events carrying the retired keys replay to current-role payloads; unrelated unknown role
+  keys remain rejected.
+
 ## Goal
 
 Finish the Orchestrator/PM control plane so it can drive work reliably from task creation through
