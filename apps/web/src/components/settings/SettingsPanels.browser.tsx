@@ -762,6 +762,10 @@ describe("GeneralSettingsPanel observability", () => {
     );
 
     await expect.element(page.getByText("About")).toBeInTheDocument();
+    await expect.element(page.getByText("GED mode for new threads")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("switch", { name: "Enable GED mode for new threads" }))
+      .toBeChecked();
     await expect
       .element(page.getByRole("heading", { name: "Diagnostics", exact: true }))
       .toBeInTheDocument();

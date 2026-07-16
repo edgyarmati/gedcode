@@ -382,6 +382,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
+      ...(settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled
+        ? ["Default GED mode"]
+        : []),
       ...(Duration.toMillis(settings.automaticGitFetchInterval) !==
       Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval)
         ? ["Automatic Git fetch interval"]
@@ -411,6 +414,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
+      settings.gedWorkflowEnabled,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       theme,
@@ -435,6 +439,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+      gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
@@ -638,6 +643,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="GED mode for new threads"
+          description="Start new chats with lightweight planning, bounded execution, and verification guidance enabled."
+          resetAction={
+            settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
+              <SettingResetButton
+                label="default GED mode"
+                onClick={() =>
+                  updateSettings({
+                    gedWorkflowEnabled: DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.gedWorkflowEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ gedWorkflowEnabled: Boolean(checked) })
+              }
+              aria-label="Enable GED mode for new threads"
             />
           }
         />

@@ -2534,6 +2534,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
     try {
       useComposerDraftStore.getState().setPrompt(THREAD_REF, "Ship it");
+      useComposerDraftStore.getState().setGedWorkflowEnabled(THREAD_REF, false);
       await waitForLayout();
 
       const sendButton = await waitForSendButton();
@@ -2548,8 +2549,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
             | {
                 _tag: string;
                 type?: string;
+                gedWorkflowEnabled?: boolean;
                 bootstrap?: {
-                  createThread?: { projectId?: string };
+                  createThread?: { projectId?: string; gedWorkflowEnabled?: boolean };
                   prepareWorktree?: { projectCwd?: string; baseBranch?: string; branch?: string };
                   runSetupScript?: boolean;
                 };
@@ -2558,9 +2560,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
           expect(dispatchRequest).toMatchObject({
             _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
             type: "thread.turn.start",
+            gedWorkflowEnabled: false,
             bootstrap: {
               createThread: {
                 projectId: PROJECT_ID,
+                gedWorkflowEnabled: false,
               },
               prepareWorktree: {
                 projectCwd: "/repo/project",
@@ -3599,6 +3603,61 @@ describe("ChatView timeline estimator parity (full app)", () => {
       expect((await waitForSelectItemContainingText("Full access")).textContent).toContain(
         "Allow commands and edits without prompts",
       );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("defaults to GED mode, explains it in a tooltip, and stores Normal overrides", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: WIDE_FOOTER_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+    });
+
+    try {
+      const workflowSelect = await waitForButtonByText("GED");
+      await page.getByText("GED", { exact: true }).hover();
+      await vi.waitFor(() => {
+        const tooltip = document.querySelector<HTMLElement>('[data-slot="tooltip-popup"]');
+        expect(tooltip?.textContent).toContain(
+          "clarification, planning, bounded implementation, and verification",
+        );
+        expect(tooltip?.textContent).toContain("does not force subagents");
+      });
+
+      workflowSelect.click();
+      (await waitForSelectItemContainingText("Normal thread")).click();
+
+      await vi.waitFor(() => {
+        expect(composerDraftFor(THREAD_ID)?.gedWorkflowEnabled).toBe(false);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("uses the global Normal default for new draft threads", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: WIDE_FOOTER_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          settings: {
+            ...nextFixture.serverConfig.settings,
+            gedWorkflowEnabled: false,
+          },
+        };
+      },
+    });
+
+    try {
+      expect(await waitForButtonByText("Normal")).toBeTruthy();
+      expect(composerDraftFor(THREAD_ID)?.gedWorkflowEnabled).toBeUndefined();
     } finally {
       await mounted.cleanup();
     }

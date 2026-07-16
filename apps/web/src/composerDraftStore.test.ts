@@ -1437,13 +1437,45 @@ describe("composerDraftStore runtime and interaction settings", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.interactionMode).toBe("plan");
   });
 
+  it("persists GED workflow overrides in the composer draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.setGedWorkflowEnabled(threadRef, false);
+
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const persistedState = persistApi.getOptions().partialize(useComposerDraftStore.getState()) as {
+      draftsByThreadKey?: Record<string, { gedWorkflowEnabled?: boolean }>;
+    };
+    expect(
+      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
+        ?.gedWorkflowEnabled,
+    ).toBe(false);
+
+    const mergedState = persistApi
+      .getOptions()
+      .merge(persistedState, useComposerDraftStore.getInitialState());
+    expect(
+      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
+        ?.gedWorkflowEnabled,
+    ).toBe(false);
+  });
+
   it("removes empty settings-only drafts when overrides are cleared", () => {
     const store = useComposerDraftStore.getState();
 
     store.setRuntimeMode(threadRef, "approval-required");
     store.setInteractionMode(threadRef, "plan");
+    store.setGedWorkflowEnabled(threadRef, false);
     store.setRuntimeMode(threadRef, null);
     store.setInteractionMode(threadRef, null);
+    store.setGedWorkflowEnabled(threadRef, null);
 
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });

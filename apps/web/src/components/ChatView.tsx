@@ -650,6 +650,9 @@ export default function ChatView(props: ChatViewProps) {
   const composerInteractionMode = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.interactionMode ?? null,
   );
+  const composerGedWorkflowEnabled = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.gedWorkflowEnabled ?? null,
+  );
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
@@ -662,6 +665,9 @@ export default function ChatView(props: ChatViewProps) {
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setComposerDraftInteractionMode = useComposerDraftStore(
     (store) => store.setInteractionMode,
+  );
+  const setComposerDraftGedWorkflowEnabled = useComposerDraftStore(
+    (store) => store.setGedWorkflowEnabled,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
@@ -807,6 +813,7 @@ export default function ChatView(props: ChatViewProps) {
               projectDefaultModelSelection: fallbackDraftProject?.defaultModelSelection,
               fallbackModelSelection: baseFallbackModelSelection,
             }),
+            composerGedWorkflowEnabled ?? settings.gedWorkflowEnabled,
             localDraftError,
           )
         : undefined,
@@ -814,6 +821,8 @@ export default function ChatView(props: ChatViewProps) {
       draftThread,
       baseFallbackModelSelection,
       fallbackDraftProject?.defaultModelSelection,
+      composerGedWorkflowEnabled,
+      settings.gedWorkflowEnabled,
       localDraftError,
       threadId,
     ],
@@ -823,6 +832,8 @@ export default function ChatView(props: ChatViewProps) {
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode =
     composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
+  const gedWorkflowEnabled =
+    composerGedWorkflowEnabled ?? activeThread?.gedWorkflowEnabled ?? settings.gedWorkflowEnabled;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const diffOpen = rawSearch.diff === "1";
@@ -2130,6 +2141,19 @@ export default function ChatView(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
+  const handleGedWorkflowToggle = useCallback(
+    (enabled: boolean) => {
+      if (enabled === gedWorkflowEnabled) return;
+      setComposerDraftGedWorkflowEnabled(composerDraftTarget, enabled);
+      scheduleComposerFocus();
+    },
+    [
+      composerDraftTarget,
+      gedWorkflowEnabled,
+      scheduleComposerFocus,
+      setComposerDraftGedWorkflowEnabled,
+    ],
+  );
   const togglePlanSidebar = useCallback(() => {
     setPlanSidebarOpen((open) => {
       if (open) {
@@ -2152,6 +2176,7 @@ export default function ChatView(props: ChatViewProps) {
       threadId: ThreadId;
       createdAt: string;
       modelSelection?: ModelSelection;
+      gedWorkflowEnabled: boolean;
       runtimeMode: RuntimeMode;
       interactionMode: ProviderInteractionMode;
     }) => {
@@ -2161,6 +2186,15 @@ export default function ChatView(props: ChatViewProps) {
       const api = readEnvironmentApi(environmentId);
       if (!api) {
         return;
+      }
+
+      if (input.gedWorkflowEnabled !== (serverThread.gedWorkflowEnabled ?? true)) {
+        await api.orchestration.dispatchCommand({
+          type: "thread.meta.update",
+          commandId: newCommandId(),
+          threadId: input.threadId,
+          gedWorkflowEnabled: input.gedWorkflowEnabled,
+        });
       }
 
       if (
@@ -2817,6 +2851,7 @@ export default function ChatView(props: ChatViewProps) {
           threadId: threadIdForSend,
           createdAt: messageCreatedAt,
           ...(ctxSelectedModel ? { modelSelection: ctxSelectedModelSelection } : {}),
+          gedWorkflowEnabled,
           runtimeMode,
           interactionMode,
         });
@@ -2832,6 +2867,7 @@ export default function ChatView(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
+                      gedWorkflowEnabled,
                       runtimeMode,
                       interactionMode,
                       branch: activeThreadBranch,
@@ -2864,6 +2900,7 @@ export default function ChatView(props: ChatViewProps) {
           attachments: turnAttachments,
         },
         modelSelection: ctxSelectedModelSelection,
+        gedWorkflowEnabled,
         titleSeed: title,
         runtimeMode,
         interactionMode,
@@ -3157,6 +3194,7 @@ export default function ChatView(props: ChatViewProps) {
           threadId: threadIdForSend,
           createdAt: messageCreatedAt,
           modelSelection: ctxSelectedModelSelection,
+          gedWorkflowEnabled,
           runtimeMode,
           interactionMode: nextInteractionMode,
         });
@@ -3179,6 +3217,7 @@ export default function ChatView(props: ChatViewProps) {
             attachments: [],
           },
           modelSelection: ctxSelectedModelSelection,
+          gedWorkflowEnabled,
           titleSeed: activeThread.title,
           runtimeMode,
           interactionMode: nextInteractionMode,
@@ -3216,6 +3255,7 @@ export default function ChatView(props: ChatViewProps) {
       activeThread,
       activeProposedPlan,
       beginLocalDispatch,
+      gedWorkflowEnabled,
       isConnecting,
       isSendBusy,
       isServerThread,
@@ -3286,6 +3326,7 @@ export default function ChatView(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
+        gedWorkflowEnabled,
         runtimeMode,
         interactionMode: "default",
         branch: activeThreadBranch,
@@ -3304,6 +3345,7 @@ export default function ChatView(props: ChatViewProps) {
             attachments: [],
           },
           modelSelection: ctxSelectedModelSelection,
+          gedWorkflowEnabled,
           titleSeed: nextThreadTitle,
           runtimeMode,
           interactionMode: "default",
@@ -3354,6 +3396,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadBranch,
     activeThread,
     beginLocalDispatch,
+    gedWorkflowEnabled,
     activeEnvironmentUnavailable,
     isConnecting,
     isSendBusy,
@@ -3651,6 +3694,7 @@ export default function ChatView(props: ChatViewProps) {
                   planSidebarLabel={planSidebarLabel}
                   planSidebarOpen={planSidebarOpen}
                   runtimeMode={runtimeMode}
+                  workflowEnabled={gedWorkflowEnabled}
                   lockedProvider={lockedProvider}
                   providerStatuses={providerStatuses as ServerProvider[]}
                   activeProjectDefaultModelSelection={composerProjectModelFallback}
@@ -3684,6 +3728,7 @@ export default function ChatView(props: ChatViewProps) {
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
                   togglePlanSidebar={togglePlanSidebar}
+                  onToggleWorkflow={handleGedWorkflowToggle}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}
                   setThreadError={setThreadError}

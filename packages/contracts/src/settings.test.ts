@@ -8,6 +8,18 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 
+describe("ServerSettings.gedWorkflowEnabled", () => {
+  it("defaults GED mode on for new threads", () => {
+    expect(decodeServerSettings({}).gedWorkflowEnabled).toBe(true);
+    expect(DEFAULT_SERVER_SETTINGS.gedWorkflowEnabled).toBe(true);
+  });
+
+  it("accepts an explicit disabled default in settings and patches", () => {
+    expect(decodeServerSettings({ gedWorkflowEnabled: false }).gedWorkflowEnabled).toBe(false);
+    expect(decodeServerSettingsPatch({ gedWorkflowEnabled: false }).gedWorkflowEnabled).toBe(false);
+  });
+});
+
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
   it("defaults to an empty record so legacy configs without the key still decode", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});

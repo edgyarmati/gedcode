@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
-- **Active task**: `CHAT-GED-02` GED selector, persisted draft plumbing, global default, and tooltip.
+- **Active task**: `CHAT-FORK-01` typed server/RPC fork operation and provider semantics.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -26,6 +26,15 @@
 
 ## Current Progress
 
+- `CHAT-GED-02` is complete. Normal chat composers expose a persisted Normal/GED selector on desktop
+  and compact layouts, explain the lightweight workflow in a tooltip/menu description, and propagate
+  the choice through thread creation, metadata updates, and every turn-start path. New drafts use a
+  global default that is GED-on unless the user disables it in General settings.
+- Final `CHAT-GED-02` verification passed on 2026-07-16: 15 focused settings tests, 125 focused web
+  logic/store tests, 24 focused compact/settings Chromium interactions, 3 targeted full-Chat Chromium
+  flows, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and
+  the complete socket-enabled `bun run test --output-logs=errors-only` gate with all 12 package tasks
+  successful in 10m37s.
 - `CHAT-GED-01` is complete. Normal chat threads once again persist a lightweight GED-mode flag, with
   GED enabled when no explicit choice exists. Provider-bound GED turns receive bounded guidance for the
   repository's grill-me, planning, execution, and verification skills; stored messages remain pristine,

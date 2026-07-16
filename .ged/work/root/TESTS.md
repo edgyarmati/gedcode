@@ -5,6 +5,22 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## CHAT-GED-02
+
+- Settings schema coverage proves the global default is GED-on and accepts an explicit Normal default
+  in both full settings and patches.
+- Draft-store coverage proves an explicit per-thread GED override survives partialization and hydration
+  and disappears cleanly when the final settings-only override is cleared.
+- Chromium coverage proves desktop and compact selectors render, the desktop tooltip explains GED and
+  its non-enforcement of subagents, the General setting defaults on, an explicit Normal choice persists,
+  a global Normal default applies to untouched drafts, and bootstrap turn-starts carry the selection to
+  both thread creation and provider turns.
+- Verification passed on 2026-07-16: 15 focused contract settings tests, 125 focused web logic/store
+  tests, 24 focused compact/settings Chromium interactions, 3 targeted full-Chat Chromium flows, `bun
+  fmt`, `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete
+  socket-enabled `bun run test --output-logs=errors-only` gate with all 12 package tasks successful in
+  10m37s. The initial sandboxed full run failed only because socket binding was denied with `EPERM`.
+
 ## CHAT-GED-01
 
 - Contract, decider, replay, SQL projection, and snapshot coverage retain an optional per-thread GED

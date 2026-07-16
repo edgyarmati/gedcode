@@ -139,6 +139,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
       planSidebarLabel="Plan"
       planSidebarOpen={false}
       runtimeMode="approval-required"
+      workflowEnabled={true}
       traitsMenuContent={
         <TraitsMenuContent
           provider={provider}
@@ -151,6 +152,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
         />
       }
       onTogglePlanSidebar={vi.fn()}
+      onToggleWorkflow={vi.fn()}
       onRuntimeModeChange={vi.fn()}
     />,
     { container: host },
@@ -298,7 +300,9 @@ describe("CompactComposerControlsMenu", () => {
         planSidebarLabel="Plan"
         planSidebarOpen={false}
         runtimeMode="approval-required"
+        workflowEnabled={true}
         onTogglePlanSidebar={vi.fn()}
+        onToggleWorkflow={vi.fn()}
         onRuntimeModeChange={vi.fn()}
       />,
       { container: host },
@@ -311,8 +315,8 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).not.toContain("Mode");
       expect(text).not.toContain("Chat");
       expect(text).not.toContain("Plan");
-      expect(text).not.toContain("Thread mode");
-      expect(text).not.toContain("Ged");
+      expect(text).toContain("Thread mode");
+      expect(text).toContain("GED");
       expect(text).toContain("Access");
       expect(text).toContain("Supervised");
       expect(text).toContain("Full access");
