@@ -141,6 +141,7 @@ import {
 } from "../lib/terminalContext";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { QueuedMessagesPanel } from "./chat/QueuedMessagesPanel";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
@@ -686,6 +687,8 @@ export default function ChatView(props: ChatViewProps) {
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const enqueueComposerMessage = useComposerDraftStore((store) => store.enqueueMessage);
   const removeComposerQueuedMessage = useComposerDraftStore((store) => store.removeQueuedMessage);
+  const editComposerQueuedMessage = useComposerDraftStore((store) => store.editQueuedMessage);
+  const setComposerQueueingEnabled = useComposerDraftStore((store) => store.setQueueingEnabled);
   const setComposerQueuedMessageStatus = useComposerDraftStore(
     (store) => store.setQueuedMessageStatus,
   );
@@ -2338,6 +2341,35 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const queuedMessageHead = composerQueuedMessages[0];
+
+  const handleSteerQueuedMessage = useCallback(
+    (message: ComposerQueuedMessage) => {
+      void dispatchQueuedMessage(message, "steer");
+    },
+    [dispatchQueuedMessage],
+  );
+
+  const handleDeleteQueuedMessage = useCallback(
+    (messageId: string) => {
+      removeComposerQueuedMessage(composerDraftTarget, messageId);
+    },
+    [composerDraftTarget, removeComposerQueuedMessage],
+  );
+
+  const handleEditQueuedMessage = useCallback(
+    (messageId: string, text: string) => {
+      editComposerQueuedMessage(composerDraftTarget, messageId, text);
+    },
+    [composerDraftTarget, editComposerQueuedMessage],
+  );
+
+  const handleComposerQueueingEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setComposerQueueingEnabled(composerDraftTarget, enabled);
+    },
+    [composerDraftTarget, setComposerQueueingEnabled],
+  );
+
   useEffect(() => {
     if (
       !canAutoDrainQueuedMessage({
@@ -3907,6 +3939,14 @@ export default function ChatView(props: ChatViewProps) {
             <div className="relative isolate">
               <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
               <div className="relative z-10">
+                <QueuedMessagesPanel
+                  messages={composerQueuedMessages}
+                  queueingEnabled={composerQueueingEnabled}
+                  onSteer={handleSteerQueuedMessage}
+                  onDelete={handleDeleteQueuedMessage}
+                  onEdit={handleEditQueuedMessage}
+                  onQueueingEnabledChange={handleComposerQueueingEnabledChange}
+                />
                 <ChatComposer
                   composerRef={composerRef}
                   composerDraftTarget={composerDraftTarget}

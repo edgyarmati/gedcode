@@ -28,7 +28,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpResponse, http, ws } from "msw";
 import { setupWorker } from "msw/browser";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -4113,6 +4113,174 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
       await vi.waitFor(() => expect(turnStartAttempts).toBe(1));
       expect(retriedCommandId).toBe("command-queue-failed-browser");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("edits, deletes, and disables queueing from the queued-message controls", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-queue-controls" as MessageId,
+        targetText: "queue controls target",
+        sessionStatus: "running",
+      }),
+    });
+
+    try {
+      const makeQueuedMessage = (id: string, text: string) => ({
+        id,
+        commandId: CommandId.make(`command-${id}`),
+        messageId: MessageId.make(`message-${id}`),
+        text,
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+        gedWorkflowEnabled: true,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        createdAt: isoAt(2_200),
+        status: "queued" as const,
+      });
+      useComposerDraftStore
+        .getState()
+        .enqueueMessage(THREAD_REF, makeQueuedMessage("queue-edit-browser", "edit this message"));
+      useComposerDraftStore
+        .getState()
+        .enqueueMessage(
+          THREAD_REF,
+          makeQueuedMessage("queue-delete-browser", "delete this message"),
+        );
+
+      await expect.element(page.getByRole("region", { name: "Queued messages" })).toBeVisible();
+      await page.getByLabelText("More options for queued message: edit this message").click();
+      await page.getByText("Edit message", { exact: true }).click();
+      const editInput = page.getByLabelText("Edit queued message");
+      await editInput.fill("edited queued message");
+      await userEvent.keyboard("{Enter}");
+
+      await vi.waitFor(() => {
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages[0]).toMatchObject({
+          id: "queue-edit-browser",
+          text: "edited queued message",
+          commandId: "command-queue-edit-browser",
+          messageId: "message-queue-edit-browser",
+        });
+      });
+
+      await page.getByLabelText("More options for queued message: edited queued message").click();
+      await page.getByText("Turn off queueing", { exact: true }).click();
+      await vi.waitFor(() => {
+        const draft = composerDraftFor(THREAD_KEY);
+        expect(draft?.queueingEnabled).toBe(false);
+        expect(draft?.queuedMessages).toHaveLength(2);
+      });
+
+      await page.getByLabelText("Delete queued message: delete this message").click();
+      await vi.waitFor(() => {
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages).toHaveLength(1);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("retries a failed queued message immediately through Steer", async () => {
+    const turnStarts: NormalizedWsRpcRequestBody[] = [];
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-queue-retry" as MessageId,
+        targetText: "queue retry target",
+        sessionStatus: "running",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          if (body.type === "thread.turn.start") turnStarts.push(body);
+          return { sequence: fixture.snapshot.snapshotSequence + 1 };
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
+        id: "queue-retry-browser",
+        commandId: CommandId.make("command-queue-retry-browser"),
+        messageId: MessageId.make("message-queue-retry-browser"),
+        text: "retry through steer",
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+        gedWorkflowEnabled: true,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: isoAt(2_300),
+        status: "failed",
+        error: "Environment disconnected",
+      });
+
+      await expect
+        .element(page.getByRole("alert", { name: "Environment disconnected" }))
+        .toHaveTextContent("Environment disconnected");
+      await page.getByLabelText("Retry queued message: retry through steer").click();
+
+      await vi.waitFor(() => {
+        expect(turnStarts).toHaveLength(1);
+        expect(turnStarts[0]).toMatchObject({
+          type: "thread.turn.start",
+          commandId: "command-queue-retry-browser",
+          message: { messageId: "message-queue-retry-browser", text: "retry through steer" },
+        });
+        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps queued-message actions accessible in the compact chat layout", async () => {
+    const mounted = await mountChatView({
+      viewport: COMPACT_FOOTER_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-queue-compact" as MessageId,
+        targetText: "queue compact target",
+        sessionStatus: "running",
+      }),
+    });
+
+    try {
+      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
+        id: "queue-compact-browser",
+        commandId: CommandId.make("command-queue-compact-browser"),
+        messageId: MessageId.make("message-queue-compact-browser"),
+        text: "a queued message with enough text to require truncation in the compact layout",
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+        gedWorkflowEnabled: true,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt: isoAt(2_400),
+        status: "queued",
+      });
+
+      const panel = page.getByRole("region", { name: "Queued messages" });
+      await expect.element(panel).toBeVisible();
+      await expect
+        .element(
+          page.getByLabelText(
+            "Steer queued message: a queued message with enough text to require truncation in the compact layout",
+          ),
+        )
+        .toBeVisible();
+      await expect
+        .element(
+          page.getByLabelText(
+            "Delete queued message: a queued message with enough text to require truncation in the compact layout",
+          ),
+        )
+        .toBeVisible();
+      const panelElement = panel.element() as HTMLElement;
+      expect(panelElement.scrollWidth).toBeLessThanOrEqual(panelElement.clientWidth + 1);
     } finally {
       await mounted.cleanup();
     }

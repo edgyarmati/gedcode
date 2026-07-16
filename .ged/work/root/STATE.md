@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `CHAT-QUEUE-03` queued-message controls and responsive rendering.
+- **Active task**: `DOC-ARTIFACTS-01` workspace and user artifact lifecycle guide.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -36,6 +36,14 @@
 
 ## Current Progress
 
+- `CHAT-QUEUE-03` is implemented. Queued normal-chat messages render above the composer with
+  identity-preserving inline edit, immediate Steer/Retry, Delete, and queue preference controls.
+  Disabling queueing affects future sends only, failed items expose their durable error, and compact
+  layouts retain accessible icon actions without horizontal overflow. All 74 queue/store tests, the
+  complete web unit suite (1,241/1,241), 3 focused Chromium flows, and all 86 ChatView Chromium
+  interactions pass. Final verification also passed `bun fmt`, `bun lint` (existing warnings only),
+  all 12 typecheck packages after retrying the known workspace resolver race, and the complete
+  12-package repository test gate in 10m55s.
 - `CHAT-QUEUE-02` is implemented. Active normal-chat turns capture sends into the queue by default;
   ready settlement drains only the head using its stable command/message IDs, captured model options,
   modes, text, and attachments. Queue-off sends use the existing provider steer path without wedging
@@ -393,9 +401,9 @@
 
 ## Remaining Work
 
-1. `CHAT-QUEUE-03` adds the reference queue controls and compact/browser coverage.
-4. `DOC-ARTIFACTS-01` and `ORCH-ROLES-01..02` follow as separate commits.
-5. `ORCH-ORDER-01` remains deferred by the user.
+1. `DOC-ARTIFACTS-01` documents workspace and user artifact lifecycles.
+2. `ORCH-ROLES-01..02` follow as separate commits.
+3. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 

@@ -10,7 +10,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   queue preference. Active-turn sends now queue by default and drain one item after each settled turn;
   interrupted dispatches reuse the same identity, failures pause without hot-looping, and queue-off
   sends use the provider's existing live-steer path. Queue state remains isolated by environment and
-  supports identity-preserving edit, delete, and status operations.
+  supports identity-preserving edit, delete, and status operations. Queued messages are shown above the
+  composer with responsive Steer/Retry, Delete, inline Edit, and queue preference controls; disabling
+  queueing leaves existing queued work intact.
 
 - Feature: Add a typed normal-chat thread fork operation. Codex forks its native conversation and
   rolls back only the new copy when continuing from an earlier assistant turn; other providers use a

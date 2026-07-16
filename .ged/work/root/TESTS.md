@@ -28,6 +28,12 @@ component lifecycle changes require integration coverage; UI interaction changes
   10m26s.
 - Chromium coverage reproduces the reference queue rows and verifies Steer, Delete, inline Edit, Turn
   off queueing, pending/error states, keyboard/accessibility behavior, and compact layout.
+- `CHAT-QUEUE-03` passes 3 focused Chromium flows covering identity-preserving edit, delete, disabling
+  queueing without flushing rows, immediate failed-item retry through Steer, compact action labels, and
+  horizontal overflow. All 86 ChatView Chromium interactions and all 1,241 web unit tests pass. Final
+  checkpoint verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck
+  packages after retrying the known workspace resolver race, and the complete 12-package `bun run test
+  --output-logs=errors-only` gate in 10m55s.
 
 ## DOC-ARTIFACTS-01
 
