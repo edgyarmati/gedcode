@@ -6,8 +6,10 @@ import {
 } from "@t3tools/client-runtime";
 import * as Schema from "effect/Schema";
 import {
+  CommandId,
   defaultInstanceIdForDriver,
   EnvironmentId,
+  MessageId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -65,6 +67,7 @@ import {
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
   type ComposerImageAttachment,
+  type ComposerQueuedMessage,
   useComposerDraftStore,
   DraftId,
 } from "./composerDraftStore";
@@ -120,6 +123,36 @@ function makeTerminalContext(input: {
     lineEnd: input.lineEnd ?? 5,
     text: input.text ?? "git status\nOn branch main",
     createdAt: "2026-03-13T12:00:00.000Z",
+  };
+}
+
+function makeQueuedMessage(input: {
+  id: string;
+  text?: string;
+  status?: ComposerQueuedMessage["status"];
+}): ComposerQueuedMessage {
+  return {
+    id: input.id,
+    commandId: CommandId.make(`command-${input.id}`),
+    messageId: MessageId.make(`message-${input.id}`),
+    text: input.text ?? `queued ${input.id}`,
+    attachments: [
+      {
+        id: `attachment-${input.id}`,
+        name: `${input.id}.png`,
+        mimeType: "image/png",
+        sizeBytes: 3,
+        dataUrl: "data:image/png;base64,AQID",
+      },
+    ],
+    modelSelection: createModelSelection(CODEX_INSTANCE, "gpt-5.6", [
+      { id: "reasoningEffort", value: "high" },
+    ]),
+    gedWorkflowEnabled: true,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    createdAt: "2026-07-16T12:00:00.000Z",
+    status: input.status ?? "queued",
   };
 }
 
@@ -285,6 +318,172 @@ describe("composerDraftStore clearComposerContent", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(draft).toBeUndefined();
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:optimistic");
+  });
+});
+
+describe("composerDraftStore queued messages", () => {
+  const threadId = ThreadId.make("thread-queue");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+  const otherThreadRef = scopeThreadRef(OTHER_TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("defaults each thread to an empty enabled queue", () => {
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
+    useComposerDraftStore.getState().setQueueingEnabled(threadRef, true);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("appends FIFO items per scoped thread and ignores duplicate queue identities", () => {
+    const first = makeQueuedMessage({ id: "first" });
+    const second = makeQueuedMessage({ id: "second" });
+    const remote = makeQueuedMessage({ id: "remote" });
+
+    useComposerDraftStore.getState().enqueueMessage(threadRef, first);
+    useComposerDraftStore.getState().enqueueMessage(threadRef, second);
+    useComposerDraftStore.getState().enqueueMessage(threadRef, {
+      ...first,
+      text: "duplicate must not replace the original",
+    });
+    useComposerDraftStore.getState().enqueueMessage(threadRef, {
+      ...makeQueuedMessage({ id: "blank" }),
+      text: "   ",
+    });
+    useComposerDraftStore.getState().enqueueMessage(otherThreadRef, remote);
+
+    expect(
+      useComposerDraftStore
+        .getState()
+        .getComposerDraft(threadRef)
+        ?.queuedMessages.map((message) => [message.id, message.text]),
+    ).toEqual([
+      ["first", "queued first"],
+      ["second", "queued second"],
+    ]);
+    expect(
+      useComposerDraftStore
+        .getState()
+        .getComposerDraft(otherThreadRef)
+        ?.queuedMessages.map((message) => message.id),
+    ).toEqual(["remote"]);
+
+    (first.attachments[0] as { dataUrl: string }).dataUrl = "data:image/png;base64,changed";
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(threadRef)?.queuedMessages[0]
+        ?.attachments[0]?.dataUrl,
+    ).toBe("data:image/png;base64,AQID");
+  });
+
+  it("edits content and status without changing FIFO identity, then deletes only the target", () => {
+    const first = makeQueuedMessage({ id: "first" });
+    const second = makeQueuedMessage({ id: "second" });
+    useComposerDraftStore.getState().enqueueMessage(threadRef, first);
+    useComposerDraftStore.getState().enqueueMessage(threadRef, second);
+
+    useComposerDraftStore.getState().editQueuedMessage(threadRef, "first", "edited first");
+    useComposerDraftStore.getState().editQueuedMessage(threadRef, "second", "   ");
+    useComposerDraftStore.getState().setQueuedMessageStatus(threadRef, "first", "dispatching");
+
+    const edited = useComposerDraftStore.getState().getComposerDraft(threadRef)?.queuedMessages;
+    expect(edited?.map((message) => message.id)).toEqual(["first", "second"]);
+    expect(edited?.[0]).toMatchObject({
+      commandId: first.commandId,
+      messageId: first.messageId,
+      text: "edited first",
+      status: "dispatching",
+    });
+    expect(edited?.[1]?.text).toBe("queued second");
+
+    useComposerDraftStore.getState().removeQueuedMessage(threadRef, "first");
+    expect(
+      useComposerDraftStore
+        .getState()
+        .getComposerDraft(threadRef)
+        ?.queuedMessages.map((message) => message.id),
+    ).toEqual(["second"]);
+  });
+
+  it("turns queueing off without flushing existing messages and removes an empty default draft", () => {
+    useComposerDraftStore.getState().enqueueMessage(threadRef, makeQueuedMessage({ id: "kept" }));
+    useComposerDraftStore.getState().setQueueingEnabled(threadRef, false);
+
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toMatchObject({
+      queueingEnabled: false,
+      queuedMessages: [{ id: "kept" }],
+    });
+
+    useComposerDraftStore.getState().removeQueuedMessage(threadRef, "kept");
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toMatchObject({
+      queueingEnabled: false,
+      queuedMessages: [],
+    });
+
+    useComposerDraftStore.getState().setQueueingEnabled(threadRef, true);
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)).toBeNull();
+  });
+
+  it("persists queue payloads and hydrates old drafts with queueing enabled", () => {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    useComposerDraftStore
+      .getState()
+      .enqueueMessage(threadRef, makeQueuedMessage({ id: "persisted", status: "dispatching" }));
+    useComposerDraftStore.getState().setQueueingEnabled(threadRef, false);
+
+    const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    const hydrated = persistApi
+      .getOptions()
+      .merge(persisted, useComposerDraftStore.getInitialState());
+    const hydratedDraft = hydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)];
+    expect(hydratedDraft).toMatchObject({
+      queueingEnabled: false,
+      queuedMessages: [
+        {
+          id: "persisted",
+          status: "dispatching",
+          text: "queued persisted",
+          gedWorkflowEnabled: true,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          attachments: [{ dataUrl: "data:image/png;base64,AQID" }],
+          modelSelection: {
+            instanceId: CODEX_INSTANCE,
+            model: "gpt-5.6",
+            options: [{ id: "reasoningEffort", value: "high" }],
+          },
+        },
+      ],
+    });
+
+    const legacyHydrated = persistApi.getOptions().merge(
+      {
+        draftsByThreadKey: {
+          [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "legacy draft",
+            attachments: [],
+          },
+        },
+        draftThreadsByThreadKey: {},
+        logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(
+      legacyHydrated.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)],
+    ).toMatchObject({
+      prompt: "legacy draft",
+      queuedMessages: [],
+      queueingEnabled: true,
+    });
   });
 });
 

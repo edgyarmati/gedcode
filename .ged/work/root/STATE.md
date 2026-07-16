@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `CHAT-QUEUE-01` persisted per-thread queue state and operations.
+- **Active task**: `CHAT-QUEUE-02` idempotent queue/steer dispatch and one-at-a-time draining.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -36,6 +36,12 @@
 
 ## Current Progress
 
+- `CHAT-QUEUE-01` is implemented. Composer draft storage v7 now persists environment-scoped FIFO queue
+  items with stable command/message IDs, exact backend options and modes, dispatching retry state, and
+  data-URL attachments. Queue edit/delete/status/preference operations preserve identity and order;
+  legacy drafts hydrate to an empty enabled queue. All 71 focused store tests, `bun fmt`, `bun lint`
+  (existing warnings only), and 12-package `bun typecheck` pass; the socket-enabled repository test
+  gate passed all 12 package tasks in 9m26s.
 - `CHAT-FORK-02` implementation and focused verification are complete. Completed assistant
   messages expose **Continue in new task** with a current-filesystem tooltip/accessibility description,
   one-operation pending state, typed fork dispatch, error toast recovery, and success navigation. The
@@ -378,8 +384,7 @@
 
 ## Remaining Work
 
-1. `CHAT-QUEUE-01` adds the persisted queue contract and store operations without changing send/UI
-   behavior.
+1. Commit verified `CHAT-QUEUE-01` atomically; it intentionally changes no send/UI behavior.
 2. `CHAT-QUEUE-02` adds idempotent queue/steer dispatch and one-at-a-time draining.
 3. `CHAT-QUEUE-03` adds the reference queue controls and compact/browser coverage.
 4. `DOC-ARTIFACTS-01` and `ORCH-ROLES-01..02` follow as separate commits.

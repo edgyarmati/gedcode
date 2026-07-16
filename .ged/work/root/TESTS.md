@@ -7,6 +7,12 @@ component lifecycle changes require integration coverage; UI interaction changes
 
 ## CHAT-QUEUE-01..03
 
+- `CHAT-QUEUE-01` focused verification covers 71 draft-store tests. New cases prove default-on queue
+  behavior, environment-scoped FIFO isolation, duplicate/blank rejection, stable identity across edit
+  and dispatching-state changes, deletion, queue-off retention, attachment/model-option cloning, and
+  current/legacy persistence hydration. `bun fmt`, `bun lint` (existing warnings only), and `bun
+  typecheck` pass; the socket-enabled `bun run test --output-logs=errors-only` gate passed all 12
+  package tasks in 9m26s.
 - Draft-store schema tests persist per-thread queue order, stable command/message identities, captured
   model options and modes, persisted image data, terminal contexts, and the default-on queue preference.
 - Dispatch logic tests hold active-turn sends locally, drain one item only after settlement, retain a

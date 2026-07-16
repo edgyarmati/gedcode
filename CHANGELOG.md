@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature foundation: Persist per-thread normal-chat message queues with captured backend options,
+  GED/runtime modes, attachments, stable idempotency identities, dispatch retry state, and a default-on
+  queue preference. Queue state is isolated by environment and supports identity-preserving edit,
+  delete, and status operations ahead of the send/drain and control-surface slices.
+
 - Feature: Add a typed normal-chat thread fork operation. Codex forks its native conversation and
   rolls back only the new copy when continuing from an earlier assistant turn; other providers use a
   fresh session with copied visible history. Both strategies preserve the source task and explicitly
