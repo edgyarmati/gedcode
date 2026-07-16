@@ -1,5 +1,32 @@
 # SPEC - Orchestrator Completion Roadmap
 
+## Sticky Normal-Chat Backend Defaults (2026-07-17)
+
+### Goal
+
+Start a fresh installation on Codex GPT-5.6 Sol with medium reasoning and Standard service, while
+making the user's latest explicit harness, model, reasoning, and speed choices the defaults for every
+subsequent normal chat.
+
+### Constraints
+
+- Existing persisted composer choices remain authoritative and are never replaced by factory values.
+- Codex factory defaults apply only when Codex is available and no user choice exists.
+- Claude keeps its provider-native first-use defaults; selecting Claude, Opus, or any Claude option
+  makes that complete choice sticky for later chats.
+- Model changes retain the prior sticky options for that provider instance until the user changes them.
+- No compatibility fallback or migration is needed: this unreleased app has no user population, while
+  the existing persisted-state schema already represents the required choices.
+
+### Acceptance Criteria
+
+- The Codex factory model is `gpt-5.6-sol`; its unconfigured traits resolve to medium reasoning and
+  Standard service rather than the catalog's Fast tier.
+- Selecting high reasoning, Fast service, another Codex model, or Claude Opus is reflected by every new
+  normal-chat draft until another explicit choice replaces it.
+- A Claude-only environment uses Claude's advertised provider defaults without synthetic Codex options.
+- Changelog and required repository verification are complete before the slice lands.
+
 ## Worker Auto-Review and PM Approval Control (2026-07-16)
 
 ### Goal

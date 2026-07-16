@@ -124,12 +124,6 @@ export function mapCodexModelCapabilities(
           name: id === "fast" ? "Fast" : id,
           description: "",
         }));
-  const catalogDefaultServiceTier = serviceTiers.some(
-    (tier) => tier.id === model.defaultServiceTier,
-  )
-    ? model.defaultServiceTier
-    : null;
-  const defaultServiceTier = catalogDefaultServiceTier ?? DEFAULT_SERVICE_TIER_ID;
   const optionDescriptors: ProviderOptionDescriptor[] = [];
 
   if (reasoningOptions.length > 0) {
@@ -155,9 +149,6 @@ export function mapCodexModelCapabilities(
       if (tier.description) {
         option.description = tier.description;
       }
-      if (defaultServiceTier === tier.id) {
-        option.isDefault = true;
-      }
       return option;
     });
     optionDescriptors.push({
@@ -168,11 +159,11 @@ export function mapCodexModelCapabilities(
         {
           id: DEFAULT_SERVICE_TIER_ID,
           label: "Standard",
-          ...(defaultServiceTier === DEFAULT_SERVICE_TIER_ID ? { isDefault: true } : {}),
+          isDefault: true,
         },
         ...serviceTierOptions,
       ],
-      currentValue: defaultServiceTier,
+      currentValue: DEFAULT_SERVICE_TIER_ID,
     });
   }
 

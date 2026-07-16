@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Changed the first-use Codex chat default to GPT-5.6 Sol with medium reasoning and Standard service.
+  Explicit provider, model, reasoning, and speed choices remain sticky across every new normal chat,
+  including Claude Opus, while Claude-only setups retain Claude's provider-native defaults.
+
 - Changed Codex orchestration workers from unrestricted full access to workspace-scoped writes with
   Codex automatic approval review. Claude and OpenCode workers remain full access, while PM and
   normal-chat permission behavior is unchanged. Granular permission requests and denied automatic

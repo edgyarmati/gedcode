@@ -754,3 +754,18 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
 - Verification passed on 2026-07-14: 85 focused server tests, `bun fmt`, `bun lint` (existing warnings
   only), `bun typecheck`, the full server suite (1,428 passed/1 skipped), and the socket-dependent
   scripts package (74 passed outside the managed sandbox).
+
+### CHAT-DEFAULT-01
+
+- Contract assertions pin the Codex factory model to `gpt-5.6-sol` without changing Claude's default.
+- Codex capability tests pin medium reasoning and Standard service as the unconfigured values even
+  when the provider catalog advertises Fast as its own default.
+- Composer-store tests prove a model change retains sticky reasoning/service selections and that an
+  explicit provider/model/options choice remains authoritative for later drafts.
+- Chromium coverage proves a no-preference Codex chat renders Sol/medium/Standard, while a subsequent
+  chat inherits an explicit high/Fast or Claude Opus selection.
+- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`; never run `bun test`.
+- Verification passed on 2026-07-17: the focused contract, Codex capability, and composer-store suites
+  passed 77 tests; the focused Chromium interaction passed and displayed GPT-5.6 Sol with
+  `Medium · Standard`; `bun fmt`, `bun lint` (existing warnings only), and all 12 typecheck packages
+  passed. The complete `bun run test --output-logs=errors-only` gate passed all 12 packages in 10m41s.

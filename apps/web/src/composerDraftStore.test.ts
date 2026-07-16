@@ -1559,6 +1559,41 @@ describe("composerDraftStore sticky composer settings", () => {
     expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("codex");
   });
 
+  it("retains sticky traits when the user changes only the model", () => {
+    const store = useComposerDraftStore.getState();
+    const nextThreadRef = scopeThreadRef(
+      TEST_ENVIRONMENT_ID,
+      ThreadId.make("thread-sticky-model-change"),
+    );
+
+    store.setStickyModelSelection(
+      modelSelection(CODEX_DRIVER, "gpt-5.6-sol", {
+        reasoningEffort: "high",
+        serviceTier: "priority",
+      }),
+    );
+    store.setStickyModelSelection(modelSelection(CODEX_DRIVER, "gpt-5.6-terra"));
+
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider[CODEX_INSTANCE]).toEqual(
+      modelSelection(CODEX_DRIVER, "gpt-5.6-terra", {
+        reasoningEffort: "high",
+        serviceTier: "priority",
+      }),
+    );
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("codex");
+
+    store.applyStickyState(nextThreadRef);
+    expect(useComposerDraftStore.getState().getComposerDraft(nextThreadRef)).toMatchObject({
+      activeProvider: CODEX_INSTANCE,
+      modelSelectionByProvider: {
+        [CODEX_INSTANCE]: modelSelection(CODEX_DRIVER, "gpt-5.6-terra", {
+          reasoningEffort: "high",
+          serviceTier: "priority",
+        }),
+      },
+    });
+  });
+
   it("normalizes empty sticky model options by dropping selection options", () => {
     const store = useComposerDraftStore.getState();
 

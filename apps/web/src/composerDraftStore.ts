@@ -2373,9 +2373,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             if (!normalized) {
               return state;
             }
+            const current = state.stickyModelSelectionByProvider[normalized.instanceId];
+            const nextSelection =
+              normalized.options === undefined && current?.options !== undefined
+                ? createModelSelection(normalized.instanceId, normalized.model, current.options)
+                : normalized;
             const nextMap: Partial<Record<ProviderInstanceId, ModelSelection>> = {
               ...state.stickyModelSelectionByProvider,
-              [normalized.instanceId]: normalized,
+              [normalized.instanceId]: nextSelection,
             };
             if (Equal.equals(state.stickyModelSelectionByProvider, nextMap)) {
               return state.stickyActiveProvider === normalized.instanceId

@@ -113,6 +113,12 @@ or explicitly blocked.
 | --- | --- | --- |
 | ORCH-ORDER-01 | DEFERRED | Enforce canonical pipeline order in the decider. User explicitly kept this fully deferred; only fresh verification before landing is enforced by ORCH-LAND-05. |
 
+## Phase 6 - Normal-Chat Backend Defaults
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| CHAT-DEFAULT-01 | DONE | Make GPT-5.6 Sol/medium/Standard the no-preference Codex default and preserve the user's latest explicit provider, model, reasoning, and service-tier selection for new chats. | Contract/provider/store and Chromium tests cover factory values, sticky option retention, Claude-native fallback, and new-draft inheritance. |
+
 ## Already Present
 
 - Detached stage workers and per-task worktrees.

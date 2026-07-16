@@ -4700,15 +4700,87 @@ describe("ChatView timeline estimator parity (full app)", () => {
   });
 
   it("falls back to defaults when no sticky composer settings exist", async () => {
+    const defaultSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-default-codex-traits-test" as MessageId,
+      targetText: "default codex traits test",
+    });
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-default-codex-traits-test" as MessageId,
-        targetText: "default codex traits test",
-      }),
+      snapshot: {
+        ...defaultSnapshot,
+        projects: defaultSnapshot.projects.map((project) =>
+          Object.assign({}, project, {
+            defaultModelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6-sol",
+            },
+          }),
+        ),
+        threads: defaultSnapshot.threads.map((thread) =>
+          Object.assign({}, thread, {
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.6-sol",
+            },
+          }),
+        ),
+      },
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          providers: [
+            {
+              ...nextFixture.serverConfig.providers[0]!,
+              models: [
+                {
+                  slug: "gpt-5.4",
+                  name: "GPT-5.4",
+                  isCustom: false,
+                  capabilities: createModelCapabilities({ optionDescriptors: [] }),
+                },
+                {
+                  slug: "gpt-5.6-sol",
+                  name: "GPT-5.6 Sol",
+                  isCustom: false,
+                  capabilities: createModelCapabilities({
+                    optionDescriptors: [
+                      {
+                        id: "reasoningEffort",
+                        label: "Reasoning",
+                        type: "select",
+                        options: [
+                          { id: "medium", label: "Medium", isDefault: true },
+                          { id: "high", label: "High" },
+                        ],
+                        currentValue: "medium",
+                      },
+                      {
+                        id: "serviceTier",
+                        label: "Service Tier",
+                        type: "select",
+                        options: [
+                          { id: "default", label: "Standard", isDefault: true },
+                          { id: "priority", label: "Fast" },
+                        ],
+                        currentValue: "default",
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          ],
+        };
+      },
     });
 
     try {
+      await waitForServerConfigToApply();
+      await vi.waitFor(() => {
+        expect(findComposerProviderModelPicker()?.textContent).toContain("GPT-5.6 Sol");
+        expect(findButtonContainingText("Medium · Standard")).not.toBeNull();
+      });
+
       const newThreadButton = page.getByTestId("new-thread-button");
       await expect.element(newThreadButton).toBeInTheDocument();
 

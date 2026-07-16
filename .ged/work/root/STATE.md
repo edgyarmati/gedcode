@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: verified — all urgent release-candidate roadmap work is complete.
-- **Active task**: none. Only the user-deferred `ORCH-ORDER-01` remains.
+- **Phase**: complete — all non-deferred roadmap work is verified.
+- **Active task**: none. `ORCH-ORDER-01` remains explicitly deferred.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -44,8 +44,20 @@
   `auto_review`. The owning PM is the fallback authority for forwarded manual requests and denied
   auto-reviews. The PM must inspect untrusted request details and grant the minimum necessary access;
   Claude and OpenCode workers retain full access.
+- **Normal-chat backend decision**: first-use Codex is GPT-5.6 Sol with medium reasoning and Standard
+  service. The latest explicit provider instance, model, reasoning, and speed selection is global and
+  sticky for every new normal chat until changed. Claude keeps its provider-native first-use default.
+- **Computer Use test preference**: when live testing through Codex, use GPT-5.6 Terra or GPT-5.6 Luna
+  at high reasoning (avoid Sol); when testing through Claude, use Opus.
 
 ## Current Progress
+
+- `CHAT-DEFAULT-01` is complete. Fresh Codex chats now resolve to GPT-5.6 Sol with medium reasoning
+  and Standard service. The existing global sticky composer state remains authoritative after any
+  explicit provider instance, model, reasoning, or speed change; model-only changes retain the
+  selected provider traits, and Claude keeps its provider-native first-use default. Focused tests
+  passed 77 unit assertions and one Chromium interaction; formatting, lint (existing warnings only),
+  all 12 typecheck packages, and the complete 12-package test gate pass.
 
 - `CHAT-DRAFT-01` is complete. The global Chat toggle and project **Open in Chat** action prefer an
   unsent project draft over completed server threads. When multiple checkout drafts exist, actual

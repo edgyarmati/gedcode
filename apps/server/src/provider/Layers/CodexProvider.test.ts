@@ -2,7 +2,7 @@ import { assert, it } from "@effect/vitest";
 
 import { mapCodexModelCapabilities } from "./CodexProvider.ts";
 
-it("maps current Codex model capability fields", () => {
+it("maps Codex reasoning while using the app's Standard service default", () => {
   const capabilities = mapCodexModelCapabilities({
     additionalSpeedTiers: [],
     defaultReasoningEffort: "super-high",
@@ -46,7 +46,7 @@ it("maps current Codex model capability fields", () => {
       label: "Service Tier",
       type: "select",
       options: [
-        { id: "default", label: "Standard" },
+        { id: "default", label: "Standard", isDefault: true },
         {
           id: "priority",
           label: "Fast",
@@ -56,10 +56,9 @@ it("maps current Codex model capability fields", () => {
           id: "flex",
           label: "Flex",
           description: "Lower-cost asynchronous routing.",
-          isDefault: true,
         },
       ],
-      currentValue: "flex",
+      currentValue: "default",
     },
   ]);
 });
