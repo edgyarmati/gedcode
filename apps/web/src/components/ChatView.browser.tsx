@@ -54,7 +54,11 @@ import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { getServerConfig } from "../rpc/serverState";
 import { getRouter } from "../router";
 import { deriveLogicalProjectKeyFromSettings } from "../logicalProject";
-import { selectBootstrapCompleteForActiveEnvironment, useStore } from "../store";
+import {
+  selectBootstrapCompleteForActiveEnvironment,
+  syncServerThreadDetail,
+  useStore,
+} from "../store";
 import { useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import { createAuthenticatedSessionHandlers } from "../../test/authHttpHandlers";
@@ -203,6 +207,7 @@ function createBaseServerConfig(): ServerConfig {
 function createMockEnvironmentApi(input: {
   browse: EnvironmentApi["filesystem"]["browse"];
   dispatchCommand: EnvironmentApi["orchestration"]["dispatchCommand"];
+  forkThread?: EnvironmentApi["orchestration"]["forkThread"];
 }): EnvironmentApi {
   return {
     terminal: {} as EnvironmentApi["terminal"],
@@ -215,9 +220,11 @@ function createMockEnvironmentApi(input: {
     git: {} as EnvironmentApi["git"],
     orchestration: {
       dispatchCommand: input.dispatchCommand,
-      forkThread: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestration"]["forkThread"],
+      forkThread:
+        input.forkThread ??
+        ((() => {
+          throw new Error("Not implemented in browser test.");
+        }) as EnvironmentApi["orchestration"]["forkThread"]),
       getTurnDiff: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestration"]["getTurnDiff"],
@@ -1744,6 +1751,114 @@ describe("ChatView timeline estimator parity (full app)", () => {
   afterEach(() => {
     customWsRpcResolver = null;
     document.body.innerHTML = "";
+  });
+
+  it("continues a completed assistant message in a new task and navigates after success", async () => {
+    const targetThreadId = "thread-forked-browser" as ThreadId;
+    const forkThread = vi.fn();
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-fork-success" as MessageId,
+        targetText: "fork success",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag !== ORCHESTRATION_WS_METHODS.forkThread) {
+          return undefined;
+        }
+        forkThread(body);
+        const sourceThread = fixture.snapshot.threads.find((thread) => thread.id === THREAD_ID);
+        if (sourceThread?.session) {
+          const targetThread: OrchestrationReadModel["threads"][number] = {
+            ...sourceThread,
+            id: targetThreadId,
+            title: "Forked browser thread",
+            session: {
+              ...sourceThread.session,
+              threadId: targetThreadId,
+            },
+          };
+          fixture.snapshot = {
+            ...fixture.snapshot,
+            threads: [...fixture.snapshot.threads, targetThread],
+          };
+          useStore.setState((state) =>
+            syncServerThreadDetail(state, targetThread, LOCAL_ENVIRONMENT_ID),
+          );
+        }
+        return {
+          threadId: targetThreadId,
+          strategy: "provider-native",
+          filesystem: "current-state",
+          sequence: 2,
+        };
+      },
+    });
+
+    try {
+      const action = await waitForElement(
+        () =>
+          document.querySelectorAll<HTMLButtonElement>(
+            'button[aria-label="Continue in new task"]',
+          )[3] ?? null,
+        "Unable to find the assistant fork action.",
+      );
+      action.click();
+
+      await vi.waitFor(() => {
+        expect(forkThread).toHaveBeenCalledWith(
+          expect.objectContaining({
+            _tag: ORCHESTRATION_WS_METHODS.forkThread,
+            sourceThreadId: THREAD_ID,
+            sourceMessageId: "msg-assistant-18",
+          }),
+        );
+        expect(mounted.router.state.location.pathname).toBe(
+          `/${LOCAL_ENVIRONMENT_ID}/${targetThreadId}`,
+        );
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("surfaces fork failures and restores the completed-message action", async () => {
+    const forkThread = vi.fn<EnvironmentApi["orchestration"]["forkThread"]>(async () => {
+      __resetEnvironmentApiOverridesForTests();
+      throw new Error("Native fork failed");
+    });
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-fork-failure" as MessageId,
+        targetText: "fork failure",
+      }),
+    });
+
+    try {
+      __setEnvironmentApiOverrideForTests(
+        LOCAL_ENVIRONMENT_ID,
+        createMockEnvironmentApi({
+          browse: async () => ({ parentPath: "/repo", entries: [] }),
+          dispatchCommand: async () => ({ sequence: 2 }),
+          forkThread,
+        }),
+      );
+      const action = await waitForElement(
+        () =>
+          document.querySelectorAll<HTMLButtonElement>(
+            'button[aria-label="Continue in new task"]',
+          )[3] ?? null,
+        "Unable to find the assistant fork action.",
+      );
+      action.click();
+      await expect.element(page.getByText("Could not continue in a new task")).toBeVisible();
+      await expect.element(page.getByText("Native fork failed")).toBeVisible();
+      await vi.waitFor(() => expect(action.disabled).toBe(false));
+      expect(mounted.router.state.location.pathname).toBe(`/${LOCAL_ENVIRONMENT_ID}/${THREAD_ID}`);
+    } finally {
+      await mounted.cleanup();
+    }
   });
 
   it("renders locked single-environment mobile run context as a static workspace label", async () => {

@@ -5,6 +5,18 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## CHAT-FORK-02
+
+- Static timeline coverage proves exactly one terminal completed assistant message receives the action,
+  streaming messages do not, and the control carries the current-filesystem accessibility description.
+- Focused Chromium coverage is implemented for completed-assistant visibility, tooltip copy, pending
+  disablement, successful typed fork/navigation, and error feedback/action recovery.
+- Verification passed on 2026-07-16: 65 focused timeline/ChatView unit tests, 91 focused Chromium
+  interactions across the timeline and full Chat view, the complete web suite (1,233/1,233), production
+  web build, `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck` across all 12 packages.
+  The final socket-enabled `bun run test --output-logs=errors-only` gate passed all 12 package tasks in
+  11m54s.
+
 ## CHAT-FORK-01
 
 - Contract coverage pins the source-message input plus explicit provider-native/copied-history strategy

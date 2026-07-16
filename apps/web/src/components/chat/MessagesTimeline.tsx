@@ -46,8 +46,10 @@ import {
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
+  GitForkIcon,
   HammerIcon,
   ListTodoIcon,
+  LoaderCircleIcon,
   type LucideIcon,
   MessageCircleIcon,
   MinusIcon,
@@ -127,6 +129,8 @@ interface TimelineRowSharedState {
   activeThreadEnvironmentId: EnvironmentId;
   pmTaskChip: PmTaskChipContext | undefined;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onForkAssistantMessage: ((messageId: MessageId) => void) | undefined;
+  forkingMessageId: MessageId | null;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
@@ -160,6 +164,8 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onForkAssistantMessage?: (messageId: MessageId) => void;
+  forkingMessageId?: MessageId | null;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
@@ -191,6 +197,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  onForkAssistantMessage,
+  forkingMessageId = null,
   isRevertingCheckpoint,
   onImageExpand,
   activeThreadEnvironmentId,
@@ -330,6 +338,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       pmTaskChip,
       onRevertUserMessage,
+      onForkAssistantMessage,
+      forkingMessageId,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -344,6 +354,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       pmTaskChip,
       onRevertUserMessage,
+      onForkAssistantMessage,
+      forkingMessageId,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -585,6 +597,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
+            <AssistantForkButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
@@ -607,6 +620,42 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+function AssistantForkButton({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  if (!ctx.onForkAssistantMessage || row.message.streaming || !row.showAssistantMeta) {
+    return null;
+  }
+  const isPending = ctx.forkingMessageId !== null;
+  const isCurrent = ctx.forkingMessageId === row.message.id;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={isPending}
+            onClick={() => ctx.onForkAssistantMessage?.(row.message.id)}
+            aria-label="Continue in new task"
+            aria-description="Conversation history branches here; files keep their current state."
+          />
+        }
+      >
+        {isCurrent ? (
+          <LoaderCircleIcon className="size-3 animate-spin" />
+        ) : (
+          <GitForkIcon className="size-3" />
+        )}
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        Continue in new task. Conversation history branches here; files keep their current state.
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 

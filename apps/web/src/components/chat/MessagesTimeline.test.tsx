@@ -149,6 +149,25 @@ function buildUserTimelineEntry(text: string) {
   };
 }
 
+function buildAssistantTimelineEntry(input: {
+  readonly id: string;
+  readonly text: string;
+  readonly streaming?: boolean;
+}) {
+  return {
+    id: `entry-${input.id}`,
+    kind: "message" as const,
+    createdAt: MESSAGE_CREATED_AT,
+    message: {
+      id: MessageId.make(input.id),
+      role: "assistant" as const,
+      text: input.text,
+      createdAt: MESSAGE_CREATED_AT,
+      streaming: input.streaming ?? false,
+    },
+  };
+}
+
 describe("MessagesTimeline", () => {
   it("renders collapse controls for long user messages", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
@@ -218,6 +237,43 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Copy link"');
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-footer="true"');
+  });
+
+  it("renders the fork action only for a terminal completed assistant message", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry("Original request"),
+          buildAssistantTimelineEntry({ id: "assistant-commentary", text: "Working on it" }),
+          buildAssistantTimelineEntry({ id: "assistant-final", text: "Completed answer" }),
+        ]}
+        onForkAssistantMessage={() => {}}
+      />,
+    );
+
+    expect(markup.match(/aria-label="Continue in new task"/g)).toHaveLength(1);
+    expect(markup).toContain(
+      'aria-description="Conversation history branches here; files keep their current state."',
+    );
+
+    const streamingMarkup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        activeTurnInProgress
+        timelineEntries={[
+          buildAssistantTimelineEntry({
+            id: "assistant-streaming",
+            text: "Still working",
+            streaming: true,
+          }),
+        ]}
+        onForkAssistantMessage={() => {}}
+      />,
+    );
+    expect(streamingMarkup).not.toContain('aria-label="Continue in new task"');
   });
 
   it("renders context compaction entries in the normal work log", async () => {

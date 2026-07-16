@@ -385,6 +385,60 @@ describe("MessagesTimeline", () => {
     }
   });
 
+  it("offers continue-in-new-task only for completed assistant messages", async () => {
+    const onForkAssistantMessage = vi.fn();
+    const assistant = buildAssistantTimelineEntry("Completed answer");
+    const screen = await render(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[buildUserTimelineEntry("Original request"), assistant]}
+        onForkAssistantMessage={onForkAssistantMessage}
+      />,
+    );
+
+    try {
+      const action = page.getByRole("button", { name: "Continue in new task" });
+      await expect.element(action).toBeVisible();
+      await action.hover();
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toContain(
+          "files keep their current state",
+        );
+      });
+      await action.click();
+      expect(onForkAssistantMessage).toHaveBeenCalledWith(assistant.message.id);
+
+      await screen.rerender(
+        <MessagesTimeline
+          {...buildProps()}
+          timelineEntries={[buildUserTimelineEntry("Original request"), assistant]}
+          onForkAssistantMessage={onForkAssistantMessage}
+          forkingMessageId={assistant.message.id}
+        />,
+      );
+      await expect.element(action).toBeDisabled();
+
+      await screen.rerender(
+        <MessagesTimeline
+          {...buildProps()}
+          isWorking
+          activeTurnInProgress
+          timelineEntries={[
+            buildUserTimelineEntry("Original request"),
+            {
+              ...assistant,
+              message: { ...assistant.message, streaming: true },
+            },
+          ]}
+          onForkAssistantMessage={onForkAssistantMessage}
+        />,
+      );
+      await expect.element(action).not.toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
   it("uses the file path without line suffix for markdown file tag icons", async () => {
     const fileLink = "[package.json](path/to/package.json:25)";
     const screen = await render(

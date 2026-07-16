@@ -638,6 +638,7 @@ export default function ChatView(props: ChatViewProps) {
   const timestampFormat = settings.timestampFormat;
   const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
   const navigate = useNavigate();
+  const [forkingMessageId, setForkingMessageId] = useState<MessageId | null>(null);
   const rawSearch = useSearch({
     strict: false,
     select: (params) => parseDiffRouteSearch(params),
@@ -3511,6 +3512,53 @@ export default function ChatView(props: ChatViewProps) {
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
+  const onForkAssistantMessage = useCallback(
+    async (sourceMessageId: MessageId) => {
+      if (!isServerThread || !activeThread || forkingMessageId !== null) {
+        return;
+      }
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not continue in a new task",
+            description: "The environment is not connected.",
+          }),
+        );
+        return;
+      }
+      setForkingMessageId(sourceMessageId);
+      try {
+        const result = await api.orchestration.forkThread({
+          sourceThreadId: activeThread.id,
+          sourceMessageId,
+        });
+        await waitForStartedServerThread(
+          scopeThreadRef(activeThread.environmentId, result.threadId),
+        );
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: activeThread.environmentId,
+            threadId: result.threadId,
+          },
+        });
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not continue in a new task",
+            description:
+              error instanceof Error ? error.message : "The conversation could not be forked.",
+          }),
+        );
+      } finally {
+        setForkingMessageId(null);
+      }
+    },
+    [activeThread, forkingMessageId, isServerThread, navigate],
+  );
   const onOpenTurnDiff = useCallback(
     (turnId: TurnId, filePath?: string) => {
       if (!isServerThread) {
@@ -3624,6 +3672,8 @@ export default function ChatView(props: ChatViewProps) {
               onOpenTurnDiff={onOpenTurnDiff}
               revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
               onRevertUserMessage={onRevertUserMessage}
+              {...(isServerThread ? { onForkAssistantMessage } : {})}
+              forkingMessageId={forkingMessageId}
               isRevertingCheckpoint={isRevertingCheckpoint}
               onImageExpand={onExpandTimelineImage}
               markdownCwd={gitCwd ?? undefined}

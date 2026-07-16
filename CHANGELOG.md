@@ -8,7 +8,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Feature: Add a typed normal-chat thread fork operation. Codex forks its native conversation and
   rolls back only the new copy when continuing from an earlier assistant turn; other providers use a
   fresh session with copied visible history. Both strategies preserve the source task and explicitly
-  retain the current filesystem state rather than reverting files to the selected message.
+  retain the current filesystem state rather than reverting files to the selected message. Completed
+  assistant messages expose a **Continue in new task** action with pending/error feedback and navigate
+  to the new task after creation.
 
 - Feature: Restore lightweight per-thread GED mode for normal chats, enabled by default. GED turns add
   repository workflow and skill guidance to the provider prompt without changing stored messages,

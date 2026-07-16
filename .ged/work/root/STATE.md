@@ -1,7 +1,7 @@
 # State
 
-- **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
-- **Active task**: `CHAT-FORK-02` completed-assistant message action and navigation.
+- **Phase**: plan — the normal-chat fork roadmap is complete; newly requested follow-ups are next.
+- **Active task**: none until the queued-message roadmap slice is recorded.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -26,6 +26,13 @@
 
 ## Current Progress
 
+- `CHAT-FORK-02` implementation and focused verification are complete. Completed assistant
+  messages expose **Continue in new task** with a current-filesystem tooltip/accessibility description,
+  one-operation pending state, typed fork dispatch, error toast recovery, and success navigation. The
+  production build, all 1,233 web unit tests, formatting, lint, and 12-package typecheck pass. The final
+  focused Chromium run passed all 91 interactions, including visibility boundaries, pending and failure
+  recovery, typed dispatch, target projection, and navigation. The final socket-enabled `bun run test
+  --output-logs=errors-only` gate passed all 12 package tasks in 11m54s.
 - `CHAT-FORK-01` is complete. The typed RPC creates an atomic event-sourced target task from a
   completed assistant-message boundary. Codex uses native `thread/fork` and rolls back only the new
   provider thread for earlier boundaries; other providers continue in a fresh session from copied
@@ -361,9 +368,10 @@
 
 ## Remaining Work
 
-1. `CHAT-FORK-02` adds the completed-assistant message action and navigation UI for the verified fork
-   operation.
-2. `ORCH-ORDER-01` remains deferred by the user.
+1. Commit `CHAT-FORK-02` atomically.
+2. Plan the newly requested queued-message controls, artifact lifecycle documentation, and per-worker
+   harness/model/thinking settings as separate bounded slices.
+3. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 
