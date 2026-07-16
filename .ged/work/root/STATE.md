@@ -1,13 +1,26 @@
 # State
 
-- **Phase**: checkpoint — all autonomously implementable roadmap slices are complete.
-- **Active task**: none. Remaining work is either explicitly deferred or requires a user compatibility
-  decision.
+- **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
+- **Active task**: `ORCH-LAND-05` fresh-verification landing invariant.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
-- **Deferred by user**: `ORCH-ORDER-01` server-enforced canonical pipeline ordering.
-- **Needs user decision**: `CHAT-FORK-01/02` provider-native resume versus a fresh provider session
-  initialized from copied message history. No compatibility fallback will be invented.
+- **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
+  skipped and the PM model can choose their order. Add only a narrow landing invariant requiring a
+  successfully completed verification stage newer than the latest successfully completed work stage.
+  Unrelated stages may occur between verification and landing. Apply this uniformly to every task;
+  there are no existing user tasks to grandfather and no compatibility fallback should be retained.
+- **Chat-fork decision**: use hybrid semantics. Codex uses a provider-native fork and rolls back only
+  the new fork to the selected completed turn; the source remains untouched. Earlier-message forks or
+  providers without native support use a fresh provider session initialized from copied visible history.
+  The UI affordance should mirror Codex/ChatGPT's per-message **Continue in new task** action.
+- **Chat-fork filesystem decision**: forking branches conversation history only. The new task retains
+  the current filesystem state and never attempts to undo file changes from turns after the selected
+  message; this limitation must be clear in the action's accessible description.
+- **Chat-fork affordance decision**: show **Continue in new task** only on completed assistant
+  messages, matching the reference Codex UI. Do not add the action to user messages or the thread menu.
+- **GED-mode decision**: restore only a lightweight normal-chat prompt mode. GED mode supplies workflow
+  instructions and skills to the selected main model; Gedcode does not enforce subagents, configure
+  role models, or start managed child sessions. Provider-native subagent use is model/runtime-owned.
 - **Worker policy**: GPT-5.6 Terra/high for medium work; GPT-5.6 Sol/high for difficult or
   cross-cutting work. `setTaskBackend` now carries the complete provider selection, including effort.
 

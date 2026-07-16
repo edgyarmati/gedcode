@@ -18,6 +18,7 @@ or explicitly blocked.
 | ORCH-WT-01 | DONE | Close TaskWorktreeReactor startup subscription race using sequence-aware replay or periodic pending-land reconciliation. | Event emitted during startup is processed exactly once. |
 | ORCH-LAND-03 | DONE | Add a first-class durable landing substate to the task aggregate/projections so PR-opening, exhausted failure, and completion survive task-only replay without depending on a stage-thread activity. | Restart/rebuild tests reconstruct opening, failed, and completed landing state even when no stage thread exists. |
 | ORCH-LAND-04 | DONE | Add an idempotent PM/MCP/RPC/UI retry actuator for a landed task whose PR-opening attempts were exhausted. | Retry after failure opens or reuses one PR, clears the failure state, and preserves the worktree until success. |
+| ORCH-LAND-05 | NEXT | Enforce one narrow landing invariant: the latest successfully completed `verify` attempt must be newer than the latest successfully completed `work` attempt. Keep every other stage ordering permissive and add no legacy fallback. | Decider/actuator tests reject absent, failed, or stale verification and accept fresh verification with unrelated later non-work stages. |
 | ORCH-WT-02 | DONE | Add durable worktree ownership/lease metadata and a grace period before orphan reaping. | A second runtime/database cannot reap an actively owned worktree. |
 
 ## Phase 1 - Task Control and Worker Defaults
@@ -60,8 +61,10 @@ or explicitly blocked.
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| CHAT-FORK-01 | BLOCKED | Define server/RPC thread-fork semantics. Needs an explicit compatibility decision: resume provider-native state or start a fresh provider session from copied history. | Contract/integration tests fork at a selected message without mutating source thread. |
-| CHAT-FORK-02 | BLOCKED | Add normal-chat Fork action to message/thread context menus after CHAT-FORK-01 semantics are decided. | Browser test creates and opens a fork. |
+| CHAT-GED-01 | TODO | Add a persisted per-thread lightweight Normal/GED mode and inject GED workflow instructions plus available skill guidance into GED turns. Do not restore managed role dispatch, subagent settings, or the deleted workflow package. | Contract/server tests prove the mode reaches provider turns, changes only prompt guidance, and invokes no managed child-session actuator. |
+| CHAT-GED-02 | TODO | Restore the Normal/GED composer selector and draft/new-thread plumbing for normal chat using the lightweight mode contract. | Logic and Chromium tests cover selection, persistence, send/new-thread propagation, and unchanged Normal prompts. |
+| CHAT-FORK-01 | TODO | Add the typed server/RPC fork operation. Codex uses native `thread/fork`, then rolls back only the fork when an earlier completed turn is selected; unsupported providers or boundaries use copied visible history in a fresh session. Retain current filesystem state and never mutate the source. | Contract/provider/integration tests cover latest and earlier Codex turns, copied-history fallback, source immutability, and explicit filesystem semantics. |
+| CHAT-FORK-02 | TODO | Add **Continue in new task** only to completed assistant-message actions, call the typed fork operation, and navigate to the new task. | Browser test verifies visibility boundaries, pending/error states, successful creation/navigation, and unchanged source history. |
 | ORCH-EMPTY-01 | DONE | In active task detail, hide the Plan section until a proposed plan exists; hide the gates section when there are no gates. | Chromium test omits both empty-state cards and renders each section when content appears. |
 | UI-DRAFT-01 | DONE | Persist composer drafts across surfaces. | Draft survives Chat -> Orchestrator -> Chat and route changes. |
 | UI-SIDEBAR-01 | DONE | Reuse Chat project sorting/manual-order infrastructure in the Orchestrator project sidebar. | Sort setting and drag reorder produce identical persisted order. |
@@ -80,7 +83,7 @@ or explicitly blocked.
 
 | ID | Status | Slice |
 | --- | --- | --- |
-| ORCH-ORDER-01 | DEFERRED | Enforce canonical pipeline order in the decider. User explicitly deferred this. |
+| ORCH-ORDER-01 | DEFERRED | Enforce canonical pipeline order in the decider. User explicitly kept this fully deferred; only fresh verification before landing is enforced by ORCH-LAND-05. |
 
 ## Already Present
 

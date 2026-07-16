@@ -135,6 +135,10 @@ Verification evidence:
 ## Landing and Release
 
 - PM and client landing operations reject missing/rejected/mismatched land gates.
+- Landing rejects a task with no successful verify attempt, a failed/interrupted verify attempt, or a
+  successful verify older than the latest successful work attempt.
+- Landing accepts a successful verify newer than work even when an unrelated classify, plan, or review
+  attempt occurs afterward; no other canonical stage order is enforced.
 - Approved land gate followed by land reaches `landed`, opens or reuses a PR, and records the URL.
 - Repeated land/release dispatch calls are idempotent.
 - Release workflow refuses dirty/unlanded state and records authoritative workflow URL/status.
@@ -211,8 +215,15 @@ Verification evidence:
 
 ## Web and Chat
 
-- Forking at a message creates a distinct thread with the intended history boundary.
-- Source thread remains unchanged after fork.
+- Normal mode sends unchanged provider guidance; GED mode adds the documented workflow/skill guidance
+  without invoking a managed subagent or child-session service.
+- GED mode selection survives draft/new-thread creation and remains isolated per thread.
+- Codex latest-message fork uses native provider state; earlier-message fork rolls back only the newly
+  forked thread. Providers without native support receive copied visible history in a fresh session.
+- Forking from a completed assistant message creates and opens a distinct task at the intended history
+  boundary, retains current filesystem state, and leaves the source thread unchanged.
+- The action is absent from user, streaming, interrupted, and failed messages; pending and typed error
+  states prevent duplicate forks.
 - Active task detail omits the Plan section until a proposed plan exists; empty `No gates` is omitted;
   populated sections still render.
 - Composer drafts survive route and Chat/Orchestrator surface switches without leaking between contexts.

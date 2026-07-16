@@ -28,6 +28,8 @@ disjoint write sets and independent verification.
 - Recover orphaned active stages after restart so tasks can be resumed or retried.
 - Close worktree reaper ownership and startup-subscription races.
 - Default orchestration workers to full write access and remove the obsolete opt-in controls.
+- Require a successful verification attempt newer than the latest successful work attempt before
+  landing can begin and open a pull request.
 
 ### PM operation
 
@@ -45,7 +47,13 @@ disjoint write sets and independent verification.
 
 ### User experience
 
-- Add normal-chat thread forking.
+- Add **Continue in new task** to completed assistant messages in normal chat. Codex forks provider
+  state natively and rolls back only the new fork to the selected turn; older-message forks and
+  providers without native support initialize a fresh session from copied visible history. Forking
+  branches conversation history only and retains the current filesystem state.
+- Restore a lightweight Normal/GED composer mode. GED mode injects workflow instructions and available
+  skills into the main provider prompt, but does not enforce, manage, or configure subagents. Native
+  subagent use remains entirely under the selected model and provider runtime.
 - In an active task detail view, hide the empty Plan section while no proposed plan exists. Also hide
   the empty `No gates` card when there are no gates.
 - Persist unsent composer drafts when switching between Chat and Orchestrator contexts.
@@ -62,7 +70,8 @@ disjoint write sets and independent verification.
 ## Explicitly Deferred
 
 - Server enforcement of canonical pipeline order is intentionally deferred. Existing permissive stage
-  ordering remains unchanged for now.
+  ordering remains unchanged; stages may intentionally be skipped. The post-work verification landing
+  invariant is the only enforced ordering rule.
 - Automatic merging to the default branch remains out of scope. Landing opens or records a gated PR.
 - Bulk implementation of this roadmap is prohibited; slices land incrementally.
 
@@ -100,6 +109,12 @@ disjoint write sets and independent verification.
     when there are no gates.
 12. Orchestrator sidebars provide native context menus, sorting, and manual ordering.
 13. Release tasks use a real release playbook and observable dispatch flow.
+14. Landing is rejected unless the latest successful verification is newer than the latest successful
+    work attempt; this applies uniformly without legacy-task fallback.
+15. GED mode is selectable in normal chat and changes prompt guidance without starting managed workers
+    or requiring provider-native subagents.
+16. **Continue in new task** appears only on completed assistant messages, opens the fork, preserves the
+    source thread, and clearly states that current filesystem state is retained.
 
 ## Delivery Order
 
