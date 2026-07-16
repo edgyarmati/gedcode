@@ -5,6 +5,16 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## DOC-ARTIFACTS-01
+
+- The source audit traces workspace task worktrees and leases to `taskWorktreeLease.ts` and
+  `TaskWorktreeReactor.ts`, task safety hooks to `workerSafety.ts`, and the application data tree to
+  server/desktop path derivation. The local workflow-guide link resolves to
+  `docs/artifact-lifecycle.md`; the focused GED settings help-link flow and all 17 settings Chromium
+  interactions pass. Final checkpoint verification passes `bun fmt`, `bun lint` (existing warnings
+  only), all 12 typecheck packages, and the complete 12-package `bun run test
+  --output-logs=errors-only` gate in 10m23s.
+
 ## CHAT-QUEUE-01..03
 
 - `CHAT-QUEUE-01` focused verification covers 71 draft-store tests. New cases prove default-on queue

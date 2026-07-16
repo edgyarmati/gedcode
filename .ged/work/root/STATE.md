@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — follow-up queue, artifact, and worker-role slices are planned.
-- **Active task**: `DOC-ARTIFACTS-01` workspace and user artifact lifecycle guide.
+- **Active task**: `ORCH-ROLES-01` PM/worker responsibility and retained-role decision.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -36,6 +36,14 @@
 
 ## Current Progress
 
+- `DOC-ARTIFACTS-01` is implemented. The new artifact lifecycle guide distinguishes agent-authored
+  workspace `.ged/` memory, app-managed workspace `.gedcode/` Orchestrator worktrees/leases, and
+  durable user `~/.gedcode/` application state. It records creation triggers, contents, retention,
+  cleanup ownership, commit/reset guidance, and privacy risks. The GED settings row links the guide,
+  and the workflow overview no longer claims normal chat has managed role-model presets. The focused
+  help-link flow and all 17 settings Chromium interactions pass. Final verification also passed `bun
+  fmt`, `bun lint` (existing warnings only), all 12 typecheck packages, and the complete 12-package
+  repository test gate in 10m23s.
 - `CHAT-QUEUE-03` is implemented. Queued normal-chat messages render above the composer with
   identity-preserving inline edit, immediate Steer/Retry, Delete, and queue preference controls.
   Disabling queueing affects future sends only, failed items expose their durable error, and compact
@@ -401,8 +409,8 @@
 
 ## Remaining Work
 
-1. `DOC-ARTIFACTS-01` documents workspace and user artifact lifecycles.
-2. `ORCH-ROLES-01..02` follow as separate commits.
+1. `ORCH-ROLES-01` decides and applies the retained worker-role taxonomy.
+2. `ORCH-ROLES-02` adds complete provider/model/reasoning pickers per retained role.
 3. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes

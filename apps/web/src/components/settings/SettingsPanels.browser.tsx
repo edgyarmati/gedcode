@@ -767,6 +767,12 @@ describe("GeneralSettingsPanel observability", () => {
       .element(page.getByRole("switch", { name: "Enable GED mode for new threads" }))
       .toBeChecked();
     await expect
+      .element(page.getByRole("link", { name: "Learn where GED artifacts are stored." }))
+      .toHaveAttribute(
+        "href",
+        "https://github.com/edgyarmati/gedcode/blob/main/docs/artifact-lifecycle.md",
+      );
+    await expect
       .element(page.getByRole("heading", { name: "Diagnostics", exact: true }))
       .toBeInTheDocument();
     await expect.element(page.getByRole("link", { name: "View diagnostics" })).toBeInTheDocument();

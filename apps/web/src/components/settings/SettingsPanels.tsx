@@ -92,6 +92,8 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+const GED_ARTIFACT_GUIDE_URL =
+  "https://github.com/edgyarmati/gedcode/blob/main/docs/artifact-lifecycle.md";
 
 const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
   maxParallelTasks: "Max parallel tasks",
@@ -649,7 +651,20 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           title="GED mode for new threads"
-          description="Start new chats with lightweight planning, bounded execution, and verification guidance enabled."
+          description={
+            <>
+              Start new chats with lightweight planning, bounded execution, and verification
+              guidance enabled.{" "}
+              <a
+                href={GED_ARTIFACT_GUIDE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground underline underline-offset-2 hover:no-underline"
+              >
+                Learn where GED artifacts are stored.
+              </a>
+            </>
+          }
           resetAction={
             settings.gedWorkflowEnabled !== DEFAULT_UNIFIED_SETTINGS.gedWorkflowEnabled ? (
               <SettingResetButton

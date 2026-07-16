@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Documentation: Add an artifact lifecycle and privacy guide distinguishing agent-authored `.ged/`
+  workflow memory, app-managed workspace `.gedcode/` task worktrees, and durable user `~/.gedcode/`
+  application state. Link it from the GED default setting and remove stale managed-subagent claims.
+
 - Feature foundation: Persist per-thread normal-chat message queues with captured backend options,
   GED/runtime modes, attachments, stable idempotency identities, dispatch retry state, and a default-on
   queue preference. Active-turn sends now queue by default and drain one item after each settled turn;

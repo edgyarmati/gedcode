@@ -40,13 +40,16 @@ This matters most when agent work becomes operational rather than conversational
 
 ## `.ged/` Memory
 
-GedCode bootstraps a `.ged/` directory in each workspace that uses the workflow:
+GED mode does not eagerly create a `.ged/` directory. For non-trivial work, the selected model is
+instructed to use the GED skills to create or refresh workflow files:
 
 - root memory stores durable project context such as standards, architecture, decisions, and vocabulary
 - work memory stores the current spec, task list, tests, notes, and state
 - runtime memory stores ephemeral checkpoint state for the active session
 
 The intent is simple: keep the agent's working contract visible in files, not buried in chat history.
+See [GedCode Artifact Lifecycle](artifact-lifecycle.md) for exactly what creates `.ged/`, workspace
+`.gedcode/`, and user `~/.gedcode/` data, along with retention and privacy guidance.
 
 ## Checkpoints
 
@@ -54,21 +57,11 @@ For non-trivial work, Ged asks the agent to record planning and verification che
 
 These checkpoints are workflow guardrails. They make the agent's state and evidence easier to inspect, but they do not replace human review or the repo's own tests.
 
-## Subagents
+## Native Agent Capabilities
 
-When a harness provides native subagent or worker tools, Ged can ask for role-specific help such as exploration, planning critique, and verification review. The parent agent still owns the final scope, source edits, verification judgment, and commit.
-
-When those tools are not available, the same roles can be performed in the main thread.
-
-Codex instances can also define a Ged subagent preset in provider settings. The settings UI exposes one row per supported native role with a model picker and reasoning-level picker. Defaults are:
-
-```text
-ged-explorer: model=gpt-5.4-mini, reasoning=medium
-ged-planner: model=gpt-5.5, reasoning=xhigh
-ged-verifier: model=gpt-5.5, reasoning=low
-```
-
-GedCode formats and injects this preset only into Codex workflow prompts. The Codex harness still decides which subagent models and reasoning levels are available at runtime.
+GED mode supplies workflow guidance to the selected main model. GedCode does not force subagents,
+select their models, or start managed child sessions for normal chat. If a provider harness offers
+native delegation and the model chooses to use it, that behavior remains owned by the provider runtime.
 
 ## What This Does Not Mean
 
