@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
-- **Active task**: `CHAT-GED-01` lightweight GED-mode contract and prompt injection.
+- **Active task**: `CHAT-GED-02` GED selector, persisted draft plumbing, global default, and tooltip.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -26,6 +26,14 @@
 
 ## Current Progress
 
+- `CHAT-GED-01` is complete. Normal chat threads once again persist a lightweight GED-mode flag, with
+  GED enabled when no explicit choice exists. Provider-bound GED turns receive bounded guidance for the
+  repository's grill-me, planning, execution, and verification skills; stored messages remain pristine,
+  Normal prompts remain byte-for-byte unchanged, and no managed subagent or role-model machinery was
+  restored.
+- Final `CHAT-GED-01` verification passed on 2026-07-16: 61 focused contract tests, 81 focused server
+  tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and the
+  complete 12-package `bun run test --output-logs=errors-only` gate in 10m49s.
 - `ORCH-LAND-05` is complete. Landing now requires the newest successful verification attempt to have
   completed after the newest successful work attempt. Failed or interrupted verification does not
   qualify; unrelated later stages remain allowed, and no other pipeline ordering is enforced.

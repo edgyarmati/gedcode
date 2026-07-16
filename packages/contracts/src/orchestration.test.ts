@@ -283,6 +283,7 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
         text: "hello",
         attachments: [],
       },
+      gedWorkflowEnabled: true,
       modelSelection: {
         provider: "codex",
         model: "gpt-5.4",
@@ -291,6 +292,7 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.modelSelection?.instanceId, "codex");
+    assert.strictEqual(parsed.gedWorkflowEnabled, true);
     assert.strictEqual(parsed.runtimeMode, "full-access");
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
   }),
@@ -316,6 +318,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
             provider: "codex",
             model: "gpt-5.4",
           },
+          gedWorkflowEnabled: true,
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
@@ -332,6 +335,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.bootstrap?.createThread?.projectId, "project-1");
+    assert.strictEqual(parsed.bootstrap?.createThread?.gedWorkflowEnabled, true);
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
   }),

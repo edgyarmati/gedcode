@@ -5,6 +5,19 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## CHAT-GED-01
+
+- Contract, decider, replay, SQL projection, and snapshot coverage retain an optional per-thread GED
+  flag while defaulting new or historical unspecified threads to GED-on.
+- Provider-reactor coverage proves GED turns receive grill-me, planning, execution, and verification
+  skill guidance while the event-sourced user message remains unchanged and no managed-agent actuator
+  is involved.
+- Provider-reactor coverage proves an explicit Normal thread persists its override and sends the exact
+  original prompt bytes to the provider.
+- Verification passed on 2026-07-16: 61 focused contract tests, 81 focused server tests, `bun fmt`,
+  `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete `bun run
+  test --output-logs=errors-only` gate with all 12 package tasks successful in 10m49s.
+
 ## ORCH-LAND-05
 
 - Decider coverage rejects landing without a successful verification, after an interrupted verification,

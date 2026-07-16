@@ -51,6 +51,7 @@ import {
 import { ORCHESTRATOR_WORKER_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
+import { applyGedChatWorkflowPrompt } from "../chatGedPrompt.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -664,6 +665,7 @@ const make = Effect.gen(function* () {
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
+    readonly gedWorkflowEnabled?: boolean;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
   }) {
@@ -681,7 +683,12 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const normalizedInput = toNonEmptyProviderInput(
+      applyGedChatWorkflowPrompt({
+        message: input.messageText,
+        enabled: input.gedWorkflowEnabled ?? thread.gedWorkflowEnabled ?? true,
+      }),
+    );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -935,6 +942,7 @@ const make = Effect.gen(function* () {
         ...(event.payload.modelSelection !== undefined
           ? { modelSelection: event.payload.modelSelection }
           : {}),
+        gedWorkflowEnabled: event.payload.gedWorkflowEnabled ?? true,
         interactionMode: event.payload.interactionMode,
         createdAt: event.payload.createdAt,
       });

@@ -1577,6 +1577,93 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("persists GED mode and adds workflow skill guidance only to the provider prompt", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-enable-ged-workflow"),
+        threadId: ThreadId.make("thread-1"),
+        gedWorkflowEnabled: true,
+      }),
+    );
+
+    const snapshot = await harness.readModel();
+    expect(
+      snapshot.threads.find((thread) => thread.id === ThreadId.make("thread-1")),
+    ).toMatchObject({ gedWorkflowEnabled: true });
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-ged"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-ged"),
+          role: "user",
+          text: "fix the race",
+          attachments: [],
+        },
+        gedWorkflowEnabled: true,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    expect(request.input).toContain("GED workflow mode is enabled");
+    expect(request.input).toContain("ged-planning skill");
+    expect(request.input).toContain("ged-execution skill");
+    expect(request.input).toContain("ged-verification skill");
+    expect(request.input).toContain("does not require managed subagents");
+    expect(request.input?.endsWith("User request:\nfix the race")).toBe(true);
+
+    const projectedMessage = (await harness.readModel()).threads
+      .find((thread) => thread.id === ThreadId.make("thread-1"))
+      ?.messages.find((message) => message.id === asMessageId("user-message-ged"));
+    expect(projectedMessage?.text).toBe("fix the race");
+  });
+
+  it("persists Normal mode and sends the provider the unchanged user prompt", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-disable-ged-workflow"),
+        threadId: ThreadId.make("thread-1"),
+        gedWorkflowEnabled: false,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-normal"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-normal"),
+          role: "user",
+          text: "keep this prompt unchanged",
+          attachments: [],
+        },
+        gedWorkflowEnabled: false,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    expect(request.input).toBe("keep this prompt unchanged");
+    expect((await harness.readModel()).threads[0]?.gedWorkflowEnabled).toBe(false);
+  });
+
   it("preserves the active session model when in-session model switching is unsupported", async () => {
     const harness = await createHarness({ sessionModelSwitch: "unsupported" });
     const now = "2026-01-01T00:00:00.000Z";

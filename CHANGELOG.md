@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Feature: Restore lightweight per-thread GED mode for normal chats, enabled by default. GED turns add
+  repository workflow and skill guidance to the provider prompt without changing stored messages,
+  forcing role models, or starting managed subagents; explicit Normal mode remains unchanged.
+
 - Fix: Require a successfully completed Orchestrator verification stage newer than the latest
   successful work stage before landing can begin or open a pull request. Other stage ordering remains
   permissive so optional stages may still be skipped.

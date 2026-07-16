@@ -84,6 +84,7 @@ describe("orchestration projector", () => {
           instanceId: "codex",
           model: "gpt-5-codex",
         },
+        gedWorkflowEnabled: true,
         runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,

@@ -571,6 +571,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 projectId: bootstrap.createThread.projectId,
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
+                ...(bootstrap.createThread.gedWorkflowEnabled !== undefined
+                  ? { gedWorkflowEnabled: bootstrap.createThread.gedWorkflowEnabled }
+                  : {}),
                 runtimeMode: bootstrap.createThread.runtimeMode,
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
