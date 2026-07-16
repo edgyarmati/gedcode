@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Require a successfully completed Orchestrator verification stage newer than the latest
+  successful work stage before landing can begin or open a pull request. Other stage ordering remains
+  permissive so optional stages may still be skipped.
+
 - UI: Complete Orchestrator context menus across project and task sidebars. Project rows now offer
   rename, orchestration settings, path copy, and state-guarded removal; task cards expose only the
   lifecycle actions valid for active, cancelling, terminal, or archived state, including cancellation

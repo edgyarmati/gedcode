@@ -214,6 +214,40 @@ function requireTaskNotCancelling(input: {
       );
 }
 
+function requireFreshVerification(input: {
+  readonly command: OrchestrationCommand;
+  readonly readModel: OrchestrationReadModel;
+  readonly task: OrchestrationReadModel["tasks"][number];
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  const completedStages = Object.values(input.readModel.stageHistory).filter(
+    (stage) =>
+      stage.taskId === input.task.id && stage.status === "completed" && stage.endedAt !== null,
+  );
+  const latestCompletedAt = (role: "work" | "verify") =>
+    completedStages
+      .filter((stage) => stage.role === role)
+      .map((stage) => stage.endedAt!)
+      .toSorted((left, right) => right.localeCompare(left))[0];
+  const latestWorkCompletedAt = latestCompletedAt("work");
+  const latestVerifyCompletedAt = latestCompletedAt("verify");
+
+  if (
+    latestVerifyCompletedAt !== undefined &&
+    (latestWorkCompletedAt === undefined || latestVerifyCompletedAt > latestWorkCompletedAt)
+  ) {
+    return Effect.void;
+  }
+
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      latestVerifyCompletedAt === undefined
+        ? `Task '${input.task.id}' cannot land without a successfully completed verification stage.`
+        : `Task '${input.task.id}' cannot land because its latest successful verification is not newer than its latest successful work stage.`,
+    ),
+  );
+}
+
 function countActiveTaskWorktrees(input: {
   readonly readModel: OrchestrationReadModel;
   readonly projectId: OrchestrationProject["id"];
@@ -392,7 +426,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (command.orchestratorConfig !== undefined) {
         yield* requireOrchestratorConfig({
           command,
-          project: { ...project, orchestratorConfig: command.orchestratorConfig },
+          project: {
+            ...project,
+            orchestratorConfig: command.orchestratorConfig,
+          },
         });
       }
       const occurredAt = yield* nowIso;
@@ -1116,7 +1153,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: command.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
-      yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
+      yield* requireRegisteredTaskType({
+        command,
+        taskTypeId: command.taskType,
+      });
       if (command.taskType !== "release" && (command.dependsOnTaskIds?.length ?? 0) > 0) {
         return yield* invariantError(
           command.type,
@@ -1261,7 +1301,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.split": {
-      const parent = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const parent = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       yield* requireTaskNotCancelling({ command, task: parent });
       const project = yield* requireProject({
         readModel,
@@ -1302,7 +1346,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(command.type, "Split child task ids must be unique.");
       }
       for (const [index, child] of command.children.entries()) {
-        yield* requireRegisteredTaskType({ command, taskTypeId: child.taskType });
+        yield* requireRegisteredTaskType({
+          command,
+          taskTypeId: child.taskType,
+        });
         if (child.taskType === "release") {
           return yield* invariantError(
             command.type,
@@ -1412,7 +1459,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: task.projectId,
       });
       yield* requireOrchestratorConfig({ command, project });
-      yield* requireRegisteredTaskType({ command, taskTypeId: command.taskType });
+      yield* requireRegisteredTaskType({
+        command,
+        taskTypeId: command.taskType,
+      });
       yield* requireReleaseSource({
         command,
         readModel,
@@ -1479,7 +1529,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.archive": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.deletedAt !== null) {
         return yield* invariantError(
           command.type,
@@ -1499,12 +1553,20 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           commandId: command.commandId,
         })),
         type: "task.archived",
-        payload: { taskId: command.taskId, archivedAt: occurredAt, updatedAt: occurredAt },
+        payload: {
+          taskId: command.taskId,
+          archivedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
       };
     }
 
     case "task.restore": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.deletedAt !== null) {
         return yield* invariantError(
           command.type,
@@ -1533,7 +1595,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.delete": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.deletedAt !== null) {
         return yield* invariantError(
           command.type,
@@ -1550,7 +1616,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           commandId: command.commandId,
         })),
         type: "task.deleted",
-        payload: { taskId: command.taskId, deletedAt: occurredAt, updatedAt: occurredAt },
+        payload: {
+          taskId: command.taskId,
+          deletedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
       };
     }
 
@@ -2123,6 +2193,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' cannot land while stage '${task.currentStageThreadId}' is active.`,
         );
       }
+      yield* requireFreshVerification({ command, readModel, task });
       const latestLandGate = (readModel.pendingGates ?? []).findLast(
         (gate) => gate.taskId === command.taskId && gate.gate === "land",
       );
@@ -2186,7 +2257,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.release.dispatch.request": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       yield* requireTaskNotCancelling({ command, task });
       if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
         return yield* invariantError(
@@ -2250,7 +2325,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 
     case "task.release.dispatch.complete":
     case "task.release.dispatch.fail": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.releaseDispatch?.status !== "dispatching") {
         return yield* invariantError(
           command.type,
@@ -2384,8 +2463,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.cancellation.request": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
-      const project = yield* requireProject({ readModel, command, projectId: task.projectId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
       yield* requireOrchestratorConfig({ command, project });
       if (isTerminalTaskStatus(task.status)) {
         return yield* invariantError(
@@ -2416,7 +2503,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.cancellation.fail": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.cancellation == null) {
         return yield* invariantError(
           command.type,
@@ -2448,7 +2539,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "task.cancellation.phase.complete": {
-      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
       if (task.cancellation == null) {
         return yield* invariantError(
           command.type,

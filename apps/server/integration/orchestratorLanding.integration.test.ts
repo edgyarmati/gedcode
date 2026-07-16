@@ -340,7 +340,7 @@ function withHarnessWithoutLanding<A, E, R>(
   ).pipe(Effect.provide(NodeServices.layer));
 }
 
-function seedReviewTask(input: {
+function seedVerifiedTask(input: {
   readonly harness: OrchestrationIntegrationHarness;
   readonly suffix: string;
   readonly projectId: ProjectId;
@@ -435,13 +435,58 @@ function seedReviewTask(input: {
         createdAt: iso(4),
       })
       .pipe(Effect.orDie);
-    const reviewTask = yield* waitForTask(
+    yield* waitForTask(
       input.harness,
       input.taskId,
       (task) => task.status === "review",
       `review task ${input.suffix}`,
     );
-    return { task: reviewTask, stageThreadId: stageStarted.payload.stageThreadId };
+
+    yield* input.harness.adapterHarness!.queueTurnResponseForNextSession(
+      successfulTurnResponse(`${input.suffix}-verify`, iso(5)),
+    );
+    const verifyCommandId = commandId(`${input.suffix}-verify-start`);
+    yield* input.harness.engine
+      .dispatch({
+        type: "task.stage.start",
+        commandId: verifyCommandId,
+        taskId: input.taskId,
+        role: "verify",
+        instructions: "Verify the landing fixture.",
+        createdAt: iso(5),
+      })
+      .pipe(Effect.orDie);
+    const verifyEvents = yield* input.harness.waitForDomainEvent(
+      (event) => event.type === "task.stage-started" && event.commandId === verifyCommandId,
+    );
+    const verifyStarted = verifyEvents.find(
+      (event): event is Extract<OrchestrationEvent, { type: "task.stage-started" }> =>
+        event.type === "task.stage-started" && event.commandId === verifyCommandId,
+    );
+    if (!verifyStarted) {
+      return yield* Effect.die(
+        new Error(`Missing verify stage-started event for ${input.suffix}.`),
+      );
+    }
+    yield* input.harness.engine
+      .dispatch({
+        type: "task.stage.complete",
+        commandId: commandId(`${input.suffix}-verify-complete`),
+        taskId: input.taskId,
+        role: "verify",
+        stageThreadId: verifyStarted.payload.stageThreadId,
+        awaitedTurnId: TurnId.make(`${input.suffix}-manual-verify-turn`),
+        diffComplete: false,
+        createdAt: iso(6),
+      })
+      .pipe(Effect.orDie);
+    const verifiedTask = yield* waitForTask(
+      input.harness,
+      input.taskId,
+      (task) => task.currentStageThreadId === null,
+      `verified task ${input.suffix}`,
+    );
+    return { task: verifiedTask, stageThreadId: verifyStarted.payload.stageThreadId };
   });
 }
 
@@ -462,7 +507,7 @@ function approveLandAndDispatch(input: {
         gate: "land",
         contentHash: `sha256:${input.suffix}-land`,
         stageThreadId: input.stageThreadId,
-        createdAt: iso(5),
+        createdAt: iso(7),
       })
       .pipe(Effect.orDie);
     yield* input.harness.engine
@@ -475,7 +520,7 @@ function approveLandAndDispatch(input: {
         approvedHash: `sha256:${input.suffix}-land`,
         decision: "approved",
         origin: "human",
-        createdAt: iso(6),
+        createdAt: iso(8),
       })
       .pipe(Effect.orDie);
     yield* landOrchestrationTaskWithServices(
@@ -483,7 +528,7 @@ function approveLandAndDispatch(input: {
       {
         taskId: input.taskId,
         commandId: Effect.succeed(commandId(`${input.suffix}-land`)),
-        createdAt: Effect.succeed(iso(7)),
+        createdAt: Effect.succeed(iso(9)),
         dispatch: (command) => input.harness.engine.dispatch(command),
       },
     ).pipe(Effect.orDie);
@@ -495,7 +540,7 @@ it.live("opens a ready PR after the human-approved land gate and cleans the work
   const id = taskId("happy");
   return withHarness(registry, (harness) =>
     Effect.gen(function* () {
-      const { task, stageThreadId } = yield* seedReviewTask({
+      const { task, stageThreadId } = yield* seedVerifiedTask({
         harness,
         suffix: "happy",
         projectId: projectId("happy"),
@@ -589,7 +634,7 @@ it.live("processes once when landing races with the startup scan-to-subscribe wi
       (harness) =>
         Effect.gen(function* () {
           const project = projectId("startup-race");
-          const { task: target, stageThreadId } = yield* seedReviewTask({
+          const { task: target, stageThreadId } = yield* seedVerifiedTask({
             harness,
             suffix: "startup-race-target",
             projectId: project,
@@ -700,7 +745,7 @@ it.live("opens a draft PR when project config sets openPrAsDraft", () => {
   const id = taskId("draft");
   return withHarness(registry, (harness) =>
     Effect.gen(function* () {
-      const { stageThreadId } = yield* seedReviewTask({
+      const { stageThreadId } = yield* seedVerifiedTask({
         harness,
         suffix: "draft",
         projectId: projectId("draft"),
@@ -729,7 +774,7 @@ it.live("fails loud without a supported provider and leaves the worktree recover
   const id = taskId("unsupported");
   return withHarness(registry, (harness) =>
     Effect.gen(function* () {
-      const { task, stageThreadId } = yield* seedReviewTask({
+      const { task, stageThreadId } = yield* seedVerifiedTask({
         harness,
         suffix: "unsupported",
         projectId: projectId("unsupported"),
@@ -792,7 +837,7 @@ it.live("retries an exhausted landing once through the shared actuator", () => {
   const id = taskId("retry");
   return withHarness(registry, (harness) =>
     Effect.gen(function* () {
-      const { task, stageThreadId } = yield* seedReviewTask({
+      const { task, stageThreadId } = yield* seedVerifiedTask({
         harness,
         suffix: "retry",
         projectId: projectId("retry"),
@@ -844,7 +889,7 @@ it.live("does not open a second PR for a landed task that already has prUrl", ()
   const id = taskId("idempotent");
   return withHarnessWithoutLanding((setupHarness) =>
     Effect.gen(function* () {
-      const { task, stageThreadId } = yield* seedReviewTask({
+      const { task, stageThreadId } = yield* seedVerifiedTask({
         harness: setupHarness,
         suffix: "idempotent",
         projectId: projectId("idempotent"),

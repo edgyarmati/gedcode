@@ -5,6 +5,19 @@
 Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
 component lifecycle changes require integration coverage; UI interaction changes require browser tests.
 
+## ORCH-LAND-05
+
+- Decider coverage rejects landing without a successful verification, after an interrupted verification,
+  or when a later successful work attempt makes the previous verification stale.
+- Decider coverage accepts a fresh successful verification even when an unrelated stage completes after
+  it, preserving the deliberately permissive stage-order policy.
+- Real-engine landing and Phase 4 integration fixtures execute a successful verify stage before the
+  human land gate and PR-opening actuator.
+- Verification passed on 2026-07-16: 78 focused decider, actuator, slice, and integration tests; `bun
+  fmt`; `bun lint` (existing warnings only); `bun typecheck` across all 12 packages after isolating the
+  known workspace resolver race; and the complete `bun run test --output-logs=errors-only` gate with all
+  12 package tasks successful in 10m26s.
+
 ## ORCH-REL-02
 
 - Contract, decider, replay, SQL projection, and migration tests cover the durable dispatching,

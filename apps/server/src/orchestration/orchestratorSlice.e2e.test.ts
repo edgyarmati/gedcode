@@ -42,12 +42,14 @@ import { createEmptyReadModel, projectEvent } from "./projector.ts";
 type PlannedEvent = Omit<OrchestrationEvent, "sequence">;
 
 const now = "2026-06-18T08:00:00.000Z";
+const afterWork = "2026-06-18T08:01:00.000Z";
 const projectId = ProjectId.make("project-orch-e2e");
 const taskId = TaskId.make("task-orch-e2e");
 const pmMessageId = MessageId.make("pm-message-orch-e2e");
 const planGateId = GateId.make("gate-plan-e2e");
 const landGateId = GateId.make("gate-land-e2e");
 const awaitedTurnId = TurnId.make("turn-worker-e2e");
+const verifyTurnId = TurnId.make("turn-verify-e2e");
 
 function makeProjectCreatedEvent(): OrchestrationEvent {
   return {
@@ -415,6 +417,25 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
       expect(pmMessages[0]).toContain("A detached worker stage completed.");
       expect(pmMessages[0]).toContain("SECRET_TOKEN=[REDACTED]");
       expect(consumeCalls).toHaveLength(1);
+
+      const verifyHandoff = yield* decideAndApply(readModel, {
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-verify-handoff-e2e"),
+        taskId,
+        role: "verify",
+        instructions: "Verify the completed implementation before landing.",
+        createdAt: afterWork,
+      });
+      const verifyStageStarted = findEvent(verifyHandoff.events, "task.stage-started");
+      readModel = (yield* decideAndApply(verifyHandoff.readModel, {
+        type: "task.stage.complete",
+        commandId: CommandId.make("cmd-verify-complete-e2e"),
+        taskId,
+        role: "verify",
+        stageThreadId: verifyStageStarted.payload.stageThreadId,
+        awaitedTurnId: verifyTurnId,
+        createdAt: afterWork,
+      })).readModel;
 
       readModel = (yield* decideAndApply(readModel, {
         type: "task.gate.request",

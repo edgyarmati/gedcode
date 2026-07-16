@@ -96,12 +96,16 @@ function makeTaskCreatedEvent(input?: {
 
 function taskReadModel(
   overrides?: Partial<NonNullable<OrchestrationReadModel["tasks"][number]>>,
-  input?: { readonly orchestratorConfig?: ProjectCreatedEvent["payload"]["orchestratorConfig"] },
+  input?: {
+    readonly orchestratorConfig?: ProjectCreatedEvent["payload"]["orchestratorConfig"];
+  },
 ) {
   return Effect.gen(function* () {
     const withProject = yield* projectEvent(
       createEmptyReadModel(now),
-      makeProjectCreatedEvent({ orchestratorConfig: input?.orchestratorConfig }),
+      makeProjectCreatedEvent({
+        orchestratorConfig: input?.orchestratorConfig,
+      }),
     );
     const withTask = yield* projectEvent(withProject, makeTaskCreatedEvent());
     const task = withTask.tasks[0];
@@ -118,6 +122,57 @@ function taskReadModel(
       ],
     };
   });
+}
+
+function withStageHistory(
+  readModel: OrchestrationReadModel,
+  stages: ReadonlyArray<{
+    readonly threadId: string;
+    readonly role: "classify" | "plan" | "review" | "work" | "verify";
+    readonly status?: "running" | "completed" | "blocked" | "interrupted";
+    readonly startedAt: string;
+    readonly endedAt: string | null;
+  }>,
+): OrchestrationReadModel {
+  return {
+    ...readModel,
+    stageHistory: Object.fromEntries(
+      stages.map((stage) => {
+        const stageThreadId = asThreadId(stage.threadId);
+        return [
+          stageThreadId,
+          {
+            projectId: asProjectId("project-1"),
+            taskId: asTaskId("task-1"),
+            stageThreadId,
+            role: stage.role,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            status: stage.status ?? "completed",
+            startedAt: stage.startedAt,
+            endedAt: stage.endedAt,
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+function withFreshVerification(readModel: OrchestrationReadModel): OrchestrationReadModel {
+  return withStageHistory(readModel, [
+    {
+      threadId: "thread-stage-work-completed",
+      role: "work",
+      startedAt: "2026-06-14T09:00:00.000Z",
+      endedAt: "2026-06-14T09:10:00.000Z",
+    },
+    {
+      threadId: "thread-stage-verify-completed",
+      role: "verify",
+      startedAt: "2026-06-14T09:11:00.000Z",
+      endedAt: "2026-06-14T09:20:00.000Z",
+    },
+  ]);
 }
 
 const toEvents = (result: PlannedEvent | ReadonlyArray<PlannedEvent>): PlannedEvent[] =>
@@ -234,7 +289,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         dependsOnTaskIds: ["task-1"],
       });
 
-      const unlanded = yield* taskReadModel({ status: "working", currentStageThreadId: null });
+      const unlanded = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: null,
+      });
       const error = yield* Effect.flip(
         decideOrchestrationCommand({
           readModel: unlanded,
@@ -445,7 +503,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
       });
       const singleEvent = Array.isArray(event) ? event[0] : event;
-      expect(singleEvent?.payload).toMatchObject({ parentTaskId: "task-1", childOrder: 0 });
+      expect(singleEvent?.payload).toMatchObject({
+        parentTaskId: "task-1",
+        childOrder: 0,
+      });
 
       const withChild = yield* applyEvents(readModel, toEvents(event));
       const duplicateOrder = yield* Effect.exit(
@@ -541,7 +602,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             ...command,
             commandId: asCommandId("cmd-split-task-invalid-dependency"),
             children: [
-              { ...command.children[0]!, dependsOnTaskIds: [asTaskId("task-child-b")] },
+              {
+                ...command.children[0]!,
+                dependsOnTaskIds: [asTaskId("task-child-b")],
+              },
               command.children[1]!,
             ],
           },
@@ -584,7 +648,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         dependsOnTaskIds: [],
         status: "working" as const,
       };
-      const withDependency = { ...readModel, tasks: [dependency, readModel.tasks[0]!] };
+      const withDependency = {
+        ...readModel,
+        tasks: [dependency, readModel.tasks[0]!],
+      };
       const command = {
         type: "task.stage.start" as const,
         commandId: asCommandId("cmd-start-dependent-child"),
@@ -630,7 +697,9 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const singleEvent = Array.isArray(event) ? event[0] : event;
       expect(singleEvent?.type).toBe("task.created");
-      expect(singleEvent?.payload).toMatchObject({ supersedesTaskId: "task-1" });
+      expect(singleEvent?.payload).toMatchObject({
+        supersedesTaskId: "task-1",
+      });
 
       const activePredecessor = yield* taskReadModel({ status: "working" });
       const rejected = yield* Effect.exit(
@@ -873,7 +942,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("starts a stage with full-access worker runtime by default", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const readModel = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+      });
 
       const result = yield* decideOrchestrationCommand({
         readModel,
@@ -905,7 +977,9 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           model: "gpt-5-codex",
         },
       });
-      expect(stageStarted?.payload).toMatchObject({ runtimeMode: "full-access" });
+      expect(stageStarted?.payload).toMatchObject({
+        runtimeMode: "full-access",
+      });
       expect(turnRequested?.payload).toMatchObject({
         runtimeMode: "full-access",
         modelSelection: {
@@ -953,7 +1027,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("starts a stage with full-access runtime when the global default opts in", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const readModel = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+      });
 
       const result = yield* decideOrchestrationCommand({
         readModel,
@@ -982,7 +1059,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("creates a fresh linked thread for each retry of the same stage role", () =>
     Effect.gen(function* () {
-      const initial = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const initial = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+      });
       const firstResult = yield* decideOrchestrationCommand({
         readModel: initial,
         command: {
@@ -1126,7 +1206,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("inherits global stages when project stages are omitted", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const readModel = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+      });
 
       const rejected = yield* Effect.exit(
         decideOrchestrationCommand({
@@ -1205,7 +1288,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("allows every canonical stage role for the default task type", () =>
     Effect.gen(function* () {
       for (const role of ORCHESTRATION_STAGE_ROLES) {
-        const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+        const readModel = yield* taskReadModel({
+          status: "review",
+          currentStageThreadId: null,
+        });
 
         const result = yield* decideOrchestrationCommand({
           readModel,
@@ -2171,7 +2257,26 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("lands a review task only after an approved land gate", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...(yield* taskReadModel({ status: "review" })),
+        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-work-completed",
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+          {
+            threadId: "thread-stage-verify-completed",
+            role: "verify",
+            startedAt: "2026-06-14T09:11:00.000Z",
+            endedAt: "2026-06-14T09:20:00.000Z",
+          },
+          {
+            threadId: "thread-stage-review-completed",
+            role: "review",
+            startedAt: "2026-06-14T09:21:00.000Z",
+            endedAt: "2026-06-14T09:30:00.000Z",
+          },
+        ]),
         pendingGates: [
           {
             gateId: asGateId("gate-land"),
@@ -2204,9 +2309,118 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("rejects task.land without a successfully completed verification stage", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-work-completed",
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+          {
+            threadId: "thread-stage-verify-interrupted",
+            role: "verify",
+            status: "interrupted",
+            startedAt: "2026-06-14T09:11:00.000Z",
+            endedAt: "2026-06-14T09:20:00.000Z",
+          },
+        ]),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:land",
+            stageThreadId: null,
+            status: "resolved" as const,
+            approvedHash: "sha256:land",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+        ],
+      };
+
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land",
+            commandId: asCommandId("cmd-land-without-verification"),
+            taskId: asTaskId("task-1"),
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("successfully completed verification stage");
+      }
+    }),
+  );
+
+  it.effect(
+    "rejects task.land when successful verification predates the latest successful work",
+    () =>
+      Effect.gen(function* () {
+        const readModel = {
+          ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+            {
+              threadId: "thread-stage-verify-stale",
+              role: "verify",
+              startedAt: "2026-06-14T09:00:00.000Z",
+              endedAt: "2026-06-14T09:10:00.000Z",
+            },
+            {
+              threadId: "thread-stage-work-newer",
+              role: "work",
+              startedAt: "2026-06-14T09:11:00.000Z",
+              endedAt: "2026-06-14T09:20:00.000Z",
+            },
+          ]),
+          pendingGates: [
+            {
+              gateId: asGateId("gate-land"),
+              taskId: asTaskId("task-1"),
+              gate: "land" as const,
+              contentHash: "sha256:land",
+              stageThreadId: null,
+              status: "resolved" as const,
+              approvedHash: "sha256:land",
+              decision: "approved" as const,
+              origin: "human" as const,
+              requestedAt: now,
+              resolvedAt: now,
+            },
+          ],
+        };
+
+        const error = yield* Effect.flip(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.land",
+              commandId: asCommandId("cmd-land-after-newer-work"),
+              taskId: asTaskId("task-1"),
+              createdAt: now,
+            },
+          }),
+        );
+
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+        if (error._tag === "OrchestrationCommandInvariantError") {
+          expect(error.detail).toContain("latest successful verification is not newer");
+        }
+      }),
+  );
+
   it.effect("rejects task.land without an approved land gate", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "review" });
+      const readModel = withFreshVerification(yield* taskReadModel({ status: "review" }));
 
       const result = yield* Effect.exit(
         decideOrchestrationCommand({
@@ -2227,11 +2441,13 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("rejects task.land while a worker stage is still active", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...(yield* taskReadModel({
-          status: "review",
-          currentStageThreadId: asThreadId("thread-active"),
-          stageThreadIds: [asThreadId("thread-active")],
-        })),
+        ...withFreshVerification(
+          yield* taskReadModel({
+            status: "review",
+            currentStageThreadId: asThreadId("thread-active"),
+            stageThreadIds: [asThreadId("thread-active")],
+          }),
+        ),
         pendingGates: [
           {
             gateId: asGateId("gate-land"),
@@ -2268,7 +2484,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("rejects task.land when a newer land gate is still pending", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...(yield* taskReadModel({ status: "review" })),
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
         pendingGates: [
           {
             gateId: asGateId("gate-land-old"),
@@ -2318,7 +2534,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("rejects task.land when the approved hash does not match the gate content", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...(yield* taskReadModel({ status: "review" })),
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
         pendingGates: [
           {
             gateId: asGateId("gate-land"),
@@ -2355,7 +2571,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("serializes cancellation reservation ahead of land", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...(yield* taskReadModel({ status: "review" })),
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
         pendingGates: [
           {
             gateId: asGateId("gate-land"),

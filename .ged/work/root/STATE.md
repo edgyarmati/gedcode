@@ -1,7 +1,7 @@
 # State
 
 - **Phase**: implement — clarified follow-up roadmap is ready for bounded execution.
-- **Active task**: `ORCH-LAND-05` fresh-verification landing invariant.
+- **Active task**: `CHAT-GED-01` lightweight GED-mode contract and prompt injection.
 - **Roadmap source**: `.ged/work/root/SPEC.md`, `TASKS.md`, and `TESTS.md`.
 - **Execution rule**: one bounded slice at a time; do not batch the roadmap.
 - **Pipeline-order decision**: keep `ORCH-ORDER-01` fully deferred because stages may intentionally be
@@ -26,6 +26,13 @@
 
 ## Current Progress
 
+- `ORCH-LAND-05` is complete. Landing now requires the newest successful verification attempt to have
+  completed after the newest successful work attempt. Failed or interrupted verification does not
+  qualify; unrelated later stages remain allowed, and no other pipeline ordering is enforced.
+- Final `ORCH-LAND-05` verification passed on 2026-07-16: 78 focused decider, actuator, slice, and
+  integration tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck` across all 12
+  packages after isolating the known resolver race, and the complete 12-package `bun run test
+  --output-logs=errors-only` gate in 10m26s.
 - `UI-SIDEBAR-02` is complete. Orchestrator project rows now use the app-native context menu for
   rename, orchestration settings, path copy, and guarded removal. Every task card, including active,
   attention, grouped-child, terminal, and archived cards, exposes only actions valid for its durable
@@ -328,8 +335,9 @@
 
 ## Remaining Work
 
-1. `CHAT-FORK-01/02` remains blocked on the explicit provider-session compatibility decision above.
-2. `ORCH-ORDER-01` remains deferred by the user.
+1. `CHAT-GED-01/02` restores lightweight GED prompt mode and its normal-chat composer plumbing.
+2. `CHAT-FORK-01/02` adds the resolved hybrid provider-native/copied-history fork behavior and UI.
+3. `ORCH-ORDER-01` remains deferred by the user.
 
 ## Repository State Notes
 

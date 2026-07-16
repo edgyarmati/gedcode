@@ -637,12 +637,23 @@ it.live(
         assert.equal(workStage.stageStarted.payload.model, TASK_SELECTION.model);
         yield* completeStage({ harness, expectedStatus: "review" });
 
+        const verifyStage = yield* startStage({
+          harness,
+          role: "verify",
+          suffix: "verify",
+          instructions: "Verify the implementation before landing.",
+          response: successfulTurnResponse("verify", iso(9)),
+          expectedInstanceId: DEFAULT_INSTANCE,
+          createdAt: iso(9),
+        });
+        yield* completeStage({ harness, expectedStatus: "verifying" });
+
         yield* requestHumanLandGateAndLand({
           harness,
-          stageThreadId: workStage.stageStarted.payload.stageThreadId,
-          requestedAt: iso(9),
-          resolvedAt: iso(10),
-          landedAt: iso(11),
+          stageThreadId: verifyStage.stageStarted.payload.stageThreadId,
+          requestedAt: iso(10),
+          resolvedAt: iso(11),
+          landedAt: iso(12),
         });
       }),
     ),
@@ -719,12 +730,23 @@ it.live(
               assert.equal(workStage.stageStarted.payload.model, TASK_SELECTION.model);
               yield* completeStage({ harness: restarted, expectedStatus: "review" });
 
+              const verifyStage = yield* startStage({
+                harness: restarted,
+                role: "verify",
+                suffix: "restart-verify",
+                instructions: "Verify the resumed implementation before landing.",
+                response: successfulTurnResponse("restart-verify", iso(26)),
+                expectedInstanceId: DEFAULT_INSTANCE,
+                createdAt: iso(26),
+              });
+              yield* completeStage({ harness: restarted, expectedStatus: "verifying" });
+
               yield* requestHumanLandGateAndLand({
                 harness: restarted,
-                stageThreadId: workStage.stageStarted.payload.stageThreadId,
-                requestedAt: iso(26),
-                resolvedAt: iso(27),
-                landedAt: iso(28),
+                stageThreadId: verifyStage.stageStarted.payload.stageThreadId,
+                requestedAt: iso(27),
+                resolvedAt: iso(28),
+                landedAt: iso(29),
               });
             }),
           (restarted) => restarted.dispose,
