@@ -1,5 +1,11 @@
 # TASKS - Orchestrator Completion Roadmap
 
+## Release publication repair
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| RELEASE-0.3.0-01 | VERIFIED | Replace the workflow-dispatch-incompatible release action with explicit, retry-safe GitHub CLI publication before releasing v0.3.0. | Unit tests cover create, retry reconciliation, strict assets, and transient lookup failure; all local gates pass. Release workflow pending. |
+
 ## Worker Auto-Review and PM Approval Control
 
 | ID | Status | Slice | Verification |

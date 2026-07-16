@@ -431,23 +431,17 @@ jobs:
         run: node scripts/promote-stable-update-manifests.ts --release-assets-dir release-assets
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.preflight.outputs.tag }}
-          target_commitish: ${{ needs.preflight.outputs.ref }}
-          name: ${{ needs.preflight.outputs.release_name }}
-          generate_release_notes: true
-          previous_tag: ${{ needs.preflight.outputs.previous_tag }}
-          prerelease: ${{ needs.preflight.outputs.is_prerelease }}
-          make_latest: ${{ needs.preflight.outputs.make_latest }}
-          files: |
-            release-assets/*.dmg
-            release-assets/*.zip
-            release-assets/*.AppImage
-            release-assets/*.exe
-            release-assets/*.blockmap
-            release-assets/*.yml
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/publish-github-release.ts \
+            --tag "${{ needs.preflight.outputs.tag }}" \
+            --target "${{ needs.preflight.outputs.ref }}" \
+            --name "${{ needs.preflight.outputs.release_name }}" \
+            --previous-tag "${{ needs.preflight.outputs.previous_tag }}" \
+            --prerelease "${{ needs.preflight.outputs.is_prerelease }}" \
+            --make-latest "${{ needs.preflight.outputs.make_latest }}" \
+            --release-assets-dir release-assets
 
   finalize:
     name: Finalize release

@@ -769,3 +769,16 @@ release slices also run `bun run fmt:check` and `bun run release:smoke`.
   passed 77 tests; the focused Chromium interaction passed and displayed GPT-5.6 Sol with
   `Medium · Standard`; `bun fmt`, `bun lint` (existing warnings only), and all 12 typecheck packages
   passed. The complete `bun run test --output-logs=errors-only` gate passed all 12 packages in 10m41s.
+
+### RELEASE-0.3.0-01
+
+- The initial v0.3.0 workflow passed preflight and all Linux x64, macOS arm64, and Windows x64 builds.
+  Publication failed before creating a release or tag because the third-party action queried
+  `refs/heads/main` as a release tag during workflow dispatch and received GitHub's 503 Unicorn page.
+- Focused publication tests cover explicit tag/SHA creation with generated notes, every required asset
+  class, retry-safe asset clobber and metadata reconciliation, and fail-closed handling for transient
+  lookup failures. All 4 tests pass.
+- Verification passed on 2026-07-17: `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck
+  packages, and the complete socket-enabled `bun run test --output-logs=errors-only` gate passed all
+  12 packages in 10m41s. A sandboxed first attempt was discarded because the existing mock update
+  server tests could not bind a local port; the permitted rerun passed.

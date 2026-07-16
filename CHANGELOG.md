@@ -7,6 +7,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## 0.3.0 - 2026-07-17
 
+- Made GitHub release publication deterministic for manually dispatched releases by using the resolved
+  version tag and commit directly, while preserving generated notes, strict cross-platform asset
+  validation, metadata reconciliation, and safe retry uploads.
+
 - Changed the first-use Codex chat default to GPT-5.6 Sol with medium reasoning and Standard service.
   Explicit provider, model, reasoning, and speed choices remain sticky across every new normal chat,
   including Claude Opus, while Claude-only setups retain Claude's provider-native defaults.

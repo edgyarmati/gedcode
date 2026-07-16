@@ -1,7 +1,8 @@
 # State
 
-- **Phase**: complete — all non-deferred roadmap work is verified.
-- **Active task**: none. `ORCH-ORDER-01` remains explicitly deferred.
+- **Phase**: release — the corrected v0.3.0 publication path is locally verified.
+- **Active task**: `RELEASE-0.3.0-01` is awaiting the corrected release workflow. `ORCH-ORDER-01`
+  remains explicitly deferred.
 - **Compatibility decision**: the user approved a narrow migration after the packaged nightly proved
   that existing project settings can retain removed `classify`/`review` keys even when no user task
   ledger exists. Preserve current roles and strict write validation; do not rewrite the event store.
@@ -51,6 +52,14 @@
   at high reasoning (avoid Sol); when testing through Claude, use Opus.
 
 ## Current Progress
+
+- `RELEASE-0.3.0-01` is locally verified. The first v0.3.0 workflow built Linux, macOS, and Windows
+  successfully, then exposed `softprops/action-gh-release` looking up the workflow-dispatch branch ref
+  `refs/heads/main` as a release tag. GitHub returns a 503 Unicorn page for that malformed lookup.
+  Publication now uses the resolved tag and SHA through `gh`, validates every expected asset class,
+  creates generated notes from the resolved previous tag, and safely reconciles retry uploads and
+  metadata. Four focused tests pass, as do `bun fmt`, `bun lint` (existing warnings only), all 12
+  typecheck packages, and the complete socket-enabled 12-package test gate in 10m41s.
 
 - `CHAT-DEFAULT-01` is complete. Fresh Codex chats now resolve to GPT-5.6 Sol with medium reasoning
   and Standard service. The existing global sticky composer state remains authoritative after any
