@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.3.0-nightly.20260716.1
+
 - Feature: Let Orchestrator projects and individual tasks choose a provider harness, model, and
   supported thinking/reasoning level independently for each `plan`, `work`, and `verify` worker. The
   shared picker includes configured custom models, preserves still-valid provider options across
