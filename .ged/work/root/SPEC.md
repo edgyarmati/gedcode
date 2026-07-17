@@ -1,268 +1,128 @@
-# SPEC - Orchestrator Completion Roadmap
-
-## Sticky Normal-Chat Backend Defaults (2026-07-17)
-
-### Goal
-
-Start a fresh installation on Codex GPT-5.6 Sol with medium reasoning and Standard service, while
-making the user's latest explicit harness, model, reasoning, and speed choices the defaults for every
-subsequent normal chat.
-
-### Constraints
-
-- Existing persisted composer choices remain authoritative and are never replaced by factory values.
-- Codex factory defaults apply only when Codex is available and no user choice exists.
-- Claude keeps its provider-native first-use defaults; selecting Claude, Opus, or any Claude option
-  makes that complete choice sticky for later chats.
-- Model changes retain the prior sticky options for that provider instance until the user changes them.
-- No compatibility fallback or migration is needed: this unreleased app has no user population, while
-  the existing persisted-state schema already represents the required choices.
-
-### Acceptance Criteria
-
-- The Codex factory model is `gpt-5.6-sol`; its unconfigured traits resolve to medium reasoning and
-  Standard service rather than the catalog's Fast tier.
-- Selecting high reasoning, Fast service, another Codex model, or Claude Opus is reflected by every new
-  normal-chat draft until another explicit choice replaces it.
-- A Claude-only environment uses Claude's advertised provider defaults without synthetic Codex options.
-- Changelog and required repository verification are complete before the slice lands.
-
-## Worker Auto-Review and PM Approval Control (2026-07-16)
-
-### Goal
-
-Run Codex orchestration workers in workspace-write mode with Codex `auto_review` handling routine
-escalations, then route unresolved manual requests and denied auto-reviews to the project PM for an
-explicit decision.
-
-### Constraints
-
-- Keep Claude and OpenCode workers on their existing full-access policy.
-- Keep the PM session read-only; approving a worker request must not grant the PM shell or filesystem
-  access.
-- Keep GedCode's private orchestration MCP tools independently approved as trusted control-plane tools.
-- Scope every PM approval decision to a real pending request on a stage thread belonging to that PM's
-  project; never accept arbitrary provider thread or request identifiers.
-- Treat provider requests as untrusted input and show the PM the requested command, paths, network
-  target, rationale, and auto-review risk assessment where available.
-- Approval state remains provider-callback-bound: after restart, stale requests fail closed and require
-  the worker stage to retry rather than fabricating a grant.
-
-### Acceptance Criteria
-
-- Codex stage threads start with workspace-write sandboxing, on-request approvals, and
-  `approvalsReviewer: "auto_review"`; normal chat and PM threads are unchanged.
-- Command, file-change, and granular permission requests forwarded by Codex enter the existing durable
-  pending-approval projection and can be resolved by the PM.
-- A denied Codex auto-review becomes a pending PM decision and PM acceptance invokes
-  `thread/approveGuardianDeniedAction` with the exact reviewed event.
-- Each new pending stage approval wakes the owning project PM exactly once, including after restart.
-- PM tools can inspect and resolve only pending approvals belonging to the selected task/stage.
-- Changelog and required repository verification are complete before each slice lands.
-
-## Codex PM Trusted-Tool Permission Repair (2026-07-16)
-
-### Goal
-
-Allow a Codex-backed PM to invoke GedCode's private `t3_orchestrator` MCP ledger and lifecycle tools
-without an approval prompt that the PM surface cannot display or resolve.
-
-### Constraints
-
-- Keep the PM filesystem sandbox read-only and do not auto-approve shell commands, file changes,
-  network escalation, or third-party MCP servers.
-- Trust only the loopback, bearer-authenticated orchestration MCP server injected by GedCode.
-- Preserve the existing provider-independent PM tool surface and task lifecycle guards.
-
-### Acceptance Criteria
-
-- Codex PM ledger and cancellation calls do not enter `waitingOnApproval` or fail as user-rejected.
-- The generated Codex configuration scopes the no-approval behavior to `t3_orchestrator`.
-- PM runtime tests continue to prove the global read-only sandbox and non-orchestration approval policy.
-
-## Startup Compatibility Repair (2026-07-16)
-
-### Goal
-
-Allow the role-reduced build to start against application state written before `classify` and
-`review` worker roles were removed.
-
-### Constraints
-
-- Preserve `plan`, `work`, and `verify` model selections and prompt prefixes exactly.
-- Remove only obsolete `classify` and `review` keys from projected project and task JSON.
-- Remove only obsolete `classify` and `review` rows from the derived stage-history projection.
-- Do not mutate the append-only orchestration event log or add runtime aliases for removed roles.
-- Keep historical project and role-selection events replayable by dropping only those retired keys at
-  the persisted-event decoding boundary.
-- Keep current writes strict: newly submitted unknown role keys must still be rejected.
-
-### Acceptance Criteria
-
-- Startup migrations convert affected project and task projection rows into values accepted by the
-  current role-map schemas.
-- Rows containing only current roles remain byte-for-byte unchanged.
-- Invalid JSON is not silently replaced or hidden.
-- A database carrying the reproduced legacy project settings completes migration and can be decoded
-  by the current projection schemas.
-- Current `plan`, `work`, and `verify` stage history survives migration while incompatible retired
-  stage-history rows no longer prevent startup.
-- Historical events carrying the retired keys replay to current-role payloads; unrelated unknown role
-  keys remain rejected.
+# SPEC — Orchestrator Delegation and Project Context
 
 ## Goal
 
-Finish the Orchestrator/PM control plane so it can drive work reliably from task creation through
-landing, recover from interruption, avoid wasteful polling, and provide the task and chat operations
-needed for daily use.
+Make the PM capable of safely completing trivial work itself while reliable task workers own proper
+implementation. Replace stage-specific backend configuration with Cheap, Smart, and Genius presets;
+make worker changes commit-safe before verification and landing; remove terminal task clutter; and add
+project-context onboarding plus practical worktree launch actions.
 
-This is a phased roadmap. Only one bounded slice should be active at a time unless two slices have
-disjoint write sets and independent verification.
+## Domain Language
 
-## Scope
+- **Stage role**: lifecycle responsibility (`plan`, `work`, or `verify`). Roles remain independent of
+  model intelligence.
+- **Capability preset**: a complete harness, model, and thinking selection named Cheap, Smart, or
+  Genius.
+- **Helper run**: a persisted read-only exploration run attached to a PM thread or task. It is not a
+  task stage and never owns a gate, commit, PR, or landing outcome.
+- **Direct PM change**: a bounded low-risk edit made, verified, and committed by the PM in the primary
+  project checkout without creating a task.
+- **Change review**: PM inspection and resolution of tracked or untracked changes left by a work agent
+  before verification may start.
+- **No changes needed**: a terminal successful outcome for a task whose accepted work produces no
+  commit relative to its base.
+- **Project context run**: an opt-in agent run that creates or reviews durable project guidance outside
+  the task lifecycle.
 
-### Collapsible left sidebar
+## Decisions and Constraints
 
-- The shared left sidebar can be collapsed and reopened on desktop from a visible content-header control.
-- Chat, empty-chat, Orchestrator, and Settings surfaces expose the same control; mobile sheet behavior is
-  unchanged.
-- The last expanded/collapsed choice is restored from the existing sidebar-state cookie on reload.
-- Sidebar resizing remains available while expanded.
+### PM direct work
 
-### Task lifecycle and reliability
+- The PM decides whether work is trivial. Direct work must be one bounded, low-risk change requiring no
+  design decision, migration, public contract change, security-sensitive logic, or broad verification.
+- A direct change uses the primary checkout. Existing dirty files do not block it, and the PM may edit
+  overlapping files and select intended hunks; the PM is responsible for reviewing the final diff.
+- Codex PM sessions use workspace-write with auto-review. Unresolved or denied escalations reach the
+  user. Claude and OpenCode retain their normal full-access behavior.
+- The PM runs proportional checks, commits intended hunks with a descriptive message, and records its
+  rationale and commit in the PM thread. Direct work has no task, gate, worktree, or PR.
+- Proper work remains task-based and isolated in an Orchestrator worktree.
 
-- Gracefully interrupt and settle active workers before abandoning tasks or deleting worktrees.
-- Expose the existing guarded `task.land` transition through PM, MCP, RPC, and UI actions.
-- Add archive/restore and explicit permanent-delete semantics for terminal tasks.
-- Make task creation idempotent and support explicit task supersession.
-- Recover orphaned active stages after restart so tasks can be resumed or retried.
-- Close worktree reaper ownership and startup-subscription races.
-- Default orchestration workers to full write access and remove the obsolete opt-in controls.
-- Require a successful verification attempt newer than the latest successful work attempt before
-  landing can begin and open a pull request.
+### Work completion, verification, and landing
 
-### PM operation
+- Work-agent instructions require meaningful commits, but correctness is server-enforced rather than
+  prompt-only.
+- A successful work turn with tracked or untracked changes enters durable Change review. Verification
+  cannot start while Change review is unresolved.
+- The PM can inspect status and diff, commit selected changes, return/steer the worker, or discard
+  selected changes. Destructive actions are scoped to the task worktree.
+- Any commit, discard, or renewed work invalidates earlier verification. A fresh verify attempt runs
+  only after the PM accepts a clean worktree.
+- Landing requires a clean worktree and a successful verification bound to the exact current task HEAD.
+- If accepted work has no commit relative to its base, settle as No changes needed instead of requesting
+  a land gate or PR.
+- Successful landed and No changes needed tasks auto-archive. They remain inspectable in history and
+  eligible for permanent deletion.
+- Existing inert `landed` tasks with no PR and no genuine PR-opening failure are repaired to No changes
+  needed and archived through append-only lifecycle events. Genuine PR failures retain Retry.
 
-- Start PM provider sessions with an enforceable read-only policy that permits built-in file/search
-  exploration without opening invisible approval requests.
-- Replace continuous PM polling with event-driven settlement and operator-requested inspection.
-- Route medium-difficulty worker stages to GPT-5.6 Terra at high reasoning and difficult,
-  cross-cutting stages to GPT-5.6 Sol at high reasoning.
-- Make worker reasoning effort an explicit per-role/per-task backend option so PM dispatch can enforce
-  the selected effort instead of relying on provider defaults.
-- Improve PM thread reuse and summaries so related work does not create unnecessary threads or
-  repeatedly reload full histories.
-- Make interrupt and steer commands observable and effective during active Codex turns.
-- Add first-class parent/child task splitting for large requests.
+### Capability presets and routing
 
-### User experience
+- Global settings define Cheap, Smart, and Genius as complete model selections. Projects may override
+  any preset. Attempts record both tier and resolved backend so settings changes do not rewrite history.
+- Role-specific prompt prefixes remain keyed by Plan, Work, and Verify.
+- Upgrade presents a non-skippable migration wizard on entering Orchestrator. The user manually maps
+  old role selections to all three presets; Orchestrator is entirely inaccessible until completion.
+- The PM handles simple planning itself and gives the work agent a concrete plan. Delegated planning
+  defaults Genius. Work and verification default Cheap or Smart based on scope and risk. The PM may
+  override any choice.
+- Escalation is PM-controlled and advances only after diagnosis. Permission, environment, and quota
+  failures never automatically spend a more capable model.
 
-- While a normal-chat turn is active, sending captures a durable per-thread FIFO queue item instead of
-  dropping or immediately steering the message. Queue items retain the selected backend/model options,
-  GED/runtime modes, images, and terminal context used when composed.
-- A settled turn drains exactly one queued item with a stable command/message identity; retries after
-  reconnect are idempotent. Remaining items wait for the resulting turn to settle.
-- Queued rows expose **Steer**, **Delete**, and a context menu with **Edit message** and **Turn off
-  queueing**. Steering sends that item immediately; disabling queueing affects future sends in that
-  thread and leaves existing queued items intact.
-- Add **Continue in new task** to completed assistant messages in normal chat. Codex forks provider
-  state natively and rolls back only the new fork to the selected turn; older-message forks and
-  providers without native support initialize a fresh session from copied visible history. Forking
-  branches conversation history only and retains the current filesystem state.
-- Restore a lightweight Normal/GED composer mode. GED mode injects workflow instructions and available
-  skills into the main provider prompt, but does not enforce, manage, or configure subagents. Native
-  subagent use remains entirely under the selected model and provider runtime.
-- In an active task detail view, hide the empty Plan section while no proposed plan exists. Also hide
-  the empty `No gates` card when there are no gates.
-- Persist unsent composer drafts when switching between Chat and Orchestrator contexts.
-- Bring Orchestrator project/task sidebars to parity with Chat for context menus, sorting, and manual
-  reordering.
-- Display effective worker permissions and recovery/action status.
+### Helper runs
 
-### Worker configuration and taxonomy
+- A PM or task can start persisted, read-only helper runs for bounded context gathering. Cheap is the
+  normal default, but the PM can choose another preset.
+- Task helpers read the task worktree; PM helpers read the project checkout. Results are bounded and
+  automatically available to the requesting PM or subsequent stage prompt.
+- Helpers appear in timeline/history but not the task board. Provider-native subagents remain allowed
+  and are not managed or duplicated by GedCode.
 
-- Review the worker-stage vocabulary now that the PM owns intake, task typing, splitting, scheduling,
-  gates, landing, and release dispatch. Document which roles remain worker handoffs before changing the
-  stage registry or playbooks.
-- For every retained worker role, project and task overrides expose provider instance (harness), model,
-  and supported thinking/reasoning level. Changing instance or model preserves valid option selections
-  and removes options unsupported by the new model.
+### Project-context onboarding and skills
 
-### Artifact lifecycle documentation
+- Replace the project `grill-me` skill with an integrated `grill-with-docs`, vendoring its `grilling`
+  and `domain-modeling` dependencies while retaining GED clarification/planning state transitions.
+- Canonical project context is `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, root
+  `CONTEXT.md`, and sparse `docs/adr/*.md`. `.ged/DECISIONS.md` is not created. Task files under
+  `.ged/work/root/` remain task-specific, and `.gedcode/` remains runtime-only.
+- On project add or first open in Chat or Orchestrator, inspect canonical files. Missing, whitespace-only,
+  or template-only stubs offer Populate; substantive files offer Review.
+- Dismissal/completion is remembered per project and content fingerprint. Prompt again only after
+  material file changes or an onboarding schema upgrade.
+- Chat and Orchestrator share one project-context operation. It offers Cheap/Smart/Genius cards with
+  the configured harness logo plus model/thinking summary. Smart is the factory choice; the selected
+  preset becomes the global default for later context runs.
+- A context run edits the primary checkout but is not a task. Its result enters a mandatory diff review
+  with Commit, Revise, and Discard; nothing commits automatically.
 
-- Document workspace-local `.ged/` workflow memory separately from workspace-local `.gedcode/`
-  orchestrator worktrees/leases/hooks and user-level `~/.gedcode/` settings, database, logs, and SSH
-  state.
-- For each artifact, state its creator, creation trigger, lifetime, cleanup owner, and whether it is safe
-  to commit or delete. Link the guide from GED help/settings where users encounter the workflow.
+### Worktree access and branch names
 
-### Workflow specialization
+- PM headers expose the configured editor button for the project root. Worker headers use the exact
+  task worktree. An adjacent menu offers Reveal in Finder/Explorer, Open terminal here, and installed
+  alternate editors.
+- Launch requests validate that the target is the registered project root or owned task worktree and
+  report unsupported remote/environment capabilities explicitly.
+- New task branches use `ged/<task-type>/<task-title-slug>`, safely truncated and normalized. Local
+  collisions use `-2`, `-3`, and so on. Existing branches are never renamed.
 
-- Add supported task types beyond `feature`, beginning with a release workflow.
-- Give release work a dedicated playbook and safe dispatch/status surface instead of treating
-  `release` as an arbitrary feature label.
+## Out of Scope
 
-## Explicitly Deferred
-
-- Server enforcement of canonical pipeline order is intentionally deferred. Existing permissive stage
-  ordering remains unchanged; stages may intentionally be skipped. The post-work verification landing
-  invariant is the only enforced ordering rule.
-- Automatic merging to the default branch remains out of scope. Landing opens or records a gated PR.
-- Bulk implementation of this roadmap is prohibited; slices land incrementally.
-
-## Constraints
-
-- Preserve the append-only orchestration event log. User-facing deletion should be modeled explicitly;
-  do not edit SQLite rows or erase historical events ad hoc.
-- Destructive cleanup must be idempotent and restart-safe.
-- Provider interruption must report requested, acknowledged, timed-out, and failed states.
-- PM correctness must come from server commands and durable state, not prompt wording alone.
-- Worker backend policy is Terra/high for medium work and Sol/high for difficult or high-risk work.
-- Existing user changes and untracked release directories must not be modified.
-- Every user-visible slice updates `CHANGELOG.md` under `## Unreleased`.
-- Required repository checks are `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`. Never run
-  `bun test`.
+- Canonical pipeline-order enforcement remains deferred beyond the exact-HEAD verification invariant.
+- Provider-native subagent orchestration is not intercepted or configured.
+- PM direct changes do not gain a PR or task history.
+- Existing branch renaming and automatic model escalation are excluded.
 
 ## Acceptance Criteria
 
-1. A newly started PM can inspect its project and reach an orchestration decision without stalling on
-   an approval request that the PM surface cannot resolve.
-2. Cancelling an active task cannot delete its worktree while its provider session or terminal is still
-   running.
-3. An approved land gate has an explicit, guarded action that reaches `landed` and starts the existing
-   PR-opening path.
-4. Terminal tasks can be archived, restored where valid, and explicitly deleted from active views.
-5. Retried PM task creation returns or supersedes the existing semantic task instead of producing
-   duplicates.
-6. Server restart cannot leave an interrupted stage permanently occupying `currentStageThreadId`.
-7. PM operation is settlement-driven; it does not continuously poll worker threads while nothing has
-   changed.
-8. Stop and steer actions show immediate acknowledgement and accurately report provider outcome.
-9. Large tasks can be represented as a parent with ordered, independently executable child slices.
-10. Normal chat supports thread forking, and unsent drafts survive context switches.
-11. Active task detail omits the Plan section until a proposed plan exists and omits the gates section
-    when there are no gates.
-12. Orchestrator sidebars provide native context menus, sorting, and manual ordering.
-13. Release tasks use a real release playbook and observable dispatch flow.
-14. Landing is rejected unless the latest successful verification is newer than the latest successful
-    work attempt; this applies uniformly without legacy-task fallback.
-15. GED mode is selectable in normal chat and changes prompt guidance without starting managed workers
-    or requiring provider-native subagents.
-16. **Continue in new task** appears only on completed assistant messages, opens the fork, preserves the
-    source thread, and clearly states that current filesystem state is retained.
-17. Messages submitted during an active normal-chat turn appear in a durable FIFO queue; each can be
-    steered, edited, or deleted, and automatic draining cannot duplicate a provider turn after retry.
-18. Every retained orchestrator worker role can select harness, model, and supported thinking level at
-    project and task scope, with the effective inherited selection visible.
-19. A user-facing artifact guide distinguishes `.ged/`, project `.gedcode/`, and `~/.gedcode/` by
-    location, creation time, ownership, retention, and deletion safety.
-
-## Delivery Order
-
-1. Lifecycle safety and landing.
-2. Recovery, idempotency, task retention, and worker access defaults.
-3. Event-driven PM operation and effective interrupt/steer behavior.
-4. Parent/child task splitting.
-5. Chat and sidebar UX.
-6. Release specialization.
-7. Queued normal-chat messages, artifact documentation, and reviewed worker-role configuration.
+- Dirty work cannot verify or land; PM resolution is durable, scoped, and always precedes fresh
+  verification of exact HEAD.
+- No-change and successfully landed work disappears from the active board without losing history.
+- PMs can safely edit/test/commit trivial work under the selected provider permission policy.
+- Orchestrator cannot be bypassed until legacy backend selections are mapped to valid tier presets.
+- Tier routing, escalation, helper runs, and resolved backends remain inspectable after replay/restart.
+- Project-context prompting behaves consistently in Chat and Orchestrator and never treats `.gedcode/`
+  as authorable context.
+- Editor/file-manager/terminal actions always target the correct checkout.
+- New task branches are readable and collision-safe.
+- `CHANGELOG.md`, `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test` pass for every completed
+  implementation slice.

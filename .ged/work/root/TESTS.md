@@ -1,789 +1,137 @@
-# TESTS - Orchestrator Completion Roadmap
-
-## ORCH-APPROVAL-01
-
-- Codex worker startup and resumed turns use workspace-write/on-request plus `auto_review`.
-- Codex PM sessions remain read-only and user-reviewed, while private orchestration MCP calls retain
-  their narrow trusted-server approval.
-- Claude and OpenCode worker startup remains full access.
-- Verification passed on 2026-07-16: 87 focused Codex runtime/adapter/provider-reactor tests, `bun
-  fmt`, `bun lint` (existing warnings only), all 12 typecheck packages, and the complete socket-enabled
-  `bun run test --output-logs=errors-only` gate with all 12 package tasks successful in 10m26s.
-
-## ORCH-APPROVAL-02
-
-- `item/permissions/requestApproval` exposes the requested permission subset and maps PM decisions to
-  turn/session grants or an empty denied subset.
-- Denied/timed-out/aborted `item/autoApprovalReview/completed` notifications become pending requests
-  with bounded rationale/action detail; approval sends the exact original assessment through
-  `thread/approveGuardianDeniedAction`.
-- Approved auto-reviews create no manual request; stale or duplicate responses fail closed.
-- Verification passed on 2026-07-16: 95 focused Codex runtime/adapter/ingestion tests, `bun fmt`,
-  `bun lint` (existing warnings only), all 12 typecheck packages after the known TypeScript-Go
-  workspace resolver race cleared on retry, and the complete socket-enabled `bun run test
-  --output-logs=errors-only` gate with all 12 package tasks successful in 10m29s.
-
-## ORCH-APPROVAL-03
-
-- Approval attention advances the durable PM cursor and produces one bounded re-entry message per
-  request across live delivery, crash recovery, and reconciliation.
-- PM inspection returns only pending requests for the named task and includes stage role plus relevant
-  command/path/network/risk details.
-- PM response rejects foreign, resolved, non-stage, and stale requests and dispatches the existing
-  provider approval response for a valid request.
-- Verification passed on 2026-07-16: 87 focused PM runtime/tool/MCP tests, including socket-bound MCP
-  HTTP coverage; `bun fmt`; `bun lint` (existing warnings only); all 12 typecheck packages; and the
-  complete socket-enabled `bun run test --output-logs=errors-only` gate with all 12 package tasks
-  successful in 10m28s.
-
-## ORCH-PMBOOT-03
-
-- Configuration coverage proves only GedCode's injected `t3_orchestrator` MCP server bypasses
-  interactive approval.
-- Codex adapter/runtime coverage proves PM sessions retain their read-only sandbox and do not broaden
-  approval behavior for shell, file-change, or unrelated MCP operations.
-- The provider-log reproduction showed `getTaskLedger` and `cancelTask` entering `waitingOnApproval`
-  and immediately reporting a synthetic user rejection. Codex 0.142.5 supports the emitted
-  server-scoped approval default, so those private calls no longer enter the unhandled prompt path.
-- Verification passed on 2026-07-16: 45 focused MCP/adapter/runtime tests, `bun fmt`, `bun lint`
-  (existing warnings only), all 12 typecheck packages, and the complete socket-enabled `bun run test
-  --output-logs=errors-only` gate with all 12 package tasks successful in 10m30s.
-
-## ORCH-ROLES-03
-
-- Run migrations through the previous version, seed project and task projection JSON containing
-  legacy `classify`/`review` keys plus current-role values, then run the new migration.
-- Decode migrated rows with current `GedRoleModelSelections`/`GedRolePromptPrefixes` schemas and
-  verify only obsolete keys were removed.
-- Prove already-current rows are unchanged and malformed JSON makes migration fail rather than
-  silently discarding persisted state.
-- Decode historical project/task events carrying `classify`/`review`, prove the retired values are
-  dropped, and retain strict rejection for unknown keys on current command/read-model schemas.
-- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`.
-
-Verification evidence:
-
-- Migration coverage passes 3/3: exact legacy project/task keys are removed, retained selections and
-  prefixes decode through current schemas, current JSON remains byte-for-byte unchanged, and malformed
-  JSON fails without replacement.
-- Contract coverage passes 64/64 and proves immutable historical project/task events drop only
-  `classify`/`review`; strict current role-map and command tests continue rejecting unknown keys.
-- Migration 54 ran successfully against a copy of the live application database. Every migrated
-  project/task role-setting row decoded with current schemas, and the installed Nightly reached
-  `backend ready` and `main window created` against that isolated copy.
-- Final repository gates pass: `bun fmt`, `bun lint` (existing warnings only), all 12 `bun typecheck`
-  packages, and all 12 `bun run test --output-logs=errors-only` packages in 10m21s.
-
-## ORCH-ROLES-04
-
-- Migration 55 coverage seeds every historical role and proves only `classify`/`review` rows are
-  removed while `plan`/`work`/`verify` rows remain unchanged; migration 54 and 55 tests pass 4/4.
-- The dev desktop applied migration 55 to the database that previously crashed strict stage-history
-  decoding, then reached `backend ready` and created its main window.
-- Final verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck packages,
-  the production build, and the complete 12-package test gate in 10m47s.
-
-## CHAT-DRAFT-01
-
-- Route tests prove an unsent project draft takes precedence over the newest server thread. Draft-store
-  tests prove the newest empty checkout draft is used only when no checkout has unsent content.
-- All 78 focused route/store tests pass. Desktop Computer Use typed
-  `draft-preservation-final-smoke`, switched to Orchestrator, and confirmed both the global **Chat**
-  toggle and project **Open in Chat** restored the same draft route and exact composer value.
-- Final verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck packages,
-  the production build, and the complete 12-package test gate in 10m47s.
-
-## Test Strategy
-
-Each slice adds focused characterization or behavior tests first, then runs the repository gates. Cross-
-component lifecycle changes require integration coverage; UI interaction changes require browser tests.
-
-## DOC-ARTIFACTS-01
-
-- The source audit traces workspace task worktrees and leases to `taskWorktreeLease.ts` and
-  `TaskWorktreeReactor.ts`, task safety hooks to `workerSafety.ts`, and the application data tree to
-  server/desktop path derivation. The local workflow-guide link resolves to
-  `docs/artifact-lifecycle.md`; the focused GED settings help-link flow and all 17 settings Chromium
-  interactions pass. Final checkpoint verification passes `bun fmt`, `bun lint` (existing warnings
-  only), all 12 typecheck packages, and the complete 12-package `bun run test
-  --output-logs=errors-only` gate in 10m23s.
-
-## CHAT-QUEUE-01..03
-
-- `CHAT-QUEUE-01` focused verification covers 71 draft-store tests. New cases prove default-on queue
-  behavior, environment-scoped FIFO isolation, duplicate/blank rejection, stable identity across edit
-  and dispatching-state changes, deletion, queue-off retention, attachment/model-option cloning, and
-  current/legacy persistence hydration. `bun fmt`, `bun lint` (existing warnings only), and `bun
-  typecheck` pass; the socket-enabled `bun run test --output-logs=errors-only` gate passed all 12
-  package tasks in 9m26s.
-- Draft-store schema tests persist per-thread queue order, stable command/message identities, captured
-  model options and modes, persisted image data, terminal contexts, and the default-on queue preference.
-- Dispatch logic tests hold active-turn sends locally, drain one item only after settlement, retain a
-  failed/unacknowledged item, and retry with the same command ID so server idempotency prevents duplicate
-  turns. Queue-off sends exercise existing provider steer/queued delivery behavior.
-- `CHAT-QUEUE-02` focused verification passes 74 queue/store tests and 3 full-Chat Chromium flows.
-  The browser flows prove active-turn submission makes no immediate turn-start call, settlement drains
-  it once with the captured IDs, queue-off submits immediately to the existing steer path, and a
-  persisted `dispatching` retry uses the same command ID then settles as `failed` without hot-looping.
-  The complete web unit suite passes 1,241/1,241 and all 83 ChatView Chromium interactions pass.
-  Final checkpoint verification passes `bun fmt`, `bun lint` (existing warnings only), all 12
-  typecheck packages, and the complete 12-package `bun run test --output-logs=errors-only` gate in
-  10m26s.
-- Chromium coverage reproduces the reference queue rows and verifies Steer, Delete, inline Edit, Turn
-  off queueing, pending/error states, keyboard/accessibility behavior, and compact layout.
-- `CHAT-QUEUE-03` passes 3 focused Chromium flows covering identity-preserving edit, delete, disabling
-  queueing without flushing rows, immediate failed-item retry through Steer, compact action labels, and
-  horizontal overflow. All 86 ChatView Chromium interactions and all 1,241 web unit tests pass. Final
-  checkpoint verification passes `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck
-  packages after retrying the known workspace resolver race, and the complete 12-package `bun run test
-  --output-logs=errors-only` gate in 10m55s.
-
-## DOC-ARTIFACTS-01
-
-- A source/path audit ties every documented directory to its actual creator and cleanup code.
-- Documentation checks and a focused UI test prove the artifact guide is reachable from GED help.
-
-## ORCH-ROLES-01..02
-
-- Contract, playbook, PM-tool, and projection tests pin the reviewed PM/worker responsibility boundary
-  and reject removed or unknown role keys without compatibility aliases.
-- `ORCH-ROLES-01` verification passes 301 focused contract/shared/server/web tests, `bun fmt`, `bun
-  lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete socket-enabled
-  12-package `bun run test --output-logs=errors-only` gate in 11m43s. The first sandboxed full run failed
-  only because loopback test ports were denied with `EPERM`; the permitted rerun passed cleanly.
-- Picker logic and Chromium tests cover provider instance, model, supported effort options, inheritance,
-  task override, and cleanup of options invalidated by a backend/model change.
-- `ORCH-ROLES-02` focused verification passes picker reconciliation unit tests, four Chromium
-  interactions covering harness/model/reasoning and typed task override persistence, all 1,230 web unit
-  tests, and all 213 web Chromium interactions. `bun fmt`, `bun lint` (existing warnings only), and
-  `bun typecheck` pass. The final socket-enabled `bun run test --output-logs=errors-only` checkpoint
-  passes all 12 workspace packages in 10m56s.
-
-## CHAT-FORK-02
-
-- Static timeline coverage proves exactly one terminal completed assistant message receives the action,
-  streaming messages do not, and the control carries the current-filesystem accessibility description.
-- Focused Chromium coverage is implemented for completed-assistant visibility, tooltip copy, pending
-  disablement, successful typed fork/navigation, and error feedback/action recovery.
-- Verification passed on 2026-07-16: 65 focused timeline/ChatView unit tests, 91 focused Chromium
-  interactions across the timeline and full Chat view, the complete web suite (1,233/1,233), production
-  web build, `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck` across all 12 packages.
-  The final socket-enabled `bun run test --output-logs=errors-only` gate passed all 12 package tasks in
-  11m54s.
-
-## CHAT-FORK-01
-
-- Contract coverage pins the source-message input plus explicit provider-native/copied-history strategy
-  and current-filesystem result semantics.
-- Decider and service coverage prove only the selected visible prefix is copied atomically, the source
-  projection remains unchanged, active turns are rejected, native Codex forks roll back only the new
-  target, and unsupported providers do not receive native fork calls.
-- Provider coverage proves Codex resumes the native fork under the new thread id and ProviderService
-  routes through the source instance while persisting the target binding.
-- Reactor coverage proves a copied-history target starts a fresh provider session with the selected
-  transcript and current-filesystem warning, while stored source history remains unchanged.
-- Verification passed on 2026-07-16: 63 focused contract tests, 106 focused server tests, `bun fmt`,
-  `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and a clean full
-  socket-enabled `bun run test --output-logs=errors-only` rerun with all 12 package tasks successful in
-  10m31s. The first full run's unrelated bootstrap-auth router flake passed immediately in isolation.
-
-## CHAT-GED-02
-
-- Settings schema coverage proves the global default is GED-on and accepts an explicit Normal default
-  in both full settings and patches.
-- Draft-store coverage proves an explicit per-thread GED override survives partialization and hydration
-  and disappears cleanly when the final settings-only override is cleared.
-- Chromium coverage proves desktop and compact selectors render, the desktop tooltip explains GED and
-  its non-enforcement of subagents, the General setting defaults on, an explicit Normal choice persists,
-  a global Normal default applies to untouched drafts, and bootstrap turn-starts carry the selection to
-  both thread creation and provider turns.
-- Verification passed on 2026-07-16: 15 focused contract settings tests, 125 focused web logic/store
-  tests, 24 focused compact/settings Chromium interactions, 3 targeted full-Chat Chromium flows, `bun
-  fmt`, `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete
-  socket-enabled `bun run test --output-logs=errors-only` gate with all 12 package tasks successful in
-  10m37s. The initial sandboxed full run failed only because socket binding was denied with `EPERM`.
-
-## CHAT-GED-01
-
-- Contract, decider, replay, SQL projection, and snapshot coverage retain an optional per-thread GED
-  flag while defaulting new or historical unspecified threads to GED-on.
-- Provider-reactor coverage proves GED turns receive grill-me, planning, execution, and verification
-  skill guidance while the event-sourced user message remains unchanged and no managed-agent actuator
-  is involved.
-- Provider-reactor coverage proves an explicit Normal thread persists its override and sends the exact
-  original prompt bytes to the provider.
-- Verification passed on 2026-07-16: 61 focused contract tests, 81 focused server tests, `bun fmt`,
-  `bun lint` (existing warnings only), `bun typecheck` across all 12 packages, and the complete `bun run
-  test --output-logs=errors-only` gate with all 12 package tasks successful in 10m49s.
-
-## ORCH-LAND-05
-
-- Decider coverage rejects landing without a successful verification, after an interrupted verification,
-  or when a later successful work attempt makes the previous verification stale.
-- Decider coverage accepts a fresh successful verification even when an unrelated stage completes after
-  it, preserving the deliberately permissive stage-order policy.
-- Real-engine landing and Phase 4 integration fixtures execute a successful verify stage before the
-  human land gate and PR-opening actuator.
-- Verification passed on 2026-07-16: 78 focused decider, actuator, slice, and integration tests; `bun
-  fmt`; `bun lint` (existing warnings only); `bun typecheck` across all 12 packages after isolating the
-  known workspace resolver race; and the complete `bun run test --output-logs=errors-only` gate with all
-  12 package tasks successful in 10m26s.
-
-## ORCH-REL-02
-
-- Contract, decider, replay, SQL projection, and migration tests cover the durable dispatching,
-  dispatched, and failed lifecycle plus exact content-hash approval matching.
-- Actuator tests prove concurrent duplicate calls invoke GitHub Actions once, parameter normalization is
-  deterministic, and a dirty repository is rejected before either durable reservation or remote work.
-- PM/MCP coverage exposes separate approval and dispatch tools; web rendering coverage shows in-progress,
-  failed, and authoritative workflow-link states.
-- Verification passed on 2026-07-15: focused server/web/shared/contract tests, `bun fmt`, `bun
-  fmt:check`, `bun lint` (existing warnings only), `bun typecheck`, `bun run release:smoke`, and the
-  complete 12-package `bun run test` gate. The server suite passed 1,454 tests with one skipped; web
-  passed 1,230, shared 146, contracts 190, and all remaining packages passed.
-
-## UI-SIDEBAR-02
-
-- Pure menu tests prove active tasks offer cancel, cancellation-in-progress offers no conflicting
-  action, terminal tasks offer archive/delete, and archived tasks offer restore/delete.
-- Chromium coverage right-clicks real project and task rows through the browser fallback menu, proves
-  invalid actions are absent or disabled, renames through `project.meta.update`, and requests active
-  task cancellation through the typed Orchestrator API.
-- Verification passed on 2026-07-15: 42 focused unit tests, 18 focused Chromium interactions, the full
-  web suite (1,231/1,231), all 200 Chromium interactions, `bun fmt`, `bun lint` (existing warnings
-  only), `bun typecheck`, `bun run build`, and the complete 12-package `bun run test` gate. The server
-  suite passed 1,454 tests with one skipped.
-
-## ORCH-PMBOOT-01
-
-- Reproduce from the live `loc-speach` PM log: Claude starts normally, emits two read-only Bash tool
-  calls, opens `command_execution_approval` requests, and never receives a decision because the PM
-  surface has no approval actuator.
-- Add focused provider/runtime coverage proving PM sessions opt into the explicit Claude read-only
-  policy, auto-allow built-in file/search tools, deny mutating tools immediately, and retain
-  orchestration MCP access.
-- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test` before marking the slice complete.
-
-Verification evidence:
-
-- The live provider log and projection snapshot reproduced the deadlock: the PM turn started normally,
-  surfaced two Bash tool starts, opened two unresolved `command_execution_approval` requests, and
-  produced no later assistant result.
-- Focused Claude adapter, driver-PM adapter, and PM runtime coverage passed: 107/107 tests.
-- Repository gates passed on 2026-07-14: `bun fmt`, `bun lint` (existing warnings only),
-  `bun typecheck`, and `bun run test` across all 12 packages. The sandboxed test attempt was invalid
-  because loopback binds returned `EPERM`; the unsandboxed rerun passed.
-
-## ORCH-PMBOOT-02
-
-- Extend the Claude read-only policy test to prove `Skill` is available without approval while
-  `Task`, `Agent`, shell, and mutation tools remain denied.
-- Pin PM prompt guidance to bounded `createTask`/`handoffWorker` exploration instead of native
-  subagents that are intentionally absent from the constrained PM surface.
-- Run the focused provider/runtime tests and all required repository gates.
-
-Verification evidence:
-
-- Claude adapter and PM runtime tests passed 97/97, covering Skill allow, Agent/Bash/write deny, the
-  unchanged orchestration MCP surface, and bounded worker-handoff prompt guidance.
-- Repository gates passed on 2026-07-14: `bun fmt`, `bun lint` (existing warnings only),
-  `bun typecheck`, and the clean full `bun run test --output-logs=errors-only` rerun across all 12
-  packages. One unrelated `effect-acp` timing test failed on the first full run and passed 9/9 in
-  isolation before the clean rerun.
-
-## ORCH-TASK-04
-
-- Decider coverage accepts one visible, settled, same-project predecessor and rejects active or
-  already-replaced predecessors.
-- Replay coverage reconstructs both `supersedesTaskId` and `supersededByTaskId`; migration and SQL
-  snapshot coverage retain the links across restart.
-- PM tool coverage proves the predecessor participates in command content identity while retaining the
-  same stable task identity, and board coverage proves only the successor is active.
-- Verification passed on 2026-07-14: 157 focused server tests, 38 focused web tests, `bun fmt`,
-  `bun lint` (existing warnings only), `bun typecheck`, and all 12 workspace test packages. The server
-  package passed 1,427 tests with 1 skipped.
-
-## ORCH-ACCESS-03
-
-- Stage-start decider coverage proves the resolved worker runtime mode is stamped beside the effective
-  backend/model; replay and SQL projections retain it through stage settlement.
-- Migration coverage backfills an older stage attempt from its actual stage thread instead of assuming
-  a permission level.
-- Timeline logic covers every runtime-mode label and unknown legacy data; Chromium task-detail coverage
-  displays the recorded Full access mode.
-- Verification passed on 2026-07-14: 118 focused server tests, 5 UI logic tests, 12 Chromium
-  interactions, `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`. Ten unaffected
-  workspace packages passed in the root run; isolated full suites passed web 1,226/1,226 and server
-  1,428/1,429 with one skipped after parallel root runs exposed unrelated five-second timing flakes.
-
-## UI-COLLAPSE-01
-
-- Unit-test parsing of the existing `sidebar_state` cookie, including absent and malformed values.
-- Component/browser-test the desktop control collapsing and reopening the off-canvas sidebar.
-- Verify the chosen state is written and restored after remount/reload while mobile sheet behavior stays
-  unchanged.
-- Run `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and `bun run test`.
-
-Verification evidence:
-
-- Cookie parser tests cover explicit open/closed values plus absent and malformed defaults.
-- Chromium tests cover desktop collapse/reopen, collapsed-state restoration after remount, and the
-  unchanged mobile sheet path without writing desktop state.
-- The complete browser suite passed 193/193 interactions across 15 files.
-- Repository gates passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
-  `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1 skipped, web
-  1,223 passed).
-- Manual Electron QA exposed the collapsed control under macOS traffic lights. A shared inset-policy
-  unit test now covers collapsed Electron, expanded Electron, and browser states, and the fix applies to
-  Orchestrator, active Chat, empty Chat, and Settings titlebars.
-- Follow-up gates passed on 2026-07-13: 193/193 Chromium interactions, `bun fmt`, `bun lint` (existing
-  warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (server 1,424
-  passed/1 skipped, web 1,224 passed). One unrelated server-router test flaked on the first full run and
-  then passed 72/72 in isolation.
-- A second manual screenshot showed responsive `sm:px-5` winning over the base inset. The regression
-  test now checks computed desktop padding with both class sets present and requires exactly 90px.
-- Final responsive follow-up gates passed on 2026-07-13: 194/194 Chromium interactions, `bun fmt`,
-  `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test` (server
-  1,424 passed/1 skipped, web 1,224 passed; all 12 packages successful).
-
-## Lifecycle Safety
-
-- Cancel during a long-running worker command: provider receives interrupt, session stops, stage settles,
-  and only then is the worktree removed.
-- Interrupt rejection/timeout: worktree remains, task exposes recovery state, and retry is idempotent.
-- Restart during cancellation: reconciliation completes each remaining step exactly once.
-- Orphaned active stage after restart becomes retryable and no longer holds `currentStageThreadId`.
-- Worktree reaper cannot remove a path owned by another live runtime.
-- Landing event during reactor startup still opens one PR and cleans up once.
-
-## Landing and Release
-
-- PM and client landing operations reject missing/rejected/mismatched land gates.
-- Landing rejects a task with no successful verify attempt, a failed/interrupted verify attempt, or a
-  successful verify older than the latest successful work attempt.
-- Landing accepts a successful verify newer than work even when an unrelated classify, plan, or review
-  attempt occurs afterward; no other canonical stage order is enforced.
-- Approved land gate followed by land reaches `landed`, opens or reuses a PR, and records the URL.
-- Repeated land/release dispatch calls are idempotent.
-- Release workflow refuses dirty/unlanded state and records authoritative workflow URL/status.
-
-## Task Lifecycle
-
-- Archive hides a terminal task from active board queries without erasing event history.
-- Restore returns an eligible task; invalid restore reports a typed error.
-- Permanent delete uses explicit retention semantics and cascades or tombstones associated stage threads.
-- Repeated create with the same idempotency key returns one task.
-- Supersession links old/new tasks and releases capacity without ambiguity.
-
-## PM Efficiency and Threads
-
-- An idle worker causes no periodic PM turns or repeated `inspectStage` calls.
-- Stage settlement, gate resolution, quota recovery, and interrupt outcome each wake the PM once.
-- PM re-entry payload remains bounded with large task and stage histories.
-- Steering reuses the active stage attempt; retry creates a linked attempt.
-- Codex interrupt reaches the provider before the original turn naturally completes.
-- Unsupported live steering reports queued/rejected behavior immediately.
-
-## Task Splitting
-
-- Parent/child relationships and child order survive projection rebuild and restart.
-- `splitTask` is atomic and idempotent.
-- Dependencies prevent blocked children from starting and identify the next unblocked child.
-- Parent progress derives from child terminal states.
-
-### ORCH-SPLIT-01
-
-- Decider coverage accepts only paired parent/order fields, visible same-project top-level parents,
-  and unique sibling positions.
-- In-memory replay reconstructs deliberately out-of-insertion-order children and derives parent
-  terminal, landed, and abandoned totals after child state changes.
-- Migration and SQL projection tests preserve nullable hierarchy fields, enforce unique sibling order,
-  and refresh serialized parent progress during projection rebuild; snapshot tests decode the new rows.
-- Verification passed on 2026-07-14: 121 focused tests, all 189 contract tests, `bun fmt`, `bun lint`
-  (existing warnings only), `bun typecheck`, and the full server suite (1,432 passed/1 skipped).
-
-### ORCH-SPLIT-02
-
-- Decider coverage proves bounded, atomic child creation; validates criteria and earlier-sibling-only
-  dependencies; rejects blocked stage starts; and permits the next child after its dependency lands.
-- Engine and PM coverage prove deterministic command/child identities make exact retries idempotent,
-  invalid splits emit no partial child set, and ledgers distinguish runnable from blocked children.
-- Projection, migration, and worktree-reactor coverage preserve criteria/dependencies and remove the
-  converted parent's obsolete worktree after the parent becomes a task container.
-- Verification passed on 2026-07-14: 216 focused tests, all 189 contract tests, the full server suite
-  (1,439 passed/1 skipped), `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, and the
-  complete 12-package `bun run test --output-logs=errors-only` gate.
-
-### ORCH-SPLIT-03
-
-- PM prompt and built-in playbook tests pin the one-focused-stage decision boundary, bounded 2-8 child
-  graph, narrow acceptance criteria, earlier-child dependencies, stable idempotency, and unblocked-only
-  scheduling.
-- Policy explicitly routes the complete child graph through the ordinary plan gate and forbids a new
-  split gate; canonical pipeline ordering remains intentionally unenforced.
-- Verification passed on 2026-07-14: 37 focused tests, `bun fmt`, `bun lint` (existing warnings only),
-  and `bun typecheck`. Nine serialized workspace packages including server passed; the sole root failure
-  was an existing five-second MessagesTimeline timing flake that passed 12/12 alone. The full web suite
-  passed 1,226/1,226 with a 15-second timeout budget.
-
-### ORCH-SPLIT-04
-
-- Pure grouping tests prove children appear beneath one visible parent in declared child order, a child
-  blocker or gate promotes the whole group to Needs you, and mixed landed/abandoned children classify
-  the completed group without leaving a permanently active parent card.
-- Chromium coverage proves children are absent while collapsed, appear in deterministic order after
-  expansion, and existing archived/terminal context-menu flows remain operational.
-- Verification passed on 2026-07-14: 40 focused unit tests, 13 focused Chromium interactions,
-  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, the complete web suite
-  (1,228/1,228), and the complete Chromium suite (196/196).
-
-## Web and Chat
-
-- Normal mode sends unchanged provider guidance; GED mode adds the documented workflow/skill guidance
-  without invoking a managed subagent or child-session service.
-- GED mode selection survives draft/new-thread creation and remains isolated per thread.
-- Codex latest-message fork uses native provider state; earlier-message fork rolls back only the newly
-  forked thread. Providers without native support receive copied visible history in a fresh session.
-- Forking from a completed assistant message creates and opens a distinct task at the intended history
-  boundary, retains current filesystem state, and leaves the source thread unchanged.
-- The action is absent from user, streaming, interrupted, and failed messages; pending and typed error
-  states prevent duplicate forks.
-- Active task detail omits the Plan section until a proposed plan exists; empty `No gates` is omitted;
-  populated sections still render.
-- Composer drafts survive route and Chat/Orchestrator surface switches without leaking between contexts.
-- Project sort/manual order matches between Chat and Orchestrator.
-- Project/task context menus expose only actions valid for the current state.
-- Effective worker permission mode is visible.
-
-### UI-DRAFT-01
-
-- PM composer browser coverage types an unsent draft, unmounts the Orchestrator surface, proves another
-  project remains empty, remounts the original project, and observes the exact restored text before a
-  successful send clears it.
-- Shared PM-thread helper coverage pins stable draft identity, while existing composer-store coverage
-  continues to verify debounced persistence and normal Chat draft behavior.
-- Verification passed on 2026-07-14: 44 focused unit tests, 6 focused Chromium interactions, the full
-  web suite (1,229/1,229), `bun fmt`, `bun lint` (existing warnings only), and `bun typecheck`.
-
-## Compatibility Checks Requiring Explicit Decisions
-
-- Task archive/delete event shape and retention policy.
-- Legacy unknown task types when the validated registry is introduced.
-- Existing persisted `allowFullAccessWorkers=false` overrides when full access becomes the default.
-- Forked thread provider resume behavior across Codex, Claude, and OpenCode.
-
-Do not add fallback behavior for these cases without a specific user decision.
-
-## Required Commands Per Implemented Slice
-
-```sh
-bun fmt
-bun lint
-bun typecheck
-bun run test
-```
-
-Never run `bun test`.
-
-For web interaction slices also run the repository's browser-test command for the affected package. For
-release slices also run `bun run fmt:check` and `bun run release:smoke`.
-
-## Completed Evidence
-
-### ORCH-POLL-01 through ORCH-POLL-03
-
-- Source characterization found no periodic server timer or scheduler for `inspectStage`; the repeated
-  calls came from an explicit PM system-prompt instruction to poll while a worker remained active.
-- The PM prompt now forbids polling or recurring status checks and names settlement, gate, quota, and
-  interrupt events as the authoritative automatic re-entry paths. Prompt tests prevent regression.
-- Existing `inspectStage` tests prove explicit requests return only the latest 10 messages and 20
-  activities, truncate message text at 500 characters, report current turn/elapsed state, and extract
-  only the latest token-usage sample rather than returning a full transcript.
-- Verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
-  `bun run build`, and `bun run test` (server 1,416 passed/1 skipped; web 1,221 passed; all 12 packages
-  successful).
-
-### ORCH-INT-01
-
-- The shared stage-interrupt actuator validates the active running turn under the task lifecycle lock,
-  dispatches one durable `thread.turn.interrupt`, and returns an immediate `requested` result through
-  PM/MCP and typed RPC without depending on the PM finishing its own turn.
-- Provider command reactor coverage proves a persisted request invokes the provider interrupt path;
-  ingestion coverage proves provider `interrupted`/`cancelled` completion emits one operator
-  `task.stage-interrupted`, clears active ownership, blocks the task, and emits no stage-completed event.
-- Router/client tests cover the typed end-to-end method and error surface. Chromium coverage verifies
-  the active-task Stop stage action and its monotonic pending state.
-- Verification passed on 2026-07-12: 217 focused server tests, 72 router tests, 20 client tests, 10
-  Chromium interactions, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
-  `bun run build`, and `bun run test` (server 1,419 passed/1 skipped; web 1,221 passed; all 12 packages
-  successful).
-
-### ORCH-INT-02
-
-- Codex runtime tests assert the exact generated `turn/steer` payload with `expectedTurnId`, active
-  turn reuse, idle `turn/start`, and rejection propagation with zero start/interrupt fallback.
-- Claude and OpenCode tests distinguish active-turn queued and steered delivery. Provider reactor tests
-  prove delivery is persisted as bounded worker activity; existing failure activity remains the explicit
-  rejection path.
-- PM tool output directs the PM to authoritative activity instead of implying that all providers handle
-  a second message identically. The changelog records the required Codex app-server `turn/steer`
-  capability and no compatibility fallback was introduced.
-- Verification passed on 2026-07-12: 197 focused provider/orchestration tests and 191 contract tests;
-  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
-  (server 1,424 passed/1 skipped; web 1,221 passed; all 12 packages successful).
-
-### ORCH-EMPTY-01
-
-- Chromium coverage first renders empty GatePanel and StageProposedPlan inputs and proves there are no
-  headings or placeholder cards, then rerenders with a gate and proposed plan and proves both populated
-  sections remain visible.
-- Verification passed on 2026-07-12: 11 Chromium interactions, `bun fmt`, `bun lint` (existing warnings
-  only), `bun typecheck`, `bun run build`, and `bun run test` (server 1,424 passed/1 skipped; web 1,221
-  passed; all 12 packages successful).
-
-### ORCH-LC-01 and ORCH-LC-02
-
-- Decider tests reject progression after cancellation reservation and reject direct live-task
-  abandonment outside the cancellation workflow.
-- Provider reactor tests cover a queued worker start racing cancellation and skip provider startup after
-  cancellation or terminal settlement.
-- PM cancellation tests cover concurrent calls, phase checkpoint retries, shutdown failures, final
-  abandonment failures, and terminal-task no-ops.
-- Projection, migration, SQL snapshot, live subscription, and web-store tests cover replay and legacy
-  compatibility for durable cancellation state.
-- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run test`, and
-  `bun run build`.
-
-### ORCH-LC-03
-
-- Startup reconciler tests prove completed phases are not repeated, missing provider sessions are not
-  resurrected, terminal cleanup runs once, transient shutdown failure retries in the same startup, and a
-  second reconciliation is a no-op.
-- A persistence-backed three-runtime integration test persists reservation plus an interrupt checkpoint,
-  resumes to abandonment after restart, and observes exactly one abandonment across another restart.
-- External shutdown effects remain retry-safe/idempotent rather than transactionally exactly-once across
-  a process crash between effect completion and its durable checkpoint.
-- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and a
-  clean root `bun run test` rerun (server 1,360 passed/1 skipped; web 1,214 passed).
-
-### ORCH-LC-04
-
-- Decider, in-memory projection, SQL projection, awaited-stage, live WebSocket, and web-store tests cover
-  durable orphan interruption and clearing `currentStageThreadId` without treating interrupted work as
-  completed or quota-blocked.
-- Startup reconciler tests cover missing, null, already-interrupted, and stale provider sessions;
-  independent session/stage repair; bounded retries; deterministic command IDs; and a worker becoming
-  live while reconciliation is waiting for the task lifecycle lock.
-- PM settlement tests prove the interruption wake-up is consumed exactly once and instructs the PM to
-  inspect the preserved worktree before retrying the same role with a fresh handoff.
-- A persistence-backed two-runtime integration test leaves an active stage behind, starts the real
-  reconciler after restart, verifies the old stage and session are interrupted, and successfully starts
-  a new same-role handoff.
-- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
-  `bun run test` (server 1,373 passed/1 skipped; web 1,215 passed).
-
-### ORCH-LAND-01
-
-- Decider tests require no active stage and the latest land gate to be resolved, approved, and
-  content-hash matched; an older approval cannot bypass a newer pending gate.
-- Shared landing-executor tests cover first dispatch, already-landed idempotency, concurrent calls
-  collapsing to one command under the lifecycle lock, and typed missing-task failure without dispatch.
-- PM tests prove `landTask` delegates through the shared executor and reports whether landing started or
-  was already complete. Authenticated MCP tests cover tool listing, required input schema, and routing
-  through the same executor registry used by Claude and Codex PM sessions.
-- Existing landing integration coverage still passes for ready/draft PR creation, loud provider failure,
-  worktree cleanup, and reuse of an existing PR URL.
-- Repository gates passed on 2026-07-11: `bun fmt`, `bun lint`, `bun typecheck`, `bun run build`, and
-  `bun run test` (server 1,381 passed/1 skipped; web 1,215 passed).
-
-### ORCH-LAND-02
-
-- Contract, client, and server-router tests cover the typed `orchestrator.landTask` request/result and
-  typed missing-task error while delegating through the shared lifecycle-locked executor.
-- Landing integration now drives approved gate -> shared executor -> `task.pr-opened`, retaining ready
-  and draft PR creation, provider-failure, worktree-preservation/cleanup, and existing-PR coverage.
-- Web logic tests mirror the decider's exact review/no-active-stage/content-matched-latest-gate
-  eligibility and prioritize authoritative PR URL/failure state over transient request state.
-- Browser coverage drives the task-detail Land action and verifies monotonic request pending, retryable
-  request failure, PR opening, durable PR-open failure activity, final PR link, and no premature Landed
-  label. Lifecycle actions are mutually disabled and task headers remount by task ID to isolate requests.
-- Repository gates passed on 2026-07-11: focused server/integration/web/browser tests, `bun fmt`,
-  `bun lint`, `bun typecheck`, `bun run build`, and `bun run test` (server 1,382 passed/1 skipped; web
-  1,218 passed).
-
-### ORCH-WT-01
-
-- Focused reactor coverage publishes the same terminal event through the buffered live subscription and
-  durable replay while startup snapshot capture is in progress, then proves one cleanup side effect.
-- Persistence-backed landing coverage pauses startup terminal cleanup after the reactor has subscribed,
-  lands another task inside the former gap, and proves exactly one branch push, PR creation,
-  `task.pr-opened` event, and target worktree cleanup.
-- Startup snapshot scans use one captured read model/cursor; snapshot failure replays from sequence zero,
-  replay failures are logged, and replay/live terminal events are sequence-deduplicated before the serial
-  worker without dropping the ongoing hot subscription.
-- Repository gates passed on 2026-07-11: focused reactor/integration tests, `bun fmt`, `bun lint`,
-  `bun typecheck`, `bun run build`, and `bun run test` (server 1,384 passed/1 skipped; web 1,218 passed).
-
-### ORCH-LAND-03
-
-- Contract, decider, in-memory projector, SQL projection, snapshot-query, live-event, and web-store tests
-  cover durable `opening-pr`, `failed`, and `completed` task landing metadata plus legacy null defaults.
-- Task-only replay reconstructs all three states without stage-thread activity. Migration 47 preserves
-  legacy rows while adding nullable validated JSON landing state.
-- Reactor and real-engine landing tests prove exhausted provider/git failures persist actionable detail
-  and branch-push state, retain the worktree, and are not retried automatically during startup.
-- Task detail prioritizes durable landing state while retaining the existing activity fallback for older
-  histories; the board keeps PR opening active and routes exhausted failure into Needs you.
-- Verification passed on 2026-07-12: focused contract/decider/projector/projection/reactor/integration/web
-  tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and two clean
-  root `bun run test` passes. The final run had server 1,390 passed/1 skipped and web 1,219 passed.
-
-### ORCH-LAND-04
-
-- Contract, engine classification, decider, and projector tests cover the explicit
-  `task.landing.retry` command and `task.landing-retry-requested` event, including rejection unless the
-  task is landed with an exhausted failure and a retained worktree.
-- Shared executor and PM tests cover first retry dispatch, completed-task idempotency, in-progress
-  coalescing, and accurate operator messages while retaining the existing public RPC result contract.
-- Reactor tests prove failed landings remain stable across startup, explicit retry opens or reuses one
-  pull request, a later failed attempt is not deduplicated against the first, and the worktree is removed
-  only after success.
-- A real-engine integration test drives provider failure -> durable failure -> shared retry actuator ->
-  successful PR creation, and browser coverage verifies the durable Retry landing action and pending UI.
-- Verification passed on 2026-07-12: focused contract/server/reactor/integration/web/browser tests,
-  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
-  (server 1,397 passed/1 skipped; web 1,219 passed).
-
-### ORCH-WT-02
-
-- Reactor tests cover atomic lease creation from both the startup snapshot and a post-snapshot
-  `task.created` event, periodic renewal, live foreign-lease protection, expiry plus grace, new unleased
-  directory grace, terminal release, deterministic-path validation, and the existing orphan metric.
-- Lease records are stored outside the removable worktree and contain schema-validated version, task,
-  project, canonical worktree path, and renewal time. Malformed or inaccessible metadata fails safe.
-- A persistence-backed integration test starts two runtimes with independent SQLite event stores over
-  one Git workspace. The observer knows the project but not the owner's task and proves its startup
-  orphan scan preserves the leased worktree.
-- Verification passed on 2026-07-12: 23 reactor tests plus the two-database integration test,
-  `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and `bun run test`
-  (server 1,402 passed/1 skipped; web 1,219 passed).
-
-### ORCH-TASK-01
-
-- Contract, decider, in-memory replay, engine classification, and live-event tests cover append-only
-  archive, restore, and permanent-delete commands/events. Legacy tasks decode with null tombstones.
-- Lifecycle invariants allow only abandoned tasks or fully landed tasks with a recorded pull request;
-  archived tasks reject ordinary commands until restored and deleted tasks reject all later transitions.
-- Migration 48 and SQL projection tests preserve tombstoned rows and full command state while active
-  project queries, public snapshots, PM ledgers, and web state omit archived/deleted tasks.
-- Verification passed on 2026-07-12: focused contract/decider/projector/SQL/migration/engine/PM/web
-  tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
-  `bun run test` (all 12 packages successful; server 1,413 passed/1 skipped, web 1,220 passed,
-  contracts 61 passed).
-
-### ORCH-TASK-02
-
-- PM and authenticated MCP tests cover archive, restore, and delete tool discovery, schema routing,
-  deterministic command dispatch, and structured results.
-- Typed websocket, client transport, and environment API tests cover archived lookup plus all three
-  lifecycle actions. Restore events include the restored task projection and immediately repopulate the
-  web store without a reconnect or polling loop.
-- Component and Chromium tests cover status-sensitive terminal task menus, archive from the active
-  board, restore from the archived section, and omission of the empty-board message when archives exist.
-- Verification passed on 2026-07-12: focused contract/server/PM/MCP/client/store tests, 9/9 affected
-  Chromium tests, `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`, `bun run build`, and
-  `bun run test` (all 12 packages successful; server 1,414 passed/1 skipped, web 1,221 passed).
-
-### ORCH-TASK-03
-
-- PM tests prove canonical whitespace variants of the same project/key/task request derive identical
-  task, command, and PM provenance IDs; changed content keeps the task identity but changes the command.
-- MCP and Claude adapter tests require and route the explicit stable `idempotencyKey`.
-- A real-engine test dispatches the identical create command twice and observes one receipt result, one
-  `task.created` event, and one projected task; a changed-content command for the same task is rejected.
-- Verification passed on 2026-07-12: focused PM/MCP/Claude/engine tests, `bun fmt`, `bun lint` (existing
-  warnings only), `bun typecheck`, `bun run build`, and a clean `bun run test` rerun (all 12 packages;
-  server 1,416 passed/1 skipped, web 1,221 passed).
-
-### ORCH-ACCESS-01/02
-
-- Decider and provider-reactor tests prove every new Orchestrator stage projection and actual provider
-  session uses `full-access`, including projects carrying either value of the removed legacy opt-in.
-- PM projection, driver-adapter, and runtime reset tests prove PM threads and sessions consistently use
-  `approval-required`, which maps Codex to its read-only/on-request sandbox policy.
-- Contract, shared resolver, migration, project-settings, and global-settings tests prove the opt-in is
-  absent from current schemas and UI, legacy persisted keys decode without effect, and saves omit them.
-- Verification passed on 2026-07-12: `bun fmt`, `bun lint` (existing warnings only), `bun typecheck`,
-  `bun run build`, and `bun run test` (all 12 packages successful; server 1,421 passed/1 skipped, web
-  1,221 passed).
-
-### ORCH-PMTH-01
-
-- A deterministic identity test proves project title/runtime changes keep `pm:<projectId>` while a
-  different project receives a distinct PM thread.
-- A sequential decider/projector test completes and restarts the same stage role, proving each attempt
-  receives a fresh thread while the task retains both IDs in order and points at the active retry.
-- Existing PM tool coverage proves steering dispatches `thread.turn.start` to the selected current or
-  explicit attempt without creating a stage thread.
-- Verification passed on 2026-07-12: 107 focused tests, `bun fmt`, `bun lint` (existing warnings only),
-  `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,423 passed/1
-  skipped, web 1,221 passed).
-
-### ORCH-PMTH-02
-
-- PM tool coverage builds a task with five historical attempts and proves the ledger returns the total
-  count but only the newest three summaries, omits the unbounded `stageThreadIds` array, and reports the
-  projection snapshot sequence as `lastActionCursor`.
-- PM runtime coverage proves completed and quota-blocked settlement prompts include their durable event
-  sequence as a last-action cursor after the existing secret scrub and length bound.
-- System-prompt coverage directs the PM to trust cursors and bounded summaries instead of reloading full
-  worker histories.
-- Verification passed on 2026-07-12: 75 focused tests, `bun fmt`, `bun lint` (existing warnings only),
-  `bun typecheck`, `bun run build`, and `bun run test` (all 12 packages successful; server 1,424 passed/1
-  skipped, web 1,221 passed).
-
-### ORCH-BACKEND-01
-
-- PM and MCP tests prove `setTaskBackend` accepts non-empty provider option identifiers/values and
-  dispatches the complete instance, model, and reasoning-effort selection in one role override event.
-- Ledger tests prove the effective per-role selection remains inspectable, while existing stage-start
-  coverage proves selection options survive resolution into thread creation, turn start, and provider
-  startup.
-- System-prompt coverage pins the configured Terra/high policy for medium bounded work and Sol/high for
-  difficult or cross-cutting work without treating model and effort as implicitly coupled.
-- Verification passed on 2026-07-14: 85 focused server tests, `bun fmt`, `bun lint` (existing warnings
-  only), `bun typecheck`, the full server suite (1,428 passed/1 skipped), and the socket-dependent
-  scripts package (74 passed outside the managed sandbox).
-
-### CHAT-DEFAULT-01
-
-- Contract assertions pin the Codex factory model to `gpt-5.6-sol` without changing Claude's default.
-- Codex capability tests pin medium reasoning and Standard service as the unconfigured values even
-  when the provider catalog advertises Fast as its own default.
-- Composer-store tests prove a model change retains sticky reasoning/service selections and that an
-  explicit provider/model/options choice remains authoritative for later drafts.
-- Chromium coverage proves a no-preference Codex chat renders Sol/medium/Standard, while a subsequent
-  chat inherits an explicit high/Fast or Claude Opus selection.
-- Run `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test`; never run `bun test`.
-- Verification passed on 2026-07-17: the focused contract, Codex capability, and composer-store suites
-  passed 77 tests; the focused Chromium interaction passed and displayed GPT-5.6 Sol with
-  `Medium · Standard`; `bun fmt`, `bun lint` (existing warnings only), and all 12 typecheck packages
-  passed. The complete `bun run test --output-logs=errors-only` gate passed all 12 packages in 10m41s.
-
-### RELEASE-0.3.0-01
-
-- The initial v0.3.0 workflow passed preflight and all Linux x64, macOS arm64, and Windows x64 builds.
-  Publication failed before creating a release or tag because the third-party action queried
-  `refs/heads/main` as a release tag during workflow dispatch and received GitHub's 503 Unicorn page.
-- Focused publication tests cover explicit tag/SHA creation with generated notes, every required asset
-  class, retry-safe asset clobber and metadata reconciliation, and fail-closed handling for transient
-  lookup failures. All 4 tests pass.
-- Verification passed on 2026-07-17: `bun fmt`, `bun lint` (existing warnings only), all 12 typecheck
-  packages, and the complete socket-enabled `bun run test --output-logs=errors-only` gate passed all
-  12 packages in 10m41s. A sandboxed first attempt was discarded because the existing mock update
-  server tests could not bind a local port; the permitted rerun passed.
-- Corrected GitHub Actions workflow `29542547098` passed preflight, Linux x64, macOS arm64, Windows
-  x64, publication, and finalization. `v0.3.0` is public, non-draft, non-prerelease, targets verified
-  commit `d5d223a98`, and exposes uploaded DMG, ZIP, AppImage, EXE, blockmap, and updater-manifest
-  assets with GitHub-recorded SHA-256 digests. Finalization commit `d35ddad8f` set all release package
-  versions to `0.3.0` on `main`.
+# TESTS — Orchestrator Delegation and Project Context
+
+Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typecheck`, and
+`bun run test`. Never use `bun test`. User-visible changes must update `CHANGELOG.md` under
+`## Unreleased`.
+
+## Commit and Landing Lifecycle
+
+### State and replay
+
+- Decode and replay Change review, No changes needed, verified HEAD, and auto-archive events.
+- Rebuild projections from the append-only event log and compare them with live projections.
+- Restart during dirty detection, PM review, commit, discard, verification, no-change settlement, and
+  archival without duplicate transitions.
+- Reject stale/foreign command IDs and invalid terminal transitions.
+
+### Dirty work resolution
+
+- Work settlement with committed clean changes proceeds to verification eligibility.
+- Tracked changes, untracked files, deletions, renames, and mixed state enter Change review.
+- PM receives exactly one bounded status/diff notification and cannot start verification beforehand.
+- Inspect/commit/discard operations are limited to the named task worktree and selected paths/hunks.
+- Returning work reuses/steers the appropriate attempt; subsequent changes invalidate old verification.
+- Commit messages are descriptive and task-scoped; commits exclude unrelated selected-out changes.
+
+### Exact verification and landing
+
+- Verification stores the exact task HEAD and cannot succeed while the worktree is dirty.
+- A later commit, amend, discard that changes HEAD, or renewed work makes verification stale.
+- Landing requires current verified HEAD, a clean worktree, approval, and existing landing guards.
+- Failed/interrupted verification never qualifies; unrelated non-mutating activity does not invalidate it.
+
+### No-change and archive
+
+- Accepted zero-diff work becomes No changes needed without land approval, PR, or landing reactor.
+- Successful landed and no-change tasks leave the active board and appear in archived history.
+- Legacy landed-without-PR tasks migrate only when no durable PR-opening failure exists.
+- Genuine PR failures remain retryable; tasks with a PR remain landed history.
+- Reconciliation is append-only, idempotent, and safe when the worktree is already absent.
+
+## PM Direct Work
+
+- Codex PM startup/resume/turn parameters use workspace-write plus auto-review.
+- Denied/unresolved Codex escalation reaches the user; Claude/OpenCode preserve native full access.
+- PM policy selects direct work only for bounded low-risk edits and explains why.
+- Direct work may overlap dirty files, but the PM reviews the combined diff and commits only intended
+  hunks after proportional checks.
+- Direct commits appear in the PM transcript with command/check evidence and create no task/worktree/PR.
+- Migrations, public contracts, security-sensitive changes, broad edits, or uncertain work become tasks.
+
+## Capability Presets
+
+### Resolution
+
+- Global Cheap/Smart/Genius selections require harness, model, and valid provider options.
+- Project overrides inherit/reset independently; settings changes do not alter past attempts.
+- Stage attempts persist semantic role, chosen tier, and complete resolved selection.
+- Role prompt prefixes remain Plan/Work/Verify-specific.
+
+### Blocking migration
+
+- Legacy role selections are enumerated without guessing their tier.
+- Partial, invalid, or dismissed mappings do not complete migration.
+- Orchestrator list, project, task, PM, helper, and deep-link routes all show the same non-skippable
+  wizard until global and project mappings are valid.
+- Completion survives restart and removes obsolete model-by-role settings from current projections
+  without rewriting historical events.
+
+### PM routing
+
+- Simple planning stays in PM context and work receives its concrete plan.
+- Delegated planning defaults Genius; work and verify resolve Cheap or Smart based on PM judgment.
+- Explicit overrides win and are visible in the ledger.
+- Inadequate results can be retried one tier higher by the PM.
+- Quota, permission, environment, launcher, and network failures never auto-escalate.
+
+## Helper Runs
+
+- Helpers persist under a PM thread or task with stable identity and bounded results.
+- PM helpers use project root; task helpers use the task worktree; both are read-only.
+- Cheap is default, while Smart/Genius overrides resolve through project presets.
+- Results enter only the requesting PM/subsequent stage context and remain size/secret bounded.
+- Helpers support interruption, quota blocking, restart recovery, and terminal retention.
+- No helper creates a task, stage, worktree, gate, commit, PR, landing state, or board card.
+
+## Project Context and Skills
+
+### Skill behavior
+
+- Integrated grilling asks one decision at a time, recommends an answer, and discovers facts from the
+  environment instead of asking the user.
+- Resolved domain terms update root `CONTEXT.md` without implementation details.
+- ADRs are offered only for hard-to-reverse, surprising, trade-off decisions and use sparse numbering.
+- GED state moves clarify → plan → implement using the vendored skill workflow.
+
+### Context scanning and prompts
+
+- Classify missing files, empty bytes, whitespace, headings/comments-only templates, and substantive
+  files across `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, and `CONTEXT.md`.
+- Ignore `.gedcode/`, `.ged/work/root/*`, generated output, and secrets.
+- New/stub context prompts Populate; substantive context prompts Review.
+- Dismissal/completion deduplicates across Chat and Orchestrator.
+- Material file changes and schema-version upgrades re-prompt; ordinary project navigation does not.
+
+### Context runs and review
+
+- Preset cards show harness logo, preset name, model, and thinking; first use is Smart.
+- Selecting Cheap/Smart/Genius becomes the global future default without copying a concrete model outside
+  preset configuration.
+- Runs use the primary checkout and may create only canonical context files or warranted ADRs.
+- Resulting changes remain uncommitted until Commit; Revise runs another turn; Discard restores only
+  context-run changes.
+- Completion records new fingerprints and creates no task, stage, gate, worktree, or PR.
+
+## Launch Actions and Branches
+
+- PM editor action receives project root; every worker action receives its owned task worktree.
+- File-manager, terminal, configured editor, and alternate-editor operations validate canonical paths.
+- Arbitrary paths, stale/deleted worktrees, and foreign task IDs fail closed.
+- Remote/unsupported environments render a clear disabled reason rather than launching locally.
+- Branches normalize task type/title into `ged/<type>/<slug>`, respect Git ref/length rules, and resolve
+  collisions as `-2`, `-3`, etc. Concurrent creation cannot select the same branch.
+- Existing task branches remain unchanged.
+
+## End-to-End Scenarios
+
+1. Cheap work leaves uncommitted files → PM reviews and commits → Smart verification records current
+   HEAD → approval → land → PR → task auto-archives.
+2. Work leaves bad files → PM discards them → no commit relative to base → No changes needed → archive.
+3. Cheap work is inadequate → PM diagnoses → Smart retry in same task → review → fresh verification.
+4. PM receives a one-line low-risk request in a dirty checkout → edits overlapping file → reviews hunks
+   → focused check → direct commit with no task.
+5. Upgrade with legacy role models → deep-link to task → mandatory mapping wizard → configure global and
+   project presets → Orchestrator unlocks.
+6. New project with stub guidance → prompt in Chat → choose Smart → context run → Revise → Commit → PM
+   surface observes completion without a duplicate prompt.
+7. Worker header opens configured editor and terminal in its task worktree; PM header opens project root.
