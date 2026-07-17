@@ -21,6 +21,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type ServerSettings,
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
@@ -35,6 +36,7 @@ import {
   WsRpcGroup,
   EditorId,
 } from "@t3tools/contracts";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import * as Clock from "effect/Clock";
@@ -63,6 +65,28 @@ import * as Socket from "effect/unstable/socket/Socket";
 import { vi } from "vitest";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
+
+const TEST_CAPABILITY_PRESETS = {
+  cheap: {
+    instanceId: ProviderInstanceId.make("codex-cheap"),
+    model: "gpt-cheap",
+  },
+  smart: {
+    instanceId: ProviderInstanceId.make("codex-smart"),
+    model: "gpt-smart",
+  },
+  genius: {
+    instanceId: ProviderInstanceId.make("claude-genius"),
+    model: "opus",
+  },
+};
+const TEST_SERVER_SETTINGS = {
+  ...DEFAULT_SERVER_SETTINGS,
+  orchestratorDefaults: {
+    ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+    capabilityPresets: TEST_CAPABILITY_PRESETS,
+  },
+};
 
 import type { ServerConfigShape } from "./config.ts";
 import { deriveServerPaths, ServerConfig } from "./config.ts";
@@ -591,8 +615,8 @@ const buildAppUnderTest = (options?: {
         Layer.mock(ServerSettingsService)({
           start: Effect.void,
           ready: Effect.void,
-          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+          getSettings: Effect.succeed(TEST_SERVER_SETTINGS),
+          updateSettings: () => Effect.succeed(TEST_SERVER_SETTINGS),
           streamChanges: Stream.empty,
           ...options?.layers?.serverSettings,
         }),
@@ -2244,7 +2268,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(first.config.observability.otlpTracesEnabled, true);
         assert.equal(first.config.observability.otlpMetricsUrl, "http://localhost:4318/v1/metrics");
         assert.equal(first.config.observability.otlpMetricsEnabled, true);
-        assert.deepEqual(first.config.settings, DEFAULT_SERVER_SETTINGS);
+        assert.deepEqual(first.config.settings, TEST_SERVER_SETTINGS);
       }
       assert.deepEqual(second, {
         version: 1,
@@ -3341,6 +3365,76 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.deepEqual(replayResult, []);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("persists capability preset migration without settings bypass", () =>
+    Effect.gen(function* () {
+      let persistedSettings: ServerSettings = DEFAULT_SERVER_SETTINGS;
+      const dispatched: OrchestrationCommand[] = [];
+
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            getSettings: Effect.sync(() => persistedSettings),
+            updateSettings: (patch) =>
+              Effect.sync(() => {
+                persistedSettings = applyServerSettingsPatch(persistedSettings, patch);
+                return persistedSettings;
+              }),
+          },
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: dispatched.length };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const initial = yield* client[ORCHESTRATOR_WS_METHODS.getPresetMigration]({});
+            assert.equal(initial.status, "required");
+            assert.deepEqual(initial.projects, []);
+
+            assert.deepEqual(dispatched, []);
+
+            const settingsBypass = yield* client[WS_METHODS.serverUpdateSettings]({
+              patch: {
+                orchestratorDefaults: {
+                  ...DEFAULT_SERVER_SETTINGS.orchestratorDefaults,
+                  capabilityPresets: TEST_CAPABILITY_PRESETS,
+                },
+              },
+            }).pipe(Effect.result);
+            assert.equal(settingsBypass._tag, "Failure");
+            assert.equal(persistedSettings.orchestratorDefaults.capabilityPresets, null);
+
+            const completed = yield* client[ORCHESTRATOR_WS_METHODS.completePresetMigration]({
+              globalPresets: TEST_CAPABILITY_PRESETS,
+              projects: [],
+            });
+            assert.equal(completed.status, "completed");
+            assert.deepEqual(
+              persistedSettings.orchestratorDefaults.capabilityPresets,
+              TEST_CAPABILITY_PRESETS,
+            );
+
+            const afterRestartInspection = yield* client[
+              ORCHESTRATOR_WS_METHODS.getPresetMigration
+            ]({});
+            assert.equal(afterRestartInspection.status, "completed");
+            const nowAllowed = yield* client[ORCHESTRATOR_WS_METHODS.listArchivedTasks]({
+              projectId: ProjectId.make("project-allowed"),
+            });
+            assert.deepEqual(nowAllowed, []);
+          }),
+        ),
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

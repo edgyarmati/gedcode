@@ -459,6 +459,24 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorGetPresetMigrationRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.getPresetMigration,
+  {
+    payload: OrchestratorRpcSchemas.getPresetMigration.input,
+    success: OrchestratorRpcSchemas.getPresetMigration.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCompletePresetMigrationRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.completePresetMigration,
+  {
+    payload: OrchestratorRpcSchemas.completePresetMigration.input,
+    success: OrchestratorRpcSchemas.completePresetMigration.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorSendMessageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.sendMessage, {
   payload: OrchestratorRpcSchemas.sendMessage.input,
   success: OrchestratorRpcSchemas.sendMessage.output,
@@ -677,6 +695,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestratorGetPresetMigrationRpc,
+  WsOrchestratorCompletePresetMigrationRpc,
   WsOrchestratorSendMessageRpc,
   WsOrchestratorSubscribeProjectRpc,
   WsOrchestratorSubscribeTaskRpc,

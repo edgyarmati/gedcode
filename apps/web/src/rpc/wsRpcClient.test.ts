@@ -116,7 +116,22 @@ describe("wsRpcClient", () => {
     const taskId = TaskId.make("task-1");
     const stageThreadId = ThreadId.make("stage-thread-1");
     const gateId = GateId.make("gate-1");
+    const globalPresets = {
+      cheap: { instanceId: ProviderInstanceId.make("codex-cheap"), model: "gpt-cheap" },
+      smart: { instanceId: ProviderInstanceId.make("codex-smart"), model: "gpt-smart" },
+      genius: { instanceId: ProviderInstanceId.make("claude-genius"), model: "opus" },
+    };
+    const migration = {
+      status: "required" as const,
+      legacyGlobalSelection: null,
+      projects: [],
+    };
     const protocolClient = {
+      [ORCHESTRATOR_WS_METHODS.getPresetMigration]: vi.fn(() => migration),
+      [ORCHESTRATOR_WS_METHODS.completePresetMigration]: vi.fn(() => ({
+        ...migration,
+        status: "completed" as const,
+      })),
       [ORCHESTRATOR_WS_METHODS.sendMessage]: vi.fn(() => ({ accepted: true })),
       [ORCHESTRATOR_WS_METHODS.subscribeProject]: vi.fn(() => "project-stream"),
       [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
@@ -170,6 +185,11 @@ describe("wsRpcClient", () => {
     const taskListener = vi.fn();
     const onResubscribe = vi.fn();
 
+    await expect(client.orchestrator.getPresetMigration()).resolves.toEqual(migration);
+    await expect(
+      client.orchestrator.completePresetMigration({ globalPresets, projects: [] }),
+    ).resolves.toEqual({ ...migration, status: "completed" });
+
     await expect(
       client.orchestrator.sendMessage({ projectId, message: "Build it" }),
     ).resolves.toEqual({ accepted: true });
@@ -220,6 +240,11 @@ describe("wsRpcClient", () => {
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
       projectId,
       message: "Build it",
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.getPresetMigration]).toHaveBeenCalledWith({});
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.completePresetMigration]).toHaveBeenCalledWith({
+      globalPresets,
+      projects: [],
     });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.subscribeProject]).toHaveBeenCalledWith({
       projectId,

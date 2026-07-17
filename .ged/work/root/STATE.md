@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-TIER-02`
+- **Active task**: `ORCH-TIER-03`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -112,6 +112,16 @@
   SQL migration, projection replay, and PM ledger suites passed (253 tests); `bun fmt`, `bun lint`, and
   all 12 typecheck packages passed. Full `bun run test` passed all 12 packages (server 184/184 files,
   1,516 passed and 1 skipped).
+- `ORCH-TIER-02` completed 2026-07-18. Legacy installs now expose a durable required/completed preset
+  migration state, including the global worker selection and every live project's legacy role
+  selections. Completion requires one exact project decision per enumerated project, persists project
+  overrides before the complete global Cheap/Smart/Genius map, and clears the retired global worker
+  default. All Orchestrator RPCs except inspection/completion are gated while required, and the generic
+  settings endpoint cannot install presets to bypass the migration flow.
+- Verification evidence for `ORCH-TIER-02`: migration state/validation, web RPC forwarding, settings
+  bypass, completion persistence, and ordinary post-migration Orchestrator route tests passed;
+  `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test` passed all 12
+  packages (server 185/185 files, 1,520 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

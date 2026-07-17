@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Upgrades from role-based Orchestrator worker settings now enter a durable, mandatory capability
+  preset migration before any Orchestrator operation can run. The migration enumerates every live
+  project's legacy selections, requires an exact manual Cheap/Smart/Genius mapping, rejects partial
+  or generic-settings bypasses, and restores access only after project decisions and the global
+  completion marker have been persisted.
+
 - Added the schema and runtime foundation for Cheap, Smart, and Genius Orchestrator capability
   presets. Global configuration now accepts only a complete three-preset map, projects can override
   presets independently, and tier-backed stage attempts permanently record the chosen tier plus the

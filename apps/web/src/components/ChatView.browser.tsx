@@ -240,6 +240,12 @@ function createMockEnvironmentApi(input: {
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
     orchestrator: {
+      getPresetMigration: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["getPresetMigration"],
+      completePresetMigration: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["completePresetMigration"],
       sendMessage: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["sendMessage"],

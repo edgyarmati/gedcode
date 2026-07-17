@@ -66,6 +66,20 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages; server 183/183 files, 1,504 passed and 1 skipped.
 
+### ORCH-TIER-02 — 2026-07-18
+
+- Focused: migration state and exact-decision validation (3 tests), web RPC/environment forwarding
+  (20 tests), settings-bypass persistence, and ordinary post-migration Orchestrator websocket routes
+  passed.
+- Manual review: only live projects with legacy role selections are enumerated; duplicate, missing,
+  and unknown project decisions fail closed; project overrides persist before the global completion
+  marker; generic settings writes cannot install the marker; repeated inspection reads the persisted
+  completed state; all non-migration `orchestrator.*` RPCs share the server gate.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 185/185 files, 1,520 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

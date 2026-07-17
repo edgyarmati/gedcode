@@ -110,6 +110,8 @@ const rpcClientMock = {
     subscribeThread: vi.fn(() => () => undefined),
   },
   orchestrator: {
+    getPresetMigration: vi.fn(),
+    completePresetMigration: vi.fn(),
     sendMessage: vi.fn(),
     subscribeProject: vi.fn(
       (input: { projectId: ProjectId }, listener: (event: OrchestratorProjectStreamItem) => void) =>
@@ -479,6 +481,21 @@ describe("wsApi", () => {
   });
 
   it("forwards orchestrator requests and subscriptions to the RPC client", async () => {
+    const globalPresets = {
+      cheap: { instanceId: ProviderInstanceId.make("codex-cheap"), model: "gpt-cheap" },
+      smart: { instanceId: ProviderInstanceId.make("codex-smart"), model: "gpt-smart" },
+      genius: { instanceId: ProviderInstanceId.make("claude-genius"), model: "opus" },
+    };
+    const migration = {
+      status: "required" as const,
+      legacyGlobalSelection: null,
+      projects: [],
+    };
+    rpcClientMock.orchestrator.getPresetMigration.mockResolvedValue(migration);
+    rpcClientMock.orchestrator.completePresetMigration.mockResolvedValue({
+      ...migration,
+      status: "completed",
+    });
     rpcClientMock.orchestrator.sendMessage.mockResolvedValue({ accepted: true });
     rpcClientMock.orchestrator.resolveGate.mockResolvedValue({ sequence: 42 });
     rpcClientMock.orchestrator.setTaskRoleSelections.mockResolvedValue({ sequence: 43 });
@@ -507,6 +524,11 @@ describe("wsApi", () => {
     const onProjectEvent = vi.fn();
     const onTaskEvent = vi.fn();
     const onResubscribe = vi.fn();
+
+    await expect(api.orchestrator.getPresetMigration()).resolves.toEqual(migration);
+    await expect(
+      api.orchestrator.completePresetMigration({ globalPresets, projects: [] }),
+    ).resolves.toEqual({ ...migration, status: "completed" });
 
     await expect(api.orchestrator.sendMessage({ projectId, message: "Build it" })).resolves.toEqual(
       { accepted: true },
@@ -555,6 +577,11 @@ describe("wsApi", () => {
     expect(rpcClientMock.orchestrator.sendMessage).toHaveBeenCalledWith({
       projectId,
       message: "Build it",
+    });
+    expect(rpcClientMock.orchestrator.getPresetMigration).toHaveBeenCalledWith();
+    expect(rpcClientMock.orchestrator.completePresetMigration).toHaveBeenCalledWith({
+      globalPresets,
+      projects: [],
     });
     expect(rpcClientMock.orchestrator.subscribeProject).toHaveBeenCalledWith(
       { projectId },

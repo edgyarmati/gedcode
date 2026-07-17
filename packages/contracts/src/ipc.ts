@@ -64,6 +64,8 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
   OrchestratorCancelTaskInput,
+  OrchestratorCompletePresetMigrationInput,
+  OrchestratorPresetMigrationState,
   OrchestratorInterruptStageInput,
   OrchestratorInterruptStageResult,
   OrchestratorInspectTaskChangesInput,
@@ -598,6 +600,10 @@ export interface EnvironmentApi {
     ) => () => void;
   };
   orchestrator: {
+    getPresetMigration: () => Promise<OrchestratorPresetMigrationState>;
+    completePresetMigration: (
+      input: OrchestratorCompletePresetMigrationInput,
+    ) => Promise<OrchestratorPresetMigrationState>;
     sendMessage: (input: OrchestratorSendMessageInput) => Promise<OrchestratorSendMessageResult>;
     subscribeProject: (
       input: OrchestratorSubscribeProjectInput,

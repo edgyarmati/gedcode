@@ -1,62 +1,24 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { PositiveInt, TrimmedNonEmptyString } from "../baseSchemas.ts";
 import {
   ModelSelection,
-  ORCHESTRATION_CAPABILITY_TIERS,
   ORCHESTRATION_STAGE_ROLES,
+  OrchestrationCapabilityPresetOverrides,
+  OrchestrationCapabilityPresets,
   OrchestrationCapabilityTier,
   OrchestrationStageRole,
 } from "../orchestration.ts";
 
-const CAPABILITY_TIER_SET = new Set<string>(ORCHESTRATION_CAPABILITY_TIERS);
-
-const CapabilityPresetSource = Schema.Record(Schema.String, ModelSelection);
-const CompleteCapabilityPresetMap = Schema.Struct({
-  cheap: ModelSelection,
-  smart: ModelSelection,
-  genius: ModelSelection,
-});
-const CapabilityPresetOverrideMap = Schema.Struct({
-  cheap: Schema.optionalKey(ModelSelection),
-  smart: Schema.optionalKey(ModelSelection),
-  genius: Schema.optionalKey(ModelSelection),
-});
-
-const makeCapabilityPresetMap = <Target extends Schema.Top>(target: Target) => {
-  return CapabilityPresetSource.pipe(
-    Schema.decodeTo(
-      target,
-      SchemaTransformation.transformOrFail({
-        decode: (value: Record<string, unknown>) => {
-          const unknownKeys = Object.keys(value).filter((key) => !CAPABILITY_TIER_SET.has(key));
-          if (unknownKeys.length > 0) {
-            return Effect.fail(
-              new SchemaIssue.InvalidValue(Option.some(unknownKeys.join(", ")), {
-                message: `Unknown capability preset key(s): ${unknownKeys.join(", ")}`,
-              }),
-            );
-          }
-          return Effect.succeed(value as typeof target.Encoded);
-        },
-        encode: (value) => Effect.succeed(value as typeof CapabilityPresetSource.Type),
-      }) as never,
-    ),
-  );
-};
-
 /** All three global presets are atomic: partial maps are invalid. */
-export const OrchestratorCapabilityPresets = makeCapabilityPresetMap(CompleteCapabilityPresetMap);
+export const OrchestratorCapabilityPresets = OrchestrationCapabilityPresets;
 export type OrchestratorCapabilityPresets = typeof OrchestratorCapabilityPresets.Type;
 
 /** Projects may override any independent preset and inherit the rest globally. */
-export const OrchestratorCapabilityPresetOverrides = makeCapabilityPresetMap(
-  CapabilityPresetOverrideMap,
-).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export const OrchestratorCapabilityPresetOverrides = OrchestrationCapabilityPresetOverrides;
 export type OrchestratorCapabilityPresetOverrides =
   typeof OrchestratorCapabilityPresetOverrides.Type;
 

@@ -156,6 +156,12 @@ export interface WsRpcClient {
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
   };
   readonly orchestrator: {
+    readonly getPresetMigration: RpcUnaryNoArgMethod<
+      typeof ORCHESTRATOR_WS_METHODS.getPresetMigration
+    >;
+    readonly completePresetMigration: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.completePresetMigration
+    >;
     readonly sendMessage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.sendMessage>;
     readonly subscribeProject: RpcInputStreamMethod<
       typeof ORCHESTRATOR_WS_METHODS.subscribeProject
@@ -351,6 +357,12 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
     },
     orchestrator: {
+      getPresetMigration: () =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.getPresetMigration]({})),
+      completePresetMigration: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.completePresetMigration](input),
+        ),
       sendMessage: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.sendMessage](input)),
       subscribeProject: (input, listener, options) =>

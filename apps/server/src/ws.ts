@@ -36,6 +36,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  ServerSettingsError,
   OrchestrationReplayEventsError,
   FilesystemBrowseError,
   ProjectId,
@@ -74,10 +75,15 @@ import {
   returnOrchestratorTaskChanges,
 } from "./orchestration/taskChangeReviewActions.ts";
 import {
-  observeRpcEffect,
+  observeRpcEffect as observeRpcEffectBase,
   observeRpcStream,
-  observeRpcStreamEffect,
+  observeRpcStreamEffect as observeRpcStreamEffectBase,
 } from "./observability/RpcInstrumentation.ts";
+import {
+  buildOrchestratorPresetMigrationState,
+  configuredOrchestratorDefaults,
+  validateOrchestratorPresetMigrationCompletion,
+} from "./orchestration/orchestratorPresetMigration.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
 import { ProviderService } from "./provider/Services/ProviderService.ts";
 import { ProviderQuotaStatusRepository } from "./persistence/Services/ProviderQuotaStatus.ts";
@@ -279,6 +285,11 @@ function toAuthAccessStreamEvent(
   }
 }
 
+const shouldGuardOrchestratorMethod = (method: string) =>
+  method.startsWith("orchestrator.") &&
+  method !== ORCHESTRATOR_WS_METHODS.getPresetMigration &&
+  method !== ORCHESTRATOR_WS_METHODS.completePresetMigration;
+
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -301,6 +312,50 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
       const serverSettings = yield* ServerSettingsService;
+      const requireCompletedPresetMigration = serverSettings.getSettings.pipe(
+        Effect.flatMap((settings) =>
+          settings.orchestratorDefaults.capabilityPresets === null
+            ? Effect.fail(
+                new OrchestrationDispatchCommandError({
+                  message:
+                    "Orchestrator capability preset migration is required before this operation.",
+                }),
+              )
+            : Effect.void,
+        ),
+        // The migration gate spans RPCs with different declared error schemas.
+        // Treat bypass attempts as protocol defects so the guard cannot widen
+        // each method's public error channel while still closing the request.
+        Effect.orDie,
+      );
+      const observeRpcEffect = <A, E, R>(
+        method: string,
+        effect: Effect.Effect<A, E, R>,
+        traceAttributes?: Readonly<Record<string, unknown>>,
+      ) =>
+        observeRpcEffectBase(
+          method,
+          shouldGuardOrchestratorMethod(method)
+            ? requireCompletedPresetMigration.pipe(Effect.andThen(effect))
+            : effect,
+          traceAttributes,
+        );
+      const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
+        method: string,
+        effect: Effect.Effect<
+          Stream.Stream<A, StreamError, StreamContext>,
+          EffectError,
+          EffectContext
+        >,
+        traceAttributes?: Readonly<Record<string, unknown>>,
+      ) =>
+        observeRpcStreamEffectBase(
+          method,
+          shouldGuardOrchestratorMethod(method)
+            ? requireCompletedPresetMigration.pipe(Effect.andThen(effect))
+            : effect,
+          traceAttributes,
+        );
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
@@ -903,6 +958,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ORCHESTRATION_WS_METHODS.dispatchCommand,
             Effect.gen(function* () {
               const normalizedCommand = yield* normalizeDispatchCommand(command);
+              if (normalizedCommand.type.startsWith("task.")) {
+                yield* requireCompletedPresetMigration;
+              }
               const shouldStopSessionAfterArchive =
                 normalizedCommand.type === "thread.archive"
                   ? yield* projectionSnapshotQuery
@@ -1196,6 +1254,92 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               );
             }),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.getPresetMigration]: (_input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.getPresetMigration,
+            Effect.all({
+              settings: serverSettings.getSettings,
+              readModel: projectionSnapshotQuery.getCommandReadModel(),
+            }).pipe(
+              Effect.map(buildOrchestratorPresetMigrationState),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to inspect capability preset migration."),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.completePresetMigration]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.completePresetMigration,
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings;
+              const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+              const state = buildOrchestratorPresetMigrationState({ settings, readModel });
+              if (state.status === "completed") {
+                return state;
+              }
+              const decisions = yield* Effect.try({
+                try: () =>
+                  validateOrchestratorPresetMigrationCompletion({
+                    state,
+                    completion: input,
+                  }),
+                catch: (cause) =>
+                  new OrchestrationDispatchCommandError({
+                    message:
+                      cause instanceof Error
+                        ? cause.message
+                        : "Invalid capability preset migration decisions.",
+                    cause,
+                  }),
+              });
+
+              yield* Effect.forEach(
+                state.projects,
+                (legacyProject) =>
+                  Effect.gen(function* () {
+                    const project = readModel.projects.find(
+                      (candidate) => candidate.id === legacyProject.projectId,
+                    );
+                    if (project === undefined) {
+                      return yield* new OrchestrationDispatchCommandError({
+                        message: `Project '${legacyProject.projectId}' disappeared during preset migration.`,
+                      });
+                    }
+                    const commandId = yield* serverCommandId(
+                      "orchestrator-complete-preset-migration-project",
+                    );
+                    yield* dispatchNormalizedCommand({
+                      type: "project.meta.update",
+                      commandId,
+                      projectId: project.id,
+                      orchestratorConfig: {
+                        ...project.orchestratorConfig,
+                        capabilityPresets: decisions.get(String(project.id)) ?? {},
+                      },
+                    });
+                  }),
+                { concurrency: 1, discard: true },
+              );
+
+              const completedSettings = yield* serverSettings.updateSettings({
+                orchestratorDefaults: configuredOrchestratorDefaults({
+                  settings,
+                  globalPresets: input.globalPresets,
+                }),
+              });
+              const completedReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
+              return buildOrchestratorPresetMigrationState({
+                settings: completedSettings,
+                readModel: completedReadModel,
+              });
+            }).pipe(
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to complete capability preset migration."),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
           ),
         [ORCHESTRATOR_WS_METHODS.sendMessage]: (input) =>
           observeRpcEffect(
@@ -1781,7 +1925,23 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
-            serverSettings.updateSettings(patch).pipe(Effect.map(redactServerSettingsForClient)),
+            Effect.gen(function* () {
+              const current = yield* serverSettings.getSettings;
+              if (
+                current.orchestratorDefaults.capabilityPresets === null &&
+                patch.orchestratorDefaults?.capabilityPresets !== null &&
+                patch.orchestratorDefaults?.capabilityPresets !== undefined
+              ) {
+                return yield* new ServerSettingsError({
+                  settingsPath: "orchestratorDefaults.capabilityPresets",
+                  detail:
+                    "Complete capability preset migration through the Orchestrator migration flow.",
+                });
+              }
+              return yield* serverSettings
+                .updateSettings(patch)
+                .pipe(Effect.map(redactServerSettingsForClient));
+            }),
             {
               "rpc.aggregate": "server",
             },

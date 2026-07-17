@@ -37,6 +37,8 @@ export const ORCHESTRATION_WS_METHODS = {
 } as const;
 
 export const ORCHESTRATOR_WS_METHODS = {
+  getPresetMigration: "orchestrator.getPresetMigration",
+  completePresetMigration: "orchestrator.completePresetMigration",
   sendMessage: "orchestrator.sendMessage",
   subscribeProject: "orchestrator.subscribeProject",
   subscribeTask: "orchestrator.subscribeTask",
@@ -160,6 +162,50 @@ export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
 export const ORCHESTRATION_CAPABILITY_TIERS = ["cheap", "smart", "genius"] as const;
 export const OrchestrationCapabilityTier = Schema.Literals(ORCHESTRATION_CAPABILITY_TIERS);
 export type OrchestrationCapabilityTier = typeof OrchestrationCapabilityTier.Type;
+
+const ORCHESTRATION_CAPABILITY_TIER_SET = new Set<string>(ORCHESTRATION_CAPABILITY_TIERS);
+const CapabilityPresetSource = Schema.Record(Schema.String, ModelSelection);
+const CompleteCapabilityPresetMap = Schema.Struct({
+  cheap: ModelSelection,
+  smart: ModelSelection,
+  genius: ModelSelection,
+});
+const CapabilityPresetOverrideMap = Schema.Struct({
+  cheap: Schema.optionalKey(ModelSelection),
+  smart: Schema.optionalKey(ModelSelection),
+  genius: Schema.optionalKey(ModelSelection),
+});
+
+const makeCapabilityPresetMap = <Target extends Schema.Top>(target: Target) =>
+  CapabilityPresetSource.pipe(
+    Schema.decodeTo(
+      target,
+      SchemaTransformation.transformOrFail({
+        decode: (value: Record<string, unknown>) => {
+          const unknownKeys = Object.keys(value).filter(
+            (key) => !ORCHESTRATION_CAPABILITY_TIER_SET.has(key),
+          );
+          if (unknownKeys.length > 0) {
+            return Effect.fail(
+              new SchemaIssue.InvalidValue(Option.some(unknownKeys.join(", ")), {
+                message: `Unknown capability preset key(s): ${unknownKeys.join(", ")}`,
+              }),
+            );
+          }
+          return Effect.succeed(value as typeof target.Encoded);
+        },
+        encode: (value) => Effect.succeed(value as typeof CapabilityPresetSource.Type),
+      }) as never,
+    ),
+  );
+
+export const OrchestrationCapabilityPresets = makeCapabilityPresetMap(CompleteCapabilityPresetMap);
+export type OrchestrationCapabilityPresets = typeof OrchestrationCapabilityPresets.Type;
+export const OrchestrationCapabilityPresetOverrides = makeCapabilityPresetMap(
+  CapabilityPresetOverrideMap,
+).pipe(Schema.withDecodingDefault(Effect.succeed({})));
+export type OrchestrationCapabilityPresetOverrides =
+  typeof OrchestrationCapabilityPresetOverrides.Type;
 
 const ORCHESTRATION_STAGE_ROLE_SET = new Set<string>(ORCHESTRATION_STAGE_ROLES);
 
@@ -2382,6 +2428,32 @@ export const OrchestratorSendMessageResult = Schema.Struct({
 });
 export type OrchestratorSendMessageResult = typeof OrchestratorSendMessageResult.Type;
 
+export const OrchestratorPresetMigrationProject = Schema.Struct({
+  projectId: ProjectId,
+  title: TrimmedNonEmptyString,
+  roleModelSelections: GedRoleModelSelections,
+});
+export type OrchestratorPresetMigrationProject = typeof OrchestratorPresetMigrationProject.Type;
+
+export const OrchestratorPresetMigrationState = Schema.Struct({
+  status: Schema.Literals(["required", "completed"]),
+  legacyGlobalSelection: Schema.NullOr(ModelSelection),
+  projects: Schema.Array(OrchestratorPresetMigrationProject),
+});
+export type OrchestratorPresetMigrationState = typeof OrchestratorPresetMigrationState.Type;
+
+export const OrchestratorCompletePresetMigrationInput = Schema.Struct({
+  globalPresets: OrchestrationCapabilityPresets,
+  projects: Schema.Array(
+    Schema.Struct({
+      projectId: ProjectId,
+      capabilityPresets: OrchestrationCapabilityPresetOverrides,
+    }),
+  ),
+});
+export type OrchestratorCompletePresetMigrationInput =
+  typeof OrchestratorCompletePresetMigrationInput.Type;
+
 export const OrchestratorSubscribeProjectInput = Schema.Struct({
   projectId: ProjectId,
 });
@@ -2737,6 +2809,14 @@ export const OrchestrationRpcSchemas = {
 } as const;
 
 export const OrchestratorRpcSchemas = {
+  getPresetMigration: {
+    input: Schema.Struct({}),
+    output: OrchestratorPresetMigrationState,
+  },
+  completePresetMigration: {
+    input: OrchestratorCompletePresetMigrationInput,
+    output: OrchestratorPresetMigrationState,
+  },
   sendMessage: {
     input: OrchestratorSendMessageInput,
     output: OrchestratorSendMessageResult,

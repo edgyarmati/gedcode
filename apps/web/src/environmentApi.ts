@@ -55,6 +55,8 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
         rpcClient.orchestration.subscribeThread(input, callback, options),
     },
     orchestrator: {
+      getPresetMigration: rpcClient.orchestrator.getPresetMigration,
+      completePresetMigration: rpcClient.orchestrator.completePresetMigration,
       sendMessage: rpcClient.orchestrator.sendMessage,
       subscribeProject: (input, callback, options) =>
         rpcClient.orchestrator.subscribeProject(input, callback, options),
