@@ -122,6 +122,7 @@ type SettlementEvent = Extract<
   {
     type:
       | "task.stage-completed"
+      | "task.change-review-requested"
       | "task.stage-blocked"
       | "task.stage-interrupted"
       | "task.gate-resolved"
@@ -360,7 +361,9 @@ const isApprovalRequestEvent = (
   event.type === "thread.activity-appended" && event.payload.activity.kind === "approval.requested";
 
 const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent =>
-  event.type === "task.stage-completed" ||
+  (event.type === "task.stage-completed" &&
+    !(event.payload.role === "work" && event.payload.worktreeCompletion?.dirty === true)) ||
+  event.type === "task.change-review-requested" ||
   event.type === "task.stage-blocked" ||
   event.type === "task.stage-interrupted" ||
   event.type === "task.gate-resolved" ||
@@ -379,19 +382,24 @@ const quotaBlockedStageSettlementKey = (stageThreadId: ThreadId): string =>
 const interruptedStageSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::interrupted`;
 
+const changeReviewSettlementKey = (stageThreadId: ThreadId): string =>
+  `${stageThreadId}::change-review`;
+
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
     ? makeStageSettlementKey({
         stageThreadId: event.payload.stageThreadId,
         awaitedTurnId: event.payload.awaitedTurnId,
       })
-    : event.type === "task.stage-blocked"
-      ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
-      : event.type === "task.stage-interrupted"
-        ? interruptedStageSettlementKey(event.payload.stageThreadId)
-        : event.type === "task.gate-resolved"
-          ? makeGateSettlementKey(event.payload.gateId)
-          : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
+    : event.type === "task.change-review-requested"
+      ? changeReviewSettlementKey(event.payload.workStageThreadId)
+      : event.type === "task.stage-blocked"
+        ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
+        : event.type === "task.stage-interrupted"
+          ? interruptedStageSettlementKey(event.payload.stageThreadId)
+          : event.type === "task.gate-resolved"
+            ? makeGateSettlementKey(event.payload.gateId)
+            : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
 
 const approvalRequestIdFromEvent = (
   event: Extract<SettlementEvent, { type: "thread.activity-appended" }>,
@@ -866,6 +874,21 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             awaitedTurnId: event.payload.awaitedTurnId,
           }),
           message: withLastActionCursor(serializeStageResultToMessage(stageResult), event),
+        } satisfies SettlementEnvelope;
+      }
+
+      if (event.type === "task.change-review-requested") {
+        const message = [
+          `Work for task "${resolved.task.title}" (${resolved.task.id}) settled with tracked or untracked changes still present.`,
+          `Work stage: ${event.payload.workStageThreadId}. Detected HEAD: ${event.payload.detectedHead}.`,
+          "Review the task worktree changes before verification. Commit the intended changes, return the work to the worker, or discard only changes that are not part of the task. Verification is blocked until this review is resolved.",
+        ].join("\n");
+        return {
+          event,
+          ...resolved,
+          kind: "stage" as const,
+          settlementKey: changeReviewSettlementKey(event.payload.workStageThreadId),
+          message: withLastActionCursor(message, event),
         } satisfies SettlementEnvelope;
       }
 

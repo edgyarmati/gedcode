@@ -305,13 +305,17 @@ function completeStage(input: {
   readonly harness: OrchestrationIntegrationHarness;
   readonly expectedStatus?: OrchestrationTask["status"];
 }): Effect.Effect<OrchestrationTask, never> {
-  return waitForTask(
-    input.harness,
-    (task) =>
-      task.currentStageThreadId === null &&
-      (input.expectedStatus === undefined || task.status === input.expectedStatus),
-    "task after stage completion",
-  );
+  return Effect.gen(function* () {
+    const task = yield* waitForTask(
+      input.harness,
+      (entry) => entry.currentStageThreadId === null,
+      "task after stage completion",
+    );
+    if (input.expectedStatus !== undefined) {
+      assert.equal(task.status, input.expectedStatus);
+    }
+    return task;
+  });
 }
 
 function seedPhase4ProjectAndTask(

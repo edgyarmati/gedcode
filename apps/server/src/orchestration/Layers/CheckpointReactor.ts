@@ -34,12 +34,14 @@ import type { CheckpointStoreError } from "../../checkpointing/Errors.ts";
 import type { OrchestrationDispatchError } from "../Errors.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
+import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import { WorkspaceEntries } from "../../workspace/Services/WorkspaceEntries.ts";
 import {
   activeStageRoleForTaskStatus,
   findTaskForStageThread,
   stageCompleteCommandId,
 } from "../stageResolution.ts";
+import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -90,6 +92,7 @@ const make = Effect.gen(function* () {
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
+  const vcsProcess = yield* VcsProcess;
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -239,6 +242,25 @@ const make = Effect.gen(function* () {
     if (role === null || !sameId(task.currentStageThreadId, input.threadId)) {
       return;
     }
+    const worktreeInspection =
+      role === "work" && task.worktreePath !== null
+        ? yield* Effect.exit(
+            inspectTaskWorktreeCompletion({
+              worktreePath: task.worktreePath,
+              process: vcsProcess,
+            }),
+          )
+        : null;
+    if (worktreeInspection?._tag === "Failure") {
+      yield* Effect.logWarning("could not inspect task worktree before stage completion", {
+        taskId: task.id,
+        stageThreadId: input.threadId,
+        worktreePath: task.worktreePath,
+        cause: Cause.pretty(worktreeInspection.cause),
+      });
+      return;
+    }
+    const worktreeCompletion = worktreeInspection?.value;
     yield* orchestrationEngine.dispatch({
       type: "task.stage.complete",
       commandId: stageCompleteCommandId(input.threadId, input.turnId),
@@ -246,6 +268,7 @@ const make = Effect.gen(function* () {
       role,
       stageThreadId: input.threadId,
       awaitedTurnId: input.turnId,
+      ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
       createdAt: input.createdAt,
     });
   });

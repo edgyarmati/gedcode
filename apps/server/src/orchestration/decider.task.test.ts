@@ -1095,6 +1095,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           role: "work",
           stageThreadId: firstStageThreadId,
           awaitedTurnId: null,
+          worktreeCompletion: { head: "abc123", dirty: false },
           createdAt: now,
         },
       });
@@ -1669,6 +1670,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           role: "work",
           stageThreadId: asThreadId("thread-stage-work"),
           awaitedTurnId: asTurnId("turn-work"),
+          worktreeCompletion: { head: "abc123", dirty: false },
           createdAt: now,
         },
       });
@@ -1702,6 +1704,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           stageThreadId: asThreadId("thread-stage-work"),
           awaitedTurnId: asTurnId("turn-work"),
           diffComplete: false,
+          worktreeCompletion: { head: "abc123", dirty: false },
           createdAt: now,
         },
       });
@@ -1709,6 +1712,57 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const singleEvent = Array.isArray(event) ? event[0] : event;
       expect(singleEvent?.type).toBe("task.stage-completed");
       expect(singleEvent?.payload).toMatchObject({ diffComplete: false });
+    }),
+  );
+
+  it.effect("atomically parks dirty completed work in change review and blocks verification", () =>
+    Effect.gen(function* () {
+      const stageThreadId = asThreadId("thread-stage-dirty-work");
+      const readModel = yield* taskReadModel({
+        status: "working",
+        currentStageThreadId: stageThreadId,
+        stageThreadIds: [stageThreadId],
+      });
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.complete",
+          commandId: asCommandId("cmd-stage-complete-dirty"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          stageThreadId,
+          awaitedTurnId: asTurnId("turn-dirty-work"),
+          worktreeCompletion: { head: "abc123", dirty: true },
+          createdAt: now,
+        },
+      });
+      const events = toEvents(result);
+      expect(events.map((event) => event.type)).toEqual([
+        "task.stage-completed",
+        "task.change-review-requested",
+      ]);
+      const pending = yield* applyEvents(readModel, events);
+      expect(pending.tasks[0]?.status).toBe("change-review");
+      expect(pending.tasks[0]?.changeReview).toMatchObject({
+        status: "pending",
+        workStageThreadId: stageThreadId,
+        detectedHead: "abc123",
+      });
+
+      const verify = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: pending,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-verify-dirty-work"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            instructions: "Verify the task.",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(verify._tag).toBe("Failure");
     }),
   );
 
@@ -1729,6 +1783,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           role: "work",
           stageThreadId: asThreadId("thread-stage-work"),
           awaitedTurnId: asTurnId("turn-work"),
+          worktreeCompletion: { head: "abc123", dirty: false },
           createdAt: now,
         },
       });
@@ -1757,6 +1812,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             role: "work",
             stageThreadId: asThreadId("thread-stage-old"),
             awaitedTurnId: asTurnId("turn-old"),
+            worktreeCompletion: { head: "abc123", dirty: false },
             createdAt: now,
           },
         }),

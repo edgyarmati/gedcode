@@ -548,6 +548,12 @@ export const OrchestrationTaskNoChangesNeeded = Schema.Struct({
 });
 export type OrchestrationTaskNoChangesNeeded = typeof OrchestrationTaskNoChangesNeeded.Type;
 
+export const OrchestrationTaskWorktreeCompletion = Schema.Struct({
+  head: TrimmedNonEmptyString,
+  dirty: Schema.Boolean,
+});
+export type OrchestrationTaskWorktreeCompletion = typeof OrchestrationTaskWorktreeCompletion.Type;
+
 export const OrchestrationTaskCancellationShutdownPhase = Schema.Literals([
   "interrupt-turn",
   "stop-session",
@@ -1187,6 +1193,7 @@ const TaskStageCompleteCommand = Schema.Struct({
   // `false` = fail-loud completion via the diff-wait timeout (no confirmed diff).
   // Set by the orchestration runtime (apps/server); contracts stays schema-only.
   diffComplete: Schema.optional(Schema.Boolean),
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1895,6 +1902,7 @@ export const TaskStageCompletedPayload = Schema.Struct({
   // present at completion; `false` = completed via the fail-loud diff-wait
   // timeout. Optional so existing consumers and on-disk events are unaffected.
   diffComplete: Schema.optional(Schema.Boolean),
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   updatedAt: IsoDateTime,
 });
 

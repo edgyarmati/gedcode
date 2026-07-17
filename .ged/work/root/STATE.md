@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-02`
+- **Active task**: `ORCH-WORK-03`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -44,6 +44,14 @@
 - Verification evidence for `ORCH-WORK-01`: focused server suite 122/122 passed; `bun fmt`, `bun lint`,
   and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox because the
   existing network tests require loopback socket binding.
+- `ORCH-WORK-02` completed 2026-07-17. Work-stage settlement now records the exact worktree HEAD and
+  tracked/untracked cleanliness before completion. Dirty work atomically enters Change review,
+  suppresses the ordinary completion re-entry, notifies the PM exactly once across replay, and blocks
+  verify startup until resolution. Work prompts require descriptive commits and a clean worktree. The
+  app-managed `.gedcode-hooks` safety hook is excluded from task-change detection.
+- Verification evidence for `ORCH-WORK-02`: focused server suite 159/159 passed; `bun fmt`, `bun lint`,
+  and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox (12/12
+  packages; server 181/181 files, 1,490 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

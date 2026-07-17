@@ -54,6 +54,8 @@ import {
 } from "../stageResolution.ts";
 import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
 import { isPmThreadId } from "../pm/PmEventProjection.ts";
+import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
+import { VcsProcess } from "../../vcs/VcsProcess.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 
@@ -693,6 +695,7 @@ const make = Effect.gen(function* () {
   const projectionQuotaBlockedStageRepository = yield* ProjectionQuotaBlockedStageRepository;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const vcsProcess = yield* VcsProcess;
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -1755,6 +1758,24 @@ const make = Effect.gen(function* () {
           const role: OrchestrationStageRole = activeStageRole;
           const stageThreadId = thread.id;
           const completionState = normalizeRuntimeTurnState(event.payload.state);
+          const inspectWorktree = () =>
+            role === "work" && taskForStageThread.worktreePath !== null
+              ? inspectTaskWorktreeCompletion({
+                  worktreePath: taskForStageThread.worktreePath,
+                  process: vcsProcess,
+                }).pipe(
+                  Effect.map(
+                    (worktreeCompletion) =>
+                      ({ worktreeCompletion }) as {
+                        readonly worktreeCompletion?: typeof worktreeCompletion;
+                      },
+                  ),
+                )
+              : Effect.succeed(
+                  {} as {
+                    readonly worktreeCompletion?: never;
+                  },
+                );
           if (completionState === "interrupted" || completionState === "cancelled") {
             yield* orchestrationEngine.dispatch({
               type: "task.stage.interrupt",
@@ -1770,6 +1791,7 @@ const make = Effect.gen(function* () {
             // so the CheckpointReactor diff-gate cannot fire. Complete the stage
             // immediately. A fresh command id is fine — there is no competing
             // deterministic dispatch to dedup against.
+            const worktreeState = yield* inspectWorktree();
             yield* orchestrationEngine.dispatch({
               type: "task.stage.complete",
               commandId: yield* providerCommandId(event, "task-stage-complete"),
@@ -1777,6 +1799,7 @@ const make = Effect.gen(function* () {
               role,
               stageThreadId,
               awaitedTurnId: null,
+              ...worktreeState,
               createdAt: now,
             });
           } else {
@@ -1790,27 +1813,29 @@ const make = Effect.gen(function* () {
             const awaitedTurnId = turnId;
             const settleCreatedAt = now;
             yield* Effect.forkDetach(
-              orchestrationEngine
-                .dispatch({
-                  type: "task.stage.complete",
-                  commandId: stageCompleteCommandId(stageThreadId, awaitedTurnId),
-                  taskId,
-                  role,
-                  stageThreadId,
-                  awaitedTurnId,
-                  diffComplete: false,
-                  createdAt: settleCreatedAt,
-                })
-                .pipe(
-                  Effect.delay(STAGE_COMPLETION_DIFF_TIMEOUT),
-                  Effect.catch((error) =>
-                    Effect.logWarning("stage-completion diff-wait timeout dispatch failed", {
-                      threadId: stageThreadId,
-                      turnId: awaitedTurnId,
-                      detail: error instanceof Error ? error.message : String(error),
-                    }),
-                  ),
+              inspectWorktree().pipe(
+                Effect.flatMap((worktreeState) =>
+                  orchestrationEngine.dispatch({
+                    type: "task.stage.complete",
+                    commandId: stageCompleteCommandId(stageThreadId, awaitedTurnId),
+                    taskId,
+                    role,
+                    stageThreadId,
+                    awaitedTurnId,
+                    diffComplete: false,
+                    ...worktreeState,
+                    createdAt: settleCreatedAt,
+                  }),
                 ),
+                Effect.delay(STAGE_COMPLETION_DIFF_TIMEOUT),
+                Effect.catch((error) =>
+                  Effect.logWarning("stage-completion diff-wait timeout dispatch failed", {
+                    threadId: stageThreadId,
+                    turnId: awaitedTurnId,
+                    detail: error instanceof Error ? error.message : String(error),
+                  }),
+                ),
+              ),
             );
           }
         }

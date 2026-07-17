@@ -34,6 +34,7 @@ import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { afterEach, describe, expect, it } from "vitest";
 
 // Derived from the source fail-loud diff-wait timeout so the test and the
@@ -69,6 +70,7 @@ import {
   stageCompleteCommandId,
 } from "../stageResolution.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { VcsProcess } from "../../vcs/VcsProcess.ts";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
   return ServerSettingsService.layerTest(overrides);
@@ -301,6 +303,18 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(
+        Layer.succeed(VcsProcess, {
+          run: ({ args }) =>
+            Effect.succeed({
+              exitCode: ChildProcessSpawner.ExitCode(0),
+              stdout: args[0] === "rev-parse" ? "abc123\n" : "",
+              stderr: "",
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            }),
+        }),
+      ),
       Layer.provideMerge(platformLayer),
     );
     const layer = testClockLayer ? Layer.merge(ingestionLayer, testClockLayer) : ingestionLayer;

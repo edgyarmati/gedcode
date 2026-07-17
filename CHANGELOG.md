@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Work-agent completion now inspects the task worktree's exact Git HEAD and tracked/untracked status.
+  Dirty completions atomically enter **Change review**, notify the PM exactly once across replay, and
+  block verification until resolved. Work-stage instructions now explicitly require descriptive
+  commits and a clean worktree before completion.
+
 - Added durable Orchestrator completion records for pending worktree change review, successful
   verification bound to an exact Git HEAD, and terminal **No changes needed** outcomes. The new
   append-only events, projections, and migration survive replay and provide the lifecycle foundation

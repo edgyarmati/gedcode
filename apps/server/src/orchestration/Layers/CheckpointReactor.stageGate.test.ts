@@ -232,6 +232,9 @@ describe("CheckpointReactor stage-completion diff gate", () => {
   async function createHarness() {
     const cwd = createGitRepository();
     tempDirs.push(cwd);
+    const worktreePath = path.join(cwd, ".gedcode", "orchestrator", "tasks", "task-stage-gate");
+    fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+    runGit(cwd, ["worktree", "add", "-b", "orchestrator/task-stage-gate", worktreePath, "HEAD"]);
     const provider = createProviderServiceHarness();
 
     const orchestrationLayer = OrchestrationEngineLive.pipe(
@@ -312,7 +315,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
 
     const readModel = () => Effect.runPromise(snapshotQuery.getSnapshot());
 
-    return { engine, readModel, provider, cwd, drain };
+    return { engine, readModel, provider, cwd, worktreePath, drain };
   }
 
   // Drives task.create -> task.classify -> task.stage.start (role: work) and
@@ -329,6 +332,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     }>;
     provider: ReturnType<typeof createProviderServiceHarness>;
     cwd: string;
+    worktreePath: string;
   }): Promise<ThreadId> {
     const createdAt = "2026-01-01T00:00:00.000Z";
     await Effect.runPromise(
@@ -380,7 +384,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
       return poll();
     };
     const stageThreadId = await poll();
-    harness.provider.setSession(stageThreadId, harness.cwd);
+    harness.provider.setSession(stageThreadId, harness.worktreePath);
     return stageThreadId;
   }
 
@@ -400,7 +404,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     });
     await harness.drain();
 
-    fs.writeFileSync(path.join(harness.cwd, "README.md"), "v2\n", "utf8");
+    fs.writeFileSync(path.join(harness.worktreePath, "UNTRACKED.md"), "new file\n", "utf8");
     harness.provider.emit({
       type: "turn.completed",
       eventId: EventId.make("evt-stage-gate-completed"),
@@ -423,8 +427,14 @@ describe("CheckpointReactor stage-completion diff gate", () => {
       // Real diff present at completion -> diffComplete stays absent.
       expect(stageCompleted.payload.diffComplete).toBeUndefined();
       expect(stageCompleted.payload.stageThreadId).toBe(stageThreadId);
+      expect(stageCompleted.payload.worktreeCompletion).toMatchObject({ dirty: true });
       expect(stageCompleted.commandId).toBe(stageCompleteCommandId(stageThreadId, turnId));
     }
+    expect(events.filter((event) => event.type === "task.change-review-requested")).toHaveLength(1);
+    const snapshot = await harness.readModel();
+    expect(snapshot.tasks.find((task) => task.id === "task-stage-gate")?.status).toBe(
+      "change-review",
+    );
   });
 
   it("dedups the timeout path against the diff path on the shared deterministic commandId", async () => {
@@ -442,7 +452,7 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     });
     await harness.drain();
 
-    fs.writeFileSync(path.join(harness.cwd, "README.md"), "v2\n", "utf8");
+    fs.writeFileSync(path.join(harness.worktreePath, "README.md"), "v2\n", "utf8");
     harness.provider.emit({
       type: "turn.completed",
       eventId: EventId.make("evt-stage-gate-dedup-completed"),

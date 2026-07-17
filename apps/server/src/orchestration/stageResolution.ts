@@ -96,8 +96,15 @@ export function prepareStageInstructions(input: {
   readonly rolePromptPrefixes: GedRolePromptPrefixes | undefined;
 }): string {
   const rawInstructions = stripStagePromptPrefix(input.instructions);
-  const promptPrefix = input.rolePromptPrefixes?.[input.role];
-  if (promptPrefix === undefined) {
+  const configuredPrefix = input.rolePromptPrefixes?.[input.role];
+  const workCompletionRequirement =
+    input.role === "work"
+      ? "Complete the implementation with descriptive Git commits and leave the task worktree clean. Before finishing, inspect tracked and untracked changes and commit all intended task changes; explicitly report anything you cannot safely resolve."
+      : undefined;
+  const promptPrefix = [configuredPrefix, workCompletionRequirement]
+    .filter((line): line is string => line !== undefined)
+    .join("\n\n");
+  if (promptPrefix.length === 0) {
     return rawInstructions;
   }
   return `${STAGE_PROMPT_PREFIX_OPEN}

@@ -17,6 +17,18 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Manual review: legacy events decode with null defaults; replay preserves resolved Change review,
   verified HEAD, and No changes needed records; terminal worktree ownership recognizes no-change.
 
+### ORCH-WORK-02 — 2026-07-17
+
+- Focused: decider, checkpoint reactor with real Git worktrees, provider-runtime ingestion, and PM
+  settlement replay tests passed.
+- Manual review: both tracked and untracked changes enter Change review; clean work settles normally;
+  the dirty completion and review request share one atomic decision; duplicate/restarted review events
+  produce one PM re-entry; verify startup rejects a pending review.
+- Repository: `bun fmt`, `bun lint`, and `bun typecheck` passed. Lint retained only pre-existing
+  warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 181/181 files, 1,490 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

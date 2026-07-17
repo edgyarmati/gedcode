@@ -398,6 +398,7 @@ function seedVerifiedTask(input: {
       branch: createdTask.branch,
       worktreePath: createdTask.worktreePath,
     });
+    const worktreeHead = runGit(createdTask.worktreePath, ["rev-parse", "--verify", "HEAD"]).trim();
 
     yield* input.harness.adapterHarness!.queueTurnResponseForNextSession(
       successfulTurnResponse(`${input.suffix}-work`, iso(3)),
@@ -432,6 +433,10 @@ function seedVerifiedTask(input: {
         stageThreadId: stageStarted.payload.stageThreadId,
         awaitedTurnId: TurnId.make(`${input.suffix}-manual-turn`),
         diffComplete: false,
+        worktreeCompletion: {
+          head: worktreeHead,
+          dirty: false,
+        },
         createdAt: iso(4),
       })
       .pipe(Effect.orDie);

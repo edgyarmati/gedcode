@@ -1794,6 +1794,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
         );
       }
+      if (command.role === "verify" && task.changeReview?.status === "pending") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot start verification while worktree changes await PM review.`,
+        );
+      }
       if (task.status === "blocked-on-quota") {
         const blockedStage = (readModel.quotaBlockedStages ?? [])
           .filter(
@@ -1986,8 +1992,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' active stage role '${activeRole}' cannot be completed as '${command.role}'.`,
         );
       }
+      if (
+        command.role === "work" &&
+        task.worktreePath !== null &&
+        command.worktreeCompletion === undefined
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' work completion must include the inspected worktree HEAD and dirty state.`,
+        );
+      }
 
-      return {
+      const stageCompletedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
           aggregateId: command.taskId,
@@ -2003,9 +2019,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           // Pass the diff-completeness marker through unchanged; absent stays
           // absent (normal completion), `false` records a fail-loud timeout.
           ...(command.diffComplete !== undefined ? { diffComplete: command.diffComplete } : {}),
+          ...(command.worktreeCompletion === undefined
+            ? {}
+            : { worktreeCompletion: command.worktreeCompletion }),
           updatedAt: command.createdAt,
         },
       };
+      if (command.role !== "work" || command.worktreeCompletion?.dirty !== true) {
+        return stageCompletedEvent;
+      }
+      const changeReviewEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: stageCompletedEvent.eventId,
+        type: "task.change-review-requested",
+        payload: {
+          taskId: command.taskId,
+          workStageThreadId: command.stageThreadId,
+          detectedHead: command.worktreeCompletion.head,
+          requestedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      return [stageCompletedEvent, changeReviewEvent];
     }
 
     case "task.change-review.request": {

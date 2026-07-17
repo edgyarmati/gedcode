@@ -397,6 +397,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         role: "work",
         stageThreadId: stageStarted.payload.stageThreadId,
         awaitedTurnId,
+        worktreeCompletion: { head: "abc123", dirty: false },
         createdAt: now,
       });
       readModel = attachWorkerResult(stageComplete.readModel, stageStarted.payload.stageThreadId);

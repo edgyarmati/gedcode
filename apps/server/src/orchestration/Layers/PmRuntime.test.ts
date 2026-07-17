@@ -250,6 +250,41 @@ const stageCompletedEvent: OrchestrationEvent = {
   },
 };
 
+const dirtyStageCompletedEvent: OrchestrationEvent = {
+  ...stageCompletedEvent,
+  sequence: 11,
+  eventId: EventId.make("evt-dirty-stage-completed"),
+  commandId: CommandId.make("cmd-dirty-stage-completed"),
+  correlationId: CommandId.make("cmd-dirty-stage-completed"),
+  payload: {
+    ...stageCompletedEvent.payload,
+    worktreeCompletion: {
+      head: "abc123",
+      dirty: true,
+    },
+  },
+};
+
+const changeReviewRequestedEvent: OrchestrationEvent = {
+  sequence: 12,
+  eventId: EventId.make("evt-change-review-requested"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.change-review-requested",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-change-review-requested"),
+  causationEventId: dirtyStageCompletedEvent.eventId,
+  correlationId: dirtyStageCompletedEvent.correlationId,
+  metadata: {},
+  payload: {
+    taskId,
+    workStageThreadId: stageThreadId,
+    detectedHead: "abc123",
+    requestedAt: now,
+    updatedAt: now,
+  },
+};
+
 const approvalRequestId = ApprovalRequestId.make("approval-worker-1");
 const approvalRequestedEvent: OrchestrationEvent = {
   sequence: 11,
@@ -2158,6 +2193,40 @@ describe("PmRuntime", () => {
         new RegExp(`Last-action cursor: ${stageCompletedEvent.sequence}`),
       );
       assert.strictEqual(consumeCalls.length, 1);
+    }),
+  );
+
+  it.effect("re-enters exactly once for dirty worktree review instead of work completion", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [
+          dirtyStageCompletedEvent,
+          changeReviewRequestedEvent,
+          changeReviewRequestedEvent,
+        ],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /tracked or untracked changes still present/);
+      assert.match(messages[0] ?? "", /Detected HEAD: abc123/);
+      assert.notMatch(messages[0] ?? "", /A detached worker stage completed/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "stage", settlementKey: `${stageThreadId}::change-review` }],
+      );
     }),
   );
 
