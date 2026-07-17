@@ -506,13 +506,47 @@ export const OrchestrationTaskStatus = Schema.Literals([
   "reviewing",
   "working",
   "review",
+  "change-review",
   "verifying",
   "landed",
+  "no-changes-needed",
   "abandoned",
   "blocked",
   "blocked-on-quota",
 ]);
 export type OrchestrationTaskStatus = typeof OrchestrationTaskStatus.Type;
+
+export const OrchestrationTaskChangeReviewResolution = Schema.Literals([
+  "committed",
+  "discarded",
+  "returned",
+]);
+export type OrchestrationTaskChangeReviewResolution =
+  typeof OrchestrationTaskChangeReviewResolution.Type;
+
+export const OrchestrationTaskChangeReview = Schema.Struct({
+  status: Schema.Literals(["pending", "resolved"]),
+  workStageThreadId: ThreadId,
+  detectedHead: TrimmedNonEmptyString,
+  resolution: Schema.NullOr(OrchestrationTaskChangeReviewResolution),
+  requestedAt: IsoDateTime,
+  resolvedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationTaskChangeReview = typeof OrchestrationTaskChangeReview.Type;
+
+export const OrchestrationTaskVerification = Schema.Struct({
+  stageThreadId: ThreadId,
+  head: TrimmedNonEmptyString,
+  verifiedAt: IsoDateTime,
+});
+export type OrchestrationTaskVerification = typeof OrchestrationTaskVerification.Type;
+
+export const OrchestrationTaskNoChangesNeeded = Schema.Struct({
+  baseHead: TrimmedNonEmptyString,
+  head: TrimmedNonEmptyString,
+  completedAt: IsoDateTime,
+});
+export type OrchestrationTaskNoChangesNeeded = typeof OrchestrationTaskNoChangesNeeded.Type;
 
 export const OrchestrationTaskCancellationShutdownPhase = Schema.Literals([
   "interrupt-turn",
@@ -608,6 +642,15 @@ export const OrchestrationTask = Schema.Struct({
   supersedesTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   supersededByTaskId: Schema.optionalKey(Schema.NullOr(TaskId)),
   cancellation: Schema.optionalKey(Schema.NullOr(OrchestrationTaskCancellation)),
+  changeReview: Schema.NullOr(OrchestrationTaskChangeReview).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  verification: Schema.NullOr(OrchestrationTaskVerification).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  noChangesNeeded: Schema.NullOr(OrchestrationTaskNoChangesNeeded).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   landing: Schema.NullOr(OrchestrationTaskLanding).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1147,6 +1190,41 @@ const TaskStageCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskChangeReviewRequestCommand = Schema.Struct({
+  type: Schema.Literal("task.change-review.request"),
+  commandId: CommandId,
+  taskId: TaskId,
+  workStageThreadId: ThreadId,
+  detectedHead: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskChangeReviewResolveCommand = Schema.Struct({
+  type: Schema.Literal("task.change-review.resolve"),
+  commandId: CommandId,
+  taskId: TaskId,
+  resolution: OrchestrationTaskChangeReviewResolution,
+  createdAt: IsoDateTime,
+});
+
+const TaskVerificationRecordCommand = Schema.Struct({
+  type: Schema.Literal("task.verification.record"),
+  commandId: CommandId,
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  head: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskNoChangesNeededCommand = Schema.Struct({
+  type: Schema.Literal("task.no-changes-needed"),
+  commandId: CommandId,
+  taskId: TaskId,
+  baseHead: TrimmedNonEmptyString,
+  head: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
 const TaskStageBlockCommand = Schema.Struct({
   type: Schema.Literal("task.stage.block"),
   commandId: CommandId,
@@ -1456,6 +1534,10 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   TaskStageCompleteCommand,
+  TaskChangeReviewRequestCommand,
+  TaskChangeReviewResolveCommand,
+  TaskVerificationRecordCommand,
+  TaskNoChangesNeededCommand,
   TaskStageBlockCommand,
   TaskStageInterruptCommand,
   TaskLandingRetryCommand,
@@ -1513,6 +1595,10 @@ export const OrchestrationEventType = Schema.Literals([
   "task.deleted",
   "task.stage-started",
   "task.stage-completed",
+  "task.change-review-requested",
+  "task.change-review-resolved",
+  "task.verification-recorded",
+  "task.no-changes-needed",
   "task.stage-blocked",
   "task.stage-interrupted",
   "task.gate-requested",
@@ -1809,6 +1895,37 @@ export const TaskStageCompletedPayload = Schema.Struct({
   // present at completion; `false` = completed via the fail-loud diff-wait
   // timeout. Optional so existing consumers and on-disk events are unaffected.
   diffComplete: Schema.optional(Schema.Boolean),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskChangeReviewRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  workStageThreadId: ThreadId,
+  detectedHead: TrimmedNonEmptyString,
+  requestedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskChangeReviewResolvedPayload = Schema.Struct({
+  taskId: TaskId,
+  resolution: OrchestrationTaskChangeReviewResolution,
+  resolvedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskVerificationRecordedPayload = Schema.Struct({
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  head: TrimmedNonEmptyString,
+  verifiedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskNoChangesNeededPayload = Schema.Struct({
+  taskId: TaskId,
+  baseHead: TrimmedNonEmptyString,
+  head: TrimmedNonEmptyString,
+  completedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -2111,6 +2228,26 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.stage-completed"),
     payload: TaskStageCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.change-review-requested"),
+    payload: TaskChangeReviewRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.change-review-resolved"),
+    payload: TaskChangeReviewResolvedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.verification-recorded"),
+    payload: TaskVerificationRecordedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.no-changes-needed"),
+    payload: TaskNoChangesNeededPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

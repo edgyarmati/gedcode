@@ -113,6 +113,10 @@ export function classifyOrchestrationCommand(
     case "task.delete":
     case "task.stage.start":
     case "task.stage.complete":
+    case "task.change-review.request":
+    case "task.change-review.resolve":
+    case "task.verification.record":
+    case "task.no-changes-needed":
     case "task.stage.block":
     case "task.stage.interrupt":
     case "task.gate.request":
@@ -187,6 +191,10 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.delete":
     case "task.stage.start":
     case "task.stage.complete":
+    case "task.change-review.request":
+    case "task.change-review.resolve":
+    case "task.verification.record":
+    case "task.no-changes-needed":
     case "task.stage.block":
     case "task.stage.interrupt":
     case "task.gate.request":

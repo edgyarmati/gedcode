@@ -120,6 +120,9 @@ function makeTask(input: {
       ...(currentStageThreadId === null ? [] : [currentStageThreadId]),
     ],
     currentStageThreadId,
+    changeReview: null,
+    verification: null,
+    noChangesNeeded: null,
     cancellation: input.cancelling
       ? {
           requestedAt: now,

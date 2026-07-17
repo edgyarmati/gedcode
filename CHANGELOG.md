@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added durable Orchestrator completion records for pending worktree change review, successful
+  verification bound to an exact Git HEAD, and terminal **No changes needed** outcomes. The new
+  append-only events, projections, and migration survive replay and provide the lifecycle foundation
+  for PM review actions and exact-commit landing enforcement.
+
 ## 0.3.0 - 2026-07-17
 
 - Made GitHub release publication deterministic for manually dispatched releases by using the resolved

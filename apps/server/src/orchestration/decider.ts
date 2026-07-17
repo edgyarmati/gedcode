@@ -178,7 +178,7 @@ function requireReleaseSource(input: {
 }
 
 function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
-  return status === "landed" || status === "abandoned";
+  return status === "landed" || status === "no-changes-needed" || status === "abandoned";
 }
 
 function requireSettledTerminalTask(input: {
@@ -188,6 +188,7 @@ function requireSettledTerminalTask(input: {
   if (
     input.task.currentStageThreadId === null &&
     (input.task.status === "abandoned" ||
+      input.task.status === "no-changes-needed" ||
       (input.task.status === "landed" && input.task.prUrl !== null))
   ) {
     return Effect.void;
@@ -1434,7 +1435,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           "The parent task must be visible before splitting.",
         );
       }
-      if (parent.status === "landed" || parent.status === "abandoned") {
+      if (
+        parent.status === "landed" ||
+        parent.status === "no-changes-needed" ||
+        parent.status === "abandoned"
+      ) {
         return yield* invariantError(command.type, "A terminal task cannot be split.");
       }
       if (parent.currentStageThreadId !== null) {
@@ -1998,6 +2003,144 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           // Pass the diff-completeness marker through unchanged; absent stays
           // absent (normal completion), `false` records a fail-loud timeout.
           ...(command.diffComplete !== undefined ? { diffComplete: command.diffComplete } : {}),
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.change-review.request": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "review" || task.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have settled work in review before remaining changes can be reviewed.`,
+        );
+      }
+      const workStage = readModel.stageHistory[command.workStageThreadId];
+      if (
+        !task.stageThreadIds.includes(command.workStageThreadId) ||
+        workStage?.taskId !== task.id ||
+        workStage.role !== "work" ||
+        workStage.status !== "completed"
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Stage thread '${command.workStageThreadId}' is not completed work for task '${command.taskId}'.`,
+        );
+      }
+      if (task.changeReview?.status === "pending") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' already has a pending change review.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.change-review-requested",
+        payload: {
+          taskId: command.taskId,
+          workStageThreadId: command.workStageThreadId,
+          detectedHead: command.detectedHead,
+          requestedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.change-review.resolve": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "change-review" || task.changeReview?.status !== "pending") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not have a pending change review.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.change-review-resolved",
+        payload: {
+          taskId: command.taskId,
+          resolution: command.resolution,
+          resolvedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.verification.record": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      const verifyStage = readModel.stageHistory[command.stageThreadId];
+      if (
+        task.currentStageThreadId !== null ||
+        !task.stageThreadIds.includes(command.stageThreadId) ||
+        verifyStage?.taskId !== task.id ||
+        verifyStage.role !== "verify" ||
+        verifyStage.status !== "completed"
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Stage thread '${command.stageThreadId}' is not completed verification for task '${command.taskId}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.verification-recorded",
+        payload: {
+          taskId: command.taskId,
+          stageThreadId: command.stageThreadId,
+          head: command.head,
+          verifiedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "task.no-changes-needed": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "review" || task.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have settled work in review before it can complete without changes.`,
+        );
+      }
+      if (command.baseHead !== command.head) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot complete without changes because HEAD differs from its base.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.no-changes-needed",
+        payload: {
+          taskId: command.taskId,
+          baseHead: command.baseHead,
+          head: command.head,
+          completedAt: command.createdAt,
           updatedAt: command.createdAt,
         },
       };

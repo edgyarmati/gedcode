@@ -2967,4 +2967,142 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       }
     }),
   );
+
+  it.effect("records and resolves a durable review of remaining worktree changes", () =>
+    Effect.gen(function* () {
+      const workStageThreadId = asThreadId("thread-work-completed");
+      const base = withStageHistory(
+        yield* taskReadModel({
+          status: "review",
+          stageThreadIds: [workStageThreadId],
+          currentStageThreadId: null,
+        }),
+        [
+          {
+            threadId: workStageThreadId,
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+        ],
+      );
+
+      const requested = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: base,
+          command: {
+            type: "task.change-review.request",
+            commandId: asCommandId("cmd-change-review-request"),
+            taskId: asTaskId("task-1"),
+            workStageThreadId,
+            detectedHead: "abc123",
+            createdAt: now,
+          },
+        }),
+      )[0]!;
+      expect(requested.type).toBe("task.change-review-requested");
+      const pending = yield* projectEvent(base, withSequence(requested, 3));
+      expect(pending.tasks[0]?.status).toBe("change-review");
+      expect(pending.tasks[0]?.changeReview).toMatchObject({
+        status: "pending",
+        detectedHead: "abc123",
+      });
+
+      const resolved = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: pending,
+          command: {
+            type: "task.change-review.resolve",
+            commandId: asCommandId("cmd-change-review-resolve"),
+            taskId: asTaskId("task-1"),
+            resolution: "committed",
+            createdAt: now,
+          },
+        }),
+      )[0]!;
+      const reviewed = yield* projectEvent(pending, withSequence(resolved, 4));
+      expect(reviewed.tasks[0]?.status).toBe("review");
+      expect(reviewed.tasks[0]?.changeReview).toMatchObject({
+        status: "resolved",
+        resolution: "committed",
+      });
+    }),
+  );
+
+  it.effect(
+    "binds verification to a commit and completes equal base and task heads as no-change",
+    () =>
+      Effect.gen(function* () {
+        const verifyStageThreadId = asThreadId("thread-verify-completed");
+        const verifying = withStageHistory(
+          yield* taskReadModel({
+            status: "verifying",
+            stageThreadIds: [verifyStageThreadId],
+            currentStageThreadId: null,
+          }),
+          [
+            {
+              threadId: verifyStageThreadId,
+              role: "verify",
+              startedAt: "2026-06-14T09:11:00.000Z",
+              endedAt: "2026-06-14T09:20:00.000Z",
+            },
+          ],
+        );
+        const verification = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel: verifying,
+            command: {
+              type: "task.verification.record",
+              commandId: asCommandId("cmd-verification-record"),
+              taskId: asTaskId("task-1"),
+              stageThreadId: verifyStageThreadId,
+              head: "def456",
+              createdAt: now,
+            },
+          }),
+        )[0]!;
+        const verified = yield* projectEvent(verifying, withSequence(verification, 3));
+        expect(verified.tasks[0]?.verification).toMatchObject({
+          stageThreadId: verifyStageThreadId,
+          head: "def456",
+        });
+
+        const review = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+        const noChanges = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel: review,
+            command: {
+              type: "task.no-changes-needed",
+              commandId: asCommandId("cmd-no-changes"),
+              taskId: asTaskId("task-1"),
+              baseHead: "abc123",
+              head: "abc123",
+              createdAt: now,
+            },
+          }),
+        )[0]!;
+        const completed = yield* projectEvent(review, withSequence(noChanges, 3));
+        expect(completed.tasks[0]?.status).toBe("no-changes-needed");
+        expect(completed.tasks[0]?.noChangesNeeded).toMatchObject({
+          baseHead: "abc123",
+          head: "abc123",
+        });
+
+        const mismatch = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel: review,
+            command: {
+              type: "task.no-changes-needed",
+              commandId: asCommandId("cmd-no-changes-mismatch"),
+              taskId: asTaskId("task-1"),
+              baseHead: "abc123",
+              head: "def456",
+              createdAt: now,
+            },
+          }),
+        );
+        expect(mismatch._tag).toBe("Failure");
+      }),
+  );
 });

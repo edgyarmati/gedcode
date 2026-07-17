@@ -120,6 +120,9 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   stageThreadIds: [stageThreadId],
   currentStageThreadId: stageThreadId,
   cancellation: null,
+  changeReview: null,
+  verification: null,
+  noChangesNeeded: null,
   landing: null,
   roleModelSelections: {
     plan: {

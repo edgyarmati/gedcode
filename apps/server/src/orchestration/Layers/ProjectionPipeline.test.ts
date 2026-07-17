@@ -7,7 +7,10 @@ import {
   MessageId,
   ProjectId,
   OrchestrationTaskAggregateProgress,
+  OrchestrationTaskChangeReview,
   OrchestrationTaskLanding,
+  OrchestrationTaskNoChangesNeeded,
+  OrchestrationTaskVerification,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -56,6 +59,15 @@ const decodeTaskLandingJson = Schema.decodeUnknownSync(
 );
 const decodeTaskAggregateProgressJson = Schema.decodeUnknownSync(
   Schema.fromJsonString(OrchestrationTaskAggregateProgress),
+);
+const decodeTaskChangeReviewJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(OrchestrationTaskChangeReview),
+);
+const decodeTaskVerificationJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(OrchestrationTaskVerification),
+);
+const decodeTaskNoChangesNeededJson = Schema.decodeUnknownSync(
+  Schema.fromJsonString(OrchestrationTaskNoChangesNeeded),
 );
 
 const exists = (filePath: string) =>
@@ -260,6 +272,9 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
             pmMessageId: null,
             stageThreadIds: [],
             currentStageThreadId: null,
+            changeReview: null,
+            verification: null,
+            noChangesNeeded: null,
             landing: null,
             playbookVersion: null,
             createdAt,
@@ -1148,6 +1163,129 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
           },
         ]);
       }),
+    );
+  },
+);
+
+it.layer(makeProjectionPipelinePrefixedTestLayer("t3-completion-records-test-"))(
+  "task completion record projection",
+  (it) => {
+    it.effect(
+      "replays change review, verified HEAD, and no-change state into durable columns",
+      () =>
+        Effect.gen(function* () {
+          const projectionPipeline = yield* OrchestrationProjectionPipeline;
+          const eventStore = yield* OrchestrationEventStore;
+          const sql = yield* SqlClient.SqlClient;
+          const taskId = TaskId.make("task-completion-records");
+          const projectId = ProjectId.make("project-completion-records");
+          const workStageThreadId = ThreadId.make("thread-completion-work");
+          const verifyStageThreadId = ThreadId.make("thread-completion-verify");
+          const occurredAt = "2026-07-17T12:00:00.000Z";
+          const append = (event: OrchestrationEvent) => eventStore.append(event);
+          const event = (
+            sequenceName: string,
+            type: OrchestrationEvent["type"],
+            payload: OrchestrationEvent["payload"],
+          ): OrchestrationEvent =>
+            ({
+              type,
+              eventId: EventId.make(`evt-${sequenceName}`),
+              aggregateKind: "task",
+              aggregateId: taskId,
+              occurredAt,
+              commandId: CommandId.make(`cmd-${sequenceName}`),
+              causationEventId: null,
+              correlationId: CorrelationId.make(`cmd-${sequenceName}`),
+              metadata: {},
+              payload,
+            }) as OrchestrationEvent;
+
+          yield* append(
+            event("completion-create", "task.created", {
+              taskId,
+              projectId,
+              taskType: TaskTypeId.make("feature"),
+              title: "Completion records",
+              branch: "orchestrator/task-completion-records",
+              worktreePath: "/tmp/task-completion-records",
+              pmMessageId: null,
+              playbookVersion: "feature@v1",
+              createdAt: occurredAt,
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
+            event("completion-review-request", "task.change-review-requested", {
+              taskId,
+              workStageThreadId,
+              detectedHead: "abc123",
+              requestedAt: occurredAt,
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
+            event("completion-review-resolve", "task.change-review-resolved", {
+              taskId,
+              resolution: "committed",
+              resolvedAt: occurredAt,
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
+            event("completion-verify", "task.verification-recorded", {
+              taskId,
+              stageThreadId: verifyStageThreadId,
+              head: "abc123",
+              verifiedAt: occurredAt,
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
+            event("completion-no-change", "task.no-changes-needed", {
+              taskId,
+              baseHead: "abc123",
+              head: "abc123",
+              completedAt: occurredAt,
+              updatedAt: occurredAt,
+            }),
+          );
+
+          yield* projectionPipeline.bootstrap;
+          const rows = yield* sql<{
+            readonly status: string;
+            readonly changeReview: string | null;
+            readonly verification: string | null;
+            readonly noChangesNeeded: string | null;
+          }>`
+          SELECT
+            status,
+            change_review_json AS "changeReview",
+            verification_json AS "verification",
+            no_changes_needed_json AS "noChangesNeeded"
+          FROM projection_tasks
+          WHERE task_id = ${taskId}
+        `;
+          assert.equal(rows[0]?.status, "no-changes-needed");
+          assert.deepEqual(decodeTaskChangeReviewJson(rows[0]?.changeReview), {
+            status: "resolved",
+            workStageThreadId,
+            detectedHead: "abc123",
+            resolution: "committed",
+            requestedAt: occurredAt,
+            resolvedAt: occurredAt,
+          });
+          assert.deepEqual(decodeTaskVerificationJson(rows[0]?.verification), {
+            stageThreadId: verifyStageThreadId,
+            head: "abc123",
+            verifiedAt: occurredAt,
+          });
+          assert.deepEqual(decodeTaskNoChangesNeededJson(rows[0]?.noChangesNeeded), {
+            baseHead: "abc123",
+            head: "abc123",
+            completedAt: occurredAt,
+          });
+        }),
     );
   },
 );

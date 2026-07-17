@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-01`
+- **Active task**: `ORCH-WORK-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -37,6 +37,13 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `ORCH-WORK-01` completed 2026-07-17. Added append-only Change review, exact-HEAD
+  verification, and No changes needed commands/events, strict task schemas, migration 056, durable
+  SQL projections, client projection support, terminal worktree ownership, and replay coverage.
+- Verification evidence for `ORCH-WORK-01`: focused server suite 122/122 passed; `bun fmt`, `bun lint`,
+  and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox because the
+  existing network tests require loopback socket binding.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

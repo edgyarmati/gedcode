@@ -53,6 +53,7 @@ type WorktreeLifecycleEvent = Extract<
       | "task.created"
       | "task.split"
       | "task.landed"
+      | "task.no-changes-needed"
       | "task.landing-retry-requested"
       | "task.abandoned";
   }
@@ -89,7 +90,12 @@ export function listTerminalTaskWorktreeCleanupCandidates(
 ): ReadonlyArray<CleanupCandidate> {
   const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
   return readModel.tasks.flatMap((task) => {
-    if (task.worktreePath === null || (task.status !== "landed" && task.status !== "abandoned")) {
+    if (
+      task.worktreePath === null ||
+      (task.status !== "landed" &&
+        task.status !== "no-changes-needed" &&
+        task.status !== "abandoned")
+    ) {
       return [];
     }
     if (task.status === "landed" && task.prUrl === null) {
@@ -817,6 +823,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
           (event.type !== "task.created" &&
             event.type !== "task.split" &&
             event.type !== "task.landed" &&
+            event.type !== "task.no-changes-needed" &&
             event.type !== "task.landing-retry-requested" &&
             event.type !== "task.abandoned") ||
           event.sequence <= lastWorktreeLifecycleSequence

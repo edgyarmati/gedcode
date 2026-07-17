@@ -76,7 +76,7 @@ const shutdownFailure = (input: {
   });
 
 const isTerminalTaskStatus = (status: OrchestrationTask["status"]): boolean =>
-  status === "landed" || status === "abandoned";
+  status === "landed" || status === "no-changes-needed" || status === "abandoned";
 
 const cancelOrchestrationTaskUnlocked = Effect.fn("cancelOrchestrationTaskUnlocked")(function* (
   services: CancelOrchestrationTaskServices,

@@ -43,7 +43,9 @@ export function isDeterministicTaskWorktreePath(input: {
 
 export function taskOwnsWorktree(task: OrchestrationTask): boolean {
   return (
-    (task.status !== "landed" && task.status !== "abandoned") ||
+    (task.status !== "landed" &&
+      task.status !== "no-changes-needed" &&
+      task.status !== "abandoned") ||
     (task.status === "landed" && task.prUrl === null)
   );
 }

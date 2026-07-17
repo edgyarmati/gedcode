@@ -4,6 +4,19 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 `bun run test`. Never use `bun test`. User-visible changes must update `CHANGELOG.md` under
 `## Unreleased`.
 
+## Verification Evidence
+
+### ORCH-WORK-01 — 2026-07-17
+
+- Focused: `decider.task`, in-memory projector, SQL projection replay, and migration 056 — 122 tests
+  passed.
+- Repository: `bun fmt`, `bun lint`, and `bun typecheck` passed. Lint retained only pre-existing
+  warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox; the sandboxed attempt failed only because existing
+  loopback tests cannot bind local sockets there.
+- Manual review: legacy events decode with null defaults; replay preserves resolved Change review,
+  verified HEAD, and No changes needed records; terminal worktree ownership recognizes no-change.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

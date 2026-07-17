@@ -19,12 +19,15 @@ import {
   TaskCancellationFailedPayload,
   TaskCancellationPhaseCompletedPayload,
   TaskCancellationRequestedPayload,
+  TaskChangeReviewRequestedPayload,
+  TaskChangeReviewResolvedPayload,
   TaskClassifiedPayload,
   TaskCreatedPayload,
   TaskDeletedPayload,
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
   TaskLandedPayload,
+  TaskNoChangesNeededPayload,
   TaskPrOpenFailedPayload,
   TaskPrOpenedPayload,
   TaskReleaseDispatchFailedPayload,
@@ -37,6 +40,7 @@ import {
   TaskStageInterruptedPayload,
   TaskStageStartedPayload,
   TaskSplitPayload,
+  TaskVerificationRecordedPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -128,7 +132,12 @@ function withAggregateTaskProgress(tasks: ReadonlyArray<OrchestrationTask>): Orc
       abandoned: 0,
     };
     progress.total += 1;
-    if (child.status === "landed" || child.status === "abandoned") progress.terminal += 1;
+    if (
+      child.status === "landed" ||
+      child.status === "no-changes-needed" ||
+      child.status === "abandoned"
+    )
+      progress.terminal += 1;
     if (child.status === "landed") progress.landed += 1;
     if (child.status === "abandoned") progress.abandoned += 1;
     progressByParent.set(child.parentTaskId, progress);
@@ -920,6 +929,9 @@ export function projectEvent(
             supersedesTaskId: payload.supersedesTaskId ?? null,
             supersededByTaskId: null,
             cancellation: null,
+            changeReview: null,
+            verification: null,
+            noChangesNeeded: null,
             landing: null,
             releaseDispatch: null,
             roleModelSelections: {},
@@ -1077,6 +1089,7 @@ export function projectEvent(
               status,
               stageThreadIds,
               currentStageThreadId: payload.stageThreadId,
+              ...(payload.role === "work" ? { verification: null } : {}),
               updatedAt: payload.updatedAt,
             }),
             quotaBlockedStages:
@@ -1139,6 +1152,95 @@ export function projectEvent(
                   },
           };
         }),
+      );
+
+    case "task.change-review-requested":
+      return decodeForEvent(
+        TaskChangeReviewRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "change-review",
+            changeReview: {
+              status: "pending",
+              workStageThreadId: payload.workStageThreadId,
+              detectedHead: payload.detectedHead,
+              resolution: null,
+              requestedAt: payload.requestedAt,
+              resolvedAt: null,
+            },
+            verification: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.change-review-resolved":
+      return decodeForEvent(
+        TaskChangeReviewResolvedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          if (task?.changeReview === null || task?.changeReview === undefined) return nextBase;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              status: "review",
+              changeReview: {
+                ...task.changeReview,
+                status: "resolved",
+                resolution: payload.resolution,
+                resolvedAt: payload.resolvedAt,
+              },
+              verification: null,
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "task.verification-recorded":
+      return decodeForEvent(
+        TaskVerificationRecordedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            verification: {
+              stageThreadId: payload.stageThreadId,
+              head: payload.head,
+              verifiedAt: payload.verifiedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.no-changes-needed":
+      return decodeForEvent(TaskNoChangesNeededPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "no-changes-needed",
+            currentStageThreadId: null,
+            noChangesNeeded: {
+              baseHead: payload.baseHead,
+              head: payload.head,
+              completedAt: payload.completedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
       );
 
     case "task.stage-blocked":

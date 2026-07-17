@@ -2034,6 +2034,9 @@ function applyEnvironmentOrchestrationEvent(
             stageThreadIds: [],
             currentStageThreadId: null,
             cancellation: null,
+            changeReview: null,
+            verification: null,
+            noChangesNeeded: null,
             landing: null,
             roleModelSelections: {},
             playbookVersion: event.payload.playbookVersion,
@@ -2090,6 +2093,7 @@ function applyEnvironmentOrchestrationEvent(
             ? task.stageThreadIds
             : [...task.stageThreadIds, event.payload.stageThreadId],
           currentStageThreadId: event.payload.stageThreadId,
+          ...(event.payload.role === "work" ? { verification: null } : {}),
           updatedAt: event.payload.updatedAt,
         };
       });
@@ -2129,6 +2133,63 @@ function applyEnvironmentOrchestrationEvent(
         endedAt: event.payload.updatedAt,
       });
     }
+
+    case "task.change-review-requested":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "change-review" as const,
+        changeReview: {
+          status: "pending" as const,
+          workStageThreadId: event.payload.workStageThreadId,
+          detectedHead: event.payload.detectedHead,
+          resolution: null,
+          requestedAt: event.payload.requestedAt,
+          resolvedAt: null,
+        },
+        verification: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.change-review-resolved":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "review" as const,
+        changeReview:
+          task.changeReview === null
+            ? null
+            : {
+                ...task.changeReview,
+                status: "resolved" as const,
+                resolution: event.payload.resolution,
+                resolvedAt: event.payload.resolvedAt,
+              },
+        verification: null,
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.verification-recorded":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        verification: {
+          stageThreadId: event.payload.stageThreadId,
+          head: event.payload.head,
+          verifiedAt: event.payload.verifiedAt,
+        },
+        updatedAt: event.payload.updatedAt,
+      }));
+
+    case "task.no-changes-needed":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        status: "no-changes-needed" as const,
+        currentStageThreadId: null,
+        noChangesNeeded: {
+          baseHead: event.payload.baseHead,
+          head: event.payload.head,
+          completedAt: event.payload.completedAt,
+        },
+        updatedAt: event.payload.updatedAt,
+      }));
 
     case "task.stage-blocked": {
       const taskId = String(event.payload.taskId);

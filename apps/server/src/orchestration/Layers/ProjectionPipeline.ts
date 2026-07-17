@@ -1550,6 +1550,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               supersedesTaskId: event.payload.supersedesTaskId ?? null,
               supersededByTaskId: null,
               cancellation: null,
+              changeReview: null,
+              verification: null,
+              noChangesNeeded: null,
               landing: null,
               releaseDispatch: null,
               roleModelSelections: {},
@@ -1682,6 +1685,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               status,
               stageThreadIds,
               currentStageThreadId: event.payload.stageThreadId,
+              ...(event.payload.role === "work" ? { verification: null } : {}),
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -1698,6 +1702,84 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ...existingRow.value,
               ...(event.payload.role === "work" ? { status: "review" as const } : {}),
               currentStageThreadId: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.change-review-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "change-review",
+              changeReview: {
+                status: "pending",
+                workStageThreadId: event.payload.workStageThreadId,
+                detectedHead: event.payload.detectedHead,
+                resolution: null,
+                requestedAt: event.payload.requestedAt,
+                resolvedAt: null,
+              },
+              verification: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.change-review-resolved": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow) || existingRow.value.changeReview === null) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "review",
+              changeReview: {
+                ...existingRow.value.changeReview,
+                status: "resolved",
+                resolution: event.payload.resolution,
+                resolvedAt: event.payload.resolvedAt,
+              },
+              verification: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.verification-recorded": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              verification: {
+                stageThreadId: event.payload.stageThreadId,
+                head: event.payload.head,
+                verifiedAt: event.payload.verifiedAt,
+              },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.no-changes-needed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "no-changes-needed",
+              currentStageThreadId: null,
+              noChangesNeeded: {
+                baseHead: event.payload.baseHead,
+                head: event.payload.head,
+                completedAt: event.payload.completedAt,
+              },
               updatedAt: event.payload.updatedAt,
             });
             return;
