@@ -108,6 +108,21 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   binding: 12/12 packages in 10m53s; web 114/114 files and 1,238 tests; server 185/185 files with
   1,520 passed and 1 skipped.
 
+### ORCH-TIER-05 — 2026-07-18
+
+- Focused: contracts passed 64 tests; server decider, PM/MCP, projection, migration, quota retry, and
+  routing suites passed 285 tests; restart/pipeline integrations passed 4 tests; Chromium passed the
+  task-tier settings scenario.
+- Manual review: task overrides contain only semantic Plan/Work/Verify tiers; every PM handoff requires
+  an explicit tier; attempt history exposes the immutable tier and resolved backend; quota and rework
+  resume without escalation; prompts reserve higher-tier retries for diagnosed result-quality or
+  capability shortfalls.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 10m55s; web 114/114 files and 1,238 tests; server 188/188 files with
+  1,524 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

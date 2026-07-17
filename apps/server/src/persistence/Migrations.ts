@@ -67,6 +67,7 @@ import Migration0054 from "./Migrations/054_RemoveLegacyOrchestrationRoleSetting
 import Migration0055 from "./Migrations/055_RemoveLegacyOrchestrationStageHistory.ts";
 import Migration0056 from "./Migrations/056_ProjectionTaskCompletionRecords.ts";
 import Migration0057 from "./Migrations/057_ProjectionStageCapabilityPreset.ts";
+import Migration0058 from "./Migrations/058_ProjectionTaskCapabilityTiers.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
 import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
 import Migration0045 from "./Migrations/045_BackfillProjectionProjectOrchestratorConfig.ts";
@@ -139,6 +140,7 @@ export const migrationEntries = [
   [55, "RemoveLegacyOrchestrationStageHistory", Migration0055],
   [56, "ProjectionTaskCompletionRecords", Migration0056],
   [57, "ProjectionStageCapabilityPreset", Migration0057],
+  [58, "ProjectionTaskCapabilityTiers", Migration0058],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

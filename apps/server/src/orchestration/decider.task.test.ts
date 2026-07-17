@@ -882,7 +882,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("updates per-task role model selections from human/client origins", () =>
+  it.effect("updates per-task capability tiers from human/client origins", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel();
 
@@ -890,68 +890,48 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         const event = yield* decideOrchestrationCommand({
           readModel,
           command: {
-            type: "task.role-selections.set",
+            type: "task.capability-tiers.set",
             commandId: asCommandId(`cmd-role-selections-${origin}`),
             taskId: asTaskId("task-1"),
-            roleModelSelections: {
-              verify: {
-                instanceId: ProviderInstanceId.make("codex_verify"),
-                model: "gpt-5-verify",
-              },
-            },
+            roleCapabilityTiers: { verify: "smart" },
             origin,
             createdAt: now,
           },
         });
 
         const singleEvent = Array.isArray(event) ? event[0] : event;
-        expect(singleEvent?.type).toBe("task.role-selections-updated");
+        expect(singleEvent?.type).toBe("task.capability-tiers-updated");
         expect(singleEvent?.payload).toMatchObject({
           taskId: asTaskId("task-1"),
           origin,
-          roleModelSelections: {
-            verify: {
-              instanceId: ProviderInstanceId.make("codex_verify"),
-              model: "gpt-5-verify",
-            },
-          },
+          roleCapabilityTiers: { verify: "smart" },
         });
       }
     }),
   );
 
-  it.effect("updates per-task role model selections from PM/runtime origins", () =>
+  it.effect("updates per-task capability tiers from PM/runtime origins", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel();
 
       const event = yield* decideOrchestrationCommand({
         readModel,
         command: {
-          type: "task.role-selections.set",
+          type: "task.capability-tiers.set",
           commandId: asCommandId("cmd-role-selections-pm"),
           taskId: asTaskId("task-1"),
-          roleModelSelections: {
-            work: {
-              instanceId: ProviderInstanceId.make("codex_work"),
-              model: "gpt-5-work",
-            },
-          },
+          roleCapabilityTiers: { work: "cheap" },
           origin: "pm-runtime",
           createdAt: now,
         },
       });
 
       const singleEvent = Array.isArray(event) ? event[0] : event;
-      expect(singleEvent?.type).toBe("task.role-selections-updated");
+      expect(singleEvent?.type).toBe("task.capability-tiers-updated");
       expect(singleEvent?.payload).toMatchObject({
         taskId: asTaskId("task-1"),
         origin: "pm-runtime",
-        roleModelSelections: {
-          work: {
-            instanceId: ProviderInstanceId.make("codex_work"),
-            model: "gpt-5-work",
-          },
-        },
+        roleCapabilityTiers: { work: "cheap" },
       });
     }),
   );
@@ -1334,17 +1314,12 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("starts a stage with task-level model precedence and one prepared role prefix", () =>
+  it.effect("resolves a saved task tier and one prepared role prefix", () =>
     Effect.gen(function* () {
       const baseReadModel = yield* taskReadModel({
         status: "review",
         currentStageThreadId: null,
-        roleModelSelections: {
-          work: {
-            instanceId: ProviderInstanceId.make("codex_task"),
-            model: "gpt-5-task",
-          },
-        },
+        roleCapabilityTiers: { work: "cheap" },
       });
       const readModel: OrchestrationReadModel = {
         ...baseReadModel,
@@ -1358,6 +1333,14 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             },
             rolePromptPrefixes: {
               work: "Use the project implementation playbook.",
+            },
+            orchestratorConfig: {
+              capabilityPresets: {
+                cheap: {
+                  instanceId: ProviderInstanceId.make("codex_task"),
+                  model: "gpt-5-task",
+                },
+              },
             },
           }),
         ),
@@ -1389,6 +1372,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         ProviderInstanceId.make("codex_task"),
       );
       expect(stageStarted?.payload.model).toBe("gpt-5-task");
+      expect(stageStarted?.payload.capabilityTier).toBe("cheap");
       expect(userMessage?.payload.text).toContain("Role: work");
       expect(userMessage?.payload.text).toContain("Use the project implementation playbook.");
       expect(userMessage?.payload.text).toContain("Implement the accepted plan.");

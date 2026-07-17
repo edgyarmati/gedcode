@@ -19,7 +19,6 @@ import {
   OrchestratorPlaybookFrontmatter,
   OrchestrationStageHistory,
   OrchestrationStageRole,
-  OrchestrationTaskStatus,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -28,7 +27,7 @@ import {
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   OrchestratorClearPmChatInput,
-  OrchestratorSetTaskRoleSelectionsInput,
+  OrchestratorSetTaskCapabilityTiersInput,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
@@ -72,11 +71,10 @@ const decodeRoleModelSelections = Schema.decodeUnknownEffect(GedRoleModelSelecti
 const decodeRolePromptPrefixes = Schema.decodeUnknownEffect(GedRolePromptPrefixes);
 const decodeStageHistory = Schema.decodeUnknownEffect(OrchestrationStageHistory);
 const decodeStageRole = Schema.decodeUnknownEffect(OrchestrationStageRole);
-const decodeTaskStatus = Schema.decodeUnknownEffect(OrchestrationTaskStatus);
 const decodeGateResolutionOrigin = Schema.decodeUnknownEffect(OrchestrationGateResolutionOrigin);
 const decodePlaybookFrontmatter = Schema.decodeUnknownEffect(OrchestratorPlaybookFrontmatter);
-const decodeOrchestratorSetTaskRoleSelectionsInput = Schema.decodeUnknownEffect(
-  OrchestratorSetTaskRoleSelectionsInput,
+const decodeOrchestratorSetTaskCapabilityTiersInput = Schema.decodeUnknownEffect(
+  OrchestratorSetTaskCapabilityTiersInput,
 );
 const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(OrchestratorClearPmChatInput);
 
@@ -1217,29 +1215,24 @@ it.effect("role prompt prefixes are keyed only by known stage roles", () =>
   }),
 );
 
-it.effect("decodes task role-selection commands and narrows persisted event origin", () =>
+it.effect("decodes task capability-tier commands and narrows persisted event origin", () =>
   Effect.gen(function* () {
     const command = yield* decodeOrchestrationCommand({
-      type: "task.role-selections.set",
+      type: "task.capability-tiers.set",
       commandId: "cmd-role-selections",
       taskId: "task-1",
-      roleModelSelections: {
-        verify: {
-          instanceId: "codex_verify",
-          model: "gpt-5.2",
-        },
-      },
+      roleCapabilityTiers: { verify: "smart" },
       origin: "human",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    assert.strictEqual(command.type, "task.role-selections.set");
+    assert.strictEqual(command.type, "task.capability-tiers.set");
 
     const event = yield* decodeOrchestrationEvent({
       sequence: 1,
       eventId: "evt-role-selections",
       aggregateKind: "task",
       aggregateId: "task-1",
-      type: "task.role-selections-updated",
+      type: "task.capability-tiers-updated",
       occurredAt: "2026-01-01T00:00:00.000Z",
       commandId: "cmd-role-selections",
       causationEventId: null,
@@ -1247,24 +1240,19 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
       metadata: {},
       payload: {
         taskId: "task-1",
-        roleModelSelections: {
-          verify: {
-            instanceId: "codex_verify",
-            model: "gpt-5.2",
-          },
-        },
+        roleCapabilityTiers: { verify: "smart" },
         origin: "client",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
     });
-    assert.strictEqual(event.type, "task.role-selections-updated");
+    assert.strictEqual(event.type, "task.capability-tiers-updated");
 
     const pmEvent = yield* decodeOrchestrationEvent({
       sequence: 2,
       eventId: "evt-role-selections-pm",
       aggregateKind: "task",
       aggregateId: "task-1",
-      type: "task.role-selections-updated",
+      type: "task.capability-tiers-updated",
       occurredAt: "2026-01-01T00:00:00.000Z",
       commandId: "cmd-role-selections",
       causationEventId: null,
@@ -1272,12 +1260,12 @@ it.effect("decodes task role-selection commands and narrows persisted event orig
       metadata: {},
       payload: {
         taskId: "task-1",
-        roleModelSelections: {},
+        roleCapabilityTiers: {},
         origin: "pm-runtime",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
     });
-    assert.strictEqual(pmEvent.type, "task.role-selections-updated");
+    assert.strictEqual(pmEvent.type, "task.capability-tiers-updated");
   }),
 );
 
@@ -1319,31 +1307,26 @@ it.effect("drops retired role keys only while decoding historical events", () =>
 
     const taskEvent = yield* decodeOrchestrationEvent({
       sequence: 2,
-      eventId: "evt-task-legacy-roles",
+      eventId: "evt-task-capability-tiers",
       aggregateKind: "task",
       aggregateId: "task-1",
-      type: "task.role-selections-updated",
+      type: "task.capability-tiers-updated",
       occurredAt: "2026-01-01T00:00:00.000Z",
-      commandId: "cmd-task-legacy-roles",
+      commandId: "cmd-task-capability-tiers",
       causationEventId: null,
-      correlationId: "cmd-task-legacy-roles",
+      correlationId: "cmd-task-capability-tiers",
       metadata: {},
       payload: {
         taskId: "task-1",
-        roleModelSelections: {
-          review: { instanceId: "claudeAgent", model: "claude-old" },
-          verify: { instanceId: "codex", model: "gpt-verify" },
-        },
+        roleCapabilityTiers: { verify: "smart" },
         origin: "client",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
     });
-    if (taskEvent.type !== "task.role-selections-updated") {
-      return assert.fail("expected task.role-selections-updated");
+    if (taskEvent.type !== "task.capability-tiers-updated") {
+      return assert.fail("expected task.capability-tiers-updated");
     }
-    assert.deepStrictEqual(Object.keys(taskEvent.payload.roleModelSelections), ["verify"]);
-    assert.strictEqual(taskEvent.payload.roleModelSelections.verify?.instanceId, "codex");
-    assert.strictEqual(taskEvent.payload.roleModelSelections.verify?.model, "gpt-verify");
+    assert.deepStrictEqual(taskEvent.payload.roleCapabilityTiers, { verify: "smart" });
   }),
 );
 
@@ -1354,29 +1337,19 @@ it.effect("decodes system gate-resolution origin for internal engine decisions",
   }),
 );
 
-it.effect("decodes task role-selection websocket input with role-keyed selections", () =>
+it.effect("decodes task capability-tier websocket input with role-keyed tiers", () =>
   Effect.gen(function* () {
-    const input = yield* decodeOrchestratorSetTaskRoleSelectionsInput({
+    const input = yield* decodeOrchestratorSetTaskCapabilityTiersInput({
       taskId: "task-1",
-      roleModelSelections: {
-        work: {
-          instanceId: "codex_task",
-          model: "gpt-5.2",
-        },
-      },
+      roleCapabilityTiers: { work: "smart" },
     });
     assert.strictEqual(input.taskId, "task-1");
-    assert.strictEqual(input.roleModelSelections.work?.instanceId, "codex_task");
+    assert.strictEqual(input.roleCapabilityTiers.work, "smart");
 
     const result = yield* Effect.exit(
-      decodeOrchestratorSetTaskRoleSelectionsInput({
+      decodeOrchestratorSetTaskCapabilityTiersInput({
         taskId: "task-1",
-        roleModelSelections: {
-          wrk: {
-            instanceId: "codex_task",
-            model: "gpt-5.2",
-          },
-        },
+        roleCapabilityTiers: { wrk: "smart" },
       }),
     );
     assert.strictEqual(result._tag, "Failure");

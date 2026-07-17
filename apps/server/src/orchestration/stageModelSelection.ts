@@ -28,10 +28,8 @@ export function resolveStageModelSelection(input: {
   };
   readonly project: Pick<OrchestrationProject, "defaultModelSelection" | "roleModelSelections">;
   readonly role: OrchestrationStageRole;
-  readonly task: Pick<OrchestrationTask, "roleModelSelections">;
 }): ModelSelection | null {
   return (
-    input.task.roleModelSelections?.[input.role] ??
     input.project.roleModelSelections?.[input.role] ??
     input.orchestratorDefaults?.defaultWorkerModelSelection ??
     input.project.defaultModelSelection

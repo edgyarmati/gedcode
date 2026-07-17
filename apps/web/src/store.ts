@@ -304,12 +304,7 @@ function mapOrchestratorTask(
   return {
     ...task,
     stageThreadIds: [...task.stageThreadIds],
-    roleModelSelections: Object.fromEntries(
-      Object.entries(task.roleModelSelections ?? {}).map(([role, selection]) => [
-        role,
-        normalizeModelSelection(selection),
-      ]),
-    ),
+    roleCapabilityTiers: { ...task.roleCapabilityTiers },
     environmentId,
   };
 }
@@ -2038,7 +2033,7 @@ function applyEnvironmentOrchestrationEvent(
             verification: null,
             noChangesNeeded: null,
             landing: null,
-            roleModelSelections: {},
+            roleCapabilityTiers: {},
             playbookVersion: event.payload.playbookVersion,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -2065,15 +2060,10 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
-    case "task.role-selections-updated":
+    case "task.capability-tiers-updated":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
-        roleModelSelections: Object.fromEntries(
-          Object.entries(event.payload.roleModelSelections).map(([role, selection]) => [
-            role,
-            normalizeModelSelection(selection),
-          ]),
-        ),
+        roleCapabilityTiers: { ...event.payload.roleCapabilityTiers },
         updatedAt: event.payload.updatedAt,
       }));
 

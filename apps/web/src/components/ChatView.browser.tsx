@@ -256,9 +256,9 @@ function createMockEnvironmentApi(input: {
       resolveGate: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["resolveGate"],
-      setTaskRoleSelections: (() => {
+      setTaskCapabilityTiers: (() => {
         throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["setTaskRoleSelections"],
+      }) as EnvironmentApi["orchestrator"]["setTaskCapabilityTiers"],
       landTask: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["landTask"],

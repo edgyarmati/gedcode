@@ -462,7 +462,7 @@ function seedProjectAndTask(
           work: WORK_PREFIX,
           verify: VERIFY_PREFIX,
         },
-        orchestratorConfig: {},
+        orchestratorConfig: { capabilityPresets: { smart: TASK_SELECTION } },
         createdAt: iso(0),
       })
       .pipe(Effect.orDie);
@@ -481,12 +481,10 @@ function seedProjectAndTask(
       .pipe(Effect.orDie);
     yield* harness.engine
       .dispatch({
-        type: "task.role-selections.set",
+        type: "task.capability-tiers.set",
         commandId: commandId("task-role-selection-human"),
         taskId: TASK_ID,
-        roleModelSelections: {
-          work: TASK_SELECTION,
-        },
+        roleCapabilityTiers: { work: "smart" },
         origin: "human",
         createdAt: iso(2),
       })
@@ -575,7 +573,7 @@ it.live(
             task.stageThreadIds.includes(blockedWorkStage.stageStarted.payload.stageThreadId),
           "work stage quota block",
         );
-        assert.equal(blockedTask.roleModelSelections?.work?.instanceId, TASK_INSTANCE);
+        assert.equal(blockedTask.roleCapabilityTiers?.work, "smart");
 
         const blockedWorkThread = yield* harness.waitForThread(
           blockedWorkStage.stageStarted.payload.stageThreadId,
@@ -685,7 +683,7 @@ it.live(
   FULL_PIPELINE_TIMEOUT_MS,
 );
 
-it.live("reloads blocked-stage pipeline position and role overrides across engine restart", () =>
+it.live("reloads blocked-stage pipeline position and tier overrides across engine restart", () =>
   withHarness((harness) =>
     Effect.gen(function* () {
       yield* seedProjectAndTask(harness);
@@ -730,7 +728,7 @@ it.live("reloads blocked-stage pipeline position and role overrides across engin
             const restartedTask = restartedSnapshot.tasks.find((task) => task.id === TASK_ID);
             assert.equal(restartedTask?.status, "blocked-on-quota");
             assert.equal(restartedTask?.currentStageThreadId, null);
-            assert.equal(restartedTask?.roleModelSelections?.work?.instanceId, TASK_INSTANCE);
+            assert.equal(restartedTask?.roleCapabilityTiers?.work, "smart");
 
             const blockedHistory =
               restartedSnapshot.stageHistory[blockedWorkStage.stageStarted.payload.stageThreadId];

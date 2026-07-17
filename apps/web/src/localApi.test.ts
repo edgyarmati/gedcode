@@ -122,7 +122,7 @@ const rpcClientMock = {
         registerListener(taskStreamListeners, listener),
     ),
     resolveGate: vi.fn(),
-    setTaskRoleSelections: vi.fn(),
+    setTaskCapabilityTiers: vi.fn(),
     landTask: vi.fn(),
     cancelTask: vi.fn(),
     interruptStage: vi.fn(),
@@ -498,7 +498,7 @@ describe("wsApi", () => {
     });
     rpcClientMock.orchestrator.sendMessage.mockResolvedValue({ accepted: true });
     rpcClientMock.orchestrator.resolveGate.mockResolvedValue({ sequence: 42 });
-    rpcClientMock.orchestrator.setTaskRoleSelections.mockResolvedValue({ sequence: 43 });
+    rpcClientMock.orchestrator.setTaskCapabilityTiers.mockResolvedValue({ sequence: 43 });
     rpcClientMock.orchestrator.landTask.mockResolvedValue({
       sequence: 44,
       alreadyLanded: false,
@@ -547,14 +547,9 @@ describe("wsApi", () => {
       }),
     ).resolves.toEqual({ sequence: 42 });
     await expect(
-      api.orchestrator.setTaskRoleSelections({
+      api.orchestrator.setTaskCapabilityTiers({
         taskId,
-        roleModelSelections: {
-          work: {
-            instanceId: ProviderInstanceId.make("codex_task"),
-            model: "gpt-5-task",
-          },
-        },
+        roleCapabilityTiers: { work: "smart" },
       }),
     ).resolves.toEqual({ sequence: 43 });
     await expect(api.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 45 });
@@ -600,14 +595,9 @@ describe("wsApi", () => {
       approvedHash: "hash-1",
       decision: "approved",
     });
-    expect(rpcClientMock.orchestrator.setTaskRoleSelections).toHaveBeenCalledWith({
+    expect(rpcClientMock.orchestrator.setTaskCapabilityTiers).toHaveBeenCalledWith({
       taskId,
-      roleModelSelections: {
-        work: {
-          instanceId: ProviderInstanceId.make("codex_task"),
-          model: "gpt-5-task",
-        },
-      },
+      roleCapabilityTiers: { work: "smart" },
     });
     expect(rpcClientMock.orchestrator.cancelTask).toHaveBeenCalledWith({ taskId });
     expect(rpcClientMock.orchestrator.interruptStage).toHaveBeenCalledWith({ taskId });

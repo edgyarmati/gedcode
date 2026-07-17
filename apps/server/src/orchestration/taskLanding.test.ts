@@ -47,7 +47,7 @@ const makeTask = (
   verification: null,
   noChangesNeeded: null,
   landing,
-  roleModelSelections: {},
+  roleCapabilityTiers: {},
   playbookVersion: null,
   createdAt: now,
   updatedAt: now,

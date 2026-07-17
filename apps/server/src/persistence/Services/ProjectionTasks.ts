@@ -11,7 +11,7 @@
  * @module ProjectionTaskRepository
  */
 import {
-  GedRoleModelSelections,
+  GedRoleCapabilityTiers,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -61,7 +61,7 @@ export const ProjectionTask = Schema.Struct({
   noChangesNeeded: Schema.NullOr(OrchestrationTaskNoChangesNeeded),
   landing: Schema.NullOr(OrchestrationTaskLanding),
   releaseDispatch: Schema.NullOr(OrchestrationReleaseDispatch),
-  roleModelSelections: GedRoleModelSelections,
+  roleCapabilityTiers: GedRoleCapabilityTiers,
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

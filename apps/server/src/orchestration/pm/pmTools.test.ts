@@ -126,12 +126,7 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   verification: null,
   noChangesNeeded: null,
   landing: null,
-  roleModelSelections: {
-    plan: {
-      instanceId: ProviderInstanceId.make("codex_plan"),
-      model: "gpt-5-plan",
-    },
-  },
+  roleCapabilityTiers: { plan: "genius" },
   playbookVersion: null,
   createdAt: now,
   updatedAt: now,
@@ -829,12 +824,16 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
       handoffWorker.execute("tool-1", {
         taskId,
         role: "plan",
+        tier: "genius",
         instructions: "Plan the work.",
       }),
     );
 
     assert.strictEqual(dispatched.length, 1);
     assert.strictEqual(dispatched[0]?.type, "task.stage.start");
+    if (dispatched[0]?.type === "task.stage.start") {
+      assert.strictEqual(dispatched[0].capabilityTier, "genius");
+    }
     assert.deepStrictEqual(result.details, {
       taskId,
       sequence: 1,
@@ -854,6 +853,7 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
       handoffWorker.execute("tool-verify", {
         taskId,
         role: "verify",
+        tier: "cheap",
         instructions: "Verify the work.",
       }),
     );
@@ -861,8 +861,46 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
     assert.strictEqual(dispatched[0]?.type, "task.stage.start");
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].role, "verify");
+      assert.strictEqual(dispatched[0].capabilityTier, "cheap");
     }
   }),
+);
+
+it.effect(
+  "handoffWorker records an explicit higher-tier retry without mutating the task default",
+  () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+      const handoffWorker = findTool(tools, "handoffWorker");
+
+      yield* Effect.promise(() =>
+        handoffWorker.execute("tool-work-cheap", {
+          taskId,
+          role: "work",
+          tier: "cheap",
+          instructions: "Apply the mechanical edit.",
+        }),
+      );
+      yield* Effect.promise(() =>
+        handoffWorker.execute("tool-work-smart-retry", {
+          taskId,
+          role: "work",
+          tier: "smart",
+          instructions: "Retry because the completed result missed the required invariant.",
+        }),
+      );
+
+      const attempts = dispatched.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "task.stage.start" }> =>
+          command.type === "task.stage.start",
+      );
+      assert.deepStrictEqual(
+        attempts.map((command) => command.capabilityTier),
+        ["cheap", "smart"],
+      );
+      assert.deepStrictEqual(makeTask().roleCapabilityTiers, { plan: "genius" });
+    }),
 );
 
 it.effect("steerStage dispatches thread.turn.start to an explicit stage thread", () =>
@@ -2185,41 +2223,33 @@ it.effect("task retention tools dispatch archive, restore, and delete commands",
   }),
 );
 
-it.effect("setTaskBackend dispatches a merged pm-runtime task.role-selections.set command", () =>
+it.effect("setTaskTier dispatches a merged pm-runtime capability-tier command", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
-    const setTaskBackend = findTool(tools, "setTaskBackend");
+    const setTaskTier = findTool(tools, "setTaskTier");
 
     const result = yield* Effect.promise(() =>
-      setTaskBackend.execute("tool-backend", {
+      setTaskTier.execute("tool-tier", {
         taskId,
         role: "work",
-        instanceId: "codex_work",
-        model: "gpt-5-work",
-        options: [{ id: "reasoningEffort", value: "high" }],
+        tier: "smart",
       }),
     );
 
     assert.strictEqual(dispatched.length, 1);
-    assert.strictEqual(dispatched[0]?.type, "task.role-selections.set");
-    if (dispatched[0]?.type === "task.role-selections.set") {
+    assert.strictEqual(dispatched[0]?.type, "task.capability-tiers.set");
+    if (dispatched[0]?.type === "task.capability-tiers.set") {
       assert.strictEqual(dispatched[0].origin, "pm-runtime");
-      assert.deepStrictEqual(dispatched[0].roleModelSelections, {
-        plan: {
-          instanceId: ProviderInstanceId.make("codex_plan"),
-          model: "gpt-5-plan",
-        },
-        work: {
-          instanceId: ProviderInstanceId.make("codex_work"),
-          model: "gpt-5-work",
-          options: [{ id: "reasoningEffort", value: "high" }],
-        },
+      assert.deepStrictEqual(dispatched[0].roleCapabilityTiers, {
+        plan: "genius",
+        work: "smart",
       });
     }
     assert.deepStrictEqual(result.details, {
       taskId,
       role: "work",
+      tier: "smart",
       sequence: 1,
     });
   }),
@@ -2319,7 +2349,7 @@ it.effect("getTaskLedger bounds stage history and returns the projection cursor"
             taskId,
             stageThreadId,
             role: "work" as const,
-            capabilityTier: null,
+            capabilityTier: "smart" as const,
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
             modelOptions: null,
@@ -2339,13 +2369,23 @@ it.effect("getTaskLedger bounds stage history and returns the projection cursor"
 
     assert.strictEqual(result.details.lastActionCursor, 42);
     assert.strictEqual(result.details.tasks[0]?.attemptCount, 5);
-    assert.deepStrictEqual(result.details.tasks[0]?.roleModelSelections, task.roleModelSelections);
+    assert.deepStrictEqual(result.details.tasks[0]?.roleCapabilityTiers, task.roleCapabilityTiers);
     assert.deepStrictEqual(
       result.details.tasks[0]?.recentAttempts.map(
         (attempt: { stageThreadId: string }) => attempt.stageThreadId,
       ),
       attemptIds.slice(-3),
     );
+    assert.deepStrictEqual(result.details.tasks[0]?.recentAttempts.at(-1), {
+      stageThreadId: attemptIds.at(-1),
+      role: "work",
+      capabilityTier: "smart",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+      status: "running",
+      startedAt: now,
+      endedAt: null,
+    });
     assert.ok(!("stageThreadIds" in (result.details.tasks[0] ?? {})));
   }),
 );

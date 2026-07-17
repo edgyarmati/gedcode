@@ -136,7 +136,7 @@ describe("wsRpcClient", () => {
       [ORCHESTRATOR_WS_METHODS.subscribeProject]: vi.fn(() => "project-stream"),
       [ORCHESTRATOR_WS_METHODS.subscribeTask]: vi.fn(() => "task-stream"),
       [ORCHESTRATOR_WS_METHODS.resolveGate]: vi.fn(() => ({ sequence: 7 })),
-      [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: vi.fn(() => ({ sequence: 8 })),
+      [ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers]: vi.fn(() => ({ sequence: 8 })),
       [ORCHESTRATOR_WS_METHODS.landTask]: vi.fn(() => ({
         sequence: 11,
         alreadyLanded: false,
@@ -207,14 +207,9 @@ describe("wsRpcClient", () => {
       }),
     ).resolves.toEqual({ sequence: 7 });
     await expect(
-      client.orchestrator.setTaskRoleSelections({
+      client.orchestrator.setTaskCapabilityTiers({
         taskId,
-        roleModelSelections: {
-          work: {
-            instanceId: ProviderInstanceId.make("codex_task"),
-            model: "gpt-5-task",
-          },
-        },
+        roleCapabilityTiers: { work: "smart" },
       }),
     ).resolves.toEqual({ sequence: 8 });
     await expect(client.orchestrator.cancelTask({ taskId })).resolves.toEqual({ sequence: 10 });
@@ -257,14 +252,9 @@ describe("wsRpcClient", () => {
       approvedHash: "hash-1",
       decision: "approved",
     });
-    expect(protocolClient[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]).toHaveBeenCalledWith({
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers]).toHaveBeenCalledWith({
       taskId,
-      roleModelSelections: {
-        work: {
-          instanceId: ProviderInstanceId.make("codex_task"),
-          model: "gpt-5-task",
-        },
-      },
+      roleCapabilityTiers: { work: "smart" },
     });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.cancelTask]).toHaveBeenCalledWith({ taskId });
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.interruptStage]).toHaveBeenCalledWith({ taskId });

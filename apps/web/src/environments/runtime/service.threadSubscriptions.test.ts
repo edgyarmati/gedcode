@@ -320,7 +320,7 @@ describe("retainThreadDetailSubscription", () => {
       orchestrator: {
         subscribeProject: mockSubscribeProject,
         subscribeTask: mockSubscribeTask,
-        setTaskRoleSelections: vi.fn(),
+        setTaskCapabilityTiers: vi.fn(),
         cancelTask: vi.fn(),
         clearPmChat: vi.fn(),
         requestPmHandoff: vi.fn(),

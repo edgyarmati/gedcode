@@ -43,7 +43,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   subscribeProject: "orchestrator.subscribeProject",
   subscribeTask: "orchestrator.subscribeTask",
   resolveGate: "orchestrator.resolveGate",
-  setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
+  setTaskCapabilityTiers: "orchestrator.setTaskCapabilityTiers",
   cancelTask: "orchestrator.cancelTask",
   interruptStage: "orchestrator.interruptStage",
   inspectTaskChanges: "orchestrator.inspectTaskChanges",
@@ -250,6 +250,11 @@ export const GedRoleModelSelections = makeStageRoleKeyedMap(ModelSelection).pipe
   Schema.withDecodingDefault(Effect.succeed({})),
 );
 export type GedRoleModelSelections = typeof GedRoleModelSelections.Type;
+
+export const GedRoleCapabilityTiers = makeStageRoleKeyedMap(OrchestrationCapabilityTier).pipe(
+  Schema.withDecodingDefault(Effect.succeed({})),
+);
+export type GedRoleCapabilityTiers = typeof GedRoleCapabilityTiers.Type;
 
 export const GedRolePromptPrefixes = makeStageRoleKeyedMap(TrimmedNonEmptyString).pipe(
   Schema.withDecodingDefault(Effect.succeed({})),
@@ -716,7 +721,7 @@ export const OrchestrationTask = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   releaseDispatch: Schema.optionalKey(Schema.NullOr(OrchestrationReleaseDispatch)),
-  roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
+  roleCapabilityTiers: Schema.optionalKey(GedRoleCapabilityTiers),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -750,12 +755,12 @@ export type OrchestrationGateResolutionOrigin = typeof OrchestrationGateResoluti
 export const OrchestrationHumanConfigOrigin = Schema.Literals(["human", "client"]);
 export type OrchestrationHumanConfigOrigin = typeof OrchestrationHumanConfigOrigin.Type;
 
-export const OrchestrationTaskRoleSelectionOrigin = Schema.Literals([
+export const OrchestrationTaskTierSelectionOrigin = Schema.Literals([
   "human",
   "client",
   "pm-runtime",
 ]);
-export type OrchestrationTaskRoleSelectionOrigin = typeof OrchestrationTaskRoleSelectionOrigin.Type;
+export type OrchestrationTaskTierSelectionOrigin = typeof OrchestrationTaskTierSelectionOrigin.Type;
 
 /**
  * Decision recorded when a task gate is resolved. Closed literal so the decider
@@ -1201,12 +1206,12 @@ const TaskClassifyCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-const TaskRoleSelectionsSetCommand = Schema.Struct({
-  type: Schema.Literal("task.role-selections.set"),
+const TaskCapabilityTiersSetCommand = Schema.Struct({
+  type: Schema.Literal("task.capability-tiers.set"),
   commandId: CommandId,
   taskId: TaskId,
-  roleModelSelections: GedRoleModelSelections,
-  origin: OrchestrationTaskRoleSelectionOrigin,
+  roleCapabilityTiers: GedRoleCapabilityTiers,
+  origin: OrchestrationTaskTierSelectionOrigin,
   createdAt: IsoDateTime,
 });
 
@@ -1230,8 +1235,8 @@ const TaskDeleteCommand = Schema.Struct({
 
 /**
  * The handoff command. Internal/PM-dispatchable. The decider (WP-E) pins
- * `runtimeMode` and the role's model from config — they are intentionally **not**
- * accepted as command params so a hallucinated PM cannot escalate the worker.
+ * `runtimeMode` and resolves the requested semantic tier through trusted config. Raw provider/model
+ * selections are intentionally not accepted, so the PM cannot bypass configured presets.
  */
 const TaskStageStartCommand = Schema.Struct({
   type: Schema.Literal("task.stage.start"),
@@ -1454,7 +1459,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadSessionStopCommand,
   TaskCreateCommand,
   TaskClassifyCommand,
-  TaskRoleSelectionsSetCommand,
+  TaskCapabilityTiersSetCommand,
   TaskArchiveCommand,
   TaskRestoreCommand,
   TaskDeleteCommand,
@@ -1664,7 +1669,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.created",
   "task.split",
   "task.classified",
-  "task.role-selections-updated",
+  "task.capability-tiers-updated",
   "task.archived",
   "task.restored",
   "task.deleted",
@@ -1938,10 +1943,10 @@ export const TaskClassifiedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
-export const TaskRoleSelectionsUpdatedPayload = Schema.Struct({
+export const TaskCapabilityTiersUpdatedPayload = Schema.Struct({
   taskId: TaskId,
-  roleModelSelections: PersistedGedRoleModelSelections,
-  origin: OrchestrationTaskRoleSelectionOrigin,
+  roleCapabilityTiers: GedRoleCapabilityTiers,
+  origin: OrchestrationTaskTierSelectionOrigin,
   updatedAt: IsoDateTime,
 });
 
@@ -2279,8 +2284,8 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
-    type: Schema.Literal("task.role-selections-updated"),
-    payload: TaskRoleSelectionsUpdatedPayload,
+    type: Schema.Literal("task.capability-tiers-updated"),
+    payload: TaskCapabilityTiersUpdatedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -2528,12 +2533,12 @@ export const OrchestratorResolveGateInput = Schema.Struct({
 });
 export type OrchestratorResolveGateInput = typeof OrchestratorResolveGateInput.Type;
 
-export const OrchestratorSetTaskRoleSelectionsInput = Schema.Struct({
+export const OrchestratorSetTaskCapabilityTiersInput = Schema.Struct({
   taskId: TaskId,
-  roleModelSelections: GedRoleModelSelections,
+  roleCapabilityTiers: GedRoleCapabilityTiers,
 });
-export type OrchestratorSetTaskRoleSelectionsInput =
-  typeof OrchestratorSetTaskRoleSelectionsInput.Type;
+export type OrchestratorSetTaskCapabilityTiersInput =
+  typeof OrchestratorSetTaskCapabilityTiersInput.Type;
 
 export const OrchestratorCancelTaskInput = Schema.Struct({
   taskId: TaskId,
@@ -2833,8 +2838,8 @@ export const OrchestratorRpcSchemas = {
     input: OrchestratorResolveGateInput,
     output: DispatchResult,
   },
-  setTaskRoleSelections: {
-    input: OrchestratorSetTaskRoleSelectionsInput,
+  setTaskCapabilityTiers: {
+    input: OrchestratorSetTaskCapabilityTiersInput,
     output: DispatchResult,
   },
   cancelTask: {

@@ -64,7 +64,7 @@ const makeTask = (overrides: Partial<OrchestrationTask> = {}): OrchestrationTask
   verification: null,
   noChangesNeeded: null,
   landing: null,
-  roleModelSelections: {},
+  roleCapabilityTiers: {},
   playbookVersion: "feature@v1",
   createdAt: now,
   updatedAt: now,

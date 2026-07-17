@@ -107,7 +107,7 @@ export function classifyOrchestrationCommand(
     case "task.create":
     case "task.split":
     case "task.classify":
-    case "task.role-selections.set":
+    case "task.capability-tiers.set":
     case "task.archive":
     case "task.restore":
     case "task.delete":
@@ -185,7 +185,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.create":
     case "task.split":
     case "task.classify":
-    case "task.role-selections.set":
+    case "task.capability-tiers.set":
     case "task.archive":
     case "task.restore":
     case "task.delete":

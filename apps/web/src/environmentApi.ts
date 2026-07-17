@@ -66,7 +66,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       subscribeTask: (input, callback, options) =>
         rpcClient.orchestrator.subscribeTask(input, callback, options),
       resolveGate: rpcClient.orchestrator.resolveGate,
-      setTaskRoleSelections: rpcClient.orchestrator.setTaskRoleSelections,
+      setTaskCapabilityTiers: rpcClient.orchestrator.setTaskCapabilityTiers,
       landTask: rpcClient.orchestrator.landTask,
       cancelTask: rpcClient.orchestrator.cancelTask,
       interruptStage: rpcClient.orchestrator.interruptStage,

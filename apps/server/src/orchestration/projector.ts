@@ -33,7 +33,7 @@ import {
   TaskReleaseDispatchFailedPayload,
   TaskReleaseDispatchRequestedPayload,
   TaskReleaseDispatchedPayload,
-  TaskRoleSelectionsUpdatedPayload,
+  TaskCapabilityTiersUpdatedPayload,
   TaskRestoredPayload,
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
@@ -934,7 +934,7 @@ export function projectEvent(
             noChangesNeeded: null,
             landing: null,
             releaseDispatch: null,
-            roleModelSelections: {},
+            roleCapabilityTiers: {},
             playbookVersion: payload.playbookVersion,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -989,9 +989,9 @@ export function projectEvent(
         })),
       );
 
-    case "task.role-selections-updated":
+    case "task.capability-tiers-updated":
       return decodeForEvent(
-        TaskRoleSelectionsUpdatedPayload,
+        TaskCapabilityTiersUpdatedPayload,
         event.payload,
         event.type,
         "payload",
@@ -999,7 +999,7 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
-            roleModelSelections: payload.roleModelSelections,
+            roleCapabilityTiers: payload.roleCapabilityTiers,
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -1062,7 +1062,6 @@ export function projectEvent(
               ? null
               : resolveStageModelSelection({
                   project,
-                  task,
                   role: payload.role,
                 });
           const providerInstanceId = payload.providerInstanceId ?? fallbackSelection?.instanceId;

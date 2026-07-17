@@ -13,7 +13,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "steerStage",
   "interruptStage",
   "requestApproval",
-  "setTaskBackend",
+  "setTaskTier",
   "inspectStage",
   "inspectDirectChanges",
   "commitDirectChanges",
@@ -37,6 +37,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
 export type OrchestrationMcpToolName = (typeof ORCHESTRATION_MCP_TOOL_NAMES)[number];
 
 const stageRole = z.enum(["plan", "work", "verify"]);
+const capabilityTier = z.enum(["cheap", "smart", "genius"]);
 
 export const mcpInputSchemas = {
   classifyRequest: {
@@ -72,6 +73,7 @@ export const mcpInputSchemas = {
   handoffWorker: {
     taskId: z.string(),
     role: stageRole,
+    tier: capabilityTier,
     instructions: z.string(),
   },
   steerStage: {
@@ -89,19 +91,10 @@ export const mcpInputSchemas = {
     contentHash: z.string(),
     stageThreadId: z.string().optional(),
   },
-  setTaskBackend: {
+  setTaskTier: {
     taskId: z.string(),
     role: stageRole,
-    instanceId: z.string(),
-    model: z.string(),
-    options: z
-      .array(
-        z.object({
-          id: z.string().trim().min(1),
-          value: z.union([z.string().trim().min(1), z.boolean()]),
-        }),
-      )
-      .optional(),
+    tier: capabilityTier,
   },
   inspectStage: {
     taskId: z.string(),
@@ -141,6 +134,7 @@ export const mcpInputSchemas = {
   returnTaskChanges: {
     taskId: z.string().trim().min(1),
     instructions: z.string().trim().min(1),
+    tier: capabilityTier.optional(),
   },
   completeTaskWithoutChanges: {
     taskId: z.string().trim().min(1),

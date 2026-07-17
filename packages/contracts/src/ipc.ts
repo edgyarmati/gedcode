@@ -90,7 +90,7 @@ import type {
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
-  OrchestratorSetTaskRoleSelectionsInput,
+  OrchestratorSetTaskCapabilityTiersInput,
   OrchestratorSubscribeProjectInput,
   OrchestratorSubscribeTaskInput,
   OrchestratorTaskStreamItem,
@@ -623,8 +623,8 @@ export interface EnvironmentApi {
       },
     ) => () => void;
     resolveGate: (input: OrchestratorResolveGateInput) => Promise<{ sequence: number }>;
-    setTaskRoleSelections: (
-      input: OrchestratorSetTaskRoleSelectionsInput,
+    setTaskCapabilityTiers: (
+      input: OrchestratorSetTaskCapabilityTiersInput,
     ) => Promise<{ sequence: number }>;
     cancelTask: (input: OrchestratorCancelTaskInput) => Promise<{ sequence: number }>;
     interruptStage: (

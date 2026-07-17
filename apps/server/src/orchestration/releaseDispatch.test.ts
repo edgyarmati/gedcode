@@ -53,7 +53,7 @@ function makeReadModel(
     noChangesNeeded: null,
     landing: null,
     releaseDispatch,
-    roleModelSelections: {},
+    roleCapabilityTiers: {},
     playbookVersion: "release@v1",
     createdAt: now,
     updatedAt: now,

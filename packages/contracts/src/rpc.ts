@@ -506,11 +506,11 @@ export const WsOrchestratorResolveGateRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.res
   error: OrchestrationDispatchCommandError,
 });
 
-export const WsOrchestratorSetTaskRoleSelectionsRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+export const WsOrchestratorSetTaskCapabilityTiersRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers,
   {
-    payload: OrchestratorRpcSchemas.setTaskRoleSelections.input,
-    success: OrchestratorRpcSchemas.setTaskRoleSelections.output,
+    payload: OrchestratorRpcSchemas.setTaskCapabilityTiers.input,
+    success: OrchestratorRpcSchemas.setTaskCapabilityTiers.output,
     error: OrchestrationDispatchCommandError,
   },
 );
@@ -701,7 +701,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorSubscribeProjectRpc,
   WsOrchestratorSubscribeTaskRpc,
   WsOrchestratorResolveGateRpc,
-  WsOrchestratorSetTaskRoleSelectionsRpc,
+  WsOrchestratorSetTaskCapabilityTiersRpc,
   WsOrchestratorCancelTaskRpc,
   WsOrchestratorInterruptStageRpc,
   WsOrchestratorInspectTaskChangesRpc,

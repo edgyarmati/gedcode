@@ -1555,7 +1555,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               noChangesNeeded: null,
               landing: null,
               releaseDispatch: null,
-              roleModelSelections: {},
+              roleCapabilityTiers: {},
               playbookVersion: event.payload.playbookVersion,
               createdAt: event.payload.createdAt,
               updatedAt: event.payload.updatedAt,
@@ -1607,7 +1607,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
-          case "task.role-selections-updated": {
+          case "task.capability-tiers-updated": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,
             });
@@ -1616,7 +1616,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
-              roleModelSelections: event.payload.roleModelSelections,
+              roleCapabilityTiers: event.payload.roleCapabilityTiers,
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -2105,7 +2105,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ? null
             : resolveStageModelSelection({
                 project: project.value,
-                task: task.value,
                 role: event.payload.role,
               });
           const providerInstanceId =

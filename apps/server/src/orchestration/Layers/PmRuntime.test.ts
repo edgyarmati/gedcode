@@ -2921,7 +2921,7 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "commands plus observed outcomes");
     assert.include(prompt, "other user hunks may exist in the same file");
     assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
-    assert.include(prompt, "createTask and handoffWorker");
+    assert.include(prompt, "Keep simple, well-understood planning in your own PM turn");
     assert.notInclude(prompt, "native subagents");
     assert.notInclude(prompt, "short read-only commands");
     assert.notInclude(prompt, "Never implement product changes yourself");
@@ -2933,9 +2933,11 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "explicit operator status request");
     assert.include(prompt, "last-action cursors");
     assert.include(prompt, "three most recent attempts");
-    assert.include(prompt, "Terra with high reasoning");
-    assert.include(prompt, "Sol with high reasoning");
-    assert.include(prompt, "setTaskBackend options");
+    assert.include(prompt, "Choose a capability tier for every handoff");
+    assert.include(prompt, "delegated planning or unusually difficult reasoning");
+    assert.include(prompt, "setTaskTier changes the visible task default");
+    assert.include(prompt, "Never move to a higher tier because of quota exhaustion");
+    assert.include(prompt, "Retry at a higher tier only when the completed result demonstrates");
     assert.include(prompt, "splitTask");
     assert.include(prompt, "cannot be completed and verified as one focused work stage");
     assert.include(prompt, "2-8 ordered child slices");

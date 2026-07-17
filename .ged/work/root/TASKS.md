@@ -28,13 +28,13 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ORCH-TIER-02 | DONE | Persist a one-time manual preset-migration requirement for legacy global/project role selections and block every Orchestrator entry/API until complete. | Migration/state tests enumerate legacy selections, reject partial mappings, persist completion, and prove no bypass after restart. |
 | ORCH-TIER-03 | DONE | Build the non-skippable Orchestrator migration wizard with harness/model/thinking pickers for all three presets and project overrides. | Chromium proves direct-route/deep-link blocking, validation, completion, restart persistence, and restored access. |
 | ORCH-TIER-04 | DONE | Replace per-role backend settings with polished preset cards showing harness logo, model, and thinking; retain advanced role prompt prefixes separately. | Settings logic/Chromium cover global defaults, project inheritance/override/reset, logos, and option reconciliation. |
-| ORCH-TIER-05 | NEXT | Replace task backend selection with tier selection and implement PM routing: simple plans remain PM-owned; delegated plans default Genius; work/verify choose Cheap or Smart; escalation is explicit and diagnosed. | PM/MCP/runtime tests cover override, resolved backend, no automatic escalation on quota/permission/environment failure, and retry at a higher tier. |
+| ORCH-TIER-05 | DONE | Replace task backend selection with tier selection and implement PM routing: simple plans remain PM-owned; delegated plans default Genius; work/verify choose Cheap or Smart; escalation is explicit and diagnosed. | PM/MCP/runtime tests cover override, resolved backend, no automatic escalation on quota/permission/environment failure, and retry at a higher tier. |
 
 ## P1 — Nested Helper Runs
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-HELPER-01 | TODO | Add persisted read-only helper-run contracts/projections linked to a PM thread or task, with tier, resolved backend, status, bounded result, and restart-safe identity. | Contract, decider, SQL, replay, and retention tests cover lifecycle without task/stage/gate fields. |
+| ORCH-HELPER-01 | NEXT | Add persisted read-only helper-run contracts/projections linked to a PM thread or task, with tier, resolved backend, status, bounded result, and restart-safe identity. | Contract, decider, SQL, replay, and retention tests cover lifecycle without task/stage/gate fields. |
 | ORCH-HELPER-02 | TODO | Run helpers against project root or task worktree under read-only provider policy; feed bounded results to the requester/subsequent stage without creating a worktree or lifecycle stage. | Provider/runtime integration proves path selection, read-only enforcement, bounded context injection, quotas, interruption, and restart. |
 | ORCH-HELPER-03 | TODO | Add PM/MCP helper tools and timeline UI; default to Cheap while allowing another preset. Keep helpers off the task board. | Tool and Chromium tests cover start/status/result, task/PM attachment, tier choice, and absence from gates/board/landing. |
 

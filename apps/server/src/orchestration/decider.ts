@@ -1631,7 +1631,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "task.role-selections.set": {
+    case "task.capability-tiers.set": {
       const task = yield* requireTask({
         readModel,
         command,
@@ -1652,7 +1652,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       ) {
         return yield* invariantError(
           command.type,
-          `Task role model selections can only be updated by human/client/pm-runtime origins; received '${command.origin}'.`,
+          `Task capability tiers can only be updated by human/client/pm-runtime origins; received '${command.origin}'.`,
         );
       }
       return {
@@ -1662,10 +1662,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
         })),
-        type: "task.role-selections-updated",
+        type: "task.capability-tiers-updated",
         payload: {
           taskId: command.taskId,
-          roleModelSelections: command.roleModelSelections,
+          roleCapabilityTiers: command.roleCapabilityTiers,
           origin: command.origin,
           updatedAt: command.createdAt,
         },
@@ -1859,25 +1859,25 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         }
       }
 
+      const capabilityTier = command.capabilityTier ?? task.roleCapabilityTiers?.[command.role];
       const modelSelection =
-        command.capabilityTier === undefined
+        capabilityTier === undefined
           ? resolveStageModelSelection({
               orchestratorDefaults,
               project,
-              task,
               role: command.role,
             })
           : resolveCapabilityPreset({
               orchestratorDefaults,
               projectConfig,
-              tier: command.capabilityTier,
+              tier: capabilityTier,
             });
       if (modelSelection === null || modelSelection === undefined) {
         return yield* invariantError(
           command.type,
-          command.capabilityTier === undefined
+          capabilityTier === undefined
             ? `Project '${task.projectId}' has no model selection for task stage role '${command.role}'.`
-            : `Project '${task.projectId}' has no configured '${command.capabilityTier}' capability preset.`,
+            : `Project '${task.projectId}' has no configured '${capabilityTier}' capability preset.`,
         );
       }
 
@@ -1905,9 +1905,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           taskId: command.taskId,
           role: command.role,
-          ...(command.capabilityTier === undefined
-            ? {}
-            : { capabilityTier: command.capabilityTier }),
+          ...(capabilityTier === undefined ? {} : { capabilityTier }),
           stageThreadId,
           awaitedTurnId: null,
           providerInstanceId: modelSelection.instanceId,

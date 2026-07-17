@@ -108,7 +108,7 @@ const task = {
   projectId,
   type: TaskTypeId.make("feature"),
   title: "Task",
-  roleModelSelections: {},
+  roleCapabilityTiers: {},
 } as OrchestratorTask;
 
 afterEach(() => {
@@ -117,10 +117,10 @@ afterEach(() => {
   resetAppAtomRegistryForTests();
 });
 
-it("sets a task worker harness with its model-dependent thinking default", async () => {
-  const setTaskRoleSelections = vi.fn(async () => ({ sequence: 1 }));
+it("sets a semantic task capability tier without selecting a raw backend", async () => {
+  const setTaskCapabilityTiers = vi.fn(async () => ({ sequence: 1 }));
   __setEnvironmentApiOverrideForTests(environmentId, {
-    orchestrator: { setTaskRoleSelections },
+    orchestrator: { setTaskCapabilityTiers },
   } as unknown as EnvironmentApi);
   setServerConfigSnapshot({
     providers,
@@ -133,20 +133,13 @@ it("sets a task worker harness with its model-dependent thinking default", async
     </AppAtomRegistryProvider>,
   );
 
-  await expect.element(page.getByText("Worker overrides")).toBeInTheDocument();
-  await userEvent.click(page.getByLabelText("Work harness"));
-  await userEvent.click(page.getByText("Claude Worker", { exact: true }));
+  await expect.element(page.getByText("Capability tiers")).toBeInTheDocument();
+  await userEvent.selectOptions(page.getByLabelText("Work capability tier"), "cheap");
 
   await vi.waitFor(() => {
-    expect(setTaskRoleSelections).toHaveBeenCalledWith({
+    expect(setTaskCapabilityTiers).toHaveBeenCalledWith({
       taskId,
-      roleModelSelections: {
-        work: {
-          instanceId: claudeInstanceId,
-          model: "claude-sonnet",
-          options: [{ id: "effort", value: "high" }],
-        },
-      },
+      roleCapabilityTiers: { work: "cheap" },
     });
   });
 });

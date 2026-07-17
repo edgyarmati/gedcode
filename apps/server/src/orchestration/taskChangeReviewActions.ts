@@ -1,6 +1,7 @@
 import {
   type CommandId,
   type DispatchResult,
+  type OrchestrationCapabilityTier,
   type OrchestrationCommand,
   type OrchestrationDispatchCommandError,
   type TaskId,
@@ -189,17 +190,31 @@ export const discardOrchestratorTaskChanges = Effect.fn("discardOrchestratorTask
 
 export const returnOrchestratorTaskChanges = Effect.fn("returnOrchestratorTaskChanges")(function* (
   services: TaskChangeReviewActionServices,
-  input: TaskChangeReviewActionInput & { readonly instructions: string },
+  input: TaskChangeReviewActionInput & {
+    readonly instructions: string;
+    readonly capabilityTier?: OrchestrationCapabilityTier;
+  },
 ) {
   return yield* withTaskLifecycleLock(
     input.taskId,
     Effect.gen(function* () {
-      yield* loadPendingChangeReview(services, input.taskId);
+      const pendingTask = yield* loadPendingChangeReview(services, input.taskId);
+      const previousWorkTier = pendingTask.changeReview
+        ? (yield* services.snapshotQuery.getCommandReadModel()).stageHistory[
+            pendingTask.changeReview.workStageThreadId
+          ]?.capabilityTier
+        : null;
+      const capabilityTier =
+        input.capabilityTier ??
+        pendingTask.roleCapabilityTiers?.work ??
+        previousWorkTier ??
+        "smart";
       const started = yield* input.dispatch({
         type: "task.stage.start",
         commandId: yield* input.commandId("return-task-changes"),
         taskId: input.taskId,
         role: "work",
+        capabilityTier,
         instructions: input.instructions.trim(),
         createdAt: yield* input.createdAt,
       });

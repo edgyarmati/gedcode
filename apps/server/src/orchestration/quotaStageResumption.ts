@@ -1,4 +1,10 @@
-import type { OrchestrationQuotaBlockedStage, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  OrchestrationCapabilityTier,
+  OrchestrationQuotaBlockedStage,
+  OrchestrationReadModel,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -16,6 +22,13 @@ import {
   type ProjectionSnapshotQueryShape,
 } from "./Services/ProjectionSnapshotQuery.ts";
 import { originalStageInstructions, quotaStageResumeCommandId } from "./stageResolution.ts";
+
+export function capabilityTierForStageRetry(
+  readModel: Pick<OrchestrationReadModel, "stageHistory">,
+  stageThreadId: ThreadId,
+): OrchestrationCapabilityTier | null {
+  return readModel.stageHistory[stageThreadId]?.capabilityTier ?? null;
+}
 
 export const resumeQuotaBlockedStageWithServices = Effect.fn("resumeQuotaBlockedStageWithServices")(
   function* (input: {
@@ -48,12 +61,14 @@ export const resumeQuotaBlockedStageWithServices = Effect.fn("resumeQuotaBlocked
       });
       return false;
     }
+    const capabilityTier = capabilityTierForStageRetry(readModel, input.stage.stageThreadId);
 
     yield* input.orchestrationEngine.dispatch({
       type: "task.stage.start",
       commandId: quotaStageResumeCommandId(input.stage.stageThreadId, input.stage.retryCount),
       taskId: input.stage.taskId,
       role: input.stage.role,
+      ...(capabilityTier === null ? {} : { capabilityTier }),
       instructions,
       createdAt: input.createdAt,
     });

@@ -33,7 +33,7 @@ function makeTask(overrides: Partial<OrchestratorTask> = {}): OrchestratorTask {
     verification: null,
     noChangesNeeded: null,
     landing: null,
-    roleModelSelections: {},
+    roleCapabilityTiers: {},
     playbookVersion: null,
     createdAt: "2026-07-11T00:00:00.000Z",
     updatedAt: "2026-07-11T00:00:00.000Z",

@@ -3,7 +3,6 @@ import {
   ProviderInstanceId,
   type ModelSelection,
   type OrchestrationProject,
-  type OrchestrationTask,
 } from "@t3tools/contracts";
 
 import { resolveCapabilityPreset, resolveStageModelSelection } from "./stageModelSelection.ts";
@@ -16,14 +15,10 @@ function selection(instanceId: string, model: string): ModelSelection {
 }
 
 function resolve(input?: {
-  readonly taskSelection?: ModelSelection | undefined;
   readonly projectRoleSelection?: ModelSelection | undefined;
   readonly globalSelection?: ModelSelection | null | undefined;
   readonly projectDefaultSelection?: ModelSelection | null | undefined;
 }) {
-  const task = (
-    input?.taskSelection === undefined ? {} : { roleModelSelections: { work: input.taskSelection } }
-  ) satisfies Pick<OrchestrationTask, "roleModelSelections">;
   const project = (
     input?.projectRoleSelection === undefined
       ? { defaultModelSelection: input?.projectDefaultSelection ?? null }
@@ -34,7 +29,6 @@ function resolve(input?: {
   ) satisfies Pick<OrchestrationProject, "defaultModelSelection" | "roleModelSelections">;
 
   return resolveStageModelSelection({
-    task,
     project,
     orchestratorDefaults: {
       defaultWorkerModelSelection: input?.globalSelection ?? null,
@@ -44,19 +38,6 @@ function resolve(input?: {
 }
 
 describe("resolveStageModelSelection", () => {
-  it("prefers per-task role override over all defaults", () => {
-    const taskSelection = selection("codex_task", "gpt-5-task");
-
-    expect(
-      resolve({
-        taskSelection,
-        projectRoleSelection: selection("codex_project_role", "gpt-5-project-role"),
-        globalSelection: selection("codex_global", "gpt-5-global"),
-        projectDefaultSelection: selection("codex_project", "gpt-5-project"),
-      }),
-    ).toEqual(taskSelection);
-  });
-
   it("prefers project role selection over global and project defaults", () => {
     const projectRoleSelection = selection("codex_project_role", "gpt-5-project-role");
 

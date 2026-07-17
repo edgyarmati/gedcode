@@ -3892,18 +3892,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             });
             assert.equal(resolveResult.sequence, 41);
 
-            const setTaskRoleSelectionsResult = yield* client[
-              ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+            const setTaskCapabilityTiersResult = yield* client[
+              ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers
             ]({
               taskId,
-              roleModelSelections: {
-                work: {
-                  instanceId: ProviderInstanceId.make("codex_task"),
-                  model: "gpt-5-task",
-                },
-              },
+              roleCapabilityTiers: { work: "smart" },
             });
-            assert.equal(setTaskRoleSelectionsResult.sequence, 41);
+            assert.equal(setTaskCapabilityTiersResult.sequence, 41);
 
             const interruptStageResult = yield* client[ORCHESTRATOR_WS_METHODS.interruptStage]({
               taskId,
@@ -3974,16 +3969,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(resolveCommand.decision, "approved");
       }
 
-      const setRoleSelectionsCommand = dispatched.find(
-        (command) => command.type === "task.role-selections.set",
+      const setCapabilityTiersCommand = dispatched.find(
+        (command) => command.type === "task.capability-tiers.set",
       );
-      assert.isDefined(setRoleSelectionsCommand);
-      if (setRoleSelectionsCommand?.type === "task.role-selections.set") {
-        assert.equal(setRoleSelectionsCommand.taskId, taskId);
-        assert.equal(setRoleSelectionsCommand.origin, "human");
-        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.instanceId, "codex_task");
-        assert.equal(setRoleSelectionsCommand.roleModelSelections.work?.model, "gpt-5-task");
-        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setRoleSelectionsCommand.createdAt));
+      assert.isDefined(setCapabilityTiersCommand);
+      if (setCapabilityTiersCommand?.type === "task.capability-tiers.set") {
+        assert.equal(setCapabilityTiersCommand.taskId, taskId);
+        assert.equal(setCapabilityTiersCommand.origin, "human");
+        assert.equal(setCapabilityTiersCommand.roleCapabilityTiers.work, "smart");
+        assertTrue(/^\d{4}-\d{2}-\d{2}T/.test(setCapabilityTiersCommand.createdAt));
       }
 
       const cancelTaskCommand = dispatched.find((command) => command.type === "task.abandon");

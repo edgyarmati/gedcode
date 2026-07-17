@@ -745,7 +745,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       });
 
       yield* eventStore.append({
-        type: "task.role-selections-updated",
+        type: "task.capability-tiers-updated",
         eventId: EventId.make("evt-stage-history-role-selection"),
         aggregateKind: "task",
         aggregateId: taskId,
@@ -756,12 +756,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         metadata: {},
         payload: {
           taskId,
-          roleModelSelections: {
-            work: {
-              instanceId: ProviderInstanceId.make("codex_task"),
-              model: "gpt-task",
-            },
-          },
+          roleCapabilityTiers: { work: "smart" },
           origin: "client",
           updatedAt: "2026-06-22T00:00:01.000Z",
         },

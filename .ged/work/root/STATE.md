@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-TIER-05`
+- **Active task**: `ORCH-HELPER-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -142,6 +142,17 @@
   provider logos, project-style inheritance/override/reset, and thinking-option reconciliation.
   `bun fmt`, `bun lint`, and all 12 typecheck packages passed; full `bun run test` passed all 12
   packages (web 1,238 tests; server 185/185 files, 1,520 passed and 1 skipped).
+- `ORCH-TIER-05` completed 2026-07-18. Task-level routing now stores semantic Plan/Work/Verify tier
+  choices instead of raw provider/model overrides. Every PM handoff names its tier, attempt history
+  retains both the tier and resolved backend, quota/rework retries preserve the chosen tier, and the
+  task UI presents tier defaults with effective provider details. PM guidance keeps simple planning
+  local, uses Genius for delegated planning, chooses Cheap or Smart for work and verification, and
+  permits a higher-tier retry only after diagnosing an inadequate result.
+- Verification evidence for `ORCH-TIER-05`: focused contracts passed 64 tests; focused server/MCP
+  routing passed 285 tests; restart/pipeline integrations passed 4 tests; focused Chromium passed the
+  task-tier scenario. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
+  passed all 12 packages in 10m55s (web 114/114 files and 1,238 tests; server 188/188 files with
+  1,524 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

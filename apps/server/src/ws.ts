@@ -185,7 +185,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     type:
       | "task.created"
       | "task.classified"
-      | "task.role-selections-updated"
+      | "task.capability-tiers-updated"
       | "task.archived"
       | "task.restored"
       | "task.deleted"
@@ -208,7 +208,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
   return (
     event.type === "task.created" ||
     event.type === "task.classified" ||
-    event.type === "task.role-selections-updated" ||
+    event.type === "task.capability-tiers-updated" ||
     event.type === "task.archived" ||
     event.type === "task.restored" ||
     event.type === "task.deleted" ||
@@ -1518,19 +1518,19 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestrator" },
           ),
-        [ORCHESTRATOR_WS_METHODS.setTaskRoleSelections]: (input) =>
+        [ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers]: (input) =>
           observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.setTaskRoleSelections,
+            ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers,
             Effect.all({
-              commandId: serverCommandId("orchestrator-set-task-role-selections"),
+              commandId: serverCommandId("orchestrator-set-task-capability-tiers"),
               createdAt: nowIso,
             }).pipe(
               Effect.flatMap(({ commandId, createdAt }) =>
                 dispatchNormalizedCommand({
-                  type: "task.role-selections.set",
+                  type: "task.capability-tiers.set",
                   commandId,
                   taskId: input.taskId,
-                  roleModelSelections: input.roleModelSelections,
+                  roleCapabilityTiers: input.roleCapabilityTiers,
                   origin: "human",
                   createdAt,
                 }),

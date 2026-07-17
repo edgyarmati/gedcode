@@ -57,6 +57,7 @@ const TASK_SELECTION: ModelSelection = {
 
 const PHASE4_CONFIG: Record<string, unknown> = {
   enabled: true,
+  capabilityPresets: { smart: TASK_SELECTION },
   taskTypes: [
     {
       id: "feature",
@@ -448,29 +449,27 @@ function requestPlanGate(input: {
   });
 }
 
-function setPmWorkBackend(input: {
+function setPmWorkTier(input: {
   readonly harness: OrchestrationIntegrationHarness;
   readonly createdAt: string;
 }): Effect.Effect<void, never> {
   return Effect.gen(function* () {
     yield* input.harness.engine
       .dispatch({
-        type: "task.role-selections.set",
+        type: "task.capability-tiers.set",
         commandId: commandId("task-role-selection-pm"),
         taskId: TASK_ID,
-        roleModelSelections: {
-          work: TASK_SELECTION,
-        },
+        roleCapabilityTiers: { work: "smart" },
         origin: "pm-runtime",
         createdAt: input.createdAt,
       })
       .pipe(Effect.orDie);
     const task = yield* waitForTask(
       input.harness,
-      (entry) => entry.roleModelSelections?.work?.instanceId === TASK_INSTANCE,
-      "pm-runtime task backend override",
+      (entry) => entry.roleCapabilityTiers?.work === "smart",
+      "pm-runtime task tier override",
     );
-    assert.equal(task.roleModelSelections?.work?.model, TASK_SELECTION.model);
+    assert.equal(task.roleCapabilityTiers?.work, "smart");
   });
 }
 
@@ -571,7 +570,7 @@ function requestHumanLandGateAndLand(input: {
 }
 
 it.live(
-  "proves Phase 4 gates, stage toggles, playbook snapshot, and PM backend override end-to-end",
+  "proves Phase 4 gates, stage toggles, playbook snapshot, and PM tier override end-to-end",
   () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -596,7 +595,7 @@ it.live(
           createdAt: iso(5),
         });
 
-        yield* setPmWorkBackend({ harness, createdAt: iso(7) });
+        yield* setPmWorkTier({ harness, createdAt: iso(7) });
 
         const workStage = yield* startStage({
           harness,
@@ -635,7 +634,7 @@ it.live(
 );
 
 it.live(
-  "replays Phase 4 config, playbook snapshot, backend override, and position after restart",
+  "replays Phase 4 config, playbook snapshot, tier override, and position after restart",
   () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -657,7 +656,7 @@ it.live(
           stageThreadId: planStage.stageStarted.payload.stageThreadId,
           createdAt: iso(22),
         });
-        yield* setPmWorkBackend({ harness, createdAt: iso(23) });
+        yield* setPmWorkTier({ harness, createdAt: iso(23) });
 
         const rootDir = harness.rootDir;
         yield* harness.dispose;
@@ -680,8 +679,7 @@ it.live(
               assert.equal(restartedTask?.status, "planning");
               assert.equal(restartedTask?.playbookVersion, playbookVersion);
               assert.match(restartedTask?.playbookVersion ?? "", /^builtin:[0-9a-f]{12}$/);
-              assert.equal(restartedTask?.roleModelSelections?.work?.instanceId, TASK_INSTANCE);
-              assert.equal(restartedTask?.roleModelSelections?.work?.model, TASK_SELECTION.model);
+              assert.equal(restartedTask?.roleCapabilityTiers?.work, "smart");
 
               const planGate = (restartedSnapshot.pendingGates ?? []).find(
                 (gate) => gate.gateId === gateId("plan"),

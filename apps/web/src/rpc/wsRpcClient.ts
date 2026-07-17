@@ -168,8 +168,8 @@ export interface WsRpcClient {
     >;
     readonly subscribeTask: RpcInputStreamMethod<typeof ORCHESTRATOR_WS_METHODS.subscribeTask>;
     readonly resolveGate: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.resolveGate>;
-    readonly setTaskRoleSelections: RpcUnaryMethod<
-      typeof ORCHESTRATOR_WS_METHODS.setTaskRoleSelections
+    readonly setTaskCapabilityTiers: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers
     >;
     readonly landTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.landTask>;
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
@@ -380,8 +380,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       resolveGate: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.resolveGate](input)),
       // Dialog caller was removed; per-task model selection is now PM-driven, but this remains a human-origin RPC.
-      setTaskRoleSelections: (input) =>
-        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.setTaskRoleSelections](input)),
+      setTaskCapabilityTiers: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers](input),
+        ),
       landTask: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.landTask](input)),
       cancelTask: (input) =>

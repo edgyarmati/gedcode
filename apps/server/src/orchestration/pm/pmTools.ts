@@ -2,7 +2,6 @@ import {
   ApprovalRequestId,
   CommandId,
   GateId,
-  ProviderInstanceId,
   MessageId,
   OrchestrationCancelTaskError,
   ProjectId,
@@ -11,8 +10,8 @@ import {
   ThreadId,
   type OrchestrationLatestTurn,
   type OrchestrationMessageRole,
-  type GedRoleModelSelections,
-  type ProviderOptionSelection,
+  type GedRoleCapabilityTiers,
+  type OrchestrationCapabilityTier,
   type ProviderApprovalDecision,
   type OrchestrationGateKind,
   type OrchestrationReadModel,
@@ -92,6 +91,7 @@ interface ClassifyRequestParameters {
 interface HandoffWorkerParameters {
   readonly taskId: string;
   readonly role: OrchestrationStageRole;
+  readonly tier: OrchestrationCapabilityTier;
   readonly instructions: string;
 }
 
@@ -113,12 +113,10 @@ interface RequestApprovalParameters {
   readonly stageThreadId?: string;
 }
 
-interface SetTaskBackendParameters {
+interface SetTaskTierParameters {
   readonly taskId: string;
   readonly role: OrchestrationStageRole;
-  readonly instanceId: string;
-  readonly model: string;
-  readonly options?: ReadonlyArray<ProviderOptionSelection>;
+  readonly tier: OrchestrationCapabilityTier;
 }
 
 interface InspectStageParameters {
@@ -157,6 +155,7 @@ interface DiscardTaskChangesParameters {
 interface ReturnTaskChangesParameters {
   readonly taskId: string;
   readonly instructions: string;
+  readonly tier?: OrchestrationCapabilityTier;
 }
 
 interface CompleteTaskWithoutChangesParameters {
@@ -209,6 +208,9 @@ interface GetTaskLedgerParameters {
 interface PmTaskAttemptSummary {
   readonly stageThreadId: string;
   readonly role: OrchestrationStageRole | null;
+  readonly capabilityTier: OrchestrationCapabilityTier | null;
+  readonly providerInstanceId: string | null;
+  readonly model: string | null;
   readonly status: string | null;
   readonly startedAt: string | null;
   readonly endedAt: string | null;
@@ -222,7 +224,7 @@ interface PmTaskSummary {
   readonly currentStageThreadId: string | null;
   readonly supersedesTaskId: string | null;
   readonly supersededByTaskId: string | null;
-  readonly roleModelSelections: GedRoleModelSelections;
+  readonly roleCapabilityTiers: GedRoleCapabilityTiers;
   readonly parentTaskId: string | null;
   readonly childOrder: number | null;
   readonly aggregateProgress: OrchestrationTask["aggregateProgress"];
@@ -391,7 +393,7 @@ const summarizeTaskForPm = (
   currentStageThreadId: task.currentStageThreadId,
   supersedesTaskId: task.supersedesTaskId ?? null,
   supersededByTaskId: task.supersededByTaskId ?? null,
-  roleModelSelections: task.roleModelSelections ?? {},
+  roleCapabilityTiers: task.roleCapabilityTiers ?? {},
   parentTaskId: task.parentTaskId ?? null,
   childOrder: task.childOrder ?? null,
   aggregateProgress: task.aggregateProgress ?? null,
@@ -407,6 +409,9 @@ const summarizeTaskForPm = (
     return {
       stageThreadId: threadId,
       role: attempt?.role ?? null,
+      capabilityTier: attempt?.capabilityTier ?? null,
+      providerInstanceId: attempt?.providerInstanceId ?? null,
+      model: attempt?.model ?? null,
       status: attempt?.status ?? null,
       startedAt: attempt?.startedAt ?? null,
       endedAt: attempt?.endedAt ?? null,
@@ -718,6 +723,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             commandId: yield* commandId("handoff-worker"),
             taskId,
             role: params.role as OrchestrationStageRole,
+            capabilityTier: params.tier,
             instructions: params.instructions,
             createdAt: yield* nowIso,
           });
@@ -726,8 +732,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const stageThreadId = latestStageThreadId(task);
           return textResult(
             stageThreadId
-              ? `Started ${params.role} worker ${stageThreadId}.`
-              : `Started ${params.role} worker.`,
+              ? `Started ${params.tier} ${params.role} worker ${stageThreadId}.`
+              : `Started ${params.tier} ${params.role} worker.`,
             { taskId, sequence, stageThreadId, awaitedTurnId: null },
           );
         }),
@@ -889,14 +895,19 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
-  const setTaskBackend: PmToolExecutor<
-    SetTaskBackendParameters,
-    { taskId: string; role: OrchestrationStageRole; sequence: number }
+  const setTaskTier: PmToolExecutor<
+    SetTaskTierParameters,
+    {
+      taskId: string;
+      role: OrchestrationStageRole;
+      tier: OrchestrationCapabilityTier;
+      sequence: number;
+    }
   > = {
-    name: "setTaskBackend",
-    label: "Set task backend",
+    name: "setTaskTier",
+    label: "Set task tier",
     description:
-      "Change which provider/model/options a task stage role runs on when asked. This overrides the project's per-role default for that task only; pass the provider's reasoning-effort option when selecting effort.",
+      "Set a semantic Cheap, Smart, or Genius default for one task stage role. The configured project/global preset resolves the harness, model, and thinking options when the attempt starts.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -904,23 +915,24 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const readModel = yield* snapshotQuery.getCommandReadModel();
           const task = readModel.tasks.find((entry) => entry.id === taskId);
           const role = params.role as OrchestrationStageRole;
-          const roleModelSelections: GedRoleModelSelections = {
-            ...task?.roleModelSelections,
-            [role]: {
-              instanceId: ProviderInstanceId.make(params.instanceId),
-              model: params.model,
-              ...(params.options === undefined ? {} : { options: [...params.options] }),
-            },
+          const roleCapabilityTiers: GedRoleCapabilityTiers = {
+            ...task?.roleCapabilityTiers,
+            [role]: params.tier,
           };
           const sequence = yield* dispatch({
-            type: "task.role-selections.set",
-            commandId: yield* commandId("set-task-backend"),
+            type: "task.capability-tiers.set",
+            commandId: yield* commandId("set-task-tier"),
             taskId,
-            roleModelSelections,
+            roleCapabilityTiers,
             origin: "pm-runtime",
             createdAt: yield* nowIso,
           });
-          return textResult(`Set ${role} backend for task ${taskId}.`, { taskId, role, sequence });
+          return textResult(`Set ${role} to ${params.tier} for task ${taskId}.`, {
+            taskId,
+            role,
+            tier: params.tier,
+            sequence,
+          });
         }),
       ),
   };
@@ -1142,6 +1154,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const result = yield* returnOrchestratorTaskChanges(services, {
             ...taskChangeReviewActionInput(taskId),
             instructions: params.instructions.trim(),
+            ...(params.tier === undefined ? {} : { capabilityTier: params.tier }),
           });
           const { sequence, stageThreadId } = result;
           return textResult(`Returned task ${taskId} changes to work stage ${stageThreadId}.`, {
@@ -1544,7 +1557,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     steerStage,
     interruptStage,
     requestApproval,
-    setTaskBackend,
+    setTaskTier,
     inspectStage,
     inspectDirectChanges,
     commitDirectChanges,

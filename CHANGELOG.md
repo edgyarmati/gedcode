@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Replaced per-task raw worker backend overrides with semantic Cheap, Smart, and Genius defaults for
+  Plan, Work, and Verify. The PM now names a tier for every handoff, keeps simple planning itself,
+  defaults delegated planning to Genius, and chooses Cheap or Smart for implementation and
+  verification. Every attempt records both the tier and resolved backend; quota, permission,
+  environment, network, and provider failures retain their tier instead of escalating silently, while
+  diagnosed capability failures can be retried explicitly at a higher tier.
+
 - Upgrades from role-based Orchestrator worker settings now enter a durable, mandatory capability
   preset migration before any Orchestrator operation can run. The migration enumerates every live
   project's legacy selections, requires an exact manual Cheap/Smart/Genius mapping, rejects partial
