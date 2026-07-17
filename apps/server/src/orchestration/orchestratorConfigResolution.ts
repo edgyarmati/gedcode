@@ -1,4 +1,6 @@
 import {
+  OrchestratorCapabilityPresetOverrides,
+  type OrchestratorCapabilityPresetOverrides as OrchestratorCapabilityPresetOverridesType,
   type OrchestrationGateKind,
   type OrchestrationStageRole,
   type OrchestratorConfigJson,
@@ -6,6 +8,8 @@ import {
   type OrchestratorGlobalDefaults,
   type OrchestratorResourceLimits,
 } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import {
   type OrchestratorResourceLimitKey,
   type OrchestratorStagesGlobalDefaults,
@@ -25,9 +29,14 @@ export type SparseResourceLimits = Partial<{
 
 export type SparseProjectConfig = {
   readonly openPrAsDraft?: boolean;
+  readonly capabilityPresets?: OrchestratorCapabilityPresetOverridesType;
   readonly resourceLimits?: SparseResourceLimits | null;
   readonly taskTypes?: ReadonlyArray<SparseTaskTypeConfig>;
 };
+
+const decodeCapabilityPresetOverrides = Schema.decodeUnknownOption(
+  OrchestratorCapabilityPresetOverrides,
+);
 
 export type SparseOrchestratorDefaults = Partial<Omit<OrchestratorGlobalDefaults, "gatePolicy">> &
   OrchestratorStagesGlobalDefaults &
@@ -57,6 +66,7 @@ export function explicitlySetProjectConfig(
 ): SparseProjectConfig {
   const raw: Record<string, unknown> = rawConfig ?? {};
   const resourceLimits = asRecord(raw.resourceLimits);
+  const capabilityPresetsOption = decodeCapabilityPresetOverrides(raw.capabilityPresets ?? {});
   const sparseResourceLimits: SparseResourceLimits = {};
   if (resourceLimits !== undefined) {
     for (const key of numericResourceLimitKeys) {
@@ -97,6 +107,9 @@ export function explicitlySetProjectConfig(
 
   return {
     ...(typeof raw.openPrAsDraft === "boolean" ? { openPrAsDraft: raw.openPrAsDraft } : {}),
+    ...(Option.isSome(capabilityPresetsOption)
+      ? { capabilityPresets: capabilityPresetsOption.value }
+      : {}),
     ...(Object.keys(sparseResourceLimits).length > 0
       ? { resourceLimits: sparseResourceLimits }
       : {}),

@@ -1,5 +1,6 @@
 import type {
   ModelSelection,
+  OrchestratorCapabilityPresets,
   OrchestratorGatePolicy,
   OrchestratorGlobalDefaults,
   OrchestrationStageRole,
@@ -104,6 +105,7 @@ export function buildProviderInstanceUpdatePatch(input: {
 export interface OrchestratorGlobalDefaultsDraft {
   readonly pmModelSelection: ModelSelection | null;
   readonly defaultWorkerModelSelection: ModelSelection | null;
+  readonly capabilityPresets: OrchestratorCapabilityPresets | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
@@ -128,6 +130,7 @@ export function seedOrchestratorGlobalDefaultsDraft(
   return {
     pmModelSelection: defaults.pmModelSelection ?? null,
     defaultWorkerModelSelection: defaults.defaultWorkerModelSelection ?? null,
+    capabilityPresets: defaults.capabilityPresets,
     optionalStages: {},
     gatePolicy: {
       plan: defaults.gatePolicy.plan,
@@ -174,6 +177,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       openPrAsDraft: draft.openPrAsDraft,
       pmModelSelection: draft.pmModelSelection,
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
+      capabilityPresets: draft.capabilityPresets,
     },
   };
 }

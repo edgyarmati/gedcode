@@ -170,6 +170,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         worktreeReaperIntervalMinutes: 10,
         pmModelSelection: selection("openai", "gpt-5-pm"),
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
+        capabilityPresets: null,
         openPrAsDraft: true,
       }),
     ).toEqual({

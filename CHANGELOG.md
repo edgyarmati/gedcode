@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added the schema and runtime foundation for Cheap, Smart, and Genius Orchestrator capability
+  presets. Global configuration now accepts only a complete three-preset map, projects can override
+  presets independently, and tier-backed stage attempts permanently record the chosen tier plus the
+  resolved harness, model, thinking options, and permission mode instead of re-resolving history from
+  later settings changes.
+
 - Project managers can now complete genuinely trivial, bounded, low-risk edits directly in the
   primary checkout without creating task or PR clutter. Direct commits require an exact reviewed
   patch, a concrete low-risk rationale, proportional check evidence, and a descriptive message;

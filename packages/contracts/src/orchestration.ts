@@ -157,6 +157,10 @@ export const ORCHESTRATION_STAGE_ROLES = ["plan", "work", "verify"] as const;
 export const OrchestrationStageRole = Schema.Literals(ORCHESTRATION_STAGE_ROLES);
 export type OrchestrationStageRole = typeof OrchestrationStageRole.Type;
 
+export const ORCHESTRATION_CAPABILITY_TIERS = ["cheap", "smart", "genius"] as const;
+export const OrchestrationCapabilityTier = Schema.Literals(ORCHESTRATION_CAPABILITY_TIERS);
+export type OrchestrationCapabilityTier = typeof OrchestrationCapabilityTier.Type;
+
 const ORCHESTRATION_STAGE_ROLE_SET = new Set<string>(ORCHESTRATION_STAGE_ROLES);
 
 const makeStageRoleKeyedMap = <Value extends Schema.Top>(
@@ -768,8 +772,14 @@ export const OrchestrationStageHistoryEntry = Schema.Struct({
   taskId: TaskId,
   stageThreadId: ThreadId,
   role: OrchestrationStageRole,
+  capabilityTier: Schema.NullOr(OrchestrationCapabilityTier).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   providerInstanceId: ProviderInstanceId,
   model: TrimmedNonEmptyString,
+  modelOptions: Schema.NullOr(ProviderOptionSelections).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   runtimeMode: Schema.optionalKey(Schema.NullOr(RuntimeMode)),
   status: OrchestrationStageHistoryStatus,
   startedAt: IsoDateTime,
@@ -1182,6 +1192,7 @@ const TaskStageStartCommand = Schema.Struct({
   commandId: CommandId,
   taskId: TaskId,
   role: OrchestrationStageRole,
+  capabilityTier: Schema.optionalKey(OrchestrationCapabilityTier),
   instructions: Schema.String,
   createdAt: IsoDateTime,
 });
@@ -1891,6 +1902,7 @@ export const TaskRoleSelectionsUpdatedPayload = Schema.Struct({
 export const TaskStageStartedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
+  capabilityTier: Schema.optionalKey(OrchestrationCapabilityTier),
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
   // Resolved backend/model for this stage, stamped by the decider at start so the
@@ -1900,6 +1912,7 @@ export const TaskStageStartedPayload = Schema.Struct({
   // to re-deriving the selection from config when they are absent.
   providerInstanceId: Schema.optional(ProviderInstanceId),
   model: Schema.optional(TrimmedNonEmptyString),
+  modelOptions: Schema.optionalKey(ProviderOptionSelections),
   runtimeMode: Schema.optional(RuntimeMode),
   updatedAt: IsoDateTime,
 });

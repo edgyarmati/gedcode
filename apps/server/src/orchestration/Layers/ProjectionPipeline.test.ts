@@ -680,7 +680,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect("projects stage history with task-level model overrides and blocked status", () =>
+  it.effect("projects immutable preset attempt history and blocked status", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
       const eventStore = yield* OrchestrationEventStore;
@@ -780,8 +780,12 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         payload: {
           taskId,
           role: "work",
+          capabilityTier: "smart",
           stageThreadId,
           awaitedTurnId: null,
+          providerInstanceId: ProviderInstanceId.make("claude_smart"),
+          model: "claude-sonnet-4-6",
+          modelOptions: [{ id: "thinking", value: "high" }],
           updatedAt: "2026-06-22T00:00:02.000Z",
         },
       });
@@ -801,7 +805,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           role: "work",
           stageThreadId,
           reason: "quota",
-          providerInstanceId: ProviderInstanceId.make("codex_task"),
+          providerInstanceId: ProviderInstanceId.make("claude_smart"),
           updatedAt: "2026-06-22T00:00:03.000Z",
         },
       });
@@ -829,12 +833,16 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const rows = yield* sql<{
         readonly providerInstanceId: string;
         readonly model: string;
+        readonly capabilityTier: string | null;
+        readonly modelOptions: string | null;
         readonly status: string;
         readonly endedAt: string | null;
       }>`
         SELECT
           provider_instance_id AS "providerInstanceId",
           model,
+          capability_tier AS "capabilityTier",
+          model_options_json AS "modelOptions",
           status,
           ended_at AS "endedAt"
         FROM projection_stage_history
@@ -842,8 +850,10 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       `;
       assert.deepEqual(rows, [
         {
-          providerInstanceId: "codex_task",
-          model: "gpt-task",
+          providerInstanceId: "claude_smart",
+          model: "claude-sonnet-4-6",
+          capabilityTier: "smart",
+          modelOptions: '[{"id":"thinking","value":"high"}]',
           status: "blocked",
           endedAt: "2026-06-22T00:00:03.000Z",
         },

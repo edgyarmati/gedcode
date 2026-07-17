@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-TIER-01`
+- **Active task**: `ORCH-TIER-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -103,6 +103,15 @@
 - Verification evidence for `ORCH-PMDIRECT-02`: focused direct-change, PM tool, runtime-prompt, and MCP
   suites passed (109 tests total); `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full
   `bun run test` passed all 12 packages (server 183/183 files, 1,511 passed and 1 skipped).
+- `ORCH-TIER-01` completed 2026-07-18. Global Orchestrator configuration now models Cheap, Smart,
+  and Genius as one strict, atomic preset map, while projects can override any preset independently.
+  Tier-backed stage starts resolve project-over-global without consulting semantic role settings, and
+  each attempt stamps its chosen tier plus resolved provider instance, model, options, and runtime mode
+  into append-only events and durable history. Existing settings saves preserve preset configuration.
+- Verification evidence for `ORCH-TIER-01`: focused contract, settings, web state, resolution, decider,
+  SQL migration, projection replay, and PM ledger suites passed (253 tests); `bun fmt`, `bun lint`, and
+  all 12 typecheck packages passed. Full `bun run test` passed all 12 packages (server 184/184 files,
+  1,516 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

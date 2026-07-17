@@ -83,6 +83,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelTasks).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.capabilityPresets).toBeNull();
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);
   });
@@ -97,6 +98,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
       land: "require-approval",
     });
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
+    expect(decoded.orchestratorDefaults.capabilityPresets).toBeNull();
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);

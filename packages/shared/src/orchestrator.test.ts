@@ -31,6 +31,7 @@ const projectConfig = (
 ): OrchestratorProjectConfig => ({
   openPrAsDraft: false,
   pmModelSelection: null,
+  capabilityPresets: {},
   taskTypes,
   resourceLimits: {
     maxParallelTasks: DEFAULT_MAX_PARALLEL_TASKS,

@@ -1,9 +1,26 @@
 import type {
   ModelSelection,
+  OrchestrationCapabilityTier,
   OrchestrationProject,
   OrchestrationStageRole,
   OrchestrationTask,
 } from "@t3tools/contracts";
+import type {
+  SparseOrchestratorDefaults,
+  SparseProjectConfig,
+} from "./orchestratorConfigResolution.ts";
+
+export function resolveCapabilityPreset(input: {
+  readonly orchestratorDefaults?: Pick<SparseOrchestratorDefaults, "capabilityPresets">;
+  readonly projectConfig?: Pick<SparseProjectConfig, "capabilityPresets">;
+  readonly tier: OrchestrationCapabilityTier;
+}): ModelSelection | null {
+  return (
+    input.projectConfig?.capabilityPresets?.[input.tier] ??
+    input.orchestratorDefaults?.capabilityPresets?.[input.tier] ??
+    null
+  );
+}
 
 export function resolveStageModelSelection(input: {
   readonly orchestratorDefaults?: {

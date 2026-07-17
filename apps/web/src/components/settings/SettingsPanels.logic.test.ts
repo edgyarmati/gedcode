@@ -115,6 +115,11 @@ describe("Orchestrator global defaults settings logic", () => {
     instanceId: ProviderInstanceId.make("codex_worker"),
     model: "gpt-5-worker",
   };
+  const capabilityPresets = {
+    cheap: { instanceId: ProviderInstanceId.make("codex_cheap"), model: "gpt-mini" },
+    smart: { instanceId: ProviderInstanceId.make("codex_smart"), model: "gpt-smart" },
+    genius: { instanceId: ProviderInstanceId.make("claude_genius"), model: "opus" },
+  } as const;
 
   it("seeds the settings-panel draft from global defaults", () => {
     const draft = seedOrchestratorGlobalDefaultsDraft({
@@ -136,6 +141,7 @@ describe("Orchestrator global defaults settings logic", () => {
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
     expect(draft.defaultWorkerModelSelection).toEqual(workerModelSelection);
+    expect(draft.capabilityPresets).toBeNull();
     expect(draft.optionalStages).toEqual({});
     expect(draft.gatePolicy).toEqual({
       plan: "require-approval",
@@ -154,6 +160,7 @@ describe("Orchestrator global defaults settings logic", () => {
     const patch = buildOrchestratorGlobalDefaultsPatch({
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
+      capabilityPresets,
       optionalStages: {},
       gatePolicy: {
         plan: "auto",
@@ -181,6 +188,7 @@ describe("Orchestrator global defaults settings logic", () => {
       worktreeReaperIntervalMinutes: 9,
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
+      capabilityPresets,
       openPrAsDraft: true,
     });
   });

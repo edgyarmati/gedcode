@@ -2111,6 +2111,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const providerInstanceId =
             event.payload.providerInstanceId ?? fallbackSelection?.instanceId;
           const model = event.payload.model ?? fallbackSelection?.model;
+          const modelOptions = event.payload.modelOptions ?? fallbackSelection?.options ?? null;
           if (providerInstanceId === undefined || model === undefined) {
             return;
           }
@@ -2119,8 +2120,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             taskId: event.payload.taskId,
             stageThreadId: event.payload.stageThreadId,
             role: event.payload.role,
+            capabilityTier: event.payload.capabilityTier ?? null,
             providerInstanceId,
             model,
+            modelOptions,
             ...(event.payload.runtimeMode === undefined
               ? {}
               : { runtimeMode: event.payload.runtimeMode }),

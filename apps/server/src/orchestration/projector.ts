@@ -1067,6 +1067,7 @@ export function projectEvent(
                 });
           const providerInstanceId = payload.providerInstanceId ?? fallbackSelection?.instanceId;
           const model = payload.model ?? fallbackSelection?.model;
+          const modelOptions = payload.modelOptions ?? fallbackSelection?.options ?? null;
           const status = taskStatusForStageRole(payload.role);
           const stageThreadIds = task.stageThreadIds.includes(payload.stageThreadId)
             ? task.stageThreadIds
@@ -1110,8 +1111,10 @@ export function projectEvent(
                       taskId: payload.taskId,
                       stageThreadId: payload.stageThreadId,
                       role: payload.role,
+                      capabilityTier: payload.capabilityTier ?? null,
                       providerInstanceId,
                       model,
+                      modelOptions,
                       ...(payload.runtimeMode === undefined
                         ? {}
                         : { runtimeMode: payload.runtimeMode }),

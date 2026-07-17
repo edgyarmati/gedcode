@@ -1,8 +1,10 @@
+import { ProviderOptionSelections } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import * as Struct from "effect/Struct";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -13,6 +15,12 @@ import {
   ProjectionStageHistoryRepository,
   type ProjectionStageHistoryRepositoryShape,
 } from "../Services/ProjectionStageHistory.ts";
+
+const ProjectionStageHistoryDbRow = ProjectionStageHistoryEntry.mapFields(
+  Struct.assign({
+    modelOptions: Schema.NullOr(Schema.fromJsonString(ProviderOptionSelections)),
+  }),
+);
 
 const makeProjectionStageHistoryRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -26,8 +34,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           project_id,
           task_id,
           role,
+          capability_tier,
           provider_instance_id,
           model,
+          model_options_json,
           runtime_mode,
           status,
           started_at,
@@ -38,8 +48,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           ${row.projectId},
           ${row.taskId},
           ${row.role},
+          ${row.capabilityTier},
           ${row.providerInstanceId},
           ${row.model},
+          ${row.modelOptions === null ? null : JSON.stringify(row.modelOptions)},
           ${row.runtimeMode ?? null},
           ${row.status},
           ${row.startedAt},
@@ -50,8 +62,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           project_id = excluded.project_id,
           task_id = excluded.task_id,
           role = excluded.role,
+          capability_tier = excluded.capability_tier,
           provider_instance_id = excluded.provider_instance_id,
           model = excluded.model,
+          model_options_json = excluded.model_options_json,
           runtime_mode = excluded.runtime_mode,
           status = excluded.status,
           started_at = excluded.started_at,
@@ -61,7 +75,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const getStageHistoryRow = SqlSchema.findOneOption({
     Request: GetProjectionStageHistoryInput,
-    Result: ProjectionStageHistoryEntry,
+    Result: ProjectionStageHistoryDbRow,
     execute: ({ stageThreadId }) =>
       sql`
         SELECT
@@ -69,8 +83,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           task_id AS "taskId",
           stage_thread_id AS "stageThreadId",
           role,
+          capability_tier AS "capabilityTier",
           provider_instance_id AS "providerInstanceId",
           model,
+          model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
@@ -82,7 +98,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const listStageHistoryRowsByProject = SqlSchema.findAll({
     Request: ListProjectionStageHistoryByProjectInput,
-    Result: ProjectionStageHistoryEntry,
+    Result: ProjectionStageHistoryDbRow,
     execute: ({ projectId }) =>
       sql`
         SELECT
@@ -90,8 +106,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           task_id AS "taskId",
           stage_thread_id AS "stageThreadId",
           role,
+          capability_tier AS "capabilityTier",
           provider_instance_id AS "providerInstanceId",
           model,
+          model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
@@ -104,7 +122,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const listStageHistoryRowsByTask = SqlSchema.findAll({
     Request: ListProjectionStageHistoryByTaskInput,
-    Result: ProjectionStageHistoryEntry,
+    Result: ProjectionStageHistoryDbRow,
     execute: ({ taskId }) =>
       sql`
         SELECT
@@ -112,8 +130,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           task_id AS "taskId",
           stage_thread_id AS "stageThreadId",
           role,
+          capability_tier AS "capabilityTier",
           provider_instance_id AS "providerInstanceId",
           model,
+          model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",
@@ -126,7 +146,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const listAllStageHistoryRows = SqlSchema.findAll({
     Request: Schema.Void,
-    Result: ProjectionStageHistoryEntry,
+    Result: ProjectionStageHistoryDbRow,
     execute: () =>
       sql`
         SELECT
@@ -134,8 +154,10 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           task_id AS "taskId",
           stage_thread_id AS "stageThreadId",
           role,
+          capability_tier AS "capabilityTier",
           provider_instance_id AS "providerInstanceId",
           model,
+          model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
           status,
           started_at AS "startedAt",

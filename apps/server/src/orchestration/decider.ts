@@ -36,7 +36,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { resolveStageModelSelection } from "./stageModelSelection.ts";
+import { resolveCapabilityPreset, resolveStageModelSelection } from "./stageModelSelection.ts";
 import { activeStageRoleForTaskStatus, prepareStageInstructions } from "./stageResolution.ts";
 import {
   explicitlySetProjectConfig,
@@ -1859,16 +1859,25 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         }
       }
 
-      const modelSelection = resolveStageModelSelection({
-        orchestratorDefaults,
-        project,
-        task,
-        role: command.role,
-      });
+      const modelSelection =
+        command.capabilityTier === undefined
+          ? resolveStageModelSelection({
+              orchestratorDefaults,
+              project,
+              task,
+              role: command.role,
+            })
+          : resolveCapabilityPreset({
+              orchestratorDefaults,
+              projectConfig,
+              tier: command.capabilityTier,
+            });
       if (modelSelection === null || modelSelection === undefined) {
         return yield* invariantError(
           command.type,
-          `Project '${task.projectId}' has no model selection for task stage role '${command.role}'.`,
+          command.capabilityTier === undefined
+            ? `Project '${task.projectId}' has no model selection for task stage role '${command.role}'.`
+            : `Project '${task.projectId}' has no configured '${command.capabilityTier}' capability preset.`,
         );
       }
 
@@ -1896,10 +1905,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           taskId: command.taskId,
           role: command.role,
+          ...(command.capabilityTier === undefined
+            ? {}
+            : { capabilityTier: command.capabilityTier }),
           stageThreadId,
           awaitedTurnId: null,
           providerInstanceId: modelSelection.instanceId,
           model: modelSelection.model,
+          ...(modelSelection.options === undefined ? {} : { modelOptions: modelSelection.options }),
           runtimeMode: workerRuntimeMode,
           updatedAt: command.createdAt,
         },

@@ -146,8 +146,10 @@ function withStageHistory(
             taskId: asTaskId("task-1"),
             stageThreadId,
             role: stage.role,
+            capabilityTier: null,
             providerInstanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
+            modelOptions: null,
             status: stage.status ?? "completed",
             startedAt: stage.startedAt,
             endedAt: stage.endedAt,
@@ -1391,6 +1393,75 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       expect(userMessage?.payload.text).toContain("Use the project implementation playbook.");
       expect(userMessage?.payload.text).toContain("Implement the accepted plan.");
       expect(userMessage?.payload.text.match(/BEGIN GEDCODE STAGE PROMPT PREFIX/g)).toHaveLength(1);
+    }),
+  );
+
+  it.effect("records the chosen tier and immutable project-resolved backend on each attempt", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { status: "review", currentStageThreadId: null },
+        {
+          orchestratorConfig: {
+            capabilityPresets: {
+              smart: {
+                instanceId: "claude-smart",
+                model: "claude-sonnet-4-6",
+                options: [{ id: "thinking", value: "high" }],
+              },
+            },
+          },
+        },
+      );
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: {
+          capabilityPresets: {
+            cheap: { instanceId: ProviderInstanceId.make("codex-cheap"), model: "gpt-mini" },
+            smart: { instanceId: ProviderInstanceId.make("codex-smart"), model: "gpt-smart" },
+            genius: { instanceId: ProviderInstanceId.make("claude-genius"), model: "opus" },
+          },
+        },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-smart-tier"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          capabilityTier: "smart",
+          instructions: "Implement the bounded task.",
+          createdAt: now,
+        },
+      });
+
+      const stageStarted = toEvents(result).find((event) => event.type === "task.stage-started");
+      expect(stageStarted?.payload).toMatchObject({
+        capabilityTier: "smart",
+        providerInstanceId: ProviderInstanceId.make("claude-smart"),
+        model: "claude-sonnet-4-6",
+        modelOptions: [{ id: "thinking", value: "high" }],
+      });
+    }),
+  );
+
+  it.effect("rejects tier routing while that preset remains unconfigured", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          orchestratorDefaults: { capabilityPresets: null },
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-unconfigured-tier"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            capabilityTier: "cheap",
+            instructions: "Implement the task.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
     }),
   );
 

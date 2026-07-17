@@ -6,7 +6,7 @@ import {
   type OrchestrationTask,
 } from "@t3tools/contracts";
 
-import { resolveStageModelSelection } from "./stageModelSelection.ts";
+import { resolveCapabilityPreset, resolveStageModelSelection } from "./stageModelSelection.ts";
 
 function selection(instanceId: string, model: string): ModelSelection {
   return {
@@ -88,5 +88,43 @@ describe("resolveStageModelSelection", () => {
 
   it("returns null when no selection resolves", () => {
     expect(resolve()).toBeNull();
+  });
+});
+
+describe("resolveCapabilityPreset", () => {
+  const globalPresets = {
+    cheap: selection("codex-cheap", "gpt-mini"),
+    smart: selection("codex-smart", "gpt-smart"),
+    genius: selection("claude-genius", "opus"),
+  };
+
+  it("lets a project override one preset while inheriting the others", () => {
+    expect(
+      resolveCapabilityPreset({
+        orchestratorDefaults: { capabilityPresets: globalPresets },
+        projectConfig: {
+          capabilityPresets: { smart: selection("claude-smart", "sonnet") },
+        },
+        tier: "smart",
+      }),
+    ).toEqual(selection("claude-smart", "sonnet"));
+
+    expect(
+      resolveCapabilityPreset({
+        orchestratorDefaults: { capabilityPresets: globalPresets },
+        projectConfig: { capabilityPresets: {} },
+        tier: "genius",
+      }),
+    ).toEqual(globalPresets.genius);
+  });
+
+  it("returns null while global preset migration is incomplete", () => {
+    expect(
+      resolveCapabilityPreset({
+        orchestratorDefaults: { capabilityPresets: null },
+        projectConfig: { capabilityPresets: {} },
+        tier: "cheap",
+      }),
+    ).toBeNull();
   });
 });

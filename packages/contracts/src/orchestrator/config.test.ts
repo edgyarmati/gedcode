@@ -108,12 +108,31 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
   it("defaults to a require-approval feature task type", () => {
     const decoded = decodeProjectConfig({});
     expect(decoded.pmModelSelection).toBe(null);
+    expect(decoded.capabilityPresets).toEqual({});
     expect(decoded.taskTypes).toHaveLength(1);
     const feature = decoded.taskTypes[0];
     expect(feature?.id).toBe("feature");
     expect(feature?.stages).toEqual(["plan", "work", "verify"]);
     expect(feature?.gatePolicy.plan).toBe("require-approval");
     expect(feature?.gatePolicy.land).toBe("require-approval");
+  });
+
+  it("accepts independent project capability preset overrides", () => {
+    const decoded = decodeProjectConfig({
+      capabilityPresets: {
+        smart: {
+          instanceId: "codex-smart",
+          model: "gpt-5.6-codex",
+          options: [{ id: "reasoningEffort", value: "high" }],
+        },
+      },
+    });
+
+    expect(decoded.capabilityPresets.smart).toEqual({
+      instanceId: "codex-smart",
+      model: "gpt-5.6-codex",
+      options: [{ id: "reasoningEffort", value: "high" }],
+    });
   });
 
   it("decodes non-feature ids for server-side registry validation", () => {
@@ -127,6 +146,39 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
     expect(decoded.resourceLimits.maxParallelTasks).toBe(DEFAULT_MAX_PARALLEL_TASKS);
     expect(decoded.resourceLimits.maxParallelWorkers).toBe(DEFAULT_MAX_PARALLEL_WORKERS);
     expect(decoded.resourceLimits.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
+  });
+});
+
+describe("OrchestratorGlobalDefaults — capability presets", () => {
+  const completePresets = {
+    cheap: { instanceId: "codex-cheap", model: "gpt-5.6-mini" },
+    smart: { instanceId: "codex-smart", model: "gpt-5.6-codex" },
+    genius: { instanceId: "claude-genius", model: "claude-opus-4-6" },
+  } as const;
+
+  it("uses null as the explicit pre-migration state", () => {
+    expect(decodeGlobalDefaults({}).capabilityPresets).toBeNull();
+  });
+
+  it("round-trips a complete Cheap/Smart/Genius map", () => {
+    const decoded = decodeGlobalDefaults({ capabilityPresets: completePresets });
+    expect(decodeGlobalDefaults(encodeGlobalDefaults(decoded)).capabilityPresets).toEqual(
+      completePresets,
+    );
+  });
+
+  it("rejects incomplete and unknown preset maps", () => {
+    expect(() =>
+      decodeGlobalDefaults({ capabilityPresets: { cheap: completePresets.cheap } }),
+    ).toThrow();
+    expect(() =>
+      decodeGlobalDefaults({
+        capabilityPresets: { ...completePresets, ultra: completePresets.smart },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeProjectConfig({ capabilityPresets: { fast: completePresets.cheap } }),
+    ).toThrow();
   });
 });
 
