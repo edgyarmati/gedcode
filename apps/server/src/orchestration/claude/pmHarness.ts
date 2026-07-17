@@ -1,4 +1,6 @@
 import type {
+  ProviderRuntimeApprovalRequestedEvent,
+  ProviderRuntimeApprovalResolvedEvent,
   ProviderRuntimeUserInputRequestedEvent,
   ProviderRuntimeUserInputResolvedEvent,
 } from "@t3tools/contracts";
@@ -236,6 +238,14 @@ export type AgentHarnessEvent =
   | {
       readonly type: "settled";
       readonly nextTurnCount: number;
+    }
+  | {
+      readonly type: "provider_runtime_approval_requested";
+      readonly event: ProviderRuntimeApprovalRequestedEvent;
+    }
+  | {
+      readonly type: "provider_runtime_approval_resolved";
+      readonly event: ProviderRuntimeApprovalResolvedEvent;
     }
   | {
       readonly type: "provider_runtime_user_input_requested";

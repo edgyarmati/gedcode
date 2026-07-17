@@ -354,6 +354,32 @@ describe("DriverPmAdapter", () => {
       yield* Queue.offer(
         runtimeEvents,
         makeEvent({
+          eventId: "event-approval-requested",
+          type: "request.opened",
+          turnId,
+          requestId: RuntimeRequestId.make("req-approval-1"),
+          payload: {
+            requestType: "file_change_approval",
+            detail: "Update a project file",
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          eventId: "event-approval-resolved",
+          type: "request.resolved",
+          turnId,
+          requestId: RuntimeRequestId.make("req-approval-1"),
+          payload: {
+            requestType: "file_change_approval",
+            decision: "accept",
+          },
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
           eventId: "event-user-input-requested",
           type: "user-input.requested",
           turnId,
@@ -432,8 +458,7 @@ describe("DriverPmAdapter", () => {
           providerInstanceId: claudeInstanceId,
           cwd: project.workspaceRoot,
           modelSelection,
-          runtimeMode: "approval-required",
-          readOnly: true,
+          runtimeMode: "full-access",
           enableOrchestrationTools: true,
           systemPromptAppend: "PM system prompt",
           resumeCursor: persistedResumeCursor,
@@ -455,6 +480,8 @@ describe("DriverPmAdapter", () => {
         "thread.message.assistant.delta",
         "thread.activity.append",
         "thread.activity.append",
+        "thread.activity.append",
+        "thread.activity.append",
         "thread.message.assistant.complete",
       ]);
 
@@ -464,8 +491,10 @@ describe("DriverPmAdapter", () => {
       );
       assert.strictEqual(toolActivities[0]?.activity.kind, "tool.started");
       assert.strictEqual(toolActivities[1]?.activity.kind, "tool.completed");
-      assert.strictEqual(toolActivities[2]?.activity.kind, "user-input.requested");
-      assert.strictEqual(toolActivities[3]?.activity.kind, "user-input.resolved");
+      assert.strictEqual(toolActivities[2]?.activity.kind, "approval.requested");
+      assert.strictEqual(toolActivities[3]?.activity.kind, "approval.resolved");
+      assert.strictEqual(toolActivities[4]?.activity.kind, "user-input.requested");
+      assert.strictEqual(toolActivities[5]?.activity.kind, "user-input.resolved");
       assert.deepStrictEqual(toolActivities[1]?.activity.payload, {
         itemType: "dynamic_tool_call",
         toolCallId: "tool-call-1",
@@ -631,7 +660,8 @@ describe("DriverPmAdapter", () => {
           providerInstanceId: codexInstanceId,
           cwd: project.workspaceRoot,
           modelSelection: codexSelection,
-          runtimeMode: "approval-required",
+          runtimeMode: "auto-accept-edits",
+          approvalReviewer: "auto-review",
           enableOrchestrationTools: true,
         },
       ]);

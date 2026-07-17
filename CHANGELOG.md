@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Project-manager sessions can now work directly in their project: Codex PMs use workspace-scoped
+  writes with native auto-review, while Claude and OpenCode PMs retain provider-native full access.
+  Access requests that Codex auto-review cannot grant are forwarded into the PM composer with their
+  details and explicit approve-once, session approval, decline, and cancel controls.
+
 - Added a visible task **Change review** workflow with a bounded tracked-diff preview, explicit path
   selection, descriptive commits, return-to-worker revision instructions, and confirmed destructive
   discard. Human and PM actions share the same per-task lifecycle lock; change reviews now appear in

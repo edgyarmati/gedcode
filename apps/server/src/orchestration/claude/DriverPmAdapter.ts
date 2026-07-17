@@ -20,7 +20,7 @@ import type { ProviderAdapterShape } from "../../provider/Services/ProviderAdapt
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { pmThreadIdForProject, type PmEventProjectionEvent } from "../pm/PmEventProjection.ts";
-import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
+import { resolveOrchestratorPmRuntimePolicy } from "../orchestratorRuntimeModes.ts";
 import type {
   AgentHarnessEvent,
   AgentHarnessResources,
@@ -252,6 +252,7 @@ export const makeDriverPmAdapter = (
     const activeAssistant = yield* Ref.make<ActiveAssistant | undefined>(undefined);
     const activeTools = new Map<string, ActiveTool>();
     const threadId = pmThreadIdForProject(options.project);
+    const runtimePolicy = resolveOrchestratorPmRuntimePolicy(options.driverKind);
 
     const offer = (event: PmEventProjectionEvent) =>
       Queue.offer(eventQueue, event).pipe(Effect.asVoid);
@@ -267,7 +268,7 @@ export const makeDriverPmAdapter = (
         provider: options.driverKind,
         providerInstanceId: options.modelSelection.instanceId,
         status: session.status === "closed" ? "stopped" : "running",
-        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+        runtimeMode: runtimePolicy.runtimeMode,
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
     }).pipe(
@@ -464,6 +465,22 @@ export const makeDriverPmAdapter = (
             return;
           }
 
+          case "request.opened": {
+            yield* offer({
+              type: "provider_runtime_approval_requested",
+              event,
+            });
+            return;
+          }
+
+          case "request.resolved": {
+            yield* offer({
+              type: "provider_runtime_approval_resolved",
+              event,
+            });
+            return;
+          }
+
           case "user-input.resolved": {
             yield* offer({
               type: "provider_runtime_user_input_resolved",
@@ -622,8 +639,10 @@ export const makeDriverPmAdapter = (
         providerInstanceId: selection.instanceId,
         cwd: options.project.workspaceRoot,
         modelSelection: selection,
-        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
-        ...(options.driverKind === "claudeAgent" ? { readOnly: true } : {}),
+        runtimeMode: runtimePolicy.runtimeMode,
+        ...(runtimePolicy.approvalReviewer !== undefined
+          ? { approvalReviewer: runtimePolicy.approvalReviewer }
+          : {}),
         enableOrchestrationTools: true,
         ...(options.systemPrompt !== undefined && options.systemPrompt.length > 0
           ? { systemPromptAppend: options.systemPrompt }
@@ -637,7 +656,7 @@ export const makeDriverPmAdapter = (
         provider: options.driverKind,
         providerInstanceId: selection.instanceId,
         status: "running",
-        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+        runtimeMode: runtimePolicy.runtimeMode,
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
       });
       return session;

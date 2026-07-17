@@ -4,6 +4,7 @@ import type {
   ModelSelection,
   OrchestrationCommand,
   ProjectId,
+  ProviderApprovalDecision,
   ProviderInstanceId,
   ProviderOptionSelection,
   ThreadId,
@@ -34,8 +35,10 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { useServerConfig } from "../../rpc/serverState";
-import { derivePendingUserInputs } from "../../session-logic";
+import { derivePendingApprovals, derivePendingUserInputs } from "../../session-logic";
 import type { Project, Thread } from "../../types";
+import { ComposerPendingApprovalActions } from "../chat/ComposerPendingApprovalActions";
+import { ComposerPendingApprovalPanel } from "../chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "../chat/ComposerPendingUserInputPanel";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
@@ -68,6 +71,22 @@ export function buildPmUserInputRespondCommand(input: {
     threadId: input.threadId,
     requestId: input.requestId,
     answers: input.answers,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+  };
+}
+
+export function buildPmApprovalRespondCommand(input: {
+  readonly threadId: ThreadId;
+  readonly requestId: ApprovalRequestId;
+  readonly decision: ProviderApprovalDecision;
+  readonly createdAt?: string;
+}): Extract<OrchestrationCommand, { type: "thread.approval.respond" }> {
+  return {
+    type: "thread.approval.respond",
+    commandId: newCommandId(),
+    threadId: input.threadId,
+    requestId: input.requestId,
+    decision: input.decision,
     createdAt: input.createdAt ?? new Date().toISOString(),
   };
 }
@@ -298,6 +317,11 @@ export function PmChatComposer({
     [pmProviderEntries, pmPickerSelection],
   );
   const environmentAvailable = useEnvironmentApiAvailable(environmentId);
+  const pendingApprovals = useMemo(
+    () => derivePendingApprovals(thread?.activities ?? []),
+    [thread?.activities],
+  );
+  const activePendingApproval = pendingApprovals[0] ?? null;
   const pendingUserInputs = useMemo(
     () => derivePendingUserInputs(thread?.activities ?? []),
     [thread?.activities],
@@ -335,15 +359,20 @@ export function PmChatComposer({
   const isAnsweringUserInput =
     activePendingUserInput !== null &&
     respondingRequestIds.includes(activePendingUserInput.requestId);
+  const isRespondingToApproval =
+    activePendingApproval !== null &&
+    respondingRequestIds.includes(activePendingApproval.requestId);
   const message = activePendingProgress ? activePendingProgress.customAnswer : draftPrompt;
   const trimmedMessage = message.trim();
-  const canSend = activePendingProgress
-    ? environmentAvailable &&
-      !savingPmModelSelection &&
-      !submitting &&
-      !isAnsweringUserInput &&
-      activePendingProgress.canAdvance
-    : environmentAvailable && !savingPmModelSelection && !submitting && trimmedMessage.length > 0;
+  const canSend = activePendingApproval
+    ? false
+    : activePendingProgress
+      ? environmentAvailable &&
+        !savingPmModelSelection &&
+        !submitting &&
+        !isAnsweringUserInput &&
+        activePendingProgress.canAdvance
+      : environmentAvailable && !savingPmModelSelection && !submitting && trimmedMessage.length > 0;
 
   const respondToActivePendingUserInput = useCallback(
     async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
@@ -377,6 +406,33 @@ export function PmChatComposer({
         })
         .catch((sendError: unknown) => {
           setError(sendError instanceof Error ? sendError.message : "Failed to submit user input.");
+        });
+      setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
+    },
+    [environmentId, thread],
+  );
+
+  const respondToActivePendingApproval = useCallback(
+    async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
+      const api = readEnvironmentApi(environmentId);
+      if (!api || !thread) {
+        setError("Environment API unavailable.");
+        return;
+      }
+      setRespondingRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
+      setError(null);
+      await api.orchestration
+        .dispatchCommand(
+          buildPmApprovalRespondCommand({
+            threadId: thread.id,
+            requestId,
+            decision,
+          }),
+        )
+        .catch((sendError: unknown) => {
+          setError(sendError instanceof Error ? sendError.message : "Failed to submit approval.");
         });
       setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
     },
@@ -661,6 +717,21 @@ export function PmChatComposer({
         </p>
       ) : null}
       <form className="space-y-2" onSubmit={onSend}>
+        {activePendingApproval ? (
+          <div className="rounded-lg border border-warning/40 bg-warning/5">
+            <ComposerPendingApprovalPanel
+              approval={activePendingApproval}
+              pendingCount={pendingApprovals.length}
+            />
+            <div className="flex flex-wrap justify-end gap-2 border-t border-warning/30 px-3 py-2">
+              <ComposerPendingApprovalActions
+                requestId={activePendingApproval.requestId}
+                isResponding={isRespondingToApproval}
+                onRespondToApproval={respondToActivePendingApproval}
+              />
+            </div>
+          </div>
+        ) : null}
         {pendingUserInputs.length > 0 ? (
           <div className="rounded-lg border border-border bg-muted/20">
             <ComposerPendingUserInputPanel
@@ -677,7 +748,12 @@ export function PmChatComposer({
           <Textarea
             aria-label="Message PM"
             className="min-w-0 flex-1"
-            disabled={savingPmModelSelection || submitting || isAnsweringUserInput}
+            disabled={
+              savingPmModelSelection ||
+              submitting ||
+              isAnsweringUserInput ||
+              activePendingApproval !== null
+            }
             onChange={(event) => {
               if (activePendingProgress) {
                 setActivePendingUserInputCustomAnswer(event.currentTarget.value);
@@ -687,9 +763,11 @@ export function PmChatComposer({
             }}
             onKeyDown={handleKeyDown}
             placeholder={
-              activePendingProgress
-                ? "Type your own answer, or leave this blank to use the selected option"
-                : "Message PM"
+              activePendingApproval
+                ? "Resolve the PM access request to continue"
+                : activePendingProgress
+                  ? "Type your own answer, or leave this blank to use the selected option"
+                  : "Message PM"
             }
             ref={textareaRef}
             rows={3}

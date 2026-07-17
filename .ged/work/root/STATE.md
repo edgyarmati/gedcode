@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-PMDIRECT-01`
+- **Active task**: `ORCH-PMDIRECT-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -86,6 +86,15 @@
   server PM/change-review suites (54 tests) passed; `bun fmt`, `bun lint`, and `bun typecheck` passed.
   The full suite passed across all 12 packages: the non-server workspace run completed 11 packages,
   and the separately reported server run passed 183/183 files with 1,504 passed and 1 skipped.
+- `ORCH-PMDIRECT-01` completed 2026-07-17. PM runtime policy is now provider-specific: Codex starts
+  workspace-scoped with native auto-review, while Claude and OpenCode retain full access. PM runtime
+  approval requests are bridged into durable PM-thread activities and the PM composer exposes their
+  details with approve-once, approve-for-session, decline, and cancel controls. Prompt-level shell and
+  mutation prohibitions were removed while retaining delegation guidance for substantial work.
+- Verification evidence for `ORCH-PMDIRECT-01`: focused PM adapter/projection/runtime and worker
+  safety suites passed (70 tests), provider and approval-routing suites passed (140 tests), and focused
+  web approval/session logic passed (112 tests). `bun fmt`, `bun lint`, and all 12 typecheck packages
+  passed; full `bun run test` passed all 12 packages (server 183/183 files, 1,508 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

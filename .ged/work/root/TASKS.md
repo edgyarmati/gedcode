@@ -17,8 +17,8 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-PMDIRECT-01 | NEXT | Give Codex PM sessions workspace-write/auto-review and retain provider-native Claude/OpenCode full access; forward unresolved escalations to the user. Remove prompt prohibitions on mutation. | Provider/runtime tests pin exact PM permission parameters and unchanged worker/manual approval routing. |
-| ORCH-PMDIRECT-02 | TODO | Teach the PM to classify bounded low-risk work for direct checkout execution, review overlapping dirty hunks, run proportional checks, commit intended hunks, and record rationale/commit. | PM prompt/runtime tests distinguish trivial from task work and prove direct commits exclude unintended hunks while allowing overlap. |
+| ORCH-PMDIRECT-01 | DONE | Give Codex PM sessions workspace-write/auto-review and retain provider-native Claude/OpenCode full access; forward unresolved escalations to the user. Remove prompt prohibitions on mutation. | Provider/runtime tests pin exact PM permission parameters and unchanged worker/manual approval routing. |
+| ORCH-PMDIRECT-02 | NEXT | Teach the PM to classify bounded low-risk work for direct checkout execution, review overlapping dirty hunks, run proportional checks, commit intended hunks, and record rationale/commit. | PM prompt/runtime tests distinguish trivial from task work and prove direct commits exclude unintended hunks while allowing overlap. |
 
 ## P1 — Capability Presets and Migration
 

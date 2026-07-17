@@ -86,7 +86,7 @@ import { defaultTaskTypeRegistry } from "../TaskTypeRegistry.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
 import { classifyRuntimeErrorClass } from "../../provider/rateLimits.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
-import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
+import { resolveOrchestratorPmRuntimePolicy } from "../orchestratorRuntimeModes.ts";
 import { pmQuotaPausedActivityCommandId, pmQuotaPausedActivityId } from "../stageResolution.ts";
 import { makePmReEntryQueue } from "../pm/PmReEntryQueue.ts";
 import {
@@ -167,9 +167,8 @@ const pmDecisionPromptLine = (driverKind: ProviderDriverKind): string =>
 
 const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
   [
-    "You are the orchestrator project manager (PM). You have orchestration, skill-loading, and read/search tool access, but your job is PM work only: feature design, task classification, skill checks, research, planning, and verifying results.",
-    "Do trivial exploration yourself when it is faster than delegating: use built-in read and search tools to gather context for good task specs and plans. Do not invoke shell or mutation tools from the PM session.",
-    "Never implement product changes yourself — no features, fixes, refactors, migrations, or edits — even though you technically can. Implementation always goes to a work agent through the orchestration tools: createTask, then handoffWorker with the `work` role.",
+    "You are the orchestrator project manager (PM). You have orchestration, skill-loading, read/search, shell, and workspace-editing tools for this project. Your primary job is feature design, task classification, skill checks, research, planning, coordinating substantial implementation, and verifying results.",
+    "Use your own workspace tools for exploration and bounded low-risk maintenance when that is faster and clearer than creating a task. Delegate proper implementation tasks through the orchestration workflow; do not create worker handoffs merely to perform a tiny mechanical edit.",
     "For heavier exploration or research that would bog you down, use createTask and handoffWorker to delegate a bounded exploration stage with explicit acceptance criteria; keep only the worker's conclusions in PM context.",
     "When a plan is doubtful or a second opinion would help, dispatch another bounded `plan` worker attempt with explicit critique instructions before committing to the plan.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs the implementation, review critiques the plan before work, work implements, and verify validates completed work before landing.",
@@ -188,7 +187,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     pmDecisionPromptLine(driverKind),
     "You may run multiple agents of each kind in parallel when the ledger's resource limits allow.",
     "Choose worker depth deliberately. When configured and suitable, prefer Terra with high reasoning for medium bounded work, and Sol with high reasoning for difficult or cross-cutting work. Use setTaskBackend options to carry the provider's effort setting; do not infer that changing only the model also changes effort.",
-    "When the human asks for implementation, your job is to turn it into a task and drive it through these stages — not to produce the code change yourself.",
+    "When the human asks for substantial implementation, turn it into a task and drive it through the appropriate stages. Keep direct PM changes bounded, review them carefully, and report exactly what changed.",
   ].join("\n");
 
 const PM_HANDOFF_BRIEF_PROMPT =
@@ -517,6 +516,7 @@ const resetDriverPmSession = (input: {
   readonly providerSessionDirectory: ProviderSessionDirectoryShape;
 }): Effect.Effect<void, PmRuntimeError> =>
   Effect.gen(function* () {
+    const runtimePolicy = resolveOrchestratorPmRuntimePolicy(input.driverKind);
     const pmThreadId = pmThreadIdForProject(input.project);
     const binding = yield* input.providerSessionDirectory
       .getBinding(pmThreadId)
@@ -553,7 +553,7 @@ const resetDriverPmSession = (input: {
         provider: input.driverKind,
         providerInstanceId: binding.providerInstanceId,
         status: "stopped",
-        runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+        runtimeMode: runtimePolicy.runtimeMode,
         resumeCursor: null,
       })
       .pipe(

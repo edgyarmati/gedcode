@@ -37,6 +37,7 @@ import {
   type BoardTaskEntry,
 } from "./TaskBoard";
 import {
+  buildPmApprovalRespondCommand,
   buildPmModelSelectionUpdateCommand,
   buildPmUserInputRespondCommand,
   decidePmHarnessSwitchGate,
@@ -756,6 +757,61 @@ describe("PmChatComposer", () => {
       answers: {
         scope: "Small",
       },
+      createdAt: "2026-06-14T10:02:00.000Z",
+    });
+    expect(command.commandId).toBeTruthy();
+  });
+
+  it("shows unresolved PM access requests with manual approval actions", () => {
+    const markup = renderToStaticMarkup(
+      <PmChatComposer
+        environmentId={environmentId}
+        project={project}
+        projectId={projectId}
+        thread={{
+          ...pmThread,
+          activities: [
+            {
+              id: EventId.make("activity-approval-requested"),
+              kind: "approval.requested",
+              tone: "approval",
+              summary: "PM access approval requested",
+              payload: {
+                requestId: "req-approval-1",
+                requestKind: "file-change",
+                requestType: "permissions_approval",
+                detail: "Write outside the project workspace",
+              },
+              turnId: null,
+              createdAt: "2026-06-14T10:01:00.000Z",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("PENDING APPROVAL");
+    expect(markup).toContain("Approve once");
+    expect(markup).toContain("Always allow this session");
+    expect(markup).toContain("Decline");
+    expect(markup).toContain("Cancel turn");
+    expect(markup).toContain("Write outside the project workspace");
+    expect(markup).toContain("Resolve the PM access request to continue");
+  });
+
+  it("builds PM approval response commands for the PM thread", () => {
+    const command = buildPmApprovalRespondCommand({
+      threadId: pmThreadId,
+      requestId: ApprovalRequestId.make("req-approval-1"),
+      decision: "acceptForSession",
+      createdAt: "2026-06-14T10:02:00.000Z",
+    });
+
+    expect(command).toMatchObject({
+      type: "thread.approval.respond",
+      threadId: pmThreadId,
+      requestId: "req-approval-1",
+      decision: "acceptForSession",
       createdAt: "2026-06-14T10:02:00.000Z",
     });
     expect(command.commandId).toBeTruthy();

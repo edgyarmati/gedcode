@@ -13,6 +13,8 @@ import {
   TurnId,
   type ProviderRuntimeUserInputRequestedEvent,
   type ProviderRuntimeUserInputResolvedEvent,
+  type ProviderRuntimeApprovalRequestedEvent,
+  type ProviderRuntimeApprovalResolvedEvent,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -129,6 +131,34 @@ const userInputResolvedEvent = (input?: {
     answers: {
       scope: "Small",
     },
+  },
+});
+
+const approvalRequestedEvent = (): ProviderRuntimeApprovalRequestedEvent => ({
+  eventId: EventId.make("event-pm-approval-requested"),
+  provider: ProviderDriverKind.make("codex"),
+  threadId: pmThreadIdForProject(project),
+  createdAt: "2026-06-14T10:01:00.000Z",
+  turnId: TurnId.make("turn-pm-approval"),
+  requestId: RuntimeRequestId.make("req-pm-approval-1"),
+  type: "request.opened",
+  payload: {
+    requestType: "permissions_approval",
+    detail: "Write outside the current workspace root",
+  },
+});
+
+const approvalResolvedEvent = (): ProviderRuntimeApprovalResolvedEvent => ({
+  eventId: EventId.make("event-pm-approval-resolved"),
+  provider: ProviderDriverKind.make("codex"),
+  threadId: pmThreadIdForProject(project),
+  createdAt: "2026-06-14T10:02:00.000Z",
+  turnId: TurnId.make("turn-pm-approval"),
+  requestId: RuntimeRequestId.make("req-pm-approval-1"),
+  type: "request.resolved",
+  payload: {
+    requestType: "permissions_approval",
+    decision: "accept",
   },
 });
 
@@ -255,6 +285,46 @@ describe("PmEventProjection", () => {
         pmThread.activities.map((activity) => activity.kind),
         ["user-input.requested", "user-input.resolved"],
       );
+    }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
+  });
+
+  it.effect("projects unresolved PM access requests for manual user approval", () => {
+    const commands: OrchestrationCommand[] = [];
+    const readModelRef = makeReadModelRef();
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        providerName: ProviderDriverKind.make("codex"),
+        pmModelSelection,
+        events: Stream.empty,
+        incarnationNonce: "test-nonce",
+      });
+
+      yield* runtime.project({
+        type: "provider_runtime_approval_requested",
+        event: approvalRequestedEvent(),
+      });
+      yield* runtime.project({
+        type: "provider_runtime_approval_resolved",
+        event: approvalResolvedEvent(),
+      });
+
+      const activities = commands
+        .filter(
+          (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
+            command.type === "thread.activity.append",
+        )
+        .map((command) => command.activity);
+      assert.deepStrictEqual(
+        activities.map((activity) => activity.kind),
+        ["approval.requested", "approval.resolved"],
+      );
+      assert.deepInclude(activities[0]?.payload, {
+        requestId: "req-pm-approval-1",
+        requestKind: "file-change",
+        requestType: "permissions_approval",
+        detail: "Write outside the current workspace root",
+      });
     }).pipe(Effect.provide(makeLayer(commands, readModelRef)), Effect.scoped);
   });
 
@@ -502,7 +572,7 @@ describe("PmEventProjection", () => {
       );
       assert.deepStrictEqual(
         sessionCommands.map((command) => command.session.runtimeMode),
-        ["approval-required", "approval-required"],
+        ["full-access", "full-access"],
       );
 
       const pmThread = readModelRef.current.threads.find(
@@ -541,7 +611,7 @@ describe("PmEventProjection", () => {
       assert.ok(sessionCommand);
       assert.strictEqual(sessionCommand.session.providerName, "claudeAgent");
       assert.strictEqual(sessionCommand.session.providerInstanceId, claudeWorkSelection.instanceId);
-      assert.strictEqual(sessionCommand.session.runtimeMode, "approval-required");
+      assert.strictEqual(sessionCommand.session.runtimeMode, "full-access");
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
@@ -569,7 +639,7 @@ describe("PmEventProjection", () => {
       assert.ok(sessionCommand);
       assert.strictEqual(sessionCommand.session.providerName, "codex");
       assert.strictEqual(sessionCommand.session.providerInstanceId, pmModelSelection.instanceId);
-      assert.strictEqual(sessionCommand.session.runtimeMode, "approval-required");
+      assert.strictEqual(sessionCommand.session.runtimeMode, "auto-accept-edits");
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
 
@@ -667,7 +737,7 @@ describe("PmEventProjection", () => {
       if (commands[0]?.type === "thread.create") {
         assert.strictEqual(commands[0].threadId, runtime.pmThreadId);
         assert.deepStrictEqual(commands[0].modelSelection, pmModelSelection);
-        assert.strictEqual(commands[0].runtimeMode, "approval-required");
+        assert.strictEqual(commands[0].runtimeMode, "full-access");
       }
 
       const deltaCommands = commands.filter(

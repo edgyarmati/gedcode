@@ -1,5 +1,6 @@
 import {
   CommandId,
+  ApprovalRequestId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
@@ -20,7 +21,7 @@ import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
-import { ORCHESTRATOR_PM_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
+import { resolveOrchestratorPmRuntimePolicy } from "../orchestratorRuntimeModes.ts";
 import type { AgentHarnessEvent, AssistantMessage, TextContent } from "../claude/pmHarness.ts";
 
 // One stable PM conversation per project. Runtime restarts and later re-entry
@@ -80,6 +81,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
     const engine = yield* OrchestrationEngineService;
     const snapshotQuery = yield* ProjectionSnapshotQuery;
     const pmThreadId = pmThreadIdForProject(input.project);
+    const runtimePolicy = resolveOrchestratorPmRuntimePolicy(input.providerName);
     const incarnationNonce = input.incarnationNonce;
     let pmThreadEnsured = false;
     let nextLocalId = 0;
@@ -133,7 +135,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           projectId: input.project.id,
           title: `${input.project.title} PM`,
           modelSelection: input.pmModelSelection,
-          runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+          runtimeMode: runtimePolicy.runtimeMode,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: null,
           worktreePath: input.project.workspaceRoot,
@@ -235,7 +237,7 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           status,
           providerName: input.providerName,
           providerInstanceId: input.pmModelSelection.instanceId,
-          runtimeMode: ORCHESTRATOR_PM_RUNTIME_MODE,
+          runtimeMode: runtimePolicy.runtimeMode,
           activeTurnId: status === "running" ? turnId : null,
           lastError: null,
           updatedAt: createdAt,
@@ -315,6 +317,58 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
       event: PmEventProjectionEvent,
     ) {
       switch (event.type) {
+        case "provider_runtime_approval_requested": {
+          const requestId = event.event.requestId ? String(event.event.requestId) : null;
+          if (requestId === null || event.event.payload.requestType === "tool_user_input") {
+            return;
+          }
+          yield* startTurn();
+          const requestType = event.event.payload.requestType;
+          const requestKind =
+            requestType === "file_read_approval"
+              ? "file-read"
+              : requestType === "command_execution_approval" ||
+                  requestType === "exec_command_approval" ||
+                  requestType === "dynamic_tool_call"
+                ? "command"
+                : "file-change";
+          yield* dispatchActivity({
+            id: event.event.eventId,
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "PM access approval requested",
+            payload: {
+              requestId: ApprovalRequestId.make(requestId),
+              requestKind,
+              requestType,
+              ...(event.event.payload.detail ? { detail: event.event.payload.detail } : {}),
+            },
+            turnId: activePmTurnId,
+            createdAt: event.event.createdAt,
+          });
+          return;
+        }
+
+        case "provider_runtime_approval_resolved": {
+          const requestId = event.event.requestId ? String(event.event.requestId) : null;
+          if (requestId === null || event.event.payload.requestType === "tool_user_input") {
+            return;
+          }
+          yield* dispatchActivity({
+            id: event.event.eventId,
+            tone: "approval",
+            kind: "approval.resolved",
+            summary: "PM access approval resolved",
+            payload: {
+              requestId: ApprovalRequestId.make(requestId),
+              requestType: event.event.payload.requestType,
+            },
+            turnId: activePmTurnId,
+            createdAt: event.event.createdAt,
+          });
+          return;
+        }
+
         case "provider_runtime_user_input_requested": {
           const requestId = event.event.requestId ? String(event.event.requestId) : null;
           if (requestId === null) {

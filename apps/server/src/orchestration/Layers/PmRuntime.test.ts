@@ -1424,8 +1424,7 @@ describe("PmRuntime", () => {
               providerInstanceId: claudeInstanceId,
               cwd: project.workspaceRoot,
               modelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
-              runtimeMode: "approval-required",
-              readOnly: true,
+              runtimeMode: "full-access",
               enableOrchestrationTools: true,
               systemPromptAppend: buildPmSystemPrompt(project),
             },
@@ -2912,13 +2911,14 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "Project");
     assert.include(prompt, "/tmp/project");
     assert.include(prompt, "never ask the human for a project id");
-    // Delegation framing: the PM orchestrates and never does the work itself.
-    assert.include(prompt, "orchestration, skill-loading, and read/search tool access");
-    assert.include(prompt, "built-in read and search tools");
+    // The PM can handle bounded maintenance directly while delegating proper tasks.
+    assert.include(prompt, "shell, and workspace-editing tools");
+    assert.include(prompt, "bounded low-risk maintenance");
     assert.include(prompt, "createTask and handoffWorker");
     assert.notInclude(prompt, "native subagents");
     assert.notInclude(prompt, "short read-only commands");
-    assert.include(prompt, "Never implement product changes yourself");
+    assert.notInclude(prompt, "Never implement product changes yourself");
+    assert.notInclude(prompt, "Do not invoke shell or mutation tools");
     assert.include(prompt, "handoffWorker");
     assert.include(prompt, "steerStage");
     assert.include(prompt, "Never poll inspectStage");

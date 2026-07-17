@@ -26,6 +26,9 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
           <span className="text-xs text-muted-foreground">1/{pendingCount}</span>
         ) : null}
       </div>
+      {approval.detail ? (
+        <p className="mt-2 break-words text-xs text-muted-foreground">{approval.detail}</p>
+      ) : null}
     </div>
   );
 });
