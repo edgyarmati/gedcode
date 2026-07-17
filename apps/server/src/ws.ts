@@ -67,6 +67,13 @@ import {
 } from "./orchestration/taskLanding.ts";
 import { inspectTaskWorktreeCompletion } from "./orchestration/worktreeCompletion.ts";
 import {
+  commitOrchestratorTaskChanges,
+  completeOrchestratorTaskWithoutChanges,
+  discardOrchestratorTaskChanges,
+  inspectOrchestratorTaskChanges,
+  returnOrchestratorTaskChanges,
+} from "./orchestration/taskChangeReviewActions.ts";
+import {
   observeRpcEffect,
   observeRpcStream,
   observeRpcStreamEffect,
@@ -1427,6 +1434,100 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 isOrchestrationInterruptStageError(cause)
                   ? cause
                   : toDispatchCommandError(cause, "Failed to interrupt orchestration stage"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.inspectTaskChanges]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.inspectTaskChanges,
+            inspectOrchestratorTaskChanges(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              input.taskId,
+            ).pipe(
+              Effect.map((changes) => ({ taskId: input.taskId, changes })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to inspect task changes"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.commitTaskChanges]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.commitTaskChanges,
+            commitOrchestratorTaskChanges(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              {
+                taskId: input.taskId,
+                paths: input.paths,
+                message: input.message,
+                commandId: (tag) => serverCommandId(`orchestrator-${tag}`),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.map((result) => ({ taskId: input.taskId, ...result })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to commit task changes"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.discardTaskChanges]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.discardTaskChanges,
+            discardOrchestratorTaskChanges(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              {
+                taskId: input.taskId,
+                paths: input.paths,
+                commandId: (tag) => serverCommandId(`orchestrator-${tag}`),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.map((result) => ({ taskId: input.taskId, ...result })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to discard task changes"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.returnTaskChanges]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.returnTaskChanges,
+            returnOrchestratorTaskChanges(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              {
+                taskId: input.taskId,
+                instructions: input.instructions,
+                commandId: (tag) => serverCommandId(`orchestrator-${tag}`),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.map((result) => ({ taskId: input.taskId, ...result })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to return task changes"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.completeTaskWithoutChanges]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.completeTaskWithoutChanges,
+            completeOrchestratorTaskWithoutChanges(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              {
+                taskId: input.taskId,
+                commandId: (tag) => serverCommandId(`orchestrator-${tag}`),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.map((result) => ({ taskId: input.taskId, ...result })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to complete task without changes"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },

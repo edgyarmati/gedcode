@@ -66,6 +66,16 @@ import type {
   OrchestratorCancelTaskInput,
   OrchestratorInterruptStageInput,
   OrchestratorInterruptStageResult,
+  OrchestratorInspectTaskChangesInput,
+  OrchestratorInspectTaskChangesResult,
+  OrchestratorCommitTaskChangesInput,
+  OrchestratorCommitTaskChangesResult,
+  OrchestratorDiscardTaskChangesInput,
+  OrchestratorDiscardTaskChangesResult,
+  OrchestratorReturnTaskChangesInput,
+  OrchestratorReturnTaskChangesResult,
+  OrchestratorCompleteTaskWithoutChangesInput,
+  OrchestratorCompleteTaskWithoutChangesResult,
   OrchestratorLandTaskInput,
   OrchestratorLandTaskResult,
   OrchestratorListArchivedTasksInput,
@@ -611,6 +621,21 @@ export interface EnvironmentApi {
     interruptStage: (
       input: OrchestratorInterruptStageInput,
     ) => Promise<OrchestratorInterruptStageResult>;
+    inspectTaskChanges: (
+      input: OrchestratorInspectTaskChangesInput,
+    ) => Promise<OrchestratorInspectTaskChangesResult>;
+    commitTaskChanges: (
+      input: OrchestratorCommitTaskChangesInput,
+    ) => Promise<OrchestratorCommitTaskChangesResult>;
+    discardTaskChanges: (
+      input: OrchestratorDiscardTaskChangesInput,
+    ) => Promise<OrchestratorDiscardTaskChangesResult>;
+    returnTaskChanges: (
+      input: OrchestratorReturnTaskChangesInput,
+    ) => Promise<OrchestratorReturnTaskChangesResult>;
+    completeTaskWithoutChanges: (
+      input: OrchestratorCompleteTaskWithoutChangesInput,
+    ) => Promise<OrchestratorCompleteTaskWithoutChangesResult>;
     landTask: (input: OrchestratorLandTaskInput) => Promise<OrchestratorLandTaskResult>;
     listArchivedTasks: (
       input: OrchestratorListArchivedTasksInput,

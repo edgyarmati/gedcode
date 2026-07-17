@@ -261,6 +261,21 @@ function createMockEnvironmentApi(input: {
       interruptStage: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["interruptStage"],
+      inspectTaskChanges: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["inspectTaskChanges"],
+      commitTaskChanges: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["commitTaskChanges"],
+      discardTaskChanges: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["discardTaskChanges"],
+      returnTaskChanges: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["returnTaskChanges"],
+      completeTaskWithoutChanges: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["completeTaskWithoutChanges"],
       listArchivedTasks: (() =>
         Promise.resolve([])) as EnvironmentApi["orchestrator"]["listArchivedTasks"],
       archiveTask: (() => {

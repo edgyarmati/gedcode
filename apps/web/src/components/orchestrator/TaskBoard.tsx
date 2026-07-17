@@ -65,6 +65,7 @@ export function activeStageLabel(status: OrchestratorTask["status"]): string {
 
 export type NeedsYouReason =
   | { readonly kind: "gate"; readonly gate: OrchestrationGateKind }
+  | { readonly kind: "change-review" }
   | { readonly kind: "blocked" }
   | { readonly kind: "quota" }
   | { readonly kind: "landing-failed" };
@@ -84,6 +85,9 @@ export function needsYouReason(entry: BoardTaskEntry): NeedsYouReason | null {
   if (entry.task.status === "blocked") {
     return { kind: "blocked" };
   }
+  if (entry.task.status === "change-review") {
+    return { kind: "change-review" };
+  }
   if (entry.task.status === "blocked-on-quota") {
     return { kind: "quota" };
   }
@@ -101,6 +105,8 @@ export function needsYouReasonLabel(reason: NeedsYouReason): string {
       return "Quota";
     case "landing-failed":
       return "Landing failed";
+    case "change-review":
+      return "Review changes";
     case "gate":
       return `Awaiting ${reason.gate} approval`;
   }
@@ -148,7 +154,11 @@ export function taskContextMenuItems(
     );
     return items;
   }
-  if (task.status === "landed" || task.status === "abandoned") {
+  if (
+    task.status === "landed" ||
+    task.status === "abandoned" ||
+    task.status === "no-changes-needed"
+  ) {
     items.push(
       { id: "archive-task", label: "Archive task" },
       { id: "delete-task", label: "Delete task permanently", destructive: true },
@@ -179,6 +189,8 @@ export function partitionBoardTasks(entries: readonly BoardTaskEntry[]): BoardPa
       } else {
         landed.push(entry.task);
       }
+    } else if (status === "no-changes-needed") {
+      landed.push(entry.task);
     } else if (status === "abandoned") {
       abandoned.push(entry.task);
     } else if (ACTIVE_STATUSES.has(status)) {
@@ -233,6 +245,10 @@ function isActiveBoardTask(task: OrchestratorTask): boolean {
   );
 }
 
+function isSuccessfulTerminalTask(task: OrchestratorTask): boolean {
+  return task.status === "landed" || task.status === "no-changes-needed";
+}
+
 export function partitionBoardTaskGroups(groups: readonly BoardTaskGroup[]): BoardGroupPartition {
   const needsYou: NeedsYouGroupItem[] = [];
   const active: BoardTaskGroup[] = [];
@@ -258,7 +274,10 @@ export function partitionBoardTaskGroups(groups: readonly BoardTaskGroup[]): Boa
 
     if (group.children.length === 0) {
       const status = group.parent.task.status;
-      if (status === "landed" && group.parent.task.landing?.status !== "opening-pr") {
+      if (
+        (status === "landed" && group.parent.task.landing?.status !== "opening-pr") ||
+        status === "no-changes-needed"
+      ) {
         landed.push(group);
       } else if (status === "abandoned") {
         abandoned.push(group);
@@ -272,13 +291,13 @@ export function partitionBoardTaskGroups(groups: readonly BoardTaskGroup[]): Boa
       active.push(group);
       continue;
     }
-    if (group.children.every((child) => child.task.status === "landed")) {
+    if (group.children.every((child) => isSuccessfulTerminalTask(child.task))) {
       landed.push(group);
       continue;
     }
     if (
       group.children.every(
-        (child) => child.task.status === "landed" || child.task.status === "abandoned",
+        (child) => isSuccessfulTerminalTask(child.task) || child.task.status === "abandoned",
       )
     ) {
       abandoned.push(group);
@@ -738,7 +757,7 @@ function taskGroupProgress(group: BoardTaskGroup): {
   return {
     total: group.children.length,
     terminal: group.children.filter(
-      (child) => child.task.status === "landed" || child.task.status === "abandoned",
+      (child) => isSuccessfulTerminalTask(child.task) || child.task.status === "abandoned",
     ).length,
     landed: group.children.filter((child) => child.task.status === "landed").length,
   };
@@ -1069,6 +1088,15 @@ function TerminalTaskCard({
       {...(onContextMenu ? { onContextMenu } : {})}
     >
       <div className="line-clamp-2 text-sm font-medium text-muted-foreground">{task.title}</div>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        <Badge size="sm" variant="outline">
+          {task.status === "no-changes-needed"
+            ? "No changes needed"
+            : task.status === "landed"
+              ? "Landed"
+              : "Abandoned"}
+        </Badge>
+      </div>
       {task.supersededByTaskId ? (
         <div className="mt-1 text-[11px] text-muted-foreground">Superseded</div>
       ) : null}

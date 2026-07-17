@@ -168,6 +168,13 @@ export interface WsRpcClient {
     readonly landTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.landTask>;
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
     readonly interruptStage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.interruptStage>;
+    readonly inspectTaskChanges: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.inspectTaskChanges>;
+    readonly commitTaskChanges: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.commitTaskChanges>;
+    readonly discardTaskChanges: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.discardTaskChanges>;
+    readonly returnTaskChanges: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.returnTaskChanges>;
+    readonly completeTaskWithoutChanges: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.completeTaskWithoutChanges
+    >;
     readonly listArchivedTasks: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.listArchivedTasks>;
     readonly archiveTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.archiveTask>;
     readonly restoreTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.restoreTask>;
@@ -369,6 +376,18 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
       interruptStage: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.interruptStage](input)),
+      inspectTaskChanges: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.inspectTaskChanges](input)),
+      commitTaskChanges: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.commitTaskChanges](input)),
+      discardTaskChanges: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.discardTaskChanges](input)),
+      returnTaskChanges: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.returnTaskChanges](input)),
+      completeTaskWithoutChanges: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.completeTaskWithoutChanges](input),
+        ),
       listArchivedTasks: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.listArchivedTasks](input)),
       archiveTask: (input) =>

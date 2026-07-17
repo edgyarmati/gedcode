@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added a visible task **Change review** workflow with a bounded tracked-diff preview, explicit path
+  selection, descriptive commits, return-to-worker revision instructions, and confirmed destructive
+  discard. Human and PM actions share the same per-task lifecycle lock; change reviews now appear in
+  **Needs you**, clean empty work can be recorded as **No changes needed**, and that outcome remains
+  labeled in archived task history.
+
 - Tasks whose accepted work leaves a clean branch at its creation commit can now be completed through
   a PM no-change action instead of a meaningless land approval or pull request. No-change results and
   successfully opened task PRs archive automatically, and startup reconciliation repairs eligible

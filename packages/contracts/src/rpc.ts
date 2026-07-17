@@ -509,6 +509,51 @@ export const WsOrchestratorInterruptStageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.
   error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationInterruptStageError]),
 });
 
+export const WsOrchestratorInspectTaskChangesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.inspectTaskChanges,
+  {
+    payload: OrchestratorRpcSchemas.inspectTaskChanges.input,
+    success: OrchestratorRpcSchemas.inspectTaskChanges.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCommitTaskChangesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.commitTaskChanges,
+  {
+    payload: OrchestratorRpcSchemas.commitTaskChanges.input,
+    success: OrchestratorRpcSchemas.commitTaskChanges.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorDiscardTaskChangesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.discardTaskChanges,
+  {
+    payload: OrchestratorRpcSchemas.discardTaskChanges.input,
+    success: OrchestratorRpcSchemas.discardTaskChanges.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorReturnTaskChangesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.returnTaskChanges,
+  {
+    payload: OrchestratorRpcSchemas.returnTaskChanges.input,
+    success: OrchestratorRpcSchemas.returnTaskChanges.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCompleteTaskWithoutChangesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.completeTaskWithoutChanges,
+  {
+    payload: OrchestratorRpcSchemas.completeTaskWithoutChanges.input,
+    success: OrchestratorRpcSchemas.completeTaskWithoutChanges.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.landTask, {
   payload: OrchestratorRpcSchemas.landTask.input,
   success: OrchestratorRpcSchemas.landTask.output,
@@ -639,6 +684,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorSetTaskRoleSelectionsRpc,
   WsOrchestratorCancelTaskRpc,
   WsOrchestratorInterruptStageRpc,
+  WsOrchestratorInspectTaskChangesRpc,
+  WsOrchestratorCommitTaskChangesRpc,
+  WsOrchestratorDiscardTaskChangesRpc,
+  WsOrchestratorReturnTaskChangesRpc,
+  WsOrchestratorCompleteTaskWithoutChangesRpc,
   WsOrchestratorLandTaskRpc,
   WsOrchestratorListArchivedTasksRpc,
   WsOrchestratorArchiveTaskRpc,

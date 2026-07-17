@@ -41,17 +41,18 @@ import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
 import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
-import { inspectTaskNoChangeEvidence } from "../taskNoChange.ts";
 import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import {
-  commitTaskWorktreeChanges,
-  discardTaskWorktreeChanges,
-  inspectTaskWorktreeChanges,
-  type TaskWorktreeChanges,
-} from "../taskChangeReview.ts";
+  commitOrchestratorTaskChanges,
+  completeOrchestratorTaskWithoutChanges,
+  discardOrchestratorTaskChanges,
+  inspectOrchestratorTaskChanges,
+  returnOrchestratorTaskChanges,
+} from "../taskChangeReviewActions.ts";
+import type { TaskWorktreeChanges } from "../taskChangeReview.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -519,64 +520,22 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const dispatch = (command: Parameters<typeof engine.dispatch>[0]) =>
     engine.dispatch(command).pipe(Effect.map((result) => result.sequence));
 
-  const taskForChangeReview = (taskId: TaskId) =>
-    Effect.gen(function* () {
-      const readModel = yield* snapshotQuery.getCommandReadModel();
-      const task = readModel.tasks.find((entry) => entry.id === taskId);
-      if (!task) {
-        return yield* new PmToolExecutionError({ detail: `Task '${taskId}' was not found.` });
-      }
-      if (task.worktreePath === null) {
-        return yield* new PmToolExecutionError({
-          detail: `Task '${taskId}' does not own a worktree.`,
-        });
-      }
-      if (task.status !== "change-review" || task.changeReview?.status !== "pending") {
-        return yield* new PmToolExecutionError({
-          detail: `Task '${taskId}' does not have a pending change review.`,
-        });
-      }
-      const process = Context.getOption(runtimeContext, VcsProcess);
-      if (Option.isNone(process)) {
-        return yield* new PmToolExecutionError({
-          detail: "Task change-review git services are unavailable.",
-        });
-      }
-      return { task, process: process.value };
-    });
-
-  const settleOrRefreshChangeReview = (input: {
-    readonly taskId: TaskId;
-    readonly changes: TaskWorktreeChanges;
-    readonly resolution: "committed" | "discarded";
-  }) =>
-    Effect.gen(function* () {
-      const readModel = yield* snapshotQuery.getCommandReadModel();
-      const task = readModel.tasks.find((entry) => entry.id === input.taskId);
-      const workStageThreadId = task?.changeReview?.workStageThreadId;
-      if (workStageThreadId === undefined) {
-        return yield* new PmToolExecutionError({
-          detail: `Task '${input.taskId}' lost its pending change-review context.`,
-        });
-      }
-      yield* dispatch({
-        type: "task.change-review.resolve",
-        commandId: yield* commandId(`change-review-${input.resolution}`),
-        taskId: input.taskId,
-        resolution: input.resolution,
-        createdAt: yield* nowIso,
+  const taskChangeReviewServices = Effect.gen(function* () {
+    const process = Context.getOption(runtimeContext, VcsProcess);
+    if (Option.isNone(process)) {
+      return yield* new PmToolExecutionError({
+        detail: "Task change-review git services are unavailable.",
       });
-      if (input.changes.dirty) {
-        yield* dispatch({
-          type: "task.change-review.request",
-          commandId: yield* commandId("change-review-remaining"),
-          taskId: input.taskId,
-          workStageThreadId,
-          detectedHead: input.changes.head,
-          createdAt: yield* nowIso,
-        });
-      }
-    });
+    }
+    return { snapshotQuery, vcsProcess: process.value };
+  });
+
+  const taskChangeReviewActionInput = (taskId: TaskId) => ({
+    taskId,
+    commandId,
+    createdAt: nowIso,
+    dispatch: engine.dispatch,
+  });
 
   const createTask: PmToolExecutor<CreateTaskParameters, { taskId: string; sequence: number }> = {
     name: "createTask",
@@ -996,11 +955,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const { task, process } = yield* taskForChangeReview(taskId);
-          const changes = yield* inspectTaskWorktreeChanges({
-            worktreePath: task.worktreePath as string,
-            process,
-          });
+          const services = yield* taskChangeReviewServices;
+          const changes = yield* inspectOrchestratorTaskChanges(services, taskId);
           return textResult(
             `Task ${taskId} has ${changes.paths.length} changed path(s) at ${changes.head}${changes.staged ? " with staged changes" : ""}.`,
             { taskId, changes },
@@ -1021,18 +977,12 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const { task, process } = yield* taskForChangeReview(taskId);
-          const result = yield* commitTaskWorktreeChanges({
-            worktreePath: task.worktreePath as string,
-            process,
+          const services = yield* taskChangeReviewServices;
+          const result = yield* commitOrchestratorTaskChanges(services, {
+            ...taskChangeReviewActionInput(taskId),
             ...(params.paths === undefined ? {} : { paths: params.paths }),
             ...(params.patch === undefined ? {} : { patch: params.patch }),
             message: params.message,
-          });
-          yield* settleOrRefreshChangeReview({
-            taskId,
-            changes: result.changes,
-            resolution: "committed",
           });
           return textResult(
             result.changes.dirty
@@ -1056,16 +1006,10 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const { task, process } = yield* taskForChangeReview(taskId);
-          const result = yield* discardTaskWorktreeChanges({
-            worktreePath: task.worktreePath as string,
-            process,
+          const services = yield* taskChangeReviewServices;
+          const result = yield* discardOrchestratorTaskChanges(services, {
+            ...taskChangeReviewActionInput(taskId),
             paths: params.paths,
-          });
-          yield* settleOrRefreshChangeReview({
-            taskId,
-            changes: result.changes,
-            resolution: "discarded",
           });
           return textResult(
             result.changes.dirty
@@ -1089,25 +1033,12 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          yield* taskForChangeReview(taskId);
-          const sequence = yield* dispatch({
-            type: "task.stage.start",
-            commandId: yield* commandId("return-task-changes"),
-            taskId,
-            role: "work",
+          const services = yield* taskChangeReviewServices;
+          const result = yield* returnOrchestratorTaskChanges(services, {
+            ...taskChangeReviewActionInput(taskId),
             instructions: params.instructions.trim(),
-            createdAt: yield* nowIso,
           });
-          const started = yield* snapshotQuery.getCommandReadModel();
-          const task = started.tasks.find((entry) => entry.id === taskId);
-          yield* dispatch({
-            type: "task.change-review.resolve",
-            commandId: yield* commandId("change-review-returned"),
-            taskId,
-            resolution: "returned",
-            createdAt: yield* nowIso,
-          });
-          const stageThreadId = latestStageThreadId(task);
+          const { sequence, stageThreadId } = result;
           return textResult(`Returned task ${taskId} changes to work stage ${stageThreadId}.`, {
             taskId,
             stageThreadId,
@@ -1129,51 +1060,16 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
-          const readModel = yield* snapshotQuery.getCommandReadModel();
-          const task = readModel.tasks.find((entry) => entry.id === taskId);
-          if (
-            task === undefined ||
-            task.status !== "review" ||
-            task.currentStageThreadId !== null ||
-            task.worktreePath === null ||
-            task.branch === null
-          ) {
-            return yield* new PmToolExecutionError({
-              detail: `Task '${taskId}' must have settled work in review and an owned branch worktree before it can complete without changes.`,
-            });
-          }
-          const project = readModel.projects.find((entry) => entry.id === task.projectId);
-          if (project === undefined) {
-            return yield* new PmToolExecutionError({
-              detail: `Project '${task.projectId}' for task '${taskId}' was not found.`,
-            });
-          }
-          const process = Context.getOption(runtimeContext, VcsProcess);
-          if (Option.isNone(process)) {
-            return yield* new PmToolExecutionError({
-              detail: "The VCS process service is unavailable for no-change completion.",
-            });
-          }
-          const evidence = yield* inspectTaskNoChangeEvidence({
-            repositoryPath: project.workspaceRoot,
-            branch: task.branch,
-            worktreePath: task.worktreePath,
-            process: process.value,
-          });
-          const sequence = yield* dispatch({
-            type: "task.no-changes-needed",
-            commandId: yield* commandId("complete-task-without-changes"),
-            taskId,
-            baseHead: evidence.baseHead,
-            head: evidence.head,
-            worktreeCompletion: { head: evidence.head, dirty: evidence.dirty },
-            createdAt: yield* nowIso,
-          });
+          const services = yield* taskChangeReviewServices;
+          const result = yield* completeOrchestratorTaskWithoutChanges(
+            services,
+            taskChangeReviewActionInput(taskId),
+          );
           return textResult(`Completed and archived task ${taskId} without repository changes.`, {
             taskId,
-            baseHead: evidence.baseHead,
-            head: evidence.head,
-            sequence,
+            baseHead: result.baseHead,
+            head: result.head,
+            sequence: result.sequence,
           });
         }),
       ),

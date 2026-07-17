@@ -35,13 +35,23 @@ import {
   TaskHeader,
 } from "./OrchestratorRoutes";
 import { TaskBoard } from "./TaskBoard";
+import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
 import { StageTimeline } from "./StageTimeline";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
 const realOpenAddProject = useCommandPaletteStore.getState().openAddProject;
 
-const makeTask = (status: "planning" | "review" | "landed" | "abandoned" = "planning") =>
+const makeTask = (
+  status:
+    | "planning"
+    | "review"
+    | "change-review"
+    | "verifying"
+    | "landed"
+    | "no-changes-needed"
+    | "abandoned" = "planning",
+) =>
   ({
     id: taskId,
     environmentId,
@@ -232,8 +242,10 @@ it("cancels a non-terminal task from the task header", async () => {
 });
 
 it("does not render Cancel task for terminal tasks", async () => {
-  render(<TaskHeader task={makeTask("abandoned")} />);
+  const view = await render(<TaskHeader task={makeTask("abandoned")} />);
 
+  await expect.element(page.getByRole("button", { name: "Cancel task" })).not.toBeInTheDocument();
+  await view.rerender(<TaskHeader task={makeTask("no-changes-needed")} />);
   await expect.element(page.getByRole("button", { name: "Cancel task" })).not.toBeInTheDocument();
 });
 
@@ -318,6 +330,187 @@ it("restores an archived task from the archived board section", async () => {
 
   await expect.poll(() => restoreTask.mock.calls.length).toBe(1);
   expect(restoreTask).toHaveBeenCalledWith({ taskId });
+});
+
+it("shows change review as a Needs you action instead of dropping it from the board", async () => {
+  const listArchivedTasks = vi.fn(async () => []);
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { listArchivedTasks },
+  } as unknown as EnvironmentApi);
+
+  renderTaskBoard([makeTask("change-review")]);
+
+  await expect.element(page.getByText("Needs you", { exact: true })).toBeInTheDocument();
+  await expect.element(page.getByText("Review changes", { exact: true })).toBeInTheDocument();
+  await expect.element(page.getByText("Browser task", { exact: true })).toBeInTheDocument();
+});
+
+it("inspects and commits explicitly selected change-review paths", async () => {
+  const changes = {
+    head: "0123456789abcdef",
+    dirty: true,
+    paths: ["src/changed.ts"],
+    staged: false,
+    diff: "diff --git a/src/changed.ts b/src/changed.ts\n+updated",
+    diffTruncated: false,
+  };
+  const inspectTaskChanges = vi.fn(async () => ({ taskId, changes }));
+  const commitTaskChanges = vi.fn(async () => ({
+    taskId,
+    commit: "[task 123] fix",
+    changes: { ...changes, dirty: false, paths: [], diff: "" },
+    sequence: 4,
+  }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { inspectTaskChanges, commitTaskChanges },
+  } as unknown as EnvironmentApi);
+  const task = {
+    ...makeTask("change-review"),
+    changeReview: {
+      status: "pending" as const,
+      workStageThreadId: ThreadId.make("work-stage-browser"),
+      detectedHead: changes.head,
+      resolution: null,
+      requestedAt: "2026-06-14T00:01:00.000Z",
+      resolvedAt: null,
+    },
+  };
+
+  const view = await render(<TaskChangeReviewPanel environmentId={environmentId} task={task} />);
+  await expect.element(page.getByText("src/changed.ts", { exact: true })).toBeInTheDocument();
+  await expect.element(page.getByText("updated", { exact: false })).toBeInTheDocument();
+  await page.getByRole("textbox", { name: "Commit message" }).fill("fix reviewed changes");
+  await page.getByRole("button", { name: "Commit selected" }).click();
+
+  await expect.poll(() => commitTaskChanges.mock.calls.length).toBe(1);
+  expect(commitTaskChanges).toHaveBeenCalledWith({
+    taskId,
+    paths: ["src/changed.ts"],
+    message: "fix reviewed changes",
+  });
+
+  await view.rerender(
+    <TaskChangeReviewPanel environmentId={environmentId} task={{ ...task, status: "verifying" }} />,
+  );
+  await expect.element(page.getByText("Change review", { exact: true })).not.toBeInTheDocument();
+});
+
+it("returns change review with precise revision instructions", async () => {
+  const changes = {
+    head: "0123456789abcdef",
+    dirty: true,
+    paths: ["src/changed.ts"],
+    staged: false,
+    diff: "diff --git a/src/changed.ts b/src/changed.ts",
+    diffTruncated: false,
+  };
+  const inspectTaskChanges = vi.fn(async () => ({ taskId, changes }));
+  const returnTaskChanges = vi.fn(async () => ({
+    taskId,
+    stageThreadId: ThreadId.make("rework-stage-browser"),
+    sequence: 5,
+  }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { inspectTaskChanges, returnTaskChanges },
+  } as unknown as EnvironmentApi);
+  const task = {
+    ...makeTask("change-review"),
+    changeReview: {
+      status: "pending" as const,
+      workStageThreadId: ThreadId.make("work-stage-browser"),
+      detectedHead: changes.head,
+      resolution: null,
+      requestedAt: "2026-06-14T00:01:00.000Z",
+      resolvedAt: null,
+    },
+  };
+
+  await render(<TaskChangeReviewPanel environmentId={environmentId} task={task} />);
+  await page
+    .getByRole("textbox", { name: "Revision instructions" })
+    .fill("Keep the parser change but remove the unrelated fixture.");
+  await page.getByRole("button", { name: "Revise" }).click();
+
+  await expect.poll(() => returnTaskChanges.mock.calls.length).toBe(1);
+  expect(returnTaskChanges).toHaveBeenCalledWith({
+    taskId,
+    instructions: "Keep the parser change but remove the unrelated fixture.",
+  });
+});
+
+it("requires destructive confirmation before discarding selected changes", async () => {
+  const changes = {
+    head: "0123456789abcdef",
+    dirty: true,
+    paths: ["src/unwanted.ts"],
+    staged: false,
+    diff: "diff --git a/src/unwanted.ts b/src/unwanted.ts",
+    diffTruncated: false,
+  };
+  const inspectTaskChanges = vi.fn(async () => ({ taskId, changes }));
+  const discardTaskChanges = vi.fn(async () => ({
+    taskId,
+    changes: { ...changes, dirty: false, paths: [], diff: "" },
+    sequence: 6,
+  }));
+  vi.stubGlobal(
+    "confirm",
+    vi.fn(() => true),
+  );
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { inspectTaskChanges, discardTaskChanges },
+  } as unknown as EnvironmentApi);
+  const task = {
+    ...makeTask("change-review"),
+    changeReview: {
+      status: "pending" as const,
+      workStageThreadId: ThreadId.make("work-stage-browser"),
+      detectedHead: changes.head,
+      resolution: null,
+      requestedAt: "2026-06-14T00:01:00.000Z",
+      resolvedAt: null,
+    },
+  };
+
+  await render(<TaskChangeReviewPanel environmentId={environmentId} task={task} />);
+  await page.getByRole("button", { name: "Discard" }).click();
+
+  await expect.poll(() => discardTaskChanges.mock.calls.length).toBe(1);
+  expect(discardTaskChanges).toHaveBeenCalledWith({ taskId, paths: ["src/unwanted.ts"] });
+});
+
+it("records clean work as no changes needed and shows the archived outcome", async () => {
+  const completeTaskWithoutChanges = vi.fn(async () => ({
+    taskId,
+    baseHead: "0123456789abcdef",
+    head: "0123456789abcdef",
+    sequence: 7,
+  }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { completeTaskWithoutChanges },
+  } as unknown as EnvironmentApi);
+  await render(<TaskChangeReviewPanel environmentId={environmentId} task={makeTask("review")} />);
+  await page.getByRole("button", { name: "No changes needed" }).click();
+  await expect.poll(() => completeTaskWithoutChanges.mock.calls.length).toBe(1);
+
+  __resetEnvironmentApiOverridesForTests();
+  const archivedTask = {
+    ...makeTask("no-changes-needed"),
+    archivedAt: "2026-06-14T00:05:00.000Z",
+    noChangesNeeded: {
+      baseHead: "0123456789abcdef",
+      head: "0123456789abcdef",
+      completedAt: "2026-06-14T00:05:00.000Z",
+    },
+  };
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { listArchivedTasks: vi.fn(async () => [archivedTask]) },
+  } as unknown as EnvironmentApi);
+  renderTaskBoard([]);
+  await page.getByRole("button", { name: /Archived/ }).click();
+  await expect
+    .element(page.getByText("No changes needed", { exact: true }).last())
+    .toBeInTheDocument();
 });
 
 it("expands a split parent to show children in their declared order", async () => {

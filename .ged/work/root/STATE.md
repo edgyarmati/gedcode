@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-06`
+- **Active task**: `ORCH-PMDIRECT-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -77,6 +77,15 @@
   and real-Git landing suites passed (213 tests); `bun fmt`, `bun lint`, and `bun typecheck` passed;
   full `bun run test` passed outside the filesystem sandbox (12/12 packages; server 183/183 files,
   1,504 passed and 1 skipped).
+- `ORCH-WORK-06` completed 2026-07-17. Task pages now expose a bounded tracked-diff preview and
+  explicit-path Commit, Revise, destructive Discard, and No changes needed controls. Browser and PM
+  mutations share one lifecycle lock and server-side ownership validation. Change review appears in
+  Needs You, successful no-change outcomes remain visible in archived history, and terminal no-change
+  tasks no longer expose cancellation.
+- Verification evidence for `ORCH-WORK-06`: focused web logic (42 tests), Chromium (19 tests), and
+  server PM/change-review suites (54 tests) passed; `bun fmt`, `bun lint`, and `bun typecheck` passed.
+  The full suite passed across all 12 packages: the non-server workspace run completed 11 packages,
+  and the separately reported server run passed 183/183 files with 1,504 passed and 1 skipped.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

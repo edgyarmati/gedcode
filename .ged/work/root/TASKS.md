@@ -11,13 +11,13 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ORCH-WORK-03 | DONE | Add scoped PM/MCP tools to inspect task status/diff and commit, discard, or return/steer remaining changes. Invalidate prior verification after every mutation. | Tool tests reject foreign paths/tasks, preserve selected hunks, record descriptive commits, and prove discard/return outcomes. |
 | ORCH-WORK-04 | DONE | Bind successful verification to exact task HEAD and require a clean worktree plus matching verified HEAD before land approval/landing. | Decider and landing integration reject stale verification after commit/discard/rework and accept only current clean HEAD. |
 | ORCH-WORK-05 | DONE | Settle accepted empty work as No changes needed, auto-archive it, and auto-archive successful landed tasks. Add an append-only reconciler for inert landed-without-PR records while preserving genuine PR failures. | Restart/replay tests repair only eligible legacy tasks; board/history tests hide success and retain retryable failures. |
-| ORCH-WORK-06 | NEXT | Surface Change review actions/status and No changes needed outcomes in PM/task UI, including safe diff preview and destructive confirmation. | Chromium covers commit, revise, discard, verify-after-resolution, no-change disappearance, and archived history. |
+| ORCH-WORK-06 | DONE | Surface Change review actions/status and No changes needed outcomes in PM/task UI, including safe diff preview and destructive confirmation. | Chromium covers commit, revise, discard, verify-after-resolution, no-change disappearance, and archived history. |
 
 ## P0 — PM Direct Work
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-PMDIRECT-01 | TODO | Give Codex PM sessions workspace-write/auto-review and retain provider-native Claude/OpenCode full access; forward unresolved escalations to the user. Remove prompt prohibitions on mutation. | Provider/runtime tests pin exact PM permission parameters and unchanged worker/manual approval routing. |
+| ORCH-PMDIRECT-01 | NEXT | Give Codex PM sessions workspace-write/auto-review and retain provider-native Claude/OpenCode full access; forward unresolved escalations to the user. Remove prompt prohibitions on mutation. | Provider/runtime tests pin exact PM permission parameters and unchanged worker/manual approval routing. |
 | ORCH-PMDIRECT-02 | TODO | Teach the PM to classify bounded low-risk work for direct checkout execution, review overlapping dirty hunks, run proportional checks, commit intended hunks, and record rationale/commit. | PM prompt/runtime tests distinguish trivial from task work and prove direct commits exclude unintended hunks while allowing overlap. |
 
 ## P1 — Capability Presets and Migration

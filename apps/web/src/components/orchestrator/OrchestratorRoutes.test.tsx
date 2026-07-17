@@ -320,7 +320,9 @@ describe("TaskBoard bucketing helpers", () => {
       entry("working"),
       entry("blocked"),
       entry("blocked-on-quota"),
+      entry("change-review"),
       entry("landed"),
+      entry("no-changes-needed"),
       entry("abandoned"),
     ]);
 
@@ -328,10 +330,11 @@ describe("TaskBoard bucketing helpers", () => {
       { kind: "gate", gate: "plan" },
       { kind: "blocked" },
       { kind: "quota" },
+      { kind: "change-review" },
     ]);
     expect(partition.active).toHaveLength(1);
     expect(partition.active[0]?.status).toBe("working");
-    expect(partition.landed).toHaveLength(1);
+    expect(partition.landed).toHaveLength(2);
     expect(partition.abandoned).toHaveLength(1);
   });
 
@@ -464,6 +467,7 @@ describe("TaskBoard bucketing helpers", () => {
     expect(needsYouReasonLabel({ kind: "blocked" })).toBe("Blocked");
     expect(needsYouReasonLabel({ kind: "quota" })).toBe("Quota");
     expect(needsYouReasonLabel({ kind: "landing-failed" })).toBe("Landing failed");
+    expect(needsYouReasonLabel({ kind: "change-review" })).toBe("Review changes");
   });
 
   it("maps active statuses to stage-role labels", () => {

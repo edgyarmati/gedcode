@@ -107,6 +107,7 @@ import { PmChatComposer } from "./PmChatComposer";
 import { TaskBoard } from "./TaskBoard";
 import { TaskPrLink } from "./TaskPrLink";
 import { TaskRoleBackendSettings } from "./TaskRoleBackendSettings";
+import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
 
 // Re-exported so existing imports (e.g. tests) keep resolving from this module.
 export { AbandonedTaskBoardSection, TaskBoard } from "./TaskBoard";
@@ -735,7 +736,8 @@ export function TaskHeader({
   const [interruptError, setInterruptError] = useState<string | null>(null);
   const [landingPending, setLandingPending] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
-  const canCancel = task.status !== "landed" && task.status !== "abandoned";
+  const canCancel =
+    task.status !== "landed" && task.status !== "no-changes-needed" && task.status !== "abandoned";
   const landing = deriveTaskLandingPresentation({
     task,
     gates,
@@ -954,6 +956,7 @@ function TaskDetailRail({
       {task ? (
         <TaskRoleBackendSettings environmentId={environmentId} project={project} task={task} />
       ) : null}
+      {task ? <TaskChangeReviewPanel environmentId={environmentId} task={task} /> : null}
       <StageTimeline environmentId={environmentId} taskId={taskId} />
       <GatePanel environmentId={environmentId} gates={gates} taskId={taskId} />
       <StageProposedPlan

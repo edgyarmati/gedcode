@@ -44,6 +44,11 @@ export const ORCHESTRATOR_WS_METHODS = {
   setTaskRoleSelections: "orchestrator.setTaskRoleSelections",
   cancelTask: "orchestrator.cancelTask",
   interruptStage: "orchestrator.interruptStage",
+  inspectTaskChanges: "orchestrator.inspectTaskChanges",
+  commitTaskChanges: "orchestrator.commitTaskChanges",
+  discardTaskChanges: "orchestrator.discardTaskChanges",
+  returnTaskChanges: "orchestrator.returnTaskChanges",
+  completeTaskWithoutChanges: "orchestrator.completeTaskWithoutChanges",
   landTask: "orchestrator.landTask",
   listArchivedTasks: "orchestrator.listArchivedTasks",
   archiveTask: "orchestrator.archiveTask",
@@ -2463,6 +2468,79 @@ export const OrchestratorInterruptStageResult = Schema.Struct({
 });
 export type OrchestratorInterruptStageResult = typeof OrchestratorInterruptStageResult.Type;
 
+export const OrchestratorTaskChanges = Schema.Struct({
+  head: TrimmedNonEmptyString,
+  dirty: Schema.Boolean,
+  paths: Schema.Array(Schema.String),
+  staged: Schema.Boolean,
+  diff: Schema.String,
+  diffTruncated: Schema.Boolean,
+});
+export type OrchestratorTaskChanges = typeof OrchestratorTaskChanges.Type;
+
+export const OrchestratorInspectTaskChangesInput = Schema.Struct({ taskId: TaskId });
+export type OrchestratorInspectTaskChangesInput = typeof OrchestratorInspectTaskChangesInput.Type;
+
+export const OrchestratorInspectTaskChangesResult = Schema.Struct({
+  taskId: TaskId,
+  changes: OrchestratorTaskChanges,
+});
+export type OrchestratorInspectTaskChangesResult = typeof OrchestratorInspectTaskChangesResult.Type;
+
+export const OrchestratorCommitTaskChangesInput = Schema.Struct({
+  taskId: TaskId,
+  paths: Schema.Array(Schema.String),
+  message: TrimmedNonEmptyString,
+});
+export type OrchestratorCommitTaskChangesInput = typeof OrchestratorCommitTaskChangesInput.Type;
+
+export const OrchestratorCommitTaskChangesResult = Schema.Struct({
+  taskId: TaskId,
+  commit: Schema.String,
+  changes: OrchestratorTaskChanges,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorCommitTaskChangesResult = typeof OrchestratorCommitTaskChangesResult.Type;
+
+export const OrchestratorDiscardTaskChangesInput = Schema.Struct({
+  taskId: TaskId,
+  paths: Schema.Array(Schema.String),
+});
+export type OrchestratorDiscardTaskChangesInput = typeof OrchestratorDiscardTaskChangesInput.Type;
+
+export const OrchestratorDiscardTaskChangesResult = Schema.Struct({
+  taskId: TaskId,
+  changes: OrchestratorTaskChanges,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorDiscardTaskChangesResult = typeof OrchestratorDiscardTaskChangesResult.Type;
+
+export const OrchestratorReturnTaskChangesInput = Schema.Struct({
+  taskId: TaskId,
+  instructions: TrimmedNonEmptyString,
+});
+export type OrchestratorReturnTaskChangesInput = typeof OrchestratorReturnTaskChangesInput.Type;
+
+export const OrchestratorReturnTaskChangesResult = Schema.Struct({
+  taskId: TaskId,
+  stageThreadId: Schema.NullOr(ThreadId),
+  sequence: NonNegativeInt,
+});
+export type OrchestratorReturnTaskChangesResult = typeof OrchestratorReturnTaskChangesResult.Type;
+
+export const OrchestratorCompleteTaskWithoutChangesInput = Schema.Struct({ taskId: TaskId });
+export type OrchestratorCompleteTaskWithoutChangesInput =
+  typeof OrchestratorCompleteTaskWithoutChangesInput.Type;
+
+export const OrchestratorCompleteTaskWithoutChangesResult = Schema.Struct({
+  taskId: TaskId,
+  baseHead: TrimmedNonEmptyString,
+  head: TrimmedNonEmptyString,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorCompleteTaskWithoutChangesResult =
+  typeof OrchestratorCompleteTaskWithoutChangesResult.Type;
+
 export const OrchestratorLandTaskInput = Schema.Struct({
   taskId: TaskId,
 });
@@ -2673,6 +2751,26 @@ export const OrchestratorRpcSchemas = {
   interruptStage: {
     input: OrchestratorInterruptStageInput,
     output: OrchestratorInterruptStageResult,
+  },
+  inspectTaskChanges: {
+    input: OrchestratorInspectTaskChangesInput,
+    output: OrchestratorInspectTaskChangesResult,
+  },
+  commitTaskChanges: {
+    input: OrchestratorCommitTaskChangesInput,
+    output: OrchestratorCommitTaskChangesResult,
+  },
+  discardTaskChanges: {
+    input: OrchestratorDiscardTaskChangesInput,
+    output: OrchestratorDiscardTaskChangesResult,
+  },
+  returnTaskChanges: {
+    input: OrchestratorReturnTaskChangesInput,
+    output: OrchestratorReturnTaskChangesResult,
+  },
+  completeTaskWithoutChanges: {
+    input: OrchestratorCompleteTaskWithoutChangesInput,
+    output: OrchestratorCompleteTaskWithoutChangesResult,
   },
   landTask: {
     input: OrchestratorLandTaskInput,
