@@ -19,6 +19,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "commitTaskChanges",
   "discardTaskChanges",
   "returnTaskChanges",
+  "completeTaskWithoutChanges",
   "listPendingStageApprovals",
   "respondToStageApproval",
   "cancelTask",
@@ -120,6 +121,9 @@ export const mcpInputSchemas = {
   returnTaskChanges: {
     taskId: z.string().trim().min(1),
     instructions: z.string().trim().min(1),
+  },
+  completeTaskWithoutChanges: {
+    taskId: z.string().trim().min(1),
   },
   listPendingStageApprovals: {
     taskId: z.string(),

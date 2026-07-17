@@ -162,7 +162,7 @@ function waitForTask(
 ): Effect.Effect<OrchestrationTask, never> {
   return waitForProjection(
     harness.snapshotQuery
-      .getSnapshot()
+      .getCommandReadModel()
       .pipe(Effect.map((snapshot) => snapshot.tasks.find((task) => task.id === id) ?? null)),
     (task): task is OrchestrationTask => task !== null && predicate(task),
     description,
@@ -410,6 +410,12 @@ function seedVerifiedTask(input: {
       branch: createdTask.branch,
       worktreePath: createdTask.worktreePath,
     });
+    runGit(createdTask.worktreePath, [
+      "commit",
+      "--allow-empty",
+      "-m",
+      `Implement ${input.suffix} fixture`,
+    ]);
     const worktreeHead = runGit(createdTask.worktreePath, ["rev-parse", "--verify", "HEAD"]).trim();
 
     yield* input.harness.adapterHarness!.queueTurnResponseForNextSession(

@@ -41,6 +41,7 @@ import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
 import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
+import { inspectTaskNoChangeEvidence } from "../taskNoChange.ts";
 import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
@@ -138,6 +139,10 @@ interface DiscardTaskChangesParameters {
 interface ReturnTaskChangesParameters {
   readonly taskId: string;
   readonly instructions: string;
+}
+
+interface CompleteTaskWithoutChangesParameters {
+  readonly taskId: string;
 }
 
 interface ListPendingStageApprovalsParameters {
@@ -1112,6 +1117,68 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const completeTaskWithoutChanges: PmToolExecutor<
+    CompleteTaskWithoutChangesParameters,
+    { taskId: string; baseHead: string; head: string; sequence: number }
+  > = {
+    name: "completeTaskWithoutChanges",
+    label: "Complete task without changes",
+    description:
+      "Complete and archive a settled task only when its task branch has no commits beyond its creation baseline and its owned worktree is clean. Use after accepting a worker result that correctly requires no repository changes.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const task = readModel.tasks.find((entry) => entry.id === taskId);
+          if (
+            task === undefined ||
+            task.status !== "review" ||
+            task.currentStageThreadId !== null ||
+            task.worktreePath === null ||
+            task.branch === null
+          ) {
+            return yield* new PmToolExecutionError({
+              detail: `Task '${taskId}' must have settled work in review and an owned branch worktree before it can complete without changes.`,
+            });
+          }
+          const project = readModel.projects.find((entry) => entry.id === task.projectId);
+          if (project === undefined) {
+            return yield* new PmToolExecutionError({
+              detail: `Project '${task.projectId}' for task '${taskId}' was not found.`,
+            });
+          }
+          const process = Context.getOption(runtimeContext, VcsProcess);
+          if (Option.isNone(process)) {
+            return yield* new PmToolExecutionError({
+              detail: "The VCS process service is unavailable for no-change completion.",
+            });
+          }
+          const evidence = yield* inspectTaskNoChangeEvidence({
+            repositoryPath: project.workspaceRoot,
+            branch: task.branch,
+            worktreePath: task.worktreePath,
+            process: process.value,
+          });
+          const sequence = yield* dispatch({
+            type: "task.no-changes-needed",
+            commandId: yield* commandId("complete-task-without-changes"),
+            taskId,
+            baseHead: evidence.baseHead,
+            head: evidence.head,
+            worktreeCompletion: { head: evidence.head, dirty: evidence.dirty },
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Completed and archived task ${taskId} without repository changes.`, {
+            taskId,
+            baseHead: evidence.baseHead,
+            head: evidence.head,
+            sequence,
+          });
+        }),
+      ),
+  };
+
   const listPendingStageApprovals: PmToolExecutor<
     ListPendingStageApprovalsParameters,
     { taskId: string; approvals: ReadonlyArray<PendingStageApprovalSummary> }
@@ -1482,6 +1549,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     commitTaskChanges,
     discardTaskChanges,
     returnTaskChanges,
+    completeTaskWithoutChanges,
     listPendingStageApprovals,
     respondToStageApproval,
     cancelTask,

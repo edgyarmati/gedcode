@@ -2226,19 +2226,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     case "task.no-changes-needed": {
       const task = yield* requireTask({ readModel, command, taskId: command.taskId });
       yield* requireTaskNotCancelling({ command, task });
-      if (task.status !== "review" || task.currentStageThreadId !== null) {
+      const reviewCompletion = task.status === "review";
+      const inertLandedRepair =
+        task.status === "landed" && task.prUrl === null && task.landing?.status !== "failed";
+      if ((!reviewCompletion && !inertLandedRepair) || task.currentStageThreadId !== null) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' must have settled work in review before it can complete without changes.`,
+          `Task '${command.taskId}' must have settled work in review or an inert landing without a PR before it can complete without changes.`,
         );
       }
-      if (command.baseHead !== command.head) {
+      if (
+        command.worktreeCompletion === undefined ||
+        command.worktreeCompletion.dirty ||
+        command.worktreeCompletion.head !== command.head ||
+        command.baseHead !== command.head
+      ) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' cannot complete without changes because HEAD differs from its base.`,
+          `Task '${command.taskId}' can complete without changes only when its inspected clean HEAD equals its branch creation baseline.`,
         );
       }
-      return {
+      const noChangesNeededEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
           aggregateId: command.taskId,
@@ -2253,7 +2261,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           completedAt: command.createdAt,
           updatedAt: command.createdAt,
         },
-      };
+      } satisfies PlannedOrchestrationEvent;
+      const archivedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: noChangesNeededEvent.eventId,
+        type: "task.archived",
+        payload: {
+          taskId: command.taskId,
+          archivedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
+      return [noChangesNeededEvent, archivedEvent];
     }
 
     case "task.stage.block": {
@@ -2767,6 +2791,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         taskId: command.taskId,
       });
       yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "landed" || task.prUrl !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be landed without an existing PR before PR success can be recorded.`,
+        );
+      }
       const project = yield* requireProject({
         readModel,
         command,
@@ -2774,7 +2804,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
 
-      return {
+      const prOpenedEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
           aggregateId: command.taskId,
@@ -2788,7 +2818,23 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.prNumber !== undefined ? { prNumber: command.prNumber } : {}),
           updatedAt: command.createdAt,
         },
-      };
+      } satisfies PlannedOrchestrationEvent;
+      const archivedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: prOpenedEvent.eventId,
+        type: "task.archived",
+        payload: {
+          taskId: command.taskId,
+          archivedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
+      return [prOpenedEvent, archivedEvent];
     }
 
     case "task.pr.open.failed": {

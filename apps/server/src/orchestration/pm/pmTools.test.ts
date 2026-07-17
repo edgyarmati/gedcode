@@ -147,6 +147,24 @@ const makeReadModel = (
   ),
 ) => ({
   ...createEmptyReadModel(now),
+  projects: [
+    {
+      id: projectId,
+      title: "Project",
+      workspaceRoot: "/repo",
+      repositoryIdentity: null,
+      defaultModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      roleModelSelections: {},
+      orchestratorConfig: {},
+      scripts: [],
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    },
+  ],
   threads,
   tasks,
 });
@@ -479,6 +497,49 @@ it.effect("change-review tools inspect task-owned changes and reject foreign tas
       }
     });
     assert.match(String(error), /not found/);
+  }),
+);
+
+it.effect("completeTaskWithoutChanges verifies the branch baseline and clean worktree", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const reviewTask = makeTask({
+      status: "review",
+      currentStageThreadId: null,
+      branch: "orchestrator/task-1",
+    });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([reviewTask]), null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(
+                input.operation === "OrchestratorTaskNoChange.head" ||
+                  input.operation === "OrchestratorTaskNoChange.base"
+                  ? vcsOutput("abc123\n")
+                  : vcsOutput(),
+              ),
+          },
+        }),
+      ),
+    );
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "completeTaskWithoutChanges").execute("no-change", { taskId }),
+    );
+    assert.match(result.content[0]?.text ?? "", /Completed and archived/);
+    assert.deepStrictEqual(result.details, {
+      taskId,
+      baseHead: "abc123",
+      head: "abc123",
+      sequence: 1,
+    });
+    const command = dispatched.find((entry) => entry.type === "task.no-changes-needed");
+    assert.ok(command?.type === "task.no-changes-needed");
+    assert.equal(command.taskId, taskId);
+    assert.equal(command.baseHead, "abc123");
+    assert.equal(command.head, "abc123");
+    assert.deepStrictEqual(command.worktreeCompletion, { head: "abc123", dirty: false });
   }),
 );
 

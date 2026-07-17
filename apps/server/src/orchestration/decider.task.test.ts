@@ -521,7 +521,6 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         parentTaskId: "task-1",
         childOrder: 0,
       });
-
       const withChild = yield* applyEvents(readModel, toEvents(event));
       const duplicateOrder = yield* Effect.exit(
         decideOrchestrationCommand({
@@ -709,7 +708,8 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
       });
 
-      const singleEvent = Array.isArray(event) ? event[0] : event;
+      const events = toEvents(event);
+      const singleEvent = events[0];
       expect(singleEvent?.type).toBe("task.created");
       expect(singleEvent?.payload).toMatchObject({
         supersedesTaskId: "task-1",
@@ -2845,13 +2845,19 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
       });
 
-      const singleEvent = Array.isArray(event) ? event[0] : event;
+      const events = toEvents(event);
+      const singleEvent = events[0];
       expect(singleEvent?.type).toBe("task.pr-opened");
       expect(singleEvent?.payload).toMatchObject({
         taskId: asTaskId("task-1"),
         prUrl: "https://github.com/acme/repo/pull/42",
         prNumber: 42,
         updatedAt: now,
+      });
+      expect(events[1]).toMatchObject({
+        type: "task.archived",
+        causationEventId: singleEvent?.eventId,
+        payload: { taskId: asTaskId("task-1"), archivedAt: now },
       });
     }),
   );
@@ -3320,12 +3326,15 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
               taskId: asTaskId("task-1"),
               baseHead: "abc123",
               head: "abc123",
+              worktreeCompletion: { head: "abc123", dirty: false },
               createdAt: now,
             },
           }),
-        )[0]!;
-        const completed = yield* projectEvent(review, withSequence(noChanges, 3));
+        );
+        let completed = yield* projectEvent(review, withSequence(noChanges[0]!, 3));
+        completed = yield* projectEvent(completed, withSequence(noChanges[1]!, 4));
         expect(completed.tasks[0]?.status).toBe("no-changes-needed");
+        expect(completed.tasks[0]?.archivedAt).toBe(now);
         expect(completed.tasks[0]?.noChangesNeeded).toMatchObject({
           baseHead: "abc123",
           head: "abc123",
@@ -3340,6 +3349,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
               taskId: asTaskId("task-1"),
               baseHead: "abc123",
               head: "def456",
+              worktreeCompletion: { head: "def456", dirty: false },
               createdAt: now,
             },
           }),

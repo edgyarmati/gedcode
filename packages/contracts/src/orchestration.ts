@@ -1230,6 +1230,7 @@ const TaskNoChangesNeededCommand = Schema.Struct({
   taskId: TaskId,
   baseHead: TrimmedNonEmptyString,
   head: TrimmedNonEmptyString,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 

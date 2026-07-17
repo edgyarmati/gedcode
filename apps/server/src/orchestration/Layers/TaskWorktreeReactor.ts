@@ -41,6 +41,7 @@ import {
   makeTaskWorktreeLeaseStore,
   taskOwnsWorktree,
 } from "../taskWorktreeLease.ts";
+import { inspectTaskNoChangeEvidence } from "../taskNoChange.ts";
 import {
   TaskWorktreeReactor,
   type TaskWorktreeReactorShape,
@@ -147,6 +148,25 @@ function taskPrOpenFailedCommandId(taskId: string): CommandId {
 
 function taskLandingFailedCommandId(taskId: string, landingStartedAt: string): CommandId {
   return CommandId.make(`task-landing-failed:${taskId}:${landingStartedAt}`);
+}
+
+function taskNoChangesCommandId(taskId: string): CommandId {
+  return CommandId.make(`task-no-changes-needed:${taskId}`);
+}
+
+function taskAutoArchiveCommandId(taskId: string): CommandId {
+  return CommandId.make(`task-auto-archive:${taskId}`);
+}
+
+export function listSuccessfulUnarchivedTasks(
+  readModel: OrchestrationReadModel,
+): ReadonlyArray<OrchestrationTask> {
+  return readModel.tasks.filter(
+    (task) =>
+      task.archivedAt === null &&
+      task.deletedAt === null &&
+      (task.status === "no-changes-needed" || (task.status === "landed" && task.prUrl !== null)),
+  );
 }
 
 function landingFailureActivityId(taskId: string): EventId {
@@ -543,6 +563,48 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         return;
       }
 
+      if (
+        context.task.branch !== null &&
+        isDeterministicTaskWorktreePath({
+          workspaceRoot: context.project.workspaceRoot,
+          taskId: String(context.task.id),
+          worktreePath: context.worktreePath,
+        })
+      ) {
+        const worktreeExists = yield* fileSystem.exists(context.worktreePath);
+        const noChangeEvidence = yield* Effect.exit(
+          inspectTaskNoChangeEvidence({
+            repositoryPath: context.project.workspaceRoot,
+            branch: context.task.branch,
+            ...(worktreeExists ? { worktreePath: context.worktreePath } : {}),
+            process: vcsProcess,
+          }),
+        );
+        if (noChangeEvidence._tag === "Success") {
+          const evidence = noChangeEvidence.value;
+          if (!evidence.dirty && evidence.baseHead === evidence.head) {
+            const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+            yield* orchestrationEngine.dispatch({
+              type: "task.no-changes-needed",
+              commandId: taskNoChangesCommandId(String(context.task.id)),
+              taskId: context.task.id,
+              baseHead: evidence.baseHead,
+              head: evidence.head,
+              worktreeCompletion: { head: evidence.head, dirty: false },
+              createdAt,
+            });
+            yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
+            return;
+          }
+        } else {
+          yield* Effect.logWarning("task no-change eligibility inspection failed", {
+            taskId: String(context.task.id),
+            branch: context.task.branch,
+            cause: Cause.pretty(noChangeEvidence.cause),
+          });
+        }
+      }
+
       let branchPushed = false;
       const landing = openTaskPrAndRecord({
         context,
@@ -684,6 +746,30 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
             cause: Cause.pretty(cause),
           });
         }),
+      );
+
+    const archiveSuccessfulTerminalTasks = Effect.fn("archiveSuccessfulTerminalTasks")(function* (
+      readModel: OrchestrationReadModel,
+    ) {
+      yield* Effect.forEach(
+        listSuccessfulUnarchivedTasks(readModel),
+        (task) =>
+          orchestrationEngine.dispatch({
+            type: "task.archive",
+            commandId: taskAutoArchiveCommandId(String(task.id)),
+            taskId: task.id,
+          }),
+        { concurrency: 1, discard: true },
+      );
+    });
+
+    const archiveSuccessfulTerminalTasksSafely = (readModel: OrchestrationReadModel) =>
+      archiveSuccessfulTerminalTasks(readModel).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("successful terminal task archive reconciliation failed", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
       );
 
     const cleanupTerminalTaskWorktrees = Effect.fn("cleanupTerminalTaskWorktrees")(function* (
@@ -836,6 +922,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
 
       if (startupReadModelExit._tag === "Success") {
         yield* refreshLiveTaskWorktreeLeasesSafely(startupReadModelExit.value);
+        yield* archiveSuccessfulTerminalTasksSafely(startupReadModelExit.value);
         yield* processPendingLandedTasksSafely(startupReadModelExit.value);
         yield* cleanupTerminalTaskWorktreesSafely(startupReadModelExit.value);
       } else {

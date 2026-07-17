@@ -233,10 +233,10 @@ function makeProjectionSnapshotQueryLayer(
   });
 }
 
-function processOutput() {
+function processOutput(stdout = "") {
   return {
     exitCode: ChildProcessSpawner.ExitCode(0),
-    stdout: "",
+    stdout,
     stderr: "",
     stdoutTruncated: false,
     stderrTruncated: false,
@@ -288,6 +288,7 @@ async function createHarness(input: {
   readonly dispatch?: OrchestrationEngineShape["dispatch"];
   readonly pushCurrentBranch?: GitWorkflowServiceShape["pushCurrentBranch"];
   readonly readRangeContext?: GitWorkflowServiceShape["readRangeContext"];
+  readonly vcsProcessRun?: VcsProcessShape["run"];
 }) {
   const readModelRef = { current: input.readModel };
   const eventPubSub = input.eventPubSub ?? Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
@@ -314,7 +315,9 @@ async function createHarness(input: {
           diffPatch: "",
         })),
   );
-  const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(() => Effect.succeed(processOutput()));
+  const vcsProcessRun = vi.fn<VcsProcessShape["run"]>(
+    input.vcsProcessRun ?? (() => Effect.succeed(processOutput())),
+  );
   const createChangeRequest = vi.fn<
     SourceControlProvider.SourceControlProviderShape["createChangeRequest"]
   >((request) => {
@@ -457,6 +460,50 @@ describe("TaskWorktreeReactor", () => {
     createdDirs.add(workspaceRoot);
     return workspaceRoot;
   }
+
+  it("repairs an empty landed branch to no changes needed and skips PR creation", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
+    const harness = await createHarness({
+      eventPubSub,
+      readModel: makeReadModel({ workspaceRoot, worktreePath, taskStatus: "working" }),
+      vcsProcessRun: (input) => {
+        if (input.operation === "OrchestratorTaskNoChange.head") {
+          return Effect.succeed(processOutput("abc123\n"));
+        }
+        if (input.operation === "OrchestratorTaskNoChange.base") {
+          return Effect.succeed(processOutput("abc123\n"));
+        }
+        return Effect.succeed(processOutput());
+      },
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await harness.runtime.runPromise(Effect.yieldNow);
+    harness.readModelRef.current = makeReadModel({
+      workspaceRoot,
+      worktreePath,
+      taskStatus: "landed",
+    });
+    await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
+    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.no-changes-needed",
+        taskId,
+        baseHead: "abc123",
+        head: "abc123",
+        worktreeCompletion: { head: "abc123", dirty: false },
+      }),
+    );
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
 
   it("recognizes only deterministic task worktree paths", () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
@@ -719,6 +766,13 @@ describe("TaskWorktreeReactor", () => {
 
     expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
     expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.archive",
+        commandId: CommandId.make("task-auto-archive:task-1"),
+        taskId,
+      }),
+    );
     expect(harness.removeWorktree).toHaveBeenCalledWith({
       cwd: workspaceRoot,
       path: worktreePath,

@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-05`
+- **Active task**: `ORCH-WORK-06`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -68,6 +68,15 @@
   landing pipeline integrations passed; `bun fmt`, `bun lint`, and `bun typecheck` passed; full
   `bun run test` passed outside the filesystem sandbox (12/12 packages; server 182/182 files, 1,501
   passed and 1 skipped).
+- `ORCH-WORK-05` completed 2026-07-17. The PM can now accept clean empty work through an
+  evidence-backed no-change actuator that compares task HEAD with the branch creation reflog. No-change
+  and successful PR-open transitions archive atomically. The worktree reactor also repairs eligible
+  inert empty landings and archives legacy successful terminal tasks while retaining genuine PR
+  failures for explicit retry.
+- Verification evidence for `ORCH-WORK-05`: focused lifecycle, PM/MCP, projection, worktree-reactor,
+  and real-Git landing suites passed (213 tests); `bun fmt`, `bun lint`, and `bun typecheck` passed;
+  full `bun run test` passed outside the filesystem sandbox (12/12 packages; server 183/183 files,
+  1,504 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Tasks whose accepted work leaves a clean branch at its creation commit can now be completed through
+  a PM no-change action instead of a meaningless land approval or pull request. No-change results and
+  successfully opened task PRs archive automatically, and startup reconciliation repairs eligible
+  empty landed tasks while preserving real PR-opening failures for retry.
+
 - Verification now succeeds only against the task worktree's exact inspected clean Git HEAD. Land
   approval requests, human approvals, initial landing, and landing retries re-check that HEAD and
   reject dirty or stale worktrees, preventing post-verification commits or edits from landing under an

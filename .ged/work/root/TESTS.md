@@ -54,6 +54,18 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages; server 182/182 files, 1,501 passed and 1 skipped.
 
+### ORCH-WORK-05 — 2026-07-17
+
+- Focused: no-change Git evidence, decider, PM/MCP tools, in-memory/SQL projections, worktree reactor,
+  and real-Git landing integration suites passed (213 tests).
+- Manual review: no-change completion requires a clean task branch whose HEAD equals its creation
+  reflog; no-change and PR success archive atomically; startup repair archives legacy successes and
+  converts only empty landed branches without a recorded PR failure; failed landing remains retryable.
+- Repository: `bun fmt`, `bun lint`, and `bun typecheck` passed. Lint retained only pre-existing
+  warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 183/183 files, 1,504 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay
