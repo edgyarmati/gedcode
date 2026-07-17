@@ -3,7 +3,9 @@ import {
   DEFAULT_MAX_PARALLEL_WORKERS,
   DEFAULT_MAX_RETRIES_PER_STAGE,
   ModelSelection,
+  ORCHESTRATION_CAPABILITY_TIERS,
   ORCHESTRATION_STAGE_ROLES,
+  type OrchestratorCapabilityPresets,
   OrchestratorGlobalDefaults,
   type OrchestratorConfigJson,
   type OrchestratorGatePolicy,
@@ -52,6 +54,9 @@ export interface OrchestrationSettingsDraft {
 export interface OrchestratorConfigDraft {
   readonly pmModelSelection: ModelSelection | null;
   readonly openPrAsDraft: boolean | null;
+  readonly capabilityPresets: Readonly<
+    Record<(typeof ORCHESTRATION_CAPABILITY_TIERS)[number], ModelSelection | null>
+  >;
   readonly optionalStages: InheritableOrchestratorStages;
   readonly gatePolicy: InheritableOrchestratorGatePolicy;
   readonly resourceLimits: InheritableOrchestratorResourceLimits;
@@ -166,9 +171,15 @@ export function seedOrchestratorConfigDraft(
     : null;
   const gatePolicy = asRecord(featureConfig?.gatePolicy);
   const resourceLimits = asRecord(raw.resourceLimits);
+  const capabilityPresets = asRecord(raw.capabilityPresets);
   return {
     pmModelSelection: asModelSelection(raw.pmModelSelection),
     openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
+    capabilityPresets: {
+      cheap: asModelSelection(capabilityPresets?.cheap),
+      smart: asModelSelection(capabilityPresets?.smart),
+      genius: asModelSelection(capabilityPresets?.genius),
+    },
     optionalStages: explicitStages === null ? null : {},
     gatePolicy: {
       plan: asGatePolicy(gatePolicy?.plan),
@@ -213,9 +224,16 @@ export function buildOrchestratorProjectConfig(
       return value === null ? [] : [[key, value]];
     }),
   );
+  const capabilityPresets = Object.fromEntries(
+    ORCHESTRATION_CAPABILITY_TIERS.flatMap((preset) => {
+      const selection = draft.capabilityPresets[preset];
+      return selection === null ? [] : [[preset, selection]];
+    }),
+  );
 
   return {
     pmModelSelection: draft.pmModelSelection,
+    capabilityPresets,
     ...(draft.openPrAsDraft === null ? {} : { openPrAsDraft: draft.openPrAsDraft }),
     ...(Object.keys(featureConfig).length > 1 ? { taskTypes: [featureConfig] } : {}),
     ...(Object.keys(resourceLimits).length > 0 ? { resourceLimits } : {}),
@@ -227,6 +245,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
 ): {
   readonly pmModelSelection: ModelSelection | null;
   readonly defaultWorkerModelSelection: ModelSelection | null;
+  readonly capabilityPresets: OrchestratorCapabilityPresets | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
@@ -236,6 +255,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
   return {
     pmModelSelection: normalizedGlobals.pmModelSelection,
     defaultWorkerModelSelection: normalizedGlobals.defaultWorkerModelSelection,
+    capabilityPresets: normalizedGlobals.capabilityPresets,
     optionalStages: {},
     gatePolicy: {
       plan: normalizedGlobals.gatePolicy.plan,
@@ -290,6 +310,9 @@ export function orchestratorConfigDraftsEqual(
 ): boolean {
   return (
     modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
+    ORCHESTRATION_CAPABILITY_TIERS.every((preset) =>
+      modelSelectionsEqual(left.capabilityPresets[preset], right.capabilityPresets[preset]),
+    ) &&
     left.openPrAsDraft === right.openPrAsDraft &&
     ((left.optionalStages === null && right.optionalStages === null) ||
       (left.optionalStages !== null &&

@@ -1,4 +1,5 @@
 import {
+  ORCHESTRATION_CAPABILITY_TIERS,
   ORCHESTRATION_STAGE_ROLES,
   type EnvironmentId,
   type ModelSelection,
@@ -34,7 +35,6 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   buildOrchestrationConfigUpdate,
   orchestrationSettingsDraftsEqual,
-  resolveRoleDefaultSelection,
   seedOrchestratorInheritedDefaultsDraft,
   seedOrchestrationSettingsDraft,
   type InheritableOrchestratorResourceLimits,
@@ -45,7 +45,8 @@ import {
   ProjectOrchestratorResourceLimitsControl,
   type ProjectResourceLimitNumberKey,
 } from "./OrchestratorConfigControls";
-import { BackendModelPicker, backendLabel, RoleBackendPicker } from "./RoleBackendPicker";
+import { BackendModelPicker, backendLabel } from "./RoleBackendPicker";
+import { CapabilityPresetCard } from "./CapabilityPresetCard";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 // The project context the editor needs: identity for dispatch plus the current
@@ -83,36 +84,18 @@ function SettingsSection({
   );
 }
 
-function RoleConfigRow({
+function PromptPrefixRow({
   role,
-  selection,
   prefix,
-  instanceEntries,
-  modelOptionsByInstance,
-  defaultSelection,
-  onSelectionChange,
   onPrefixChange,
 }: {
   role: OrchestrationStageRole;
-  selection: ModelSelection | null;
   prefix: string;
-  instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
-  modelOptionsByInstance: ReadonlyMap<ModelSelection["instanceId"], ReadonlyArray<AppModelOption>>;
-  defaultSelection: ModelSelection | null;
-  onSelectionChange: (role: OrchestrationStageRole, next: ModelSelection | null) => void;
   onPrefixChange: (role: OrchestrationStageRole, next: string) => void;
 }) {
   return (
     <div className="grid gap-2 rounded-lg border border-border bg-card p-3">
       <span className="text-sm font-medium text-foreground">{STAGE_ROLE_LABELS[role]}</span>
-      <RoleBackendPicker
-        role={role}
-        selection={selection}
-        instanceEntries={instanceEntries}
-        modelOptionsByInstance={modelOptionsByInstance}
-        defaultSelection={defaultSelection}
-        onSelectionChange={onSelectionChange}
-      />
       <Textarea
         aria-label={`${STAGE_ROLE_LABELS[role]} prompt prefix`}
         placeholder="Optional prompt prefix prepended to this stage's instructions"
@@ -261,11 +244,14 @@ export function ProjectOrchestrationSettingsDialog({
     setDraft(seededDraft);
   }, [seededDraft]);
 
-  const handleSelectionChange = useCallback(
-    (role: OrchestrationStageRole, next: ModelSelection | null) => {
+  const handlePresetSelectionChange = useCallback(
+    (preset: (typeof ORCHESTRATION_CAPABILITY_TIERS)[number], next: ModelSelection | null) => {
       setDraft((current) => ({
         ...current,
-        roleSelections: { ...current.roleSelections, [role]: next },
+        orchestratorConfig: {
+          ...current.orchestratorConfig,
+          capabilityPresets: { ...current.orchestratorConfig.capabilityPresets, [preset]: next },
+        },
       }));
     },
     [],
@@ -356,7 +342,7 @@ export function ProjectOrchestrationSettingsDialog({
           <DialogTitle>Orchestration settings</DialogTitle>
           <DialogDescription>
             {target
-              ? `Edit Orchestrator settings for ${target.cwd}. Roles left on the project default inherit it.`
+              ? `Edit Orchestrator settings for ${target.cwd}. Capability presets left inherited follow the global defaults.`
               : "Edit Orchestrator settings for this project."}
           </DialogDescription>
         </DialogHeader>
@@ -379,27 +365,34 @@ export function ProjectOrchestrationSettingsDialog({
             onNumberLimitChange={handleNumberLimitChange}
           />
           <SettingsSection
-            title="Worker harnesses and prompt prefixes"
-            description="Choose a harness, model, and supported thinking level per worker. Roles left on the project default inherit it."
+            title="Capability presets"
+            description="Override the global harness, model, and thinking level for this project. Presets left inherited continue following the global setting."
+          >
+            <div className="space-y-3">
+              {ORCHESTRATION_CAPABILITY_TIERS.map((preset) => (
+                <CapabilityPresetCard
+                  key={preset}
+                  preset={preset}
+                  selection={draft.orchestratorConfig.capabilityPresets[preset]}
+                  inheritedSelection={inheritedDefaults.capabilityPresets?.[preset] ?? null}
+                  instanceEntries={instanceEntries}
+                  modelOptionsByInstance={modelOptionsByInstance}
+                  allowInherit
+                  onSelectionChange={(selection) => handlePresetSelectionChange(preset, selection)}
+                />
+              ))}
+            </div>
+          </SettingsSection>
+          <SettingsSection
+            title="Worker prompt prefixes"
+            description="Optional role-specific instructions. Backend selection is controlled by the capability presets above."
           >
             <div className="space-y-3">
               {ORCHESTRATION_STAGE_ROLES.map((role) => (
-                <RoleConfigRow
+                <PromptPrefixRow
                   key={role}
                   role={role}
-                  selection={draft.roleSelections[role]}
                   prefix={draft.rolePrefixes[role]}
-                  instanceEntries={instanceEntries}
-                  modelOptionsByInstance={modelOptionsByInstance}
-                  defaultSelection={
-                    target
-                      ? resolveRoleDefaultSelection(target, {
-                          defaultWorkerModelSelection:
-                            inheritedDefaults.defaultWorkerModelSelection,
-                        })
-                      : inheritedDefaults.defaultWorkerModelSelection
-                  }
-                  onSelectionChange={handleSelectionChange}
                   onPrefixChange={handlePrefixChange}
                 />
               ))}

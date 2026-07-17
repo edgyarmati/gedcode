@@ -17,7 +17,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   presets. Global configuration now accepts only a complete three-preset map, projects can override
   presets independently, and tier-backed stage attempts permanently record the chosen tier plus the
   resolved harness, model, thinking options, and permission mode instead of re-resolving history from
-  later settings changes.
+  later settings changes. Global and project settings now present these as branded preset cards with
+  harness, model, and thinking controls, visible inheritance, and independent project reset; semantic
+  Plan, Work, and Verify settings remain available separately for prompt prefixes only.
 
 - Project managers can now complete genuinely trivial, bounded, low-risk edits directly in the
   primary checkout without creating task or PR clutter. Direct commits require an exact reviewed

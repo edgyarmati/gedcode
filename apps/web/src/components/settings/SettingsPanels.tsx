@@ -5,6 +5,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
+  type ModelSelection,
+  ORCHESTRATION_CAPABILITY_TIERS,
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -39,6 +41,7 @@ import {
   useDesktopUpdateState,
 } from "../../lib/desktopUpdateReactQuery";
 import {
+  getAppModelOptionsForInstance,
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
@@ -68,6 +71,8 @@ import {
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import { NumberLimitRow } from "../orchestrator/OrchestratorConfigControls";
+import { CapabilityPresetCard } from "../orchestrator/CapabilityPresetCard";
+import { BackendModelPicker } from "../orchestrator/RoleBackendPicker";
 import {
   buildOrchestratorGlobalDefaultsPatch,
   buildProviderInstanceUpdatePatch,
@@ -936,6 +941,21 @@ export function GeneralSettingsPanel() {
 export function OrchestratorDefaultsSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
+  const serverProviders = useServerProviders();
+  const instanceEntries = useMemo(
+    () => sortProviderInstanceEntries(deriveProviderInstanceEntries(serverProviders)),
+    [serverProviders],
+  );
+  const modelOptionsByInstance = useMemo(() => {
+    const options = new Map<
+      ModelSelection["instanceId"],
+      ReturnType<typeof getAppModelOptionsForInstance>
+    >();
+    for (const entry of instanceEntries) {
+      options.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+    }
+    return options;
+  }, [instanceEntries, settings]);
   const draft = useMemo(
     () => seedOrchestratorGlobalDefaultsDraft(settings.orchestratorDefaults),
     [settings.orchestratorDefaults],
@@ -963,6 +983,62 @@ export function OrchestratorDefaultsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="Orchestrator defaults">
+        <SettingsRow
+          title="Project manager"
+          description="Default harness, model, and thinking level used by the Orchestrator PM. Projects can override it."
+        >
+          <div className="pb-4 pt-3">
+            <BackendModelPicker
+              selection={draft.pmModelSelection}
+              instanceEntries={instanceEntries}
+              modelOptionsByInstance={modelOptionsByInstance}
+              unsetLabel="Use provider default"
+              unsetOptionLabel="Use provider default"
+              backendAriaLabel="Default PM harness"
+              modelAriaLabel="Default PM model"
+              onSelectionChange={(selection) =>
+                updateDraft({ ...draft, pmModelSelection: selection })
+              }
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Capability presets"
+          description="Choose the default harness, model, and thinking level the PM can assign to Cheap, Smart, and Genius work."
+        >
+          <div className="grid gap-3 pb-4 pt-3">
+            {draft.capabilityPresets ? (
+              ORCHESTRATION_CAPABILITY_TIERS.map((preset) => (
+                <CapabilityPresetCard
+                  key={preset}
+                  preset={preset}
+                  selection={draft.capabilityPresets?.[preset] ?? null}
+                  instanceEntries={instanceEntries}
+                  modelOptionsByInstance={modelOptionsByInstance}
+                  allowInherit={false}
+                  onSelectionChange={(selection) => {
+                    if (!selection || !draft.capabilityPresets) return;
+                    updateDraft({
+                      ...draft,
+                      capabilityPresets: { ...draft.capabilityPresets, [preset]: selection },
+                    });
+                  }}
+                />
+              ))
+            ) : (
+              <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+                <p className="text-muted-foreground">
+                  Complete the required capability-preset setup before editing these defaults.
+                </p>
+                <Button className="mt-3" size="sm" variant="outline" render={<Link to="/orch" />}>
+                  Open Orchestrator setup
+                </Button>
+              </div>
+            )}
+          </div>
+        </SettingsRow>
+
         <SettingsRow
           title="Auto-create PRs"
           description="When work is approved for landing, choose the default state for the created pull request."

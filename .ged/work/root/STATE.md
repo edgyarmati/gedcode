@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-TIER-04`
+- **Active task**: `ORCH-TIER-05`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -132,6 +132,16 @@
   and completed-state remount persistence. `bun fmt`, `bun lint`, and all 12 typecheck packages
   passed; full `bun run test` passed all 12 packages (web 1,238 tests; server 185/185 files, 1,520
   passed and 1 skipped).
+- `ORCH-TIER-04` completed 2026-07-18. Global Orchestrator settings now expose the default PM backend
+  and polished Cheap/Smart/Genius cards with provider logos and full harness/model/thinking controls.
+  Project settings expose the same cards as independent overrides, visibly resolve inherited global
+  providers, and reset per preset. Plan/Work/Verify configuration is now a separate prompt-prefix-only
+  section; retained legacy role selections are preserved but no longer presented as active routing.
+- Verification evidence for `ORCH-TIER-04`: settings draft/serialization tests cover global and sparse
+  project preset persistence, inheritance, reset, and equality; focused Chromium covers global cards,
+  provider logos, project-style inheritance/override/reset, and thinking-option reconciliation.
+  `bun fmt`, `bun lint`, and all 12 typecheck packages passed; full `bun run test` passed all 12
+  packages (web 1,238 tests; server 185/185 files, 1,520 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

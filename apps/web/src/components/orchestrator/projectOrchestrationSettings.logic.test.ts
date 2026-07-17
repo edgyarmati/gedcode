@@ -60,7 +60,7 @@ describe("retained orchestrator role settings", () => {
         plan: "Inspect first.",
         verify: "Verify independently.",
       },
-      orchestratorConfig: { pmModelSelection: null },
+      orchestratorConfig: { pmModelSelection: null, capabilityPresets: {} },
     });
   });
 });
@@ -70,6 +70,7 @@ describe("seedOrchestratorConfigDraft", () => {
     expect(seedOrchestratorConfigDraft(undefined)).toEqual({
       pmModelSelection: null,
       openPrAsDraft: null,
+      capabilityPresets: { cheap: null, smart: null, genius: null },
       optionalStages: null,
       gatePolicy: { plan: null },
       resourceLimits: {
@@ -87,6 +88,9 @@ describe("seedOrchestratorConfigDraft", () => {
         options: [{ id: "effort", value: "high" }],
       },
       openPrAsDraft: true,
+      capabilityPresets: {
+        smart: selection("codex_smart", "gpt-5-smart"),
+      },
       taskTypes: [
         {
           id: "feature",
@@ -107,6 +111,11 @@ describe("seedOrchestratorConfigDraft", () => {
         options: [{ id: "effort", value: "high" }],
       },
       openPrAsDraft: true,
+      capabilityPresets: {
+        cheap: null,
+        smart: selection("codex_smart", "gpt-5-smart"),
+        genius: null,
+      },
       optionalStages: {},
       gatePolicy: { plan: "auto" },
       resourceLimits: {
@@ -122,6 +131,7 @@ describe("buildOrchestratorProjectConfig", () => {
   it("builds a minimal sparse config when everything inherits", () => {
     expect(buildOrchestratorProjectConfig(seedOrchestratorConfigDraft({}))).toEqual({
       pmModelSelection: null,
+      capabilityPresets: {},
     });
   });
 
@@ -129,6 +139,11 @@ describe("buildOrchestratorProjectConfig", () => {
     const draft: OrchestratorConfigDraft = {
       pmModelSelection: selection("openai", "gpt-5-pm"),
       openPrAsDraft: true,
+      capabilityPresets: {
+        cheap: null,
+        smart: selection("codex_smart", "gpt-5-smart"),
+        genius: null,
+      },
       optionalStages: {},
       gatePolicy: { plan: "auto" },
       resourceLimits: {
@@ -140,6 +155,9 @@ describe("buildOrchestratorProjectConfig", () => {
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
       pmModelSelection: selection("openai", "gpt-5-pm"),
+      capabilityPresets: {
+        smart: selection("codex_smart", "gpt-5-smart"),
+      },
       openPrAsDraft: true,
       taskTypes: [
         {
@@ -176,6 +194,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
     ).toEqual({
       pmModelSelection: selection("openai", "gpt-5-pm"),
       defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
+      capabilityPresets: null,
       optionalStages: {},
       gatePolicy: { plan: "require-approval" },
       openPrAsDraft: true,

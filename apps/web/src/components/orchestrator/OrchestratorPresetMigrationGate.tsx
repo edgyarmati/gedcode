@@ -16,9 +16,9 @@ import {
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
-import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
-import { BackendModelPicker, backendLabel } from "./RoleBackendPicker";
+import { CapabilityPresetCard } from "./CapabilityPresetCard";
+import { backendLabel } from "./RoleBackendPicker";
 import {
   buildPresetMigrationCompletion,
   CAPABILITY_PRESET_KEYS,
@@ -28,21 +28,6 @@ import {
   type MigrationGlobalDraft,
   type MigrationProjectDecision,
 } from "./orchestratorPresetMigration.logic";
-
-const PRESET_COPY: Record<CapabilityPresetKey, { label: string; description: string }> = {
-  cheap: {
-    label: "Cheap",
-    description: "Fast, economical execution for routine and mechanical work.",
-  },
-  smart: {
-    label: "Smart",
-    description: "The balanced default for most implementation and verification work.",
-  },
-  genius: {
-    label: "Genius",
-    description: "Maximum reasoning for planning and unusually complex problems.",
-  },
-};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -72,57 +57,6 @@ function LegacySelection({
         {backendLabel(selection, selectedEntry(selection, entries))}
       </span>
     </div>
-  );
-}
-
-function PresetPickerCard({
-  preset,
-  selection,
-  entries,
-  allowUnset,
-  onChange,
-}: {
-  preset: CapabilityPresetKey;
-  selection: ModelSelection | null;
-  entries: ReadonlyArray<ProviderInstanceEntry>;
-  allowUnset: boolean;
-  onChange: (selection: ModelSelection | null) => void;
-}) {
-  const entry = selectedEntry(selection, entries);
-  const copy = PRESET_COPY[preset];
-  return (
-    <section className="rounded-xl border border-border/80 bg-card p-4 shadow-xs">
-      <div className="mb-3 flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background">
-          {entry ? (
-            <ProviderInstanceIcon
-              driverKind={entry.driverKind}
-              displayName={entry.displayName}
-              accentColor={entry.accentColor}
-              showBadge={!entry.isDefault}
-            />
-          ) : (
-            <span className="text-sm font-semibold text-muted-foreground">
-              {copy.label.slice(0, 1)}
-            </span>
-          )}
-        </div>
-        <div>
-          <h3 className="font-semibold">{copy.label}</h3>
-          <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
-        </div>
-      </div>
-      <BackendModelPicker
-        selection={selection}
-        instanceEntries={entries}
-        allowUnset={allowUnset}
-        unsetLabel="Choose a harness"
-        unsetOptionLabel="Inherit global preset"
-        backendAriaLabel={`${copy.label} harness`}
-        modelAriaLabel={`${copy.label} model`}
-        onSelectionChange={onChange}
-      />
-    </section>
   );
 }
 
@@ -303,13 +237,13 @@ export function PresetMigrationWizard({
             ) : null}
             <div className="grid gap-4">
               {CAPABILITY_PRESET_KEYS.map((preset) => (
-                <PresetPickerCard
+                <CapabilityPresetCard
                   key={preset}
                   preset={preset}
                   selection={global[preset]}
-                  entries={entries}
-                  allowUnset={false}
-                  onChange={(selection) => updateGlobal(preset, selection)}
+                  instanceEntries={entries}
+                  allowInherit={false}
+                  onSelectionChange={(selection) => updateGlobal(preset, selection)}
                 />
               ))}
             </div>
@@ -388,13 +322,13 @@ export function PresetMigrationWizard({
                     {decision?.kind === "customize" ? (
                       <div className="mt-4 grid gap-3 border-t pt-4">
                         {CAPABILITY_PRESET_KEYS.map((preset) => (
-                          <PresetPickerCard
+                          <CapabilityPresetCard
                             key={preset}
                             preset={preset}
                             selection={decision.presets[preset]}
-                            entries={entries}
-                            allowUnset
-                            onChange={(selection) =>
+                            instanceEntries={entries}
+                            allowInherit
+                            onSelectionChange={(selection) =>
                               setProjectDecision(project.projectId, {
                                 kind: "customize",
                                 presets: { ...decision.presets, [preset]: selection },
