@@ -211,6 +211,7 @@ function createMockEnvironmentApi(input: {
   forkThread?: EnvironmentApi["orchestration"]["forkThread"];
 }): EnvironmentApi {
   return {
+    server: { getConfig: async () => createBaseServerConfig() },
     terminal: {} as EnvironmentApi["terminal"],
     projects: {} as EnvironmentApi["projects"],
     filesystem: {

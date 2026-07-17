@@ -68,6 +68,7 @@ export function BackendModelPicker({
   backendAriaLabel,
   modelAriaLabel,
   modelOptionsByInstance,
+  allowUnset = true,
   onSelectionChange,
 }: {
   selection: ModelSelection | null;
@@ -79,6 +80,7 @@ export function BackendModelPicker({
   modelOptionsByInstance?:
     | ReadonlyMap<ProviderInstanceId, ReadonlyArray<PickerModelOption>>
     | undefined;
+  allowUnset?: boolean | undefined;
   onSelectionChange: (next: ModelSelection | null) => void;
 }) {
   const selectedEntry = selection
@@ -167,9 +169,11 @@ export function BackendModelPicker({
           </SelectValue>
         </SelectTrigger>
         <SelectPopup align="start" alignItemWithTrigger={false}>
-          <SelectItem hideIndicator value={USE_DEFAULT_VALUE}>
-            {unsetOptionLabel}
-          </SelectItem>
+          {allowUnset ? (
+            <SelectItem hideIndicator value={USE_DEFAULT_VALUE}>
+              {unsetOptionLabel}
+            </SelectItem>
+          ) : null}
           {instanceEntries.map((entry) => (
             <SelectItem
               key={String(entry.instanceId)}

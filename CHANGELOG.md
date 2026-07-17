@@ -9,7 +9,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   preset migration before any Orchestrator operation can run. The migration enumerates every live
   project's legacy selections, requires an exact manual Cheap/Smart/Genius mapping, rejects partial
   or generic-settings bypasses, and restores access only after project decisions and the global
-  completion marker have been persisted.
+  completion marker have been persisted. A non-dismissible two-step wizard now enforces that setup
+  across Orchestrator home, project, task, and deep-link routes, with provider logos and full
+  harness/model/thinking pickers for global presets and explicit per-project inheritance or overrides.
 
 - Added the schema and runtime foundation for Cheap, Smart, and Genius Orchestrator capability
   presets. Global configuration now accepts only a complete three-preset map, projects can override

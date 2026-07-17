@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-TIER-03`
+- **Active task**: `ORCH-TIER-04`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -122,6 +122,16 @@
   bypass, completion persistence, and ordinary post-migration Orchestrator route tests passed;
   `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test` passed all 12
   packages (server 185/185 files, 1,520 passed and 1 skipped).
+- `ORCH-TIER-03` completed 2026-07-18. Every environment's Orchestrator route boundary now loads the
+  durable preset-migration state before rendering home, project, or task content. Required installs
+  receive a two-step, non-dismissible wizard with provider logos and harness/model/thinking pickers
+  for Cheap, Smart, and Genius. Every existing project must explicitly inherit or provide at least
+  one override; provider settings remain reachable when no usable harness exists.
+- Verification evidence for `ORCH-TIER-03`: pure draft/completion validation and focused Chromium
+  coverage passed for deep-link blocking, explicit preset selection, completion, route restoration,
+  and completed-state remount persistence. `bun fmt`, `bun lint`, and all 12 typecheck packages
+  passed; full `bun run test` passed all 12 packages (web 1,238 tests; server 185/185 files, 1,520
+  passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at
