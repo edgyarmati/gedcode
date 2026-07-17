@@ -3,10 +3,12 @@ import {
   ProjectId,
   TaskId,
   TaskTypeId,
+  type OrchestrationCommand,
   type OrchestrationReadModel,
   type OrchestrationTask,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
 
 import { createEmptyReadModel } from "./projector.ts";
@@ -14,6 +16,16 @@ import { landOrchestrationTaskWithServices, OrchestrationLandTaskError } from ".
 
 const now = "2026-07-11T00:00:00.000Z";
 const taskId = TaskId.make("task-land");
+const vcsProcess = {
+  run: (input: { readonly args: ReadonlyArray<string> }) =>
+    Effect.succeed({
+      exitCode: ChildProcessSpawner.ExitCode(0),
+      stdout: input.args[0] === "rev-parse" ? "verified-head\n" : "",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    }),
+};
 
 const makeTask = (
   status: OrchestrationTask["status"],
@@ -56,11 +68,12 @@ const makeReadModel = (
 it.effect("dispatches landing once and returns an idempotent result after landing", () =>
   Effect.gen(function* () {
     let readModel: OrchestrationReadModel = makeReadModel("review");
-    const commands: string[] = [];
+    const commands: OrchestrationCommand[] = [];
     const services = {
       snapshotQuery: {
         getCommandReadModel: () => Effect.succeed(readModel),
       },
+      vcsProcess,
     };
     const runLanding = landOrchestrationTaskWithServices(services, {
       taskId,
@@ -68,7 +81,7 @@ it.effect("dispatches landing once and returns an idempotent result after landin
       createdAt: Effect.succeed(now),
       dispatch: (command) =>
         Effect.sync(() => {
-          commands.push(command.type);
+          commands.push(command);
           readModel = makeReadModel("landed", 11, {
             status: "opening-pr",
             failureMessage: null,
@@ -92,7 +105,17 @@ it.effect("dispatches landing once and returns an idempotent result after landin
       alreadyLanded: false,
       alreadyInProgress: true,
     });
-    assert.deepStrictEqual(commands, ["task.land"]);
+    assert.deepStrictEqual(
+      commands.map((command) => command.type),
+      ["task.land"],
+    );
+    const landCommand = commands[0];
+    assert.strictEqual(landCommand?.type, "task.land");
+    if (landCommand?.type !== "task.land") return;
+    assert.deepStrictEqual(landCommand.worktreeCompletion, {
+      head: "verified-head",
+      dirty: false,
+    });
   }),
 );
 
@@ -104,6 +127,7 @@ it.effect("serializes concurrent landing attempts into one command", () =>
       snapshotQuery: {
         getCommandReadModel: () => Effect.succeed(readModel),
       },
+      vcsProcess,
     };
     const runLanding = () =>
       landOrchestrationTaskWithServices(services, {
@@ -135,10 +159,11 @@ it.effect("retries one exhausted landing attempt and coalesces repeated requests
       branchPushed: false,
       updatedAt: now,
     });
-    const commands: string[] = [];
+    const commands: OrchestrationCommand[] = [];
     const runLanding = landOrchestrationTaskWithServices(
       {
         snapshotQuery: { getCommandReadModel: () => Effect.succeed(readModel) },
+        vcsProcess,
       },
       {
         taskId,
@@ -146,7 +171,7 @@ it.effect("retries one exhausted landing attempt and coalesces repeated requests
         createdAt: Effect.succeed("2026-07-12T01:00:00.000Z"),
         dispatch: (command) =>
           Effect.sync(() => {
-            commands.push(command.type);
+            commands.push(command);
             readModel = makeReadModel("landed", 21, {
               status: "opening-pr",
               failureMessage: null,
@@ -161,7 +186,17 @@ it.effect("retries one exhausted landing attempt and coalesces repeated requests
     const first = yield* runLanding;
     const second = yield* runLanding;
 
-    assert.deepStrictEqual(commands, ["task.landing.retry"]);
+    assert.deepStrictEqual(
+      commands.map((command) => command.type),
+      ["task.landing.retry"],
+    );
+    const retryCommand = commands[0];
+    assert.strictEqual(retryCommand?.type, "task.landing.retry");
+    if (retryCommand?.type !== "task.landing.retry") return;
+    assert.deepStrictEqual(retryCommand.worktreeCompletion, {
+      head: "verified-head",
+      dirty: false,
+    });
     assert.deepStrictEqual(first, {
       sequence: 21,
       alreadyLanded: false,
@@ -180,6 +215,7 @@ it.effect("returns a typed error without dispatching when the task is missing", 
           snapshotQuery: {
             getCommandReadModel: () => Effect.succeed(createEmptyReadModel(now)),
           },
+          vcsProcess,
         },
         {
           taskId,

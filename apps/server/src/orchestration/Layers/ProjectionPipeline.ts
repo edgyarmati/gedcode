@@ -1759,6 +1759,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             if (Option.isNone(existingRow)) return;
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
+              status: "review",
               verification: {
                 stageThreadId: event.payload.stageThreadId,
                 head: event.payload.head,

@@ -219,32 +219,59 @@ function requireFreshVerification(input: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
   readonly task: OrchestrationReadModel["tasks"][number];
+  readonly worktreeCompletion: { readonly head: string; readonly dirty: boolean } | undefined;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
   const completedStages = Object.values(input.readModel.stageHistory).filter(
     (stage) =>
       stage.taskId === input.task.id && stage.status === "completed" && stage.endedAt !== null,
   );
-  const latestCompletedAt = (role: "work" | "verify") =>
+  const latestCompletedStage = (role: "work" | "verify") =>
     completedStages
       .filter((stage) => stage.role === role)
-      .map((stage) => stage.endedAt!)
-      .toSorted((left, right) => right.localeCompare(left))[0];
-  const latestWorkCompletedAt = latestCompletedAt("work");
-  const latestVerifyCompletedAt = latestCompletedAt("verify");
+      .toSorted((left, right) => right.endedAt!.localeCompare(left.endedAt!))[0];
+  const latestWork = latestCompletedStage("work");
+  const latestVerify = latestCompletedStage("verify");
+  const verification = input.task.verification;
 
   if (
-    latestVerifyCompletedAt !== undefined &&
-    (latestWorkCompletedAt === undefined || latestVerifyCompletedAt > latestWorkCompletedAt)
+    verification !== null &&
+    latestVerify !== undefined &&
+    verification.stageThreadId === latestVerify.stageThreadId &&
+    (latestWork === undefined || latestVerify.endedAt! > latestWork.endedAt!)
   ) {
+    if (input.worktreeCompletion === undefined) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Task '${input.task.id}' must have its worktree inspected before land approval or landing.`,
+        ),
+      );
+    }
+    if (input.worktreeCompletion.dirty) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Task '${input.task.id}' cannot be approved or landed while its worktree has uncommitted changes.`,
+        ),
+      );
+    }
+    if (input.worktreeCompletion.head !== verification.head) {
+      return Effect.fail(
+        invariantError(
+          input.command.type,
+          `Task '${input.task.id}' cannot be approved or landed because HEAD '${input.worktreeCompletion.head}' differs from verified HEAD '${verification.head}'.`,
+        ),
+      );
+    }
     return Effect.void;
   }
 
   return Effect.fail(
     invariantError(
       input.command.type,
-      latestVerifyCompletedAt === undefined
-        ? `Task '${input.task.id}' cannot land without a successfully completed verification stage.`
-        : `Task '${input.task.id}' cannot land because its latest successful verification is not newer than its latest successful work stage.`,
+      verification === null || latestVerify === undefined
+        ? `Task '${input.task.id}' cannot be approved or landed without verification recorded against its worktree HEAD.`
+        : `Task '${input.task.id}' cannot be approved or landed because its recorded verification is stale.`,
     ),
   );
 }
@@ -1993,13 +2020,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       if (
-        command.role === "work" &&
+        (command.role === "work" || command.role === "verify") &&
         task.worktreePath !== null &&
         command.worktreeCompletion === undefined
       ) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' work completion must include the inspected worktree HEAD and dirty state.`,
+          `Task '${command.taskId}' ${command.role} completion must include the inspected worktree HEAD and dirty state.`,
         );
       }
 
@@ -2025,6 +2052,26 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+      if (command.role === "verify" && command.worktreeCompletion?.dirty === false) {
+        const verificationRecordedEvent: PlannedOrchestrationEvent = {
+          ...(yield* withEventBase({
+            aggregateKind: "task",
+            aggregateId: command.taskId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          causationEventId: stageCompletedEvent.eventId,
+          type: "task.verification-recorded",
+          payload: {
+            taskId: command.taskId,
+            stageThreadId: command.stageThreadId,
+            head: command.worktreeCompletion.head,
+            verifiedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+        return [stageCompletedEvent, verificationRecordedEvent];
+      }
       if (command.role !== "work" || command.worktreeCompletion?.dirty !== true) {
         return stageCompletedEvent;
       }
@@ -2146,6 +2193,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(
           command.type,
           `Stage thread '${command.stageThreadId}' is not completed verification for task '${command.taskId}'.`,
+        );
+      }
+      if (
+        command.worktreeCompletion === undefined ||
+        command.worktreeCompletion.dirty ||
+        command.worktreeCompletion.head !== command.head
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' verification must record the exact inspected clean worktree HEAD.`,
         );
       }
       return {
@@ -2325,6 +2382,20 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
+      if (command.gate === "land") {
+        if (task.status !== "review" || task.currentStageThreadId !== null) {
+          return yield* invariantError(
+            command.type,
+            `Land approval requires task '${command.taskId}' to have settled work in review.`,
+          );
+        }
+        yield* requireFreshVerification({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+        });
+      }
       if (command.gate === "release") {
         if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
           return yield* invariantError(
@@ -2447,6 +2518,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Land gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
         );
       }
+      if (command.gate === "land" && command.decision === "approved") {
+        yield* requireFreshVerification({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+        });
+      }
       if (
         command.gate === "release" &&
         (task.type !== "release" || task.status !== "landed" || task.prUrl === null)
@@ -2501,7 +2580,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' cannot land while stage '${task.currentStageThreadId}' is active.`,
         );
       }
-      yield* requireFreshVerification({ command, readModel, task });
+      yield* requireFreshVerification({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: command.worktreeCompletion,
+      });
       const latestLandGate = (readModel.pendingGates ?? []).findLast(
         (gate) => gate.taskId === command.taskId && gate.gate === "land",
       );
@@ -2549,6 +2633,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' must have an exhausted landing failure and a retained worktree before landing can be retried.`,
         );
       }
+      yield* requireFreshVerification({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: command.worktreeCompletion,
+      });
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",

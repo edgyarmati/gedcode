@@ -1216,6 +1216,7 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "review",
             verification: {
               stageThreadId: payload.stageThreadId,
               head: payload.head,

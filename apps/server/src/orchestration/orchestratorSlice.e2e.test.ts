@@ -51,6 +51,7 @@ const planGateId = GateId.make("gate-plan-e2e");
 const landGateId = GateId.make("gate-land-e2e");
 const awaitedTurnId = TurnId.make("turn-worker-e2e");
 const verifyTurnId = TurnId.make("turn-verify-e2e");
+const cleanWorktreeCompletion = { head: "abc123", dirty: false } as const;
 
 function makeProjectCreatedEvent(): OrchestrationEvent {
   return {
@@ -397,7 +398,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         role: "work",
         stageThreadId: stageStarted.payload.stageThreadId,
         awaitedTurnId,
-        worktreeCompletion: { head: "abc123", dirty: false },
+        worktreeCompletion: cleanWorktreeCompletion,
         createdAt: now,
       });
       readModel = attachWorkerResult(stageComplete.readModel, stageStarted.payload.stageThreadId);
@@ -445,6 +446,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         role: "verify",
         stageThreadId: verifyStageStarted.payload.stageThreadId,
         awaitedTurnId: verifyTurnId,
+        worktreeCompletion: cleanWorktreeCompletion,
         createdAt: afterWork,
       })).readModel;
 
@@ -456,6 +458,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         gate: "land",
         contentHash: "sha256:land-e2e",
         stageThreadId: stageStarted.payload.stageThreadId,
+        worktreeCompletion: cleanWorktreeCompletion,
         createdAt: now,
       })).readModel;
       readModel = (yield* decideAndApply(readModel, {
@@ -467,12 +470,14 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         approvedHash: "sha256:land-e2e",
         decision: "approved",
         origin: "human",
+        worktreeCompletion: cleanWorktreeCompletion,
         createdAt: now,
       })).readModel;
       readModel = (yield* decideAndApply(readModel, {
         type: "task.land",
         commandId: CommandId.make("cmd-land-e2e"),
         taskId,
+        worktreeCompletion: cleanWorktreeCompletion,
         createdAt: now,
       })).readModel;
 

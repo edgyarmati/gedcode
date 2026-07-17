@@ -40,6 +40,7 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
+import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
 import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
@@ -838,6 +839,28 @@ export const makePmToolExecutors = Effect.gen(function* () {
         Effect.gen(function* () {
           const gateId = yield* randomGateId;
           const taskId = TaskId.make(params.taskId);
+          const worktreeCompletion =
+            params.gate === "land"
+              ? yield* Effect.gen(function* () {
+                  const readModel = yield* snapshotQuery.getCommandReadModel();
+                  const task = readModel.tasks.find((entry) => entry.id === taskId);
+                  if (!task?.worktreePath) {
+                    return yield* new PmToolExecutionError({
+                      detail: `Task '${taskId}' does not have an owned worktree to inspect before land approval.`,
+                    });
+                  }
+                  const process = Context.getOption(runtimeContext, VcsProcess);
+                  if (Option.isNone(process)) {
+                    return yield* new PmToolExecutionError({
+                      detail: "The VCS process service is unavailable for land approval.",
+                    });
+                  }
+                  return yield* inspectTaskWorktreeCompletion({
+                    worktreePath: task.worktreePath,
+                    process: process.value,
+                  });
+                })
+              : undefined;
           const sequence = yield* dispatch({
             type: "task.gate.request",
             commandId: yield* commandId("request-approval"),
@@ -847,6 +870,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             contentHash: params.contentHash,
             stageThreadId:
               params.stageThreadId === undefined ? null : ThreadId.make(params.stageThreadId),
+            ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
             createdAt: yield* nowIso,
           });
           return textResult(`Requested ${params.gate} approval ${gateId}.`, {
@@ -1255,9 +1279,18 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
+          const vcsProcess = Context.getOption(runtimeContext, VcsProcess);
+          if (Option.isNone(vcsProcess)) {
+            return yield* new PmToolExecutionError({
+              detail: "The VCS process service is unavailable for landing.",
+            });
+          }
           const { sequence, alreadyLanded, alreadyInProgress } =
             yield* landOrchestrationTaskWithServices(
-              { snapshotQuery },
+              {
+                snapshotQuery,
+                vcsProcess: vcsProcess.value,
+              },
               {
                 taskId,
                 commandId: commandId("land-task"),

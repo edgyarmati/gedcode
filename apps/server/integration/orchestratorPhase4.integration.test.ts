@@ -484,6 +484,15 @@ function requestHumanLandGateAndLand(input: {
   return Effect.gen(function* () {
     const landGateId = gateId("land");
     const landGateCommandId = commandId("gate-request-land");
+    const verifiedTask = yield* waitForTask(
+      input.harness,
+      (task) => task.status === "review" && task.verification !== null,
+      "verified task before land approval",
+    );
+    const worktreeCompletion = {
+      head: verifiedTask.verification!.head,
+      dirty: false,
+    };
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -493,6 +502,7 @@ function requestHumanLandGateAndLand(input: {
         gate: "land",
         contentHash: "sha256:phase4-land",
         stageThreadId: input.stageThreadId,
+        worktreeCompletion,
         createdAt: input.requestedAt,
       })
       .pipe(Effect.orDie);
@@ -518,6 +528,7 @@ function requestHumanLandGateAndLand(input: {
         type: "task.land",
         commandId: commandId("task-land-before-human"),
         taskId: TASK_ID,
+        worktreeCompletion,
         createdAt: input.requestedAt,
       }),
     );
@@ -533,6 +544,7 @@ function requestHumanLandGateAndLand(input: {
         approvedHash: "sha256:phase4-land",
         decision: "approved",
         origin: "human",
+        worktreeCompletion,
         createdAt: input.resolvedAt,
       })
       .pipe(Effect.orDie);
@@ -550,6 +562,7 @@ function requestHumanLandGateAndLand(input: {
         type: "task.land",
         commandId: commandId("task-land"),
         taskId: TASK_ID,
+        worktreeCompletion,
         createdAt: input.landedAt,
       })
       .pipe(Effect.orDie);
@@ -607,7 +620,7 @@ it.live(
           expectedInstanceId: DEFAULT_INSTANCE,
           createdAt: iso(9),
         });
-        yield* completeStage({ harness, expectedStatus: "verifying" });
+        yield* completeStage({ harness, expectedStatus: "review" });
 
         yield* requestHumanLandGateAndLand({
           harness,
@@ -698,7 +711,7 @@ it.live(
                 expectedInstanceId: DEFAULT_INSTANCE,
                 createdAt: iso(26),
               });
-              yield* completeStage({ harness: restarted, expectedStatus: "verifying" });
+              yield* completeStage({ harness: restarted, expectedStatus: "review" });
 
               yield* requestHumanLandGateAndLand({
                 harness: restarted,

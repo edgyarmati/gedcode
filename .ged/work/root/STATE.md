@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-04`
+- **Active task**: `ORCH-WORK-05`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -60,6 +60,14 @@
 - Verification evidence for `ORCH-WORK-03`: focused server suite 191/191 passed; `bun fmt`, `bun lint`,
   and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox (12/12
   packages; server 182/182 files, 1,498 passed and 1 skipped).
+- `ORCH-WORK-04` completed 2026-07-17. Verification settlement now inspects the task worktree and
+  atomically records only a clean exact HEAD. Successful verification returns the task to review.
+  Land-gate request, human approval, initial landing, and exhausted landing retry all re-inspect and
+  require that same clean HEAD, so commits, amends, discards, or renewed work make approval stale.
+- Verification evidence for `ORCH-WORK-04`: focused decider/runtime/PM/projection/landing suites and
+  landing pipeline integrations passed; `bun fmt`, `bun lint`, and `bun typecheck` passed; full
+  `bun run test` passed outside the filesystem sandbox (12/12 packages; server 182/182 files, 1,501
+  passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

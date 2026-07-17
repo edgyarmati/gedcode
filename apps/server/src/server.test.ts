@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import { execFileSync } from "node:child_process";
+
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -3348,10 +3351,26 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const taskId = TaskId.make("task-orchestrator");
       const gateId = GateId.make("gate-plan");
       const pmThreadId = ThreadId.make("pm:project-orchestrator");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-orchestrator-route-test-",
+      });
+      const worktreePath = `${workspaceRoot}/.gedcode/orchestrator/tasks/task-orchestrator`;
+      yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+      yield* Effect.sync(() => {
+        execFileSync("git", ["init", "-q"], { cwd: worktreePath });
+        execFileSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: worktreePath,
+        });
+        execFileSync("git", ["config", "user.name", "T3 Test"], { cwd: worktreePath });
+        execFileSync("git", ["commit", "--allow-empty", "-qm", "initial"], {
+          cwd: worktreePath,
+        });
+      });
       const project = {
         id: projectId,
         title: "Orchestrator Project",
-        workspaceRoot: "/tmp/orchestrator-project",
+        workspaceRoot,
         repositoryIdentity: null,
         defaultModelSelection,
         roleModelSelections: {},
@@ -3368,7 +3387,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         title: "Ship orchestrator UI",
         status: "plan-review" as const,
         branch: "orchestrator/task-orchestrator",
-        worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        worktreePath,
         prUrl: null,
         pmMessageId: MessageId.make("pm-message-1"),
         stageThreadIds: [ThreadId.make("thread-plan")],
@@ -3405,7 +3424,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         interactionMode: "default" as const,
         runtimeMode: "approval-required" as const,
         branch: null,
-        worktreePath: "/tmp/orchestrator-project",
+        worktreePath: workspaceRoot,
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -3423,7 +3442,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         id: ThreadId.make("thread-plan"),
         title: "Plan stage",
         branch: "orchestrator/task-orchestrator",
-        worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+        worktreePath,
         latestTurn: {
           turnId: TurnId.make("turn-plan"),
           state: "running" as const,
@@ -3460,7 +3479,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           taskType: TaskTypeId.make("feature"),
           title: "Ship orchestrator UI",
           branch: "orchestrator/task-orchestrator",
-          worktreePath: "/tmp/orchestrator-project/.gedcode/orchestrator/tasks/task-orchestrator",
+          worktreePath,
           pmMessageId: MessageId.make("pm-message-1"),
           playbookVersion: "feature@v1",
           createdAt: now,

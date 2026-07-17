@@ -1220,6 +1220,7 @@ const TaskVerificationRecordCommand = Schema.Struct({
   taskId: TaskId,
   stageThreadId: ThreadId,
   head: TrimmedNonEmptyString,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1262,6 +1263,7 @@ const TaskGateRequestCommand = Schema.Struct({
   gate: OrchestrationGateKind,
   contentHash: TrimmedNonEmptyString,
   stageThreadId: Schema.NullOr(ThreadId),
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1274,6 +1276,7 @@ const TaskGateResolveCommand = Schema.Struct({
   approvedHash: TrimmedNonEmptyString,
   decision: OrchestrationGateDecision,
   origin: OrchestrationGateResolutionOrigin,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1281,6 +1284,7 @@ const TaskLandCommand = Schema.Struct({
   type: Schema.Literal("task.land"),
   commandId: CommandId,
   taskId: TaskId,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -1297,6 +1301,7 @@ const TaskLandingRetryCommand = Schema.Struct({
   type: Schema.Literal("task.landing.retry"),
   commandId: CommandId,
   taskId: TaskId,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
 });
 
@@ -2766,7 +2771,7 @@ export class OrchestrationLandTaskError extends Schema.TaggedErrorClass<Orchestr
   "OrchestrationLandTaskError",
   {
     taskId: TaskId,
-    reason: Schema.Literal("task-not-found"),
+    reason: Schema.Literals(["task-not-found", "worktree-unavailable"]),
     message: TrimmedNonEmptyString,
   },
 ) {}

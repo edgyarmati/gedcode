@@ -10,9 +10,11 @@ import * as Effect from "effect/Effect";
 import type * as PlatformError from "effect/PlatformError";
 
 import type { ProjectionRepositoryError } from "../persistence/Errors.ts";
+import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
 import type { OrchestrationDispatchError } from "./Errors.ts";
 import type { ProjectionSnapshotQueryShape } from "./Services/ProjectionSnapshotQuery.ts";
 import { withTaskLifecycleLock } from "./taskLifecycleCoordinator.ts";
+import { inspectTaskWorktreeCompletion } from "./worktreeCompletion.ts";
 
 type LandOrchestrationTaskError =
   | OrchestrationLandTaskError
@@ -27,7 +29,7 @@ type DispatchLandCommand = (
 
 export class OrchestrationLandTaskError extends Data.TaggedError("OrchestrationLandTaskError")<{
   readonly taskId: TaskId;
-  readonly reason: "task-not-found";
+  readonly reason: "task-not-found" | "worktree-unavailable";
   readonly detail: string;
 }> {
   override get message(): string {
@@ -37,6 +39,7 @@ export class OrchestrationLandTaskError extends Data.TaggedError("OrchestrationL
 
 export interface LandOrchestrationTaskServices {
   readonly snapshotQuery: Pick<ProjectionSnapshotQueryShape, "getCommandReadModel">;
+  readonly vcsProcess: Pick<VcsProcessShape, "run">;
 }
 
 export interface LandOrchestrationTaskInput {
@@ -60,6 +63,13 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
             detail: `Task '${input.taskId}' was not found and cannot be landed.`,
           });
         }
+        if (task.worktreePath === null) {
+          return yield* new OrchestrationLandTaskError({
+            taskId: input.taskId,
+            reason: "worktree-unavailable",
+            detail: `Task '${input.taskId}' does not have an owned worktree to inspect before landing.`,
+          });
+        }
         if (task.status === "landed") {
           if (task.prUrl !== null || task.landing?.status === "completed") {
             return {
@@ -75,19 +85,29 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
               alreadyInProgress: true,
             };
           }
+          const worktreeCompletion = yield* inspectTaskWorktreeCompletion({
+            worktreePath: task.worktreePath,
+            process: services.vcsProcess,
+          });
           const result = yield* input.dispatch({
             type: "task.landing.retry",
             commandId: yield* input.commandId,
             taskId: input.taskId,
+            worktreeCompletion,
             createdAt: yield* input.createdAt,
           });
           return { ...result, alreadyLanded: false, alreadyInProgress: false };
         }
 
+        const worktreeCompletion = yield* inspectTaskWorktreeCompletion({
+          worktreePath: task.worktreePath,
+          process: services.vcsProcess,
+        });
         const result = yield* input.dispatch({
           type: "task.land",
           commandId: yield* input.commandId,
           taskId: input.taskId,
+          worktreeCompletion,
           createdAt: yield* input.createdAt,
         });
         return { ...result, alreadyLanded: false, alreadyInProgress: false };

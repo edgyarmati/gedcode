@@ -1759,7 +1759,7 @@ const make = Effect.gen(function* () {
           const stageThreadId = thread.id;
           const completionState = normalizeRuntimeTurnState(event.payload.state);
           const inspectWorktree = () =>
-            role === "work" && taskForStageThread.worktreePath !== null
+            (role === "work" || role === "verify") && taskForStageThread.worktreePath !== null
               ? inspectTaskWorktreeCompletion({
                   worktreePath: taskForStageThread.worktreePath,
                   process: vcsProcess,

@@ -243,7 +243,7 @@ const make = Effect.gen(function* () {
       return;
     }
     const worktreeInspection =
-      role === "work" && task.worktreePath !== null
+      (role === "work" || role === "verify") && task.worktreePath !== null
         ? yield* Effect.exit(
             inspectTaskWorktreeCompletion({
               worktreePath: task.worktreePath,

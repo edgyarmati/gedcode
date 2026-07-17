@@ -1927,7 +1927,16 @@ it.effect("landTask delegates one task.land command to the guarded landing execu
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const readModel = makeReadModel([makeTask({ status: "review", currentStageThreadId: null })]);
-    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(vcsOutput(input.args[0] === "rev-parse" ? "verified-head\n" : "")),
+          },
+        }),
+      ),
+    );
 
     const result = yield* Effect.promise(() =>
       findTool(tools, "landTask").execute("tool-land", { taskId }),
@@ -1993,7 +2002,16 @@ it.effect("landTask retries an exhausted durable landing failure", () =>
         },
       }),
     ]);
-    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(vcsOutput(input.args[0] === "rev-parse" ? "verified-head\n" : "")),
+          },
+        }),
+      ),
+    );
 
     const result = yield* Effect.promise(() =>
       findTool(tools, "landTask").execute("tool-land-retry", { taskId }),

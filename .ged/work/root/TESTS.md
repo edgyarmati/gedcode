@@ -42,6 +42,18 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages; server 182/182 files, 1,498 passed and 1 skipped.
 
+### ORCH-WORK-04 — 2026-07-17
+
+- Focused: decider, checkpoint/provider-runtime ingestion, PM tools, landing actuator, in-memory/SQL
+  projection, and landing/pipeline integration suites passed.
+- Manual review: clean verification completion atomically records the exact inspected HEAD and returns
+  the task to review; dirty verification never records success; land-gate request, human approval,
+  initial landing, and landing retry each reject a dirty or mismatched HEAD.
+- Repository: `bun fmt`, `bun lint`, and `bun typecheck` passed. Lint retained only pre-existing
+  warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 182/182 files, 1,501 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

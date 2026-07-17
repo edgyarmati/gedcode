@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import {
   makeOrchestrationIntegrationHarness,
@@ -72,6 +73,17 @@ function runGit(cwd: string, args: ReadonlyArray<string>) {
     encoding: "utf8",
   });
 }
+
+const vcsProcess = {
+  run: (input: { readonly cwd: string; readonly args: ReadonlyArray<string> }) =>
+    Effect.sync(() => ({
+      exitCode: ChildProcessSpawner.ExitCode(0),
+      stdout: runGit(input.cwd, input.args),
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    })),
+};
 
 function ensureGitWorktree(input: {
   readonly workspaceDir: string;
@@ -482,6 +494,10 @@ function seedVerifiedTask(input: {
         stageThreadId: verifyStarted.payload.stageThreadId,
         awaitedTurnId: TurnId.make(`${input.suffix}-manual-verify-turn`),
         diffComplete: false,
+        worktreeCompletion: {
+          head: worktreeHead,
+          dirty: false,
+        },
         createdAt: iso(6),
       })
       .pipe(Effect.orDie);
@@ -503,6 +519,15 @@ function approveLandAndDispatch(input: {
 }): Effect.Effect<void, never> {
   return Effect.gen(function* () {
     const id = gateId(`${input.suffix}-land`);
+    const readModel = yield* input.harness.snapshotQuery.getCommandReadModel().pipe(Effect.orDie);
+    const task = readModel.tasks.find((entry) => entry.id === input.taskId);
+    if (!task?.worktreePath) {
+      return yield* Effect.die(new Error(`Missing task worktree for ${input.suffix}.`));
+    }
+    const worktreeCompletion = {
+      head: runGit(task.worktreePath, ["rev-parse", "--verify", "HEAD"]).trim(),
+      dirty: false,
+    };
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -512,6 +537,7 @@ function approveLandAndDispatch(input: {
         gate: "land",
         contentHash: `sha256:${input.suffix}-land`,
         stageThreadId: input.stageThreadId,
+        worktreeCompletion,
         createdAt: iso(7),
       })
       .pipe(Effect.orDie);
@@ -525,11 +551,12 @@ function approveLandAndDispatch(input: {
         approvedHash: `sha256:${input.suffix}-land`,
         decision: "approved",
         origin: "human",
+        worktreeCompletion,
         createdAt: iso(8),
       })
       .pipe(Effect.orDie);
     yield* landOrchestrationTaskWithServices(
-      { snapshotQuery: input.harness.snapshotQuery },
+      { snapshotQuery: input.harness.snapshotQuery, vcsProcess },
       {
         taskId: input.taskId,
         commandId: Effect.succeed(commandId(`${input.suffix}-land`)),
@@ -862,7 +889,7 @@ it.live("retries an exhausted landing once through the shared actuator", () => {
       );
 
       const result = yield* landOrchestrationTaskWithServices(
-        { snapshotQuery: harness.snapshotQuery },
+        { snapshotQuery: harness.snapshotQuery, vcsProcess },
         {
           taskId: id,
           commandId: Effect.succeed(commandId("retry-request")),

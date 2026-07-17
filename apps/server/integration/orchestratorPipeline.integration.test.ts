@@ -400,6 +400,15 @@ function requestAndApproveGate(input: {
   readonly resolvedAt: string;
 }): Effect.Effect<void, never> {
   return Effect.gen(function* () {
+    const task = yield* waitForTask(
+      input.harness,
+      (entry) => input.gate !== "land" || entry.verification !== null,
+      `task ready for ${input.gate} gate`,
+    );
+    const worktreeCompletion =
+      input.gate === "land" && task.verification !== null
+        ? { head: task.verification.head, dirty: false }
+        : undefined;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -409,6 +418,7 @@ function requestAndApproveGate(input: {
         gate: input.gate,
         contentHash: input.contentHash,
         stageThreadId: input.stageThreadId,
+        ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
         createdAt: input.requestedAt,
       })
       .pipe(Effect.orDie);
@@ -422,6 +432,7 @@ function requestAndApproveGate(input: {
         approvedHash: input.contentHash,
         decision: "approved",
         origin: "human",
+        ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
         createdAt: input.resolvedAt,
       })
       .pipe(Effect.orDie);
@@ -614,7 +625,7 @@ it.live(
           stageThreadId: verifyStage.stageStarted.payload.stageThreadId,
           suffix: "verify",
           createdAt: iso(17),
-          expectedStatus: "verifying",
+          expectedStatus: "review",
         });
 
         yield* requestAndApproveGate({
@@ -632,6 +643,14 @@ it.live(
             type: "task.land",
             commandId: commandId("task-land"),
             taskId: TASK_ID,
+            worktreeCompletion: {
+              head: (yield* waitForTask(
+                harness,
+                (task) => task.verification !== null,
+                "verified task before land",
+              )).verification!.head,
+              dirty: false,
+            },
             createdAt: iso(20),
           })
           .pipe(Effect.orDie);

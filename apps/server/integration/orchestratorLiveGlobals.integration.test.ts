@@ -260,6 +260,15 @@ function requestGate(input: {
   return Effect.gen(function* () {
     const requestGateId = gateId(`${input.suffix}-${input.gate}`);
     const gateCommandId = commandId(`${input.suffix}-gate-request-${input.gate}`);
+    const worktreeCompletion =
+      input.gate === "land"
+        ? yield* waitForTask(
+            input.harness,
+            input.taskId,
+            (task) => task.status === "review" && task.verification !== null,
+            `verified task for ${input.suffix} land gate`,
+          ).pipe(Effect.map((task) => ({ head: task.verification!.head, dirty: false })))
+        : undefined;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -269,6 +278,7 @@ function requestGate(input: {
         gate: input.gate,
         contentHash: input.contentHash,
         stageThreadId: ThreadId.make(`thread-live-global-${input.suffix}-${input.gate}`),
+        ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
         createdAt: input.createdAt,
       })
       .pipe(Effect.orDie);
@@ -543,13 +553,27 @@ it.live(
           },
           createdAt: iso(30),
         });
+        yield* startAndCompleteStage({
+          harness,
+          suffix: "land-global-auto-work",
+          taskId: landTask,
+          role: "work",
+          createdAt: iso(30),
+        });
+        yield* startAndCompleteStage({
+          harness,
+          suffix: "land-global-auto-verify",
+          taskId: landTask,
+          role: "verify",
+          createdAt: iso(31),
+        });
         yield* requestGate({
           harness,
           suffix: "land-global-auto",
           taskId: landTask,
           gate: "land",
           contentHash: "sha256:live-global-land",
-          createdAt: iso(31),
+          createdAt: iso(32),
           expectAutoResolved: false,
         });
 

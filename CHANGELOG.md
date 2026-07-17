@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Verification now succeeds only against the task worktree's exact inspected clean Git HEAD. Land
+  approval requests, human approvals, initial landing, and landing retries re-check that HEAD and
+  reject dirty or stale worktrees, preventing post-verification commits or edits from landing under an
+  outdated approval.
+
 - Added scoped PM change-review tools to inspect a task-owned worktree, commit selected paths or exact
   patch hunks, discard only explicitly selected changes, or return the work to a fresh worker attempt.
   Foreign paths and pre-staged commits are rejected, unselected changes remain pending for review,

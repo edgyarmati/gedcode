@@ -159,7 +159,7 @@ function withStageHistory(
 }
 
 function withFreshVerification(readModel: OrchestrationReadModel): OrchestrationReadModel {
-  return withStageHistory(readModel, [
+  const verified = withStageHistory(readModel, [
     {
       threadId: "thread-stage-work-completed",
       role: "work",
@@ -173,6 +173,20 @@ function withFreshVerification(readModel: OrchestrationReadModel): Orchestration
       endedAt: "2026-06-14T09:20:00.000Z",
     },
   ]);
+  return {
+    ...verified,
+    tasks: [
+      {
+        ...verified.tasks[0]!,
+        verification: {
+          stageThreadId: asThreadId("thread-stage-verify-completed"),
+          head: "verified-head",
+          verifiedAt: "2026-06-14T09:20:00.000Z",
+        },
+      },
+      ...verified.tasks.slice(1),
+    ],
+  };
 }
 
 const toEvents = (result: PlannedEvent | ReadonlyArray<PlannedEvent>): PlannedEvent[] =>
@@ -1766,6 +1780,72 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("records successful verification against the exact inspected clean HEAD", () =>
+    Effect.gen(function* () {
+      const stageThreadId = asThreadId("thread-stage-verify-clean");
+      const readModel = yield* taskReadModel({
+        status: "verifying",
+        currentStageThreadId: stageThreadId,
+        stageThreadIds: [stageThreadId],
+      });
+
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.complete",
+            commandId: asCommandId("cmd-stage-complete-verify-clean"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            stageThreadId,
+            awaitedTurnId: asTurnId("turn-verify-clean"),
+            worktreeCompletion: { head: "verified-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        "task.stage-completed",
+        "task.verification-recorded",
+      ]);
+      expect(events[1]?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        stageThreadId,
+        head: "verified-head",
+      });
+    }),
+  );
+
+  it.effect("does not record verification when the inspected worktree is dirty", () =>
+    Effect.gen(function* () {
+      const stageThreadId = asThreadId("thread-stage-verify-dirty");
+      const readModel = yield* taskReadModel({
+        status: "verifying",
+        currentStageThreadId: stageThreadId,
+        stageThreadIds: [stageThreadId],
+      });
+
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.complete",
+            commandId: asCommandId("cmd-stage-complete-verify-dirty"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            stageThreadId,
+            awaitedTurnId: asTurnId("turn-verify-dirty"),
+            worktreeCompletion: { head: "dirty-head", dirty: true },
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual(["task.stage-completed"]);
+    }),
+  );
+
   it.effect("omits diffComplete on the event when the command does not set it", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({
@@ -2122,25 +2202,27 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("never auto-approves a land gate", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel(
-        {
-          status: "review",
-          currentStageThreadId: null,
-          stageThreadIds: [asThreadId("thread-stage-work")],
-        },
-        {
-          orchestratorConfig: {
-            taskTypes: [
-              {
-                id: "feature",
-                gatePolicy: {
-                  plan: "auto",
-                  land: "require-approval",
-                },
-              },
-            ],
+      const readModel = withFreshVerification(
+        yield* taskReadModel(
+          {
+            status: "review",
+            currentStageThreadId: null,
+            stageThreadIds: [asThreadId("thread-stage-work")],
           },
-        },
+          {
+            orchestratorConfig: {
+              taskTypes: [
+                {
+                  id: "feature",
+                  gatePolicy: {
+                    plan: "auto",
+                    land: "require-approval",
+                  },
+                },
+              ],
+            },
+          },
+        ),
       );
 
       const result = yield* decideOrchestrationCommand({
@@ -2158,6 +2240,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           gate: "land",
           contentHash: "sha256:land",
           stageThreadId: asThreadId("thread-stage-work"),
+          worktreeCompletion: { head: "verified-head", dirty: false },
           createdAt: now,
         },
       });
@@ -2174,6 +2257,37 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         decision: null,
         origin: null,
       });
+    }),
+  );
+
+  it.effect("rejects land approval when the worktree is dirty or no longer at verified HEAD", () =>
+    Effect.gen(function* () {
+      const readModel = withFreshVerification(
+        yield* taskReadModel({ status: "review", currentStageThreadId: null }),
+      );
+
+      for (const worktreeCompletion of [
+        { head: "verified-head", dirty: true },
+        { head: "new-unverified-head", dirty: false },
+      ]) {
+        const result = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.gate.request",
+              commandId: asCommandId(`cmd-land-gate-${worktreeCompletion.head}`),
+              taskId: asTaskId("task-1"),
+              gateId: asGateId(`gate-land-${worktreeCompletion.head}`),
+              gate: "land",
+              contentHash: "sha256:land",
+              stageThreadId: null,
+              worktreeCompletion,
+              createdAt: now,
+            },
+          }),
+        );
+        expect(result._tag).toBe("Failure");
+      }
     }),
   );
 
@@ -2310,20 +2424,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
   it.effect("lands a review task only after an approved land gate", () =>
     Effect.gen(function* () {
       const readModel = {
-        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
-          {
-            threadId: "thread-stage-work-completed",
-            role: "work",
-            startedAt: "2026-06-14T09:00:00.000Z",
-            endedAt: "2026-06-14T09:10:00.000Z",
-          },
-          {
-            threadId: "thread-stage-verify-completed",
-            role: "verify",
-            startedAt: "2026-06-14T09:11:00.000Z",
-            endedAt: "2026-06-14T09:20:00.000Z",
-          },
-        ]),
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
         pendingGates: [
           {
             gateId: asGateId("gate-land"),
@@ -2347,6 +2448,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           type: "task.land",
           commandId: asCommandId("cmd-land"),
           taskId: asTaskId("task-1"),
+          worktreeCompletion: { head: "verified-head", dirty: false },
           createdAt: now,
         },
       });
@@ -2405,7 +2507,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
       if (error._tag === "OrchestrationCommandInvariantError") {
-        expect(error.detail).toContain("successfully completed verification stage");
+        expect(error.detail).toContain("without verification recorded");
       }
     }),
   );
@@ -2414,21 +2516,33 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     "rejects task.land when successful verification predates the latest successful work",
     () =>
       Effect.gen(function* () {
+        const baseReadModel = withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-verify-stale",
+            role: "verify",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+          {
+            threadId: "thread-stage-work-newer",
+            role: "work",
+            startedAt: "2026-06-14T09:11:00.000Z",
+            endedAt: "2026-06-14T09:20:00.000Z",
+          },
+        ]);
         const readModel = {
-          ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+          ...baseReadModel,
+          tasks: [
             {
-              threadId: "thread-stage-verify-stale",
-              role: "verify",
-              startedAt: "2026-06-14T09:00:00.000Z",
-              endedAt: "2026-06-14T09:10:00.000Z",
+              ...baseReadModel.tasks[0]!,
+              verification: {
+                stageThreadId: asThreadId("thread-stage-verify-stale"),
+                head: "stale-head",
+                verifiedAt: "2026-06-14T09:10:00.000Z",
+              },
             },
-            {
-              threadId: "thread-stage-work-newer",
-              role: "work",
-              startedAt: "2026-06-14T09:11:00.000Z",
-              endedAt: "2026-06-14T09:20:00.000Z",
-            },
-          ]),
+            ...baseReadModel.tasks.slice(1),
+          ],
           pendingGates: [
             {
               gateId: asGateId("gate-land"),
@@ -2460,7 +2574,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
         expect(error._tag).toBe("OrchestrationCommandInvariantError");
         if (error._tag === "OrchestrationCommandInvariantError") {
-          expect(error.detail).toContain("latest successful verification is not newer");
+          expect(error.detail).toContain("recorded verification is stale");
         }
       }),
   );
@@ -2771,7 +2885,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("retries only a failed landed task with its worktree retained", () =>
     Effect.gen(function* () {
-      const failed = yield* taskReadModel({ status: "landed", prUrl: null });
+      const failed = withFreshVerification(yield* taskReadModel({ status: "landed", prUrl: null }));
       const readModel = {
         ...failed,
         tasks: [
@@ -2793,6 +2907,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           type: "task.landing.retry",
           commandId: asCommandId("cmd-landing-retry"),
           taskId: asTaskId("task-1"),
+          worktreeCompletion: { head: "verified-head", dirty: false },
           createdAt: now,
         },
       });
@@ -3184,6 +3299,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
               taskId: asTaskId("task-1"),
               stageThreadId: verifyStageThreadId,
               head: "def456",
+              worktreeCompletion: { head: "def456", dirty: false },
               createdAt: now,
             },
           }),

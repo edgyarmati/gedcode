@@ -65,6 +65,7 @@ import {
   landOrchestrationTaskWithServices,
   OrchestrationLandTaskError as TaskLandingError,
 } from "./orchestration/taskLanding.ts";
+import { inspectTaskWorktreeCompletion } from "./orchestration/worktreeCompletion.ts";
 import {
   observeRpcEffect,
   observeRpcStream,
@@ -283,6 +284,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService;
       const vcsProvisioning = yield* VcsProvisioningService;
+      const vcsProcess = yield* VcsProcess.VcsProcess;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerService = yield* ProviderService;
@@ -1325,22 +1327,42 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [ORCHESTRATOR_WS_METHODS.resolveGate]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.resolveGate,
-            Effect.all({
-              commandId: serverCommandId("orchestrator-resolve-gate"),
-              createdAt: nowIso,
+            Effect.gen(function* () {
+              const commandId = yield* serverCommandId("orchestrator-resolve-gate");
+              const createdAt = yield* nowIso;
+              const worktreeCompletion =
+                input.gate === "land" && input.decision === "approved"
+                  ? yield* projectionSnapshotQuery.getCommandReadModel().pipe(
+                      Effect.flatMap((readModel) => {
+                        const task = readModel.tasks.find((entry) => entry.id === input.taskId);
+                        return task?.worktreePath
+                          ? inspectTaskWorktreeCompletion({
+                              worktreePath: task.worktreePath,
+                              process: vcsProcess,
+                            }).pipe(Effect.map(Option.some))
+                          : Effect.succeed(Option.none());
+                      }),
+                    )
+                  : Option.none();
+              return yield* dispatchNormalizedCommand({
+                type: "task.gate.resolve",
+                commandId,
+                taskId: input.taskId,
+                gateId: input.gateId,
+                gate: input.gate,
+                approvedHash: input.approvedHash,
+                decision: input.decision,
+                origin: "human",
+                ...(Option.isSome(worktreeCompletion)
+                  ? { worktreeCompletion: worktreeCompletion.value }
+                  : {}),
+                createdAt,
+              });
             }).pipe(
-              Effect.flatMap(({ commandId, createdAt }) =>
-                dispatchNormalizedCommand({
-                  type: "task.gate.resolve",
-                  commandId,
-                  taskId: input.taskId,
-                  gateId: input.gateId,
-                  gate: input.gate,
-                  approvedHash: input.approvedHash,
-                  decision: input.decision,
-                  origin: "human",
-                  createdAt,
-                }),
+              Effect.mapError((cause) =>
+                isOrchestrationDispatchCommandError(cause)
+                  ? cause
+                  : toDispatchCommandError(cause, "Failed to resolve orchestration gate"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },
@@ -1413,7 +1435,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.landTask,
             landOrchestrationTaskWithServices(
-              { snapshotQuery: projectionSnapshotQuery },
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
               {
                 taskId: input.taskId,
                 commandId: serverCommandId("orchestrator-land-task"),
@@ -2045,6 +2067,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
                   Layer.provide(VcsProcess.layer),
                 ),
               ),
+              Layer.provide(VcsProcess.layer),
             ),
           ),
         );
