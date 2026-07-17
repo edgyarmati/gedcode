@@ -27,6 +27,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -40,6 +41,7 @@ import { TerminalManager, type TerminalManagerShape } from "../../terminal/Servi
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { createEmptyReadModel } from "../projector.ts";
 import { makePmTools, type PmToolExecutor } from "./pmTools.ts";
+import { VcsProcess, type VcsProcessOutput, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
 
 const now = "2026-06-14T00:00:00.000Z";
 const projectId = ProjectId.make("project-1");
@@ -181,6 +183,7 @@ const makeLayer = (
     readonly afterCancellationRequest?: OrchestrationReadModel;
     readonly failDispatchFor?: ReadonlySet<OrchestrationCommand["type"]>;
     readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
+    readonly vcsProcess?: Partial<VcsProcessShape>;
   } = {},
 ) => {
   let currentReadModel = readModel;
@@ -351,6 +354,10 @@ const makeLayer = (
       subscribe: () => Effect.succeed(() => undefined),
       ...overrides.terminalManager,
     }),
+    Layer.mock(VcsProcess)({
+      run: () => Effect.die("VcsProcess.run should not be called"),
+      ...overrides.vcsProcess,
+    }),
     NodeServices.layer,
   );
 };
@@ -360,6 +367,28 @@ const findTool = (tools: ReadonlyArray<PmToolExecutor>, name: string): PmToolExe
   assert.ok(tool);
   return tool;
 };
+
+const vcsOutput = (stdout = "", exitCode = 0): VcsProcessOutput => ({
+  exitCode: ChildProcessSpawner.ExitCode(exitCode),
+  stdout,
+  stderr: "",
+  stdoutTruncated: false,
+  stderrTruncated: false,
+});
+
+const changeReviewTask = () =>
+  makeTask({
+    status: "change-review",
+    currentStageThreadId: null,
+    changeReview: {
+      status: "pending",
+      workStageThreadId: stageThreadId,
+      detectedHead: "abc123",
+      resolution: null,
+      requestedAt: now,
+      resolvedAt: null,
+    },
+  });
 
 it.effect("createTask derives stable task and command identities from its idempotency key", () =>
   Effect.gen(function* () {
@@ -412,6 +441,154 @@ it.effect("createTask derives stable task and command identities from its idempo
       assert.notStrictEqual(replacementCommand.commandId, firstCommand?.commandId);
     }
     assert.match(first.content[0]?.text ?? "", /Created or reused task/);
+  }),
+);
+
+it.effect("change-review tools inspect task-owned changes and reject foreign tasks", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([changeReviewTask()]), null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(
+                input.operation === "TaskChangeReview.head"
+                  ? vcsOutput("abc123\n")
+                  : input.operation === "TaskChangeReview.status"
+                    ? vcsOutput(" M selected.txt\0?? untracked.txt\0")
+                    : input.operation === "TaskChangeReview.diff"
+                      ? vcsOutput("diff --git a/selected.txt b/selected.txt\n")
+                      : vcsOutput(),
+              ),
+          },
+        }),
+      ),
+    );
+    const inspect = findTool(tools, "inspectTaskChanges");
+    const result = yield* Effect.promise(() => inspect.execute("inspect-changes", { taskId }));
+    assert.deepStrictEqual(result.details.changes.paths, ["selected.txt", "untracked.txt"]);
+    assert.equal(result.details.changes.head, "abc123");
+
+    const error = yield* Effect.promise(async () => {
+      try {
+        await inspect.execute("inspect-foreign", { taskId: "task-foreign" });
+        return null;
+      } catch (cause) {
+        return cause;
+      }
+    });
+    assert.match(String(error), /not found/);
+  }),
+);
+
+it.effect("commitTaskChanges preserves remaining review changes and refreshes their HEAD", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    let committed = false;
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([changeReviewTask()]), null, {
+          vcsProcess: {
+            run: (input) => {
+              if (input.operation === "TaskChangeReview.commitSelection") {
+                committed = true;
+                return Effect.succeed(vcsOutput("[branch def456] fix: selected path\n"));
+              }
+              if (input.operation === "TaskChangeReview.head") {
+                return Effect.succeed(vcsOutput(committed ? "def456\n" : "abc123\n"));
+              }
+              if (input.operation === "TaskChangeReview.status") {
+                return Effect.succeed(
+                  vcsOutput(
+                    committed ? " M remaining.txt\0" : " M selected.txt\0 M remaining.txt\0",
+                  ),
+                );
+              }
+              if (input.operation === "TaskChangeReview.diff") {
+                return Effect.succeed(vcsOutput("diff --git a/selected.txt b/selected.txt\n"));
+              }
+              return Effect.succeed(vcsOutput());
+            },
+          },
+        }),
+      ),
+    );
+    const commit = findTool(tools, "commitTaskChanges");
+    const result = yield* Effect.promise(() =>
+      commit.execute("commit-changes", {
+        taskId,
+        paths: ["selected.txt"],
+        message: "fix: commit selected path",
+      }),
+    );
+
+    assert.deepStrictEqual(result.details.changes.paths, ["remaining.txt"]);
+    assert.deepStrictEqual(
+      dispatched.map((command) => command.type),
+      ["task.change-review.resolve", "task.change-review.request"],
+    );
+    const refreshed = dispatched[1];
+    assert.equal(refreshed?.type, "task.change-review.request");
+    if (refreshed?.type === "task.change-review.request") {
+      assert.equal(refreshed.detectedHead, "def456");
+    }
+  }),
+);
+
+it.effect("discard and return tools record distinct review outcomes", () =>
+  Effect.gen(function* () {
+    const discardedCommands: OrchestrationCommand[] = [];
+    let discarded = false;
+    const discardTools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(discardedCommands, makeReadModel([changeReviewTask()]), null, {
+          vcsProcess: {
+            run: (input) => {
+              if (input.operation === "TaskChangeReview.cleanSelection") discarded = true;
+              if (input.operation === "TaskChangeReview.head") {
+                return Effect.succeed(vcsOutput("abc123\n"));
+              }
+              if (input.operation === "TaskChangeReview.status") {
+                return Effect.succeed(vcsOutput(discarded ? "" : "?? temporary.txt\0"));
+              }
+              return Effect.succeed(vcsOutput());
+            },
+          },
+        }),
+      ),
+    );
+    yield* Effect.promise(() =>
+      findTool(discardTools, "discardTaskChanges").execute("discard-changes", {
+        taskId,
+        paths: ["temporary.txt"],
+      }),
+    );
+    const discardResolution = discardedCommands.at(-1);
+    assert.equal(discardResolution?.type, "task.change-review.resolve");
+    if (discardResolution?.type === "task.change-review.resolve") {
+      assert.equal(discardResolution.resolution, "discarded");
+    }
+
+    const returnedCommands: OrchestrationCommand[] = [];
+    const returnTools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(returnedCommands, makeReadModel([changeReviewTask()]))),
+    );
+    yield* Effect.promise(() =>
+      findTool(returnTools, "returnTaskChanges").execute("return-changes", {
+        taskId,
+        instructions: "Commit the intended remaining changes and leave the worktree clean.",
+      }),
+    );
+    assert.deepStrictEqual(
+      returnedCommands.map((command) => command.type),
+      ["task.stage.start", "task.change-review.resolve"],
+    );
+    const returned = returnedCommands[1];
+    assert.equal(returned?.type, "task.change-review.resolve");
+    if (returned?.type === "task.change-review.resolve") {
+      assert.equal(returned.resolution, "returned");
+    }
   }),
 );
 

@@ -15,6 +15,10 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "requestApproval",
   "setTaskBackend",
   "inspectStage",
+  "inspectTaskChanges",
+  "commitTaskChanges",
+  "discardTaskChanges",
+  "returnTaskChanges",
   "listPendingStageApprovals",
   "respondToStageApproval",
   "cancelTask",
@@ -99,6 +103,23 @@ export const mcpInputSchemas = {
   inspectStage: {
     taskId: z.string(),
     stageThreadId: z.string().optional(),
+  },
+  inspectTaskChanges: {
+    taskId: z.string().trim().min(1),
+  },
+  commitTaskChanges: {
+    taskId: z.string().trim().min(1),
+    paths: z.array(z.string().trim().min(1)).min(1).optional(),
+    patch: z.string().min(1).optional(),
+    message: z.string().trim().min(12),
+  },
+  discardTaskChanges: {
+    taskId: z.string().trim().min(1),
+    paths: z.array(z.string().trim().min(1)).min(1),
+  },
+  returnTaskChanges: {
+    taskId: z.string().trim().min(1),
+    instructions: z.string().trim().min(1),
   },
   listPendingStageApprovals: {
     taskId: z.string(),

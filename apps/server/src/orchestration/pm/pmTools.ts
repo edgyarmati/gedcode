@@ -44,6 +44,12 @@ import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
+import {
+  commitTaskWorktreeChanges,
+  discardTaskWorktreeChanges,
+  inspectTaskWorktreeChanges,
+  type TaskWorktreeChanges,
+} from "../taskChangeReview.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -110,6 +116,27 @@ interface SetTaskBackendParameters {
 interface InspectStageParameters {
   readonly taskId: string;
   readonly stageThreadId?: string;
+}
+
+interface InspectTaskChangesParameters {
+  readonly taskId: string;
+}
+
+interface CommitTaskChangesParameters {
+  readonly taskId: string;
+  readonly paths?: ReadonlyArray<string>;
+  readonly patch?: string;
+  readonly message: string;
+}
+
+interface DiscardTaskChangesParameters {
+  readonly taskId: string;
+  readonly paths: ReadonlyArray<string>;
+}
+
+interface ReturnTaskChangesParameters {
+  readonly taskId: string;
+  readonly instructions: string;
 }
 
 interface ListPendingStageApprovalsParameters {
@@ -485,6 +512,65 @@ export const makePmToolExecutors = Effect.gen(function* () {
 
   const dispatch = (command: Parameters<typeof engine.dispatch>[0]) =>
     engine.dispatch(command).pipe(Effect.map((result) => result.sequence));
+
+  const taskForChangeReview = (taskId: TaskId) =>
+    Effect.gen(function* () {
+      const readModel = yield* snapshotQuery.getCommandReadModel();
+      const task = readModel.tasks.find((entry) => entry.id === taskId);
+      if (!task) {
+        return yield* new PmToolExecutionError({ detail: `Task '${taskId}' was not found.` });
+      }
+      if (task.worktreePath === null) {
+        return yield* new PmToolExecutionError({
+          detail: `Task '${taskId}' does not own a worktree.`,
+        });
+      }
+      if (task.status !== "change-review" || task.changeReview?.status !== "pending") {
+        return yield* new PmToolExecutionError({
+          detail: `Task '${taskId}' does not have a pending change review.`,
+        });
+      }
+      const process = Context.getOption(runtimeContext, VcsProcess);
+      if (Option.isNone(process)) {
+        return yield* new PmToolExecutionError({
+          detail: "Task change-review git services are unavailable.",
+        });
+      }
+      return { task, process: process.value };
+    });
+
+  const settleOrRefreshChangeReview = (input: {
+    readonly taskId: TaskId;
+    readonly changes: TaskWorktreeChanges;
+    readonly resolution: "committed" | "discarded";
+  }) =>
+    Effect.gen(function* () {
+      const readModel = yield* snapshotQuery.getCommandReadModel();
+      const task = readModel.tasks.find((entry) => entry.id === input.taskId);
+      const workStageThreadId = task?.changeReview?.workStageThreadId;
+      if (workStageThreadId === undefined) {
+        return yield* new PmToolExecutionError({
+          detail: `Task '${input.taskId}' lost its pending change-review context.`,
+        });
+      }
+      yield* dispatch({
+        type: "task.change-review.resolve",
+        commandId: yield* commandId(`change-review-${input.resolution}`),
+        taskId: input.taskId,
+        resolution: input.resolution,
+        createdAt: yield* nowIso,
+      });
+      if (input.changes.dirty) {
+        yield* dispatch({
+          type: "task.change-review.request",
+          commandId: yield* commandId("change-review-remaining"),
+          taskId: input.taskId,
+          workStageThreadId,
+          detectedHead: input.changes.head,
+          createdAt: yield* nowIso,
+        });
+      }
+    });
 
   const createTask: PmToolExecutor<CreateTaskParameters, { taskId: string; sequence: number }> = {
     name: "createTask",
@@ -869,6 +955,139 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const inspectTaskChanges: PmToolExecutor<
+    InspectTaskChangesParameters,
+    { taskId: string; changes: TaskWorktreeChanges }
+  > = {
+    name: "inspectTaskChanges",
+    label: "Inspect task changes",
+    description:
+      "Inspect one task-owned worktree's current HEAD, changed paths, staged state, and bounded tracked diff. Use this before resolving a change review; untracked files are listed but their contents are not exposed automatically.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const { task, process } = yield* taskForChangeReview(taskId);
+          const changes = yield* inspectTaskWorktreeChanges({
+            worktreePath: task.worktreePath as string,
+            process,
+          });
+          return textResult(
+            `Task ${taskId} has ${changes.paths.length} changed path(s) at ${changes.head}${changes.staged ? " with staged changes" : ""}.`,
+            { taskId, changes },
+          );
+        }),
+      ),
+  };
+
+  const commitTaskChanges: PmToolExecutor<
+    CommitTaskChangesParameters,
+    { taskId: string; commit: string; changes: TaskWorktreeChanges }
+  > = {
+    name: "commitTaskChanges",
+    label: "Commit task changes",
+    description:
+      "Commit only explicitly selected changed paths in a task-owned worktree with a descriptive message. Refuses pre-staged or foreign paths, preserves unselected changes, and keeps change review pending when changes remain.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const { task, process } = yield* taskForChangeReview(taskId);
+          const result = yield* commitTaskWorktreeChanges({
+            worktreePath: task.worktreePath as string,
+            process,
+            ...(params.paths === undefined ? {} : { paths: params.paths }),
+            ...(params.patch === undefined ? {} : { patch: params.patch }),
+            message: params.message,
+          });
+          yield* settleOrRefreshChangeReview({
+            taskId,
+            changes: result.changes,
+            resolution: "committed",
+          });
+          return textResult(
+            result.changes.dirty
+              ? `Committed selected changes for task ${taskId}; ${result.changes.paths.length} changed path(s) still require review.`
+              : `Committed selected changes and resolved change review for task ${taskId}.`,
+            { taskId, commit: result.commit, changes: result.changes },
+          );
+        }),
+      ),
+  };
+
+  const discardTaskChanges: PmToolExecutor<
+    DiscardTaskChangesParameters,
+    { taskId: string; changes: TaskWorktreeChanges }
+  > = {
+    name: "discardTaskChanges",
+    label: "Discard task changes",
+    description:
+      "Permanently discard only explicitly selected changed paths in a task-owned worktree. Use only for changes confirmed outside task intent. Unselected changes are preserved and remain in change review.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          const { task, process } = yield* taskForChangeReview(taskId);
+          const result = yield* discardTaskWorktreeChanges({
+            worktreePath: task.worktreePath as string,
+            process,
+            paths: params.paths,
+          });
+          yield* settleOrRefreshChangeReview({
+            taskId,
+            changes: result.changes,
+            resolution: "discarded",
+          });
+          return textResult(
+            result.changes.dirty
+              ? `Discarded selected changes for task ${taskId}; ${result.changes.paths.length} changed path(s) still require review.`
+              : `Discarded selected changes and resolved change review for task ${taskId}.`,
+            { taskId, changes: result.changes },
+          );
+        }),
+      ),
+  };
+
+  const returnTaskChanges: PmToolExecutor<
+    ReturnTaskChangesParameters,
+    { taskId: string; stageThreadId: string | null; sequence: number }
+  > = {
+    name: "returnTaskChanges",
+    label: "Return changes to worker",
+    description:
+      "Return a pending task change review to a fresh work attempt with precise revision instructions. The prior review is recorded as returned and verification remains invalid until the new work settles.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const taskId = TaskId.make(params.taskId);
+          yield* taskForChangeReview(taskId);
+          const sequence = yield* dispatch({
+            type: "task.stage.start",
+            commandId: yield* commandId("return-task-changes"),
+            taskId,
+            role: "work",
+            instructions: params.instructions.trim(),
+            createdAt: yield* nowIso,
+          });
+          const started = yield* snapshotQuery.getCommandReadModel();
+          const task = started.tasks.find((entry) => entry.id === taskId);
+          yield* dispatch({
+            type: "task.change-review.resolve",
+            commandId: yield* commandId("change-review-returned"),
+            taskId,
+            resolution: "returned",
+            createdAt: yield* nowIso,
+          });
+          const stageThreadId = latestStageThreadId(task);
+          return textResult(`Returned task ${taskId} changes to work stage ${stageThreadId}.`, {
+            taskId,
+            stageThreadId,
+            sequence,
+          });
+        }),
+      ),
+  };
+
   const listPendingStageApprovals: PmToolExecutor<
     ListPendingStageApprovalsParameters,
     { taskId: string; approvals: ReadonlyArray<PendingStageApprovalSummary> }
@@ -1226,6 +1445,10 @@ export const makePmToolExecutors = Effect.gen(function* () {
     requestApproval,
     setTaskBackend,
     inspectStage,
+    inspectTaskChanges,
+    commitTaskChanges,
+    discardTaskChanges,
+    returnTaskChanges,
     listPendingStageApprovals,
     respondToStageApproval,
     cancelTask,

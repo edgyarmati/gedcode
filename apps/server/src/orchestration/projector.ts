@@ -1192,7 +1192,7 @@ export function projectEvent(
           return {
             ...nextBase,
             tasks: updateTask(nextBase.tasks, payload.taskId, {
-              status: "review",
+              status: task.currentStageThreadId === null ? "review" : task.status,
               changeReview: {
                 ...task.changeReview,
                 status: "resolved",

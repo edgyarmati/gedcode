@@ -3085,6 +3085,76 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("records a returned review after a replacement work stage starts", () =>
+    Effect.gen(function* () {
+      const priorWorkStageThreadId = asThreadId("thread-work-returned");
+      const base = withStageHistory(
+        yield* taskReadModel({
+          status: "change-review",
+          stageThreadIds: [priorWorkStageThreadId],
+          currentStageThreadId: null,
+          changeReview: {
+            status: "pending",
+            workStageThreadId: priorWorkStageThreadId,
+            detectedHead: "abc123",
+            resolution: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+          verification: {
+            stageThreadId: asThreadId("stale-verification"),
+            head: "older",
+            verifiedAt: now,
+          },
+        }),
+        [
+          {
+            threadId: priorWorkStageThreadId,
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+        ],
+      );
+      const startedEvent = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: base,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-return-work-start"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            instructions: "Revise and commit the remaining changes.",
+            createdAt: now,
+          },
+        }),
+      )[0]!;
+      const working = yield* projectEvent(base, withSequence(startedEvent, 10));
+      expect(working.tasks[0]?.status).toBe("working");
+      expect(working.tasks[0]?.verification).toBeNull();
+
+      const resolvedEvent = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: working,
+          command: {
+            type: "task.change-review.resolve",
+            commandId: asCommandId("cmd-change-review-returned"),
+            taskId: asTaskId("task-1"),
+            resolution: "returned",
+            createdAt: now,
+          },
+        }),
+      )[0]!;
+      const returned = yield* projectEvent(working, withSequence(resolvedEvent, 11));
+      expect(returned.tasks[0]?.status).toBe("working");
+      expect(returned.tasks[0]?.changeReview).toMatchObject({
+        status: "resolved",
+        resolution: "returned",
+      });
+      expect(returned.tasks[0]?.verification).toBeNull();
+    }),
+  );
+
   it.effect(
     "binds verification to a commit and completes equal base and task heads as no-change",
     () =>

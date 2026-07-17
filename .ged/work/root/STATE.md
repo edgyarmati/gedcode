@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-WORK-03`
+- **Active task**: `ORCH-WORK-04`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,14 @@
 - Verification evidence for `ORCH-WORK-02`: focused server suite 159/159 passed; `bun fmt`, `bun lint`,
   and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox (12/12
   packages; server 181/181 files, 1,490 passed and 1 skipped).
+- `ORCH-WORK-03` completed 2026-07-17. The PM and orchestration MCP now expose task-owned change
+  inspection, exact path or patch-hunk commits, selected discard, and return-to-worker actions.
+  Existing staged state and foreign paths fail closed; partial mutations rotate a new pending review
+  at the resulting HEAD; returned work starts a fresh work attempt; all mutation paths clear stale
+  verification.
+- Verification evidence for `ORCH-WORK-03`: focused server suite 191/191 passed; `bun fmt`, `bun lint`,
+  and `bun typecheck` passed; full `bun run test` passed outside the filesystem sandbox (12/12
+  packages; server 182/182 files, 1,498 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

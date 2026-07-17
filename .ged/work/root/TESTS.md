@@ -29,6 +29,19 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages; server 181/181 files, 1,490 passed and 1 skipped.
 
+### ORCH-WORK-03 — 2026-07-17
+
+- Focused: task change-review Git integration, PM/MCP tools, decider, in-memory/SQL projection, and PM
+  runtime suites passed (191 tests).
+- Manual review: exact patch hunks commit without absorbing selected-out edits; selected tracked and
+  untracked discard preserves unrelated files; foreign paths, unknown tasks, pre-staged indexes, and
+  non-descriptive commits fail closed; partial mutation refreshes pending review at the new HEAD;
+  return starts a fresh work stage and records the prior review as returned.
+- Repository: `bun fmt`, `bun lint`, and `bun typecheck` passed. Lint retained only pre-existing
+  warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 182/182 files, 1,498 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

@@ -1736,7 +1736,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             if (Option.isNone(existingRow) || existingRow.value.changeReview === null) return;
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
-              status: "review",
+              status:
+                existingRow.value.currentStageThreadId === null
+                  ? "review"
+                  : existingRow.value.status,
               changeReview: {
                 ...existingRow.value.changeReview,
                 status: "resolved",

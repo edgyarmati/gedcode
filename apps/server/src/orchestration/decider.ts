@@ -2096,7 +2096,20 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     case "task.change-review.resolve": {
       const task = yield* requireTask({ readModel, command, taskId: command.taskId });
       yield* requireTaskNotCancelling({ command, task });
-      if (task.status !== "change-review" || task.changeReview?.status !== "pending") {
+      const activeStage =
+        task.currentStageThreadId === null
+          ? undefined
+          : readModel.stageHistory[task.currentStageThreadId];
+      const returningToActiveWork =
+        command.resolution === "returned" &&
+        task.status === "working" &&
+        activeStage?.taskId === task.id &&
+        activeStage.role === "work" &&
+        activeStage.status === "running";
+      if (
+        task.changeReview?.status !== "pending" ||
+        (task.status !== "change-review" && !returningToActiveWork)
+      ) {
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' does not have a pending change review.`,
