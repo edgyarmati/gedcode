@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-PMDIRECT-02`
+- **Active task**: `ORCH-TIER-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -95,6 +95,14 @@
   safety suites passed (70 tests), provider and approval-routing suites passed (140 tests), and focused
   web approval/session logic passed (112 tests). `bun fmt`, `bun lint`, and all 12 typecheck packages
   passed; full `bun run test` passed all 12 packages (server 183/183 files, 1,508 passed and 1 skipped).
+- `ORCH-PMDIRECT-02` completed 2026-07-17. The PM now has explicit boundaries for keeping one bounded,
+  low-risk edit in the primary checkout versus delegating substantial or uncertain work. Direct-change
+  inspection and exact-patch commit tools require a recorded rationale and proportional check evidence,
+  preserve unrelated paths and overlapping user hunks, return the resulting commit, and dispatch no task,
+  worktree, gate, pull request, or landing command.
+- Verification evidence for `ORCH-PMDIRECT-02`: focused direct-change, PM tool, runtime-prompt, and MCP
+  suites passed (109 tests total); `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full
+  `bun run test` passed all 12 packages (server 183/183 files, 1,511 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

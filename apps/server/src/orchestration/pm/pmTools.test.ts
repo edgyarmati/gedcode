@@ -500,6 +500,79 @@ it.effect("change-review tools inspect task-owned changes and reject foreign tas
   }),
 );
 
+it.effect("direct PM tools inspect and commit an exact primary-checkout patch without a task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: Array<{ operation: string; cwd: string; stdin?: string }> = [];
+    let committed = false;
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([]), null, {
+          vcsProcess: {
+            run: (input) => {
+              calls.push({
+                operation: input.operation,
+                cwd: input.cwd,
+                ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+              });
+              if (input.operation === "TaskChangeReview.commitSelection") {
+                committed = true;
+                return Effect.succeed(vcsOutput("[main def456] docs: update label\n"));
+              }
+              if (input.operation === "TaskChangeReview.head") {
+                return Effect.succeed(vcsOutput(committed ? "def456\n" : "abc123\n"));
+              }
+              if (input.operation === "TaskChangeReview.status") {
+                return Effect.succeed(
+                  vcsOutput(committed ? " M shared.txt\0" : " M direct.txt\0 M shared.txt\0"),
+                );
+              }
+              if (input.operation === "TaskChangeReview.diff") {
+                return Effect.succeed(vcsOutput("diff --git a/direct.txt b/direct.txt\n"));
+              }
+              return Effect.succeed(vcsOutput());
+            },
+          },
+        }),
+      ),
+    );
+    const inspect = findTool(tools, "inspectDirectChanges");
+    const inspected = yield* Effect.promise(() => inspect.execute("inspect-direct", { projectId }));
+    assert.equal(inspected.details.projectId, projectId);
+    assert.deepStrictEqual(inspected.details.changes.paths, ["direct.txt", "shared.txt"]);
+
+    const patch = [
+      "diff --git a/direct.txt b/direct.txt",
+      "--- a/direct.txt",
+      "+++ b/direct.txt",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "",
+    ].join("\n");
+    const commit = findTool(tools, "commitDirectChanges");
+    const result = yield* Effect.promise(() =>
+      commit.execute("commit-direct", {
+        projectId,
+        patch,
+        message: "docs: update direct label",
+        rationale: "This is one bounded text change with no behavior or contract impact.",
+        checks: [{ command: "bun fmt", outcome: "passed" }],
+      }),
+    );
+
+    assert.equal(result.details.commit, "def456");
+    assert.deepStrictEqual(result.details.changes.paths, ["shared.txt"]);
+    assert.deepStrictEqual(result.details.checks, [{ command: "bun fmt", outcome: "passed" }]);
+    assert.deepStrictEqual(dispatched, []);
+    assert.ok(calls.every((call) => call.cwd === "/repo"));
+    assert.equal(
+      calls.find((call) => call.operation === "TaskChangeReview.stagePatch")?.stdin,
+      patch,
+    );
+  }),
+);
+
 it.effect("completeTaskWithoutChanges verifies the branch baseline and clean worktree", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

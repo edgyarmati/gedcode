@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Project managers can now complete genuinely trivial, bounded, low-risk edits directly in the
+  primary checkout without creating task or PR clutter. Direct commits require an exact reviewed
+  patch, a concrete low-risk rationale, proportional check evidence, and a descriptive message;
+  unrelated dirty paths and unselected hunks in the same file remain untouched and visible.
+
 - Project-manager sessions can now work directly in their project: Codex PMs use workspace-scoped
   writes with native auto-review, while Claude and OpenCode PMs retain provider-native full access.
   Access requests that Codex auto-review cannot grant are forwarded into the PM composer with their

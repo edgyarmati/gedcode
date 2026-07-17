@@ -10,6 +10,7 @@ import {
   discardTaskWorktreeChanges,
   inspectTaskWorktreeChanges,
 } from "./taskChangeReview.ts";
+import { commitDirectPmChanges } from "./directPmChanges.ts";
 
 const TestLayer = VcsProcessLive.pipe(Layer.provideMerge(NodeServices.layer));
 
@@ -35,6 +36,91 @@ const makeRepository = Effect.gen(function* () {
 });
 
 it.layer(TestLayer)("task change review git operations", (it) => {
+  it.effect("direct PM commits select one hunk from a file with overlapping user changes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const process = yield* VcsProcess;
+        const cwd = yield* makeRepository;
+        yield* fs.writeFileString(`${cwd}/selected.txt`, "ONE\ntwo\nthree\nUSER FOUR\n");
+
+        const result = yield* commitDirectPmChanges({
+          workspaceRoot: cwd,
+          process,
+          patch: [
+            "diff --git a/selected.txt b/selected.txt",
+            "--- a/selected.txt",
+            "+++ b/selected.txt",
+            "@@ -1 +1 @@",
+            "-one",
+            "+ONE",
+            "",
+          ].join("\n"),
+          message: "docs: capitalize direct example",
+          rationale: "This is one bounded documentation capitalization with no contract impact.",
+          checks: [{ command: "bun fmt", outcome: "passed" }],
+        });
+
+        assert.match(result.commit, /^[0-9a-f]{40}$/u);
+        assert.deepStrictEqual(result.checks, [{ command: "bun fmt", outcome: "passed" }]);
+        assert.equal(
+          (yield* git(cwd, ["show", "HEAD:selected.txt"])).stdout,
+          "ONE\ntwo\nthree\nfour\n",
+        );
+        assert.equal(
+          yield* fs.readFileString(`${cwd}/selected.txt`),
+          "ONE\ntwo\nthree\nUSER FOUR\n",
+        );
+        assert.deepStrictEqual(result.changes.paths, ["selected.txt"]);
+      }),
+    ),
+  );
+
+  it.effect("direct PM commits require rationale and proportional check evidence", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const process = yield* VcsProcess;
+        const cwd = yield* makeRepository;
+        yield* fs.writeFileString(`${cwd}/selected.txt`, "ONE\ntwo\nthree\nfour\n");
+        const patch = [
+          "diff --git a/selected.txt b/selected.txt",
+          "--- a/selected.txt",
+          "+++ b/selected.txt",
+          "@@ -1 +1 @@",
+          "-one",
+          "+ONE",
+          "",
+        ].join("\n");
+
+        const missingRationale = yield* Effect.flip(
+          commitDirectPmChanges({
+            workspaceRoot: cwd,
+            process,
+            patch,
+            message: "docs: capitalize direct example",
+            rationale: "tiny edit",
+            checks: [{ command: "bun fmt", outcome: "passed" }],
+          }),
+        );
+        assert.equal(missingRationale._tag, "DirectPmChangeError");
+
+        const missingChecks = yield* Effect.flip(
+          commitDirectPmChanges({
+            workspaceRoot: cwd,
+            process,
+            patch,
+            message: "docs: capitalize direct example",
+            rationale: "This is one bounded documentation capitalization with no contract impact.",
+            checks: [],
+          }),
+        );
+        assert.equal(missingChecks._tag, "DirectPmChangeError");
+        assert.equal((yield* git(cwd, ["rev-list", "--count", "HEAD"])).stdout.trim(), "1");
+      }),
+    ),
+  );
+
   it.effect("commits an exact patch hunk while preserving unselected worktree changes", () =>
     Effect.scoped(
       Effect.gen(function* () {

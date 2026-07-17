@@ -53,6 +53,11 @@ import {
   returnOrchestratorTaskChanges,
 } from "../taskChangeReviewActions.ts";
 import type { TaskWorktreeChanges } from "../taskChangeReview.ts";
+import {
+  commitDirectPmChanges,
+  inspectDirectPmChanges,
+  type DirectPmCheckEvidence,
+} from "../directPmChanges.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -123,6 +128,18 @@ interface InspectStageParameters {
 
 interface InspectTaskChangesParameters {
   readonly taskId: string;
+}
+
+interface InspectDirectChangesParameters {
+  readonly projectId: string;
+}
+
+interface CommitDirectChangesParameters {
+  readonly projectId: string;
+  readonly patch: string;
+  readonly message: string;
+  readonly rationale: string;
+  readonly checks: ReadonlyArray<DirectPmCheckEvidence>;
 }
 
 interface CommitTaskChangesParameters {
@@ -528,6 +545,32 @@ export const makePmToolExecutors = Effect.gen(function* () {
       });
     }
     return { snapshotQuery, vcsProcess: process.value };
+  });
+
+  const directPmChangeServices = Effect.gen(function* () {
+    const process = Context.getOption(runtimeContext, VcsProcess);
+    if (Option.isNone(process)) {
+      return yield* new PmToolExecutionError({
+        detail: "Direct PM git services are unavailable.",
+      });
+    }
+    return { vcsProcess: process.value };
+  });
+
+  const resolveDirectProject = Effect.fn("PmTools.resolveDirectProject")(function* (
+    requestedProjectId: string,
+  ) {
+    const requestedId = ProjectId.make(requestedProjectId.trim());
+    const readModel = yield* snapshotQuery.getCommandReadModel();
+    const project = readModel.projects.find(
+      (candidate) => candidate.id === requestedId && candidate.deletedAt === null,
+    );
+    if (project === undefined) {
+      return yield* new PmToolExecutionError({
+        detail: `Project '${requestedId}' was not found.`,
+      });
+    }
+    return project;
   });
 
   const taskChangeReviewActionInput = (taskId: TaskId) => ({
@@ -960,6 +1003,68 @@ export const makePmToolExecutors = Effect.gen(function* () {
           return textResult(
             `Task ${taskId} has ${changes.paths.length} changed path(s) at ${changes.head}${changes.staged ? " with staged changes" : ""}.`,
             { taskId, changes },
+          );
+        }),
+      ),
+  };
+
+  const inspectDirectChanges: PmToolExecutor<
+    InspectDirectChangesParameters,
+    { projectId: string; changes: TaskWorktreeChanges }
+  > = {
+    name: "inspectDirectChanges",
+    label: "Inspect direct PM changes",
+    description:
+      "Inspect the primary project checkout's current HEAD, changed paths, staged state, and bounded tracked diff before a direct PM commit. This does not create a task or expose untracked file contents automatically.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const project = yield* resolveDirectProject(params.projectId);
+          const services = yield* directPmChangeServices;
+          const changes = yield* inspectDirectPmChanges({
+            workspaceRoot: project.workspaceRoot,
+            process: services.vcsProcess,
+          });
+          return textResult(
+            `Project ${project.id} has ${changes.paths.length} changed path(s) at ${changes.head}${changes.staged ? " with staged changes" : ""}.`,
+            { projectId: project.id, changes },
+          );
+        }),
+      ),
+  };
+
+  const commitDirectChanges: PmToolExecutor<
+    CommitDirectChangesParameters,
+    {
+      projectId: string;
+      commit: string;
+      rationale: string;
+      checks: ReadonlyArray<DirectPmCheckEvidence>;
+      changes: TaskWorktreeChanges;
+    }
+  > = {
+    name: "commitDirectChanges",
+    label: "Commit direct PM changes",
+    description:
+      "Commit one exact reviewed patch for a bounded low-risk primary-checkout edit after proportional checks. Requires rationale and observed check outcomes, rejects pre-staged state, preserves unselected hunks (including other edits in the same file), and creates no task, worktree, gate, PR, or landing action. Do not use for migrations, public contracts, security-sensitive logic, broad edits, or uncertain work.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const project = yield* resolveDirectProject(params.projectId);
+          const services = yield* directPmChangeServices;
+          const result = yield* commitDirectPmChanges({
+            workspaceRoot: project.workspaceRoot,
+            process: services.vcsProcess,
+            patch: params.patch,
+            message: params.message,
+            rationale: params.rationale,
+            checks: params.checks,
+          });
+          return textResult(
+            result.changes.dirty
+              ? `Committed bounded direct change ${result.commit} for project ${project.id}; ${result.changes.paths.length} unrelated changed path(s) remain.`
+              : `Committed bounded direct change ${result.commit} for project ${project.id}; the checkout is clean.`,
+            { projectId: project.id, ...result },
           );
         }),
       ),
@@ -1441,6 +1546,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
     requestApproval,
     setTaskBackend,
     inspectStage,
+    inspectDirectChanges,
+    commitDirectChanges,
     inspectTaskChanges,
     commitTaskChanges,
     discardTaskChanges,

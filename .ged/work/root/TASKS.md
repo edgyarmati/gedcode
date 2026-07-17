@@ -18,13 +18,13 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
 | ORCH-PMDIRECT-01 | DONE | Give Codex PM sessions workspace-write/auto-review and retain provider-native Claude/OpenCode full access; forward unresolved escalations to the user. Remove prompt prohibitions on mutation. | Provider/runtime tests pin exact PM permission parameters and unchanged worker/manual approval routing. |
-| ORCH-PMDIRECT-02 | NEXT | Teach the PM to classify bounded low-risk work for direct checkout execution, review overlapping dirty hunks, run proportional checks, commit intended hunks, and record rationale/commit. | PM prompt/runtime tests distinguish trivial from task work and prove direct commits exclude unintended hunks while allowing overlap. |
+| ORCH-PMDIRECT-02 | DONE | Teach the PM to classify bounded low-risk work for direct checkout execution, review overlapping dirty hunks, run proportional checks, commit intended hunks, and record rationale/commit. | PM prompt/runtime tests distinguish trivial from task work and prove direct commits exclude unintended hunks while allowing overlap. |
 
 ## P1 — Capability Presets and Migration
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-TIER-01 | TODO | Replace backend-by-role configuration with Cheap/Smart/Genius preset schemas at global and project levels. Keep semantic roles/prompt prefixes and record tier plus resolved backend per attempt. | Contract and resolution tests cover inheritance, project overrides, immutable attempt history, and rejection of incomplete presets. |
+| ORCH-TIER-01 | NEXT | Replace backend-by-role configuration with Cheap/Smart/Genius preset schemas at global and project levels. Keep semantic roles/prompt prefixes and record tier plus resolved backend per attempt. | Contract and resolution tests cover inheritance, project overrides, immutable attempt history, and rejection of incomplete presets. |
 | ORCH-TIER-02 | TODO | Persist a one-time manual preset-migration requirement for legacy global/project role selections and block every Orchestrator entry/API until complete. | Migration/state tests enumerate legacy selections, reject partial mappings, persist completion, and prove no bypass after restart. |
 | ORCH-TIER-03 | TODO | Build the non-skippable Orchestrator migration wizard with harness/model/thinking pickers for all three presets and project overrides. | Chromium proves direct-route/deep-link blocking, validation, completion, restart persistence, and restored access. |
 | ORCH-TIER-04 | TODO | Replace per-role backend settings with polished preset cards showing harness logo, model, and thinking; retain advanced role prompt prefixes separately. | Settings logic/Chromium cover global defaults, project inheritance/override/reset, logos, and option reconciliation. |

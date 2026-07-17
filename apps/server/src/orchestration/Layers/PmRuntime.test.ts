@@ -2914,6 +2914,13 @@ describe("buildPmSystemPrompt", () => {
     // The PM can handle bounded maintenance directly while delegating proper tasks.
     assert.include(prompt, "shell, and workspace-editing tools");
     assert.include(prompt, "bounded low-risk maintenance");
+    assert.include(prompt, "no design decision, migration, public contract change");
+    assert.include(prompt, "State the concrete reason it qualifies");
+    assert.include(prompt, "inspectDirectChanges");
+    assert.include(prompt, "commitDirectChanges");
+    assert.include(prompt, "commands plus observed outcomes");
+    assert.include(prompt, "other user hunks may exist in the same file");
+    assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
     assert.include(prompt, "createTask and handoffWorker");
     assert.notInclude(prompt, "native subagents");
     assert.notInclude(prompt, "short read-only commands");

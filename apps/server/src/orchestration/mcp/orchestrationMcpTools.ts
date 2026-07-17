@@ -15,6 +15,8 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "requestApproval",
   "setTaskBackend",
   "inspectStage",
+  "inspectDirectChanges",
+  "commitDirectChanges",
   "inspectTaskChanges",
   "commitTaskChanges",
   "discardTaskChanges",
@@ -105,6 +107,24 @@ export const mcpInputSchemas = {
     taskId: z.string(),
     stageThreadId: z.string().optional(),
   },
+  inspectDirectChanges: {
+    projectId: z.string().trim().min(1),
+  },
+  commitDirectChanges: {
+    projectId: z.string().trim().min(1),
+    patch: z.string().min(1),
+    message: z.string().trim().min(12),
+    rationale: z.string().trim().min(20),
+    checks: z
+      .array(
+        z.object({
+          command: z.string().trim().min(1),
+          outcome: z.string().trim().min(1),
+        }),
+      )
+      .min(1)
+      .max(8),
+  },
   inspectTaskChanges: {
     taskId: z.string().trim().min(1),
   },
@@ -166,7 +186,7 @@ export const mcpInputSchemas = {
 } as const;
 
 export const ORCHESTRATION_MCP_INSTRUCTIONS =
-  "Use these tools to manage the T3 Code orchestration ledger, worker handoffs, approvals, and task state. Do not use them for filesystem or shell access.";
+  "Use these tools to manage the T3 Code orchestration ledger, worker handoffs, approvals, task state, and exact reviewed direct-PM commits. Use provider-native filesystem and shell tools for inspection, editing, and checks.";
 
 export const orchestrationMcpToolId = (toolName: OrchestrationMcpToolName): string =>
   `mcp__${ORCHESTRATION_MCP_SERVER_NAME}__${toolName}`;
