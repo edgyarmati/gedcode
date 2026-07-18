@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-HELPER-01`
+- **Active task**: `ORCH-HELPER-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -153,6 +153,15 @@
   task-tier scenario. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
   passed all 12 packages in 10m55s (web 114/114 files and 1,238 tests; server 188/188 files with
   1,524 passed and 1 skipped).
+- `ORCH-HELPER-01` completed 2026-07-18. Read-only helper runs are now an independent append-only
+  aggregate attached to either a PM thread or an active task. Requests resolve and permanently stamp
+  the chosen capability tier, provider instance, model, and options; lifecycle events retain stable
+  provider-thread identity, bounded results or failure details, and terminal timestamps without any
+  task, stage, gate, worktree, commit, PR, landing, or board state.
+- Verification evidence for `ORCH-HELPER-01`: focused contract, decider, migration, SQL projection,
+  replay, retention, and attachment lookup suites passed 8 tests. `bun fmt`, `bun lint`, and all 12
+  typecheck packages passed. Full `bun run test` passed all 12 packages in 10m55s (web 114/114 files
+  and 1,238 tests; server 191/191 files with 1,529 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

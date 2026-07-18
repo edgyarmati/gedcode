@@ -4,6 +4,7 @@ import type {
   OrchestrationProject,
   OrchestrationReadModel,
   OrchestrationTask,
+  OrchestrationHelperRun,
   OrchestrationStageHistory,
   TaskId,
   ThreadId,
@@ -71,6 +72,7 @@ import {
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 type TaskPatch = Partial<Omit<OrchestrationTask, "id" | "projectId">>;
+type HelperRunPatch = Partial<Omit<OrchestrationHelperRun, "id" | "projectId">>;
 type PendingGatePatch = Partial<Omit<OrchestrationPendingGate, "gateId" | "taskId">>;
 type ProjectOrchestratorConfig = NonNullable<OrchestrationProject["orchestratorConfig"]>;
 const MAX_THREAD_MESSAGES = 2_000;
@@ -116,6 +118,14 @@ function updateTask(
   return withAggregateTaskProgress(
     tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task)),
   );
+}
+
+function updateHelperRun(
+  helperRuns: ReadonlyArray<OrchestrationHelperRun>,
+  helperRunId: OrchestrationHelperRun["id"],
+  patch: HelperRunPatch,
+): OrchestrationHelperRun[] {
+  return helperRuns.map((run) => (run.id === helperRunId ? { ...run, ...patch } : run));
 }
 
 function withAggregateTaskProgress(tasks: ReadonlyArray<OrchestrationTask>): OrchestrationTask[] {
@@ -292,6 +302,7 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     projects: [],
     threads: [],
     tasks: [],
+    helperRuns: [],
     pendingGates: [],
     quotaBlockedStages: [],
     stageHistory: {},
@@ -310,6 +321,77 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    case "helper.run-requested":
+      return Effect.succeed({
+        ...nextBase,
+        helperRuns: [
+          ...(nextBase.helperRuns ?? []).filter((run) => run.id !== event.payload.helperRunId),
+          {
+            id: event.payload.helperRunId,
+            projectId: event.payload.projectId,
+            attachment: event.payload.attachment,
+            accessMode: event.payload.accessMode,
+            tier: event.payload.tier,
+            providerInstanceId: event.payload.providerInstanceId,
+            model: event.payload.model,
+            modelOptions: event.payload.modelOptions,
+            prompt: event.payload.prompt,
+            status: "pending",
+            providerThreadId: null,
+            result: null,
+            failureMessage: null,
+            createdAt: event.payload.createdAt,
+            startedAt: null,
+            completedAt: null,
+            updatedAt: event.payload.updatedAt,
+          },
+        ],
+      });
+
+    case "helper.run-started":
+      return Effect.succeed({
+        ...nextBase,
+        helperRuns: updateHelperRun(nextBase.helperRuns ?? [], event.payload.helperRunId, {
+          status: "running",
+          providerThreadId: event.payload.providerThreadId,
+          startedAt: event.payload.startedAt,
+          updatedAt: event.payload.updatedAt,
+        }),
+      });
+
+    case "helper.run-completed":
+      return Effect.succeed({
+        ...nextBase,
+        helperRuns: updateHelperRun(nextBase.helperRuns ?? [], event.payload.helperRunId, {
+          status: "completed",
+          result: event.payload.result,
+          failureMessage: null,
+          completedAt: event.payload.completedAt,
+          updatedAt: event.payload.updatedAt,
+        }),
+      });
+
+    case "helper.run-failed":
+      return Effect.succeed({
+        ...nextBase,
+        helperRuns: updateHelperRun(nextBase.helperRuns ?? [], event.payload.helperRunId, {
+          status: "failed",
+          failureMessage: event.payload.message,
+          completedAt: event.payload.failedAt,
+          updatedAt: event.payload.updatedAt,
+        }),
+      });
+
+    case "helper.run-interrupted":
+      return Effect.succeed({
+        ...nextBase,
+        helperRuns: updateHelperRun(nextBase.helperRuns ?? [], event.payload.helperRunId, {
+          status: "interrupted",
+          completedAt: event.payload.interruptedAt,
+          updatedAt: event.payload.updatedAt,
+        }),
+      });
+
     case "project.created":
       return decodeForEvent(ProjectCreatedPayload, event.payload, event.type, "payload").pipe(
         Effect.flatMap((payload) =>

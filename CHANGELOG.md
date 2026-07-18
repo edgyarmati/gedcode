@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added the durable foundation for read-only nested helper runs attached to a project-manager thread
+  or an existing task. Each run keeps a restart-safe identity, selected capability tier, resolved
+  harness/model/thinking configuration, bounded prompt and result, provider thread identity, and
+  terminal outcome independently from task stages. Helpers intentionally create no task, worktree,
+  gate, commit, pull request, landing state, or task-board card.
+
 - Replaced per-task raw worker backend overrides with semantic Cheap, Smart, and Genius defaults for
   Plan, Work, and Verify. The PM now names a tier for every handoff, keeps simple planning itself,
   defaults delegated planning to Genius, and chooses Cheap or Smart for implementation and

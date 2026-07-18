@@ -24,6 +24,7 @@ import { ProjectionProjectRepository } from "../../persistence/Services/Projecti
 import { ProjectionStageHistoryRepository } from "../../persistence/Services/ProjectionStageHistory.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionTaskRepository } from "../../persistence/Services/ProjectionTasks.ts";
+import { ProjectionHelperRunRepository } from "../../persistence/Services/ProjectionHelperRuns.ts";
 import { ProjectionThreadActivityRepository } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { type ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import {
@@ -48,6 +49,7 @@ import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/Projec
 import { ProjectionStageHistoryRepositoryLive } from "../../persistence/Layers/ProjectionStageHistory.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionTaskRepositoryLive } from "../../persistence/Layers/ProjectionTasks.ts";
+import { ProjectionHelperRunRepositoryLive } from "../../persistence/Layers/ProjectionHelperRuns.ts";
 import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { ProjectionThreadMessageRepositoryLive } from "../../persistence/Layers/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/Layers/ProjectionThreadProposedPlans.ts";
@@ -78,6 +80,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
   tasks: "projection.tasks",
+  helperRuns: "projection.helper-runs",
   stageHistory: "projection.stage-history",
   awaitedStages: "projection.awaited-stages",
   pendingGates: "projection.pending-gates",
@@ -466,6 +469,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
     const projectionTaskRepository = yield* ProjectionTaskRepository;
+    const projectionHelperRunRepository = yield* ProjectionHelperRunRepository;
     const projectionStageHistoryRepository = yield* ProjectionStageHistoryRepository;
     const projectionAwaitedStageRepository = yield* ProjectionAwaitedStageRepository;
     const projectionPendingGateRepository = yield* ProjectionPendingGateRepository;
@@ -1513,6 +1517,82 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
     });
 
+    const applyHelperRunsProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyHelperRunsProjection",
+    )(function* (event, _attachmentSideEffects) {
+      if (event.type === "helper.run-requested") {
+        yield* projectionHelperRunRepository.upsert({
+          id: event.payload.helperRunId,
+          projectId: event.payload.projectId,
+          attachment: event.payload.attachment,
+          accessMode: event.payload.accessMode,
+          tier: event.payload.tier,
+          providerInstanceId: event.payload.providerInstanceId,
+          model: event.payload.model,
+          modelOptions: event.payload.modelOptions,
+          prompt: event.payload.prompt,
+          status: "pending",
+          providerThreadId: null,
+          result: null,
+          failureMessage: null,
+          createdAt: event.payload.createdAt,
+          startedAt: null,
+          completedAt: null,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (
+        event.type !== "helper.run-started" &&
+        event.type !== "helper.run-completed" &&
+        event.type !== "helper.run-failed" &&
+        event.type !== "helper.run-interrupted"
+      ) {
+        return;
+      }
+      const existing = yield* projectionHelperRunRepository.getById({
+        helperRunId: event.payload.helperRunId,
+      });
+      if (Option.isNone(existing)) return;
+      if (event.type === "helper.run-started") {
+        yield* projectionHelperRunRepository.upsert({
+          ...existing.value,
+          status: "running",
+          providerThreadId: event.payload.providerThreadId,
+          startedAt: event.payload.startedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "helper.run-completed") {
+        yield* projectionHelperRunRepository.upsert({
+          ...existing.value,
+          status: "completed",
+          result: event.payload.result,
+          failureMessage: null,
+          completedAt: event.payload.completedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "helper.run-failed") {
+        yield* projectionHelperRunRepository.upsert({
+          ...existing.value,
+          status: "failed",
+          failureMessage: event.payload.message,
+          completedAt: event.payload.failedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      yield* projectionHelperRunRepository.upsert({
+        ...existing.value,
+        status: "interrupted",
+        completedAt: event.payload.interruptedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+    });
+
     // Task aggregate projector (Plan 018 WP-D). `status` is computed here from
     // the event being applied + the current row — never taken from a command or
     // payload status field. The derivation is the same deterministic left-fold
@@ -2417,6 +2497,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyTasksProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.helperRuns,
+        apply: applyHelperRunsProjection,
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.stageHistory,
         apply: applyStageHistoryProjection,
       },
@@ -2541,6 +2625,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionTaskRepositoryLive),
+  Layer.provideMerge(ProjectionHelperRunRepositoryLive),
   Layer.provideMerge(ProjectionStageHistoryRepositoryLive),
   Layer.provideMerge(ProjectionAwaitedStageRepositoryLive),
   Layer.provideMerge(ProjectionQuotaBlockedStageRepositoryLive),

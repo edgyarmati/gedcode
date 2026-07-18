@@ -1286,6 +1286,177 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "helper.run.request": {
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      if ((readModel.helperRuns ?? []).some((run) => run.id === command.helperRunId)) {
+        return yield* invariantError(
+          command.type,
+          `Helper run '${command.helperRunId}' already exists.`,
+        );
+      }
+      if (command.attachment.kind === "pm") {
+        const thread = yield* requirePmThread({
+          readModel,
+          command,
+          threadId: command.attachment.threadId,
+        });
+        if (thread.projectId !== project.id) {
+          return yield* invariantError(
+            command.type,
+            `PM thread '${thread.id}' belongs to a different project.`,
+          );
+        }
+      } else {
+        const task = yield* requireTask({
+          readModel,
+          command,
+          taskId: command.attachment.taskId,
+        });
+        if (task.projectId !== project.id) {
+          return yield* invariantError(
+            command.type,
+            `Task '${task.id}' belongs to a different project.`,
+          );
+        }
+        if (
+          task.archivedAt !== null ||
+          task.deletedAt !== null ||
+          isTerminalTaskStatus(task.status)
+        ) {
+          return yield* invariantError(
+            command.type,
+            `Task '${task.id}' must be active before starting a helper run.`,
+          );
+        }
+      }
+      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
+      const modelSelection = resolveCapabilityPreset({
+        orchestratorDefaults,
+        projectConfig,
+        tier: command.tier,
+      });
+      if (modelSelection === null) {
+        return yield* invariantError(
+          command.type,
+          `Project '${project.id}' has no configured '${command.tier}' capability preset.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "helper-run",
+          aggregateId: command.helperRunId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "helper.run-requested",
+        payload: {
+          helperRunId: command.helperRunId,
+          projectId: project.id,
+          attachment: command.attachment,
+          accessMode: "read-only",
+          tier: command.tier,
+          providerInstanceId: modelSelection.instanceId,
+          model: modelSelection.model,
+          modelOptions: modelSelection.options ?? null,
+          prompt: command.prompt,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "helper.run.start":
+    case "helper.run.complete":
+    case "helper.run.fail":
+    case "helper.run.interrupt": {
+      const helperRun = (readModel.helperRuns ?? []).find((run) => run.id === command.helperRunId);
+      if (helperRun === undefined) {
+        return yield* invariantError(
+          command.type,
+          `Helper run '${command.helperRunId}' does not exist.`,
+        );
+      }
+      const eventBase = yield* withEventBase({
+        aggregateKind: "helper-run",
+        aggregateId: command.helperRunId,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      if (command.type === "helper.run.start") {
+        if (helperRun.status !== "pending") {
+          return yield* invariantError(
+            command.type,
+            `Helper run '${command.helperRunId}' cannot start from '${helperRun.status}'.`,
+          );
+        }
+        return {
+          ...eventBase,
+          type: "helper.run-started",
+          payload: {
+            helperRunId: command.helperRunId,
+            providerThreadId: command.providerThreadId,
+            startedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (command.type === "helper.run.complete") {
+        if (helperRun.status !== "running") {
+          return yield* invariantError(
+            command.type,
+            `Helper run '${command.helperRunId}' cannot complete from '${helperRun.status}'.`,
+          );
+        }
+        return {
+          ...eventBase,
+          type: "helper.run-completed",
+          payload: {
+            helperRunId: command.helperRunId,
+            result: command.result,
+            completedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (command.type === "helper.run.fail") {
+        if (helperRun.status !== "pending" && helperRun.status !== "running") {
+          return yield* invariantError(
+            command.type,
+            `Helper run '${command.helperRunId}' cannot fail from '${helperRun.status}'.`,
+          );
+        }
+        return {
+          ...eventBase,
+          type: "helper.run-failed",
+          payload: {
+            helperRunId: command.helperRunId,
+            message: command.message,
+            failedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (helperRun.status !== "pending" && helperRun.status !== "running") {
+        return yield* invariantError(
+          command.type,
+          `Helper run '${command.helperRunId}' cannot be interrupted from '${helperRun.status}'.`,
+        );
+      }
+      return {
+        ...eventBase,
+        type: "helper.run-interrupted",
+        payload: {
+          helperRunId: command.helperRunId,
+          interruptedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "task.create": {
       const project = yield* requireProject({
         readModel,

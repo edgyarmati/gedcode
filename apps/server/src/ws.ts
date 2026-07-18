@@ -786,6 +786,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 pmThread,
                 pmQuotaBlock,
                 tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
+                helperRuns: (snapshot.helperRuns ?? []).filter(
+                  (run) => run.projectId === projectId,
+                ),
                 pendingGates,
                 quotaBlockedStages,
                 stageHistory,
@@ -822,6 +825,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 Object.entries(snapshot.stageHistory).filter(
                   ([, stage]) => stage.taskId === taskId,
                 ),
+              ),
+              helperRuns: (snapshot.helperRuns ?? []).filter(
+                (run) => run.attachment.kind === "task" && run.attachment.taskId === taskId,
               ),
             });
           }),

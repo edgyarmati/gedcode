@@ -13,6 +13,8 @@ import {
   OrchestrationStageHistory,
   OrchestrationStageHistoryEntry,
   OrchestrationTask,
+  OrchestrationHelperRun,
+  OrchestrationHelperRunAttachment,
   OrchestrationTaskAggregateProgress,
   OrchestrationTaskCancellation,
   OrchestrationTaskChangeReview,
@@ -37,6 +39,7 @@ import {
   GedRoleCapabilityTiers,
   GedRolePromptPrefixes,
   ModelSelection,
+  ProviderOptionSelections,
   OrchestratorConfigJson,
   ProjectId,
   ThreadId,
@@ -61,6 +64,7 @@ import { ProjectionCheckpoint } from "../../persistence/Services/ProjectionCheck
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionState } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionTask } from "../../persistence/Services/ProjectionTasks.ts";
+import { ProjectionHelperRun } from "../../persistence/Services/ProjectionHelperRuns.ts";
 import { ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { ProjectionThreadMessage } from "../../persistence/Services/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlan } from "../../persistence/Services/ProjectionThreadProposedPlans.ts";
@@ -141,6 +145,12 @@ const ProjectionTaskDbRowSchema = ProjectionTask.mapFields(
     releaseDispatch: Schema.NullOr(Schema.fromJsonString(OrchestrationReleaseDispatch)),
   }),
 );
+const ProjectionHelperRunDbRowSchema = ProjectionHelperRun.mapFields(
+  Struct.assign({
+    attachment: Schema.fromJsonString(OrchestrationHelperRunAttachment),
+    modelOptions: Schema.NullOr(Schema.fromJsonString(ProviderOptionSelections)),
+  }),
+);
 const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate;
 const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry;
 const ProjectionCountsRowSchema = Schema.Struct({
@@ -188,6 +198,7 @@ const REQUIRED_SNAPSHOT_PROJECTORS = [
   ORCHESTRATION_PROJECTOR_NAMES.threadSessions,
   ORCHESTRATION_PROJECTOR_NAMES.checkpoints,
   ORCHESTRATION_PROJECTOR_NAMES.tasks,
+  ORCHESTRATION_PROJECTOR_NAMES.helperRuns,
   ORCHESTRATION_PROJECTOR_NAMES.stageHistory,
 ] as const;
 
@@ -720,6 +731,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const listHelperRunRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionHelperRunDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          helper_run_id AS "id", project_id AS "projectId", attachment_json AS "attachment",
+          access_mode AS "accessMode",
+          tier, provider_instance_id AS "providerInstanceId", model,
+          model_options_json AS "modelOptions", prompt, status,
+          provider_thread_id AS "providerThreadId", result,
+          failure_message AS "failureMessage", created_at AS "createdAt",
+          started_at AS "startedAt", completed_at AS "completedAt", updated_at AS "updatedAt"
+        FROM projection_helper_runs
+        ORDER BY created_at ASC, helper_run_id ASC
+      `,
+  });
+
   const listPendingGateRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionPendingGateDbRowSchema,
@@ -1217,6 +1246,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listHelperRunRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listHelperRuns:query",
+                "ProjectionSnapshotQuery.getSnapshot:listHelperRuns:decodeRows",
+              ),
+            ),
+          ),
           listPendingGateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1263,6 +1300,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             checkpointRows,
             latestTurnRows,
             taskRows,
+            helperRunRows,
             pendingGateRows,
             quotaBlockedStageRows,
             stageHistoryRows,
@@ -1288,6 +1326,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
               for (const row of taskRows) {
+                updatedAt = maxIso(updatedAt, row.updatedAt);
+              }
+              for (const row of helperRunRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
               for (const row of pendingGateRows) {
@@ -1463,6 +1504,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               const tasks: ReadonlyArray<OrchestrationTask> = taskRows
                 .filter((row) => row.archivedAt === null && row.deletedAt === null)
                 .map(mapTaskRow);
+              const helperRuns: ReadonlyArray<OrchestrationHelperRun> = helperRunRows;
               const pendingGates: ReadonlyArray<OrchestrationPendingGate> = pendingGateRows;
               const quotaBlockedStages: ReadonlyArray<OrchestrationQuotaBlockedStage> =
                 quotaBlockedStageRows;
@@ -1473,6 +1515,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 projects,
                 threads,
                 tasks,
+                helperRuns,
                 pendingGates,
                 quotaBlockedStages,
                 stageHistory,
@@ -1546,6 +1589,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listHelperRunRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listHelperRuns:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listHelperRuns:decodeRows",
+              ),
+            ),
+          ),
           listPendingGateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1589,6 +1640,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             sessionRows,
             latestTurnRows,
             taskRows,
+            helperRunRows,
             pendingGateRows,
             quotaBlockedStageRows,
             stageHistoryRows,
@@ -1599,6 +1651,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               const projects: OrchestrationProject[] = [];
               const threads: OrchestrationThread[] = [];
               const tasks: OrchestrationTask[] = [];
+              const helperRuns: OrchestrationHelperRun[] = Array.from(helperRunRows);
               const pendingGates: OrchestrationPendingGate[] = Array.from(pendingGateRows);
 
               for (let index = 0; index < projectRows.length; index += 1) {
@@ -1669,6 +1722,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 }
                 updatedAt = maxIso(updatedAt, row.updatedAt);
                 tasks.push(mapTaskRow(row));
+              }
+              for (let index = 0; index < helperRunRows.length; index += 1) {
+                const row = helperRunRows[index];
+                if (row) updatedAt = maxIso(updatedAt, row.updatedAt);
               }
               for (let index = 0; index < pendingGateRows.length; index += 1) {
                 const row = pendingGateRows[index];
@@ -1758,6 +1815,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 projects,
                 threads,
                 tasks,
+                helperRuns,
                 pendingGates,
                 quotaBlockedStages: Array.from(quotaBlockedStageRows),
                 stageHistory: mapStageHistoryRows(stageHistoryRows),

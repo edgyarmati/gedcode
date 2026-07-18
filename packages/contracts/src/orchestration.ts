@@ -12,6 +12,7 @@ import {
   CommandId,
   EventId,
   GateId,
+  HelperRunId,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
@@ -844,6 +845,54 @@ export const OrchestrationStageHistory = Schema.Record(
 ).pipe(Schema.withDecodingDefault(Effect.succeed({})));
 export type OrchestrationStageHistory = typeof OrchestrationStageHistory.Type;
 
+export const HELPER_RUN_PROMPT_MAX_CHARS = 16_000;
+export const HELPER_RUN_RESULT_MAX_CHARS = 32_000;
+export const HELPER_RUN_FAILURE_MAX_CHARS = 4_000;
+
+export const OrchestrationHelperRunAttachment = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("pm"),
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("task"),
+    taskId: TaskId,
+  }),
+]);
+export type OrchestrationHelperRunAttachment = typeof OrchestrationHelperRunAttachment.Type;
+
+export const OrchestrationHelperRunStatus = Schema.Literals([
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "interrupted",
+]);
+export type OrchestrationHelperRunStatus = typeof OrchestrationHelperRunStatus.Type;
+
+export const OrchestrationHelperRun = Schema.Struct({
+  id: HelperRunId,
+  projectId: ProjectId,
+  attachment: OrchestrationHelperRunAttachment,
+  accessMode: Schema.Literal("read-only"),
+  tier: OrchestrationCapabilityTier,
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  modelOptions: Schema.NullOr(ProviderOptionSelections),
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_PROMPT_MAX_CHARS)),
+  status: OrchestrationHelperRunStatus,
+  providerThreadId: Schema.NullOr(ThreadId),
+  result: Schema.NullOr(Schema.String.check(Schema.isMaxLength(HELPER_RUN_RESULT_MAX_CHARS))),
+  failureMessage: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_FAILURE_MAX_CHARS)),
+  ),
+  createdAt: IsoDateTime,
+  startedAt: Schema.NullOr(IsoDateTime),
+  completedAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationHelperRun = typeof OrchestrationHelperRun.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -855,6 +904,7 @@ export const OrchestrationReadModel = Schema.Struct({
   // blob; a decoding default of `[]` mirrors the `proposedPlans` field above so
   // any snapshot produced before this field existed still decodes cleanly.
   tasks: Schema.Array(OrchestrationTask).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  helperRuns: Schema.optionalKey(Schema.Array(OrchestrationHelperRun)),
   pendingGates: Schema.optionalKey(Schema.Array(OrchestrationPendingGate)),
   quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1180,6 +1230,17 @@ const TaskCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const HelperRunRequestCommand = Schema.Struct({
+  type: Schema.Literal("helper.run.request"),
+  commandId: CommandId,
+  helperRunId: HelperRunId,
+  projectId: ProjectId,
+  attachment: OrchestrationHelperRunAttachment,
+  tier: OrchestrationCapabilityTier,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_PROMPT_MAX_CHARS)),
+  createdAt: IsoDateTime,
+});
+
 export const OrchestrationTaskSplitChild = Schema.Struct({
   taskId: TaskId,
   taskType: TaskTypeId,
@@ -1467,6 +1528,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskGateRequestCommand,
   TaskGateResolveCommand,
   TaskLandCommand,
+  HelperRunRequestCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -1631,6 +1693,33 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskCancellationFailCommand,
   TaskCancellationPhaseCompleteCommand,
   TaskSplitCommand,
+  Schema.Struct({
+    type: Schema.Literal("helper.run.start"),
+    commandId: CommandId,
+    helperRunId: HelperRunId,
+    providerThreadId: ThreadId,
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("helper.run.complete"),
+    commandId: CommandId,
+    helperRunId: HelperRunId,
+    result: Schema.String.check(Schema.isMaxLength(HELPER_RUN_RESULT_MAX_CHARS)),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("helper.run.fail"),
+    commandId: CommandId,
+    helperRunId: HelperRunId,
+    message: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_FAILURE_MAX_CHARS)),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("helper.run.interrupt"),
+    commandId: CommandId,
+    helperRunId: HelperRunId,
+    createdAt: IsoDateTime,
+  }),
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1694,10 +1783,20 @@ export const OrchestrationEventType = Schema.Literals([
   "task.pr-opened",
   "task.pr-open-failed",
   "task.abandoned",
+  "helper.run-requested",
+  "helper.run-started",
+  "helper.run-completed",
+  "helper.run-failed",
+  "helper.run-interrupted",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread", "task"]);
+export const OrchestrationAggregateKind = Schema.Literals([
+  "project",
+  "thread",
+  "task",
+  "helper-run",
+]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1950,6 +2049,47 @@ export const TaskCapabilityTiersUpdatedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const HelperRunRequestedPayload = Schema.Struct({
+  helperRunId: HelperRunId,
+  projectId: ProjectId,
+  attachment: OrchestrationHelperRunAttachment,
+  accessMode: Schema.Literal("read-only"),
+  tier: OrchestrationCapabilityTier,
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  modelOptions: Schema.NullOr(ProviderOptionSelections),
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_PROMPT_MAX_CHARS)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const HelperRunStartedPayload = Schema.Struct({
+  helperRunId: HelperRunId,
+  providerThreadId: ThreadId,
+  startedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const HelperRunCompletedPayload = Schema.Struct({
+  helperRunId: HelperRunId,
+  result: Schema.String.check(Schema.isMaxLength(HELPER_RUN_RESULT_MAX_CHARS)),
+  completedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const HelperRunFailedPayload = Schema.Struct({
+  helperRunId: HelperRunId,
+  message: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_FAILURE_MAX_CHARS)),
+  failedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const HelperRunInterruptedPayload = Schema.Struct({
+  helperRunId: HelperRunId,
+  interruptedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskStageStartedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
@@ -2133,7 +2273,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId, HelperRunId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -2407,6 +2547,31 @@ export const OrchestrationEvent = Schema.Union([
     type: Schema.Literal("task.abandoned"),
     payload: TaskAbandonedPayload,
   }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("helper.run-requested"),
+    payload: HelperRunRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("helper.run-started"),
+    payload: HelperRunStartedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("helper.run-completed"),
+    payload: HelperRunCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("helper.run-failed"),
+    payload: HelperRunFailedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("helper.run-interrupted"),
+    payload: HelperRunInterruptedPayload,
+  }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
@@ -2475,6 +2640,7 @@ export const OrchestratorProjectDetailSnapshot = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   tasks: Schema.Array(OrchestrationTask),
+  helperRuns: Schema.optionalKey(Schema.Array(OrchestrationHelperRun)),
   pendingGates: Schema.Array(OrchestrationPendingGate),
   // Active quota-blocked stages for this project's tasks, so the web can surface
   // a "resets ~HH:MM" badge on a blocked-on-quota task at subscribe time (it is
@@ -2509,6 +2675,7 @@ export const OrchestratorTaskDetailSnapshot = Schema.Struct({
   task: OrchestrationTask,
   pendingGates: Schema.Array(OrchestrationPendingGate),
   stageHistory: OrchestrationStageHistory,
+  helperRuns: Schema.optionalKey(Schema.Array(OrchestrationHelperRun)),
 });
 export type OrchestratorTaskDetailSnapshot = typeof OrchestratorTaskDetailSnapshot.Type;
 

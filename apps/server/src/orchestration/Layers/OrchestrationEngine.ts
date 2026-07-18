@@ -2,8 +2,6 @@ import type {
   OrchestrationEvent,
   OrchestrationReadModel,
   OrchestrationShellStreamEvent,
-  ProjectId,
-  TaskId,
 } from "@t3tools/contracts";
 import { OrchestrationCommand, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -132,6 +130,11 @@ export function classifyOrchestrationCommand(
     case "task.cancellation.request":
     case "task.cancellation.fail":
     case "task.cancellation.phase.complete":
+    case "helper.run.request":
+    case "helper.run.start":
+    case "helper.run.complete":
+    case "helper.run.fail":
+    case "helper.run.interrupt":
       return "task";
     case "thread.message.user.append":
     case "thread.message.assistant.delta":
@@ -171,8 +174,8 @@ export function classifyOrchestrationCommand(
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread" | "task";
-  readonly aggregateId: ProjectId | ThreadId | TaskId;
+  readonly aggregateKind: OrchestrationEvent["aggregateKind"];
+  readonly aggregateId: OrchestrationEvent["aggregateId"];
 } {
   switch (command.type) {
     case "project.create":
@@ -213,6 +216,15 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "task",
         aggregateId: command.taskId,
+      };
+    case "helper.run.request":
+    case "helper.run.start":
+    case "helper.run.complete":
+    case "helper.run.fail":
+    case "helper.run.interrupt":
+      return {
+        aggregateKind: "helper-run",
+        aggregateId: command.helperRunId,
       };
     case "thread.fork":
       return {
