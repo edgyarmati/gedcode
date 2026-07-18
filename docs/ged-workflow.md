@@ -8,7 +8,13 @@ GedCode is not just a place to send prompts to providers. It is a workspace for 
 
 ### Clarify
 
-Clarify the task, constraints, and success criteria before changing files. For simple requests this can be quick; for larger work it prevents the agent from guessing its way into the wrong scope.
+Clarify the task, constraints, and success criteria before changing files. For simple requests this can
+be quick. For larger work, the vendored `grill-with-docs` workflow inspects the repository for facts,
+asks the user one decision at a time, and waits for shared understanding before planning. Resolved
+project terms are recorded immediately in root `CONTEXT.md`; an ADR is offered only for a decision that
+is hard to reverse, surprising without context, and the result of a real trade-off. For non-trivial
+work, `.ged/work/root/STATE.md` records the `clarify` phase during the interview and moves to `plan`
+only after the user confirms shared understanding.
 
 ### Plan
 
@@ -43,7 +49,8 @@ This matters most when agent work becomes operational rather than conversational
 GED mode does not eagerly create a `.ged/` directory. For non-trivial work, the selected model is
 instructed to use the GED skills to create or refresh workflow files:
 
-- root memory stores durable project context such as standards, architecture, decisions, and vocabulary
+- root memory stores durable project context such as standards and architecture; canonical project
+  vocabulary lives in root `CONTEXT.md`, while sparse architectural decisions live in `docs/adr/`
 - work memory stores the current spec, task list, tests, notes, and state
 - runtime memory stores ephemeral checkpoint state for the active session
 

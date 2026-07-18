@@ -1633,6 +1633,8 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
     const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
     expect(request.input).toContain("GED workflow mode is enabled");
+    expect(request.input).toContain("grill-with-docs skill");
+    expect(request.input).toContain("transition from clarify to ged-planning");
     expect(request.input).toContain("ged-planning skill");
     expect(request.input).toContain("ged-execution skill");
     expect(request.input).toContain("ged-verification skill");

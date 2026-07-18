@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `GED-SKILL-01`
+- **Active task**: `PROJECT-CTX-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -183,6 +183,15 @@
   runtime reconciliation, and WebSocket filtering; focused web coverage passed 81 unit tests and 20
   Chromium scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
   passed all 12 packages in 11m32s (server 194/194 files, 1,541 passed and 1 skipped).
+- `GED-SKILL-01` completed 2026-07-18. The retired `grill-me` workflow is replaced by pinned,
+  MIT-attributed `grill-with-docs`, `grilling`, and `domain-modeling` resources for Codex and Claude.
+  Clarification now inspects discoverable facts, asks one recommended decision at a time, records
+  resolved project language immediately in root `CONTEXT.md`, offers root `docs/adr/` entries only for
+  consequential trade-offs, and moves GED state from clarify to planning after shared understanding.
+- Verification evidence for `GED-SKILL-01`: the static vendor/behavior contract passed 2 tests and the
+  prompt/provider-delivery suites passed 47 tests. `bun fmt`, `bun lint`, and all 12 typecheck packages
+  passed. Full `bun run test` passed all 12 packages in 11m14s (server 194/194 files, 1,542 passed and
+  1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

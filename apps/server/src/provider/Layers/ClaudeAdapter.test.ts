@@ -573,7 +573,7 @@ describe("ClaudeAdapterLive", () => {
       const skillDecision = yield* Effect.promise(() =>
         canUseTool(
           "Skill",
-          { skill: "grill-me" },
+          { skill: "grill-with-docs" },
           {
             signal: new AbortController().signal,
             toolUseID: "tool-skill",

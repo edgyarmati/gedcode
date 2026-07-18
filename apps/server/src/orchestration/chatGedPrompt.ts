@@ -8,7 +8,7 @@
 export const GED_CHAT_WORKFLOW_INSTRUCTIONS = `GED workflow mode is enabled for this chat.
 
 Follow the repository's GED workflow and keep its checkpoint documents current:
-- For non-trivial work, clarify important product decisions before implementation. Use the grill-me skill when it is available.
+- For non-trivial work, clarify important product decisions before implementation. Use the grill-with-docs skill when it is available: inspect the environment for facts, ask one decision at a time, capture resolved project language in root CONTEXT.md and only warranted decisions in docs/adr/, then transition from clarify to ged-planning after shared understanding is confirmed.
 - Write or refresh .ged/work/root/SPEC.md, TASKS.md, and TESTS.md before implementing broad changes. Use the ged-planning skill when it is available.
 - Implement one bounded NEXT slice at a time and record progress in .ged/work/root/STATE.md. Use the ged-execution skill when it is available.
 - Verify the completed slice before committing it, including repository-required format, lint, typecheck, and test gates. Use the ged-verification skill when it is available.

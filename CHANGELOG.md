@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Replaced the basic GED `grill-me` clarification prompt with pinned, vendored `grill-with-docs`,
+  `grilling`, and `domain-modeling` skills for both Codex and Claude. Non-trivial work now resolves one
+  user decision at a time, looks up discoverable facts in the repository, records clarified project
+  language inline in root `CONTEXT.md`, offers sparse ADRs only for consequential trade-offs, and
+  hands confirmed understanding into GED planning without duplicating implementation details in the
+  glossary.
+
 - Project managers and orchestration MCP clients can now start, inspect, and interrupt persisted
   read-only helper runs without creating task-board work. Helpers default to the Cheap capability
   preset, can explicitly use Smart or Genius, attach either to the PM conversation or an active task,

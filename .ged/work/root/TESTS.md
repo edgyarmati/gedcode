@@ -165,6 +165,21 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages in 11m32s; server 194/194 files with 1,541 passed and 1 skipped.
 
+### GED-SKILL-01 — 2026-07-18
+
+- Focused: the vendored skill contract passed 2 tests; GED prompt and provider-delivery coverage
+  passed 47 tests. The contract compares Codex/Claude mirrors and pins one-question interviewing,
+  recommended answers, environment lookup, inline root glossary capture, root-only context paths,
+  all three sparse-ADR conditions, GED state handoff, and the upstream license/source commit.
+- Manual review: `grill-with-docs` composes the upstream `grilling` and `domain-modeling` disciplines;
+  only the GED clarify-to-plan flow and canonical root `CONTEXT.md`/`docs/adr/` constraint are adapted.
+  The retired live `grill-me` skill and prompt references are removed without reviving the deleted
+  runtime checkpoint subsystem or adding compatibility fallback behavior.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 11m14s; server 194/194 files with 1,542 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

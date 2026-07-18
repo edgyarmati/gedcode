@@ -25,10 +25,11 @@ itself. For non-trivial work, the instructed agent uses the installed GED skills
     └── STATE.md   # current phase, active slice, and resume checkpoint
 ```
 
-Repositories that have used older or project-specific GED workflows may also contain durable project
-memory such as `PROJECT.md`, `ARCHITECTURE.md`, `DECISIONS.md`, or named directories below `.ged/work/`.
-Those are project documents, not application state. `.ged/runtime/` is intended for ephemeral session
-checkpoints and should normally be ignored.
+Repositories that use the current project-context workflow may also contain `.ged/PROJECT.md`,
+`.ged/ARCHITECTURE.md`, root `CONTEXT.md`, sparse `docs/adr/*.md`, or named directories below
+`.ged/work/`. Older repositories can still contain legacy files such as `.ged/DECISIONS.md`; new
+workflow runs do not create that file. These are project documents, not application state.
+`.ged/runtime/` is intended for ephemeral session checkpoints and should normally be ignored.
 
 - **Created when:** an agent follows GED planning/execution guidance for a non-trivial task. A normal
   chat or merely switching the selector to GED does not eagerly create it.
