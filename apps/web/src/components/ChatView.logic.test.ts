@@ -300,6 +300,7 @@ function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) 
     taskIds: [],
     taskIdsByProjectId: {},
     taskById: {},
+    helperRunById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},

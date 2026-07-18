@@ -10,6 +10,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   EventId,
+  HelperRunId,
   GateId,
   GitCommandError,
   KeybindingRule,
@@ -3664,6 +3665,31 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           updatedAt: now,
         },
       };
+      const helperRequestedEvent: OrchestrationEvent = {
+        sequence: 19,
+        eventId: EventId.make("event-helper-requested"),
+        aggregateKind: "helper-run",
+        aggregateId: HelperRunId.make("helper-task-context"),
+        type: "helper.run-requested",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-helper-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-helper-requested"),
+        metadata: {},
+        payload: {
+          helperRunId: HelperRunId.make("helper-task-context"),
+          projectId,
+          attachment: { kind: "task", taskId },
+          accessMode: "read-only",
+          tier: "cheap",
+          providerInstanceId: ProviderInstanceId.make("codex-cheap"),
+          model: "gpt-cheap",
+          modelOptions: null,
+          prompt: "Inspect the task context.",
+          createdAt: now,
+          updatedAt: now,
+        },
+      };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
       const surfacedMessages: string[] = [];
@@ -3743,6 +3769,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cancellationPhaseCompletedEvent,
               cancellationFailedEvent,
               stageInterruptedEvent,
+              helperRequestedEvent,
             ),
           },
           providerService: {
@@ -3828,11 +3855,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
-                Stream.take(7),
+                Stream.take(8),
                 Stream.runCollect,
               ),
             );
-            assert.equal(projectItems.length, 7);
+            assert.equal(projectItems.length, 8);
             const projectSnapshotItem = projectItems[0];
             assert.equal(projectSnapshotItem?.kind, "snapshot");
             if (projectSnapshotItem?.kind === "snapshot") {
@@ -3857,16 +3884,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 "task.cancellation-phase-completed",
                 "task.cancellation-failed",
                 "task.stage-interrupted",
+                "helper.run-requested",
               ],
             );
 
             const taskItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({ taskId }).pipe(
-                Stream.take(2),
+                Stream.take(8),
                 Stream.runCollect,
               ),
             );
-            assert.equal(taskItems.length, 2);
+            assert.equal(taskItems.length, 8);
             const taskSnapshotItem = taskItems[0];
             assert.equal(taskSnapshotItem?.kind, "snapshot");
             if (taskSnapshotItem?.kind === "snapshot") {
@@ -3881,6 +3909,24 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             if (taskEventItem?.kind === "event") {
               assert.equal(taskEventItem.event.type, "task.created");
               assert.equal(taskEventItem.event.aggregateId, taskId);
+            }
+            assert.deepEqual(
+              taskItems.slice(1).map((item) => (item.kind === "event" ? item.event.type : null)),
+              [
+                "task.created",
+                "task.gate-requested",
+                "task.cancellation-requested",
+                "task.cancellation-phase-completed",
+                "task.cancellation-failed",
+                "task.stage-interrupted",
+                "helper.run-requested",
+              ],
+            );
+            const helperEventItem = taskItems.at(-1);
+            assert.equal(helperEventItem?.kind, "event");
+            if (helperEventItem?.kind === "event") {
+              assert.equal(helperEventItem.event.type, "helper.run-requested");
+              assert.equal(helperEventItem.event.aggregateId, "helper-task-context");
             }
 
             const resolveResult = yield* client[ORCHESTRATOR_WS_METHODS.resolveGate]({

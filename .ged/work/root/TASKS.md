@@ -36,13 +36,13 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | --- | --- | --- | --- |
 | ORCH-HELPER-01 | DONE | Add persisted read-only helper-run contracts/projections linked to a PM thread or task, with tier, resolved backend, status, bounded result, and restart-safe identity. | Contract, decider, SQL, replay, and retention tests cover lifecycle without task/stage/gate fields. |
 | ORCH-HELPER-02 | DONE | Run helpers against project root or task worktree under read-only provider policy; feed bounded results to the requester/subsequent stage without creating a worktree or lifecycle stage. | Provider/runtime integration proves path selection, read-only enforcement, bounded context injection, quotas, interruption, and restart. |
-| ORCH-HELPER-03 | NEXT | Add PM/MCP helper tools and timeline UI; default to Cheap while allowing another preset. Keep helpers off the task board. | Tool and Chromium tests cover start/status/result, task/PM attachment, tier choice, and absence from gates/board/landing. |
+| ORCH-HELPER-03 | DONE | Add PM/MCP helper tools and timeline UI; default to Cheap while allowing another preset. Keep helpers off the task board. | Tool and Chromium tests cover start/status/result, task/PM attachment, tier choice, and absence from gates/board/landing. |
 
 ## P1 — Project Context and Skill Workflow
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| GED-SKILL-01 | TODO | Replace project `grill-me` with integrated `grill-with-docs`; vendor `grilling` and `domain-modeling`, preserve upstream glossary/ADR rules, and update GED prompts/docs/state transitions. | Skill fixture tests and prompt snapshots prove one-question interviews, environment lookup, inline context capture, sparse ADRs, and transition to planning. |
+| GED-SKILL-01 | NEXT | Replace project `grill-me` with integrated `grill-with-docs`; vendor `grilling` and `domain-modeling`, preserve upstream glossary/ADR rules, and update GED prompts/docs/state transitions. | Skill fixture tests and prompt snapshots prove one-question interviews, environment lookup, inline context capture, sparse ADRs, and transition to planning. |
 | PROJECT-CTX-01 | TODO | Define canonical project-context files and a scanner for missing, whitespace-only, template-only, and substantive content. Persist per-project schema version, fingerprint, dismissal, and completion. | Filesystem/persistence tests cover every classification, material changes, schema upgrades, and `.gedcode/` exclusion. |
 | PROJECT-CTX-02 | TODO | Add a shared project-context run using a selectable capability preset, primary checkout access, and durable Populate/Review lifecycle ending in pending diff review. | Runtime tests cover Smart factory default, resolved backend, file scope, restart, failure, and no task/stage/PR creation. |
 | PROJECT-CTX-03 | TODO | Prompt state-aware onboarding from Chat and Orchestrator and add Cheap/Smart/Genius picker cards with harness logo/model/thinking. Persist the chosen tier globally. | Chromium covers new/missing/stub/existing files, cross-surface dedupe, dismissal, fingerprint re-prompt, and sticky tier selection. |

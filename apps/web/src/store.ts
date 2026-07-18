@@ -4,6 +4,7 @@ import type {
   OrchestrationCheckpointSummary,
   OrchestrationEvent,
   OrchestrationLatestTurn,
+  OrchestrationHelperRun,
   OrchestrationMessage,
   OrchestrationPendingGate,
   OrchestrationPmQuotaBlock,
@@ -66,6 +67,7 @@ export interface EnvironmentState {
   taskIds: string[];
   taskIdsByProjectId: Record<ProjectId, string[]>;
   taskById: Record<string, OrchestratorTask>;
+  helperRunById: Record<string, OrchestrationHelperRun>;
   pendingGateIdsByTaskId: Record<string, string[]>;
   pendingGateById: Record<string, OrchestratorPendingGate>;
   // Active quota-blocked stage per task (at most one stage is active at a time).
@@ -147,6 +149,7 @@ export const initialEnvironmentState: EnvironmentState = {
   taskIds: [],
   taskIdsByProjectId: {},
   taskById: {},
+  helperRunById: {},
   pendingGateIdsByTaskId: {},
   pendingGateById: {},
   quotaBlockedStageByTaskId: {},
@@ -691,6 +694,41 @@ function updateTaskState(
   }
   const nextTask = update(task);
   return nextTask === task ? state : writeTaskState(state, nextTask);
+}
+
+function upsertHelperRunState(
+  state: EnvironmentState,
+  helperRun: OrchestrationHelperRun,
+): EnvironmentState {
+  return {
+    ...state,
+    helperRunById: {
+      ...state.helperRunById,
+      [String(helperRun.id)]: helperRun,
+    },
+  };
+}
+
+function patchHelperRunState(
+  state: EnvironmentState,
+  helperRunId: string,
+  patch: Partial<OrchestrationHelperRun>,
+): EnvironmentState {
+  const existing = state.helperRunById[helperRunId];
+  return existing === undefined ? state : upsertHelperRunState(state, { ...existing, ...patch });
+}
+
+function replaceHelperRuns(
+  state: EnvironmentState,
+  predicate: (run: OrchestrationHelperRun) => boolean,
+  helperRuns: ReadonlyArray<OrchestrationHelperRun>,
+): EnvironmentState {
+  const helperRunById = { ...state.helperRunById };
+  for (const [id, run] of Object.entries(helperRunById)) {
+    if (predicate(run)) delete helperRunById[id];
+  }
+  for (const run of helperRuns) helperRunById[String(run.id)] = run;
+  return { ...state, helperRunById };
 }
 
 function setTaskQuotaBlock(
@@ -1831,6 +1869,11 @@ export function syncOrchestratorProjectSnapshot(
     nextEnvironmentState,
     Object.values(snapshot.stageHistory).filter((stage) => !skipTaskIds.has(String(stage.taskId))),
   );
+  nextEnvironmentState = replaceHelperRuns(
+    nextEnvironmentState,
+    (run) => run.projectId === snapshot.project.id,
+    snapshot.helperRuns ?? [],
+  );
 
   nextEnvironmentState = retainProjectSnapshotTaskState({
     state: nextEnvironmentState,
@@ -1878,6 +1921,11 @@ export function syncOrchestratorTaskSnapshot(
     nextEnvironmentState,
     Object.values(snapshot.stageHistory),
   );
+  nextEnvironmentState = replaceHelperRuns(
+    nextEnvironmentState,
+    (run) => run.attachment.kind === "task" && run.attachment.taskId === snapshot.task.id,
+    snapshot.helperRuns ?? [],
+  );
 
   return commitEnvironmentState(state, environmentId, nextEnvironmentState);
 }
@@ -1888,6 +1936,59 @@ function applyEnvironmentOrchestrationEvent(
   environmentId: EnvironmentId,
 ): EnvironmentState {
   switch (event.type) {
+    case "helper.run-requested":
+      return upsertHelperRunState(state, {
+        id: event.payload.helperRunId,
+        projectId: event.payload.projectId,
+        attachment: event.payload.attachment,
+        accessMode: event.payload.accessMode,
+        tier: event.payload.tier,
+        providerInstanceId: event.payload.providerInstanceId,
+        model: event.payload.model,
+        modelOptions: event.payload.modelOptions,
+        prompt: event.payload.prompt,
+        status: "pending",
+        providerThreadId: null,
+        result: null,
+        failureMessage: null,
+        createdAt: event.payload.createdAt,
+        startedAt: null,
+        completedAt: null,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "helper.run-started":
+      return patchHelperRunState(state, String(event.payload.helperRunId), {
+        status: "running",
+        providerThreadId: event.payload.providerThreadId,
+        startedAt: event.payload.startedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "helper.run-completed":
+      return patchHelperRunState(state, String(event.payload.helperRunId), {
+        status: "completed",
+        result: event.payload.result,
+        failureMessage: null,
+        completedAt: event.payload.completedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "helper.run-failed":
+      return patchHelperRunState(state, String(event.payload.helperRunId), {
+        status: "failed",
+        failureMessage: event.payload.message,
+        completedAt: event.payload.failedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "helper.run-interrupted":
+      return patchHelperRunState(state, String(event.payload.helperRunId), {
+        status: "interrupted",
+        completedAt: event.payload.interruptedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
     case "project.created": {
       const nextProject = mapProject(
         {
@@ -2004,9 +2105,15 @@ function applyEnvironmentOrchestrationEvent(
       const { [event.payload.projectId]: _removedProject, ...projectById } = state.projectById;
       const { [event.payload.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
         nextState.pmQuotaBlockByProjectId;
+      const helperRunById = Object.fromEntries(
+        Object.entries(nextState.helperRunById).filter(
+          ([, run]) => run.projectId !== event.payload.projectId,
+        ),
+      );
       return {
         ...nextState,
         projectById,
+        helperRunById,
         pmQuotaBlockByProjectId,
         projectIds: removeId(nextState.projectIds, event.payload.projectId),
       };
@@ -3039,6 +3146,34 @@ export function selectTaskByRef(
   return ref
     ? selectEnvironmentState(state, ref.environmentId).taskById[String(ref.taskId)]
     : undefined;
+}
+
+export function selectHelperRunsForProjectRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): OrchestrationHelperRun[] {
+  if (!ref) return [];
+  return Object.values(selectEnvironmentState(state, ref.environmentId).helperRunById)
+    .filter((run) => run.projectId === ref.projectId && run.attachment.kind === "pm")
+    .toSorted(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) ||
+        String(left.id).localeCompare(String(right.id)),
+    );
+}
+
+export function selectHelperRunsForTaskRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestrationHelperRun[] {
+  if (!ref) return [];
+  return Object.values(selectEnvironmentState(state, ref.environmentId).helperRunById)
+    .filter((run) => run.attachment.kind === "task" && run.attachment.taskId === ref.taskId)
+    .toSorted(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) ||
+        String(left.id).localeCompare(String(right.id)),
+    );
 }
 
 export function selectTaskQuotaBlockByRef(

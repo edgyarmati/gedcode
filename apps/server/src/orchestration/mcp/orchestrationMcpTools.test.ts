@@ -40,4 +40,34 @@ describe("orchestration MCP capability-tier inputs", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("defaults helper tier at execution while validating explicit preset overrides", () => {
+    expect(ORCHESTRATION_MCP_TOOL_NAMES).toEqual(
+      expect.arrayContaining(["startHelperRun", "inspectHelperRun", "interruptHelperRun"]),
+    );
+    expect(
+      z.object(mcpInputSchemas.startHelperRun).safeParse({
+        projectId: "project-1",
+        idempotencyKey: "request-1:context",
+        prompt: "Inspect the relevant code paths.",
+      }).success,
+    ).toBe(true);
+    expect(
+      z.object(mcpInputSchemas.startHelperRun).safeParse({
+        projectId: "project-1",
+        idempotencyKey: "request-1:context",
+        prompt: "Inspect the relevant code paths.",
+        taskId: "task-1",
+        tier: "genius",
+      }).success,
+    ).toBe(true);
+    expect(
+      z.object(mcpInputSchemas.startHelperRun).safeParse({
+        projectId: "project-1",
+        idempotencyKey: "request-1:context",
+        prompt: "Inspect the relevant code paths.",
+        tier: "fast",
+      }).success,
+    ).toBe(false);
+  });
 });

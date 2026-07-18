@@ -229,6 +229,26 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
   );
 }
 
+function isHelperRunEvent(event: OrchestrationEvent): event is Extract<
+  OrchestrationEvent,
+  {
+    type:
+      | "helper.run-requested"
+      | "helper.run-started"
+      | "helper.run-completed"
+      | "helper.run-failed"
+      | "helper.run-interrupted";
+  }
+> {
+  return (
+    event.type === "helper.run-requested" ||
+    event.type === "helper.run-started" ||
+    event.type === "helper.run-completed" ||
+    event.type === "helper.run-failed" ||
+    event.type === "helper.run-interrupted"
+  );
+}
+
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 function pmHandoffFallbackReason(error: unknown): string {
@@ -905,6 +925,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           return Effect.succeed(true);
         }
 
+        if (isHelperRunEvent(event)) {
+          if (event.type === "helper.run-requested") {
+            return Effect.succeed(event.payload.projectId === projectId);
+          }
+          return projectionSnapshotQuery.getCommandReadModel().pipe(
+            Effect.map((readModel) =>
+              (readModel.helperRuns ?? []).some(
+                (helperRun) =>
+                  helperRun.id === event.payload.helperRunId && helperRun.projectId === projectId,
+              ),
+            ),
+            Effect.catch(() => Effect.succeed(false)),
+          );
+        }
+
         if (!isTaskEvent(event)) {
           return Effect.succeed(false);
         }
@@ -917,6 +952,31 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           Effect.map((readModel) =>
             readModel.tasks.some(
               (task) => task.id === event.payload.taskId && task.projectId === projectId,
+            ),
+          ),
+          Effect.catch(() => Effect.succeed(false)),
+        );
+      };
+
+      const isTaskOrchestratorEvent = (taskId: TaskId, event: OrchestrationEvent) => {
+        if (event.aggregateKind === "task" && event.aggregateId === taskId) {
+          return Effect.succeed(true);
+        }
+        if (!isHelperRunEvent(event)) {
+          return Effect.succeed(false);
+        }
+        if (event.type === "helper.run-requested") {
+          return Effect.succeed(
+            event.payload.attachment.kind === "task" && event.payload.attachment.taskId === taskId,
+          );
+        }
+        return projectionSnapshotQuery.getCommandReadModel().pipe(
+          Effect.map((readModel) =>
+            (readModel.helperRuns ?? []).some(
+              (helperRun) =>
+                helperRun.id === event.payload.helperRunId &&
+                helperRun.attachment.kind === "task" &&
+                helperRun.attachment.taskId === taskId,
             ),
           ),
           Effect.catch(() => Effect.succeed(false)),
@@ -1446,18 +1506,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             Effect.gen(function* () {
               const snapshot = yield* loadOrchestratorTaskSnapshot(input.taskId);
               const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.filter(
-                  (event) => event.aggregateKind === "task" && event.aggregateId === input.taskId,
-                ),
+                Stream.filterEffect((event) => isTaskOrchestratorEvent(input.taskId, event)),
                 Stream.map((event) => ({
                   kind: "event" as const,
                   event,
                 })),
               );
               const replayStream = orchestrationEngine.readEvents(snapshot.snapshotSequence).pipe(
-                Stream.filter(
-                  (event) => event.aggregateKind === "task" && event.aggregateId === input.taskId,
-                ),
+                Stream.filterEffect((event) => isTaskOrchestratorEvent(input.taskId, event)),
                 Stream.map((event) => ({
                   kind: "event" as const,
                   event,

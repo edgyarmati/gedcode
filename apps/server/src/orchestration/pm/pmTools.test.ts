@@ -1,6 +1,7 @@
 import {
   ApprovalRequestId,
   EventId,
+  HelperRunId,
   ProjectId,
   ProviderInstanceId,
   MessageId,
@@ -457,6 +458,103 @@ it.effect("createTask derives stable task and command identities from its idempo
     }
     assert.match(first.content[0]?.text ?? "", /Created or reused task/);
   }),
+);
+
+it.effect(
+  "helper tools preserve identity while exposing conflicting retries and task attachments",
+  () =>
+    Effect.gen(function* () {
+      const helperRunId = HelperRunId.make("helper-existing");
+      const readModel: OrchestrationReadModel = {
+        ...makeReadModel(),
+        helperRuns: [
+          {
+            id: helperRunId,
+            projectId,
+            attachment: { kind: "task", taskId },
+            accessMode: "read-only",
+            tier: "smart",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+            modelOptions: null,
+            prompt: "Inspect the task invariants.",
+            status: "running",
+            providerThreadId: ThreadId.make("helper:helper-existing"),
+            result: null,
+            failureMessage: null,
+            createdAt: now,
+            startedAt: now,
+            completedAt: null,
+            updatedAt: now,
+          },
+        ],
+      };
+      const dispatched: OrchestrationCommand[] = [];
+      const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+      const start = findTool(tools, "startHelperRun");
+      const inspect = findTool(tools, "inspectHelperRun");
+      const interrupt = findTool(tools, "interruptHelperRun");
+      const params = {
+        projectId,
+        idempotencyKey: "request-42:helper-context",
+        prompt: "Map the relevant implementation without changing files.",
+      };
+
+      const first = yield* Effect.promise(() => start.execute("helper-start-1", params));
+      const second = yield* Effect.promise(() =>
+        start.execute("helper-start-2", {
+          ...params,
+          idempotencyKey: ` ${params.idempotencyKey} `,
+        }),
+      );
+      yield* Effect.promise(() =>
+        start.execute("helper-start-changed-prompt", {
+          ...params,
+          prompt: "Inspect only the task state.",
+        }),
+      );
+      yield* Effect.promise(() =>
+        start.execute("helper-start-changed-tier", { ...params, tier: "genius" }),
+      );
+      const attached = yield* Effect.promise(() =>
+        start.execute("helper-start-task", {
+          ...params,
+          idempotencyKey: "request-42:task-context",
+          taskId: ` ${taskId} `,
+          tier: "genius",
+        }),
+      );
+      const inspected = yield* Effect.promise(() =>
+        inspect.execute("helper-inspect", { projectId, helperRunId }),
+      );
+      yield* Effect.promise(() =>
+        interrupt.execute("helper-interrupt", { projectId, helperRunId }),
+      );
+
+      const requests = dispatched.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "helper.run.request" }> =>
+          command.type === "helper.run.request",
+      );
+      assert.strictEqual(requests.length, 5);
+      assert.strictEqual(requests[0]?.helperRunId, requests[1]?.helperRunId);
+      assert.strictEqual(requests[0]?.commandId, requests[1]?.commandId);
+      assert.strictEqual(requests[0]?.helperRunId, requests[2]?.helperRunId);
+      assert.strictEqual(requests[0]?.helperRunId, requests[3]?.helperRunId);
+      assert.notStrictEqual(requests[0]?.commandId, requests[2]?.commandId);
+      assert.notStrictEqual(requests[0]?.commandId, requests[3]?.commandId);
+      assert.strictEqual(requests[0]?.tier, "cheap");
+      assert.deepStrictEqual(requests[0]?.attachment, {
+        kind: "pm",
+        threadId: ThreadId.make(`pm:${projectId}`),
+      });
+      assert.deepStrictEqual(requests[4]?.attachment, { kind: "task", taskId });
+      assert.strictEqual(requests[4]?.tier, "genius");
+      assert.strictEqual(first.details.helperRunId, second.details.helperRunId);
+      assert.strictEqual(attached.details.taskId, taskId);
+      assert.strictEqual(attached.details.tier, "genius");
+      assert.strictEqual(inspected.details.helperRun.id, helperRunId);
+      assert.strictEqual(dispatched.at(-1)?.type, "helper.run.interrupt");
+    }),
 );
 
 it.effect("change-review tools inspect task-owned changes and reject foreign tasks", () =>

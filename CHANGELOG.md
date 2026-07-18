@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Project managers and orchestration MCP clients can now start, inspect, and interrupt persisted
+  read-only helper runs without creating task-board work. Helpers default to the Cheap capability
+  preset, can explicitly use Smart or Genius, attach either to the PM conversation or an active task,
+  and re-enter the PM automatically on completion, failure, or interruption instead of requiring
+  polling. Project and task timelines show live and reconnect-safe helper status, stamped provider,
+  model, tier, and bounded result or failure details.
+
 - Read-only helper runs now execute through the configured Codex, Claude, or OpenCode harness against
   the project root or an existing task worktree without creating lifecycle stages or worktrees.
   Provider-native read-only policies block edits, shell mutation, delegation, and interactive access;

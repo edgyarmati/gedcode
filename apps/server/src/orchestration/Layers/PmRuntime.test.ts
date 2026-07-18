@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   CommandId,
   EventId,
+  HelperRunId,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -262,6 +263,26 @@ const dirtyStageCompletedEvent: OrchestrationEvent = {
       head: "abc123",
       dirty: true,
     },
+  },
+};
+
+const helperRunId = HelperRunId.make("helper-pm-context");
+const helperCompletedEvent: OrchestrationEvent = {
+  sequence: 13,
+  eventId: EventId.make("evt-helper-completed"),
+  aggregateKind: "helper-run",
+  aggregateId: helperRunId,
+  type: "helper.run-completed",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-helper-completed"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-helper-completed"),
+  metadata: {},
+  payload: {
+    helperRunId,
+    result: "Found context. OPENAI_API_KEY=sk-helper-secret",
+    completedAt: now,
+    updatedAt: now,
   },
 };
 
@@ -2229,6 +2250,61 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("re-enters the requesting PM exactly once with a scrubbed helper result", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const commandReadModel: OrchestrationReadModel = {
+        ...readModel,
+        helperRuns: [
+          {
+            id: helperRunId,
+            projectId,
+            attachment: { kind: "pm", threadId: pmThreadIdForProject(project) },
+            accessMode: "read-only",
+            tier: "cheap",
+            providerInstanceId: codexInstanceId,
+            model: "gpt-5.6-sol",
+            modelOptions: null,
+            prompt: "Gather project context.",
+            status: "completed",
+            providerThreadId: ThreadId.make(`helper:${helperRunId}`),
+            result: helperCompletedEvent.payload.result,
+            failureMessage: null,
+            createdAt: now,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+          },
+        ],
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [helperCompletedEvent, helperCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /Read-only helper helper-pm-context completed/);
+      assert.match(messages[0] ?? "", /Found context/);
+      assert.notMatch(messages[0] ?? "", /sk-helper-secret/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "stage", settlementKey: `helper:${helperRunId}` }],
+      );
+    }),
+  );
+
   it.effect("re-enters the PM exactly once for a pending worker permission request", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
@@ -2406,6 +2482,66 @@ describe("PmRuntime", () => {
 
       assert.strictEqual(messages.length, 0);
       assert.strictEqual(consumeCalls.length, 0);
+    }),
+  );
+
+  it.effect("reconciles a helper settlement after the PM provider recovers", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const providerQuotaStatuses = new Map<string, "ok" | "blocked-until" | "blocked-unknown">([
+        [String(claudeInstanceId), "blocked-until"],
+      ]);
+      const commandReadModel: OrchestrationReadModel = {
+        ...readModel,
+        helperRuns: [
+          {
+            id: helperRunId,
+            projectId,
+            attachment: { kind: "pm", threadId: pmThreadIdForProject(project) },
+            accessMode: "read-only",
+            tier: "cheap",
+            providerInstanceId: codexInstanceId,
+            model: "gpt-5.6-sol",
+            modelOptions: null,
+            prompt: "Gather project context.",
+            status: "completed",
+            providerThreadId: ThreadId.make(`helper:${helperRunId}`),
+            result: helperCompletedEvent.payload.result,
+            failureMessage: null,
+            createdAt: now,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+          },
+        ],
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [helperCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel,
+        providerQuotaStatuses,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        providerQuotaStatuses.set(String(claudeInstanceId), "ok");
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /Read-only helper helper-pm-context completed/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "stage", settlementKey: `helper:${helperRunId}` }],
+      );
     }),
   );
 

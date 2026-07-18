@@ -5,6 +5,7 @@ import {
   EnvironmentId,
   EventId,
   GateId,
+  HelperRunId,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -25,6 +26,8 @@ import {
   selectEnvironmentState,
   selectPendingGateById,
   selectPendingGatesForTaskRef,
+  selectHelperRunsForProjectRef,
+  selectHelperRunsForTaskRef,
   selectProjectPmQuotaBlockByRef,
   selectProjectsAcrossEnvironments,
   selectTaskByRef,
@@ -127,6 +130,7 @@ function makeState(thread: Thread): AppState {
     taskIds: [],
     taskIdsByProjectId: {},
     taskById: {},
+    helperRunById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},
@@ -213,6 +217,7 @@ function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): A
     taskIds: [],
     taskIdsByProjectId: {},
     taskById: {},
+    helperRunById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},
@@ -1139,6 +1144,246 @@ describe("incremental orchestration updates", () => {
         taskId: retainedTaskId,
       }).map((gate) => gate.gateId),
     ).toEqual([retainedGateId]);
+  });
+
+  it("projects helper runs into PM/task timelines without creating task-board entries", () => {
+    const projectId = ProjectId.make("project-helper");
+    const taskId = TaskId.make("task-helper");
+    const pmHelperId = HelperRunId.make("helper-pm");
+    const taskHelperId = HelperRunId.make("helper-task");
+    const base = makeEmptyState({ activeEnvironmentId: localEnvironmentId });
+    const requestEvent = (
+      helperRunId: typeof pmHelperId,
+      attachment:
+        | { readonly kind: "pm"; readonly threadId: ThreadId }
+        | { readonly kind: "task"; readonly taskId: TaskId },
+      sequence: number,
+    ) =>
+      makeEvent(
+        "helper.run-requested",
+        {
+          helperRunId,
+          projectId,
+          attachment,
+          accessMode: "read-only",
+          tier: "cheap",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+          modelOptions: null,
+          prompt: `Inspect ${helperRunId}`,
+          createdAt: "2026-07-18T12:00:00.000Z",
+          updatedAt: "2026-07-18T12:00:00.000Z",
+        },
+        { sequence, aggregateKind: "helper-run", aggregateId: helperRunId },
+      );
+    const requested = applyOrchestrationEvents(
+      base,
+      [
+        requestEvent(pmHelperId, { kind: "pm", threadId: ThreadId.make("pm:project-helper") }, 1),
+        requestEvent(taskHelperId, { kind: "task", taskId }, 2),
+      ],
+      localEnvironmentId,
+    );
+    const completed = applyOrchestrationEvent(
+      requested,
+      makeEvent(
+        "helper.run-completed",
+        {
+          helperRunId: taskHelperId,
+          result: "Found the task context.",
+          completedAt: "2026-07-18T12:00:02.000Z",
+          updatedAt: "2026-07-18T12:00:02.000Z",
+        },
+        { sequence: 3, aggregateKind: "helper-run", aggregateId: taskHelperId },
+      ),
+      localEnvironmentId,
+    );
+
+    expect(
+      selectHelperRunsForProjectRef(completed, scopeProjectRef(localEnvironmentId, projectId)).map(
+        (run) => run.id,
+      ),
+    ).toEqual([pmHelperId]);
+    expect(
+      selectHelperRunsForTaskRef(completed, { environmentId: localEnvironmentId, taskId }),
+    ).toMatchObject([{ id: taskHelperId, status: "completed", result: "Found the task context." }]);
+    expect(selectTasksForEnvironment(completed, localEnvironmentId)).toEqual([]);
+  });
+
+  it("keeps PM and task helper rows through authoritative reconnect snapshots", () => {
+    const projectId = ProjectId.make("project-helper-snapshot");
+    const taskId = TaskId.make("task-helper-snapshot");
+    const pmHelperId = HelperRunId.make("helper-pm-snapshot");
+    const taskHelperId = HelperRunId.make("helper-task-snapshot");
+    const requestedAt = "2026-07-18T12:00:00.000Z";
+    const seeded = applyOrchestrationEvents(
+      makeEmptyState({ activeEnvironmentId: localEnvironmentId }),
+      [
+        makeEvent(
+          "task.created",
+          {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Helper snapshot task",
+            branch: null,
+            worktreePath: null,
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: requestedAt,
+            updatedAt: requestedAt,
+          },
+          { sequence: 1, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "helper.run-requested",
+          {
+            helperRunId: pmHelperId,
+            projectId,
+            attachment: { kind: "pm", threadId: ThreadId.make("pm:project-helper-snapshot") },
+            accessMode: "read-only",
+            tier: "cheap",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-mini",
+            modelOptions: null,
+            prompt: "Stale PM helper",
+            createdAt: requestedAt,
+            updatedAt: requestedAt,
+          },
+          { sequence: 2, aggregateKind: "helper-run", aggregateId: pmHelperId },
+        ),
+        makeEvent(
+          "helper.run-requested",
+          {
+            helperRunId: taskHelperId,
+            projectId,
+            attachment: { kind: "task", taskId },
+            accessMode: "read-only",
+            tier: "smart",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-sol",
+            modelOptions: null,
+            prompt: "Stale task helper",
+            createdAt: requestedAt,
+            updatedAt: requestedAt,
+          },
+          { sequence: 3, aggregateKind: "helper-run", aggregateId: taskHelperId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+    const task = selectTaskByRef(seeded, { environmentId: localEnvironmentId, taskId });
+    const pmHelper = selectHelperRunsForProjectRef(
+      seeded,
+      scopeProjectRef(localEnvironmentId, projectId),
+    )[0];
+    const taskHelper = selectHelperRunsForTaskRef(seeded, {
+      environmentId: localEnvironmentId,
+      taskId,
+    })[0];
+    if (!task || !pmHelper || !taskHelper) {
+      throw new Error("Expected task and helper runs to be seeded.");
+    }
+
+    const projectSnapshotState = syncOrchestratorProjectSnapshot(
+      seeded,
+      {
+        snapshotSequence: 10,
+        project: {
+          id: projectId,
+          title: "Helper snapshot project",
+          workspaceRoot: "/tmp/project-helper-snapshot",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          scripts: [],
+          createdAt: requestedAt,
+          updatedAt: requestedAt,
+          deletedAt: null,
+        },
+        pmThreadId: ThreadId.make("pm:project-helper-snapshot"),
+        pmThread: null,
+        pmQuotaBlock: null,
+        tasks: [task],
+        helperRuns: [
+          { ...pmHelper, prompt: "PM helper from project snapshot" },
+          {
+            ...taskHelper,
+            status: "completed",
+            prompt: "Task helper from project snapshot",
+            result: "Project snapshot result.",
+            completedAt: "2026-07-18T12:00:02.000Z",
+            updatedAt: "2026-07-18T12:00:02.000Z",
+          },
+        ],
+        pendingGates: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
+      },
+      localEnvironmentId,
+    );
+
+    expect(
+      selectHelperRunsForProjectRef(
+        projectSnapshotState,
+        scopeProjectRef(localEnvironmentId, projectId),
+      ),
+    ).toMatchObject([{ id: pmHelperId, prompt: "PM helper from project snapshot" }]);
+    expect(
+      selectHelperRunsForTaskRef(projectSnapshotState, {
+        environmentId: localEnvironmentId,
+        taskId,
+      }),
+    ).toMatchObject([
+      {
+        id: taskHelperId,
+        prompt: "Task helper from project snapshot",
+        status: "completed",
+        result: "Project snapshot result.",
+      },
+    ]);
+
+    const taskSnapshotState = syncOrchestratorTaskSnapshot(
+      projectSnapshotState,
+      {
+        snapshotSequence: 11,
+        task,
+        pendingGates: [],
+        stageHistory: {},
+        helperRuns: [
+          {
+            ...taskHelper,
+            status: "completed",
+            prompt: "Task helper from task snapshot",
+            result: "Task snapshot result.",
+            completedAt: "2026-07-18T12:00:03.000Z",
+            updatedAt: "2026-07-18T12:00:03.000Z",
+          },
+        ],
+      },
+      localEnvironmentId,
+    );
+
+    expect(
+      selectHelperRunsForProjectRef(
+        taskSnapshotState,
+        scopeProjectRef(localEnvironmentId, projectId),
+      ),
+    ).toMatchObject([{ id: pmHelperId, prompt: "PM helper from project snapshot" }]);
+    expect(
+      selectHelperRunsForTaskRef(taskSnapshotState, {
+        environmentId: localEnvironmentId,
+        taskId,
+      }),
+    ).toMatchObject([
+      {
+        id: taskHelperId,
+        prompt: "Task helper from task snapshot",
+        status: "completed",
+        result: "Task snapshot result.",
+      },
+    ]);
   });
 
   it("syncs PM quota block state from project snapshots", () => {

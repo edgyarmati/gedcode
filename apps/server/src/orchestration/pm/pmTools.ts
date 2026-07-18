@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   CommandId,
   GateId,
+  HelperRunId,
   MessageId,
   OrchestrationCancelTaskError,
   ProjectId,
@@ -9,6 +10,7 @@ import {
   TaskTypeId,
   ThreadId,
   type OrchestrationLatestTurn,
+  type OrchestrationHelperRun,
   type OrchestrationMessageRole,
   type GedRoleCapabilityTiers,
   type OrchestrationCapabilityTier,
@@ -57,6 +59,7 @@ import {
   inspectDirectPmChanges,
   type DirectPmCheckEvidence,
 } from "../directPmChanges.ts";
+import { pmThreadIdForProject } from "./PmEventProjection.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -123,6 +126,21 @@ interface InspectStageParameters {
   readonly taskId: string;
   readonly stageThreadId?: string;
 }
+
+interface StartHelperRunParameters {
+  readonly projectId: string;
+  readonly idempotencyKey: string;
+  readonly prompt: string;
+  readonly tier?: OrchestrationCapabilityTier;
+  readonly taskId?: string;
+}
+
+interface InspectHelperRunParameters {
+  readonly projectId: string;
+  readonly helperRunId: string;
+}
+
+interface InterruptHelperRunParameters extends InspectHelperRunParameters {}
 
 interface InspectTaskChangesParameters {
   readonly taskId: string;
@@ -335,6 +353,25 @@ function splitTaskIdentity(params: SplitTaskParameters): {
   return {
     commandId: CommandId.make(`pm:split-task:${requestDigest}`),
     childIdsByKey,
+  };
+}
+
+function helperRunIdentity(params: StartHelperRunParameters): {
+  readonly helperRunId: HelperRunId;
+  readonly commandId: CommandId;
+} {
+  const projectId = params.projectId.trim();
+  const taskId = params.taskId?.trim() || null;
+  const idempotencyKey = params.idempotencyKey.trim();
+  const identityDigest = createHash("sha256")
+    .update(JSON.stringify([projectId, taskId, idempotencyKey]), "utf8")
+    .digest("hex");
+  const requestDigest = createHash("sha256")
+    .update(JSON.stringify([identityDigest, params.prompt.trim(), params.tier ?? "cheap"]), "utf8")
+    .digest("hex");
+  return {
+    helperRunId: HelperRunId.make(`pm-helper-${identityDigest.slice(0, 32)}`),
+    commandId: CommandId.make(`pm:start-helper:${identityDigest.slice(0, 16)}:${requestDigest}`),
   };
 }
 
@@ -576,6 +613,23 @@ export const makePmToolExecutors = Effect.gen(function* () {
       });
     }
     return project;
+  });
+
+  const resolveOwnedHelperRun = Effect.fn("PmTools.resolveOwnedHelperRun")(function* (
+    params: InspectHelperRunParameters,
+  ) {
+    const projectId = ProjectId.make(params.projectId.trim());
+    const helperRunId = HelperRunId.make(params.helperRunId.trim());
+    const readModel = yield* snapshotQuery.getCommandReadModel();
+    const run = (readModel.helperRuns ?? []).find(
+      (candidate) => candidate.id === helperRunId && candidate.projectId === projectId,
+    );
+    if (run === undefined) {
+      return yield* new PmToolExecutionError({
+        detail: `Helper run '${helperRunId}' was not found in project '${projectId}'.`,
+      });
+    }
+    return run;
   });
 
   const taskChangeReviewActionInput = (taskId: TaskId) => ({
@@ -994,6 +1048,107 @@ export const makePmToolExecutors = Effect.gen(function* () {
               stageDigest,
             },
           );
+        }),
+      ),
+  };
+
+  const startHelperRun: PmToolExecutor<
+    StartHelperRunParameters,
+    {
+      helperRunId: string;
+      projectId: string;
+      taskId: string | null;
+      tier: string;
+      sequence: number;
+    }
+  > = {
+    name: "startHelperRun",
+    label: "Start read-only helper",
+    description:
+      "Start or reuse one persisted read-only context-gathering helper attached to this PM conversation or an active task. Cheap is the default; choose Smart or Genius only when the exploration requires more judgment. Reuse the exact idempotencyKey on retries.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const projectId = ProjectId.make(params.projectId.trim());
+          const identity = helperRunIdentity(params);
+          const tier = params.tier ?? "cheap";
+          const taskId = params.taskId?.trim() ? TaskId.make(params.taskId.trim()) : null;
+          const sequence = yield* dispatch({
+            type: "helper.run.request",
+            commandId: identity.commandId,
+            helperRunId: identity.helperRunId,
+            projectId,
+            attachment:
+              taskId === null
+                ? { kind: "pm", threadId: pmThreadIdForProject({ id: projectId }) }
+                : { kind: "task", taskId },
+            tier,
+            prompt: params.prompt.trim(),
+            createdAt: yield* nowIso,
+          });
+          return textResult(
+            `Started or reused ${tier} read-only helper ${identity.helperRunId}${taskId === null ? " for the PM" : ` for task ${taskId}`}. Wait for its automatic completion re-entry instead of polling.`,
+            {
+              helperRunId: identity.helperRunId,
+              projectId,
+              taskId,
+              tier,
+              sequence,
+            },
+          );
+        }),
+      ),
+  };
+
+  const inspectHelperRun: PmToolExecutor<
+    InspectHelperRunParameters,
+    { helperRun: OrchestrationHelperRun }
+  > = {
+    name: "inspectHelperRun",
+    label: "Inspect helper run",
+    description:
+      "Inspect one persisted helper status and its bounded result or failure. Use for an explicit operator request or one bounded diagnostic, never for polling.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        resolveOwnedHelperRun(params).pipe(
+          Effect.map((helperRun) =>
+            textResult(
+              `Helper ${helperRun.id} is ${helperRun.status}${helperRun.result === null ? "" : "; its bounded result is included in details"}.`,
+              { helperRun },
+            ),
+          ),
+        ),
+      ),
+  };
+
+  const interruptHelperRun: PmToolExecutor<
+    InterruptHelperRunParameters,
+    { helperRunId: string; projectId: string; sequence: number }
+  > = {
+    name: "interruptHelperRun",
+    label: "Interrupt helper run",
+    description:
+      "Interrupt one pending or running read-only helper. Its durable interrupted state and provider shutdown are handled asynchronously.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const helperRun = yield* resolveOwnedHelperRun(params);
+          if (helperRun.status !== "pending" && helperRun.status !== "running") {
+            return yield* new PmToolExecutionError({
+              detail: `Helper run '${helperRun.id}' is already ${helperRun.status}.`,
+            });
+          }
+          const sequence = yield* dispatch({
+            type: "helper.run.interrupt",
+            commandId: yield* commandId("interrupt-helper"),
+            helperRunId: helperRun.id,
+            createdAt: yield* nowIso,
+          });
+          return textResult(`Requested interruption of helper ${helperRun.id}.`, {
+            helperRunId: helperRun.id,
+            projectId: helperRun.projectId,
+            sequence,
+          });
         }),
       ),
   };
@@ -1559,6 +1714,9 @@ export const makePmToolExecutors = Effect.gen(function* () {
     requestApproval,
     setTaskTier,
     inspectStage,
+    startHelperRun,
+    inspectHelperRun,
+    interruptHelperRun,
     inspectDirectChanges,
     commitDirectChanges,
     inspectTaskChanges,

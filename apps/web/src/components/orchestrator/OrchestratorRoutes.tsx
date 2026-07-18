@@ -57,6 +57,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
+import { HelperRunTimeline } from "./HelperRunTimeline";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
@@ -445,6 +446,7 @@ function PmConversation({
           Clear
         </Button>
       </div>
+      <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
       <SharedThreadTimeline
         cwd={project?.cwd}
         emptyMessage="PM conversation will appear here."
@@ -957,6 +959,7 @@ function TaskDetailRail({
         <TaskRoleBackendSettings environmentId={environmentId} project={project} task={task} />
       ) : null}
       {task ? <TaskChangeReviewPanel environmentId={environmentId} task={task} /> : null}
+      <HelperRunTimeline environmentId={environmentId} taskId={taskId} />
       <StageTimeline environmentId={environmentId} taskId={taskId} />
       <GatePanel environmentId={environmentId} gates={gates} taskId={taskId} />
       <StageProposedPlan

@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-HELPER-03`
+- **Active task**: `GED-SKILL-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -173,6 +173,16 @@
   interruption, output bounds, and context injection. `bun fmt`, `bun lint`, and all 12 typecheck
   packages passed. Full `bun run test` passed all 12 packages in 11m33s (web 114/114 files and 1,238
   tests; server 194/194 files with 1,537 passed and 1 skipped).
+- `ORCH-HELPER-03` completed 2026-07-18. PM and orchestration MCP tools now start, inspect, and
+  interrupt persisted read-only helpers, defaulting to Cheap with explicit Smart/Genius selection and
+  stable conflict-aware idempotency. Terminal outcomes re-enter the PM exactly once without polling,
+  including after quota recovery. Project and task timelines receive live and reconnect-safe helper
+  state with tier/backend stamps and bounded result details while helpers remain absent from task
+  lifecycle and the board.
+- Verification evidence for `ORCH-HELPER-03`: focused server coverage passed 170 tests across PM/MCP,
+  runtime reconciliation, and WebSocket filtering; focused web coverage passed 81 unit tests and 20
+  Chromium scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
+  passed all 12 packages in 11m32s (server 194/194 files, 1,541 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

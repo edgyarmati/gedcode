@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   EventId,
   GateId,
+  HelperRunId,
   ProjectId,
   ProviderInstanceId,
   TaskId,
@@ -37,6 +38,7 @@ import {
 import { TaskBoard } from "./TaskBoard";
 import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
 import { StageTimeline } from "./StageTimeline";
+import { HelperRunTimeline } from "./HelperRunTimeline";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
@@ -222,6 +224,76 @@ it("shows the effective worker permission mode in stage history", async () => {
   await render(<StageTimeline environmentId={environmentId} taskId={taskId} />);
   await expect.element(page.getByText("Full access", { exact: true })).toBeInTheDocument();
   await expect.element(page.getByText("codex · gpt-5.6", { exact: true })).toBeInTheDocument();
+});
+
+it("shows read-only helper history without adding a task-board card", async () => {
+  const projectId = ProjectId.make("project-browser");
+  const helperRunId = HelperRunId.make("helper-browser");
+  const pmHelperRunId = HelperRunId.make("helper-pm-browser");
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        helperRunById: {
+          [pmHelperRunId]: {
+            id: pmHelperRunId,
+            projectId,
+            attachment: { kind: "pm", threadId: ThreadId.make("pm:project-browser") },
+            accessMode: "read-only",
+            tier: "cheap",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-mini",
+            modelOptions: null,
+            prompt: "Inspect the project architecture.",
+            status: "running",
+            providerThreadId: ThreadId.make("helper:helper-pm-browser"),
+            result: null,
+            failureMessage: null,
+            createdAt: "2026-07-18T12:00:00.000Z",
+            startedAt: "2026-07-18T12:00:01.000Z",
+            completedAt: null,
+            updatedAt: "2026-07-18T12:00:01.000Z",
+          },
+          [helperRunId]: {
+            id: helperRunId,
+            projectId,
+            attachment: { kind: "task", taskId },
+            accessMode: "read-only",
+            tier: "smart",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-sol",
+            modelOptions: null,
+            prompt: "Inspect the task architecture.",
+            status: "completed",
+            providerThreadId: ThreadId.make("helper:helper-browser"),
+            result: "Found the relevant architecture module.",
+            failureMessage: null,
+            createdAt: "2026-07-18T12:00:00.000Z",
+            startedAt: "2026-07-18T12:00:01.000Z",
+            completedAt: "2026-07-18T12:00:02.000Z",
+            updatedAt: "2026-07-18T12:00:02.000Z",
+          },
+        },
+      },
+    },
+  });
+
+  await render(
+    <>
+      <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
+      <HelperRunTimeline environmentId={environmentId} taskId={taskId} />
+      <TaskBoard environmentId={environmentId} projectId={projectId} tasks={[]} />
+    </>,
+  );
+  await expect.element(page.getByText("Inspect the project architecture.")).toBeInTheDocument();
+  await expect
+    .element(page.getByText("Cheap · codex · gpt-5.6-mini · Read only"))
+    .toBeInTheDocument();
+  await expect.element(page.getByText("Inspect the task architecture.")).toBeInTheDocument();
+  await expect
+    .element(page.getByText("Smart · codex · gpt-5.6-sol · Read only"))
+    .toBeInTheDocument();
+  await expect.element(page.getByText("Browser task")).not.toBeInTheDocument();
 });
 
 it("cancels a non-terminal task from the task header", async () => {

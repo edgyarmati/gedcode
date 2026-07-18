@@ -151,6 +151,20 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   binding: 12/12 packages in 11m33s; web 114/114 files and 1,238 tests; server 194/194 files with
   1,537 passed and 1 skipped.
 
+### ORCH-HELPER-03 — 2026-07-18
+
+- Focused: PM/MCP tools, PM settlement recovery, live WebSocket filtering, web projection/selectors,
+  timeline logic, and Chromium passed. Server coverage passed 170 tests across 4 files; web coverage
+  passed 81 unit tests and 20 Chromium scenarios.
+- Manual review: helper identity remains stable across exact retries while changed prompts or tiers
+  reach conflict validation; blank task attachment normalizes to the PM. Terminal helpers re-enter the
+  PM exactly once, including after quota recovery. Project and task snapshots plus live streams retain
+  their scoped helpers, while helpers create no task-board, gate, worktree, commit, PR, or landing row.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 11m32s; server 194/194 files with 1,541 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

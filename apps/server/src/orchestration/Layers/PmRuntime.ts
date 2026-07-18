@@ -126,14 +126,17 @@ type SettlementEvent = Extract<
       | "task.stage-blocked"
       | "task.stage-interrupted"
       | "task.gate-resolved"
-      | "thread.activity-appended";
+      | "thread.activity-appended"
+      | "helper.run-completed"
+      | "helper.run-failed"
+      | "helper.run-interrupted";
   }
 >;
 
 type SettlementEnvelope = {
   readonly event: SettlementEvent;
   readonly project: OrchestrationProject;
-  readonly task: OrchestrationTask;
+  readonly task: OrchestrationTask | null;
   readonly kind: "stage" | "gate" | "approval";
   readonly settlementKey: string;
   readonly message: string;
@@ -175,6 +178,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs or critiques complex implementation, work implements, and verify validates completed work before landing.",
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, worker permission requests, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
+    "For bounded read-only context gathering, use startHelperRun instead of creating an exploration task. Attach it to the PM for project-wide context or to an existing task when later stages should receive the result. Cheap is the default; choose Smart or Genius only when the investigation itself requires more judgment. Helper completion, failure, and interruption re-enter you automatically, so never poll inspectHelperRun. Helpers create no task, stage, gate, worktree, commit, PR, landing action, or task-board card.",
     "When work settles in change review, call inspectTaskChanges once. Commit only intended paths or an exact intended patch with commitTaskChanges, use discardTaskChanges only for explicitly selected changes that are outside task intent, or use returnTaskChanges with precise revision instructions. Never bypass change review or start verification while changes remain pending.",
     "When settled work is clean and you accept that the task correctly requires no repository changes, call completeTaskWithoutChanges. It verifies the task branch against its creation baseline and archives the no-change result; never request land approval for empty work.",
     "When a worker permission request re-enters you, use listPendingStageApprovals for the task and resolve it with respondToStageApproval. Approve only access that is necessary for the delegated task and consistent with its instructions. Prefer accept for a single action; use acceptForSession only for a stable, repeated, narrowly scoped need. Decline unrelated, destructive, secret-bearing, or scope-expanding access. Ask the human only when the requested authority is genuinely ambiguous or exceeds the task they assigned.",
@@ -370,6 +374,9 @@ const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent 
   event.type === "task.stage-blocked" ||
   event.type === "task.stage-interrupted" ||
   event.type === "task.gate-resolved" ||
+  event.type === "helper.run-completed" ||
+  event.type === "helper.run-failed" ||
+  event.type === "helper.run-interrupted" ||
   isApprovalRequestEvent(event);
 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
@@ -388,6 +395,8 @@ const interruptedStageSettlementKey = (stageThreadId: ThreadId): string =>
 const changeReviewSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::change-review`;
 
+const helperSettlementKey = (helperRunId: string): string => `helper:${helperRunId}`;
+
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
     ? makeStageSettlementKey({
@@ -400,9 +409,13 @@ const settlementEventKey = (event: SettlementEvent): string =>
         ? quotaBlockedStageSettlementKey(event.payload.stageThreadId)
         : event.type === "task.stage-interrupted"
           ? interruptedStageSettlementKey(event.payload.stageThreadId)
-          : event.type === "task.gate-resolved"
-            ? makeGateSettlementKey(event.payload.gateId)
-            : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
+          : event.type === "helper.run-completed" ||
+              event.type === "helper.run-failed" ||
+              event.type === "helper.run-interrupted"
+            ? helperSettlementKey(event.payload.helperRunId)
+            : event.type === "task.gate-resolved"
+              ? makeGateSettlementKey(event.payload.gateId)
+              : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
 
 const approvalRequestIdFromEvent = (
   event: Extract<SettlementEvent, { type: "thread.activity-appended" }>,
@@ -814,6 +827,54 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const makeSettlementEnvelope = Effect.fn("PmRuntime.makeSettlementEnvelope")(function* (
       event: SettlementEvent,
     ) {
+      if (
+        event.type === "helper.run-completed" ||
+        event.type === "helper.run-failed" ||
+        event.type === "helper.run-interrupted"
+      ) {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const helperRun = (readModel.helperRuns ?? []).find(
+          (candidate) => candidate.id === event.payload.helperRunId,
+        );
+        if (helperRun === undefined) return null;
+        const project = readModel.projects.find(
+          (candidate) => candidate.id === helperRun.projectId,
+        );
+        if (project === undefined) return null;
+        const attachedTaskId =
+          helperRun.attachment.kind === "task" ? helperRun.attachment.taskId : null;
+        const task =
+          attachedTaskId === null
+            ? null
+            : (readModel.tasks.find((candidate) => candidate.id === attachedTaskId) ?? null);
+        const target = task === null ? "the project manager" : `task "${task.title}" (${task.id})`;
+        const message =
+          event.type === "helper.run-completed"
+            ? [
+                `Read-only helper ${helperRun.id} completed for ${target}.`,
+                `Tier/backend: ${helperRun.tier} · ${helperRun.providerInstanceId} · ${helperRun.model}.`,
+                "Bounded result:",
+                boundUntrustedContent(scrubSecrets(event.payload.result)),
+                task === null
+                  ? "Use this result as context for the current PM request."
+                  : "This result is also available automatically to the task's subsequent stage prompt.",
+              ].join("\n")
+            : event.type === "helper.run-failed"
+              ? [
+                  `Read-only helper ${helperRun.id} failed for ${target}.`,
+                  `Failure: ${boundUntrustedContent(scrubSecrets(event.payload.message))}`,
+                  "Diagnose the failure at the same capability tier; do not escalate merely because the provider or environment failed.",
+                ].join("\n")
+              : `Read-only helper ${helperRun.id} was interrupted for ${target}. Continue without polling it.`;
+        return {
+          event,
+          project,
+          task,
+          kind: "stage" as const,
+          settlementKey: helperSettlementKey(helperRun.id),
+          message: withLastActionCursor(message, event),
+        } satisfies SettlementEnvelope;
+      }
       const resolved =
         event.type === "thread.activity-appended"
           ? yield* resolveStageThreadTaskProject(event.payload.threadId)
@@ -851,6 +912,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return {
           event,
           ...resolved,
+          task: resolved.task,
           kind: "approval" as const,
           settlementKey: requestId,
           message: withLastActionCursor(message, event),
@@ -872,6 +934,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return {
           event,
           ...resolved,
+          task: resolved.task,
           kind: "stage" as const,
           settlementKey: makeStageSettlementKey({
             stageThreadId: event.payload.stageThreadId,
@@ -890,6 +953,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return {
           event,
           ...resolved,
+          task: resolved.task,
           kind: "stage" as const,
           settlementKey: changeReviewSettlementKey(event.payload.workStageThreadId),
           message: withLastActionCursor(message, event),
@@ -900,6 +964,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return {
           event,
           ...resolved,
+          task: resolved.task,
           kind: "stage" as const,
           settlementKey: quotaBlockedStageSettlementKey(event.payload.stageThreadId),
           message: withLastActionCursor(
@@ -913,6 +978,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return {
           event,
           ...resolved,
+          task: resolved.task,
           kind: "stage" as const,
           settlementKey: interruptedStageSettlementKey(event.payload.stageThreadId),
           message: withLastActionCursor(
@@ -925,6 +991,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       return {
         event,
         ...resolved,
+        task: resolved.task,
         kind: "gate" as const,
         settlementKey: makeGateSettlementKey(event.payload.gateId),
         message: withLastActionCursor(gateResultMessage({ event, task: resolved.task }), event),
@@ -1091,7 +1158,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           return Effect.logWarning("PM runtime failed to process settlement event", {
             eventType: event.type,
             taskId:
-              event.type === "thread.activity-appended" ? undefined : String(event.payload.taskId),
+              event.type === "thread.activity-appended" ||
+              event.type === "helper.run-completed" ||
+              event.type === "helper.run-failed" ||
+              event.type === "helper.run-interrupted"
+                ? undefined
+                : String(event.payload.taskId),
             threadId:
               event.type === "thread.activity-appended"
                 ? String(event.payload.threadId)
@@ -1134,6 +1206,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         const interruptedStageKeys = Object.values(input.readModel.stageHistory)
           .filter((stage) => stage.status === "interrupted" && taskIds.has(String(stage.taskId)))
           .map((stage) => interruptedStageSettlementKey(stage.stageThreadId));
+        const helperRunKeys = (input.readModel.helperRuns ?? [])
+          .filter(
+            (helperRun) =>
+              helperRun.projectId === input.project.id &&
+              (helperRun.status === "completed" ||
+                helperRun.status === "failed" ||
+                helperRun.status === "interrupted"),
+          )
+          .map((helperRun) => helperSettlementKey(helperRun.id));
         const approvalRows = yield* Effect.forEach(
           tasks.flatMap((task) => task.stageThreadIds),
           (threadId) => projectionPendingApprovalRepository.listByThreadId({ threadId }),
@@ -1145,7 +1226,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           .map((approval) => String(approval.requestId));
 
         return {
-          stageKeys: [...stageKeys, ...quotaBlockedStageKeys, ...interruptedStageKeys],
+          stageKeys: [
+            ...stageKeys,
+            ...quotaBlockedStageKeys,
+            ...interruptedStageKeys,
+            ...helperRunKeys,
+          ],
           gateKeys,
           approvalKeys,
         };
