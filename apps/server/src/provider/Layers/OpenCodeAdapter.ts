@@ -1060,7 +1060,9 @@ export function makeOpenCodeAdapter(
               const openCodeSession = yield* runOpenCodeSdk("session.create", () =>
                 client.session.create({
                   title: `GedCode ${input.threadId}`,
-                  permission: buildOpenCodePermissionRules(input.runtimeMode),
+                  permission: buildOpenCodePermissionRules(input.runtimeMode, {
+                    readOnly: input.readOnly === true,
+                  }),
                 }),
               );
               if (!openCodeSession.data) {

@@ -211,7 +211,33 @@ export function toOpenCodeFileParts(input: {
   return parts;
 }
 
-export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): PermissionRuleset {
+export function buildOpenCodePermissionRules(
+  runtimeMode: RuntimeMode,
+  options?: { readonly readOnly?: boolean },
+): PermissionRuleset {
+  if (options?.readOnly === true) {
+    // Rules are evaluated in order and the last match wins. Keep the default
+    // deny first, then allow only provider-native inspection tools. Shell,
+    // edits, external directories, nested tasks, and interactive questions
+    // remain explicitly denied even when OpenCode auto approval is enabled.
+    return [
+      { permission: "*", pattern: "*", action: "deny" },
+      { permission: "read", pattern: "*", action: "allow" },
+      { permission: "glob", pattern: "*", action: "allow" },
+      { permission: "grep", pattern: "*", action: "allow" },
+      { permission: "lsp", pattern: "*", action: "allow" },
+      { permission: "webfetch", pattern: "*", action: "allow" },
+      { permission: "websearch", pattern: "*", action: "allow" },
+      { permission: "codesearch", pattern: "*", action: "allow" },
+      { permission: "skill", pattern: "*", action: "allow" },
+      { permission: "bash", pattern: "*", action: "deny" },
+      { permission: "edit", pattern: "*", action: "deny" },
+      { permission: "external_directory", pattern: "*", action: "deny" },
+      { permission: "task", pattern: "*", action: "deny" },
+      { permission: "question", pattern: "*", action: "deny" },
+      { permission: "doom_loop", pattern: "*", action: "deny" },
+    ];
+  }
   if (runtimeMode === "full-access") {
     return [{ permission: "*", pattern: "*", action: "allow" }];
   }

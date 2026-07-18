@@ -102,6 +102,7 @@ export interface CodexSessionRuntimeOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly readOnly?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
@@ -276,10 +277,19 @@ function readResumeCursorThreadId(
   return isCodexResumeCursorSchema(resumeCursor) ? resumeCursor.threadId : undefined;
 }
 
-function runtimeModeToThreadConfig(input: RuntimeMode): {
+function runtimeModeToThreadConfig(
+  input: RuntimeMode,
+  readOnly = false,
+): {
   readonly approvalPolicy: EffectCodexSchema.V2ThreadStartParams__AskForApproval;
   readonly sandbox: EffectCodexSchema.V2ThreadStartParams__SandboxMode;
 } {
+  if (readOnly) {
+    return {
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    };
+  }
   switch (input) {
     case "approval-required":
       return {
@@ -303,13 +313,14 @@ function runtimeModeToThreadConfig(input: RuntimeMode): {
 function buildThreadStartParams(input: {
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly readOnly?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly systemPromptAppend: string | undefined;
   readonly config: Record<string, unknown> | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.readOnly);
   return {
     cwd: input.cwd,
     approvalPolicy: config.approvalPolicy,
@@ -326,7 +337,11 @@ function buildThreadStartParams(input: {
 
 function runtimeModeToTurnSandboxPolicy(
   input: RuntimeMode,
+  readOnly = false,
 ): EffectCodexSchema.V2TurnStartParams__SandboxPolicy {
+  if (readOnly) {
+    return { type: "readOnly" };
+  }
   switch (input) {
     case "approval-required":
       return {
@@ -369,6 +384,7 @@ function buildCodexCollaborationMode(input: {
 export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
+  readonly readOnly?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
@@ -394,7 +410,7 @@ export function buildTurnStartParams(input: {
     turnInput.push(attachment);
   }
 
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.readOnly);
   const collaborationMode = buildCodexCollaborationMode({
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
@@ -405,7 +421,7 @@ export function buildTurnStartParams(input: {
     threadId: input.threadId,
     input: turnInput,
     approvalPolicy: config.approvalPolicy,
-    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
+    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode, input.readOnly),
     ...(input.approvalReviewer
       ? { approvalsReviewer: input.approvalReviewer === "auto-review" ? "auto_review" : "user" }
       : {}),
@@ -561,6 +577,7 @@ export const openCodexThread = (input: {
   readonly client: CodexThreadOpenClient;
   readonly threadId: ThreadId;
   readonly runtimeMode: RuntimeMode;
+  readonly readOnly?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly cwd: string;
   readonly requestedModel: string | undefined;
@@ -573,6 +590,7 @@ export const openCodexThread = (input: {
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
     runtimeMode: input.runtimeMode,
+    ...(input.readOnly === true ? { readOnly: true } : {}),
     ...(input.approvalReviewer ? { approvalReviewer: input.approvalReviewer } : {}),
     model: input.requestedModel,
     serviceTier: input.serviceTier,
@@ -1434,6 +1452,7 @@ export const makeCodexSessionRuntime = (
         client,
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
+        ...(options.readOnly === true ? { readOnly: true } : {}),
         ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
         cwd: options.cwd,
         requestedModel,
@@ -1499,6 +1518,7 @@ export const makeCodexSessionRuntime = (
           const startParams = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
+            ...(options.readOnly === true ? { readOnly: true } : {}),
             ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),

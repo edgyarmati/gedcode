@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-HELPER-02`
+- **Active task**: `ORCH-HELPER-03`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -162,6 +162,17 @@
   replay, retention, and attachment lookup suites passed 8 tests. `bun fmt`, `bun lint`, and all 12
   typecheck packages passed. Full `bun run test` passed all 12 packages in 10m55s (web 114/114 files
   and 1,238 tests; server 191/191 files with 1,529 passed and 1 skipped).
+- `ORCH-HELPER-02` completed 2026-07-18. Helper runs now execute through their stamped provider
+  against the project root or an existing task worktree with provider-native read-only enforcement.
+  Their stable provider thread resumes after restart, pending work waits for quota recovery without
+  polling, terminal provider outcomes settle and stop the helper, and completed task helper output is
+  bounded, secret-scrubbed, and injected into subsequent stage instructions without creating a task,
+  lifecycle stage, worktree, gate, commit, PR, landing record, or board card.
+- Verification evidence for `ORCH-HELPER-02`: focused provider/runtime/context/reactor coverage passed
+  142 tests across 11 files, including root selection, read-only policy, quota recovery, restart,
+  interruption, output bounds, and context injection. `bun fmt`, `bun lint`, and all 12 typecheck
+  packages passed. Full `bun run test` passed all 12 packages in 11m33s (web 114/114 files and 1,238
+  tests; server 194/194 files with 1,537 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

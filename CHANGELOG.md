@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Read-only helper runs now execute through the configured Codex, Claude, or OpenCode harness against
+  the project root or an existing task worktree without creating lifecycle stages or worktrees.
+  Provider-native read-only policies block edits, shell mutation, delegation, and interactive access;
+  bounded secret-scrubbed results feed subsequent task stages. Pending helpers respect provider quota,
+  resume after recovery or restart with stable identities, and settle cleanly on completion, failure,
+  or interruption.
+
 - Added the durable foundation for read-only nested helper runs attached to a project-manager thread
   or an existing task. Each run keeps a restart-safe identity, selected capability tier, resolved
   harness/model/thinking configuration, bounded prompt and result, provider thread identity, and

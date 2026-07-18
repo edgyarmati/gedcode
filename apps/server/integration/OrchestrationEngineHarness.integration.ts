@@ -78,6 +78,7 @@ import { PmRuntime } from "../src/orchestration/Services/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "../src/orchestration/Layers/WorkerStartAdmission.ts";
 import { makeTaskWorktreeReactorLive } from "../src/orchestration/Layers/TaskWorktreeReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
+import { HelperRunReactor } from "../src/orchestration/Services/HelperRunReactor.ts";
 import {
   RuntimeReceiptBus,
   type OrchestrationRuntimeReceipt,
@@ -634,6 +635,13 @@ export const makeOrchestrationIntegrationHarness = (
         }),
       ),
       Layer.provideMerge(taskWorktreeReactorLayer),
+      Layer.provideMerge(
+        Layer.succeed(HelperRunReactor, {
+          start: () => Effect.void,
+          reconcile: Effect.void,
+          drain: Effect.void,
+        }),
+      ),
     );
     const layer = Layer.empty.pipe(
       Layer.provideMerge(runtimeServicesLayer),

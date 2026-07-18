@@ -35,8 +35,8 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
 | ORCH-HELPER-01 | DONE | Add persisted read-only helper-run contracts/projections linked to a PM thread or task, with tier, resolved backend, status, bounded result, and restart-safe identity. | Contract, decider, SQL, replay, and retention tests cover lifecycle without task/stage/gate fields. |
-| ORCH-HELPER-02 | NEXT | Run helpers against project root or task worktree under read-only provider policy; feed bounded results to the requester/subsequent stage without creating a worktree or lifecycle stage. | Provider/runtime integration proves path selection, read-only enforcement, bounded context injection, quotas, interruption, and restart. |
-| ORCH-HELPER-03 | TODO | Add PM/MCP helper tools and timeline UI; default to Cheap while allowing another preset. Keep helpers off the task board. | Tool and Chromium tests cover start/status/result, task/PM attachment, tier choice, and absence from gates/board/landing. |
+| ORCH-HELPER-02 | DONE | Run helpers against project root or task worktree under read-only provider policy; feed bounded results to the requester/subsequent stage without creating a worktree or lifecycle stage. | Provider/runtime integration proves path selection, read-only enforcement, bounded context injection, quotas, interruption, and restart. |
+| ORCH-HELPER-03 | NEXT | Add PM/MCP helper tools and timeline UI; default to Cheap while allowing another preset. Keep helpers off the task board. | Tool and Chromium tests cover start/status/result, task/PM attachment, tier choice, and absence from gates/board/landing. |
 
 ## P1 — Project Context and Skill Workflow
 

@@ -38,6 +38,7 @@ import {
 import { projectEvent } from "./projector.ts";
 import { resolveCapabilityPreset, resolveStageModelSelection } from "./stageModelSelection.ts";
 import { activeStageRoleForTaskStatus, prepareStageInstructions } from "./stageResolution.ts";
+import { appendCompletedHelperContext } from "./helperRunContext.ts";
 import {
   explicitlySetProjectConfig,
   type SparseOrchestratorDefaults,
@@ -2059,7 +2060,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const stageThreadId = ThreadId.make(yield* crypto.randomUUIDv4);
       const messageId = MessageId.make(yield* crypto.randomUUIDv4);
       const stageInstructions = prepareStageInstructions({
-        instructions: command.instructions,
+        instructions: appendCompletedHelperContext({
+          instructions: command.instructions,
+          taskId: task.id,
+          helperRuns: readModel.helperRuns ?? [],
+        }),
         role: command.role,
         rolePromptPrefixes: project.rolePromptPrefixes,
       });

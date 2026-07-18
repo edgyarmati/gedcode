@@ -1459,6 +1459,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { resumeCursor: input.resumeCursor }
             : {}),
           runtimeMode: input.runtimeMode,
+          ...(input.readOnly === true ? { readOnly: true } : {}),
           ...(input.approvalReviewer ? { approvalReviewer: input.approvalReviewer } : {}),
           ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
           ...(orchestrationMcpEndpoint

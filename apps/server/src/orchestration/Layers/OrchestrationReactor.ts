@@ -13,6 +13,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { TaskWorktreeReactor } from "../Services/TaskWorktreeReactor.ts";
 import { TaskCancellationReconciler } from "../Services/TaskCancellationReconciler.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
+import { HelperRunReactor } from "../Services/HelperRunReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const taskCancellationReconciler = yield* TaskCancellationReconciler;
@@ -22,6 +23,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const checkpointReactor = yield* CheckpointReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
   const taskWorktreeReactor = yield* TaskWorktreeReactor;
+  const helperRunReactor = yield* HelperRunReactor;
   const pmRuntime = yield* PmRuntime;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
@@ -31,6 +33,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
     yield* taskWorktreeReactor.start();
+    yield* helperRunReactor.start();
     // PM startup can replay a settlement and immediately hand off a retry, so
     // provider consumers must already be subscribed before the PM starts.
     yield* pmRuntime.start();

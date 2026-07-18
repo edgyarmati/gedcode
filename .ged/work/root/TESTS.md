@@ -136,6 +136,21 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   binding: 12/12 packages in 10m55s; web 114/114 files and 1,238 tests; server 191/191 files with
   1,529 passed and 1 skipped.
 
+### ORCH-HELPER-02 — 2026-07-18
+
+- Focused: helper reactor, context injection, Codex/OpenCode/Claude adapter policies, helper lifecycle,
+  orchestration startup, and stage resolution passed 142 tests across 11 files.
+- Manual review: PM helpers use only the project root; task helpers require an existing owned
+  worktree and never provision one. Provider sessions receive read-only policy, orchestration tools
+  are disabled, output is bounded and secret-scrubbed, completed task results enter subsequent stage
+  context, quota recovery resumes pending runs without polling, and restart reuses the stable helper
+  identity without another lifecycle start.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 11m33s; web 114/114 files and 1,238 tests; server 194/194 files with
+  1,537 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

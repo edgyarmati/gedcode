@@ -154,6 +154,20 @@ describe("buildTurnStartParams", () => {
       ],
     });
   });
+
+  it("keeps read-only helper turns non-interactive even from a full-access runtime", () => {
+    const params = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-helper-thread",
+        runtimeMode: "full-access",
+        readOnly: true,
+        prompt: "Inspect the repository without changing it.",
+      }),
+    );
+
+    assert.equal(params.approvalPolicy, "never");
+    assert.deepStrictEqual(params.sandboxPolicy, { type: "readOnly" });
+  });
 });
 
 describe("Codex approval bridging", () => {
