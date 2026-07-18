@@ -100,6 +100,7 @@ export function classifyOrchestrationCommand(
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
+    case "project.context.resolve":
     case "project.delete":
       return "project";
     case "task.create":
@@ -180,6 +181,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
+    case "project.context.resolve":
     case "project.delete":
       return {
         aggregateKind: "project",
@@ -256,6 +258,8 @@ export const toShellStreamEvent = (
   switch (event.type) {
     case "project.created":
     case "project.meta-updated":
+    case "project.context-dismissed":
+    case "project.context-completed":
       return projectionSnapshotQuery.getProjectShellById(event.payload.projectId).pipe(
         Effect.map((project) =>
           Option.map(project, (nextProject) => ({

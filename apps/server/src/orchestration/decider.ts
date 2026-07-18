@@ -415,6 +415,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             roleModelSelections: command.roleModelSelections ?? {},
             rolePromptPrefixes: command.rolePromptPrefixes ?? {},
             orchestratorConfig: command.orchestratorConfig,
+            projectContextResolution: null,
             scripts: [],
             createdAt: command.createdAt,
             updatedAt: command.createdAt,
@@ -489,6 +490,41 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           updatedAt: occurredAt,
         },
+      };
+    }
+
+    case "project.context.resolve": {
+      yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project",
+          aggregateId: command.projectId,
+          occurredAt: command.resolvedAt,
+          commandId: command.commandId,
+        })),
+        type:
+          command.outcome === "dismissed"
+            ? "project.context-dismissed"
+            : "project.context-completed",
+        payload:
+          command.outcome === "dismissed"
+            ? {
+                projectId: command.projectId,
+                schemaVersion: command.schemaVersion,
+                fingerprint: command.fingerprint,
+                dismissedAt: command.resolvedAt,
+              }
+            : {
+                projectId: command.projectId,
+                schemaVersion: command.schemaVersion,
+                fingerprint: command.fingerprint,
+                completedAt: command.resolvedAt,
+              },
       };
     }
 

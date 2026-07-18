@@ -916,6 +916,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         });
 
       const isProjectOrchestratorEvent = (projectId: ProjectId, event: OrchestrationEvent) => {
+        if (event.aggregateKind === "project" && event.aggregateId === projectId) {
+          return Effect.succeed(true);
+        }
         const pmThreadId = pmThreadIdForProject({ id: projectId });
         if (
           event.aggregateKind === "thread" &&

@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added the durable project-context onboarding foundation. A bounded scanner classifies the canonical
+  `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, root `CONTEXT.md`, and root ADR files without
+  crawling `.gedcode/`, task memory, generated output, or secret-bearing paths. Semantic fingerprints
+  ignore formatting/comment noise, detect material context changes and schema upgrades, and compare
+  against append-only per-project Dismissed or Completed resolutions so Chat and Orchestrator can
+  share one restart-safe onboarding decision in the next UI slices.
+
 - Replaced the basic GED `grill-me` clarification prompt with pinned, vendored `grill-with-docs`,
   `grilling`, and `domain-modeling` skills for both Codex and Claude. Non-trivial work now resolves one
   user decision at a time, looks up discoverable facts in the repository, records clarified project

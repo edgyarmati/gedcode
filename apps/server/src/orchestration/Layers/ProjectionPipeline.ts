@@ -492,6 +492,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             roleModelSelections: event.payload.roleModelSelections ?? {},
             rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
             orchestratorConfig: event.payload.orchestratorConfig ?? {},
+            projectContextResolution: null,
             scripts: event.payload.scripts,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -526,6 +527,29 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
             updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "project.context-dismissed":
+        case "project.context-completed": {
+          const existingRow = yield* projectionProjectRepository.getById({
+            projectId: event.payload.projectId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          const dismissed = event.type === "project.context-dismissed";
+          const resolvedAt = dismissed ? event.payload.dismissedAt : event.payload.completedAt;
+          yield* projectionProjectRepository.upsert({
+            ...existingRow.value,
+            projectContextResolution: {
+              schemaVersion: event.payload.schemaVersion,
+              fingerprint: event.payload.fingerprint,
+              outcome: dismissed ? "dismissed" : "completed",
+              resolvedAt,
+            },
+            updatedAt: resolvedAt,
           });
           return;
         }

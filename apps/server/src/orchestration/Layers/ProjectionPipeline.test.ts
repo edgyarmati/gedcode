@@ -5,6 +5,8 @@ import {
   CorrelationId,
   EventId,
   MessageId,
+  ProjectContextFingerprint,
+  ProjectContextSchemaVersion,
   ProjectId,
   OrchestrationTaskAggregateProgress,
   OrchestrationTaskChangeReview,
@@ -199,6 +201,94 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         assert.equal(row.lastAppliedSequence, 3);
       }
     }),
+  );
+
+  it.effect(
+    "replays the latest project-context resolution into the durable project projection",
+    () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const projectId = ProjectId.make("project-context-replay");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const dismissedAt = "2026-01-01T00:01:00.000Z";
+        const completedAt = "2026-01-01T00:02:00.000Z";
+
+        yield* eventStore.append({
+          type: "project.created",
+          eventId: EventId.make("evt-project-context-replay-create"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-project-context-replay-create"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-project-context-replay-create"),
+          metadata: {},
+          payload: {
+            projectId,
+            title: "Project context replay",
+            workspaceRoot: "/tmp/project-context-replay",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+        yield* eventStore.append({
+          type: "project.context-dismissed",
+          eventId: EventId.make("evt-project-context-replay-dismissed"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: dismissedAt,
+          commandId: CommandId.make("cmd-project-context-replay-dismissed"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-project-context-replay-dismissed"),
+          metadata: {},
+          payload: {
+            projectId,
+            schemaVersion: ProjectContextSchemaVersion.make(1),
+            fingerprint: ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`),
+            dismissedAt,
+          },
+        });
+        yield* eventStore.append({
+          type: "project.context-completed",
+          eventId: EventId.make("evt-project-context-replay-completed"),
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: completedAt,
+          commandId: CommandId.make("cmd-project-context-replay-completed"),
+          causationEventId: null,
+          correlationId: CorrelationId.make("cmd-project-context-replay-completed"),
+          metadata: {},
+          payload: {
+            projectId,
+            schemaVersion: ProjectContextSchemaVersion.make(2),
+            fingerprint: ProjectContextFingerprint.make(`sha256:${"b".repeat(64)}`),
+            completedAt,
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const rows = yield* sql<{
+          readonly projectContextResolution: string | null;
+          readonly updatedAt: string;
+        }>`
+        SELECT
+          project_context_onboarding_json AS "projectContextResolution",
+          updated_at AS "updatedAt"
+        FROM projection_projects
+        WHERE project_id = 'project-context-replay'
+      `;
+        assert.deepEqual(rows, [
+          {
+            projectContextResolution: `{"schemaVersion":2,"fingerprint":"sha256:${"b".repeat(64)}","outcome":"completed","resolvedAt":"${completedAt}"}`,
+            updatedAt: completedAt,
+          },
+        ]);
+      }),
   );
 
   it.effect("persists task retention tombstones without deleting the task row", () =>

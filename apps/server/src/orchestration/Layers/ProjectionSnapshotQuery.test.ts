@@ -6,12 +6,14 @@ import {
   ThreadId,
   TurnId,
   ProviderInstanceId,
+  ProjectContextResolution,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Schema from "effect/Schema";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
@@ -25,6 +27,12 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const projectContextResolution = Schema.decodeUnknownSync(ProjectContextResolution)({
+  schemaVersion: 1,
+  fingerprint: "sha256:4de5861c53fa4d598c6c5f4a0b6b6ef30c9be6e9b5678ed5f8ff643c2b07c27a",
+  outcome: "completed",
+  resolvedAt: "2026-02-24T00:00:01.000Z",
+});
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -51,6 +59,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           title,
           workspace_root,
           default_model_selection_json,
+          project_context_onboarding_json,
           scripts_json,
           created_at,
           updated_at,
@@ -61,6 +70,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'Project 1',
           '/tmp/project-1',
           '{"provider":"codex","model":"gpt-5-codex"}',
+          '{"schemaVersion":1,"fingerprint":"sha256:4de5861c53fa4d598c6c5f4a0b6b6ef30c9be6e9b5678ed5f8ff643c2b07c27a","outcome":"completed","resolvedAt":"2026-02-24T00:00:01.000Z"}',
           '[{"id":"script-1","name":"Build","command":"bun run build","icon":"build","runOnWorktreeCreate":false}]',
           '2026-02-24T00:00:00.000Z',
           '2026-02-24T00:00:01.000Z',
@@ -106,6 +116,18 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           NULL
         )
       `;
+
+      const persistedProjectRows = yield* sql<{
+        readonly projectContextResolution: string | null;
+      }>`
+        SELECT project_context_onboarding_json AS "projectContextResolution"
+        FROM projection_projects
+        WHERE project_id = 'project-1'
+      `;
+      assert.strictEqual(
+        persistedProjectRows[0]?.projectContextResolution,
+        '{"schemaVersion":1,"fingerprint":"sha256:4de5861c53fa4d598c6c5f4a0b6b6ef30c9be6e9b5678ed5f8ff643c2b07c27a","outcome":"completed","resolvedAt":"2026-02-24T00:00:01.000Z"}',
+      );
 
       yield* sql`
         INSERT INTO projection_thread_messages (
@@ -270,6 +292,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           roleModelSelections: {},
           rolePromptPrefixes: {},
           orchestratorConfig: {},
+          projectContextResolution,
           scripts: [
             {
               id: "script-1",
@@ -386,6 +409,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           roleModelSelections: {},
           rolePromptPrefixes: {},
           orchestratorConfig: {},
+          projectContextResolution,
           scripts: [
             {
               id: "script-1",

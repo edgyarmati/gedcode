@@ -10,6 +10,7 @@ import {
   GedRolePromptPrefixes,
   ModelSelection,
   OrchestratorConfigJson,
+  ProjectContextResolution,
   ProjectScript,
 } from "@t3tools/contracts";
 import { toPersistenceSqlError } from "../Errors.ts";
@@ -27,6 +28,7 @@ const ProjectionProjectDbRow = ProjectionProject.mapFields(
     roleModelSelections: Schema.fromJsonString(GedRoleModelSelections),
     rolePromptPrefixes: Schema.fromJsonString(GedRolePromptPrefixes),
     orchestratorConfig: Schema.fromJsonString(OrchestratorConfigJson),
+    projectContextResolution: Schema.NullOr(Schema.fromJsonString(ProjectContextResolution)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -47,6 +49,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           role_model_selections_json,
           role_prompt_prefixes_json,
           orchestrator_config_json,
+          project_context_onboarding_json,
           scripts_json,
           created_at,
           updated_at,
@@ -60,6 +63,11 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           ${JSON.stringify(row.roleModelSelections)},
           ${JSON.stringify(row.rolePromptPrefixes)},
           ${JSON.stringify(row.orchestratorConfig ?? {})},
+          ${
+            row.projectContextResolution !== null
+              ? JSON.stringify(row.projectContextResolution)
+              : null
+          },
           ${JSON.stringify(row.scripts)},
           ${row.createdAt},
           ${row.updatedAt},
@@ -73,6 +81,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           role_model_selections_json = excluded.role_model_selections_json,
           role_prompt_prefixes_json = excluded.role_prompt_prefixes_json,
           orchestrator_config_json = excluded.orchestrator_config_json,
+          project_context_onboarding_json = excluded.project_context_onboarding_json,
           scripts_json = excluded.scripts_json,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -93,6 +102,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           role_prompt_prefixes_json AS "rolePromptPrefixes",
           orchestrator_config_json AS "orchestratorConfig",
+          project_context_onboarding_json AS "projectContextResolution",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -115,6 +125,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           role_model_selections_json AS "roleModelSelections",
           role_prompt_prefixes_json AS "rolePromptPrefixes",
           orchestrator_config_json AS "orchestratorConfig",
+          project_context_onboarding_json AS "projectContextResolution",
           scripts_json AS "scripts",
           created_at AS "createdAt",
           updated_at AS "updatedAt",

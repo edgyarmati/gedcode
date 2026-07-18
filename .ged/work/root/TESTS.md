@@ -180,6 +180,24 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages in 11m14s; server 194/194 files with 1,542 passed and 1 skipped.
 
+### PROJECT-CTX-01 — 2026-07-18
+
+- Focused: 180 tests passed across the pure scanner, filesystem security, contracts, decider,
+  projector, replay pipeline, migration, repositories, snapshot queries, engine shell routing, and
+  WebSocket project isolation.
+- Manual review: scanning is a bounded allowlist over the four canonical files and non-recursive root
+  ADR Markdown, with explicit missing/empty/whitespace/template/substantive states. Semantic hashes
+  normalize comment and formatting noise; `.gedcode/`, task memory, unrelated/generated files, nested
+  ADRs, escaping symlinks, invalid UTF-8, oversized content, and non-regular files cannot enter the
+  snapshot. Mixed real context recommends Review; all-stub context recommends Populate.
+- Persistence review: Dismissed and Completed resolutions are append-only project events keyed to the
+  exact scanner schema and fingerprint. The latest resolution survives replay, SQL restart, snapshots,
+  and shell/project streams; legacy NULL means onboarding is required rather than silently completed.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings outside this slice.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 11m06s; server 197/197 files with 1,560 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

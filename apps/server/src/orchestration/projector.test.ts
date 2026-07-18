@@ -42,6 +42,89 @@ function makeEvent(input: {
 }
 
 describe("orchestration projector", () => {
+  it("keeps only the latest project-context resolution while preserving event history externally", async () => {
+    const createdAt = "2026-01-01T00:00:00.000Z";
+    const dismissedAt = "2026-01-02T00:00:00.000Z";
+    const completedAt = "2026-01-03T00:00:00.000Z";
+    const projectId = "project-context";
+
+    let model = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(createdAt),
+        makeEvent({
+          sequence: 1,
+          type: "project.created",
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: createdAt,
+          commandId: "cmd-project-create-context",
+          payload: {
+            projectId,
+            title: "Project Context",
+            workspaceRoot: "/tmp/project-context",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 2,
+          type: "project.context-dismissed",
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: dismissedAt,
+          commandId: "cmd-project-context-dismiss",
+          payload: {
+            projectId,
+            schemaVersion: 1,
+            fingerprint: `sha256:${"a".repeat(64)}`,
+            dismissedAt,
+          },
+        }),
+      ),
+    );
+    expect(model.projects[0]?.projectContextResolution).toEqual({
+      schemaVersion: 1,
+      fingerprint: `sha256:${"a".repeat(64)}`,
+      outcome: "dismissed",
+      resolvedAt: dismissedAt,
+    });
+
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 3,
+          type: "project.context-completed",
+          aggregateKind: "project",
+          aggregateId: projectId,
+          occurredAt: completedAt,
+          commandId: "cmd-project-context-complete",
+          payload: {
+            projectId,
+            schemaVersion: 2,
+            fingerprint: `sha256:${"b".repeat(64)}`,
+            completedAt,
+          },
+        }),
+      ),
+    );
+    expect(model.projects[0]?.projectContextResolution).toEqual({
+      schemaVersion: 2,
+      fingerprint: `sha256:${"b".repeat(64)}`,
+      outcome: "completed",
+      resolvedAt: completedAt,
+    });
+    expect(model.projects[0]?.updatedAt).toBe(completedAt);
+  });
+
   it("applies thread.created events", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);

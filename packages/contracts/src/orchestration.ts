@@ -367,6 +367,32 @@ export type ProjectScript = typeof ProjectScript.Type;
 export const OrchestratorConfigJson = Schema.Record(Schema.String, Schema.Unknown);
 export type OrchestratorConfigJson = typeof OrchestratorConfigJson.Type;
 
+export const ProjectContextFingerprint = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^sha256:[a-f0-9]{64}$/),
+).pipe(Schema.brand("ProjectContextFingerprint"));
+export type ProjectContextFingerprint = typeof ProjectContextFingerprint.Type;
+
+export const ProjectContextSchemaVersion = PositiveInt.pipe(
+  Schema.brand("ProjectContextSchemaVersion"),
+);
+export type ProjectContextSchemaVersion = typeof ProjectContextSchemaVersion.Type;
+
+export const ProjectContextResolutionOutcome = Schema.Literals(["dismissed", "completed"]);
+export type ProjectContextResolutionOutcome = typeof ProjectContextResolutionOutcome.Type;
+
+/**
+ * The latest user resolution of project-context onboarding for one exact
+ * scanner schema and content fingerprint. Earlier resolutions remain in the
+ * append-only project event stream.
+ */
+export const ProjectContextResolution = Schema.Struct({
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  outcome: ProjectContextResolutionOutcome,
+  resolvedAt: IsoDateTime,
+});
+export type ProjectContextResolution = typeof ProjectContextResolution.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -376,6 +402,9 @@ export const OrchestrationProject = Schema.Struct({
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
+  projectContextResolution: Schema.optionalKey(
+    Schema.NullOr(ProjectContextResolution).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  ),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -923,6 +952,9 @@ export const OrchestrationProjectShell = Schema.Struct({
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
+  projectContextResolution: Schema.optionalKey(
+    Schema.NullOr(ProjectContextResolution).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  ),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1034,6 +1066,16 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+});
+
+const ProjectContextResolveCommand = Schema.Struct({
+  type: Schema.Literal("project.context.resolve"),
+  commandId: CommandId,
+  projectId: ProjectId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  outcome: ProjectContextResolutionOutcome,
+  resolvedAt: IsoDateTime,
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -1663,6 +1705,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ProjectContextResolveCommand,
   ThreadForkCommand,
   ThreadSessionSetCommand,
   ThreadMessageUserAppendCommand,
@@ -1732,6 +1775,8 @@ export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 export const OrchestrationEventType = Schema.Literals([
   "project.created",
   "project.meta-updated",
+  "project.context-dismissed",
+  "project.context-completed",
   "project.deleted",
   "thread.created",
   "thread.deleted",
@@ -1830,6 +1875,20 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
 export const ProjectDeletedPayload = Schema.Struct({
   projectId: ProjectId,
   deletedAt: IsoDateTime,
+});
+
+export const ProjectContextDismissedPayload = Schema.Struct({
+  projectId: ProjectId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  dismissedAt: IsoDateTime,
+});
+
+export const ProjectContextCompletedPayload = Schema.Struct({
+  projectId: ProjectId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  completedAt: IsoDateTime,
 });
 
 export const ThreadCreatedPayload = Schema.Struct({
@@ -2291,6 +2350,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.meta-updated"),
     payload: ProjectMetaUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-dismissed"),
+    payload: ProjectContextDismissedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-completed"),
+    payload: ProjectContextCompletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

@@ -42,6 +42,8 @@ import {
   TaskStageStartedPayload,
   TaskSplitPayload,
   TaskVerificationRecordedPayload,
+  ProjectContextCompletedPayload,
+  ProjectContextDismissedPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -412,6 +414,7 @@ export function projectEvent(
             roleModelSelections: payload.roleModelSelections ?? {},
             rolePromptPrefixes: payload.rolePromptPrefixes ?? {},
             orchestratorConfig,
+            projectContextResolution: null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -461,6 +464,58 @@ export function projectEvent(
                   ...(orchestratorConfig !== undefined ? { orchestratorConfig } : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,
+                }
+              : project,
+          ),
+        })),
+      );
+
+    case "project.context-dismissed":
+      return decodeForEvent(
+        ProjectContextDismissedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          projects: nextBase.projects.map((project) =>
+            project.id === payload.projectId
+              ? {
+                  ...project,
+                  projectContextResolution: {
+                    schemaVersion: payload.schemaVersion,
+                    fingerprint: payload.fingerprint,
+                    outcome: "dismissed",
+                    resolvedAt: payload.dismissedAt,
+                  },
+                  updatedAt: payload.dismissedAt,
+                }
+              : project,
+          ),
+        })),
+      );
+
+    case "project.context-completed":
+      return decodeForEvent(
+        ProjectContextCompletedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          projects: nextBase.projects.map((project) =>
+            project.id === payload.projectId
+              ? {
+                  ...project,
+                  projectContextResolution: {
+                    schemaVersion: payload.schemaVersion,
+                    fingerprint: payload.fingerprint,
+                    outcome: "completed",
+                    resolvedAt: payload.completedAt,
+                  },
+                  updatedAt: payload.completedAt,
                 }
               : project,
           ),

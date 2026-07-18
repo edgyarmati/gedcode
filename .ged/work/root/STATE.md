@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-CTX-01`
+- **Active task**: `PROJECT-CTX-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -192,6 +192,16 @@
   prompt/provider-delivery suites passed 47 tests. `bun fmt`, `bun lint`, and all 12 typecheck packages
   passed. Full `bun run test` passed all 12 packages in 11m14s (server 194/194 files, 1,542 passed and
   1 skipped).
+- `PROJECT-CTX-01` completed 2026-07-18. A fixed-manifest scanner now classifies canonical project
+  guidance and sparse root ADRs, computes a bounded semantic fingerprint, and recommends Populate or
+  Review without crawling runtime/task/generated/secret paths. Per-project Dismissed and Completed
+  outcomes are append-only events projected through SQL, replay, snapshots, shell updates, and scoped
+  WebSocket streams. Exact schema/fingerprint matches suppress repeat prompting; material changes and
+  schema upgrades require onboarding again.
+- Verification evidence for `PROJECT-CTX-01`: 180 focused scanner, security, contract, lifecycle,
+  migration, persistence, replay, engine, and WebSocket tests passed. `bun fmt`, `bun lint`, and all 12
+  typecheck packages passed. Full `bun run test` passed all 12 packages in 11m06s (server 197/197 files,
+  1,560 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at
