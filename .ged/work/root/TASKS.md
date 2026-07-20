@@ -54,7 +54,7 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | --- | --- | --- | --- |
 | ORCH-OPEN-01 | DONE | Add typed launch operations for configured editor, file manager reveal, terminal, and installed alternate editors. Validate project/worktree ownership and environment capability. | Server/RPC tests reject arbitrary paths, target owned roots, and return explicit unsupported/launcher failures. |
 | ORCH-OPEN-02 | DONE | Add configured-editor primary button and adjacent launch menu to PM/project and worker headers, using project root or exact task worktree respectively. | Desktop/Chromium tests cover icons, target paths, menu actions, compact layout, and disabled remote capabilities. |
-| ORCH-BRANCH-01 | NEXT | Generate new task branches as `ged/<task-type>/<title-slug>` with sanitization, length bounds, deterministic numeric collisions, and no existing-branch migration. | Git/worktree tests cover Unicode/punctuation, empty titles, collisions, concurrent provisioning, replay, and protected-branch safety. |
+| ORCH-BRANCH-01 | DONE | Generate new task branches as `ged/<task-type>/<title-slug>` with sanitization, length bounds, deterministic numeric collisions, and no existing-branch migration. | Git/worktree tests cover Unicode/punctuation, empty titles, collisions, concurrent provisioning, replay, and protected-branch safety. |
 
 ## Deferred
 

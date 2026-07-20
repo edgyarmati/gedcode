@@ -5,6 +5,15 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- New Orchestrator tasks now receive readable server-owned branches such as
+  `ged/feature/fix-the-pm-harness`. Task types and titles are normalized into bounded Git-safe slugs;
+  existing names are reserved atomically with deterministic `-2`, `-3`, and later suffixes, including
+  under concurrent creation. Failed dispatches release only an unchanged reservation. Worker
+  worktrees attach the exact persisted ref, while existing `orchestrator/*` tasks remain unchanged.
+  The PM/MCP task-creation tool no longer accepts caller-selected branch names, and task creation now
+  requires the registered project checkout to be an available Git repository rather than silently
+  falling back to an unsafe name.
+
 - Added compact Open controls to Orchestrator project/PM and worker headers. The primary action uses
   the user's preferred installed editor, while the adjacent branded menu offers every available
   alternate editor plus file-manager reveal and terminal launch. Project actions target the registered

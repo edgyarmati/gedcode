@@ -203,6 +203,29 @@ const makeLayer = (
   } = {},
 ) => {
   let currentReadModel = readModel;
+  const reservedRefs = new Set<string>();
+  const defaultVcsRun: VcsProcessShape["run"] = (input) => {
+    if (input.operation === "TaskBranchReservation.resolveHead") {
+      return Effect.succeed(vcsOutput("a".repeat(40)));
+    }
+    if (input.operation === "TaskBranchReservation.create") {
+      const ref = input.args[1] ?? "";
+      if (reservedRefs.has(ref)) {
+        return Effect.succeed(vcsOutput("", 1));
+      }
+      reservedRefs.add(ref);
+      return Effect.succeed(vcsOutput());
+    }
+    if (input.operation === "TaskBranchReservation.inspectCollision") {
+      const ref = input.args[3] ?? "";
+      return Effect.succeed(vcsOutput("", reservedRefs.has(ref) ? 0 : 1));
+    }
+    if (input.operation === "TaskBranchReservation.release") {
+      reservedRefs.delete(input.args[2] ?? "");
+      return Effect.succeed(vcsOutput());
+    }
+    return Effect.die(`Unexpected VcsProcess operation '${input.operation}'.`);
+  };
   return Layer.mergeAll(
     Layer.succeed(ProjectionPendingApprovalRepository, {
       upsert: () => Effect.void,
@@ -371,7 +394,7 @@ const makeLayer = (
       ...overrides.terminalManager,
     }),
     Layer.mock(VcsProcess)({
-      run: () => Effect.die("VcsProcess.run should not be called"),
+      run: defaultVcsRun,
       ...overrides.vcsProcess,
     }),
     NodeServices.layer,
@@ -448,6 +471,9 @@ it.effect("createTask derives stable task and command identities from its idempo
       assert.strictEqual(firstCommand.pmMessageId, secondCommand.pmMessageId);
       assert.strictEqual(firstCommand.taskId, changedCommand.taskId);
       assert.notStrictEqual(firstCommand.commandId, changedCommand.commandId);
+      assert.strictEqual(firstCommand.branch, "ged/feature/implement-stable-creation");
+      assert.strictEqual(secondCommand.branch, firstCommand.branch);
+      assert.strictEqual(changedCommand.branch, firstCommand.branch);
     }
     assert.strictEqual(first.details.taskId, second.details.taskId);
     assert.strictEqual(first.details.taskId, changed.details.taskId);
@@ -866,6 +892,7 @@ it.effect("createTask carries release provenance into the durable dependency", (
     assert.strictEqual(command?.type, "task.create");
     if (command?.type === "task.create") {
       assert.strictEqual(command.taskType, TaskTypeId.make("release"));
+      assert.strictEqual(command.branch, "ged/release/release-landed-feature");
       assert.deepStrictEqual(command.dependsOnTaskIds, [TaskId.make("task-1")]);
     }
   }),
@@ -874,7 +901,11 @@ it.effect("createTask carries release provenance into the durable dependency", (
 it.effect("splitTask derives stable children and resolves dependencies by earlier child key", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
-    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([makeTask({ id: TaskId.make("task-parent") })])),
+      ),
+    );
     const splitTask = findTool(tools, "splitTask");
     const params = {
       parentTaskId: "task-parent",
@@ -907,6 +938,10 @@ it.effect("splitTask derives stable children and resolves dependencies by earlie
         firstCommand.children[0].taskId,
       ]);
       assert.deepStrictEqual(firstCommand.children[0]?.acceptanceCriteria, ["Contracts decode"]);
+      assert.deepStrictEqual(
+        firstCommand.children.map((child) => child.branch),
+        ["ged/feature/add-contracts", "ged/feature/add-runtime"],
+      );
     }
     assert.deepStrictEqual(first.details.childTaskIds, second.details.childTaskIds);
   }),

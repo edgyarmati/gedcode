@@ -53,7 +53,6 @@ export const mcpInputSchemas = {
     title: z.string(),
     idempotencyKey: z.string().trim().min(1),
     taskType: z.string().optional(),
-    branch: z.string().optional(),
     supersedesTaskId: z.string().optional(),
     releaseSourceTaskId: z.string().optional(),
   },

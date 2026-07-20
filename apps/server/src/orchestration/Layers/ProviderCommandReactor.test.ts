@@ -1219,6 +1219,42 @@ describe("ProviderCommandReactor", () => {
     }
   });
 
+  it("attaches a reserved ged task branch without recreating it", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-reserved-branch"),
+        taskId: asTaskId("task-reserved-branch"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Reserved Branch",
+        pmMessageId: null,
+        branch: "ged/feature/reserved-branch",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-reserved-branch"),
+        taskId: asTaskId("task-reserved-branch"),
+        role: "work",
+        instructions: "Use the reserved branch.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.createWorktree.mock.calls.length === 1);
+    expect(harness.createWorktree).toHaveBeenCalledWith({
+      cwd: harness.projectRoot,
+      refName: "ged/feature/reserved-branch",
+      path: path.join(harness.projectRoot, ".gedcode/orchestrator/tasks/task-reserved-branch"),
+    });
+  });
+
   it("generates a thread title on the first turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

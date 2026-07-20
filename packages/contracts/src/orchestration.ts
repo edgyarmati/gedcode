@@ -1569,6 +1569,7 @@ export const OrchestrationTaskSplitChild = Schema.Struct({
   taskId: TaskId,
   taskType: TaskTypeId,
   title: TrimmedNonEmptyString,
+  branch: Schema.optionalKey(TrimmedNonEmptyString),
   acceptanceCriteria: Schema.Array(TrimmedNonEmptyString),
   dependsOnTaskIds: Schema.Array(TaskId),
 });

@@ -378,7 +378,8 @@ const make = Effect.gen(function* () {
     const taskForStageThread = yield* resolveTaskForStageThread(threadId);
     const isOrchestratorWorker =
       taskForStageThread !== undefined ||
-      (thread.branch !== null && thread.branch.startsWith("orchestrator/"));
+      (thread.branch !== null &&
+        (thread.branch.startsWith("orchestrator/") || thread.branch.startsWith("ged/")));
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
@@ -540,12 +541,20 @@ const make = Effect.gen(function* () {
       }
       const exists = yield* fileSystem.exists(workerWorktreePath);
       if (!exists) {
-        yield* gitWorkflow.createWorktree({
-          cwd: project.workspaceRoot,
-          refName: "HEAD",
-          newRefName: workerBranch,
-          path: workerWorktreePath,
-        });
+        yield* gitWorkflow.createWorktree(
+          workerBranch.startsWith("ged/")
+            ? {
+                cwd: project.workspaceRoot,
+                refName: workerBranch,
+                path: workerWorktreePath,
+              }
+            : {
+                cwd: project.workspaceRoot,
+                refName: "HEAD",
+                newRefName: workerBranch,
+                path: workerWorktreePath,
+              },
+        );
       }
       yield* installTaskWorktreePushBlockHook(workerWorktreePath);
     });

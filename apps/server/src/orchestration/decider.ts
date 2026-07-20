@@ -11,6 +11,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationThread,
 } from "@t3tools/contracts";
+import { buildOrchestratorTaskBranchName } from "@t3tools/shared/git";
 import {
   resolveGatePolicy,
   resolveResourceLimit,
@@ -2031,7 +2032,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           taskType: command.taskType,
           title: command.title,
-          branch: command.branch ?? `orchestrator/${String(command.taskId)}`,
+          branch:
+            command.branch ?? buildOrchestratorTaskBranchName(command.taskType, command.title),
           worktreePath: taskWorktreePath({
             workspaceRoot: project.workspaceRoot,
             taskId: String(command.taskId),
@@ -2177,7 +2179,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               projectId: parent.projectId,
               taskType: child.taskType,
               title: child.title,
-              branch: `orchestrator/${String(child.taskId)}`,
+              branch: child.branch ?? buildOrchestratorTaskBranchName(child.taskType, child.title),
               worktreePath: taskWorktreePath({
                 workspaceRoot: project.workspaceRoot,
                 taskId: String(child.taskId),

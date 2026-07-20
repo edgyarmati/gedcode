@@ -322,7 +322,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
         branch: null,
         createdAt: now,
       })).readModel;
-      expect(latestTask(readModel).branch).toBe("orchestrator/task-orch-e2e");
+      expect(latestTask(readModel).branch).toBe("ged/feature/finish-orchestrator-slice");
       expect(latestTask(readModel).worktreePath).toContain("task-orch-e2e");
 
       readModel = (yield* decideAndApply(readModel, {
@@ -483,7 +483,7 @@ it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
 
       expect(latestTask(readModel)).toMatchObject({
         status: "landed",
-        branch: "orchestrator/task-orch-e2e",
+        branch: "ged/feature/finish-orchestrator-slice",
       });
     }),
   );

@@ -12,6 +12,10 @@ import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "gedcode";
 export const TEMP_WORKTREE_BRANCH_PREFIX = "worktree";
+export const ORCHESTRATOR_TASK_BRANCH_PREFIX = "ged";
+export const ORCHESTRATOR_TASK_BRANCH_MAX_LENGTH = 96;
+const ORCHESTRATOR_TASK_TYPE_MAX_LENGTH = 24;
+const ORCHESTRATOR_TASK_TITLE_MAX_LENGTH = 64;
 const LEGACY_WORKTREE_BRANCH_PREFIX = "gedcode";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
   `^(?:${TEMP_WORKTREE_BRANCH_PREFIX}|${LEGACY_WORKTREE_BRANCH_PREFIX})\\/[0-9a-f]{8}$`,
@@ -77,6 +81,52 @@ export function resolveAutoFeatureBranchName(
   }
 
   return `${resolvedBase}-${suffix}`;
+}
+
+function sanitizeTaskBranchSegment(raw: string, fallback: string, maxLength: number): string {
+  const normalized = raw
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLength)
+    .replace(/-+$/g, "");
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+/** Build the canonical base ref for a newly created orchestrator task. */
+export function buildOrchestratorTaskBranchName(taskType: string, title: string): string {
+  const typeSegment = sanitizeTaskBranchSegment(
+    taskType,
+    "task",
+    ORCHESTRATOR_TASK_TYPE_MAX_LENGTH,
+  );
+  const fixedLength = ORCHESTRATOR_TASK_BRANCH_PREFIX.length + typeSegment.length + 2;
+  const titleBudget = Math.min(
+    ORCHESTRATOR_TASK_TITLE_MAX_LENGTH,
+    ORCHESTRATOR_TASK_BRANCH_MAX_LENGTH - fixedLength,
+  );
+  const titleSegment = sanitizeTaskBranchSegment(title, "untitled", titleBudget);
+  return `${ORCHESTRATOR_TASK_BRANCH_PREFIX}/${typeSegment}/${titleSegment}`;
+}
+
+/** Add the deterministic collision suffix used by orchestrator-owned task refs. */
+export function withOrchestratorTaskBranchCollisionSuffix(
+  baseBranch: string,
+  collisionNumber: number,
+): string {
+  if (!Number.isInteger(collisionNumber) || collisionNumber < 2) {
+    throw new RangeError("Task branch collision numbers start at 2.");
+  }
+  const suffix = `-${collisionNumber}`;
+  const separator = baseBranch.lastIndexOf("/");
+  const prefix = baseBranch.slice(0, separator + 1);
+  const title = baseBranch.slice(separator + 1);
+  const titleBudget = ORCHESTRATOR_TASK_BRANCH_MAX_LENGTH - prefix.length - suffix.length;
+  const boundedTitle = title.slice(0, Math.max(1, titleBudget)).replace(/-+$/g, "") || "task";
+  return `${prefix}${boundedTitle}${suffix}`;
 }
 
 /**

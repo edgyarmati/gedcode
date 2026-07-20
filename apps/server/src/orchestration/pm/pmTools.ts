@@ -59,6 +59,11 @@ import {
   inspectDirectPmChanges,
   type DirectPmCheckEvidence,
 } from "../directPmChanges.ts";
+import {
+  releaseTaskBranchReservation,
+  reserveTaskBranch,
+  type TaskBranchReservation,
+} from "../taskBranchReservation.ts";
 import { pmThreadIdForProject } from "./PmEventProjection.ts";
 
 interface CreateTaskParameters {
@@ -66,7 +71,6 @@ interface CreateTaskParameters {
   readonly title: string;
   readonly idempotencyKey: string;
   readonly taskType?: string;
-  readonly branch?: string;
   readonly supersedesTaskId?: string;
   readonly releaseSourceTaskId?: string;
 }
@@ -292,7 +296,6 @@ function createTaskIdentity(params: CreateTaskParameters): {
   const idempotencyKey = params.idempotencyKey.trim();
   const title = params.title.trim();
   const taskType = params.taskType?.trim() || "feature";
-  const branch = params.branch?.trim() || null;
   const supersedesTaskId = params.supersedesTaskId?.trim() || null;
   const releaseSourceTaskId = params.releaseSourceTaskId?.trim() || null;
   const identityDigest = createHash("sha256")
@@ -305,7 +308,6 @@ function createTaskIdentity(params: CreateTaskParameters): {
         idempotencyKey,
         title,
         taskType,
-        branch,
         supersedesTaskId,
         releaseSourceTaskId,
       ]),
@@ -569,6 +571,11 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const pendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
   const crypto = yield* Crypto.Crypto;
   const runtimeContext = yield* Effect.context<never>();
+  const vcsProcess = Context.getOption(runtimeContext, VcsProcess);
+  const branchReservationsByTaskId = new Map<
+    TaskId,
+    { readonly cwd: string; readonly reservation: TaskBranchReservation }
+  >();
   const runPromise = Effect.runPromiseWith(runtimeContext);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -615,6 +622,74 @@ export const makePmToolExecutors = Effect.gen(function* () {
     return project;
   });
 
+  const reserveBranchForTask = Effect.fn("PmTools.reserveBranchForTask")(function* (input: {
+    readonly taskId: TaskId;
+    readonly projectId: ProjectId;
+    readonly taskType: TaskTypeId;
+    readonly title: string;
+  }) {
+    const readModel = yield* snapshotQuery.getCommandReadModel();
+    const existingTask = readModel.tasks.find((task) => task.id === input.taskId);
+    if (existingTask?.branch) {
+      return { branch: existingTask.branch, newlyReserved: null } as const;
+    }
+    const cached = branchReservationsByTaskId.get(input.taskId);
+    if (cached) {
+      return { branch: cached.reservation.branch, newlyReserved: null } as const;
+    }
+    const project = readModel.projects.find(
+      (candidate) => candidate.id === input.projectId && candidate.deletedAt === null,
+    );
+    if (!project) {
+      return yield* new PmToolExecutionError({
+        detail: `Project '${input.projectId}' was not found before reserving its task branch.`,
+      });
+    }
+    if (Option.isNone(vcsProcess)) {
+      return yield* new PmToolExecutionError({
+        detail: "Task branch reservation services are unavailable.",
+      });
+    }
+    const reservation = yield* reserveTaskBranch({
+      vcsProcess: vcsProcess.value,
+      cwd: project.workspaceRoot,
+      taskType: input.taskType,
+      title: input.title,
+    }).pipe(Effect.mapError((cause) => new PmToolExecutionError({ detail: cause.detail })));
+    const owned = { cwd: project.workspaceRoot, reservation } as const;
+    branchReservationsByTaskId.set(input.taskId, owned);
+    return { branch: reservation.branch, newlyReserved: owned } as const;
+  });
+
+  const releaseNewReservations = (
+    reservations: ReadonlyArray<{
+      readonly taskId: TaskId;
+      readonly cwd: string;
+      readonly reservation: TaskBranchReservation;
+    }>,
+  ) =>
+    Option.isNone(vcsProcess)
+      ? Effect.void
+      : Effect.forEach(
+          reservations,
+          (owned) =>
+            releaseTaskBranchReservation({
+              vcsProcess: vcsProcess.value,
+              cwd: owned.cwd,
+              reservation: owned.reservation,
+            }).pipe(
+              Effect.tap(() => Effect.sync(() => branchReservationsByTaskId.delete(owned.taskId))),
+              Effect.catch((cause) =>
+                Effect.logWarning("failed to compensate task branch reservation", {
+                  taskId: owned.taskId,
+                  branch: owned.reservation.branch,
+                  cause,
+                }),
+              ),
+            ),
+          { discard: true },
+        );
+
   const resolveOwnedHelperRun = Effect.fn("PmTools.resolveOwnedHelperRun")(function* (
     params: InspectHelperRunParameters,
   ) {
@@ -649,15 +724,22 @@ export const makePmToolExecutors = Effect.gen(function* () {
         Effect.gen(function* () {
           const identity = createTaskIdentity(params);
           const taskType = yield* registeredTaskTypeId(params.taskType);
+          const projectId = ProjectId.make(params.projectId.trim());
+          const reserved = yield* reserveBranchForTask({
+            taskId: identity.taskId,
+            projectId,
+            taskType,
+            title: params.title.trim(),
+          });
           const sequence = yield* dispatch({
             type: "task.create",
             commandId: identity.commandId,
             taskId: identity.taskId,
-            projectId: ProjectId.make(params.projectId.trim()),
+            projectId,
             taskType,
             title: params.title.trim(),
             pmMessageId: identity.pmMessageId,
-            branch: params.branch?.trim() || null,
+            branch: reserved.branch,
             dependsOnTaskIds: params.releaseSourceTaskId
               ? [TaskId.make(params.releaseSourceTaskId.trim())]
               : [],
@@ -665,7 +747,13 @@ export const makePmToolExecutors = Effect.gen(function* () {
               ? TaskId.make(params.supersedesTaskId.trim())
               : null,
             createdAt: yield* nowIso,
-          });
+          }).pipe(
+            Effect.onError(() =>
+              reserved.newlyReserved === null
+                ? Effect.void
+                : releaseNewReservations([{ taskId: identity.taskId, ...reserved.newlyReserved }]),
+            ),
+          );
           return textResult(`Created or reused task ${identity.taskId}.`, {
             taskId: identity.taskId,
             sequence,
@@ -689,7 +777,20 @@ export const makePmToolExecutors = Effect.gen(function* () {
           if (identity.childIdsByKey.size !== params.children.length) {
             return yield* new PmToolExecutionError({ detail: "Split child keys must be unique." });
           }
+          const parentTaskId = TaskId.make(params.parentTaskId.trim());
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const parent = readModel.tasks.find((task) => task.id === parentTaskId);
+          if (!parent) {
+            return yield* new PmToolExecutionError({
+              detail: `Parent task '${parentTaskId}' was not found before reserving child branches.`,
+            });
+          }
           const children: OrchestrationTaskSplitChild[] = [];
+          const newlyReserved: Array<{
+            readonly taskId: TaskId;
+            readonly cwd: string;
+            readonly reservation: TaskBranchReservation;
+          }> = [];
           for (const child of params.children) {
             const key = child.key.trim();
             const taskId = identity.childIdsByKey.get(key);
@@ -709,22 +810,32 @@ export const makePmToolExecutors = Effect.gen(function* () {
               }
               dependsOnTaskIds.push(dependencyTaskId);
             }
+            const taskType = yield* registeredTaskTypeId(child.taskType);
+            const reserved = yield* reserveBranchForTask({
+              taskId,
+              projectId: parent.projectId,
+              taskType,
+              title: child.title.trim(),
+            }).pipe(Effect.onError(() => releaseNewReservations(newlyReserved)));
+            if (reserved.newlyReserved !== null) {
+              newlyReserved.push({ taskId, ...reserved.newlyReserved });
+            }
             children.push({
               taskId,
-              taskType: yield* registeredTaskTypeId(child.taskType),
+              taskType,
               title: child.title.trim(),
+              branch: reserved.branch,
               acceptanceCriteria: child.acceptanceCriteria.map((criterion) => criterion.trim()),
               dependsOnTaskIds,
             });
           }
-          const parentTaskId = TaskId.make(params.parentTaskId.trim());
           const sequence = yield* dispatch({
             type: "task.split",
             commandId: identity.commandId,
             taskId: parentTaskId,
             children,
             createdAt: yield* nowIso,
-          });
+          }).pipe(Effect.onError(() => releaseNewReservations(newlyReserved)));
           return textResult(`Split task ${parentTaskId} into ${children.length} children.`, {
             parentTaskId,
             childTaskIds: children.map((child) => child.taskId),

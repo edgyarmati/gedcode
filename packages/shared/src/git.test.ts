@@ -3,13 +3,44 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyGitStatusStreamEvent,
+  buildOrchestratorTaskBranchName,
   buildTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
   TEMP_WORKTREE_BRANCH_PREFIX,
   WORKTREE_BRANCH_PREFIX,
+  withOrchestratorTaskBranchCollisionSuffix,
 } from "./git.ts";
+
+describe("orchestrator task branch names", () => {
+  it.each([
+    ["feature", "Fix the PM harness", "ged/feature/fix-the-pm-harness"],
+    ["release", "Crème brûlée", "ged/release/creme-brulee"],
+    ["Feature / ../../main", "Ship it", "ged/feature-main/ship-it"],
+    ["!!!", "日本語", "ged/task/untitled"],
+  ])("sanitizes %s / %s", (taskType, title, expected) => {
+    expect(buildOrchestratorTaskBranchName(taskType, title)).toBe(expected);
+  });
+
+  it("bounds long names and preserves room for numeric collision suffixes", () => {
+    const base = buildOrchestratorTaskBranchName("feature", "a".repeat(200));
+    const collision = withOrchestratorTaskBranchCollisionSuffix(base, 123);
+
+    expect(base.length).toBeLessThanOrEqual(96);
+    expect(collision.length).toBeLessThanOrEqual(96);
+    expect(collision).toMatch(/-123$/);
+  });
+
+  it("starts collision numbering at two", () => {
+    expect(withOrchestratorTaskBranchCollisionSuffix("ged/feature/fix-the-pm-harness", 2)).toBe(
+      "ged/feature/fix-the-pm-harness-2",
+    );
+    expect(() =>
+      withOrchestratorTaskBranchCollisionSuffix("ged/feature/fix-the-pm-harness", 1),
+    ).toThrow(/start at 2/);
+  });
+});
 
 describe("normalizeGitRemoteUrl", () => {
   it("canonicalizes equivalent GitHub remotes across protocol variants", () => {

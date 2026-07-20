@@ -35,6 +35,7 @@ import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -49,6 +50,7 @@ import { ProjectionSnapshotQuery } from "../../orchestration/Services/Projection
 import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { TerminalManager, type TerminalManagerShape } from "../../terminal/Services/Manager.ts";
+import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { ProviderService, type ProviderServiceShape } from "../Services/ProviderService.ts";
@@ -231,7 +233,27 @@ function makeHarness(config?: {
 }
 
 const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
-  const readModel = createEmptyReadModel("2026-06-29T00:00:00.000Z");
+  const readModel = {
+    ...createEmptyReadModel("2026-06-29T00:00:00.000Z"),
+    projects: [
+      {
+        id: ProjectId.make("project-1"),
+        title: "Project",
+        workspaceRoot: "/tmp/claude-adapter-project",
+        repositoryIdentity: null,
+        defaultModelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-opus-4-1",
+        ),
+        roleModelSelections: {},
+        orchestratorConfig: {},
+        scripts: [],
+        createdAt: "2026-06-29T00:00:00.000Z",
+        updatedAt: "2026-06-29T00:00:00.000Z",
+        deletedAt: null,
+      },
+    ],
+  };
   return Layer.mergeAll(
     Layer.succeed(ProjectionPendingApprovalRepository, {
       upsert: () => Effect.void,
@@ -302,6 +324,16 @@ const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
       close: () => Effect.void,
       subscribe: () => Effect.succeed(() => undefined),
     } satisfies TerminalManagerShape),
+    Layer.succeed(VcsProcess, {
+      run: (input) =>
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(0),
+          stdout: input.operation === "TaskBranchReservation.resolveHead" ? "a".repeat(40) : "",
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+    } satisfies VcsProcessShape),
   );
 };
 
@@ -554,6 +586,7 @@ describe("ClaudeAdapterLive", () => {
       if (dispatched[0]?.type === "task.create") {
         assert.strictEqual(dispatched[0].projectId, ProjectId.make("project-1"));
         assert.strictEqual(dispatched[0].taskType, TaskTypeId.make("feature"));
+        assert.strictEqual(dispatched[0].branch, "ged/feature/mcp-proof-task");
       }
 
       const canUseTool = createInput.options.canUseTool;

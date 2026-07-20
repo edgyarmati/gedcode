@@ -407,6 +407,21 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   warnings. Full `bun run test` passed all 12 packages in 12m08s (server 207/207 files, 1,619 passed
   and 1 skipped). Focused Chromium passed independently.
 
+### ORCH-BRANCH-01 — 2026-07-20
+
+- Naming: 16 shared Git utility cases cover task-type/title normalization, diacritics, punctuation,
+  empty/non-ASCII fallbacks, total length bounds, and collision suffixes beginning at `-2`.
+- Reservation: 3 real-Git cases prove collisions produce `-2`/`-3`, four concurrent requests never
+  reuse a ref, and compensation deletes only the exact unchanged reservation. The PM reuses durable
+  or in-flight task identities and compensates reservations when task/split dispatch fails.
+- Provisioning/compatibility: focused PM, MCP, Claude adapter, decider, provider reactor, and mocked
+  end-to-end suites prove newly persisted `ged/*` refs are attached without `git worktree add -b`.
+  Existing `orchestrator/*` task branches retain their previous creation path and are not migrated.
+- Repository: `bun fmt`, `bun lint`, and all 12 typecheck packages passed; lint retained only existing
+  warnings. Final `bun run test` passed all 12 packages in 12m09s; server passed 208/208 files with
+  1,623 tests passing and 1 skipped. Earlier load-sensitive GitManager and server-router flakes also
+  passed as complete isolated files before the clean full-suite result.
+
 - PM editor action receives project root; every worker action receives its owned task worktree.
 - File-manager, terminal, configured editor, and alternate-editor operations validate canonical paths.
 - Arbitrary paths, stale/deleted worktrees, and foreign task IDs fail closed.

@@ -1,7 +1,7 @@
 # STATE
 
-- **Phase**: implement
-- **Active task**: `ORCH-BRANCH-01`
+- **Phase**: complete
+- **Active task**: none; all non-deferred roadmap slices are implemented
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -252,6 +252,16 @@
   23 launcher and Orchestrator regression scenarios. `bun fmt`, `bun lint`, and all 12 typecheck
   packages passed. Full `bun run test` passed all 12 packages in 12m08s (server 207/207 files,
   1,619 passed and 1 skipped).
+- `ORCH-BRANCH-01` completed 2026-07-20. The PM now reserves server-owned task refs atomically at
+  current HEAD as `ged/<task-type>/<title-slug>`, using bounded ASCII slugs and deterministic `-2`,
+  `-3` collisions. Task creation no longer exposes a custom branch override. New worker worktrees
+  attach the persisted reserved ref, while existing `orchestrator/*` tasks retain their legacy
+  create-on-first-use behavior and are never renamed.
+- Verification evidence for `ORCH-BRANCH-01`: shared slug tests passed 16 cases; real-Git reservation,
+  collision, concurrency, and guarded compensation passed 3 cases; focused PM, MCP, provider,
+  decider, Claude adapter, and Orchestrator end-to-end suites passed. `bun fmt`, `bun lint`, and all
+  12 typecheck packages passed. Final `bun run test` passed all 12 packages in 12m09s; server passed
+  208/208 files with 1,623 tests passing and 1 skipped.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

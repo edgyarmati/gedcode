@@ -876,7 +876,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const singleEvent = Array.isArray(event) ? event[0] : event;
       expect(singleEvent?.type).toBe("task.created");
       expect(singleEvent?.payload).toMatchObject({
-        branch: "orchestrator/task-2",
+        branch: "ged/feature/task-2",
         worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-2",
       });
     }),
