@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added compact Open controls to Orchestrator project/PM and worker headers. The primary action uses
+  the user's preferred installed editor, while the adjacent branded menu offers every available
+  alternate editor plus file-manager reveal and terminal launch. Project actions target the registered
+  project root; worker actions target only that task's managed worktree. Preferences persist across
+  future controls, header actions wrap on narrow layouts, and unavailable/remote capabilities or tasks
+  without worktrees render disabled with an explicit reason.
+
 - Added secure Orchestrator launch APIs for project roots and task worktrees. Callers select a logical
   project or task plus an installed editor, file-manager reveal, or terminal action; the server derives
   the path from current projections, verifies exact project/worktree ownership and directory liveness,

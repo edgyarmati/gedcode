@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-OPEN-02`
+- **Active task**: `ORCH-BRANCH-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -243,6 +243,15 @@
   server suites passed 25 tests; WebSocket routing passed 2 loopback tests; web transport routing
   passed 2 tests. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
   passed all 12 packages in 12m05s.
+- `ORCH-OPEN-02` completed 2026-07-20. Project/PM and worker headers now share a compact preferred-editor
+  primary button and adjacent branded menu for alternate editors, file-manager reveal, and terminal.
+  Capability discovery is scoped to the selected environment; project actions use the registered root
+  and worker actions use the exact project-qualified task worktree. Preferences persist, launch errors
+  surface visibly, and unsupported environments or tasks without worktrees remain explicitly disabled.
+- Verification evidence for `ORCH-OPEN-02`: focused editor/route logic passed 7 tests; Chromium passed
+  23 launcher and Orchestrator regression scenarios. `bun fmt`, `bun lint`, and all 12 typecheck
+  packages passed. Full `bun run test` passed all 12 packages in 12m08s (server 207/207 files,
+  1,619 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

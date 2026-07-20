@@ -109,6 +109,7 @@ import { TaskBoard } from "./TaskBoard";
 import { TaskPrLink } from "./TaskPrLink";
 import { TaskRoleBackendSettings } from "./TaskRoleBackendSettings";
 import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
+import { OrchestratorLaunchPicker } from "./OrchestratorLaunchPicker";
 
 // Re-exported so existing imports (e.g. tests) keep resolving from this module.
 export { AbandonedTaskBoardSection, TaskBoard } from "./TaskBoard";
@@ -175,7 +176,9 @@ function OrchestratorPageChrome({
             <p className="truncate text-xs text-muted-foreground">{description}</p>
           ) : null}
         </div>
-        {children}
+        {children ? (
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{children}</div>
+        ) : null}
       </div>
     </header>
   );
@@ -323,6 +326,10 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
         title={project?.name ?? "Project"}
         description={project?.cwd ?? props.projectId}
       >
+        <OrchestratorLaunchPicker
+          environmentId={environmentId}
+          target={{ kind: "project-root", projectId }}
+        />
         <OrchestratorBoardVisibilityButton
           collapsed={boardCollapsed}
           setCollapsed={setBoardCollapsed}
@@ -834,7 +841,17 @@ export function TaskHeader({
             status={task.status}
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <OrchestratorLaunchPicker
+            disabled={task.worktreePath === null}
+            disabledReason={
+              task.worktreePath === null
+                ? "This task does not have an available worktree."
+                : undefined
+            }
+            environmentId={task.environmentId}
+            target={{ kind: "task-worktree", projectId: task.projectId, taskId: task.id }}
+          />
           {task.currentStageThreadId !== null ? (
             <Button
               aria-label="Interrupt active stage"

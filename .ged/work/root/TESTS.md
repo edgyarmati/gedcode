@@ -391,6 +391,22 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Repository: `bun fmt`, `bun lint`, and all 12 typecheck packages passed; lint retained only existing
   warnings. Full `bun run test` passed all 12 packages in 12m05s.
 
+### ORCH-OPEN-02 — 2026-07-20
+
+- Focused: shared branded editor-option logic and existing Orchestrator route logic passed 7 tests.
+  Chromium passed 23 scenarios across the new launch picker and existing route suite.
+- Project/worker targeting: project chrome dispatches only `{ kind: "project-root", projectId }`;
+  worker chrome dispatches only the project-qualified task-worktree target. Primary buttons use the
+  preferred installed editor; alternate selection persists as the new preference. Menus cover every
+  available branded editor, file-manager reveal, and terminal launch.
+- Availability/layout: capabilities come from the selected environment rather than the local shell.
+  Unsupported/older environments, empty capability sets, and tasks without worktrees keep both
+  controls disabled with an explicit reason. Project and task header action groups wrap under compact
+  widths. Launch failures surface as an error toast.
+- Repository: `bun fmt`, `bun lint`, and all 12 typecheck packages passed; lint retained only existing
+  warnings. Full `bun run test` passed all 12 packages in 12m08s (server 207/207 files, 1,619 passed
+  and 1 skipped). Focused Chromium passed independently.
+
 - PM editor action receives project root; every worker action receives its owned task worktree.
 - File-manager, terminal, configured editor, and alternate-editor operations validate canonical paths.
 - Arbitrary paths, stale/deleted worktrees, and foreign task IDs fail closed.
