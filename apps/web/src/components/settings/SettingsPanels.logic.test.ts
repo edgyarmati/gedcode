@@ -116,9 +116,18 @@ describe("Orchestrator global defaults settings logic", () => {
     model: "gpt-5-worker",
   };
   const capabilityPresets = {
-    cheap: { instanceId: ProviderInstanceId.make("codex_cheap"), model: "gpt-mini" },
-    smart: { instanceId: ProviderInstanceId.make("codex_smart"), model: "gpt-smart" },
-    genius: { instanceId: ProviderInstanceId.make("claude_genius"), model: "opus" },
+    cheap: {
+      instanceId: ProviderInstanceId.make("codex_cheap"),
+      model: "gpt-mini",
+    },
+    smart: {
+      instanceId: ProviderInstanceId.make("codex_smart"),
+      model: "gpt-smart",
+    },
+    genius: {
+      instanceId: ProviderInstanceId.make("claude_genius"),
+      model: "opus",
+    },
   } as const;
 
   it("seeds the settings-panel draft from global defaults", () => {
@@ -161,6 +170,7 @@ describe("Orchestrator global defaults settings logic", () => {
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
       capabilityPresets,
+      projectContextDefaultTier: "smart",
       optionalStages: {},
       gatePolicy: {
         plan: "auto",
@@ -189,6 +199,7 @@ describe("Orchestrator global defaults settings logic", () => {
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
       capabilityPresets,
+      projectContextDefaultTier: "smart",
       openPrAsDraft: true,
     });
   });

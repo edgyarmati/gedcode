@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-CTX-03`
+- **Active task**: `PROJECT-CTX-04`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -213,6 +213,17 @@
   and live WebSocket routing suites passed 156 tests. `bun fmt`, `bun lint`, and all 12 typecheck
   packages passed. Full `bun run test` passed all 12 packages in 11m30s (web 115/115 files and 1,242
   tests; server 203/203 files with 1,601 passed and 1 skipped).
+- `PROJECT-CTX-03` completed 2026-07-20. A shared root coordinator now scans the active normal-Chat or
+  Orchestrator project through content-free typed RPCs and presents one non-bypassable Populate/Review
+  decision across surface switches. Exact fingerprint dismissal, active-run suppression, and query
+  reuse prevent duplicate prompts; material changes or scanner upgrades re-enable onboarding. Cheap,
+  Smart, and Genius cards show the effective project/global harness logo, model, and thinking options.
+  Smart is the factory default, and an explicit selection is durably saved as the next global default.
+- Verification evidence for `PROJECT-CTX-03`: focused contracts passed 105 tests; focused server
+  onboarding, run-coordinator, and WebSocket suites passed 84 tests; focused web unit tests passed 3
+  and Chromium passed 4 scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed after a
+  single-worker retry of a native `tsgo` crash with no TypeScript diagnostic. Full `bun run test`
+  passed all 12 packages (server 204/204 files). Existing lint warnings remain outside this slice.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

@@ -219,6 +219,32 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   binding: 12/12 packages in 11m30s; web 115/115 files and 1,242 tests; server 203/203 files with
   1,601 passed and 1 skipped.
 
+### PROJECT-CTX-03 — 2026-07-20
+
+- Focused: contracts settings/RPC schemas passed 105 tests; server onboarding coordinator,
+  project-context run coordinator, migration guard, and WebSocket routing passed 84 tests; web route
+  logic passed 3 tests; Chromium passed 4 scenarios for Populate/Review copy, file classifications,
+  dismissal, fingerprint re-prompt, Chat/Orchestrator query reuse, sticky tier selection, and effective
+  harness logo/model/thinking presentation.
+- Manual review: the shared root coordinator derives project identity from Orchestrator, normal-chat
+  thread, and draft routes and retains one React Query identity across surface switches. Browser-facing
+  scans contain only path/classification metadata, never raw context. The dialog cannot close through
+  Escape, backdrop, or a close button; only explicit Dismiss or Start settles it. Dismissal rescans and
+  rejects stale schema/fingerprint state, while matching pending/running/pending-review runs suppress
+  duplicate prompts. Orchestrator preset migration still guards dismissal and run startup; only the
+  read-only scan is inspectable before migration.
+- Preset review: project overrides resolve over global Cheap/Smart/Genius presets for display. Smart
+  is the schema and UI factory default. Explicit run selection persists the global default server-side
+  before dispatch, and omitted tiers resolve that durable value while every run still stamps its exact
+  selected backend.
+- Repository: `bun fmt` and `bun lint` passed with only existing warnings. All 12 `bun typecheck`
+  packages passed with `TURBO_CONCURRENCY=1 GOMAXPROCS=1`; an earlier desktop-package attempt hit a
+  native `tsgo` SIGSEGV without a TypeScript diagnostic and passed immediately when rerun alone and in
+  the full root gate at conservative concurrency.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages; server 204/204 files. The focused Chromium suite is separate from the
+  default unit-test workspace gate and passed independently.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

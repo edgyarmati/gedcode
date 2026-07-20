@@ -3,6 +3,7 @@ import type {
   OrchestratorCapabilityPresets,
   OrchestratorGatePolicy,
   OrchestratorGlobalDefaults,
+  OrchestrationCapabilityTier,
   OrchestrationStageRole,
   ProviderDriverKind,
   ProviderInstanceConfig,
@@ -106,6 +107,7 @@ export interface OrchestratorGlobalDefaultsDraft {
   readonly pmModelSelection: ModelSelection | null;
   readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly capabilityPresets: OrchestratorCapabilityPresets | null;
+  readonly projectContextDefaultTier: OrchestrationCapabilityTier;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
@@ -131,6 +133,9 @@ export function seedOrchestratorGlobalDefaultsDraft(
     pmModelSelection: defaults.pmModelSelection ?? null,
     defaultWorkerModelSelection: defaults.defaultWorkerModelSelection ?? null,
     capabilityPresets: defaults.capabilityPresets,
+    projectContextDefaultTier:
+      defaults.projectContextDefaultTier ??
+      DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.projectContextDefaultTier,
     optionalStages: {},
     gatePolicy: {
       plan: defaults.gatePolicy.plan,
@@ -178,6 +183,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       pmModelSelection: draft.pmModelSelection,
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
       capabilityPresets: draft.capabilityPresets,
+      projectContextDefaultTier: draft.projectContextDefaultTier,
     },
   };
 }

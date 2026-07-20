@@ -84,9 +84,15 @@ import type {
   OrchestratorTaskRetentionInput,
   OrchestrationTask,
   OrchestratorClearPmChatInput,
+  OrchestratorDismissProjectContextOnboardingInput,
+  OrchestratorDismissProjectContextOnboardingResult,
+  OrchestratorGetProjectContextOnboardingInput,
+  OrchestratorGetProjectContextOnboardingResult,
   OrchestratorProjectStreamItem,
   OrchestratorRequestPmHandoffInput,
   OrchestratorRequestPmHandoffResult,
+  OrchestratorRequestProjectContextRunInput,
+  OrchestratorRequestProjectContextRunResult,
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
@@ -656,5 +662,14 @@ export interface EnvironmentApi {
     requestPmHandoff: (
       input: OrchestratorRequestPmHandoffInput,
     ) => Promise<OrchestratorRequestPmHandoffResult>;
+    getProjectContextOnboarding: (
+      input: OrchestratorGetProjectContextOnboardingInput,
+    ) => Promise<OrchestratorGetProjectContextOnboardingResult>;
+    dismissProjectContextOnboarding: (
+      input: OrchestratorDismissProjectContextOnboardingInput,
+    ) => Promise<OrchestratorDismissProjectContextOnboardingResult>;
+    requestProjectContextRun: (
+      input: OrchestratorRequestProjectContextRunInput,
+    ) => Promise<OrchestratorRequestProjectContextRunResult>;
   };
 }

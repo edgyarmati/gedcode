@@ -56,6 +56,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
   it("global defaults include durability and cleanup intervals", () => {
     const decoded = decodeGlobalDefaults({});
     expect(decoded.defaultWorkerModelSelection).toBeNull();
+    expect(decoded.projectContextDefaultTier).toBe("smart");
     expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
     expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
@@ -82,8 +83,15 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
       maxRetriesPerStage: 5,
       pmReconciliationIntervalMs: 120_000,
       worktreeReaperIntervalMinutes: 10,
-      pmModelSelection: { instanceId: "claudeAgent", model: "claude-sonnet-4-6" },
-      defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
+      pmModelSelection: {
+        instanceId: "claudeAgent",
+        model: "claude-sonnet-4-6",
+      },
+      defaultWorkerModelSelection: {
+        instanceId: "codex_worker",
+        model: "gpt-5-worker",
+      },
+      projectContextDefaultTier: "genius",
       openPrAsDraft: true,
     });
 
@@ -101,6 +109,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
       model: "gpt-5-worker",
     });
     expect(reDecoded.openPrAsDraft).toBe(true);
+    expect(reDecoded.projectContextDefaultTier).toBe("genius");
   });
 });
 
@@ -161,7 +170,9 @@ describe("OrchestratorGlobalDefaults — capability presets", () => {
   });
 
   it("round-trips a complete Cheap/Smart/Genius map", () => {
-    const decoded = decodeGlobalDefaults({ capabilityPresets: completePresets });
+    const decoded = decodeGlobalDefaults({
+      capabilityPresets: completePresets,
+    });
     expect(decodeGlobalDefaults(encodeGlobalDefaults(decoded)).capabilityPresets).toEqual(
       completePresets,
     );
@@ -169,7 +180,9 @@ describe("OrchestratorGlobalDefaults — capability presets", () => {
 
   it("rejects incomplete and unknown preset maps", () => {
     expect(() =>
-      decodeGlobalDefaults({ capabilityPresets: { cheap: completePresets.cheap } }),
+      decodeGlobalDefaults({
+        capabilityPresets: { cheap: completePresets.cheap },
+      }),
     ).toThrow();
     expect(() =>
       decodeGlobalDefaults({
@@ -177,7 +190,9 @@ describe("OrchestratorGlobalDefaults — capability presets", () => {
       }),
     ).toThrow();
     expect(() =>
-      decodeProjectConfig({ capabilityPresets: { fast: completePresets.cheap } }),
+      decodeProjectConfig({
+        capabilityPresets: { fast: completePresets.cheap },
+      }),
     ).toThrow();
   });
 });

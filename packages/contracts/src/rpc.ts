@@ -620,6 +620,24 @@ export const WsOrchestratorRequestPmHandoffRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorGetProjectContextOnboardingRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding,
+  {
+    payload: OrchestratorRpcSchemas.getProjectContextOnboarding.input,
+    success: OrchestratorRpcSchemas.getProjectContextOnboarding.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorDismissProjectContextOnboardingRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding,
+  {
+    payload: OrchestratorRpcSchemas.dismissProjectContextOnboarding.input,
+    success: OrchestratorRpcSchemas.dismissProjectContextOnboarding.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.requestProjectContextRun,
   {
@@ -725,5 +743,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorDeleteTaskRpc,
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
+  WsOrchestratorGetProjectContextOnboardingRpc,
+  WsOrchestratorDismissProjectContextOnboardingRpc,
   WsOrchestratorRequestProjectContextRunRpc,
 );

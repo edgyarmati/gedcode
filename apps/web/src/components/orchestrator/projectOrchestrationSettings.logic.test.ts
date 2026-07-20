@@ -189,6 +189,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         pmModelSelection: selection("openai", "gpt-5-pm"),
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
         capabilityPresets: null,
+        projectContextDefaultTier: "smart",
         openPrAsDraft: true,
       }),
     ).toEqual({
@@ -248,14 +249,18 @@ describe("orchestration settings equality", () => {
 
 describe("resolveRoleDefaultSelection", () => {
   it("prefers the global worker default and falls back to the project", () => {
-    const project = { defaultModelSelection: selection("codex", "gpt-5-default") };
+    const project = {
+      defaultModelSelection: selection("codex", "gpt-5-default"),
+    };
     expect(
       resolveRoleDefaultSelection(project, {
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
       }),
     ).toEqual(selection("codex_global", "gpt-5-global"));
-    expect(resolveRoleDefaultSelection(project, { defaultWorkerModelSelection: null })).toEqual(
-      selection("codex", "gpt-5-default"),
-    );
+    expect(
+      resolveRoleDefaultSelection(project, {
+        defaultWorkerModelSelection: null,
+      }),
+    ).toEqual(selection("codex", "gpt-5-default"));
   });
 });

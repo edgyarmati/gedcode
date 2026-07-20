@@ -178,7 +178,10 @@ export const OrchestratorProjectConfig = Schema.Struct({
         {
           id: "feature" as const,
           stages: ORCHESTRATION_STAGE_ROLES,
-          gatePolicy: { plan: "require-approval" as const, land: "require-approval" as const },
+          gatePolicy: {
+            plan: "require-approval" as const,
+            land: "require-approval" as const,
+          },
         },
       ]),
     ),
@@ -240,6 +243,11 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // contain Cheap, Smart, and Genius as complete model selections.
   capabilityPresets: Schema.NullOr(OrchestratorCapabilityPresets).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  // The last project-context capability chosen by the user. Context runs are
+  // intentionally independent of stage routing, but use the same presets.
+  projectContextDefaultTier: OrchestratorCapabilityTier.pipe(
+    Schema.withDecodingDefault(Effect.succeed("smart" as const)),
   ),
   defaultWorkerModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),

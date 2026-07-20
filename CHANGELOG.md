@@ -5,6 +5,15 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added shared project-context onboarding across normal Chat and Orchestrator. A fresh bounded scan
+  offers **Populate** for missing or stub guidance and **Review** for substantive context, while
+  exact schema/fingerprint dismissal and active-run detection prevent repeat prompts across surface
+  switches and reconnects. The non-bypassable prompt presents Cheap, Smart, and Genius cards with
+  the effective project/global harness logo, model, and thinking options; Smart is the factory
+  choice, and each explicit selection becomes the durable global default for later context runs.
+  Material context changes and scanner schema upgrades make onboarding eligible again without
+  exposing file contents to the browser.
+
 - Added durable Populate/Review agents for canonical project context. Runs default to the Smart
   capability preset, permanently stamp the selected harness/model/thinking configuration, and work
   in the primary checkout without creating a task, worktree, stage, gate, commit, pull request, or

@@ -60,6 +60,8 @@ export const ORCHESTRATOR_WS_METHODS = {
   deleteTask: "orchestrator.deleteTask",
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
+  getProjectContextOnboarding: "orchestrator.getProjectContextOnboarding",
+  dismissProjectContextOnboarding: "orchestrator.dismissProjectContextOnboarding",
   requestProjectContextRun: "orchestrator.requestProjectContextRun",
 } as const;
 
@@ -381,6 +383,19 @@ export type ProjectContextSchemaVersion = typeof ProjectContextSchemaVersion.Typ
 
 export const ProjectContextResolutionOutcome = Schema.Literals(["dismissed", "completed"]);
 export type ProjectContextResolutionOutcome = typeof ProjectContextResolutionOutcome.Type;
+
+/** A content-free classification emitted by the server-side context scanner. */
+export const ProjectContextFileClassification = Schema.Literals([
+  "missing",
+  "empty",
+  "whitespace",
+  "template",
+  "substantive",
+]);
+export type ProjectContextFileClassification = typeof ProjectContextFileClassification.Type;
+
+export const ProjectContextPromptKind = Schema.Literals(["populate", "review"]);
+export type ProjectContextPromptKind = typeof ProjectContextPromptKind.Type;
 
 /**
  * The latest user resolution of project-context onboarding for one exact
@@ -3210,6 +3225,52 @@ export const OrchestratorRequestPmHandoffResult = Schema.Struct({
 export type OrchestratorRequestPmHandoffResult = typeof OrchestratorRequestPmHandoffResult.Type;
 
 /**
+ * A safe presentation of a freshly scanned project-context manifest. Raw
+ * context content deliberately never crosses this boundary.
+ */
+export const OrchestratorGetProjectContextOnboardingInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorGetProjectContextOnboardingInput =
+  typeof OrchestratorGetProjectContextOnboardingInput.Type;
+
+export const OrchestratorProjectContextOnboardingFile = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  classification: ProjectContextFileClassification,
+});
+export type OrchestratorProjectContextOnboardingFile =
+  typeof OrchestratorProjectContextOnboardingFile.Type;
+
+export const OrchestratorGetProjectContextOnboardingResult = Schema.Struct({
+  projectId: ProjectId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  promptKind: ProjectContextPromptKind,
+  files: Schema.Array(OrchestratorProjectContextOnboardingFile),
+  shouldPrompt: Schema.Boolean,
+});
+export type OrchestratorGetProjectContextOnboardingResult =
+  typeof OrchestratorGetProjectContextOnboardingResult.Type;
+
+/**
+ * A dismissal is bound to one scanner schema and fingerprint. The server
+ * rescans before dispatching so a delayed client cannot dismiss newer context.
+ */
+export const OrchestratorDismissProjectContextOnboardingInput = Schema.Struct({
+  projectId: ProjectId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+});
+export type OrchestratorDismissProjectContextOnboardingInput =
+  typeof OrchestratorDismissProjectContextOnboardingInput.Type;
+
+export const OrchestratorDismissProjectContextOnboardingResult = Schema.Struct({
+  sequence: NonNegativeInt,
+});
+export type OrchestratorDismissProjectContextOnboardingResult =
+  typeof OrchestratorDismissProjectContextOnboardingResult.Type;
+
+/**
  * The project-context baseline is captured by the server. Clients can select
  * a project and an optional capability tier, but cannot supply paths,
  * contents, Git state, or a command identifier.
@@ -3455,6 +3516,14 @@ export const OrchestratorRpcSchemas = {
   requestPmHandoff: {
     input: OrchestratorRequestPmHandoffInput,
     output: OrchestratorRequestPmHandoffResult,
+  },
+  getProjectContextOnboarding: {
+    input: OrchestratorGetProjectContextOnboardingInput,
+    output: OrchestratorGetProjectContextOnboardingResult,
+  },
+  dismissProjectContextOnboarding: {
+    input: OrchestratorDismissProjectContextOnboardingInput,
+    output: OrchestratorDismissProjectContextOnboardingResult,
   },
   requestProjectContextRun: {
     input: OrchestratorRequestProjectContextRunInput,

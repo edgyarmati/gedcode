@@ -113,6 +113,10 @@ import {
   type ProjectContextRunCoordinatorShape,
 } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
 import {
+  ProjectContextOnboardingCoordinator,
+  type ProjectContextOnboardingCoordinatorShape,
+} from "./orchestration/Services/ProjectContextOnboardingCoordinator.ts";
+import {
   PmProjectRuntimeFactory,
   type PmProjectRuntimeFactoryShape,
 } from "./orchestration/Services/PmRuntime.ts";
@@ -393,6 +397,7 @@ const buildAppUnderTest = (options?: {
     providerService?: Partial<ProviderServiceShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
     projectContextRunCoordinator?: Partial<ProjectContextRunCoordinatorShape>;
+    projectContextOnboardingCoordinator?: Partial<ProjectContextOnboardingCoordinatorShape>;
     pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
     providerQuotaStatusRepository?: Partial<ProviderQuotaStatusRepositoryShape>;
@@ -406,7 +411,9 @@ const buildAppUnderTest = (options?: {
 }) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    const tempBaseDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-test-" });
+    const tempBaseDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-router-test-",
+    });
     const baseDir = options?.config?.baseDir ?? tempBaseDir;
     const devUrl = options?.config?.devUrl;
     const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
@@ -614,7 +621,10 @@ const buildAppUnderTest = (options?: {
           refreshInstance: () => Effect.succeed([]),
           getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
             Effect.succeed(
-              makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null }),
+              makeManualOnlyProviderMaintenanceCapabilities({
+                provider,
+                packageName: null,
+              }),
             ),
           setProviderMaintenanceActionState: () => Effect.succeed([]),
           streamChanges: Stream.empty,
@@ -754,6 +764,12 @@ const buildAppUnderTest = (options?: {
                 sequence: 0,
               }),
             ...options?.layers?.projectContextRunCoordinator,
+          }),
+          Layer.mock(ProjectContextOnboardingCoordinator)({
+            get: () => Effect.die("ProjectContextOnboardingCoordinator.get should not be called"),
+            dismiss: () =>
+              Effect.die("ProjectContextOnboardingCoordinator.dismiss should not be called"),
+            ...options?.layers?.projectContextOnboardingCoordinator,
           }),
         ),
       ),
@@ -1083,7 +1099,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const staticDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-router-static-" });
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-",
+      });
       const indexPath = path.join(staticDir, "index.html");
       yield* fileSystem.writeFileString(indexPath, "<html>router-static-ok</html>");
 
@@ -1102,7 +1120,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
 
       const response = yield* HttpClient.get("/foo/bar?token=test-token").pipe(
-        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+        Effect.provideService(FetchHttpClient.RequestInit, {
+          redirect: "manual",
+        }),
       );
 
       assert.equal(response.status, 302);
@@ -1776,7 +1796,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
       assert.isNotNull(attachmentPath, "Attachment path should be resolvable");
 
-      yield* fileSystem.makeDirectory(path.dirname(attachmentPath), { recursive: true });
+      yield* fileSystem.makeDirectory(path.dirname(attachmentPath), {
+        recursive: true,
+      });
       yield* fileSystem.writeFileString(attachmentPath, "attachment-ok");
 
       const response = yield* HttpClient.get(`/attachments/${attachmentId}`, {
@@ -1801,7 +1823,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
       assert.isNotNull(attachmentPath, "Attachment path should be resolvable");
 
-      yield* fileSystem.makeDirectory(path.dirname(attachmentPath), { recursive: true });
+      yield* fileSystem.makeDirectory(path.dirname(attachmentPath), {
+        recursive: true,
+      });
       yield* fileSystem.writeFileString(attachmentPath, "attachment-encoded-ok");
 
       const response = yield* HttpClient.get(
@@ -2197,7 +2221,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-auth-required-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-auth-required-",
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, "needle-file.ts"),
         "export const needle = 1;",
@@ -2373,7 +2399,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           version: 1 as const,
           sequence: 2,
           type: "ready" as const,
-          payload: { at: "2026-01-01T00:00:00.000Z", environment: testEnvironmentDescriptor },
+          payload: {
+            at: "2026-01-01T00:00:00.000Z",
+            environment: testEnvironmentDescriptor,
+          },
         });
 
         yield* buildAppUnderTest({
@@ -2407,7 +2436,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-search-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-search-",
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, "needle-file.ts"),
         "export const needle = 1;",
@@ -2440,12 +2471,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         prefix: "t3-ws-project-search-gitignored-",
       });
       yield* fs.writeFileString(path.join(workspaceDir, ".gitignore"), ".venv/\n");
-      yield* fs.makeDirectory(path.join(workspaceDir, ".venv", "lib"), { recursive: true });
+      yield* fs.makeDirectory(path.join(workspaceDir, ".venv", "lib"), {
+        recursive: true,
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, ".venv", "lib", "ignored-search-target.ts"),
         "export const ignored = true;",
       );
-      yield* fs.makeDirectory(path.join(workspaceDir, "src"), { recursive: true });
+      yield* fs.makeDirectory(path.join(workspaceDir, "src"), {
+        recursive: true,
+      });
       yield* fs.writeFileString(
         path.join(workspaceDir, "src", "tracked.ts"),
         "export const ok = 1;",
@@ -2517,7 +2552,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-write-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-write-",
+      });
 
       yield* buildAppUnderTest();
 
@@ -2542,7 +2579,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const parentDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-create-" });
+      const parentDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-create-",
+      });
       const missingWorkspaceRoot = path.join(parentDir, "nested", "new-project");
 
       yield* buildAppUnderTest();
@@ -2575,7 +2614,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("routes websocket rpc projects.writeFile errors", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-project-write-" });
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-write-",
+      });
 
       yield* buildAppUnderTest();
 
@@ -3463,6 +3504,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("guards project-context run requests until preset migration completes", () =>
     Effect.gen(function* () {
       let requestCalls = 0;
+      let dismissCalls = 0;
       yield* buildAppUnderTest({
         layers: {
           serverSettings: {
@@ -3476,6 +3518,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   projectContextRunId: ProjectContextRunId.make("context-run-guarded"),
                   sequence: 1,
                 };
+              }),
+          },
+          projectContextOnboardingCoordinator: {
+            get: (input) =>
+              Effect.succeed({
+                projectId: input.projectId,
+                schemaVersion: ProjectContextSchemaVersion.make(1),
+                fingerprint: ProjectContextFingerprint.make(`sha256:${"d".repeat(64)}`),
+                promptKind: "populate",
+                files: [],
+                shouldPrompt: true,
+              }),
+            dismiss: () =>
+              Effect.sync(() => {
+                dismissCalls += 1;
+                return { sequence: 2 };
               }),
           },
         },
@@ -3492,6 +3550,27 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(result._tag, "Failure");
       assert.equal(requestCalls, 0);
+
+      const onboarding = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding]({
+            projectId: defaultProjectId,
+          }),
+        ),
+      );
+      assert.equal(onboarding.shouldPrompt, true);
+
+      const dismissal = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding]({
+            projectId: defaultProjectId,
+            schemaVersion: onboarding.schemaVersion,
+            fingerprint: onboarding.fingerprint,
+          }),
+        ).pipe(Effect.exit),
+      );
+      assert.equal(dismissal._tag, "Failure");
+      assert.equal(dismissCalls, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3529,6 +3608,70 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect(
+    "routes content-free project-context onboarding inspection and stale-safe dismissal",
+    () =>
+      Effect.gen(function* () {
+        const fingerprint = ProjectContextFingerprint.make(`sha256:${"c".repeat(64)}`);
+        const calls: string[] = [];
+        yield* buildAppUnderTest({
+          layers: {
+            projectContextOnboardingCoordinator: {
+              get: (input) =>
+                Effect.sync(() => {
+                  calls.push(`get:${input.projectId}`);
+                  return {
+                    projectId: input.projectId,
+                    schemaVersion: ProjectContextSchemaVersion.make(1),
+                    fingerprint,
+                    promptKind: "populate" as const,
+                    files: [{ path: "AGENTS.md", classification: "missing" as const }],
+                    shouldPrompt: true,
+                  };
+                }),
+              dismiss: (input) =>
+                Effect.sync(() => {
+                  calls.push(`dismiss:${input.fingerprint}`);
+                  return { sequence: 74 };
+                }),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const onboarding = yield* client[ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding](
+                {
+                  projectId: defaultProjectId,
+                },
+              );
+              const dismissed = yield* client[
+                ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding
+              ]({
+                projectId: defaultProjectId,
+                schemaVersion: ProjectContextSchemaVersion.make(1),
+                fingerprint,
+              });
+              return { onboarding, dismissed };
+            }),
+          ),
+        );
+
+        assert.deepEqual(result.onboarding, {
+          projectId: defaultProjectId,
+          schemaVersion: ProjectContextSchemaVersion.make(1),
+          fingerprint,
+          promptKind: "populate",
+          files: [{ path: "AGENTS.md", classification: "missing" }],
+          shouldPrompt: true,
+        });
+        assert.deepEqual(result.dismissed, { sequence: 74 });
+        assert.deepEqual(calls, [`get:${defaultProjectId}`, `dismiss:${fingerprint}`]);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestrator methods", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";
@@ -3547,7 +3690,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         execFileSync("git", ["config", "user.email", "test@example.com"], {
           cwd: worktreePath,
         });
-        execFileSync("git", ["config", "user.name", "T3 Test"], { cwd: worktreePath });
+        execFileSync("git", ["config", "user.name", "T3 Test"], {
+          cwd: worktreePath,
+        });
         execFileSync("git", ["commit", "--allow-empty", "-qm", "initial"], {
           cwd: worktreePath,
         });
@@ -3983,10 +4128,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             assert.deepEqual(runtimeCalls, ["surface:What is next?", "enqueue:What is next?"]);
 
             const projectItems = Array.from(
-              yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({ projectId }).pipe(
-                Stream.take(9),
-                Stream.runCollect,
-              ),
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({
+                projectId,
+              }).pipe(Stream.take(9), Stream.runCollect),
             );
             assert.equal(projectItems.length, 9);
             const projectSnapshotItem = projectItems[0];
@@ -4019,10 +4163,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             );
 
             const taskItems = Array.from(
-              yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({ taskId }).pipe(
-                Stream.take(8),
-                Stream.runCollect,
-              ),
+              yield* client[ORCHESTRATOR_WS_METHODS.subscribeTask]({
+                taskId,
+              }).pipe(Stream.take(8), Stream.runCollect),
             );
             assert.equal(taskItems.length, 8);
             const taskSnapshotItem = taskItems[0];
@@ -4102,7 +4245,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             ]);
 
             const landTaskResult = yield* client[ORCHESTRATOR_WS_METHODS.landTask]({ taskId });
-            assert.deepEqual(landTaskResult, { sequence: 41, alreadyLanded: false });
+            assert.deepEqual(landTaskResult, {
+              sequence: 41,
+              alreadyLanded: false,
+            });
 
             const archivedTasks = yield* client[ORCHESTRATOR_WS_METHODS.listArchivedTasks]({
               projectId,
@@ -4882,7 +5028,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           projectionSnapshotQuery: {
             getThreadShellById: () =>
               Effect.succeed(
-                Option.some(makeDefaultOrchestrationThreadShell({ id: threadId, session: null })),
+                Option.some(
+                  makeDefaultOrchestrationThreadShell({
+                    id: threadId,
+                    session: null,
+                  }),
+                ),
               ),
           },
         },

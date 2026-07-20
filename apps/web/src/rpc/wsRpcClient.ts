@@ -187,6 +187,15 @@ export interface WsRpcClient {
     readonly deleteTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.deleteTask>;
     readonly clearPmChat: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.clearPmChat>;
     readonly requestPmHandoff: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.requestPmHandoff>;
+    readonly getProjectContextOnboarding: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding
+    >;
+    readonly dismissProjectContextOnboarding: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding
+    >;
+    readonly requestProjectContextRun: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.requestProjectContextRun
+    >;
   };
 }
 
@@ -414,6 +423,18 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.clearPmChat](input)),
       requestPmHandoff: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.requestPmHandoff](input)),
+      getProjectContextOnboarding: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding](input),
+        ),
+      dismissProjectContextOnboarding: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding](input),
+        ),
+      requestProjectContextRun: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestProjectContextRun](input),
+        ),
     },
   };
 }

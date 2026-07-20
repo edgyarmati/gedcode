@@ -57,7 +57,9 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     const ollamaId = ProviderInstanceId.make("ollama_local");
 
     expect(decoded.providerInstances[personalId]?.driver).toBe("codex");
-    expect(decoded.providerInstances[workId]?.config).toEqual({ homePath: "~/.codex_work" });
+    expect(decoded.providerInstances[workId]?.config).toEqual({
+      homePath: "~/.codex_work",
+    });
     // Critical: a config naming a driver this build does not know about
     // (`ollama` is not in `ProviderDriverKind`) must round-trip without loss.
     // The runtime handles "driver not installed" — the schema must not.
@@ -84,6 +86,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.maxParallelWorkers).toBe(2);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.capabilityPresets).toBeNull();
+    expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.projectContextDefaultTier).toBe("smart");
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
     expect(DEFAULT_SERVER_SETTINGS.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);
   });
@@ -99,6 +102,7 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
     });
     expect(decoded.orchestratorDefaults.defaultWorkerModelSelection).toBeNull();
     expect(decoded.orchestratorDefaults.capabilityPresets).toBeNull();
+    expect(decoded.orchestratorDefaults.projectContextDefaultTier).toBe("smart");
     expect(decoded.orchestratorDefaults.maxRetriesPerStage).toBe(2);
     expect(decoded.orchestratorDefaults.pmReconciliationIntervalMs).toBe(60 * 1000);
     expect(decoded.orchestratorDefaults.worktreeReaperIntervalMinutes).toBe(15);
@@ -119,7 +123,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
           land: "require-approval",
         },
         allowFullAccessWorkers: true,
-        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
+        defaultWorkerModelSelection: {
+          instanceId: "codex_worker",
+          model: "gpt-5-worker",
+        },
         maxRetriesPerStage: 4,
         pmReconciliationIntervalMs: 60_000,
         worktreeReaperIntervalMinutes: 2,
@@ -150,7 +157,10 @@ describe("ServerSettings.orchestratorDefaults (Plan 018 WP-B)", () => {
         },
         maxParallelTasks: 3,
         maxParallelWorkers: 4,
-        defaultWorkerModelSelection: { instanceId: "codex_worker", model: "gpt-5-worker" },
+        defaultWorkerModelSelection: {
+          instanceId: "codex_worker",
+          model: "gpt-5-worker",
+        },
         maxRetriesPerStage: 5,
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,

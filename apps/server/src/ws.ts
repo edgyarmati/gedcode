@@ -57,6 +57,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectContextRunCoordinator } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
+import { ProjectContextOnboardingCoordinator } from "./orchestration/Services/ProjectContextOnboardingCoordinator.ts";
 import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
@@ -329,7 +330,10 @@ function toAuthAccessStreamEvent(
 const shouldGuardOrchestratorMethod = (method: string) =>
   method.startsWith("orchestrator.") &&
   method !== ORCHESTRATOR_WS_METHODS.getPresetMigration &&
-  method !== ORCHESTRATOR_WS_METHODS.completePresetMigration;
+  method !== ORCHESTRATOR_WS_METHODS.completePresetMigration &&
+  // Read-only context inspection may safely discover current state before the
+  // required preset migration. Dismissal remains a guarded mutation.
+  method !== ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding;
 
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
@@ -338,6 +342,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
       const projectContextRunCoordinator = yield* ProjectContextRunCoordinator;
+      const projectContextOnboardingCoordinator = yield* ProjectContextOnboardingCoordinator;
       const pmProjectRuntimeFactory = yield* PmProjectRuntimeFactory;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
@@ -681,7 +686,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 title: bootstrap.createThread.title,
                 modelSelection: bootstrap.createThread.modelSelection,
                 ...(bootstrap.createThread.gedWorkflowEnabled !== undefined
-                  ? { gedWorkflowEnabled: bootstrap.createThread.gedWorkflowEnabled }
+                  ? {
+                      gedWorkflowEnabled: bootstrap.createThread.gedWorkflowEnabled,
+                    }
                   : {}),
                 runtimeMode: bootstrap.createThread.runtimeMode,
                 interactionMode: bootstrap.createThread.interactionMode,
@@ -1384,7 +1391,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             Effect.gen(function* () {
               const settings = yield* serverSettings.getSettings;
               const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-              const state = buildOrchestratorPresetMigrationState({ settings, readModel });
+              const state = buildOrchestratorPresetMigrationState({
+                settings,
+                readModel,
+              });
               if (state.status === "completed") {
                 return state;
               }
@@ -1647,7 +1657,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.cancelTask,
             cancelOrchestrationTaskWithServices(
-              { snapshotQuery: projectionSnapshotQuery, providerService, terminalManager },
+              {
+                snapshotQuery: projectionSnapshotQuery,
+                providerService,
+                terminalManager,
+              },
               {
                 taskId: input.taskId,
                 commandId: serverCommandId("orchestrator-cancel-task"),
@@ -1976,7 +1990,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ? `Summary handoff failed; using transcript handoff. Reason: ${pmHandoffFallbackReason(summaryResult.failure)}`
                 : "No active PM runtime; using transcript handoff.";
               yield* dispatchRequest({ mode: "transcript" });
-              return { accepted: true as const, mode: "transcript" as const, fallback };
+              return {
+                accepted: true as const,
+                mode: "transcript" as const,
+                fallback,
+              };
             }),
             { "rpc.aggregate": "orchestrator" },
           ),
@@ -1993,6 +2011,30 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 toDispatchCommandError(cause, "Failed to request a project-context run."),
               ),
             ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding,
+            projectContextOnboardingCoordinator
+              .get(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to scan project context onboarding."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding,
+            projectContextOnboardingCoordinator
+              .dismiss(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to dismiss project context onboarding."),
+                ),
+              ),
             { "rpc.aggregate": "orchestrator" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>

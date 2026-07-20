@@ -89,6 +89,12 @@ const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(Orchestrat
 const decodeOrchestratorRequestProjectContextRunInput = Schema.decodeUnknownEffect(
   OrchestratorRpcSchemas.requestProjectContextRun.input,
 );
+const decodeOrchestratorGetProjectContextOnboardingInput = Schema.decodeUnknownEffect(
+  OrchestratorRpcSchemas.getProjectContextOnboarding.input,
+);
+const decodeOrchestratorDismissProjectContextOnboardingInput = Schema.decodeUnknownEffect(
+  OrchestratorRpcSchemas.dismissProjectContextOnboarding.input,
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -276,7 +282,34 @@ it.effect("exposes only project and optional tier for project-context run reques
       expectedPrimaryCheckoutPath: "/spoofed-project-root",
     });
 
-    assert.deepStrictEqual(input, { projectId: ProjectId.make("project-1"), tier: "genius" });
+    assert.deepStrictEqual(input, {
+      projectId: ProjectId.make("project-1"),
+      tier: "genius",
+    });
+  }),
+);
+
+it.effect("keeps project-context onboarding scan and dismissal inputs content-free", () =>
+  Effect.gen(function* () {
+    const getInput = yield* decodeOrchestratorGetProjectContextOnboardingInput({
+      projectId: "project-1",
+      rawContent: "must-not-cross-rpc",
+    });
+    const dismissInput = yield* decodeOrchestratorDismissProjectContextOnboardingInput({
+      projectId: "project-1",
+      schemaVersion: 1,
+      fingerprint: `sha256:${"a".repeat(64)}`,
+      files: [{ path: "AGENTS.md", rawContent: "must-not-cross-rpc" }],
+    });
+
+    assert.deepStrictEqual(getInput, {
+      projectId: ProjectId.make("project-1"),
+    });
+    assert.deepStrictEqual(dismissInput, {
+      projectId: ProjectId.make("project-1"),
+      schemaVersion: 1,
+      fingerprint: `sha256:${"a".repeat(64)}`,
+    });
   }),
 );
 
@@ -1531,7 +1564,9 @@ it.effect("drops retired role keys only while decoding historical events", () =>
     assert.deepStrictEqual(Object.keys(projectEvent.payload.roleModelSelections ?? {}), ["work"]);
     assert.strictEqual(projectEvent.payload.roleModelSelections?.work?.instanceId, "codex");
     assert.strictEqual(projectEvent.payload.roleModelSelections?.work?.model, "gpt-work");
-    assert.deepStrictEqual(projectEvent.payload.rolePromptPrefixes, { verify: "Verify" });
+    assert.deepStrictEqual(projectEvent.payload.rolePromptPrefixes, {
+      verify: "Verify",
+    });
 
     const taskEvent = yield* decodeOrchestrationEvent({
       sequence: 2,
@@ -1554,7 +1589,9 @@ it.effect("drops retired role keys only while decoding historical events", () =>
     if (taskEvent.type !== "task.capability-tiers-updated") {
       return assert.fail("expected task.capability-tiers-updated");
     }
-    assert.deepStrictEqual(taskEvent.payload.roleCapabilityTiers, { verify: "smart" });
+    assert.deepStrictEqual(taskEvent.payload.roleCapabilityTiers, {
+      verify: "smart",
+    });
   }),
 );
 

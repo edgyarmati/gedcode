@@ -68,7 +68,12 @@ import { BrowserWsRpcHarness, type NormalizedWsRpcRequestBody } from "../../test
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 
 vi.mock("../lib/gitStatusState", () => ({
-  useGitStatus: () => ({ data: null, error: null, cause: null, isPending: false }),
+  useGitStatus: () => ({
+    data: null,
+    error: null,
+    cause: null,
+    isPending: false,
+  }),
   useGitStatuses: () => new Map(),
   refreshGitStatus: () => Promise.resolve(null),
   resetGitStatusStateForTests: () => undefined,
@@ -300,6 +305,15 @@ function createMockEnvironmentApi(input: {
       requestPmHandoff: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["requestPmHandoff"],
+      getProjectContextOnboarding: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["getProjectContextOnboarding"],
+      dismissProjectContextOnboarding: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["dismissProjectContextOnboarding"],
+      requestProjectContextRun: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["requestProjectContextRun"],
     },
   };
 }
@@ -831,7 +845,10 @@ function createSnapshotWithSecondaryProject(options?: {
           id: "thread-secondary-project" as ThreadId,
           projectId: SECOND_PROJECT_ID,
           title: "Release checklist",
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5",
+          },
           interactionMode: "default",
           runtimeMode: "full-access",
           branch: "release/docs-portal",
@@ -864,7 +881,10 @@ function createSnapshotWithSecondaryProject(options?: {
           id: ARCHIVED_SECONDARY_THREAD_ID,
           projectId: SECOND_PROJECT_ID,
           title: "Archived Docs Notes",
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5",
+          },
           interactionMode: "default",
           runtimeMode: "full-access",
           branch: "release/docs-archive",
@@ -900,7 +920,10 @@ function createSnapshotWithSecondaryProject(options?: {
         id: SECOND_PROJECT_ID,
         title: "Docs Portal",
         workspaceRoot: "/repo/clients/docs-portal",
-        defaultModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5",
+        },
         scripts: [],
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
@@ -2693,8 +2716,15 @@ describe("ChatView timeline estimator parity (full app)", () => {
                 type?: string;
                 gedWorkflowEnabled?: boolean;
                 bootstrap?: {
-                  createThread?: { projectId?: string; gedWorkflowEnabled?: boolean };
-                  prepareWorktree?: { projectCwd?: string; baseBranch?: string; branch?: string };
+                  createThread?: {
+                    projectId?: string;
+                    gedWorkflowEnabled?: boolean;
+                  };
+                  prepareWorktree?: {
+                    projectCwd?: string;
+                    baseBranch?: string;
+                    branch?: string;
+                  };
                   runSetupScript?: boolean;
                 };
               }
@@ -2764,7 +2794,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   slug: "claude-opus-4-7",
                   name: "Claude Opus 4.7",
                   isCustom: false,
-                  capabilities: createModelCapabilities({ optionDescriptors: [] }),
+                  capabilities: createModelCapabilities({
+                    optionDescriptors: [],
+                  }),
                 },
               ],
               slashCommands: [],
@@ -2785,7 +2817,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   slug: "claude-opus-4-7",
                   name: "Claude Opus 4.7",
                   isCustom: false,
-                  capabilities: createModelCapabilities({ optionDescriptors: [] }),
+                  capabilities: createModelCapabilities({
+                    optionDescriptors: [],
+                  }),
                 },
               ],
               slashCommands: [],
@@ -2922,7 +2956,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
                 type?: string;
                 bootstrap?: {
                   createThread?: { projectId?: string };
-                  prepareWorktree?: { projectCwd?: string; baseBranch?: string; branch?: string };
+                  prepareWorktree?: {
+                    projectCwd?: string;
+                    baseBranch?: string;
+                    branch?: string;
+                  };
                   runSetupScript?: boolean;
                 };
               }
@@ -3044,10 +3082,16 @@ describe("ChatView timeline estimator parity (full app)", () => {
       ...snapshotWithSecondThread,
       threads: snapshotWithSecondThread.threads.map((thread) => {
         if (thread.id === THREAD_ID) {
-          return Object.assign({}, thread, { session: null, title: "Thread alpha" });
+          return Object.assign({}, thread, {
+            session: null,
+            title: "Thread alpha",
+          });
         }
         if (thread.id === secondThreadId) {
-          return Object.assign({}, thread, { session: null, title: "Thread beta" });
+          return Object.assign({}, thread, {
+            session: null,
+            title: "Thread beta",
+          });
         }
         return thread;
       }),
@@ -3499,7 +3543,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       useComposerDraftStore.getState().setPrompt(THREAD_REF, "selected");
       await waitForComposerText("selected");
-      await setComposerSelectionByTextOffsets({ start: 0, end: "selected".length });
+      await setComposerSelectionByTextOffsets({
+        start: 0,
+        end: "selected".length,
+      });
       await pressComposerKey("(");
       await waitForComposerText("(selected)");
 
@@ -3572,7 +3619,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
     try {
       await waitForComposerText("quoted");
-      await setComposerSelectionByTextOffsets({ start: 0, end: "quoted".length });
+      await setComposerSelectionByTextOffsets({
+        start: 0,
+        end: "quoted".length,
+      });
       await pressComposerKey("«");
       await waitForComposerText("«quoted»");
     } finally {
@@ -3593,7 +3643,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
     try {
       await waitForComposerText("quoted");
-      await setComposerSelectionByTextOffsets({ start: 0, end: "quoted".length });
+      await setComposerSelectionByTextOffsets({
+        start: 0,
+        end: "quoted".length,
+      });
       const composerEditor = await waitForComposerEditor();
       composerEditor.focus();
       composerEditor.dispatchEvent(
@@ -4013,7 +4066,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await vi.waitFor(() => {
         const queued = composerDraftFor(THREAD_KEY)?.queuedMessages ?? [];
         expect(queued).toHaveLength(1);
-        expect(queued[0]).toMatchObject({ text: "queued follow up", status: "queued" });
+        expect(queued[0]).toMatchObject({
+          text: "queued follow up",
+          status: "queued",
+        });
         queuedCommandId = String(queued[0]?.commandId ?? "");
         queuedMessageId = String(queued[0]?.messageId ?? "");
         expect(turnStarts).toHaveLength(0);
@@ -4252,7 +4308,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
         expect(turnStarts[0]).toMatchObject({
           type: "thread.turn.start",
           commandId: "command-queue-retry-browser",
-          message: { messageId: "message-queue-retry-browser", text: "retry through steer" },
+          message: {
+            messageId: "message-queue-retry-browser",
+            text: "retry through steer",
+          },
         });
         expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
       });
@@ -4759,7 +4818,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   slug: "gpt-5.4",
                   name: "GPT-5.4",
                   isCustom: false,
-                  capabilities: createModelCapabilities({ optionDescriptors: [] }),
+                  capabilities: createModelCapabilities({
+                    optionDescriptors: [],
+                  }),
                 },
                 {
                   slug: "gpt-5.6-sol",
@@ -5544,7 +5605,12 @@ describe("ChatView timeline estimator parity (full app)", () => {
           if (body.partialPath === "~/Development/codex/") {
             return {
               parentPath: "~/Development/codex/",
-              entries: [{ name: "Codex.app", fullPath: "~/Development/codex/Codex.app" }],
+              entries: [
+                {
+                  name: "Codex.app",
+                  fullPath: "~/Development/codex/Codex.app",
+                },
+              ],
             };
           }
 
@@ -5709,7 +5775,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       await vi.waitFor(
         () => {
-          expect(remoteBrowseMock).toHaveBeenCalledWith({ partialPath: "~/workspaces/" });
+          expect(remoteBrowseMock).toHaveBeenCalledWith({
+            partialPath: "~/workspaces/",
+          });
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -5717,7 +5785,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await page.getByPlaceholder(ADD_PROJECT_SUBMENU_PLACEHOLDER).fill("~/workspaces/");
       await vi.waitFor(
         () => {
-          expect(remoteBrowseMock).toHaveBeenCalledWith({ partialPath: "~/workspaces/" });
+          expect(remoteBrowseMock).toHaveBeenCalledWith({
+            partialPath: "~/workspaces/",
+          });
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -5809,7 +5879,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
       await vi.waitFor(
         () => {
-          expect(pickFolder).toHaveBeenCalledWith({ initialPath: "~/Applications" });
+          expect(pickFolder).toHaveBeenCalledWith({
+            initialPath: "~/Applications",
+          });
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -6087,7 +6159,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
   it("creates a new thread from project search when no active project thread exists", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotWithSecondaryProject({ includeSecondaryThread: false }),
+      snapshot: createSnapshotWithSecondaryProject({
+        includeSecondaryThread: false,
+      }),
       configureFixture: (nextFixture) => {
         nextFixture.serverConfig = {
           ...nextFixture.serverConfig,
@@ -6656,7 +6730,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
         threads: snapshot.threads.map((thread) =>
           thread.id === THREAD_ID
             ? Object.assign({}, thread, {
-                modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("codex"),
+                  model: "gpt-5.4",
+                },
               })
             : thread,
         ),
@@ -6714,7 +6791,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   isCustom: false,
                   capabilities: createModelCapabilities({
                     optionDescriptors: [
-                      { id: "fastMode", label: "Fast Mode", type: "boolean" as const },
+                      {
+                        id: "fastMode",
+                        label: "Fast Mode",
+                        type: "boolean" as const,
+                      },
                     ],
                   }),
                 },
@@ -6724,7 +6805,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   isCustom: false,
                   capabilities: createModelCapabilities({
                     optionDescriptors: [
-                      { id: "fastMode", label: "Fast Mode", type: "boolean" as const },
+                      {
+                        id: "fastMode",
+                        label: "Fast Mode",
+                        type: "boolean" as const,
+                      },
                     ],
                   }),
                 },
@@ -6734,7 +6819,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
                   isCustom: false,
                   capabilities: createModelCapabilities({
                     optionDescriptors: [
-                      { id: "fastMode", label: "Fast Mode", type: "boolean" as const },
+                      {
+                        id: "fastMode",
+                        label: "Fast Mode",
+                        type: "boolean" as const,
+                      },
                     ],
                   }),
                 },

@@ -16,6 +16,7 @@ import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
 
 import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import type { ProjectContextSnapshot } from "../../project/ProjectContext.ts";
 import {
   captureProjectContextRunGitState,
@@ -220,7 +221,10 @@ export const requestProjectContextRunWithServices = Effect.fn(
     gitState,
     createdAt: yield* runtime.createdAt,
   });
-  return { ...result, projectContextRunId } satisfies ProjectContextRunRequestResult;
+  return {
+    ...result,
+    projectContextRunId,
+  } satisfies ProjectContextRunRequestResult;
 });
 
 export const makeProjectContextRunCoordinator = Effect.gen(function* () {
@@ -231,20 +235,42 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
   const path = yield* Path.Path;
   const engine = yield* OrchestrationEngineService;
   const crypto = yield* Crypto.Crypto;
+  const serverSettings = yield* ServerSettingsService;
 
   const request = (input: RequestProjectContextRunInput) =>
-    requestProjectContextRunWithServices(
-      { snapshotQuery, scanner, vcsProcess, fileSystem, path },
-      {
-        projectContextRunId: crypto.randomUUIDv4.pipe(Effect.map(ProjectContextRunId.make)),
-        commandId: crypto.randomUUIDv4.pipe(
-          Effect.map((uuid) => CommandId.make(`server:project-context-run-request:${uuid}`)),
-        ),
-        createdAt: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
-        dispatch: engine.dispatch,
-      },
-      input,
-    );
+    Effect.gen(function* () {
+      const currentSettings = yield* serverSettings.getSettings;
+      const tier = input.tier ?? currentSettings.orchestratorDefaults.projectContextDefaultTier;
+
+      // A picker selection is a durable global preference, not a transient
+      // client hint. Save it before dispatching the run so reconnects and the
+      // other surface resolve the same default. A failed run does not erase a
+      // deliberate preference selection.
+      if (
+        input.tier !== undefined &&
+        input.tier !== currentSettings.orchestratorDefaults.projectContextDefaultTier
+      ) {
+        yield* serverSettings.updateSettings({
+          orchestratorDefaults: {
+            ...currentSettings.orchestratorDefaults,
+            projectContextDefaultTier: input.tier,
+          },
+        });
+      }
+
+      return yield* requestProjectContextRunWithServices(
+        { snapshotQuery, scanner, vcsProcess, fileSystem, path },
+        {
+          projectContextRunId: crypto.randomUUIDv4.pipe(Effect.map(ProjectContextRunId.make)),
+          commandId: crypto.randomUUIDv4.pipe(
+            Effect.map((uuid) => CommandId.make(`server:project-context-run-request:${uuid}`)),
+          ),
+          createdAt: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
+          dispatch: engine.dispatch,
+        },
+        { projectId: input.projectId, tier },
+      );
+    });
 
   return { request };
 });
