@@ -196,6 +196,18 @@ export interface WsRpcClient {
     readonly requestProjectContextRun: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.requestProjectContextRun
     >;
+    readonly getProjectContextRunReview: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.getProjectContextRunReview
+    >;
+    readonly reviseProjectContextRun: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.reviseProjectContextRun
+    >;
+    readonly commitProjectContextRun: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.commitProjectContextRun
+    >;
+    readonly discardProjectContextRun: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.discardProjectContextRun
+    >;
   };
 }
 
@@ -434,6 +446,22 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       requestProjectContextRun: (input) =>
         transport.request((client) =>
           client[ORCHESTRATOR_WS_METHODS.requestProjectContextRun](input),
+        ),
+      getProjectContextRunReview: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.getProjectContextRunReview](input),
+        ),
+      reviseProjectContextRun: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.reviseProjectContextRun](input),
+        ),
+      commitProjectContextRun: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.commitProjectContextRun](input),
+        ),
+      discardProjectContextRun: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.discardProjectContextRun](input),
         ),
     },
   };

@@ -44,8 +44,9 @@ const makeRepository = Effect.gen(function* () {
         model_options_json, primary_checkout_path, schema_version, fingerprint, prompt,
         baseline_manifest_json, workspace_status_manifest_json, git_state_json, status, provider_thread_id, result,
         failure_message,
-        changes_json, scope_violation_paths_json, created_at, started_at, pending_review_at,
-        failed_at, interrupted_at, updated_at
+        changes_json, scope_violation_paths_json, resolution, commit_hash, result_schema_version,
+        result_fingerprint, created_at, started_at, pending_review_at, failed_at, interrupted_at,
+        resolved_at, updated_at
       ) VALUES (
         ${run.id}, ${run.projectId}, ${run.mode}, ${run.tier}, ${run.providerInstanceId},
         ${run.model}, ${run.modelOptions === null ? null : JSON.stringify(run.modelOptions)},
@@ -53,8 +54,9 @@ const makeRepository = Effect.gen(function* () {
         ${JSON.stringify(run.baselineManifest)}, ${JSON.stringify(run.workspaceStatusManifest)}, ${JSON.stringify(run.gitState)},
         ${run.status}, ${run.providerThreadId},
         ${run.result}, ${run.failureMessage}, ${JSON.stringify(run.changes)},
-        ${JSON.stringify(run.scopeViolationPaths)}, ${run.createdAt}, ${run.startedAt},
-        ${run.pendingReviewAt}, ${run.failedAt}, ${run.interruptedAt}, ${run.updatedAt}
+        ${JSON.stringify(run.scopeViolationPaths)}, ${run.resolution}, ${run.commitHash},
+        ${run.resultSchemaVersion}, ${run.resultFingerprint}, ${run.createdAt}, ${run.startedAt},
+        ${run.pendingReviewAt}, ${run.failedAt}, ${run.interruptedAt}, ${run.resolvedAt}, ${run.updatedAt}
       )
       ON CONFLICT (project_context_run_id) DO UPDATE SET
         project_id = excluded.project_id,
@@ -76,11 +78,16 @@ const makeRepository = Effect.gen(function* () {
         failure_message = excluded.failure_message,
         changes_json = excluded.changes_json,
         scope_violation_paths_json = excluded.scope_violation_paths_json,
+        resolution = excluded.resolution,
+        commit_hash = excluded.commit_hash,
+        result_schema_version = excluded.result_schema_version,
+        result_fingerprint = excluded.result_fingerprint,
         created_at = excluded.created_at,
         started_at = excluded.started_at,
         pending_review_at = excluded.pending_review_at,
         failed_at = excluded.failed_at,
         interrupted_at = excluded.interrupted_at,
+        resolved_at = excluded.resolved_at,
         updated_at = excluded.updated_at
     `,
   });
@@ -96,9 +103,11 @@ const makeRepository = Effect.gen(function* () {
       git_state_json AS "gitState", status,
       provider_thread_id AS "providerThreadId", result, failure_message AS "failureMessage",
       changes_json AS "changes", scope_violation_paths_json AS "scopeViolationPaths",
+      resolution, commit_hash AS "commitHash", result_schema_version AS "resultSchemaVersion",
+      result_fingerprint AS "resultFingerprint",
       created_at AS "createdAt", started_at AS "startedAt",
       pending_review_at AS "pendingReviewAt", failed_at AS "failedAt",
-      interrupted_at AS "interruptedAt", updated_at AS "updatedAt"
+      interrupted_at AS "interruptedAt", resolved_at AS "resolvedAt", updated_at AS "updatedAt"
     FROM projection_project_context_runs
   `;
 

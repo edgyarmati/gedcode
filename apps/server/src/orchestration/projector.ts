@@ -362,11 +362,16 @@ export function projectEvent(
             failureMessage: null,
             changes: [],
             scopeViolationPaths: [],
+            resolution: null,
+            commitHash: null,
+            resultSchemaVersion: null,
+            resultFingerprint: null,
             createdAt: event.payload.createdAt,
             startedAt: null,
             pendingReviewAt: null,
             failedAt: null,
             interruptedAt: null,
+            resolvedAt: null,
             updatedAt: event.payload.updatedAt,
           },
         ],
@@ -400,6 +405,70 @@ export function projectEvent(
             changes: event.payload.changes,
             scopeViolationPaths: event.payload.scopeViolationPaths,
             pendingReviewAt: event.payload.pendingReviewAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-revised":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "pending",
+            prompt: event.payload.prompt,
+            providerThreadId: null,
+            result: null,
+            failureMessage: null,
+            changes: [],
+            scopeViolationPaths: [],
+            resolution: null,
+            commitHash: null,
+            resultSchemaVersion: null,
+            resultFingerprint: null,
+            startedAt: null,
+            pendingReviewAt: null,
+            failedAt: null,
+            interruptedAt: null,
+            resolvedAt: null,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-committed":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "completed",
+            resolution: "committed",
+            commitHash: event.payload.commitHash,
+            resultSchemaVersion: event.payload.resultSchemaVersion,
+            resultFingerprint: event.payload.resultFingerprint,
+            resolvedAt: event.payload.resolvedAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-discarded":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "discarded",
+            resolution: "discarded",
+            commitHash: null,
+            resultSchemaVersion: event.payload.resultSchemaVersion,
+            resultFingerprint: event.payload.resultFingerprint,
+            resolvedAt: event.payload.resolvedAt,
             updatedAt: event.payload.updatedAt,
           },
         ),

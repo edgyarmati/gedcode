@@ -86,6 +86,7 @@ function makeEmptyEnvironmentState(): EnvironmentState {
     taskIdsByProjectId: {},
     taskById: {},
     helperRunById: {},
+    projectContextRunById: {},
     pendingGateIdsByTaskId: {},
     pendingGateById: {},
     quotaBlockedStageByTaskId: {},

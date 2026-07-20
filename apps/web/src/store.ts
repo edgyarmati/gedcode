@@ -10,6 +10,7 @@ import type {
   OrchestrationPmQuotaBlock,
   OrchestrationProposedPlan,
   OrchestrationReadModel,
+  OrchestrationProjectContextRun,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamEvent,
   OrchestrationSession,
@@ -68,6 +69,7 @@ export interface EnvironmentState {
   taskIdsByProjectId: Record<ProjectId, string[]>;
   taskById: Record<string, OrchestratorTask>;
   helperRunById: Record<string, OrchestrationHelperRun>;
+  projectContextRunById: Record<string, OrchestrationProjectContextRun>;
   pendingGateIdsByTaskId: Record<string, string[]>;
   pendingGateById: Record<string, OrchestratorPendingGate>;
   // Active quota-blocked stage per task (at most one stage is active at a time).
@@ -150,6 +152,7 @@ export const initialEnvironmentState: EnvironmentState = {
   taskIdsByProjectId: {},
   taskById: {},
   helperRunById: {},
+  projectContextRunById: {},
   pendingGateIdsByTaskId: {},
   pendingGateById: {},
   quotaBlockedStageByTaskId: {},
@@ -729,6 +732,43 @@ function replaceHelperRuns(
   }
   for (const run of helperRuns) helperRunById[String(run.id)] = run;
   return { ...state, helperRunById };
+}
+
+function upsertProjectContextRunState(
+  state: EnvironmentState,
+  run: OrchestrationProjectContextRun,
+): EnvironmentState {
+  return {
+    ...state,
+    projectContextRunById: {
+      ...state.projectContextRunById,
+      [String(run.id)]: run,
+    },
+  };
+}
+
+function patchProjectContextRunState(
+  state: EnvironmentState,
+  runId: string,
+  patch: Partial<OrchestrationProjectContextRun>,
+): EnvironmentState {
+  const existing = state.projectContextRunById[runId];
+  return existing === undefined
+    ? state
+    : upsertProjectContextRunState(state, { ...existing, ...patch });
+}
+
+function replaceProjectContextRuns(
+  state: EnvironmentState,
+  projectId: ProjectId,
+  runs: ReadonlyArray<OrchestrationProjectContextRun>,
+): EnvironmentState {
+  const projectContextRunById = { ...state.projectContextRunById };
+  for (const [id, run] of Object.entries(projectContextRunById)) {
+    if (run.projectId === projectId) delete projectContextRunById[id];
+  }
+  for (const run of runs) projectContextRunById[String(run.id)] = run;
+  return { ...state, projectContextRunById };
 }
 
 function setTaskQuotaBlock(
@@ -1782,6 +1822,7 @@ export function syncServerThreadDetail(
 interface SyncOrchestratorProjectSnapshotOptions {
   readonly skipPmThread?: boolean;
   readonly skipTaskIds?: ReadonlySet<string>;
+  readonly skipContextRunIds?: ReadonlySet<string>;
 }
 
 export function syncOrchestratorProjectSnapshot(
@@ -1874,6 +1915,13 @@ export function syncOrchestratorProjectSnapshot(
     (run) => run.projectId === snapshot.project.id,
     snapshot.helperRuns ?? [],
   );
+  nextEnvironmentState = replaceProjectContextRuns(nextEnvironmentState, snapshot.project.id, [
+    ...snapshot.projectContextRuns.filter((run) => !options.skipContextRunIds?.has(String(run.id))),
+    ...Object.values(nextEnvironmentState.projectContextRunById).filter(
+      (run) =>
+        run.projectId === snapshot.project.id && options.skipContextRunIds?.has(String(run.id)),
+    ),
+  ]);
 
   nextEnvironmentState = retainProjectSnapshotTaskState({
     state: nextEnvironmentState,
@@ -1986,6 +2034,109 @@ function applyEnvironmentOrchestrationEvent(
       return patchHelperRunState(state, String(event.payload.helperRunId), {
         status: "interrupted",
         completedAt: event.payload.interruptedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-requested":
+      return upsertProjectContextRunState(state, {
+        id: event.payload.projectContextRunId,
+        projectId: event.payload.projectId,
+        mode: event.payload.mode,
+        tier: event.payload.tier,
+        providerInstanceId: event.payload.providerInstanceId,
+        model: event.payload.model,
+        modelOptions: event.payload.modelOptions,
+        primaryCheckoutPath: event.payload.primaryCheckoutPath,
+        schemaVersion: event.payload.schemaVersion,
+        fingerprint: event.payload.fingerprint,
+        prompt: event.payload.prompt,
+        baselineManifest: event.payload.baselineManifest,
+        workspaceStatusManifest: event.payload.workspaceStatusManifest,
+        gitState: event.payload.gitState,
+        status: "pending",
+        providerThreadId: null,
+        result: null,
+        failureMessage: null,
+        changes: [],
+        scopeViolationPaths: [],
+        resolution: null,
+        commitHash: null,
+        resultSchemaVersion: null,
+        resultFingerprint: null,
+        createdAt: event.payload.createdAt,
+        startedAt: null,
+        pendingReviewAt: null,
+        failedAt: null,
+        interruptedAt: null,
+        resolvedAt: null,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-started":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "running",
+        providerThreadId: event.payload.providerThreadId,
+        startedAt: event.payload.startedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-pending-review":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "pending-review",
+        result: event.payload.result,
+        failureMessage: null,
+        changes: event.payload.changes,
+        scopeViolationPaths: event.payload.scopeViolationPaths,
+        pendingReviewAt: event.payload.pendingReviewAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-revised":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "pending",
+        prompt: event.payload.prompt,
+        providerThreadId: null,
+        result: null,
+        failureMessage: null,
+        changes: [],
+        scopeViolationPaths: [],
+        pendingReviewAt: null,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-committed":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "completed",
+        resolution: "committed",
+        commitHash: event.payload.commitHash,
+        resultSchemaVersion: event.payload.resultSchemaVersion,
+        resultFingerprint: event.payload.resultFingerprint,
+        resolvedAt: event.payload.resolvedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-discarded":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "discarded",
+        resolution: "discarded",
+        resultSchemaVersion: event.payload.resultSchemaVersion,
+        resultFingerprint: event.payload.resultFingerprint,
+        resolvedAt: event.payload.resolvedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-failed":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "failed",
+        failureMessage: event.payload.message,
+        failedAt: event.payload.failedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
+    case "project.context-run-interrupted":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "interrupted",
+        interruptedAt: event.payload.interruptedAt,
         updatedAt: event.payload.updatedAt,
       });
 
@@ -2110,10 +2261,16 @@ function applyEnvironmentOrchestrationEvent(
           ([, run]) => run.projectId !== event.payload.projectId,
         ),
       );
+      const projectContextRunById = Object.fromEntries(
+        Object.entries(nextState.projectContextRunById).filter(
+          ([, run]) => run.projectId !== event.payload.projectId,
+        ),
+      );
       return {
         ...nextState,
         projectById,
         helperRunById,
+        projectContextRunById,
         pmQuotaBlockByProjectId,
         projectIds: removeId(nextState.projectIds, event.payload.projectId),
       };
@@ -3057,10 +3214,16 @@ function applyEnvironmentShellEvent(
       const { [event.projectId]: _removedProject, ...projectById } = state.projectById;
       const { [event.projectId]: _removedPmQuotaBlock, ...pmQuotaBlockByProjectId } =
         state.pmQuotaBlockByProjectId;
+      const projectContextRunById = Object.fromEntries(
+        Object.entries(state.projectContextRunById).filter(
+          ([, run]) => run.projectId !== event.projectId,
+        ),
+      );
       return {
         ...state,
         projectById,
         pmQuotaBlockByProjectId,
+        projectContextRunById,
         projectIds: removeId(state.projectIds, event.projectId),
       };
     }
@@ -3155,6 +3318,20 @@ export function selectHelperRunsForProjectRef(
   if (!ref) return [];
   return Object.values(selectEnvironmentState(state, ref.environmentId).helperRunById)
     .filter((run) => run.projectId === ref.projectId && run.attachment.kind === "pm")
+    .toSorted(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) ||
+        String(left.id).localeCompare(String(right.id)),
+    );
+}
+
+export function selectProjectContextRunsForProjectRef(
+  state: AppState,
+  ref: ScopedProjectRef | null | undefined,
+): OrchestrationProjectContextRun[] {
+  if (!ref) return [];
+  return Object.values(selectEnvironmentState(state, ref.environmentId).projectContextRunById)
+    .filter((run) => run.projectId === ref.projectId)
     .toSorted(
       (left, right) =>
         left.createdAt.localeCompare(right.createdAt) ||

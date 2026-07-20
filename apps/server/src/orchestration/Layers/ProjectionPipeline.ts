@@ -1646,11 +1646,16 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           failureMessage: null,
           changes: [],
           scopeViolationPaths: [],
+          resolution: null,
+          commitHash: null,
+          resultSchemaVersion: null,
+          resultFingerprint: null,
           createdAt: event.payload.createdAt,
           startedAt: null,
           pendingReviewAt: null,
           failedAt: null,
           interruptedAt: null,
+          resolvedAt: null,
           updatedAt: event.payload.updatedAt,
         });
         return;
@@ -1658,6 +1663,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       if (
         event.type !== "project.context-run-started" &&
         event.type !== "project.context-run-pending-review" &&
+        event.type !== "project.context-run-revised" &&
+        event.type !== "project.context-run-committed" &&
+        event.type !== "project.context-run-discarded" &&
         event.type !== "project.context-run-failed" &&
         event.type !== "project.context-run-interrupted"
       ) {
@@ -1686,6 +1694,55 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           changes: event.payload.changes,
           scopeViolationPaths: event.payload.scopeViolationPaths,
           pendingReviewAt: event.payload.pendingReviewAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-revised") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "pending",
+          prompt: event.payload.prompt,
+          providerThreadId: null,
+          result: null,
+          failureMessage: null,
+          changes: [],
+          scopeViolationPaths: [],
+          resolution: null,
+          commitHash: null,
+          resultSchemaVersion: null,
+          resultFingerprint: null,
+          startedAt: null,
+          pendingReviewAt: null,
+          failedAt: null,
+          interruptedAt: null,
+          resolvedAt: null,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-committed") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "completed",
+          resolution: "committed",
+          commitHash: event.payload.commitHash,
+          resultSchemaVersion: event.payload.resultSchemaVersion,
+          resultFingerprint: event.payload.resultFingerprint,
+          resolvedAt: event.payload.resolvedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-discarded") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "discarded",
+          resolution: "discarded",
+          commitHash: null,
+          resultSchemaVersion: event.payload.resultSchemaVersion,
+          resultFingerprint: event.payload.resultFingerprint,
+          resolvedAt: event.payload.resolvedAt,
           updatedAt: event.payload.updatedAt,
         });
         return;

@@ -92,11 +92,16 @@ it.layer(layer)("ProjectionProjectContextRunRepository", (it) => {
           },
         ],
         scopeViolationPaths: ["notes.txt"],
+        resolution: null,
+        commitHash: null,
+        resultSchemaVersion: null,
+        resultFingerprint: null,
         createdAt: now,
         startedAt: now,
         pendingReviewAt: now,
         failedAt: null,
         interruptedAt: null,
+        resolvedAt: null,
         updatedAt: now,
       });
 

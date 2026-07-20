@@ -7,6 +7,7 @@ import {
   MessageId,
   ProjectContextFingerprint,
   ProjectContextRunContentDigest,
+  ProjectContextRunGitObjectId,
   ProjectContextRunId,
   ProjectContextSchemaVersion,
   ProjectId,
@@ -300,6 +301,8 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const projectId = ProjectId.make("project-context-run-replay");
       const reviewRunId = ProjectContextRunId.make("context-run-review");
+      const completedRunId = ProjectContextRunId.make("context-run-completed");
+      const discardedRunId = ProjectContextRunId.make("context-run-discarded");
       const failedRunId = ProjectContextRunId.make("context-run-failed");
       const interruptedRunId = ProjectContextRunId.make("context-run-interrupted");
       const now = "2026-07-20T10:00:00.000Z";
@@ -327,6 +330,8 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       for (const [index, projectContextRunId] of [
         reviewRunId,
+        completedRunId,
+        discardedRunId,
         failedRunId,
         interruptedRunId,
       ].entries()) {
@@ -416,6 +421,43 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
       yield* eventStore.append({
+        type: "project.context-run-committed",
+        eventId: EventId.make("evt-context-run-committed"),
+        aggregateKind: "project-context-run",
+        aggregateId: completedRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-committed"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-committed"),
+        metadata: {},
+        payload: {
+          projectContextRunId: completedRunId,
+          commitHash: ProjectContextRunGitObjectId.make("a".repeat(40)),
+          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
+          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"2".repeat(64)}`),
+          resolvedAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "project.context-run-discarded",
+        eventId: EventId.make("evt-context-run-discarded"),
+        aggregateKind: "project-context-run",
+        aggregateId: discardedRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-discarded"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-discarded"),
+        metadata: {},
+        payload: {
+          projectContextRunId: discardedRunId,
+          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
+          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"3".repeat(64)}`),
+          resolvedAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
         type: "project.context-run-failed",
         eventId: EventId.make("evt-context-run-failed"),
         aggregateKind: "project-context-run",
@@ -456,37 +498,48 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         readonly baselineManifest: string;
         readonly workspaceStatusManifest: string;
         readonly changes: string;
+        readonly resolution: string | null;
+        readonly commitHash: string | null;
       }>`
         SELECT project_context_run_id AS "id", status,
           baseline_manifest_json AS "baselineManifest",
           workspace_status_manifest_json AS "workspaceStatusManifest",
-          changes_json AS "changes"
+          changes_json AS "changes", resolution, commit_hash AS "commitHash"
         FROM projection_project_context_runs
         ORDER BY project_context_run_id
       `;
       assert.deepStrictEqual(
         rows.map((row) => [row.id, row.status]),
         [
+          ["context-run-completed", "completed"],
+          ["context-run-discarded", "discarded"],
           ["context-run-failed", "failed"],
           ["context-run-interrupted", "interrupted"],
           ["context-run-review", "pending-review"],
         ],
       );
       assert.strictEqual(
-        rows[2]?.baselineManifest,
+        rows[4]?.baselineManifest,
         '[{"path":"AGENTS.md","rawContent":"# Existing\\n"}]',
       );
       assert.strictEqual(
-        rows[2]?.workspaceStatusManifest,
+        rows[4]?.workspaceStatusManifest,
         '[{"relativePath":"AGENTS.md","porcelainStatus":" M","contentDigest":null}]',
       );
-      assert.match(rows[2]?.changes ?? "", /Keep changes bounded/);
+      assert.match(rows[4]?.changes ?? "", /Keep changes bounded/);
+      assert.deepStrictEqual(
+        rows.slice(0, 2).map((row) => [row.resolution, row.commitHash]),
+        [
+          ["committed", "a".repeat(40)],
+          ["discarded", null],
+        ],
+      );
 
       yield* projectionPipeline.bootstrap;
       const replayedCount = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count FROM projection_project_context_runs
       `;
-      assert.strictEqual(replayedCount[0]?.count, 3);
+      assert.strictEqual(replayedCount[0]?.count, 5);
     }),
   );
 

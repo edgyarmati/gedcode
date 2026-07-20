@@ -1,7 +1,10 @@
 import {
   CommandId,
+  PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS,
+  ProjectContextRunGitObjectId,
   ProjectContextRunId,
   ProjectContextRunPath,
+  type OrchestrationProjectContextRun,
   type OrchestrationCommand,
   type ProjectContextRunBaselineManifest,
 } from "@t3tools/contracts";
@@ -29,6 +32,14 @@ import {
   type ProjectContextScannerShape,
 } from "../../project/Services/ProjectContextScanner.ts";
 import type { OrchestrationDispatchError } from "../Errors.ts";
+import { withProjectContextRunLifecycleLock } from "../projectContextRunLifecycleCoordinator.ts";
+import {
+  commitProjectContextRunReview,
+  discardProjectContextRunReview,
+  inspectProjectContextRunReview,
+  ProjectContextRunReviewError,
+  projectContextRunReviewPresentation,
+} from "../projectContextRunReview.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ProjectionSnapshotQuery,
@@ -36,6 +47,7 @@ import {
 } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ProjectContextRunCoordinator,
+  type ProjectContextRunCoordinatorShape,
   type ProjectContextRunRequestResult,
   type RequestProjectContextRunInput,
 } from "../Services/ProjectContextRunCoordinator.ts";
@@ -237,6 +249,61 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const serverSettings = yield* ServerSettingsService;
 
+  const reviewServices = (run: OrchestrationProjectContextRun) => ({
+    scan: (workspaceRoot: string) =>
+      scanner.scan(workspaceRoot).pipe(
+        Effect.mapError(
+          (error) =>
+            new ProjectContextRunReviewError({
+              projectContextRunId: run.id,
+              detail: error.message,
+            }),
+        ),
+      ),
+    vcsProcess,
+    fileSystem,
+    path,
+  });
+
+  const loadPendingReview = Effect.fn("ProjectContextRunCoordinator.loadPendingReview")(function* (
+    runId: ProjectContextRunId,
+  ) {
+    const readModel = yield* snapshotQuery.getCommandReadModel();
+    const run = readModel.projectContextRuns.find((candidate) => candidate.id === runId);
+    if (run === undefined) {
+      return yield* new ProjectContextRunReviewError({
+        projectContextRunId: runId,
+        detail: `Project-context run '${runId}' was not found.`,
+      });
+    }
+    if (run.status !== "pending-review") {
+      return yield* new ProjectContextRunReviewError({
+        projectContextRunId: runId,
+        detail: `Project-context run '${runId}' does not have a pending review.`,
+      });
+    }
+    const project = readModel.projects.find((candidate) => candidate.id === run.projectId);
+    if (
+      project === undefined ||
+      project.deletedAt !== null ||
+      project.workspaceRoot !== run.primaryCheckoutPath
+    ) {
+      return yield* new ProjectContextRunReviewError({
+        projectContextRunId: runId,
+        detail:
+          "The project primary checkout changed or became unavailable after this context run.",
+      });
+    }
+    return run;
+  });
+
+  const commandId = (kind: string) =>
+    crypto.randomUUIDv4.pipe(
+      Effect.map((uuid) => CommandId.make(`server:project-context-run-${kind}:${uuid}`)),
+    );
+
+  const createdAt = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+
   const request = (input: RequestProjectContextRunInput) =>
     Effect.gen(function* () {
       const currentSettings = yield* serverSettings.getSettings;
@@ -272,7 +339,102 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       );
     });
 
-  return { request };
+  const getReview: ProjectContextRunCoordinatorShape["getReview"] = (input) =>
+    snapshotQuery.getCommandReadModel().pipe(
+      Effect.map((readModel) => {
+        const run = readModel.projectContextRuns
+          .filter(
+            (candidate) =>
+              candidate.projectId === input.projectId && candidate.status === "pending-review",
+          )
+          .toSorted(
+            (left, right) =>
+              right.updatedAt.localeCompare(left.updatedAt) ||
+              String(right.id).localeCompare(String(left.id)),
+          )[0];
+        return { review: run === undefined ? null : projectContextRunReviewPresentation(run) };
+      }),
+    );
+
+  const revise: ProjectContextRunCoordinatorShape["revise"] = (input) =>
+    withProjectContextRunLifecycleLock(
+      input.runId,
+      Effect.gen(function* () {
+        const run = yield* loadPendingReview(input.runId);
+        yield* inspectProjectContextRunReview(reviewServices(run), run);
+        const prefix = [
+          "Revise the current project-context proposal in the primary checkout.",
+          "Keep every edit within the allowed project-context files and do not stage or commit.",
+          "Apply this reviewer feedback:",
+          "",
+        ].join("\n");
+        const prompt = `${prefix}${input.instructions.trim()}`.slice(
+          0,
+          PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS,
+        );
+        const result = yield* engine.dispatch({
+          type: "project.context.run.revise",
+          commandId: yield* commandId("revise"),
+          projectContextRunId: run.id,
+          prompt,
+          createdAt: yield* createdAt,
+        });
+        return { runId: run.id, sequence: result.sequence };
+      }),
+    );
+
+  const commit: ProjectContextRunCoordinatorShape["commit"] = (input) =>
+    withProjectContextRunLifecycleLock(
+      input.runId,
+      Effect.gen(function* () {
+        const run = yield* loadPendingReview(input.runId);
+        const committed = yield* commitProjectContextRunReview(
+          reviewServices(run),
+          run,
+          input.message,
+        );
+        if (committed.commitSha === null) {
+          return yield* new ProjectContextRunReviewError({
+            projectContextRunId: run.id,
+            detail:
+              "This context run has no changes to commit; discard the empty proposal instead.",
+          });
+        }
+        const commitHash = ProjectContextRunGitObjectId.make(committed.commitSha);
+        const snapshot = yield* scanner.scan(run.primaryCheckoutPath);
+        const result = yield* engine.dispatch({
+          type: "project.context.run.commit",
+          commandId: yield* commandId("commit"),
+          projectContextRunId: run.id,
+          commitHash,
+          resultSchemaVersion: snapshot.schemaVersion,
+          resultFingerprint: snapshot.fingerprint,
+          createdAt: yield* createdAt,
+        });
+        return { runId: run.id, commitHash, sequence: result.sequence };
+      }),
+    );
+
+  const discard: ProjectContextRunCoordinatorShape["discard"] = (input) =>
+    withProjectContextRunLifecycleLock(
+      input.runId,
+      Effect.gen(function* () {
+        const run = yield* loadPendingReview(input.runId);
+        yield* discardProjectContextRunReview(reviewServices(run), run);
+        const snapshot = yield* scanner.scan(run.primaryCheckoutPath);
+        const result = yield* engine.dispatch({
+          type: "project.context.run.discard",
+          commandId: yield* commandId("discard"),
+          projectContextRunId: run.id,
+          resultSchemaVersion: snapshot.schemaVersion,
+          resultFingerprint: snapshot.fingerprint,
+          createdAt: yield* createdAt,
+        });
+        return { runId: run.id, sequence: result.sequence };
+      }),
+    );
+
+  return { request, getReview, revise, commit, discard };
 });
 
 export const ProjectContextRunCoordinatorLive = Layer.effect(

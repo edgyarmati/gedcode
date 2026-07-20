@@ -5,6 +5,17 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added mandatory project-context change review across normal Chat and Orchestrator. Completed
+  context agents now present their bounded summary, changed paths, deterministic diff, and any scope
+  violations before anything is committed. Commit creates a descriptive, run-attributed Git commit
+  containing only the reviewed agent delta; baseline-aware three-way merging preserves pre-existing
+  unstaged edits in the same context file, while stale files, staged indexes, Git drift, and
+  overlapping hunks fail closed. Revise starts another durable agent turn against the original
+  baseline, and Discard restores the exact pre-run bytes without `git restore` or path-wide cleanup.
+  Commit and Discard atomically settle the run plus its resulting context fingerprint, so onboarding
+  stays complete until a material context change or scanner upgrade. These runs remain independent
+  from tasks, worktrees, stages, gates, pull requests, and landing.
+
 - Added shared project-context onboarding across normal Chat and Orchestrator. A fresh bounded scan
   offers **Populate** for missing or stub guidance and **Review** for substantive context, while
   exact schema/fingerprint dismissal and active-run detection prevent repeat prompts across surface

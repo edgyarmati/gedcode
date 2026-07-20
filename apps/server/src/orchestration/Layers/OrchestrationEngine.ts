@@ -106,6 +106,9 @@ export function classifyOrchestrationCommand(
     case "project.context.run.request":
     case "project.context.run.start":
     case "project.context.run.pending-review":
+    case "project.context.run.revise":
+    case "project.context.run.commit":
+    case "project.context.run.discard":
     case "project.context.run.fail":
     case "project.context.run.interrupt":
       return "project";
@@ -196,6 +199,9 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "project.context.run.request":
     case "project.context.run.start":
     case "project.context.run.pending-review":
+    case "project.context.run.revise":
+    case "project.context.run.commit":
+    case "project.context.run.discard":
     case "project.context.run.fail":
     case "project.context.run.interrupt":
       return {

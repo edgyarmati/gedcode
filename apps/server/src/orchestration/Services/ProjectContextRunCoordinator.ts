@@ -1,5 +1,13 @@
 import {
   type OrchestrationCapabilityTier,
+  type OrchestratorCommitProjectContextRunInput,
+  type OrchestratorCommitProjectContextRunResult,
+  type OrchestratorDiscardProjectContextRunInput,
+  type OrchestratorDiscardProjectContextRunResult,
+  type OrchestratorGetProjectContextRunReviewInput,
+  type OrchestratorGetProjectContextRunReviewResult,
+  type OrchestratorReviseProjectContextRunInput,
+  type OrchestratorReviseProjectContextRunResult,
   type ProjectContextRunId,
   type ProjectId,
 } from "@t3tools/contracts";
@@ -24,6 +32,18 @@ export interface ProjectContextRunCoordinatorShape {
   readonly request: (
     input: RequestProjectContextRunInput,
   ) => Effect.Effect<ProjectContextRunRequestResult, unknown>;
+  readonly getReview: (
+    input: OrchestratorGetProjectContextRunReviewInput,
+  ) => Effect.Effect<OrchestratorGetProjectContextRunReviewResult, unknown>;
+  readonly revise: (
+    input: OrchestratorReviseProjectContextRunInput,
+  ) => Effect.Effect<OrchestratorReviseProjectContextRunResult, unknown>;
+  readonly commit: (
+    input: OrchestratorCommitProjectContextRunInput,
+  ) => Effect.Effect<OrchestratorCommitProjectContextRunResult, unknown>;
+  readonly discard: (
+    input: OrchestratorDiscardProjectContextRunInput,
+  ) => Effect.Effect<OrchestratorDiscardProjectContextRunResult, unknown>;
 }
 
 export class ProjectContextRunCoordinator extends Context.Service<

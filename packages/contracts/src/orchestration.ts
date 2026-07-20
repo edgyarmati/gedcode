@@ -63,6 +63,10 @@ export const ORCHESTRATOR_WS_METHODS = {
   getProjectContextOnboarding: "orchestrator.getProjectContextOnboarding",
   dismissProjectContextOnboarding: "orchestrator.dismissProjectContextOnboarding",
   requestProjectContextRun: "orchestrator.requestProjectContextRun",
+  getProjectContextRunReview: "orchestrator.getProjectContextRunReview",
+  reviseProjectContextRun: "orchestrator.reviseProjectContextRun",
+  commitProjectContextRun: "orchestrator.commitProjectContextRun",
+  discardProjectContextRun: "orchestrator.discardProjectContextRun",
 } as const;
 
 export const OrchestratorPlaybookFrontmatter = Schema.Struct({
@@ -954,10 +958,15 @@ export const ProjectContextRunStatus = Schema.Literals([
   "pending",
   "running",
   "pending-review",
+  "completed",
+  "discarded",
   "failed",
   "interrupted",
 ]);
 export type ProjectContextRunStatus = typeof ProjectContextRunStatus.Type;
+
+export const ProjectContextRunResolution = Schema.Literals(["committed", "discarded"]);
+export type ProjectContextRunResolution = typeof ProjectContextRunResolution.Type;
 
 export const ProjectContextRunPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1_024),
@@ -1087,11 +1096,16 @@ export const OrchestrationProjectContextRun = Schema.Struct({
   ),
   changes: ProjectContextRunChanges,
   scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  resolution: Schema.NullOr(ProjectContextRunResolution),
+  commitHash: Schema.NullOr(ProjectContextRunGitObjectId),
+  resultSchemaVersion: Schema.NullOr(ProjectContextSchemaVersion),
+  resultFingerprint: Schema.NullOr(ProjectContextFingerprint),
   createdAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),
   pendingReviewAt: Schema.NullOr(IsoDateTime),
   failedAt: Schema.NullOr(IsoDateTime),
   interruptedAt: Schema.NullOr(IsoDateTime),
+  resolvedAt: Schema.NullOr(IsoDateTime),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationProjectContextRun = typeof OrchestrationProjectContextRun.Type;
@@ -1494,6 +1508,38 @@ export const ProjectContextRunPendingReviewCommand = Schema.Struct({
   result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
   changes: ProjectContextRunChanges,
   scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  createdAt: IsoDateTime,
+});
+
+/**
+ * Reopens a reviewed context run with a server-authored, durable revision
+ * prompt. The immutable baseline remains unchanged so a later review covers
+ * the whole context-run delta rather than just its final turn.
+ */
+export const ProjectContextRunReviseCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.revise"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunCommitCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.commit"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  commitHash: ProjectContextRunGitObjectId,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunDiscardCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.discard"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
   createdAt: IsoDateTime,
 });
 
@@ -1938,6 +1984,9 @@ const InternalOrchestrationCommand = Schema.Union([
   ProjectContextRunRequestCommand,
   ProjectContextRunStartCommand,
   ProjectContextRunPendingReviewCommand,
+  ProjectContextRunReviseCommand,
+  ProjectContextRunCommitCommand,
+  ProjectContextRunDiscardCommand,
   ProjectContextRunFailCommand,
   ProjectContextRunInterruptCommand,
   ThreadForkCommand,
@@ -2070,6 +2119,9 @@ export const OrchestrationEventType = Schema.Literals([
   "project.context-run-requested",
   "project.context-run-started",
   "project.context-run-pending-review",
+  "project.context-run-revised",
+  "project.context-run-committed",
+  "project.context-run-discarded",
   "project.context-run-failed",
   "project.context-run-interrupted",
 ]);
@@ -2421,6 +2473,29 @@ export const ProjectContextRunPendingReviewPayload = Schema.Struct({
   changes: ProjectContextRunChanges,
   scopeViolationPaths: ProjectContextRunScopeViolationPaths,
   pendingReviewAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunRevisedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunCommittedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  commitHash: ProjectContextRunGitObjectId,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
+  resolvedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunDiscardedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
+  resolvedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -2946,6 +3021,21 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("project.context-run-revised"),
+    payload: ProjectContextRunRevisedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-committed"),
+    payload: ProjectContextRunCommittedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-discarded"),
+    payload: ProjectContextRunDiscardedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("project.context-run-failed"),
     payload: ProjectContextRunFailedPayload,
   }),
@@ -3289,6 +3379,88 @@ export const OrchestratorRequestProjectContextRunResult = Schema.Struct({
 export type OrchestratorRequestProjectContextRunResult =
   typeof OrchestratorRequestProjectContextRunResult.Type;
 
+export const OrchestratorProjectContextRunReviewChangeKind = Schema.Literals([
+  "added",
+  "modified",
+  "deleted",
+]);
+export type OrchestratorProjectContextRunReviewChangeKind =
+  typeof OrchestratorProjectContextRunReviewChangeKind.Type;
+
+/** A path-only change summary accompanies the bounded, deterministic diff. */
+export const OrchestratorProjectContextRunReviewChange = Schema.Struct({
+  path: ProjectContextRunPath,
+  kind: OrchestratorProjectContextRunReviewChangeKind,
+});
+export type OrchestratorProjectContextRunReviewChange =
+  typeof OrchestratorProjectContextRunReviewChange.Type;
+
+export const OrchestratorProjectContextRunReview = Schema.Struct({
+  runId: ProjectContextRunId,
+  result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  changes: Schema.Array(OrchestratorProjectContextRunReviewChange),
+  diff: Schema.String,
+  diffTruncated: Schema.Boolean,
+  scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+});
+export type OrchestratorProjectContextRunReview = typeof OrchestratorProjectContextRunReview.Type;
+
+export const OrchestratorGetProjectContextRunReviewInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorGetProjectContextRunReviewInput =
+  typeof OrchestratorGetProjectContextRunReviewInput.Type;
+
+export const OrchestratorGetProjectContextRunReviewResult = Schema.Struct({
+  review: Schema.NullOr(OrchestratorProjectContextRunReview),
+});
+export type OrchestratorGetProjectContextRunReviewResult =
+  typeof OrchestratorGetProjectContextRunReviewResult.Type;
+
+export const OrchestratorReviseProjectContextRunInput = Schema.Struct({
+  runId: ProjectContextRunId,
+  instructions: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS),
+  ),
+});
+export type OrchestratorReviseProjectContextRunInput =
+  typeof OrchestratorReviseProjectContextRunInput.Type;
+
+export const OrchestratorReviseProjectContextRunResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorReviseProjectContextRunResult =
+  typeof OrchestratorReviseProjectContextRunResult.Type;
+
+export const OrchestratorCommitProjectContextRunInput = Schema.Struct({
+  runId: ProjectContextRunId,
+  message: TrimmedNonEmptyString,
+});
+export type OrchestratorCommitProjectContextRunInput =
+  typeof OrchestratorCommitProjectContextRunInput.Type;
+
+export const OrchestratorCommitProjectContextRunResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  commitHash: ProjectContextRunGitObjectId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorCommitProjectContextRunResult =
+  typeof OrchestratorCommitProjectContextRunResult.Type;
+
+export const OrchestratorDiscardProjectContextRunInput = Schema.Struct({
+  runId: ProjectContextRunId,
+});
+export type OrchestratorDiscardProjectContextRunInput =
+  typeof OrchestratorDiscardProjectContextRunInput.Type;
+
+export const OrchestratorDiscardProjectContextRunResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorDiscardProjectContextRunResult =
+  typeof OrchestratorDiscardProjectContextRunResult.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -3528,6 +3700,22 @@ export const OrchestratorRpcSchemas = {
   requestProjectContextRun: {
     input: OrchestratorRequestProjectContextRunInput,
     output: OrchestratorRequestProjectContextRunResult,
+  },
+  getProjectContextRunReview: {
+    input: OrchestratorGetProjectContextRunReviewInput,
+    output: OrchestratorGetProjectContextRunReviewResult,
+  },
+  reviseProjectContextRun: {
+    input: OrchestratorReviseProjectContextRunInput,
+    output: OrchestratorReviseProjectContextRunResult,
+  },
+  commitProjectContextRun: {
+    input: OrchestratorCommitProjectContextRunInput,
+    output: OrchestratorCommitProjectContextRunResult,
+  },
+  discardProjectContextRun: {
+    input: OrchestratorDiscardProjectContextRunInput,
+    output: OrchestratorDiscardProjectContextRunResult,
   },
 } as const;
 

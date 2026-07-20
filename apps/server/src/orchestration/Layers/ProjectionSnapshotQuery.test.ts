@@ -1539,8 +1539,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           project_context_run_id, project_id, mode, tier, provider_instance_id, model,
           model_options_json, primary_checkout_path, schema_version, fingerprint, prompt,
           baseline_manifest_json, workspace_status_manifest_json, git_state_json, status, provider_thread_id,
-          result, failure_message, changes_json, scope_violation_paths_json, created_at,
-          started_at, pending_review_at, failed_at, interrupted_at, updated_at
+          result, failure_message, changes_json, scope_violation_paths_json,
+          resolution, commit_hash, result_schema_version, result_fingerprint, created_at,
+          started_at, pending_review_at, failed_at, interrupted_at, resolved_at, updated_at
         ) VALUES (
           'context-run-snapshot', 'project-context-snapshot', 'review', 'smart', 'codex-smart',
           'gpt-smart', '{"effort":"high"}', '/tmp/project-context-snapshot', 1,
@@ -1550,8 +1551,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ${gitStateJson},
           'pending-review', 'project-context-run:snapshot', 'Context updated.', NULL,
           '[{"path":"CONTEXT.md","beforeRawContent":"# Context\\n","afterRawContent":"# Context\\n\\n## Terms\\n"}]',
-          '[]', '2026-07-20T12:00:00.000Z', '2026-07-20T12:00:01.000Z',
-          '2026-07-20T12:00:02.000Z', NULL, NULL, '2026-07-20T12:00:02.000Z'
+          '[]', NULL, NULL, NULL, NULL, '2026-07-20T12:00:00.000Z',
+          '2026-07-20T12:00:01.000Z', '2026-07-20T12:00:02.000Z', NULL, NULL, NULL,
+          '2026-07-20T12:00:02.000Z'
         )
       `;
 

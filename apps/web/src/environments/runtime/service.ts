@@ -515,6 +515,24 @@ function skippedProjectSnapshotTaskIds(
   return skipped;
 }
 
+function skippedProjectSnapshotContextRunIds(
+  snapshot: OrchestratorProjectDetailSnapshot,
+  environmentId: EnvironmentId,
+): Set<string> {
+  return new Set(
+    snapshot.projectContextRuns
+      .filter((run) =>
+        aggregateHasNewerAppliedEvent({
+          environmentId,
+          aggregateKind: "project-context-run",
+          aggregateId: String(run.id),
+          snapshotSequence: snapshot.snapshotSequence,
+        }),
+      )
+      .map((run) => String(run.id)),
+  );
+}
+
 function markThreadSnapshotApplied(input: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -533,6 +551,7 @@ function markProjectSnapshotApplied(input: {
   readonly snapshot: OrchestratorProjectDetailSnapshot;
   readonly skipPmThread: boolean;
   readonly skipTaskIds: ReadonlySet<string>;
+  readonly skipContextRunIds: ReadonlySet<string>;
 }): void {
   markAggregateSnapshotSequence(
     input.environmentId,
@@ -554,6 +573,16 @@ function markProjectSnapshotApplied(input: {
         input.environmentId,
         "task",
         taskId,
+        input.snapshot.snapshotSequence,
+      );
+    }
+  }
+  for (const run of input.snapshot.projectContextRuns) {
+    if (!input.skipContextRunIds.has(String(run.id))) {
+      markAggregateSnapshotSequence(
+        input.environmentId,
+        "project-context-run",
+        String(run.id),
         input.snapshot.snapshotSequence,
       );
     }
@@ -611,15 +640,21 @@ function attachOrchestratorProjectSubscription(
             snapshotSequence: item.snapshot.snapshotSequence,
           });
         const skipTaskIds = skippedProjectSnapshotTaskIds(item.snapshot, entry.environmentId);
+        const skipContextRunIds = skippedProjectSnapshotContextRunIds(
+          item.snapshot,
+          entry.environmentId,
+        );
         useStore.getState().syncOrchestratorProjectSnapshot(item.snapshot, entry.environmentId, {
           skipPmThread,
           skipTaskIds,
+          skipContextRunIds,
         });
         markProjectSnapshotApplied({
           environmentId: entry.environmentId,
           snapshot: item.snapshot,
           skipPmThread,
           skipTaskIds,
+          skipContextRunIds,
         });
         syncProjectUiFromStore();
         return;

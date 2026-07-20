@@ -46,13 +46,13 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | PROJECT-CTX-01 | DONE | Define canonical project-context files and a scanner for missing, whitespace-only, template-only, and substantive content. Persist per-project schema version, fingerprint, dismissal, and completion. | Filesystem/persistence tests cover every classification, material changes, schema upgrades, and `.gedcode/` exclusion. |
 | PROJECT-CTX-02 | DONE | Add a shared project-context run using a selectable capability preset, primary checkout access, and durable Populate/Review lifecycle ending in pending diff review. | Runtime tests cover Smart factory default, resolved backend, file scope, restart, failure, and no task/stage/PR creation. |
 | PROJECT-CTX-03 | DONE | Prompt state-aware onboarding from Chat and Orchestrator and add Cheap/Smart/Genius picker cards with harness logo/model/thinking. Persist the chosen tier globally. | Chromium covers new/missing/stub/existing files, cross-surface dedupe, dismissal, fingerprint re-prompt, and sticky tier selection. |
-| PROJECT-CTX-04 | NEXT | Add context-run diff review with Commit, Revise, and Discard; commit only after explicit review and record the resulting context fingerprint. | Integration/Chromium covers iterative revision, safe discard, commit metadata, overlapping checkout changes, and prompt completion. |
+| PROJECT-CTX-04 | DONE | Add context-run diff review with Commit, Revise, and Discard; commit only after explicit review and record the resulting context fingerprint. | Integration/Chromium covers iterative revision, safe discard, commit metadata, overlapping checkout changes, and prompt completion. |
 
 ## P2 — Worktree Access and Readable Branches
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-OPEN-01 | TODO | Add typed launch operations for configured editor, file manager reveal, terminal, and installed alternate editors. Validate project/worktree ownership and environment capability. | Server/RPC tests reject arbitrary paths, target owned roots, and return explicit unsupported/launcher failures. |
+| ORCH-OPEN-01 | NEXT | Add typed launch operations for configured editor, file manager reveal, terminal, and installed alternate editors. Validate project/worktree ownership and environment capability. | Server/RPC tests reject arbitrary paths, target owned roots, and return explicit unsupported/launcher failures. |
 | ORCH-OPEN-02 | TODO | Add configured-editor primary button and adjacent launch menu to PM/project and worker headers, using project root or exact task worktree respectively. | Desktop/Chromium tests cover icons, target paths, menu actions, compact layout, and disabled remote capabilities. |
 | ORCH-BRANCH-01 | TODO | Generate new task branches as `ged/<task-type>/<title-slug>` with sanitization, length bounds, deterministic numeric collisions, and no existing-branch migration. | Git/worktree tests cover Unicode/punctuation, empty titles, collisions, concurrent provisioning, replay, and protected-branch safety. |
 

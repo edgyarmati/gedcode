@@ -786,9 +786,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           git_state_json AS "gitState", status,
           provider_thread_id AS "providerThreadId", result,
           failure_message AS "failureMessage", changes_json AS "changes",
-          scope_violation_paths_json AS "scopeViolationPaths", created_at AS "createdAt",
+          scope_violation_paths_json AS "scopeViolationPaths", resolution,
+          commit_hash AS "commitHash", result_schema_version AS "resultSchemaVersion",
+          result_fingerprint AS "resultFingerprint", created_at AS "createdAt",
           started_at AS "startedAt", pending_review_at AS "pendingReviewAt",
-          failed_at AS "failedAt", interrupted_at AS "interruptedAt", updated_at AS "updatedAt"
+          failed_at AS "failedAt", interrupted_at AS "interruptedAt",
+          resolved_at AS "resolvedAt", updated_at AS "updatedAt"
         FROM projection_project_context_runs
         ORDER BY updated_at ASC, project_context_run_id ASC
       `,

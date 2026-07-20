@@ -647,6 +647,42 @@ export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorGetProjectContextRunReviewRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.getProjectContextRunReview,
+  {
+    payload: OrchestratorRpcSchemas.getProjectContextRunReview.input,
+    success: OrchestratorRpcSchemas.getProjectContextRunReview.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorReviseProjectContextRunRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.reviseProjectContextRun,
+  {
+    payload: OrchestratorRpcSchemas.reviseProjectContextRun.input,
+    success: OrchestratorRpcSchemas.reviseProjectContextRun.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCommitProjectContextRunRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.commitProjectContextRun,
+  {
+    payload: OrchestratorRpcSchemas.commitProjectContextRun.input,
+    success: OrchestratorRpcSchemas.commitProjectContextRun.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorDiscardProjectContextRunRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.discardProjectContextRun,
+  {
+    payload: OrchestratorRpcSchemas.discardProjectContextRun.input,
+    success: OrchestratorRpcSchemas.discardProjectContextRun.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -746,4 +782,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorGetProjectContextOnboardingRpc,
   WsOrchestratorDismissProjectContextOnboardingRpc,
   WsOrchestratorRequestProjectContextRunRpc,
+  WsOrchestratorGetProjectContextRunReviewRpc,
+  WsOrchestratorReviseProjectContextRunRpc,
+  WsOrchestratorCommitProjectContextRunRpc,
+  WsOrchestratorDiscardProjectContextRunRpc,
 );

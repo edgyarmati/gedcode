@@ -258,6 +258,9 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
       | "project.context-run-requested"
       | "project.context-run-started"
       | "project.context-run-pending-review"
+      | "project.context-run-revised"
+      | "project.context-run-committed"
+      | "project.context-run-discarded"
       | "project.context-run-failed"
       | "project.context-run-interrupted";
   }
@@ -266,6 +269,9 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
     event.type === "project.context-run-requested" ||
     event.type === "project.context-run-started" ||
     event.type === "project.context-run-pending-review" ||
+    event.type === "project.context-run-revised" ||
+    event.type === "project.context-run-committed" ||
+    event.type === "project.context-run-discarded" ||
     event.type === "project.context-run-failed" ||
     event.type === "project.context-run-interrupted"
   );
@@ -333,7 +339,8 @@ const shouldGuardOrchestratorMethod = (method: string) =>
   method !== ORCHESTRATOR_WS_METHODS.completePresetMigration &&
   // Read-only context inspection may safely discover current state before the
   // required preset migration. Dismissal remains a guarded mutation.
-  method !== ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding;
+  method !== ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding &&
+  method !== ORCHESTRATOR_WS_METHODS.getProjectContextRunReview;
 
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
@@ -2033,6 +2040,58 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               .pipe(
                 Effect.mapError((cause) =>
                   toDispatchCommandError(cause, "Failed to dismiss project context onboarding."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.getProjectContextRunReview]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.getProjectContextRunReview,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .getReview(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to inspect project-context review."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.reviseProjectContextRun]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.reviseProjectContextRun,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .revise(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to revise project-context changes."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.commitProjectContextRun]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.commitProjectContextRun,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .commit(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to commit project-context changes."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.discardProjectContextRun]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.discardProjectContextRun,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .discard(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to discard project-context changes."),
                 ),
               ),
             { "rpc.aggregate": "orchestrator" },

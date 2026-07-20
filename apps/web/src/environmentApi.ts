@@ -84,6 +84,10 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       getProjectContextOnboarding: rpcClient.orchestrator.getProjectContextOnboarding,
       dismissProjectContextOnboarding: rpcClient.orchestrator.dismissProjectContextOnboarding,
       requestProjectContextRun: rpcClient.orchestrator.requestProjectContextRun,
+      getProjectContextRunReview: rpcClient.orchestrator.getProjectContextRunReview,
+      reviseProjectContextRun: rpcClient.orchestrator.reviseProjectContextRun,
+      commitProjectContextRun: rpcClient.orchestrator.commitProjectContextRun,
+      discardProjectContextRun: rpcClient.orchestrator.discardProjectContextRun,
     },
   };
 }

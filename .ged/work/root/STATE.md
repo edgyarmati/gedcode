@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-CTX-04`
+- **Active task**: `ORCH-OPEN-01`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -224,6 +224,16 @@
   and Chromium passed 4 scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed after a
   single-worker retry of a native `tsgo` crash with no TypeScript diagnostic. Full `bun run test`
   passed all 12 packages (server 204/204 files). Existing lint warnings remain outside this slice.
+- `PROJECT-CTX-04` completed 2026-07-20. Pending context changes now enter one mandatory, durable review
+  shared by Chat and Orchestrator. Users can revise against the original baseline, commit only the exact
+  provider delta, or explicitly discard it. Fresh compare-and-swap validation rejects staged state,
+  stale files, Git drift, scope violations, and overlapping edits while preserving unrelated and
+  same-file user work. Terminal resolution atomically records the resulting context fingerprint and
+  creates no task, worktree, stage, gate, pull request, or landing state.
+- Verification evidence for `PROJECT-CTX-04`: focused contracts passed 71 tests; focused server suites
+  passed 76 tests plus 5 real-Git safety cases; focused web unit coverage passed 189 tests and Chromium
+  passed 6 scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
+  passed all 12 packages in 12m11s (web 116/116 files and 1,245 tests).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

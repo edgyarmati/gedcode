@@ -436,7 +436,10 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   const processDomainEvent = Effect.fn("ProjectContextRunReactor.processDomainEvent")(function* (
     event: OrchestrationEvent,
   ) {
-    if (event.type === "project.context-run-requested") {
+    if (
+      event.type === "project.context-run-requested" ||
+      event.type === "project.context-run-revised"
+    ) {
       const run = yield* runs.getById({
         projectContextRunId: event.payload.projectContextRunId,
       });

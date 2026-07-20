@@ -150,11 +150,16 @@ const makeRun = (id: string): OrchestrationProjectContextRun => ({
   failureMessage: null,
   changes: [],
   scopeViolationPaths: [],
+  resolution: null,
+  commitHash: null,
+  resultSchemaVersion: null,
+  resultFingerprint: null,
   createdAt: now,
   startedAt: null,
   pendingReviewAt: null,
   failedAt: null,
   interruptedAt: null,
+  resolvedAt: null,
   updatedAt: now,
 });
 

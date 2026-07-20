@@ -15,6 +15,7 @@ import { FileTextIcon, LoaderCircleIcon, RefreshCwIcon, SparklesIcon } from "luc
 import { useEffect, useMemo, useState } from "react";
 
 import { readEnvironmentApi } from "../../environmentApi";
+import { retainOrchestratorProjectSubscription } from "../../environments/runtime/service";
 import { useEnvironmentApiAvailable } from "../../hooks/useEnvironmentApiAvailable";
 import {
   deriveProviderInstanceEntries,
@@ -33,6 +34,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { ProjectContextTierCard } from "./ProjectContextTierCard";
+import { ProjectContextRunReviewDialog } from "./ProjectContextRunReviewDialog";
 
 const ONBOARDING_QUERY_PREFIX = "project-context-onboarding";
 
@@ -112,15 +114,30 @@ export function ProjectContextOnboardingCoordinator() {
   const draftThread = useComposerDraftStore((state) =>
     routeTarget?.kind === "draft" ? state.getDraftSession(routeTarget.draftId) : null,
   );
-  const projectRef: ScopedProjectRef | null =
-    routeTarget?.kind === "project"
-      ? scopeProjectRef(routeTarget.environmentId, routeTarget.projectId)
-      : serverThread
-        ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
-        : draftThread
-          ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
-          : null;
+  const projectRef: ScopedProjectRef | null = useMemo(
+    () =>
+      routeTarget?.kind === "project"
+        ? scopeProjectRef(routeTarget.environmentId, routeTarget.projectId)
+        : serverThread
+          ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
+          : draftThread
+            ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
+            : null,
+    [draftThread, routeTarget, serverThread],
+  );
   const project = useStore((state) => selectProjectByRef(state, projectRef));
+  const latestContextRun = useStore((state) => {
+    if (!projectRef) return undefined;
+    return Object.values(
+      state.environmentStateById[String(projectRef.environmentId)]?.projectContextRunById ?? {},
+    )
+      .filter((run) => run.projectId === projectRef.projectId)
+      .toSorted(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          String(right.id).localeCompare(String(left.id)),
+      )[0];
+  });
   const apiAvailable = useEnvironmentApiAvailable(
     projectRef?.environmentId ?? EnvironmentId.make("unavailable"),
   );
@@ -132,6 +149,11 @@ export function ProjectContextOnboardingCoordinator() {
     () => [ONBOARDING_QUERY_PREFIX, projectRef?.environmentId, projectRef?.projectId] as const,
     [projectRef?.environmentId, projectRef?.projectId],
   );
+
+  useEffect(() => {
+    if (!projectRef) return;
+    return retainOrchestratorProjectSubscription(projectRef.environmentId, projectRef.projectId);
+  }, [projectRef]);
 
   const onboardingQuery = useQuery({
     queryKey,
@@ -166,6 +188,11 @@ export function ProjectContextOnboardingCoordinator() {
     onboardingQuery.data?.config.settings.orchestratorDefaults.projectContextDefaultTier,
   ]);
 
+  useEffect(() => {
+    if (!latestContextRun) return;
+    void queryClient.invalidateQueries({ queryKey });
+  }, [latestContextRun, queryClient, queryKey]);
+
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
@@ -193,6 +220,16 @@ export function ProjectContextOnboardingCoordinator() {
   ]);
 
   if (!projectRef) return null;
+
+  if (latestContextRun?.status === "pending-review") {
+    return (
+      <ProjectContextRunReviewDialog
+        environmentId={projectRef.environmentId}
+        projectId={projectRef.projectId}
+        runId={latestContextRun.id}
+      />
+    );
+  }
 
   if (onboardingQuery.isError) {
     return (

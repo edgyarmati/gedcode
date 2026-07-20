@@ -316,10 +316,11 @@ it.layer(NodeServices.layer)("ProjectContextRunCoordinator", (it) => {
           let dispatched = false;
           const deletedReadModel: OrchestrationReadModel = {
             ...makeReadModel(),
-            projects: makeReadModel().projects.map((project) => ({
-              ...project,
-              deletedAt: createdAt,
-            })),
+            projects: makeReadModel().projects.map((project) =>
+              Object.assign({}, project, {
+                deletedAt: createdAt,
+              }),
+            ),
           };
 
           const error = yield* requestProjectContextRunWithServices(

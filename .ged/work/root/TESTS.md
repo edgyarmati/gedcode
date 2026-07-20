@@ -245,6 +245,26 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   binding: 12/12 packages; server 204/204 files. The focused Chromium suite is separate from the
   default unit-test workspace gate and passed independently.
 
+### PROJECT-CTX-04 — 2026-07-20
+
+- Focused: contract schemas passed 71 tests; server lifecycle, projection, coordinator, persistence,
+  and WebSocket coverage passed 76 tests; the real-Git review suite passed 5 tests; web state and route
+  logic passed 189 tests; Chromium passed 6 review/onboarding scenarios.
+- Review lifecycle: pending review is durable and shared by normal Chat and Orchestrator. The mandatory
+  dialog presents the persisted summary, exact changed paths and diff, scope violations, and proposed
+  commit message. Revise records feedback and reruns the same context aggregate from its original
+  baseline; Commit and confirmed Discard are the only terminal choices.
+- Git safety: commit uses a fresh compare-and-swap preflight, refuses staged state, stale files, Git
+  metadata drift, scope violations, and overlapping provider/user edits, then commits only the exact
+  provider delta with a context-run trailer. Same-file pre-existing user hunks remain unstaged. Discard
+  restores exact baseline bytes without path-wide cleanup and preserves unrelated work.
+- Resolution: commit/discard atomically settle the run and project onboarding fingerprint. No context
+  review action creates a task, stage, gate, worktree, pull request, or landing record; live streamed
+  projection updates close the dialog without polling or a refetch race.
+- Repository: `bun fmt`, `bun lint`, and all 12 typecheck packages passed; lint retained only existing
+  warnings. Full `bun run test` passed all 12 packages in 12m11s, including web 116/116 files and
+  1,245 tests. Focused Chromium passed independently.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay
