@@ -15,6 +15,7 @@ import { TaskCancellationReconciler } from "../Services/TaskCancellationReconcil
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { HelperRunReactor } from "../Services/HelperRunReactor.ts";
+import { ProjectContextRunReactor } from "../Services/ProjectContextRunReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 
 describe("OrchestrationReactor", () => {
@@ -112,6 +113,13 @@ describe("OrchestrationReactor", () => {
             drain: Effect.void,
           }),
         ),
+        Layer.provideMerge(
+          Layer.succeed(ProjectContextRunReactor, {
+            start: () => Effect.sync(() => void started.push("project-context-run-reactor")),
+            reconcile: Effect.void,
+            drain: Effect.void,
+          }),
+        ),
       ),
     );
 
@@ -127,6 +135,7 @@ describe("OrchestrationReactor", () => {
       "thread-deletion-reactor",
       "task-worktree-reactor",
       "helper-run-reactor",
+      "project-context-run-reactor",
       "pm-runtime",
       "orphan-turn-reconciler",
     ]);

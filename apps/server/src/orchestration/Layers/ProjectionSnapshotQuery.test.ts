@@ -1518,6 +1518,60 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(shellSnapshot.threads.length, 0);
     }),
   );
+
+  it.effect("hydrates project-context runs into command and full snapshots", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const gitStateJson = `{"head":null,"headIdentity":{"kind":"branch","ref":"refs/heads/main"},"stagedIndexDigest":"sha256:${"a".repeat(64)}","refsDigest":"sha256:${"b".repeat(64)}","configDigest":"sha256:${"c".repeat(64)}","hooksDigest":"sha256:${"d".repeat(64)}","infoExcludeDigest":"sha256:${"e".repeat(64)}","infoAttributesDigest":"sha256:${"f".repeat(64)}","infoGraftsDigest":"sha256:${"0".repeat(64)}"}`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, default_model_selection_json, scripts_json,
+          created_at, updated_at, deleted_at
+        ) VALUES (
+          'project-context-snapshot', 'Context snapshot', '/tmp/project-context-snapshot',
+          NULL, '[]', '2026-07-20T12:00:00.000Z', '2026-07-20T12:00:00.000Z', NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO projection_project_context_runs (
+          project_context_run_id, project_id, mode, tier, provider_instance_id, model,
+          model_options_json, primary_checkout_path, schema_version, fingerprint, prompt,
+          baseline_manifest_json, workspace_status_manifest_json, git_state_json, status, provider_thread_id,
+          result, failure_message, changes_json, scope_violation_paths_json, created_at,
+          started_at, pending_review_at, failed_at, interrupted_at, updated_at
+        ) VALUES (
+          'context-run-snapshot', 'project-context-snapshot', 'review', 'smart', 'codex-smart',
+          'gpt-smart', '{"effort":"high"}', '/tmp/project-context-snapshot', 1,
+          ${`sha256:${"c".repeat(64)}`}, 'Review canonical context.',
+          '[{"path":"CONTEXT.md","rawContent":"# Context\\n"}]',
+          '[{"relativePath":"CONTEXT.md","porcelainStatus":" M","contentDigest":null}]',
+          ${gitStateJson},
+          'pending-review', 'project-context-run:snapshot', 'Context updated.', NULL,
+          '[{"path":"CONTEXT.md","beforeRawContent":"# Context\\n","afterRawContent":"# Context\\n\\n## Terms\\n"}]',
+          '[]', '2026-07-20T12:00:00.000Z', '2026-07-20T12:00:01.000Z',
+          '2026-07-20T12:00:02.000Z', NULL, NULL, '2026-07-20T12:00:02.000Z'
+        )
+      `;
+
+      const commandReadModel = yield* snapshotQuery.getCommandReadModel();
+      const fullSnapshot = yield* snapshotQuery.getSnapshot();
+      for (const snapshot of [commandReadModel, fullSnapshot]) {
+        assert.strictEqual(snapshot.projectContextRuns.length, 1);
+        const run = snapshot.projectContextRuns[0];
+        assert.strictEqual(run?.id, "context-run-snapshot");
+        assert.strictEqual(run?.status, "pending-review");
+        assert.deepStrictEqual(run?.baselineManifest, [
+          { path: "CONTEXT.md", rawContent: "# Context\n" },
+        ]);
+        assert.deepStrictEqual(run?.workspaceStatusManifest, [
+          { relativePath: "CONTEXT.md", porcelainStatus: " M", contentDigest: null },
+        ]);
+        assert.strictEqual(run?.changes[0]?.afterRawContent, "# Context\n\n## Terms\n");
+      }
+    }),
+  );
 });
 
 it.effect(

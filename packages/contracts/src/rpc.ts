@@ -620,6 +620,15 @@ export const WsOrchestratorRequestPmHandoffRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.requestProjectContextRun,
+  {
+    payload: OrchestratorRpcSchemas.requestProjectContextRun.input,
+    success: OrchestratorRpcSchemas.requestProjectContextRun.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -716,4 +725,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorDeleteTaskRpc,
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
+  WsOrchestratorRequestProjectContextRunRpc,
 );

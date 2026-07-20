@@ -141,6 +141,7 @@ function makeReadModel(input: {
       },
     ],
     pendingGates: [],
+    projectContextRuns: [],
     quotaBlockedStages: [],
     stageHistory: {},
     updatedAt: now,

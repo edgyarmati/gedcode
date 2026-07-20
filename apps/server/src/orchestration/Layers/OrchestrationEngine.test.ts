@@ -176,6 +176,7 @@ describe("OrchestrationEngine", () => {
         },
       ],
       tasks: [],
+      projectContextRuns: [],
       quotaBlockedStages: [],
       stageHistory: {},
     };

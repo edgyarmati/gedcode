@@ -17,6 +17,7 @@ import {
   MessageId,
   NonNegativeInt,
   PositiveInt,
+  ProjectContextRunId,
   ProjectId,
   ProviderItemId,
   TaskId,
@@ -59,6 +60,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   deleteTask: "orchestrator.deleteTask",
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
+  requestProjectContextRun: "orchestrator.requestProjectContextRun",
 } as const;
 
 export const OrchestratorPlaybookFrontmatter = Schema.Struct({
@@ -922,6 +924,163 @@ export const OrchestrationHelperRun = Schema.Struct({
 });
 export type OrchestrationHelperRun = typeof OrchestrationHelperRun.Type;
 
+export const PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS = 16_000;
+export const PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS = 32_000;
+export const PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS = 4_000;
+export const PROJECT_CONTEXT_RUN_FILE_CONTENT_MAX_CHARS = 256 * 1024;
+export const PROJECT_CONTEXT_RUN_MAX_FILES = 256;
+export const PROJECT_CONTEXT_RUN_MAX_WORKSPACE_STATUS_ENTRIES = 4_096;
+export const PROJECT_CONTEXT_RUN_MAX_GIT_AUDIT_OUTPUT_BYTES = 256 * 1024;
+
+export const ProjectContextRunMode = Schema.Literals(["populate", "review"]);
+export type ProjectContextRunMode = typeof ProjectContextRunMode.Type;
+
+export const ProjectContextRunStatus = Schema.Literals([
+  "pending",
+  "running",
+  "pending-review",
+  "failed",
+  "interrupted",
+]);
+export type ProjectContextRunStatus = typeof ProjectContextRunStatus.Type;
+
+export const ProjectContextRunPath = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(1_024),
+  Schema.isPattern(
+    /^(?:AGENTS\.md|CONTEXT\.md|\.ged\/(?:PROJECT|ARCHITECTURE)\.md|docs\/adr\/[^/]+\.md)$/,
+  ),
+);
+export type ProjectContextRunPath = typeof ProjectContextRunPath.Type;
+
+const ProjectContextRunRawContent = Schema.String.check(
+  Schema.isMaxLength(PROJECT_CONTEXT_RUN_FILE_CONTENT_MAX_CHARS),
+);
+
+export const ProjectContextRunBaselineEntry = Schema.Struct({
+  path: ProjectContextRunPath,
+  rawContent: Schema.NullOr(ProjectContextRunRawContent),
+});
+export type ProjectContextRunBaselineEntry = typeof ProjectContextRunBaselineEntry.Type;
+
+export const ProjectContextRunBaselineManifest = Schema.Array(ProjectContextRunBaselineEntry).check(
+  Schema.isMaxLength(PROJECT_CONTEXT_RUN_MAX_FILES),
+);
+export type ProjectContextRunBaselineManifest = typeof ProjectContextRunBaselineManifest.Type;
+
+export const ProjectContextRunChange = Schema.Struct({
+  path: ProjectContextRunPath,
+  beforeRawContent: Schema.NullOr(ProjectContextRunRawContent),
+  afterRawContent: Schema.NullOr(ProjectContextRunRawContent),
+});
+export type ProjectContextRunChange = typeof ProjectContextRunChange.Type;
+
+export const ProjectContextRunChanges = Schema.Array(ProjectContextRunChange).check(
+  Schema.isMaxLength(PROJECT_CONTEXT_RUN_MAX_FILES),
+);
+export type ProjectContextRunChanges = typeof ProjectContextRunChanges.Type;
+
+export const ProjectContextRunScopeViolationPaths = Schema.Array(
+  TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+).check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_MAX_WORKSPACE_STATUS_ENTRIES));
+export type ProjectContextRunScopeViolationPaths = typeof ProjectContextRunScopeViolationPaths.Type;
+
+export const ProjectContextRunContentDigest = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^sha256:[a-f0-9]{64}$/),
+).pipe(Schema.brand("ProjectContextRunContentDigest"));
+export type ProjectContextRunContentDigest = typeof ProjectContextRunContentDigest.Type;
+
+export const ProjectContextRunWorkspaceStatusEntry = Schema.Struct({
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+  porcelainStatus: Schema.String.check(Schema.isPattern(/^[ MADRCUT?!]{2}$/)),
+  contentDigest: Schema.NullOr(ProjectContextRunContentDigest),
+});
+export type ProjectContextRunWorkspaceStatusEntry =
+  typeof ProjectContextRunWorkspaceStatusEntry.Type;
+
+export const ProjectContextRunWorkspaceStatusManifest = Schema.Array(
+  ProjectContextRunWorkspaceStatusEntry,
+).check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_MAX_WORKSPACE_STATUS_ENTRIES));
+export type ProjectContextRunWorkspaceStatusManifest =
+  typeof ProjectContextRunWorkspaceStatusManifest.Type;
+
+export const ProjectContextRunGitObjectId = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
+).pipe(Schema.brand("ProjectContextRunGitObjectId"));
+export type ProjectContextRunGitObjectId = typeof ProjectContextRunGitObjectId.Type;
+
+const ProjectContextRunGitHeadIdentity = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("branch"),
+    ref: TrimmedNonEmptyString.check(
+      Schema.isMaxLength(4_096),
+      Schema.isPattern(/^refs\/heads\/[^\s~^:?*\\[\\]+$/),
+      Schema.makeFilter(
+        (value) =>
+          !value.includes("\u0000") ||
+          new SchemaIssue.InvalidValue(Option.some(value), {
+            message: "Git branch references cannot contain NUL bytes",
+          }),
+        { identifier: "ProjectContextRunGitBranchRef" },
+      ),
+    ),
+  }),
+  Schema.Struct({ kind: Schema.Literal("detached") }),
+]);
+export type ProjectContextRunGitHeadIdentity = typeof ProjectContextRunGitHeadIdentity.Type;
+
+/**
+ * Git state whose semantic mutation is forbidden while a project-context
+ * provider runs. Every field is server-captured and bounded before it reaches
+ * the append-only run record.
+ */
+export const ProjectContextRunGitState = Schema.Struct({
+  /** Null only when the symbolic branch is unborn. */
+  head: Schema.NullOr(ProjectContextRunGitObjectId),
+  headIdentity: ProjectContextRunGitHeadIdentity,
+  stagedIndexDigest: ProjectContextRunContentDigest,
+  refsDigest: ProjectContextRunContentDigest,
+  configDigest: ProjectContextRunContentDigest,
+  hooksDigest: ProjectContextRunContentDigest,
+  infoExcludeDigest: ProjectContextRunContentDigest,
+  infoAttributesDigest: ProjectContextRunContentDigest,
+  infoGraftsDigest: ProjectContextRunContentDigest,
+});
+export type ProjectContextRunGitState = typeof ProjectContextRunGitState.Type;
+
+export const OrchestrationProjectContextRun = Schema.Struct({
+  id: ProjectContextRunId,
+  projectId: ProjectId,
+  mode: ProjectContextRunMode,
+  tier: OrchestrationCapabilityTier,
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  modelOptions: Schema.NullOr(ProviderOptionSelections),
+  primaryCheckoutPath: TrimmedNonEmptyString,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
+  baselineManifest: ProjectContextRunBaselineManifest,
+  workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
+  gitState: ProjectContextRunGitState,
+  status: ProjectContextRunStatus,
+  providerThreadId: Schema.NullOr(ThreadId),
+  result: Schema.NullOr(
+    Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  ),
+  failureMessage: Schema.NullOr(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS)),
+  ),
+  changes: ProjectContextRunChanges,
+  scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  createdAt: IsoDateTime,
+  startedAt: Schema.NullOr(IsoDateTime),
+  pendingReviewAt: Schema.NullOr(IsoDateTime),
+  failedAt: Schema.NullOr(IsoDateTime),
+  interruptedAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationProjectContextRun = typeof OrchestrationProjectContextRun.Type;
+
 export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
@@ -934,6 +1093,7 @@ export const OrchestrationReadModel = Schema.Struct({
   // any snapshot produced before this field existed still decodes cleanly.
   tasks: Schema.Array(OrchestrationTask).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   helperRuns: Schema.optionalKey(Schema.Array(OrchestrationHelperRun)),
+  projectContextRuns: Schema.Array(OrchestrationProjectContextRun),
   pendingGates: Schema.optionalKey(Schema.Array(OrchestrationPendingGate)),
   quotaBlockedStages: Schema.Array(OrchestrationQuotaBlockedStage).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1280,6 +1440,60 @@ const HelperRunRequestCommand = Schema.Struct({
   attachment: OrchestrationHelperRunAttachment,
   tier: OrchestrationCapabilityTier,
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_PROMPT_MAX_CHARS)),
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunRequestCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.request"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  projectId: ProjectId,
+  /**
+   * Server-captured primary checkout identity. This is intentionally absent
+   * from the public request RPC: it binds the captured baseline to the exact
+   * project root the decider must still observe when it serializes the event.
+   */
+  expectedPrimaryCheckoutPath: TrimmedNonEmptyString,
+  mode: ProjectContextRunMode,
+  tier: Schema.optionalKey(OrchestrationCapabilityTier),
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  baselineManifest: ProjectContextRunBaselineManifest,
+  workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
+  gitState: ProjectContextRunGitState,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunStartCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.start"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  providerThreadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunPendingReviewCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.pending-review"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  changes: ProjectContextRunChanges,
+  scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunFailCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.fail"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  message: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS)),
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunInterruptCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.interrupt"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
   createdAt: IsoDateTime,
 });
 
@@ -1706,6 +1920,11 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 
 const InternalOrchestrationCommand = Schema.Union([
   ProjectContextResolveCommand,
+  ProjectContextRunRequestCommand,
+  ProjectContextRunStartCommand,
+  ProjectContextRunPendingReviewCommand,
+  ProjectContextRunFailCommand,
+  ProjectContextRunInterruptCommand,
   ThreadForkCommand,
   ThreadSessionSetCommand,
   ThreadMessageUserAppendCommand,
@@ -1833,6 +2052,11 @@ export const OrchestrationEventType = Schema.Literals([
   "helper.run-completed",
   "helper.run-failed",
   "helper.run-interrupted",
+  "project.context-run-requested",
+  "project.context-run-started",
+  "project.context-run-pending-review",
+  "project.context-run-failed",
+  "project.context-run-interrupted",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
@@ -1841,6 +2065,7 @@ export const OrchestrationAggregateKind = Schema.Literals([
   "thread",
   "task",
   "helper-run",
+  "project-context-run",
 ]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
@@ -2149,6 +2374,54 @@ export const HelperRunInterruptedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ProjectContextRunRequestedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  projectId: ProjectId,
+  mode: ProjectContextRunMode,
+  tier: OrchestrationCapabilityTier,
+  providerInstanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  modelOptions: Schema.NullOr(ProviderOptionSelections),
+  primaryCheckoutPath: TrimmedNonEmptyString,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
+  baselineManifest: ProjectContextRunBaselineManifest,
+  workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
+  gitState: ProjectContextRunGitState,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunStartedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  providerThreadId: ThreadId,
+  startedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunPendingReviewPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  changes: ProjectContextRunChanges,
+  scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  pendingReviewAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunFailedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  message: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS)),
+  failedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunInterruptedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  interruptedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskStageStartedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
@@ -2332,7 +2605,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId, HelperRunId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, TaskId, HelperRunId, ProjectContextRunId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -2641,6 +2914,31 @@ export const OrchestrationEvent = Schema.Union([
     type: Schema.Literal("helper.run-interrupted"),
     payload: HelperRunInterruptedPayload,
   }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-requested"),
+    payload: ProjectContextRunRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-started"),
+    payload: ProjectContextRunStartedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-pending-review"),
+    payload: ProjectContextRunPendingReviewPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-failed"),
+    payload: ProjectContextRunFailedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-interrupted"),
+    payload: ProjectContextRunInterruptedPayload,
+  }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
@@ -2710,6 +3008,7 @@ export const OrchestratorProjectDetailSnapshot = Schema.Struct({
   ),
   tasks: Schema.Array(OrchestrationTask),
   helperRuns: Schema.optionalKey(Schema.Array(OrchestrationHelperRun)),
+  projectContextRuns: Schema.Array(OrchestrationProjectContextRun),
   pendingGates: Schema.Array(OrchestrationPendingGate),
   // Active quota-blocked stages for this project's tasks, so the web can surface
   // a "resets ~HH:MM" badge on a blocked-on-quota task at subscribe time (it is
@@ -2804,7 +3103,9 @@ export const OrchestratorTaskChanges = Schema.Struct({
 });
 export type OrchestratorTaskChanges = typeof OrchestratorTaskChanges.Type;
 
-export const OrchestratorInspectTaskChangesInput = Schema.Struct({ taskId: TaskId });
+export const OrchestratorInspectTaskChangesInput = Schema.Struct({
+  taskId: TaskId,
+});
 export type OrchestratorInspectTaskChangesInput = typeof OrchestratorInspectTaskChangesInput.Type;
 
 export const OrchestratorInspectTaskChangesResult = Schema.Struct({
@@ -2854,7 +3155,9 @@ export const OrchestratorReturnTaskChangesResult = Schema.Struct({
 });
 export type OrchestratorReturnTaskChangesResult = typeof OrchestratorReturnTaskChangesResult.Type;
 
-export const OrchestratorCompleteTaskWithoutChangesInput = Schema.Struct({ taskId: TaskId });
+export const OrchestratorCompleteTaskWithoutChangesInput = Schema.Struct({
+  taskId: TaskId,
+});
 export type OrchestratorCompleteTaskWithoutChangesInput =
   typeof OrchestratorCompleteTaskWithoutChangesInput.Type;
 
@@ -2905,6 +3208,25 @@ export const OrchestratorRequestPmHandoffResult = Schema.Struct({
   fallback: Schema.optional(Schema.String),
 });
 export type OrchestratorRequestPmHandoffResult = typeof OrchestratorRequestPmHandoffResult.Type;
+
+/**
+ * The project-context baseline is captured by the server. Clients can select
+ * a project and an optional capability tier, but cannot supply paths,
+ * contents, Git state, or a command identifier.
+ */
+export const OrchestratorRequestProjectContextRunInput = Schema.Struct({
+  projectId: ProjectId,
+  tier: Schema.optionalKey(OrchestrationCapabilityTier),
+});
+export type OrchestratorRequestProjectContextRunInput =
+  typeof OrchestratorRequestProjectContextRunInput.Type;
+
+export const OrchestratorRequestProjectContextRunResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorRequestProjectContextRunResult =
+  typeof OrchestratorRequestProjectContextRunResult.Type;
 
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
@@ -3133,6 +3455,10 @@ export const OrchestratorRpcSchemas = {
   requestPmHandoff: {
     input: OrchestratorRequestPmHandoffInput,
     output: OrchestratorRequestPmHandoffResult,
+  },
+  requestProjectContextRun: {
+    input: OrchestratorRequestProjectContextRunInput,
+    output: OrchestratorRequestProjectContextRunResult,
   },
 } as const;
 

@@ -56,6 +56,7 @@ import { Keybindings } from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
+import { ProjectContextRunCoordinator } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
 import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
@@ -249,6 +250,26 @@ function isHelperRunEvent(event: OrchestrationEvent): event is Extract<
   );
 }
 
+function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
+  OrchestrationEvent,
+  {
+    type:
+      | "project.context-run-requested"
+      | "project.context-run-started"
+      | "project.context-run-pending-review"
+      | "project.context-run-failed"
+      | "project.context-run-interrupted";
+  }
+> {
+  return (
+    event.type === "project.context-run-requested" ||
+    event.type === "project.context-run-started" ||
+    event.type === "project.context-run-pending-review" ||
+    event.type === "project.context-run-failed" ||
+    event.type === "project.context-run-interrupted"
+  );
+}
+
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 function pmHandoffFallbackReason(error: unknown): string {
@@ -316,6 +337,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
+      const projectContextRunCoordinator = yield* ProjectContextRunCoordinator;
       const pmProjectRuntimeFactory = yield* PmProjectRuntimeFactory;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
@@ -809,6 +831,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 helperRuns: (snapshot.helperRuns ?? []).filter(
                   (run) => run.projectId === projectId,
                 ),
+                projectContextRuns: snapshot.projectContextRuns.filter(
+                  (run) => run.projectId === projectId,
+                ),
                 pendingGates,
                 quotaBlockedStages,
                 stageHistory,
@@ -937,6 +962,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               (readModel.helperRuns ?? []).some(
                 (helperRun) =>
                   helperRun.id === event.payload.helperRunId && helperRun.projectId === projectId,
+              ),
+            ),
+            Effect.catch(() => Effect.succeed(false)),
+          );
+        }
+
+        if (isProjectContextRunEvent(event)) {
+          if (event.type === "project.context-run-requested") {
+            return Effect.succeed(event.payload.projectId === projectId);
+          }
+          return projectionSnapshotQuery.getCommandReadModel().pipe(
+            Effect.map((readModel) =>
+              readModel.projectContextRuns.some(
+                (run) =>
+                  run.id === event.payload.projectContextRunId && run.projectId === projectId,
               ),
             ),
             Effect.catch(() => Effect.succeed(false)),
@@ -1938,6 +1978,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               yield* dispatchRequest({ mode: "transcript" });
               return { accepted: true as const, mode: "transcript" as const, fallback };
             }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.requestProjectContextRun]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.requestProjectContextRun,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator.request(input).pipe(
+              Effect.map(({ projectContextRunId, sequence }) => ({
+                runId: projectContextRunId,
+                sequence,
+              })),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to request a project-context run."),
+              ),
+            ),
             { "rpc.aggregate": "orchestrator" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>

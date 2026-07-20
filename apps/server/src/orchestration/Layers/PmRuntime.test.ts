@@ -172,6 +172,7 @@ const readModel: OrchestrationReadModel = {
   projects: [project],
   threads: [],
   tasks: [task],
+  projectContextRuns: [],
   pendingGates: [],
   quotaBlockedStages: [],
   stageHistory: {},

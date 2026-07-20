@@ -228,6 +228,7 @@ function makeProjectDetailSnapshot(params: {
     pmThread: params.pmThread,
     pmQuotaBlock: null,
     tasks: [],
+    projectContextRuns: [],
     pendingGates: [],
     quotaBlockedStages: [],
     stageHistory: {},

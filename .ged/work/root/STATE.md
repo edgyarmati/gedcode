@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-CTX-02`
+- **Active task**: `PROJECT-CTX-03`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -202,6 +202,17 @@
   migration, persistence, replay, engine, and WebSocket tests passed. `bun fmt`, `bun lint`, and all 12
   typecheck packages passed. Full `bun run test` passed all 12 packages in 11m06s (server 197/197 files,
   1,560 passed and 1 skipped).
+- `PROJECT-CTX-02` completed 2026-07-20. Project-context Populate/Review runs are now a separate
+  append-only aggregate that defaults to Smart, permanently stamps the resolved provider/model/options,
+  and executes in the primary checkout without creating a task, worktree, stage, gate, commit, pull
+  request, or landing record. Server-owned raw context, Git-visible workspace, and selected Git
+  metadata baselines preserve pre-existing dirt and leave all auditable changes in pending review.
+  Requests reject project deletion or root relocation races. Quota resets use one scoped wake-up rather
+  than polling, and restart recovery audits orphaned writable runs instead of replaying their prompts.
+- Verification evidence for `PROJECT-CTX-02`: focused contract, lifecycle, audit, persistence, replay,
+  and live WebSocket routing suites passed 156 tests. `bun fmt`, `bun lint`, and all 12 typecheck
+  packages passed. Full `bun run test` passed all 12 packages in 11m30s (web 115/115 files and 1,242
+  tests; server 203/203 files with 1,601 passed and 1 skipped).
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

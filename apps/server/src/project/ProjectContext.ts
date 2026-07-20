@@ -30,11 +30,37 @@ export interface ProjectContextFile {
   readonly normalizedContent: string;
 }
 
+export type ProjectContextContentDigest = `sha256:${string}`;
+
+export type ProjectContextRawFileState =
+  | {
+      readonly presence: "absent";
+      readonly digest: null;
+      readonly size: 0;
+      readonly content: null;
+    }
+  | {
+      readonly presence: "present";
+      readonly digest: ProjectContextContentDigest;
+      readonly size: number;
+      readonly content: string;
+    };
+
+export interface ProjectContextOwnershipFile {
+  readonly relativePath: string;
+  readonly state: ProjectContextRawFileState;
+}
+
+export interface ProjectContextOwnershipBaseline {
+  readonly files: ReadonlyArray<ProjectContextOwnershipFile>;
+}
+
 export interface ProjectContextSnapshot {
   readonly schemaVersion: ProjectContextSchemaVersion;
   readonly files: ReadonlyArray<ProjectContextFile>;
   readonly fingerprint: ProjectContextFingerprint;
   readonly promptKind: "populate" | "review";
+  readonly ownershipBaseline: ProjectContextOwnershipBaseline;
 }
 
 const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
@@ -98,6 +124,7 @@ export function fingerprintProjectContext(input: {
 export function makeProjectContextSnapshot(input: {
   readonly schemaVersion?: ProjectContextSchemaVersion;
   readonly files: ReadonlyArray<ProjectContextFile>;
+  readonly ownershipBaseline?: ProjectContextOwnershipBaseline;
 }): ProjectContextSnapshot {
   const schemaVersion = input.schemaVersion ?? PROJECT_CONTEXT_SCHEMA_VERSION;
   const files = [...input.files];
@@ -106,6 +133,7 @@ export function makeProjectContextSnapshot(input: {
     files,
     fingerprint: fingerprintProjectContext({ schemaVersion, files }),
     promptKind: files.some((file) => file.classification === "substantive") ? "review" : "populate",
+    ownershipBaseline: input.ownershipBaseline ?? { files: [] },
   };
 }
 

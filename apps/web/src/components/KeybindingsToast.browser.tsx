@@ -153,6 +153,7 @@ function createMinimalSnapshot(): OrchestrationReadModel {
       },
     ],
     tasks: [],
+    projectContextRuns: [],
     quotaBlockedStages: [],
     stageHistory: {},
     threads: [

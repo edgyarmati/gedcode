@@ -5,6 +5,20 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added durable Populate/Review agents for canonical project context. Runs default to the Smart
+  capability preset, permanently stamp the selected harness/model/thinking configuration, and work
+  in the primary checkout without creating a task, worktree, stage, gate, commit, pull request, or
+  landing record. Server-owned raw-file and Git-visible baselines preserve pre-existing dirty work,
+  detect out-of-scope files plus HEAD, index, ref, local-config, hook, and Git info mutations, and
+  survive restart. The audit intentionally covers Git-visible checkout state and selected Git
+  metadata; ignored content and paths outside the checkout remain within the trusted provider-policy
+  boundary. Successful runs and abnormal runs with safely auditable changes stop at pending human
+  diff review; Gedcode never stages, commits, resets, cleans, or silently repairs the checkout.
+  Pending runs wake once at a known quota-reset time even without fresh provider telemetry, while
+  orphaned running runs never replay their prompt after restart and instead audit changes into review
+  or stop safely. Requests are bound to the server-captured checkout identity, so queued deletion or
+  root relocation rejects an obsolete baseline instead of starting a run in a different workspace.
+
 - Added the durable project-context onboarding foundation. A bounded scanner classifies the canonical
   `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, root `CONTEXT.md`, and root ADR files without
   crawling `.gedcode/`, task memory, generated output, or secret-bearing paths. Semantic fingerprints

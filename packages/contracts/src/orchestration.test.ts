@@ -23,11 +23,17 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationProject,
+  OrchestrationReadModel,
   OrchestrationSession,
   OrchestrationTask,
   ProjectCreateCommand,
+  ProjectContextRunContentDigest,
+  PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS,
+  PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS,
+  PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS,
   ThreadMetaUpdatedPayload,
   OrchestratorClearPmChatInput,
+  OrchestratorRpcSchemas,
   OrchestratorSetTaskCapabilityTiersInput,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
@@ -35,7 +41,7 @@ import {
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { ThreadId } from "./baseSchemas.ts";
+import { ProjectId, ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -52,6 +58,7 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationProject = Schema.decodeUnknownEffect(OrchestrationProject);
+const decodeOrchestrationReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
 
@@ -79,6 +86,9 @@ const decodeOrchestratorSetTaskCapabilityTiersInput = Schema.decodeUnknownEffect
   OrchestratorSetTaskCapabilityTiersInput,
 );
 const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(OrchestratorClearPmChatInput);
+const decodeOrchestratorRequestProjectContextRunInput = Schema.decodeUnknownEffect(
+  OrchestratorRpcSchemas.requestProjectContextRun.input,
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -253,6 +263,168 @@ it.effect("decodes an internal project-context resolution command and its dismis
       },
     });
     assert.strictEqual(event.type, "project.context-dismissed");
+  }),
+);
+
+it.effect("exposes only project and optional tier for project-context run requests", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorRequestProjectContextRunInput({
+      projectId: "project-1",
+      tier: "genius",
+      baselineManifest: [{ path: "AGENTS.md", rawContent: "spoofed" }],
+      commandId: "spoofed-command",
+      expectedPrimaryCheckoutPath: "/spoofed-project-root",
+    });
+
+    assert.deepStrictEqual(input, { projectId: ProjectId.make("project-1"), tier: "genius" });
+  }),
+);
+
+it.effect("requires project-context runs in orchestration read models", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeOrchestrationReadModel({
+        snapshotSequence: 0,
+        projects: [],
+        threads: [],
+        tasks: [],
+        helperRuns: [],
+        pendingGates: [],
+        quotaBlockedStages: [],
+        stageHistory: {},
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("decodes a bounded project-context request without caller prompt or backend fields", () =>
+  Effect.gen(function* () {
+    const command = yield* decodeOrchestrationCommand({
+      type: "project.context.run.request",
+      commandId: "cmd-context-run",
+      projectContextRunId: "context-run-1",
+      projectId: "project-1",
+      expectedPrimaryCheckoutPath: "/repo/project-1",
+      mode: "populate",
+      schemaVersion: 1,
+      fingerprint: `sha256:${"a".repeat(64)}`,
+      baselineManifest: [{ path: "AGENTS.md", rawContent: null }],
+      workspaceStatusManifest: [
+        {
+          relativePath: "src/index.ts",
+          porcelainStatus: " M",
+          contentDigest: ProjectContextRunContentDigest.make(`sha256:${"b".repeat(64)}`),
+        },
+      ],
+      gitState: {
+        head: null,
+        headIdentity: { kind: "branch", ref: "refs/heads/main" },
+        stagedIndexDigest: ProjectContextRunContentDigest.make(`sha256:${"c".repeat(64)}`),
+        refsDigest: ProjectContextRunContentDigest.make(`sha256:${"d".repeat(64)}`),
+        configDigest: ProjectContextRunContentDigest.make(`sha256:${"e".repeat(64)}`),
+        hooksDigest: ProjectContextRunContentDigest.make(`sha256:${"f".repeat(64)}`),
+        infoExcludeDigest: ProjectContextRunContentDigest.make(`sha256:${"0".repeat(64)}`),
+        infoAttributesDigest: ProjectContextRunContentDigest.make(`sha256:${"1".repeat(64)}`),
+        infoGraftsDigest: ProjectContextRunContentDigest.make(`sha256:${"2".repeat(64)}`),
+      },
+      prompt: "caller prompt must be ignored",
+      providerInstanceId: "caller-provider",
+      model: "caller-model",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(command.type, "project.context.run.request");
+    if (command.type === "project.context.run.request") {
+      assert.strictEqual(command.expectedPrimaryCheckoutPath, "/repo/project-1");
+      assert.strictEqual("prompt" in command, false);
+      assert.strictEqual("providerInstanceId" in command, false);
+      assert.strictEqual("model" in command, false);
+      assert.deepStrictEqual(command.workspaceStatusManifest, [
+        {
+          relativePath: "src/index.ts",
+          porcelainStatus: " M",
+          contentDigest: ProjectContextRunContentDigest.make(`sha256:${"b".repeat(64)}`),
+        },
+      ]);
+    }
+  }),
+);
+
+it.effect("enforces project-context path and prompt/result/failure bounds", () =>
+  Effect.gen(function* () {
+    const badPath = yield* Effect.exit(
+      decodeOrchestrationCommand({
+        type: "project.context.run.request",
+        commandId: "cmd-context-run-bad-path",
+        projectContextRunId: "context-run-bad-path",
+        projectId: "project-1",
+        mode: "review",
+        schemaVersion: 1,
+        fingerprint: `sha256:${"a".repeat(64)}`,
+        baselineManifest: [{ path: "src/index.ts", rawContent: "source" }],
+        workspaceStatusManifest: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(badPath._tag, "Failure");
+
+    const longResult = yield* Effect.exit(
+      decodeOrchestrationCommand({
+        type: "project.context.run.pending-review",
+        commandId: "cmd-context-run-result",
+        projectContextRunId: "context-run-1",
+        result: "r".repeat(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS + 1),
+        changes: [],
+        scopeViolationPaths: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(longResult._tag, "Failure");
+
+    const longFailure = yield* Effect.exit(
+      decodeOrchestrationCommand({
+        type: "project.context.run.fail",
+        commandId: "cmd-context-run-failure",
+        projectContextRunId: "context-run-1",
+        message: "f".repeat(PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS + 1),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    assert.strictEqual(longFailure._tag, "Failure");
+
+    const longPromptEvent = yield* Effect.exit(
+      decodeOrchestrationEvent({
+        sequence: 1,
+        eventId: "event-context-run-requested",
+        aggregateKind: "project-context-run",
+        aggregateId: "context-run-1",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        commandId: "cmd-context-run",
+        causationEventId: null,
+        correlationId: "cmd-context-run",
+        metadata: {},
+        type: "project.context-run-requested",
+        payload: {
+          projectContextRunId: "context-run-1",
+          projectId: "project-1",
+          mode: "populate",
+          tier: "smart",
+          providerInstanceId: "codex",
+          model: "gpt",
+          modelOptions: null,
+          primaryCheckoutPath: "/repo",
+          schemaVersion: 1,
+          fingerprint: `sha256:${"a".repeat(64)}`,
+          prompt: "p".repeat(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS + 1),
+          baselineManifest: [],
+          workspaceStatusManifest: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    assert.strictEqual(longPromptEvent._tag, "Failure");
   }),
 );
 

@@ -452,6 +452,7 @@ function createSnapshotForTargetUser(options: {
       },
     ],
     tasks: [],
+    projectContextRuns: [],
     quotaBlockedStages: [],
     stageHistory: {},
     updatedAt: NOW_ISO,

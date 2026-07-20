@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import { createHash } from "node:crypto";
 
 import {
   CANONICAL_PROJECT_CONTEXT_PATHS,
@@ -10,6 +11,7 @@ import {
   MAX_PROJECT_CONTEXT_FILE_BYTES,
   normalizeProjectContextContent,
   type ProjectContextFile,
+  type ProjectContextOwnershipFile,
 } from "../ProjectContext.ts";
 import {
   ProjectContextScanner,
@@ -63,7 +65,10 @@ export const makeProjectContextScanner = Effect.gen(function* () {
     workspaceRoot: string,
     realWorkspaceRoot: string,
     relativePath: string,
-  ): Effect.fn.Return<ProjectContextFile | null, ProjectContextScannerError> {
+  ): Effect.fn.Return<
+    { readonly file: ProjectContextFile; readonly ownership: ProjectContextOwnershipFile } | null,
+    ProjectContextScannerError
+  > {
     const absolutePath = yield* resolveInsideRoot(workspaceRoot, realWorkspaceRoot, relativePath);
     if (
       !(yield* fileSystem
@@ -133,9 +138,20 @@ export const makeProjectContextScanner = Effect.gen(function* () {
     });
 
     return {
-      relativePath,
-      classification: classifyProjectContextContent(content),
-      normalizedContent: normalizeProjectContextContent(content),
+      file: {
+        relativePath,
+        classification: classifyProjectContextContent(content),
+        normalizedContent: normalizeProjectContextContent(content),
+      },
+      ownership: {
+        relativePath,
+        state: {
+          presence: "present",
+          digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          size: bytes.byteLength,
+          content,
+        },
+      },
     };
   });
 
@@ -166,13 +182,20 @@ export const makeProjectContextScanner = Effect.gen(function* () {
       }
 
       const files: ProjectContextFile[] = [];
+      const ownershipFiles: ProjectContextOwnershipFile[] = [];
       for (const relativePath of CANONICAL_PROJECT_CONTEXT_PATHS) {
-        const file = yield* readRegularUtf8File(workspaceRoot, realWorkspaceRoot, relativePath);
+        const result = yield* readRegularUtf8File(workspaceRoot, realWorkspaceRoot, relativePath);
         files.push(
-          file ?? {
+          result?.file ?? {
             relativePath,
             classification: "missing",
             normalizedContent: "",
+          },
+        );
+        ownershipFiles.push(
+          result?.ownership ?? {
+            relativePath,
+            state: { presence: "absent", digest: null, size: 0, content: null },
           },
         );
       }
@@ -228,16 +251,22 @@ export const makeProjectContextScanner = Effect.gen(function* () {
             ),
           );
         for (const entry of entries.filter(isMarkdownFileName).toSorted()) {
-          const file = yield* readRegularUtf8File(
+          const result = yield* readRegularUtf8File(
             workspaceRoot,
             realWorkspaceRoot,
             `${ADR_DIRECTORY}/${entry}`,
           );
-          if (file !== null) files.push(file);
+          if (result !== null) {
+            files.push(result.file);
+            ownershipFiles.push(result.ownership);
+          }
         }
       }
 
-      return makeProjectContextSnapshot({ files });
+      return makeProjectContextSnapshot({
+        files,
+        ownershipBaseline: { files: ownershipFiles },
+      });
     },
   );
 

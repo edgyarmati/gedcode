@@ -21,6 +21,7 @@ import { ProjectionPendingApprovalRepository } from "../../persistence/Services/
 import { ProjectionPendingGateRepository } from "../../persistence/Services/ProjectionPendingGates.ts";
 import { ProjectionQuotaBlockedStageRepository } from "../../persistence/Services/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepository } from "../../persistence/Services/ProjectionProjects.ts";
+import { ProjectionProjectContextRunRepository } from "../../persistence/Services/ProjectionProjectContextRuns.ts";
 import { ProjectionStageHistoryRepository } from "../../persistence/Services/ProjectionStageHistory.ts";
 import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionTaskRepository } from "../../persistence/Services/ProjectionTasks.ts";
@@ -46,6 +47,7 @@ import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layer
 import { ProjectionPendingGateRepositoryLive } from "../../persistence/Layers/ProjectionPendingGates.ts";
 import { ProjectionQuotaBlockedStageRepositoryLive } from "../../persistence/Layers/ProjectionQuotaBlockedStages.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
+import { ProjectionProjectContextRunRepositoryLive } from "../../persistence/Layers/ProjectionProjectContextRuns.ts";
 import { ProjectionStageHistoryRepositoryLive } from "../../persistence/Layers/ProjectionStageHistory.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionTaskRepositoryLive } from "../../persistence/Layers/ProjectionTasks.ts";
@@ -81,6 +83,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   pendingApprovals: "projection.pending-approvals",
   tasks: "projection.tasks",
   helperRuns: "projection.helper-runs",
+  projectContextRuns: "projection.project-context-runs",
   stageHistory: "projection.stage-history",
   awaitedStages: "projection.awaited-stages",
   pendingGates: "projection.pending-gates",
@@ -461,6 +464,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const eventStore = yield* OrchestrationEventStore;
     const projectionStateRepository = yield* ProjectionStateRepository;
     const projectionProjectRepository = yield* ProjectionProjectRepository;
+    const projectionProjectContextRunRepository = yield* ProjectionProjectContextRunRepository;
     const projectionThreadRepository = yield* ProjectionThreadRepository;
     const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
     const projectionThreadProposedPlanRepository = yield* ProjectionThreadProposedPlanRepository;
@@ -1617,6 +1621,93 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       });
     });
 
+    const applyProjectContextRunsProjection: ProjectorDefinition["apply"] = Effect.fn(
+      "applyProjectContextRunsProjection",
+    )(function* (event, _attachmentSideEffects) {
+      if (event.type === "project.context-run-requested") {
+        yield* projectionProjectContextRunRepository.upsert({
+          id: event.payload.projectContextRunId,
+          projectId: event.payload.projectId,
+          mode: event.payload.mode,
+          tier: event.payload.tier,
+          providerInstanceId: event.payload.providerInstanceId,
+          model: event.payload.model,
+          modelOptions: event.payload.modelOptions,
+          primaryCheckoutPath: event.payload.primaryCheckoutPath,
+          schemaVersion: event.payload.schemaVersion,
+          fingerprint: event.payload.fingerprint,
+          prompt: event.payload.prompt,
+          baselineManifest: event.payload.baselineManifest,
+          workspaceStatusManifest: event.payload.workspaceStatusManifest,
+          gitState: event.payload.gitState,
+          status: "pending",
+          providerThreadId: null,
+          result: null,
+          failureMessage: null,
+          changes: [],
+          scopeViolationPaths: [],
+          createdAt: event.payload.createdAt,
+          startedAt: null,
+          pendingReviewAt: null,
+          failedAt: null,
+          interruptedAt: null,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (
+        event.type !== "project.context-run-started" &&
+        event.type !== "project.context-run-pending-review" &&
+        event.type !== "project.context-run-failed" &&
+        event.type !== "project.context-run-interrupted"
+      ) {
+        return;
+      }
+      const existing = yield* projectionProjectContextRunRepository.getById({
+        projectContextRunId: event.payload.projectContextRunId,
+      });
+      if (Option.isNone(existing)) return;
+      if (event.type === "project.context-run-started") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "running",
+          providerThreadId: event.payload.providerThreadId,
+          startedAt: event.payload.startedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-pending-review") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "pending-review",
+          result: event.payload.result,
+          failureMessage: null,
+          changes: event.payload.changes,
+          scopeViolationPaths: event.payload.scopeViolationPaths,
+          pendingReviewAt: event.payload.pendingReviewAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-failed") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "failed",
+          failureMessage: event.payload.message,
+          failedAt: event.payload.failedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      yield* projectionProjectContextRunRepository.upsert({
+        ...existing.value,
+        status: "interrupted",
+        interruptedAt: event.payload.interruptedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+    });
+
     // Task aggregate projector (Plan 018 WP-D). `status` is computed here from
     // the event being applied + the current row — never taken from a command or
     // payload status field. The derivation is the same deterministic left-fold
@@ -2525,6 +2616,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyHelperRunsProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.projectContextRuns,
+        apply: applyProjectContextRunsProjection,
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.stageHistory,
         apply: applyStageHistoryProjection,
       },
@@ -2650,6 +2745,7 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
   Layer.provideMerge(ProjectionTaskRepositoryLive),
   Layer.provideMerge(ProjectionHelperRunRepositoryLive),
+  Layer.provideMerge(ProjectionProjectContextRunRepositoryLive),
   Layer.provideMerge(ProjectionStageHistoryRepositoryLive),
   Layer.provideMerge(ProjectionAwaitedStageRepositoryLive),
   Layer.provideMerge(ProjectionQuotaBlockedStageRepositoryLive),

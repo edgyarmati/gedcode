@@ -110,6 +110,7 @@ import type {
   TextContent,
 } from "../claude/pmHarness.ts";
 import { resumeQuotaBlockedStageWithServices } from "../quotaStageResumption.ts";
+import { recoverElapsedProviderQuotaBlocks } from "../quotaResetRecovery.ts";
 import {
   buildStageResult,
   serializeStageResultToMessage,
@@ -1377,29 +1378,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     // re-marks the instance blocked, bounded by `maxRetriesPerStage`.
     const reconcileResetElapsedInstances = Effect.fn("PmRuntime.reconcileResetElapsedInstances")(
       function* () {
-        const nowIso = DateTime.formatIso(yield* DateTime.now);
-        const nowMs = Date.parse(nowIso);
-        const blocked = yield* providerQuotaStatusRepository.listBlocked();
-        const elapsed = blocked.filter(
-          (row) =>
-            row.status === "blocked-until" &&
-            row.resetAt !== null &&
-            Date.parse(row.resetAt) <= nowMs,
-        );
+        const elapsed = yield* recoverElapsedProviderQuotaBlocks({
+          quota: providerQuotaStatusRepository,
+        });
         if (elapsed.length === 0) {
           return 0;
         }
-        yield* Effect.forEach(
-          elapsed,
-          (row) =>
-            providerQuotaStatusRepository.upsert({
-              providerInstanceId: row.providerInstanceId,
-              status: "ok",
-              resetAt: null,
-              updatedAt: nowIso,
-            }),
-          { concurrency: 1, discard: true },
-        );
         yield* increment(orchestrationQuotaResetClearedTotal, {}, elapsed.length);
         yield* Effect.logInfo("quota reset elapsed; instances optimistically cleared to ok", {
           count: elapsed.length,

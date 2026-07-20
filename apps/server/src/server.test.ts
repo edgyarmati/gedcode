@@ -26,6 +26,7 @@ import {
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   ProjectContextFingerprint,
+  ProjectContextRunId,
   ProjectContextSchemaVersion,
   ProjectId,
   ProviderDriverKind,
@@ -107,6 +108,10 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "./orchestration/Services/OrchestrationEngine.ts";
+import {
+  ProjectContextRunCoordinator,
+  type ProjectContextRunCoordinatorShape,
+} from "./orchestration/Services/ProjectContextRunCoordinator.ts";
 import {
   PmProjectRuntimeFactory,
   type PmProjectRuntimeFactoryShape,
@@ -229,6 +234,7 @@ const makeDefaultOrchestrationReadModel = () => {
       },
     ],
     tasks: [],
+    projectContextRuns: [],
     quotaBlockedStages: [],
     stageHistory: {},
   };
@@ -386,6 +392,7 @@ const buildAppUnderTest = (options?: {
     terminalManager?: Partial<TerminalManagerShape>;
     providerService?: Partial<ProviderServiceShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
+    projectContextRunCoordinator?: Partial<ProjectContextRunCoordinatorShape>;
     pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
     providerQuotaStatusRepository?: Partial<ProviderQuotaStatusRepositoryShape>;
@@ -732,13 +739,23 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(OrchestrationEngineService)({
-          readEvents: () => Stream.empty,
-          dispatch: () => Effect.succeed({ sequence: 0 }),
-          streamDomainEvents: Stream.empty,
-          streamShellEvents: defaultStreamShellEvents,
-          ...options?.layers?.orchestrationEngine,
-        }),
+        Layer.mergeAll(
+          Layer.mock(OrchestrationEngineService)({
+            readEvents: () => Stream.empty,
+            dispatch: () => Effect.succeed({ sequence: 0 }),
+            streamDomainEvents: Stream.empty,
+            streamShellEvents: defaultStreamShellEvents,
+            ...options?.layers?.orchestrationEngine,
+          }),
+          Layer.mock(ProjectContextRunCoordinator)({
+            request: () =>
+              Effect.succeed({
+                projectContextRunId: ProjectContextRunId.make("context-run-default"),
+                sequence: 0,
+              }),
+            ...options?.layers?.projectContextRunCoordinator,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(PmProjectRuntimeFactory)({
@@ -1863,6 +1880,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
         ],
         tasks: [],
+        projectContextRuns: [],
         quotaBlockedStages: [],
         stageHistory: {},
       };
@@ -3294,6 +3312,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           },
         ],
         tasks: [],
+        projectContextRuns: [],
         quotaBlockedStages: [],
         stageHistory: {},
       };
@@ -3441,6 +3460,75 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("guards project-context run requests until preset migration completes", () =>
+    Effect.gen(function* () {
+      let requestCalls = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+          },
+          projectContextRunCoordinator: {
+            request: () =>
+              Effect.sync(() => {
+                requestCalls += 1;
+                return {
+                  projectContextRunId: ProjectContextRunId.make("context-run-guarded"),
+                  sequence: 1,
+                };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestProjectContextRun]({
+            projectId: defaultProjectId,
+          }),
+        ).pipe(Effect.exit),
+      );
+
+      assert.equal(result._tag, "Failure");
+      assert.equal(requestCalls, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes server-owned project-context run requests", () =>
+    Effect.gen(function* () {
+      const requests: Array<{
+        readonly projectId: ProjectId;
+        readonly tier?: "cheap" | "smart" | "genius";
+      }> = [];
+      const runId = ProjectContextRunId.make("context-run-from-rpc");
+      yield* buildAppUnderTest({
+        layers: {
+          projectContextRunCoordinator: {
+            request: (input) =>
+              Effect.sync(() => {
+                requests.push(input);
+                return { projectContextRunId: runId, sequence: 73 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.requestProjectContextRun]({
+            projectId: defaultProjectId,
+            tier: "smart",
+          }),
+        ),
+      );
+
+      assert.deepEqual(result, { runId, sequence: 73 });
+      assert.deepEqual(requests, [{ projectId: defaultProjectId, tier: "smart" }]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestrator methods", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";
@@ -3555,6 +3643,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         projects: [project],
         threads: [pmThread, stageThread],
         tasks: [task],
+        projectContextRuns: [],
         pendingGates: [pendingGate],
         quotaBlockedStages: [],
         stageHistory: {},

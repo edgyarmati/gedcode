@@ -45,10 +45,13 @@ import { PmProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Laye
 import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
 import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
 import { HelperRunReactorLive } from "./orchestration/Layers/HelperRunReactor.ts";
+import { ProjectContextRunReactorLive } from "./orchestration/Layers/ProjectContextRunReactor.ts";
+import { ProjectContextRunCoordinatorLive } from "./orchestration/Layers/ProjectContextRunCoordinator.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
 import { RepositoryIdentityResolverLive } from "./project/Layers/RepositoryIdentityResolver.ts";
+import { ProjectContextScannerLive } from "./project/Layers/ProjectContextScanner.ts";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.ts";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
@@ -152,6 +155,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(TaskWorktreeReactorLive),
   Layer.provideMerge(HelperRunReactorLive),
+  Layer.provideMerge(ProjectContextRunReactorLive),
+  Layer.provideMerge(ProjectContextRunCoordinatorLive),
+  Layer.provideMerge(ProjectContextScannerLive),
   Layer.provideMerge(PmRuntimeLive),
   Layer.provideMerge(PmProjectRuntimeFactoryLive),
   Layer.provideMerge(OrphanTurnReconcilerLive),

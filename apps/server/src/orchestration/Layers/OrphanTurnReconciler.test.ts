@@ -163,6 +163,7 @@ function makeReadModel(input: {
     projects: [],
     threads: [...(input.threads ?? [])],
     tasks: [...input.tasks],
+    projectContextRuns: [],
     pendingGates: [],
     quotaBlockedStages: [],
     stageHistory: {},

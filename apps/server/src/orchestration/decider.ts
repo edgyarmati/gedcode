@@ -7,6 +7,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationProject,
+  type OrchestrationProjectContextRun,
   type OrchestrationReadModel,
   type OrchestrationThread,
 } from "@t3tools/contracts";
@@ -48,6 +49,41 @@ import { resolveWorkerStageRuntimeMode } from "./workerSafety.ts";
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 const defaultOrchestratorConfig = Option.getOrThrow(decodeOrchestratorConfig({}));
+const ACTIVE_PROJECT_CONTEXT_RUN_STATUSES = new Set(["pending", "running", "pending-review"]);
+
+function requireNoActiveProjectContextRun(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly projectId: OrchestrationProject["id"];
+  readonly operation: "delete" | "relocate its workspace root";
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  const activeRun = input.readModel.projectContextRuns.find(
+    (run) =>
+      run.projectId === input.projectId && ACTIVE_PROJECT_CONTEXT_RUN_STATUSES.has(run.status),
+  );
+  if (activeRun === undefined) return Effect.void;
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `Project '${input.projectId}' cannot ${input.operation} while project-context run '${activeRun.id}' is '${activeRun.status}'. Interrupt the run or resolve its pending review first.`,
+    ),
+  );
+}
+
+function projectContextRunPrompt(mode: "populate" | "review"): string {
+  const action =
+    mode === "populate"
+      ? "Populate missing or stub project guidance with concise, project-specific content."
+      : "Review the existing project guidance and improve only material inaccuracies or omissions.";
+  return [
+    "You are maintaining the shared project context in the primary checkout.",
+    action,
+    "You may change only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, and direct Markdown files under docs/adr/.",
+    "Do not modify application code, runtime state, task files, generated files, secrets, Git history, branches, worktrees, commits, pull requests, or orchestration state.",
+    "Do not create tasks, stages, gates, worktrees, commits, pull requests, or delegate to another agent.",
+    "Finish with a concise summary of the context changes for human diff review.",
+  ].join(" ");
+}
 
 function taskWorktreePath(input: { readonly workspaceRoot: string; readonly taskId: string }) {
   return `${input.workspaceRoot.replace(/[\\/]+$/, "")}/.gedcode/orchestrator/tasks/${input.taskId}`;
@@ -81,6 +117,24 @@ function requirePmThread(input: {
           ),
     ),
   );
+}
+
+function requireProjectContextRun(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly projectContextRunId: OrchestrationProjectContextRun["id"];
+}): Effect.Effect<OrchestrationProjectContextRun, OrchestrationCommandInvariantError> {
+  const run = input.readModel.projectContextRuns.find(
+    (candidate) => candidate.id === input.projectContextRunId,
+  );
+  return run === undefined
+    ? Effect.fail(
+        invariantError(
+          input.command.type,
+          `Project-context run '${input.projectContextRunId}' does not exist.`,
+        ),
+      )
+    : Effect.succeed(run);
 }
 
 function requireOrchestratorConfig(input: {
@@ -453,6 +507,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
+      if (command.workspaceRoot !== undefined && command.workspaceRoot !== project.workspaceRoot) {
+        yield* requireNoActiveProjectContextRun({
+          readModel,
+          command,
+          projectId: command.projectId,
+          operation: "relocate its workspace root",
+        });
+      }
       if (command.orchestratorConfig !== undefined) {
         yield* requireOrchestratorConfig({
           command,
@@ -528,11 +590,236 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "project.context.run.request": {
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      if (project.deletedAt !== null) {
+        return yield* invariantError(
+          command.type,
+          `Project '${project.id}' was deleted before its project-context baseline could be requested.`,
+        );
+      }
+      if (project.workspaceRoot !== command.expectedPrimaryCheckoutPath) {
+        return yield* invariantError(
+          command.type,
+          `Project '${project.id}' primary checkout changed from '${command.expectedPrimaryCheckoutPath}' to '${project.workspaceRoot}' while capturing its project-context baseline.`,
+        );
+      }
+      if (readModel.projectContextRuns.some((run) => run.id === command.projectContextRunId)) {
+        return yield* invariantError(
+          command.type,
+          `Project-context run '${command.projectContextRunId}' already exists.`,
+        );
+      }
+      const activeRun = readModel.projectContextRuns.find(
+        (run) =>
+          run.projectId === command.projectId &&
+          ACTIVE_PROJECT_CONTEXT_RUN_STATUSES.has(run.status),
+      );
+      if (activeRun !== undefined) {
+        return yield* invariantError(
+          command.type,
+          `Project '${command.projectId}' already has active project-context run '${activeRun.id}'.`,
+        );
+      }
+      const baselinePaths = new Set(command.baselineManifest.map((entry) => entry.path));
+      if (baselinePaths.size !== command.baselineManifest.length) {
+        return yield* invariantError(
+          command.type,
+          "Project-context baseline manifest contains duplicate paths.",
+        );
+      }
+      for (let index = 1; index < command.workspaceStatusManifest.length; index += 1) {
+        const previous = command.workspaceStatusManifest[index - 1];
+        const current = command.workspaceStatusManifest[index];
+        if (
+          previous === undefined ||
+          current === undefined ||
+          previous.relativePath >= current.relativePath
+        ) {
+          return yield* invariantError(
+            command.type,
+            "Project-context workspace status manifest must have unique, code-unit-sorted paths.",
+          );
+        }
+      }
+      const tier = command.tier ?? "smart";
+      const modelSelection = resolveCapabilityPreset({
+        orchestratorDefaults,
+        projectConfig: explicitlySetProjectConfig(project.orchestratorConfig),
+        tier,
+      });
+      if (modelSelection === null) {
+        return yield* invariantError(
+          command.type,
+          `Project '${project.id}' has no configured '${tier}' capability preset.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project-context-run",
+          aggregateId: command.projectContextRunId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "project.context-run-requested",
+        payload: {
+          projectContextRunId: command.projectContextRunId,
+          projectId: command.projectId,
+          mode: command.mode,
+          tier,
+          providerInstanceId: modelSelection.instanceId,
+          model: modelSelection.model,
+          modelOptions: modelSelection.options ?? null,
+          primaryCheckoutPath: project.workspaceRoot,
+          schemaVersion: command.schemaVersion,
+          fingerprint: command.fingerprint,
+          prompt: projectContextRunPrompt(command.mode),
+          baselineManifest: command.baselineManifest,
+          workspaceStatusManifest: command.workspaceStatusManifest,
+          gitState: command.gitState,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "project.context.run.start":
+    case "project.context.run.pending-review":
+    case "project.context.run.fail":
+    case "project.context.run.interrupt": {
+      const run = yield* requireProjectContextRun({
+        readModel,
+        command,
+        projectContextRunId: command.projectContextRunId,
+      });
+      const eventBase = yield* withEventBase({
+        aggregateKind: "project-context-run",
+        aggregateId: command.projectContextRunId,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      if (command.type === "project.context.run.start") {
+        if (run.status !== "pending") {
+          return yield* invariantError(
+            command.type,
+            `Project-context run '${run.id}' cannot start from '${run.status}'.`,
+          );
+        }
+        return {
+          ...eventBase,
+          type: "project.context-run-started",
+          payload: {
+            projectContextRunId: run.id,
+            providerThreadId: command.providerThreadId,
+            startedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (command.type === "project.context.run.pending-review") {
+        if (run.status !== "running") {
+          return yield* invariantError(
+            command.type,
+            `Project-context run '${run.id}' cannot enter pending review from '${run.status}'.`,
+          );
+        }
+        const changePaths = new Set(command.changes.map((change) => change.path));
+        if (changePaths.size !== command.changes.length) {
+          return yield* invariantError(
+            command.type,
+            "Project-context changes contain duplicate paths.",
+          );
+        }
+        const baselineByPath = new Map(
+          run.baselineManifest.map((entry) => [entry.path, entry.rawContent] as const),
+        );
+        for (const change of command.changes) {
+          if (change.beforeRawContent === change.afterRawContent) {
+            return yield* invariantError(
+              command.type,
+              `Project-context change '${change.path}' does not change its raw content.`,
+            );
+          }
+          if (
+            (baselineByPath.has(change.path) &&
+              baselineByPath.get(change.path) !== change.beforeRawContent) ||
+            (!baselineByPath.has(change.path) && change.beforeRawContent !== null)
+          ) {
+            return yield* invariantError(
+              command.type,
+              `Project-context change '${change.path}' does not match the immutable baseline.`,
+            );
+          }
+        }
+        if (new Set(command.scopeViolationPaths).size !== command.scopeViolationPaths.length) {
+          return yield* invariantError(
+            command.type,
+            "Project-context scope violations contain duplicate paths.",
+          );
+        }
+        return {
+          ...eventBase,
+          type: "project.context-run-pending-review",
+          payload: {
+            projectContextRunId: run.id,
+            result: command.result,
+            changes: command.changes,
+            scopeViolationPaths: command.scopeViolationPaths,
+            pendingReviewAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (command.type === "project.context.run.fail") {
+        if (run.status !== "pending" && run.status !== "running") {
+          return yield* invariantError(
+            command.type,
+            `Project-context run '${run.id}' cannot fail from '${run.status}'.`,
+          );
+        }
+        return {
+          ...eventBase,
+          type: "project.context-run-failed",
+          payload: {
+            projectContextRunId: run.id,
+            message: command.message,
+            failedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        };
+      }
+      if (run.status !== "pending" && run.status !== "running") {
+        return yield* invariantError(
+          command.type,
+          `Project-context run '${run.id}' cannot be interrupted from '${run.status}'.`,
+        );
+      }
+      return {
+        ...eventBase,
+        type: "project.context-run-interrupted",
+        payload: {
+          projectContextRunId: run.id,
+          interruptedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "project.delete": {
       yield* requireProject({
         readModel,
         command,
         projectId: command.projectId,
+      });
+      yield* requireNoActiveProjectContextRun({
+        readModel,
+        command,
+        projectId: command.projectId,
+        operation: "delete",
       });
       const activeThreads = listThreadsByProjectId(readModel, command.projectId).filter(
         (thread) => thread.deletedAt === null,

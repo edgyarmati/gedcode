@@ -2,6 +2,7 @@ import type {
   OrchestrationEvent,
   OrchestrationPendingGate,
   OrchestrationProject,
+  OrchestrationProjectContextRun,
   OrchestrationReadModel,
   OrchestrationTask,
   OrchestrationHelperRun,
@@ -75,6 +76,7 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 type TaskPatch = Partial<Omit<OrchestrationTask, "id" | "projectId">>;
 type HelperRunPatch = Partial<Omit<OrchestrationHelperRun, "id" | "projectId">>;
+type ProjectContextRunPatch = Partial<Omit<OrchestrationProjectContextRun, "id" | "projectId">>;
 type PendingGatePatch = Partial<Omit<OrchestrationPendingGate, "gateId" | "taskId">>;
 type ProjectOrchestratorConfig = NonNullable<OrchestrationProject["orchestratorConfig"]>;
 const MAX_THREAD_MESSAGES = 2_000;
@@ -128,6 +130,14 @@ function updateHelperRun(
   patch: HelperRunPatch,
 ): OrchestrationHelperRun[] {
   return helperRuns.map((run) => (run.id === helperRunId ? { ...run, ...patch } : run));
+}
+
+function updateProjectContextRun(
+  runs: ReadonlyArray<OrchestrationProjectContextRun>,
+  runId: OrchestrationProjectContextRun["id"],
+  patch: ProjectContextRunPatch,
+): OrchestrationProjectContextRun[] {
+  return runs.map((run) => (run.id === runId ? { ...run, ...patch } : run));
 }
 
 function withAggregateTaskProgress(tasks: ReadonlyArray<OrchestrationTask>): OrchestrationTask[] {
@@ -305,6 +315,7 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     threads: [],
     tasks: [],
     helperRuns: [],
+    projectContextRuns: [],
     pendingGates: [],
     quotaBlockedStages: [],
     stageHistory: {},
@@ -323,6 +334,106 @@ export function projectEvent(
   };
 
   switch (event.type) {
+    case "project.context-run-requested":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: [
+          ...nextBase.projectContextRuns.filter(
+            (run) => run.id !== event.payload.projectContextRunId,
+          ),
+          {
+            id: event.payload.projectContextRunId,
+            projectId: event.payload.projectId,
+            mode: event.payload.mode,
+            tier: event.payload.tier,
+            providerInstanceId: event.payload.providerInstanceId,
+            model: event.payload.model,
+            modelOptions: event.payload.modelOptions,
+            primaryCheckoutPath: event.payload.primaryCheckoutPath,
+            schemaVersion: event.payload.schemaVersion,
+            fingerprint: event.payload.fingerprint,
+            prompt: event.payload.prompt,
+            baselineManifest: event.payload.baselineManifest,
+            workspaceStatusManifest: event.payload.workspaceStatusManifest,
+            gitState: event.payload.gitState,
+            status: "pending",
+            providerThreadId: null,
+            result: null,
+            failureMessage: null,
+            changes: [],
+            scopeViolationPaths: [],
+            createdAt: event.payload.createdAt,
+            startedAt: null,
+            pendingReviewAt: null,
+            failedAt: null,
+            interruptedAt: null,
+            updatedAt: event.payload.updatedAt,
+          },
+        ],
+      });
+
+    case "project.context-run-started":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "running",
+            providerThreadId: event.payload.providerThreadId,
+            startedAt: event.payload.startedAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-pending-review":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "pending-review",
+            result: event.payload.result,
+            failureMessage: null,
+            changes: event.payload.changes,
+            scopeViolationPaths: event.payload.scopeViolationPaths,
+            pendingReviewAt: event.payload.pendingReviewAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-failed":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "failed",
+            failureMessage: event.payload.message,
+            failedAt: event.payload.failedAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-interrupted":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "interrupted",
+            interruptedAt: event.payload.interruptedAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
     case "helper.run-requested":
       return Effect.succeed({
         ...nextBase,

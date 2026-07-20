@@ -198,6 +198,27 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
   binding: 12/12 packages in 11m06s; server 197/197 files with 1,560 passed and 1 skipped.
 
+### PROJECT-CTX-02 — 2026-07-20
+
+- Focused: contracts passed 70 tests; project-context scanner, exact workspace/Git metadata audit,
+  decider, coordinator, reactor, SQL migration/projection, replay, and snapshots passed 84 tests; live
+  WebSocket request routing and mandatory-preset-migration gating passed 2 tests.
+- Manual review: the public request accepts only project ID and optional capability tier; the server
+  captures and atomically binds the baseline to the current primary checkout. Runs stamp the resolved
+  backend, use provider-native writable policy with orchestration tools disabled, and create no task,
+  worktree, stage, gate, commit, PR, or landing state. Git-visible checkout changes plus HEAD, index,
+  refs, local config, hooks, and Git info metadata are audited without staging or repair. Ignored files
+  and paths outside the checkout remain the explicit trusted-provider boundary selected for this flow.
+- Recovery review: project deletion and workspace relocation are rejected while a run is active;
+  interleaved request races fail closed. Known quota resets schedule one scoped wake-up without
+  polling. Restart preserves a provably active session, while an orphaned writable run is audited into
+  pending review or interrupted without replaying its prompt.
+- Repository: `bun fmt`, `bun lint`, and all 12 `bun typecheck` packages passed. Lint retained only
+  existing warnings.
+- Full: `bun run test` passed outside the sandbox because existing loopback tests require socket
+  binding: 12/12 packages in 11m30s; web 115/115 files and 1,242 tests; server 203/203 files with
+  1,601 passed and 1 skipped.
+
 ## Commit and Landing Lifecycle
 
 ### State and replay

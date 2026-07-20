@@ -103,6 +103,7 @@ const readModel: OrchestrationReadModel = {
     },
   ],
   tasks: [],
+  projectContextRuns: [],
   pendingGates: [],
   quotaBlockedStages: [],
   stageHistory: {},

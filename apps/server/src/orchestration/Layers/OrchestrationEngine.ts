@@ -103,6 +103,12 @@ export function classifyOrchestrationCommand(
     case "project.context.resolve":
     case "project.delete":
       return "project";
+    case "project.context.run.request":
+    case "project.context.run.start":
+    case "project.context.run.pending-review":
+    case "project.context.run.fail":
+    case "project.context.run.interrupt":
+      return "project";
     case "task.create":
     case "task.split":
     case "task.classify":
@@ -186,6 +192,15 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
+      };
+    case "project.context.run.request":
+    case "project.context.run.start":
+    case "project.context.run.pending-review":
+    case "project.context.run.fail":
+    case "project.context.run.interrupt":
+      return {
+        aggregateKind: "project-context-run",
+        aggregateId: command.projectContextRunId,
       };
     case "task.create":
     case "task.split":

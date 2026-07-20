@@ -6,6 +6,8 @@ import {
   EventId,
   MessageId,
   ProjectContextFingerprint,
+  ProjectContextRunContentDigest,
+  ProjectContextRunId,
   ProjectContextSchemaVersion,
   ProjectId,
   OrchestrationTaskAggregateProgress,
@@ -289,6 +291,203 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           },
         ]);
       }),
+  );
+
+  it.effect("replays every project-context run terminal lifecycle", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-context-run-replay");
+      const reviewRunId = ProjectContextRunId.make("context-run-review");
+      const failedRunId = ProjectContextRunId.make("context-run-failed");
+      const interruptedRunId = ProjectContextRunId.make("context-run-interrupted");
+      const now = "2026-07-20T10:00:00.000Z";
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-context-run-project"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-project"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-project"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Project context runs",
+          workspaceRoot: "/tmp/project-context-run-replay",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      for (const [index, projectContextRunId] of [
+        reviewRunId,
+        failedRunId,
+        interruptedRunId,
+      ].entries()) {
+        yield* eventStore.append({
+          type: "project.context-run-requested",
+          eventId: EventId.make(`evt-context-run-request-${index}`),
+          aggregateKind: "project-context-run",
+          aggregateId: projectContextRunId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-context-run-request-${index}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-context-run-request-${index}`),
+          metadata: {},
+          payload: {
+            projectContextRunId,
+            projectId,
+            mode: index === 0 ? "review" : "populate",
+            tier: "smart",
+            providerInstanceId: ProviderInstanceId.make("codex-smart"),
+            model: "gpt-smart",
+            modelOptions: [{ id: "effort", value: "high" }],
+            primaryCheckoutPath: "/tmp/project-context-run-replay",
+            schemaVersion: ProjectContextSchemaVersion.make(1),
+            fingerprint: ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`),
+            prompt: "Maintain the canonical context.",
+            baselineManifest: [{ path: "AGENTS.md", rawContent: "# Existing\n" }],
+            workspaceStatusManifest: [
+              { relativePath: "AGENTS.md", porcelainStatus: " M", contentDigest: null },
+            ],
+            gitState: {
+              head: null,
+              headIdentity: { kind: "branch", ref: "refs/heads/main" },
+              stagedIndexDigest: ProjectContextRunContentDigest.make(`sha256:${"b".repeat(64)}`),
+              refsDigest: ProjectContextRunContentDigest.make(`sha256:${"c".repeat(64)}`),
+              configDigest: ProjectContextRunContentDigest.make(`sha256:${"d".repeat(64)}`),
+              hooksDigest: ProjectContextRunContentDigest.make(`sha256:${"e".repeat(64)}`),
+              infoExcludeDigest: ProjectContextRunContentDigest.make(`sha256:${"f".repeat(64)}`),
+              infoAttributesDigest: ProjectContextRunContentDigest.make(`sha256:${"0".repeat(64)}`),
+              infoGraftsDigest: ProjectContextRunContentDigest.make(`sha256:${"1".repeat(64)}`),
+            },
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
+
+      yield* eventStore.append({
+        type: "project.context-run-started",
+        eventId: EventId.make("evt-context-run-review-start"),
+        aggregateKind: "project-context-run",
+        aggregateId: reviewRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-review-start"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-review-start"),
+        metadata: {},
+        payload: {
+          projectContextRunId: reviewRunId,
+          providerThreadId: ThreadId.make("project-context-run:review"),
+          startedAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "project.context-run-pending-review",
+        eventId: EventId.make("evt-context-run-review-ready"),
+        aggregateKind: "project-context-run",
+        aggregateId: reviewRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-review-ready"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-review-ready"),
+        metadata: {},
+        payload: {
+          projectContextRunId: reviewRunId,
+          result: "Updated project guidance.",
+          changes: [
+            {
+              path: "AGENTS.md",
+              beforeRawContent: "# Existing\n",
+              afterRawContent: "# Existing\n\nKeep changes bounded.\n",
+            },
+          ],
+          scopeViolationPaths: [],
+          pendingReviewAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "project.context-run-failed",
+        eventId: EventId.make("evt-context-run-failed"),
+        aggregateKind: "project-context-run",
+        aggregateId: failedRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-failed"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-failed"),
+        metadata: {},
+        payload: {
+          projectContextRunId: failedRunId,
+          message: "Scope validation failed.",
+          failedAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "project.context-run-interrupted",
+        eventId: EventId.make("evt-context-run-interrupted"),
+        aggregateKind: "project-context-run",
+        aggregateId: interruptedRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-interrupted"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-interrupted"),
+        metadata: {},
+        payload: {
+          projectContextRunId: interruptedRunId,
+          interruptedAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+      const rows = yield* sql<{
+        readonly id: string;
+        readonly status: string;
+        readonly baselineManifest: string;
+        readonly workspaceStatusManifest: string;
+        readonly changes: string;
+      }>`
+        SELECT project_context_run_id AS "id", status,
+          baseline_manifest_json AS "baselineManifest",
+          workspace_status_manifest_json AS "workspaceStatusManifest",
+          changes_json AS "changes"
+        FROM projection_project_context_runs
+        ORDER BY project_context_run_id
+      `;
+      assert.deepStrictEqual(
+        rows.map((row) => [row.id, row.status]),
+        [
+          ["context-run-failed", "failed"],
+          ["context-run-interrupted", "interrupted"],
+          ["context-run-review", "pending-review"],
+        ],
+      );
+      assert.strictEqual(
+        rows[2]?.baselineManifest,
+        '[{"path":"AGENTS.md","rawContent":"# Existing\\n"}]',
+      );
+      assert.strictEqual(
+        rows[2]?.workspaceStatusManifest,
+        '[{"relativePath":"AGENTS.md","porcelainStatus":" M","contentDigest":null}]',
+      );
+      assert.match(rows[2]?.changes ?? "", /Keep changes bounded/);
+
+      yield* projectionPipeline.bootstrap;
+      const replayedCount = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM projection_project_context_runs
+      `;
+      assert.strictEqual(replayedCount[0]?.count, 3);
+    }),
   );
 
   it.effect("persists task retention tombstones without deleting the task row", () =>

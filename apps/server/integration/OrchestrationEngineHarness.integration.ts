@@ -79,6 +79,7 @@ import { WorkerStartAdmissionLive } from "../src/orchestration/Layers/WorkerStar
 import { makeTaskWorktreeReactorLive } from "../src/orchestration/Layers/TaskWorktreeReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import { HelperRunReactor } from "../src/orchestration/Services/HelperRunReactor.ts";
+import { ProjectContextRunReactor } from "../src/orchestration/Services/ProjectContextRunReactor.ts";
 import {
   RuntimeReceiptBus,
   type OrchestrationRuntimeReceipt,
@@ -637,6 +638,13 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(taskWorktreeReactorLayer),
       Layer.provideMerge(
         Layer.succeed(HelperRunReactor, {
+          start: () => Effect.void,
+          reconcile: Effect.void,
+          drain: Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ProjectContextRunReactor, {
           start: () => Effect.void,
           reconcile: Effect.void,
           drain: Effect.void,

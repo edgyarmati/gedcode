@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import { MAX_PROJECT_CONTEXT_FILE_BYTES } from "../ProjectContext.ts";
+import { compareProjectContextOwnership } from "../ProjectContextRunChanges.ts";
 import { ProjectContextScanner } from "../Services/ProjectContextScanner.ts";
 import { WorkspacePathsLive } from "../../workspace/Layers/WorkspacePaths.ts";
 import { ProjectContextScannerLive } from "./ProjectContextScanner.ts";
@@ -59,6 +60,61 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
           ["docs/adr/0002.md", "template"],
         ]);
         expect(snapshot.promptKind).toBe("review");
+        expect(snapshot.ownershipBaseline.files.map((file) => file.relativePath)).toEqual([
+          "AGENTS.md",
+          ".ged/PROJECT.md",
+          ".ged/ARCHITECTURE.md",
+          "CONTEXT.md",
+          "docs/adr/0001.md",
+          "docs/adr/0002.md",
+        ]);
+        expect(snapshot.ownershipBaseline.files[0]?.state).toMatchObject({
+          presence: "present",
+          size: 21,
+          content: "# Agent instructions\n",
+        });
+        expect(snapshot.ownershipBaseline.files[3]?.state).toEqual({
+          presence: "absent",
+          digest: null,
+          size: 0,
+          content: null,
+        });
+      }),
+    );
+
+    it.effect("captures deterministic restart data and compares canonical run ownership", () =>
+      Effect.gen(function* () {
+        const scanner = yield* ProjectContextScanner;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "AGENTS.md", "# Existing user draft\n");
+        yield* writeTextFile(cwd, "docs/adr/0001.md", "# Remove me\n");
+
+        const before = yield* scanner.scan(cwd);
+        const restartedBefore = yield* scanner.scan(cwd);
+        expect(restartedBefore.ownershipBaseline).toEqual(before.ownershipBaseline);
+
+        yield* writeTextFile(cwd, "AGENTS.md", "# Existing user draft\nAgent addition\n");
+        yield* writeTextFile(cwd, "CONTEXT.md", "# Context\nDetails\n");
+        yield* fileSystem.remove(path.join(cwd, "docs/adr/0001.md"));
+        yield* writeTextFile(cwd, "docs/adr/nested/ignored.md", "# Nested\nSecret\n");
+        yield* writeTextFile(cwd, ".gedcode/ignored.md", "runtime secret\n");
+
+        const after = yield* scanner.scan(cwd);
+        const changes = compareProjectContextOwnership(
+          before.ownershipBaseline,
+          after.ownershipBaseline,
+        );
+
+        expect(changes.changes.map((change) => [change.relativePath, change.kind])).toEqual([
+          ["AGENTS.md", "modify"],
+          ["CONTEXT.md", "add"],
+          ["docs/adr/0001.md", "delete"],
+        ]);
+        expect(changes.changes[0]?.before.content).toBe("# Existing user draft\n");
+        expect(changes.diff).not.toContain("nested/ignored.md");
+        expect(changes.diff).not.toContain("runtime secret");
       }),
     );
 
