@@ -26,6 +26,11 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import {
+  OrchestratorLaunchCapabilities,
+  OrchestratorLaunchInput,
+  OrchestratorLaunchResult,
+} from "./editor.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -67,6 +72,8 @@ export const ORCHESTRATOR_WS_METHODS = {
   reviseProjectContextRun: "orchestrator.reviseProjectContextRun",
   commitProjectContextRun: "orchestrator.commitProjectContextRun",
   discardProjectContextRun: "orchestrator.discardProjectContextRun",
+  getLaunchCapabilities: "orchestrator.getLaunchCapabilities",
+  launch: "orchestrator.launch",
 } as const;
 
 export const OrchestratorPlaybookFrontmatter = Schema.Struct({
@@ -3716,6 +3723,14 @@ export const OrchestratorRpcSchemas = {
   discardProjectContextRun: {
     input: OrchestratorDiscardProjectContextRunInput,
     output: OrchestratorDiscardProjectContextRunResult,
+  },
+  getLaunchCapabilities: {
+    input: Schema.Struct({}),
+    output: OrchestratorLaunchCapabilities,
+  },
+  launch: {
+    input: OrchestratorLaunchInput,
+    output: OrchestratorLaunchResult,
   },
 } as const;
 

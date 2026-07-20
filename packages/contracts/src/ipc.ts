@@ -112,7 +112,12 @@ import type {
 import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthBearerBootstrapResult, AuthSessionState, AuthWebSocketTokenResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
-import { EditorId } from "./editor.ts";
+import {
+  EditorId,
+  type OrchestratorLaunchCapabilities,
+  type OrchestratorLaunchInput,
+  type OrchestratorLaunchResult,
+} from "./editor.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings.ts";
 import type {
@@ -691,5 +696,7 @@ export interface EnvironmentApi {
     discardProjectContextRun: (
       input: OrchestratorDiscardProjectContextRunInput,
     ) => Promise<OrchestratorDiscardProjectContextRunResult>;
+    getLaunchCapabilities: () => Promise<OrchestratorLaunchCapabilities>;
+    launch: (input: OrchestratorLaunchInput) => Promise<OrchestratorLaunchResult>;
   };
 }

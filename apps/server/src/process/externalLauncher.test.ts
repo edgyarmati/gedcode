@@ -7,17 +7,23 @@ import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import { Sink } from "effect";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   isCommandAvailable,
+  launchExternalProcess,
   launchBrowser,
   launchEditorProcess,
+  resolveAvailableEditorLaunch,
   resolveAvailableEditors,
   resolveBrowserLaunch,
   resolveEditorLaunch,
+  resolveExternalLauncherAvailability,
+  resolveFileManagerLaunch,
+  resolveTerminalLaunch,
 } from "./externalLauncher.ts";
 
 function encodeUtf16LeBase64(input: string): string {
@@ -513,6 +519,80 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
   );
 });
 
+it.layer(NodeServices.layer)("workspace launcher resolution", (it) => {
+  it.effect("resolves the installed editor, file manager, and terminal capabilities", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-external-launcher-test-" });
+
+      for (const command of ["code", "xdg-open", "konsole"]) {
+        yield* fs.writeFileString(path.join(dir, command), "#!/bin/sh\nexit 0\n");
+        yield* fs.chmod(path.join(dir, command), 0o755);
+      }
+
+      const env = { PATH: dir } satisfies NodeJS.ProcessEnv;
+      assert.deepEqual(resolveExternalLauncherAvailability("linux", env), {
+        editors: ["vscode"],
+        fileManager: true,
+        terminal: true,
+      });
+
+      const editor = yield* resolveAvailableEditorLaunch(
+        { cwd: "/tmp/workspace", editor: "vscode" },
+        "linux",
+        env,
+      );
+      assert.deepEqual(editor, { command: "code", args: ["/tmp/workspace"] });
+
+      const fileManager = yield* resolveFileManagerLaunch("/tmp/workspace", "linux", env);
+      assert.deepEqual(fileManager, {
+        command: "xdg-open",
+        args: ["/tmp/workspace"],
+        options: {
+          detached: true,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      });
+
+      const terminal = yield* resolveTerminalLaunch("/tmp/workspace", "linux", env);
+      assert.deepEqual(terminal, {
+        command: "konsole",
+        args: ["--workdir", "/tmp/workspace"],
+        options: {
+          detached: true,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      });
+    }),
+  );
+
+  it.effect("returns an explicit unsupported error when an action has no launcher", () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.all([
+        resolveAvailableEditorLaunch({ cwd: "/tmp/workspace", editor: "vscode" }, "linux", {
+          PATH: "",
+        }).pipe(Effect.result),
+        resolveFileManagerLaunch("/tmp/workspace", "linux", { PATH: "" }).pipe(Effect.result),
+        resolveTerminalLaunch("/tmp/workspace", "linux", { PATH: "" }).pipe(Effect.result),
+      ]);
+
+      assert.deepEqual(
+        result.map((entry) => (entry._tag === "Failure" ? entry.failure._tag : "unexpected")),
+        [
+          "ExternalLauncherUnsupportedError",
+          "ExternalLauncherUnsupportedError",
+          "ExternalLauncherUnsupportedError",
+        ],
+      );
+    }),
+  );
+});
+
 it("resolveBrowserLaunch maps default browser launchers by platform", () => {
   const target = "https://example.com/some path?name=o'hara";
 
@@ -657,6 +737,45 @@ it.layer(NodeServices.layer)("launchEditorProcess", (it) => {
         args: [],
       }).pipe(Effect.provide(spawnerLayer), Effect.result);
       assert.equal(result._tag, "Failure");
+    }),
+  );
+});
+
+it.layer(NodeServices.layer)("launchExternalProcess", (it) => {
+  it.effect("reports a process-launch error after a compatible launcher fails to spawn", () =>
+    Effect.gen(function* () {
+      const spawnerLayer = Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {
+        spawn: () =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              module: "ChildProcessSpawner",
+              method: "spawn",
+              description: "spawn failed",
+            }),
+          ),
+      });
+
+      const result = yield* launchExternalProcess(
+        {
+          command: "supported-terminal",
+          args: ["--cwd", "/tmp/workspace"],
+          options: {
+            detached: true,
+            stdin: "ignore",
+            stdout: "ignore",
+            stderr: "ignore",
+          },
+        },
+        "terminal",
+      ).pipe(Effect.provide(spawnerLayer), Effect.result);
+
+      assert.equal(result._tag, "Failure");
+      if (result._tag === "Failure") {
+        assert.equal(result.failure._tag, "ExternalProcessLaunchError");
+        assert.equal(result.failure.operation, "terminal");
+        assert.equal(result.failure.command, "supported-terminal");
+      }
     }),
   );
 });

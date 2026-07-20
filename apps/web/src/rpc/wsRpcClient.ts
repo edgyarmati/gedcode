@@ -208,6 +208,10 @@ export interface WsRpcClient {
     readonly discardProjectContextRun: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.discardProjectContextRun
     >;
+    readonly getLaunchCapabilities: RpcUnaryNoArgMethod<
+      typeof ORCHESTRATOR_WS_METHODS.getLaunchCapabilities
+    >;
+    readonly launch: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.launch>;
   };
 }
 
@@ -463,6 +467,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) =>
           client[ORCHESTRATOR_WS_METHODS.discardProjectContextRun](input),
         ),
+      getLaunchCapabilities: () =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]({})),
+      launch: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.launch](input)),
     },
   };
 }

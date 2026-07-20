@@ -157,6 +157,15 @@ describe("wsRpcClient", () => {
         accepted: true,
         mode: "transcript" as const,
       })),
+      [ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]: vi.fn(() => ({
+        editors: ["cursor" as const],
+        reveal: true,
+        terminal: false,
+      })),
+      [ORCHESTRATOR_WS_METHODS.launch]: vi.fn((input) => ({
+        launched: true as const,
+        ...input,
+      })),
     };
     const request = vi.fn((execute: (client: typeof protocolClient) => unknown) =>
       Promise.resolve(execute(protocolClient)),
@@ -231,6 +240,21 @@ describe("wsRpcClient", () => {
     await expect(
       client.orchestrator.requestPmHandoff({ projectId, mode: "transcript" }),
     ).resolves.toEqual({ accepted: true, mode: "transcript" });
+    await expect(client.orchestrator.getLaunchCapabilities()).resolves.toEqual({
+      editors: ["cursor"],
+      reveal: true,
+      terminal: false,
+    });
+    await expect(
+      client.orchestrator.launch({
+        target: { kind: "task-worktree", projectId, taskId },
+        operation: { kind: "editor", editor: "cursor" },
+      }),
+    ).resolves.toEqual({
+      launched: true,
+      target: { kind: "task-worktree", projectId, taskId },
+      operation: { kind: "editor", editor: "cursor" },
+    });
 
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.sendMessage]).toHaveBeenCalledWith({
       projectId,
@@ -271,6 +295,11 @@ describe("wsRpcClient", () => {
     expect(protocolClient[ORCHESTRATOR_WS_METHODS.requestPmHandoff]).toHaveBeenCalledWith({
       projectId,
       mode: "transcript",
+    });
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]).toHaveBeenCalledWith({});
+    expect(protocolClient[ORCHESTRATOR_WS_METHODS.launch]).toHaveBeenCalledWith({
+      target: { kind: "task-worktree", projectId, taskId },
+      operation: { kind: "editor", editor: "cursor" },
     });
     expect(subscribe.mock.calls[0]?.[2]).toEqual({
       onResubscribe,

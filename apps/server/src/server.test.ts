@@ -2695,6 +2695,53 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("routes typed Orchestrator launcher capabilities", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const capabilities = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]({}),
+        ),
+      );
+
+      assert.isArray(capabilities.editors);
+      assert.strictEqual(typeof capabilities.reveal, "boolean");
+      assert.strictEqual(typeof capabilities.terminal, "boolean");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects an unowned Orchestrator launch target through the typed RPC", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getCommandReadModel: () =>
+              Effect.succeed({ projects: [], tasks: [] } as unknown as OrchestrationReadModel),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.launch]({
+            target: {
+              kind: "project-root",
+              projectId: ProjectId.make("project-forged"),
+            },
+            operation: { kind: "reveal" },
+          }),
+        ).pipe(Effect.result),
+      );
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestratorLaunchError");
+      assert.equal(result.failure.reason, "project-not-found");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc git methods", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({

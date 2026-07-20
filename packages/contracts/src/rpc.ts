@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
+import { ExternalLauncherError, LaunchEditorInput, OrchestratorLaunchError } from "./editor.ts";
 import { AuthAccessStreamEvent } from "./auth.ts";
 import {
   FilesystemBrowseInput,
@@ -683,6 +683,20 @@ export const WsOrchestratorDiscardProjectContextRunRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorLaunchRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.launch, {
+  payload: OrchestratorRpcSchemas.launch.input,
+  success: OrchestratorRpcSchemas.launch.output,
+  error: OrchestratorLaunchError,
+});
+
+export const WsOrchestratorGetLaunchCapabilitiesRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.getLaunchCapabilities,
+  {
+    payload: OrchestratorRpcSchemas.getLaunchCapabilities.input,
+    success: OrchestratorRpcSchemas.getLaunchCapabilities.output,
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -786,4 +800,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorReviseProjectContextRunRpc,
   WsOrchestratorCommitProjectContextRunRpc,
   WsOrchestratorDiscardProjectContextRunRpc,
+  WsOrchestratorGetLaunchCapabilitiesRpc,
+  WsOrchestratorLaunchRpc,
 );

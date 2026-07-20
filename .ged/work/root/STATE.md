@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-OPEN-01`
+- **Active task**: `ORCH-OPEN-02`
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -234,6 +234,15 @@
   passed 76 tests plus 5 real-Git safety cases; focused web unit coverage passed 189 tests and Chromium
   passed 6 scenarios. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
   passed all 12 packages in 12m11s (web 116/116 files and 1,245 tests).
+- `ORCH-OPEN-01` completed 2026-07-20. New typed capability and launch RPCs accept only logical project
+  or project-qualified task targets, derive paths from current projections, validate exact live
+  project/worktree ownership, and invoke installed editors, the host file manager, or a terminal.
+  Unsupported host capabilities and detached-process failures are distinct typed errors. Existing
+  general Chat editor launching remains compatible and separate.
+- Verification evidence for `ORCH-OPEN-01`: focused contracts passed 73 tests; launcher and ownership
+  server suites passed 25 tests; WebSocket routing passed 2 loopback tests; web transport routing
+  passed 2 tests. `bun fmt`, `bun lint`, and all 12 typecheck packages passed. Full `bun run test`
+  passed all 12 packages in 12m05s.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

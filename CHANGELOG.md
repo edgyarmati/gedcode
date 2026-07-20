@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Added secure Orchestrator launch APIs for project roots and task worktrees. Callers select a logical
+  project or task plus an installed editor, file-manager reveal, or terminal action; the server derives
+  the path from current projections, verifies exact project/worktree ownership and directory liveness,
+  and never accepts a caller-provided path. Environment capabilities are queryable for disabled UI,
+  with unsupported launchers and process failures reported distinctly. Existing general Chat editor
+  actions keep their current behavior.
+
 - Added mandatory project-context change review across normal Chat and Orchestrator. Completed
   context agents now present their bounded summary, changed paths, deterministic diff, and any scope
   violations before anything is committed. Commit creates a descriptive, run-attributed Git commit

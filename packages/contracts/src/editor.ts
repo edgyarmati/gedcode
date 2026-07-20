@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProjectId, TaskId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const EditorLaunchStyle = Schema.Literals(["direct-path", "goto", "line-column"]);
 export type EditorLaunchStyle = typeof EditorLaunchStyle.Type;
@@ -49,6 +49,68 @@ export const LaunchEditorInput = Schema.Struct({
   editor: EditorId,
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
+
+export const OrchestratorLaunchTarget = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("project-root"),
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("task-worktree"),
+    projectId: ProjectId,
+    taskId: TaskId,
+  }),
+]);
+export type OrchestratorLaunchTarget = typeof OrchestratorLaunchTarget.Type;
+
+export const OrchestratorLaunchOperation = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("editor"),
+    editor: EditorId,
+  }),
+  Schema.Struct({ kind: Schema.Literal("reveal") }),
+  Schema.Struct({ kind: Schema.Literal("terminal") }),
+]);
+export type OrchestratorLaunchOperation = typeof OrchestratorLaunchOperation.Type;
+
+export const OrchestratorLaunchInput = Schema.Struct({
+  target: OrchestratorLaunchTarget,
+  operation: OrchestratorLaunchOperation,
+});
+export type OrchestratorLaunchInput = typeof OrchestratorLaunchInput.Type;
+
+export const OrchestratorLaunchResult = Schema.Struct({
+  launched: Schema.Literal(true),
+  target: OrchestratorLaunchTarget,
+  operation: OrchestratorLaunchOperation,
+});
+export type OrchestratorLaunchResult = typeof OrchestratorLaunchResult.Type;
+
+export const OrchestratorLaunchCapabilities = Schema.Struct({
+  editors: Schema.Array(EditorId),
+  reveal: Schema.Boolean,
+  terminal: Schema.Boolean,
+});
+export type OrchestratorLaunchCapabilities = typeof OrchestratorLaunchCapabilities.Type;
+
+export class OrchestratorLaunchError extends Schema.TaggedErrorClass<OrchestratorLaunchError>()(
+  "OrchestratorLaunchError",
+  {
+    reason: Schema.Literals([
+      "project-not-found",
+      "task-not-found",
+      "project-mismatch",
+      "worktree-unavailable",
+      "target-not-owned",
+      "target-unavailable",
+      "projection-unavailable",
+      "capability-unavailable",
+      "launcher-failed",
+    ]),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
 
 export class ExternalLauncherError extends Schema.TaggedErrorClass<ExternalLauncherError>()(
   "ExternalLauncherError",

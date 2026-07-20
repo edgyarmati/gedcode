@@ -375,6 +375,22 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 
 ## Launch Actions and Branches
 
+### ORCH-OPEN-01 — 2026-07-20
+
+- Focused: contract launch schemas and orchestration schemas passed 73 tests; strict external launcher
+  and ownership coordinator suites passed 25 tests; typed WebSocket capability/ownership routing
+  passed 2 loopback tests; web transport routing passed 2 tests.
+- Security review: requests contain only a logical project root or project-qualified task ID and an
+  operation—never a filesystem path. The server derives the registered project root or exact
+  deterministic task worktree, rejects foreign project/task pairs, terminal tasks without ownership,
+  forged worktree locations, deleted/non-directory targets, and projection failures before launch.
+- Capability review: each environment reports installed editor IDs plus file-manager and terminal
+  availability. Unsupported capabilities fail distinctly from detached-process spawn failures. The
+  general Chat `shell.openInEditor` RPC remains unchanged because its in-project file targets are a
+  separate compatibility boundary.
+- Repository: `bun fmt`, `bun lint`, and all 12 typecheck packages passed; lint retained only existing
+  warnings. Full `bun run test` passed all 12 packages in 12m05s.
+
 - PM editor action receives project root; every worker action receives its owned task worktree.
 - File-manager, terminal, configured editor, and alternate-editor operations validate canonical paths.
 - Arbitrary paths, stale/deleted worktrees, and foreign task IDs fail closed.

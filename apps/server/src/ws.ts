@@ -63,6 +63,10 @@ import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnap
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
 import { interruptOrchestrationStageWithServices } from "./orchestration/stageInterrupt.ts";
+import {
+  getOrchestratorLaunchCapabilities,
+  launchOwnedOrchestratorTarget,
+} from "./orchestration/orchestratorLauncher.ts";
 import { forkOrchestrationThreadWithServices } from "./orchestration/threadFork.ts";
 import {
   landOrchestrationTaskWithServices,
@@ -2095,6 +2099,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 ),
               ),
             { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]: (_input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.getLaunchCapabilities,
+            Effect.sync(getOrchestratorLaunchCapabilities),
+            { "rpc.aggregate": "orchestrator-launcher" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.launch]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.launch,
+            launchOwnedOrchestratorTarget(input, {
+              snapshotQuery: projectionSnapshotQuery,
+              externalLauncher,
+              getCapabilities: getOrchestratorLaunchCapabilities,
+            }),
+            { "rpc.aggregate": "orchestrator-launcher" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetConfig, loadServerConfig, {
