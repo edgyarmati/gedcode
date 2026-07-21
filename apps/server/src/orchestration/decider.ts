@@ -659,6 +659,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Project '${project.id}' has no configured '${tier}' capability preset.`,
         );
       }
+      const pmTurnRunning = readModel.threads.some(
+        (thread) =>
+          thread.projectId === project.id &&
+          String(thread.id) === `pm:${project.id}` &&
+          thread.latestTurn?.state === "running",
+      );
       return {
         ...(yield* withEventBase({
           aggregateKind: "project-context-run",
@@ -682,7 +688,71 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           baselineManifest: command.baselineManifest,
           workspaceStatusManifest: command.workspaceStatusManifest,
           gitState: command.gitState,
+          pmStartState: pmTurnRunning ? "awaiting-user" : "ready",
           createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "project.context.run.prepare-start": {
+      const run = yield* requireProjectContextRun({
+        readModel,
+        command,
+        projectContextRunId: command.projectContextRunId,
+      });
+      if (run.status !== "pending" || run.pmStartState !== "awaiting-user") {
+        return yield* invariantError(
+          command.type,
+          `Project-context run '${run.id}' cannot prepare PM settlement from '${run.status}/${run.pmStartState}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project-context-run",
+          aggregateId: run.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "project.context-run-start-prepared",
+        payload: {
+          projectContextRunId: run.id,
+          pmStartState: command.action === "wait" ? "waiting-for-idle" : "interrupting",
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "project.context.run.refresh-baseline": {
+      const run = yield* requireProjectContextRun({
+        readModel,
+        command,
+        projectContextRunId: command.projectContextRunId,
+      });
+      if (
+        run.status !== "pending" ||
+        (run.pmStartState !== "waiting-for-idle" && run.pmStartState !== "interrupting")
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Project-context run '${run.id}' cannot refresh its baseline from '${run.status}/${run.pmStartState}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project-context-run",
+          aggregateId: run.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "project.context-run-baseline-refreshed",
+        payload: {
+          projectContextRunId: run.id,
+          schemaVersion: command.schemaVersion,
+          fingerprint: command.fingerprint,
+          baselineManifest: command.baselineManifest,
+          workspaceStatusManifest: command.workspaceStatusManifest,
+          gitState: command.gitState,
           updatedAt: command.createdAt,
         },
       };
@@ -817,10 +887,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         commandId: command.commandId,
       });
       if (command.type === "project.context.run.start") {
-        if (run.status !== "pending") {
+        if (run.status !== "pending" || run.pmStartState !== "ready") {
           return yield* invariantError(
             command.type,
-            `Project-context run '${run.id}' cannot start from '${run.status}'.`,
+            `Project-context run '${run.id}' cannot start from '${run.status}/${run.pmStartState}'.`,
           );
         }
         return {

@@ -4,6 +4,10 @@ import {
   type OrchestratorCommitProjectContextRunResult,
   type OrchestratorDiscardProjectContextRunInput,
   type OrchestratorDiscardProjectContextRunResult,
+  type OrchestratorResolveProjectContextRunStartInput,
+  type OrchestratorResolveProjectContextRunStartResult,
+  type OrchestratorCancelProjectContextRunStartInput,
+  type OrchestratorCancelProjectContextRunStartResult,
   type OrchestratorGetProjectContextRunReviewInput,
   type OrchestratorGetProjectContextRunReviewResult,
   type OrchestratorReviseProjectContextRunInput,
@@ -32,6 +36,12 @@ export interface ProjectContextRunCoordinatorShape {
   readonly request: (
     input: RequestProjectContextRunInput,
   ) => Effect.Effect<ProjectContextRunRequestResult, unknown>;
+  readonly resolveStart: (
+    input: OrchestratorResolveProjectContextRunStartInput,
+  ) => Effect.Effect<OrchestratorResolveProjectContextRunStartResult, unknown>;
+  readonly cancelStart: (
+    input: OrchestratorCancelProjectContextRunStartInput,
+  ) => Effect.Effect<OrchestratorCancelProjectContextRunStartResult, unknown>;
   readonly getReview: (
     input: OrchestratorGetProjectContextRunReviewInput,
   ) => Effect.Effect<OrchestratorGetProjectContextRunReviewResult, unknown>;

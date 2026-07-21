@@ -42,6 +42,29 @@ describe("PmReEntryQueue", () => {
     }),
   );
 
+  it.effect("keeps queued entries intact while durable delivery policy holds the drain", () =>
+    Effect.gen(function* () {
+      const allowed = yield* Ref.make(false);
+      const prompts: string[] = [];
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          prompt: (message) => Effect.sync(() => prompts.push(message)) as never,
+          followUp: () => Effect.void as never,
+        },
+        { canDrain: Ref.get(allowed) },
+      );
+
+      yield* queue.enqueue("preserved settlement");
+      yield* queue.drain;
+      assert.deepStrictEqual(prompts, []);
+
+      yield* Ref.set(allowed, true);
+      yield* queue.drain;
+      assert.deepStrictEqual(prompts, ["preserved settlement"]);
+    }),
+  );
+
   // Pins the serialization invariant the `drain` comment relies on: because
   // `PmAdapterShape.prompt` blocks for the whole turn while holding the drain
   // semaphore, a settlement that lands mid-turn cannot be observed by a second

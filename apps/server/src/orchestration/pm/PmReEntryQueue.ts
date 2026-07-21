@@ -12,6 +12,8 @@ export type PmReEntryQueueShape = {
 };
 
 export type PmReEntryQueueOptions = {
+  /** Leave queued entries untouched while durable project policy holds delivery. */
+  readonly canDrain?: Effect.Effect<boolean>;
   // Observe a failed PM turn before its error propagates out of `drain`. Lets the
   // PM runtime detect provider-instance quota exhaustion (a rate-limit turn
   // failure) and mark the instance blocked so subsequent re-entry is held rather
@@ -40,6 +42,7 @@ export const makePmReEntryQueue = (
     // own in-flight prompt; under normal serialized operation it does not fire.
     const drain = semaphore.withPermits(1)(
       Effect.gen(function* () {
+        if (options?.canDrain !== undefined && !(yield* options.canDrain)) return;
         const messages = yield* Queue.takeAll(queue);
         if (messages.length === 0) return;
 

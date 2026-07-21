@@ -121,6 +121,61 @@ export const projectContextBaselineManifest = (
     rawContent: file.state.presence === "present" ? file.state.content : null,
   }));
 
+export const captureProjectContextRunBaselineWithServices = Effect.fn(
+  "captureProjectContextRunBaselineWithServices",
+)(function* (
+  services: Pick<
+    ProjectContextRunCoordinatorServices,
+    "scanner" | "vcsProcess" | "fileSystem" | "path"
+  >,
+  input: {
+    readonly projectId: RequestProjectContextRunInput["projectId"];
+    readonly workspaceRoot: string;
+  },
+) {
+  const captureWorkspaceStatus = () =>
+    captureProjectContextWorkspaceStatus({
+      workspaceRoot: input.workspaceRoot,
+      process: services.vcsProcess,
+      fileSystem: services.fileSystem,
+      path: services.path,
+    });
+  const workspaceStatusManifest = yield* captureWorkspaceStatus();
+  const gitState = yield* captureProjectContextRunGitState({
+    workspaceRoot: input.workspaceRoot,
+    process: services.vcsProcess,
+    fileSystem: services.fileSystem,
+    path: services.path,
+  });
+  const snapshot = yield* services.scanner.scan(input.workspaceRoot);
+  yield* rejectSymlinkedContextBaselinePaths({
+    projectId: input.projectId,
+    workspaceRoot: input.workspaceRoot,
+    snapshot,
+    fileSystem: services.fileSystem,
+    path: services.path,
+  });
+  const workspaceStatusAfterScan = yield* captureWorkspaceStatus();
+  const gitStateAfterScan = yield* captureProjectContextRunGitState({
+    workspaceRoot: input.workspaceRoot,
+    process: services.vcsProcess,
+    fileSystem: services.fileSystem,
+    path: services.path,
+  });
+  if (
+    !sameWorkspaceStatus(workspaceStatusManifest, workspaceStatusAfterScan) ||
+    !sameProjectContextRunGitState(gitState, gitStateAfterScan)
+  ) {
+    return yield* new ProjectContextRunCoordinatorError({
+      projectId: input.projectId,
+      reason: "workspace-changed-during-capture",
+      detail:
+        "Project workspace changed while capturing the project-context baseline; retry after the workspace is stable.",
+    });
+  }
+  return { snapshot, workspaceStatusManifest, gitState };
+});
+
 const rejectSymlinkedContextBaselinePaths = Effect.fn(
   "ProjectContextRunCoordinator.rejectSymlinkedContextBaselinePaths",
 )(function* (input: {
@@ -176,46 +231,11 @@ export const requestProjectContextRunWithServices = Effect.fn(
     });
   }
 
-  const captureWorkspaceStatus = () =>
-    captureProjectContextWorkspaceStatus({
-      workspaceRoot: project.workspaceRoot,
-      process: services.vcsProcess,
-      fileSystem: services.fileSystem,
-      path: services.path,
-    });
-  const workspaceStatusManifest = yield* captureWorkspaceStatus();
-  const gitState = yield* captureProjectContextRunGitState({
-    workspaceRoot: project.workspaceRoot,
-    process: services.vcsProcess,
-    fileSystem: services.fileSystem,
-    path: services.path,
-  });
-  const snapshot = yield* services.scanner.scan(project.workspaceRoot);
-  yield* rejectSymlinkedContextBaselinePaths({
-    projectId: input.projectId,
-    workspaceRoot: project.workspaceRoot,
-    snapshot,
-    fileSystem: services.fileSystem,
-    path: services.path,
-  });
-  const workspaceStatusAfterScan = yield* captureWorkspaceStatus();
-  const gitStateAfterScan = yield* captureProjectContextRunGitState({
-    workspaceRoot: project.workspaceRoot,
-    process: services.vcsProcess,
-    fileSystem: services.fileSystem,
-    path: services.path,
-  });
-  if (
-    !sameWorkspaceStatus(workspaceStatusManifest, workspaceStatusAfterScan) ||
-    !sameProjectContextRunGitState(gitState, gitStateAfterScan)
-  ) {
-    return yield* new ProjectContextRunCoordinatorError({
+  const { snapshot, workspaceStatusManifest, gitState } =
+    yield* captureProjectContextRunBaselineWithServices(services, {
       projectId: input.projectId,
-      reason: "workspace-changed-during-capture",
-      detail:
-        "Project workspace changed while capturing the project-context baseline; retry after the workspace is stable.",
+      workspaceRoot: project.workspaceRoot,
     });
-  }
 
   const projectContextRunId = yield* runtime.projectContextRunId;
   const result = yield* runtime.dispatch({
@@ -356,6 +376,29 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       }),
     );
 
+  const resolveStart: ProjectContextRunCoordinatorShape["resolveStart"] = (input) =>
+    Effect.gen(function* () {
+      const result = yield* engine.dispatch({
+        type: "project.context.run.prepare-start",
+        commandId: yield* commandId("prepare-start"),
+        projectContextRunId: input.runId,
+        action: input.action,
+        createdAt: yield* createdAt,
+      });
+      return { runId: input.runId, sequence: result.sequence };
+    });
+
+  const cancelStart: ProjectContextRunCoordinatorShape["cancelStart"] = (input) =>
+    Effect.gen(function* () {
+      const result = yield* engine.dispatch({
+        type: "project.context.run.interrupt",
+        commandId: yield* commandId("cancel-start"),
+        projectContextRunId: input.runId,
+        createdAt: yield* createdAt,
+      });
+      return { runId: input.runId, sequence: result.sequence };
+    });
+
   const revise: ProjectContextRunCoordinatorShape["revise"] = (input) =>
     withProjectContextRunLifecycleLock(
       input.runId,
@@ -434,7 +477,7 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       }),
     );
 
-  return { request, getReview, revise, commit, discard };
+  return { request, resolveStart, cancelStart, getReview, revise, commit, discard };
 });
 
 export const ProjectContextRunCoordinatorLive = Layer.effect(

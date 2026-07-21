@@ -104,6 +104,8 @@ export function classifyOrchestrationCommand(
     case "project.delete":
       return "project";
     case "project.context.run.request":
+    case "project.context.run.prepare-start":
+    case "project.context.run.refresh-baseline":
     case "project.context.run.start":
     case "project.context.run.pending-review":
     case "project.context.run.revise":
@@ -197,6 +199,8 @@ function commandToAggregateRef(command: OrchestrationCommand): {
         aggregateId: command.projectId,
       };
     case "project.context.run.request":
+    case "project.context.run.prepare-start":
+    case "project.context.run.refresh-baseline":
     case "project.context.run.start":
     case "project.context.run.pending-review":
     case "project.context.run.revise":

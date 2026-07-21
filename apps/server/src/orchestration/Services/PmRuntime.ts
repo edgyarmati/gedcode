@@ -27,6 +27,7 @@ export interface PmProjectRuntimeFactoryShape {
     project: OrchestrationProject,
   ) => Effect.Effect<PmProjectRuntime, PmRuntimeError>;
   readonly waitForIdle: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
+  readonly interruptActive: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
   readonly invalidateRuntime: (
     projectId: ProjectId,
     reason: string,

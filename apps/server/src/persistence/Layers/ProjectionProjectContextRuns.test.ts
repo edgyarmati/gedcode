@@ -81,6 +81,7 @@ it.layer(layer)("ProjectionProjectContextRunRepository", (it) => {
           infoGraftsDigest: ProjectContextRunContentDigest.make(`sha256:${"2".repeat(64)}`),
         },
         status: "pending-review",
+        pmStartState: "ready",
         providerThreadId: ThreadId.make("project-context-run:repository"),
         result: "Updated the context.",
         failureMessage: null,

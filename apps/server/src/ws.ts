@@ -1476,6 +1476,25 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ORCHESTRATOR_WS_METHODS.sendMessage,
             Effect.gen(function* () {
               const project = yield* loadProjectForPmRuntime(input.projectId);
+              const readModel = yield* projectionSnapshotQuery
+                .getCommandReadModel()
+                .pipe(
+                  Effect.mapError((cause) =>
+                    toDispatchCommandError(cause, "Failed to inspect project-context hold."),
+                  ),
+                );
+              const contextRun = readModel.projectContextRuns.find(
+                (run) =>
+                  run.projectId === project.id &&
+                  (run.status === "pending" ||
+                    run.status === "running" ||
+                    run.status === "pending-review"),
+              );
+              if (contextRun !== undefined) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: `PM delivery is paused while project-context run '${contextRun.id}' is ${contextRun.status}.`,
+                });
+              }
               const runtime = yield* pmProjectRuntimeFactory.getOrCreate(project).pipe(
                 Effect.mapError(
                   (cause) =>
@@ -2022,6 +2041,32 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 toDispatchCommandError(cause, "Failed to request a project-context run."),
               ),
             ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .resolveStart(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to resolve project-context PM startup."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.cancelProjectContextRunStart]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.cancelProjectContextRunStart,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .cancelStart(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to cancel project-context startup."),
+                ),
+              ),
             { "rpc.aggregate": "orchestrator" },
           ),
         [ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding]: (input) =>

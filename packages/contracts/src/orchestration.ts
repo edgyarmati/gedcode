@@ -68,6 +68,8 @@ export const ORCHESTRATOR_WS_METHODS = {
   getProjectContextOnboarding: "orchestrator.getProjectContextOnboarding",
   dismissProjectContextOnboarding: "orchestrator.dismissProjectContextOnboarding",
   requestProjectContextRun: "orchestrator.requestProjectContextRun",
+  resolveProjectContextRunStart: "orchestrator.resolveProjectContextRunStart",
+  cancelProjectContextRunStart: "orchestrator.cancelProjectContextRunStart",
   getProjectContextRunReview: "orchestrator.getProjectContextRunReview",
   reviseProjectContextRun: "orchestrator.reviseProjectContextRun",
   commitProjectContextRun: "orchestrator.commitProjectContextRun",
@@ -972,6 +974,17 @@ export const ProjectContextRunStatus = Schema.Literals([
 ]);
 export type ProjectContextRunStatus = typeof ProjectContextRunStatus.Type;
 
+export const ProjectContextRunPmStartState = Schema.Literals([
+  "ready",
+  "awaiting-user",
+  "waiting-for-idle",
+  "interrupting",
+]);
+export type ProjectContextRunPmStartState = typeof ProjectContextRunPmStartState.Type;
+
+export const ProjectContextRunPmStartAction = Schema.Literals(["wait", "interrupt"]);
+export type ProjectContextRunPmStartAction = typeof ProjectContextRunPmStartAction.Type;
+
 export const ProjectContextRunResolution = Schema.Literals(["committed", "discarded"]);
 export type ProjectContextRunResolution = typeof ProjectContextRunResolution.Type;
 
@@ -1094,6 +1107,9 @@ export const OrchestrationProjectContextRun = Schema.Struct({
   workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
   gitState: ProjectContextRunGitState,
   status: ProjectContextRunStatus,
+  pmStartState: ProjectContextRunPmStartState.pipe(
+    Schema.withDecodingDefault(Effect.succeed("ready" as const)),
+  ),
   providerThreadId: Schema.NullOr(ThreadId),
   result: Schema.NullOr(
     Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
@@ -1492,6 +1508,26 @@ export const ProjectContextRunRequestCommand = Schema.Struct({
   expectedPrimaryCheckoutPath: TrimmedNonEmptyString,
   mode: ProjectContextRunMode,
   tier: Schema.optionalKey(OrchestrationCapabilityTier),
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  baselineManifest: ProjectContextRunBaselineManifest,
+  workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
+  gitState: ProjectContextRunGitState,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunPrepareStartCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.prepare-start"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  action: ProjectContextRunPmStartAction,
+  createdAt: IsoDateTime,
+});
+
+export const ProjectContextRunRefreshBaselineCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.refresh-baseline"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
   schemaVersion: ProjectContextSchemaVersion,
   fingerprint: ProjectContextFingerprint,
   baselineManifest: ProjectContextRunBaselineManifest,
@@ -1990,6 +2026,8 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 const InternalOrchestrationCommand = Schema.Union([
   ProjectContextResolveCommand,
   ProjectContextRunRequestCommand,
+  ProjectContextRunPrepareStartCommand,
+  ProjectContextRunRefreshBaselineCommand,
   ProjectContextRunStartCommand,
   ProjectContextRunPendingReviewCommand,
   ProjectContextRunReviseCommand,
@@ -2125,6 +2163,8 @@ export const OrchestrationEventType = Schema.Literals([
   "helper.run-failed",
   "helper.run-interrupted",
   "project.context-run-requested",
+  "project.context-run-start-prepared",
+  "project.context-run-baseline-refreshed",
   "project.context-run-started",
   "project.context-run-pending-review",
   "project.context-run-revised",
@@ -2464,7 +2504,26 @@ export const ProjectContextRunRequestedPayload = Schema.Struct({
   baselineManifest: ProjectContextRunBaselineManifest,
   workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
   gitState: ProjectContextRunGitState,
+  pmStartState: ProjectContextRunPmStartState.pipe(
+    Schema.withDecodingDefault(Effect.succeed("ready" as const)),
+  ),
   createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunStartPreparedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  pmStartState: Schema.Literals(["waiting-for-idle", "interrupting"]),
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunBaselineRefreshedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  schemaVersion: ProjectContextSchemaVersion,
+  fingerprint: ProjectContextFingerprint,
+  baselineManifest: ProjectContextRunBaselineManifest,
+  workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
+  gitState: ProjectContextRunGitState,
   updatedAt: IsoDateTime,
 });
 
@@ -3019,6 +3078,16 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("project.context-run-start-prepared"),
+    payload: ProjectContextRunStartPreparedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-baseline-refreshed"),
+    payload: ProjectContextRunBaselineRefreshedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("project.context-run-started"),
     payload: ProjectContextRunStartedPayload,
   }),
@@ -3387,6 +3456,33 @@ export const OrchestratorRequestProjectContextRunResult = Schema.Struct({
 export type OrchestratorRequestProjectContextRunResult =
   typeof OrchestratorRequestProjectContextRunResult.Type;
 
+export const OrchestratorResolveProjectContextRunStartInput = Schema.Struct({
+  runId: ProjectContextRunId,
+  action: ProjectContextRunPmStartAction,
+});
+export type OrchestratorResolveProjectContextRunStartInput =
+  typeof OrchestratorResolveProjectContextRunStartInput.Type;
+
+export const OrchestratorResolveProjectContextRunStartResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorResolveProjectContextRunStartResult =
+  typeof OrchestratorResolveProjectContextRunStartResult.Type;
+
+export const OrchestratorCancelProjectContextRunStartInput = Schema.Struct({
+  runId: ProjectContextRunId,
+});
+export type OrchestratorCancelProjectContextRunStartInput =
+  typeof OrchestratorCancelProjectContextRunStartInput.Type;
+
+export const OrchestratorCancelProjectContextRunStartResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorCancelProjectContextRunStartResult =
+  typeof OrchestratorCancelProjectContextRunStartResult.Type;
+
 export const OrchestratorProjectContextRunReviewChangeKind = Schema.Literals([
   "added",
   "modified",
@@ -3708,6 +3804,14 @@ export const OrchestratorRpcSchemas = {
   requestProjectContextRun: {
     input: OrchestratorRequestProjectContextRunInput,
     output: OrchestratorRequestProjectContextRunResult,
+  },
+  resolveProjectContextRunStart: {
+    input: OrchestratorResolveProjectContextRunStartInput,
+    output: OrchestratorResolveProjectContextRunStartResult,
+  },
+  cancelProjectContextRunStart: {
+    input: OrchestratorCancelProjectContextRunStartInput,
+    output: OrchestratorCancelProjectContextRunStartResult,
   },
   getProjectContextRunReview: {
     input: OrchestratorGetProjectContextRunReviewInput,

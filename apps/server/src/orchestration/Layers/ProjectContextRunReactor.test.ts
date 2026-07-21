@@ -9,6 +9,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationCommand,
+  type OrchestrationEvent,
   type OrchestrationProjectContextRun,
   type OrchestrationReadModel,
   type ProviderRuntimeEvent,
@@ -43,6 +44,7 @@ import {
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { PmProjectRuntimeFactory } from "../Services/PmRuntime.ts";
 import {
   ProjectContextRunReactor,
   type ProjectContextRunReactorShape,
@@ -145,6 +147,7 @@ const makeRun = (id: string): OrchestrationProjectContextRun => ({
     infoGraftsDigest: digest("absent"),
   } as OrchestrationProjectContextRun["gitState"],
   status: "pending",
+  pmStartState: "ready",
   providerThreadId: null,
   result: null,
   failureMessage: null,
@@ -166,7 +169,7 @@ const makeRun = (id: string): OrchestrationProjectContextRun => ({
 const makeHarness = (driver = "codex") =>
   Effect.gen(function* () {
     const providerEvents = yield* PubSub.unbounded<ProviderRuntimeEvent>();
-    const domainEvents = yield* PubSub.unbounded<never>();
+    const domainEvents = yield* PubSub.unbounded<OrchestrationEvent>();
     const runs = new Map<string, OrchestrationProjectContextRun>();
     const commands: OrchestrationCommand[] = [];
     const sessionStarts: ProviderSessionStartInput[] = [];
@@ -178,6 +181,8 @@ const makeHarness = (driver = "codex") =>
     const interrupted = yield* Deferred.make<void>();
     const failed = yield* Deferred.make<void>();
     const sessionStopped = yield* Deferred.make<void>();
+    let pmWaits = 0;
+    let pmInterrupted = false;
     const activeSessions: ProviderSession[] = [];
     let quotaStatus: "ok" | "blocked-until" | "blocked-unknown" = "ok";
     let quotaResetAt: string | null = null;
@@ -232,6 +237,17 @@ const makeHarness = (driver = "codex") =>
             updatedAt: command.createdAt,
           });
           yield* Deferred.succeed(pendingReview, undefined);
+        } else if (command.type === "project.context.run.refresh-baseline") {
+          runs.set(String(current.id), {
+            ...current,
+            schemaVersion: command.schemaVersion,
+            fingerprint: command.fingerprint,
+            baselineManifest: command.baselineManifest,
+            workspaceStatusManifest: command.workspaceStatusManifest,
+            gitState: command.gitState,
+            pmStartState: "ready",
+            updatedAt: command.createdAt,
+          });
         } else if (command.type === "project.context.run.fail") {
           runs.set(String(current.id), {
             ...current,
@@ -390,6 +406,23 @@ const makeHarness = (driver = "codex") =>
         }),
       ),
       Layer.provideMerge(
+        Layer.succeed(PmProjectRuntimeFactory, {
+          getOrCreate: () => Effect.die("not used"),
+          waitForIdle: () =>
+            Effect.sync(() => {
+              pmWaits += 1;
+            }),
+          interruptActive: () =>
+            Effect.sync(() => {
+              pmInterrupted = true;
+            }),
+          invalidateRuntime: () => Effect.void,
+          clearSessionStorage: () => Effect.void,
+          resetSessionBinding: () => Effect.void,
+          createHandoffBrief: () => Effect.succeed(Option.none()),
+        }),
+      ),
+      Layer.provideMerge(
         Layer.mock(ProjectContextScanner)({
           scan: () =>
             scannerFailure === null
@@ -480,6 +513,8 @@ const makeHarness = (driver = "codex") =>
       setProjectState: (next: "active" | "deleted" | "missing") => {
         projectState = next;
       },
+      pmWaitCount: () => pmWaits,
+      wasPmInterrupted: () => pmInterrupted,
     };
   });
 
@@ -493,6 +528,56 @@ const completedEvent = (threadId: ThreadId): ProviderRuntimeEvent => ({
   type: "turn.completed",
   payload: { state: "completed" },
 });
+
+it.effect("holds a pending context run until PM settlement and refreshes its baseline", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const run = { ...makeRun("context-wait-pm"), pmStartState: "awaiting-user" as const };
+        harness.runs.set(String(run.id), run);
+
+        const reactor = yield* ProjectContextRunReactor;
+        yield* reactor.start();
+        assert.strictEqual(harness.sessionStarts.length, 0);
+
+        harness.runs.set(String(run.id), { ...run, pmStartState: "waiting-for-idle" });
+        yield* reactor.reconcile;
+        assert.strictEqual(harness.pmWaitCount(), 1);
+        assert.strictEqual(harness.sessionStarts.length, 0);
+
+        yield* reactor.reconcile;
+        yield* Deferred.await(harness.sessionStarted);
+        assert.deepStrictEqual(
+          harness.commands.map((command) => command.type),
+          ["project.context.run.refresh-baseline", "project.context.run.start"],
+        );
+        assert.deepStrictEqual(harness.turnInputs, [run.prompt]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  ),
+);
+
+it.effect("interrupts the PM before refreshing and starting when the user chooses interrupt", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      yield* Effect.gen(function* () {
+        const run = { ...makeRun("context-interrupt-pm"), pmStartState: "interrupting" as const };
+        harness.runs.set(String(run.id), run);
+
+        const reactor = yield* ProjectContextRunReactor;
+        yield* reactor.start();
+        assert.isTrue(harness.wasPmInterrupted());
+        assert.strictEqual(harness.sessionStarts.length, 0);
+
+        yield* reactor.reconcile;
+        yield* Deferred.await(harness.sessionStarted);
+        assert.deepStrictEqual(harness.turnInputs, [run.prompt]);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  ),
+);
 
 it.effect(
   "uses the stamped Smart backend in the primary checkout without orchestration tools",

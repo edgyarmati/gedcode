@@ -647,6 +647,24 @@ export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorResolveProjectContextRunStartRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart,
+  {
+    payload: OrchestratorRpcSchemas.resolveProjectContextRunStart.input,
+    success: OrchestratorRpcSchemas.resolveProjectContextRunStart.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorCancelProjectContextRunStartRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.cancelProjectContextRunStart,
+  {
+    payload: OrchestratorRpcSchemas.cancelProjectContextRunStart.input,
+    success: OrchestratorRpcSchemas.cancelProjectContextRunStart.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorGetProjectContextRunReviewRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.getProjectContextRunReview,
   {
@@ -796,6 +814,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorGetProjectContextOnboardingRpc,
   WsOrchestratorDismissProjectContextOnboardingRpc,
   WsOrchestratorRequestProjectContextRunRpc,
+  WsOrchestratorResolveProjectContextRunStartRpc,
+  WsOrchestratorCancelProjectContextRunStartRpc,
   WsOrchestratorGetProjectContextRunReviewRpc,
   WsOrchestratorReviseProjectContextRunRpc,
   WsOrchestratorCommitProjectContextRunRpc,

@@ -139,6 +139,7 @@ const makeReviewRun = Effect.fn("ProjectContextRunReviewTest.makeReviewRun")(fun
     workspaceStatusManifest,
     gitState,
     status: "pending-review",
+    pmStartState: "ready",
     providerThreadId: null,
     result: "Updated project instructions.",
     failureMessage: null,

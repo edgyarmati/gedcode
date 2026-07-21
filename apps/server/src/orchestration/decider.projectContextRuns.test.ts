@@ -9,6 +9,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationProject,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
@@ -109,6 +110,7 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
         expect(event.payload.providerInstanceId).toBe(ProviderInstanceId.make("global-smart"));
         expect(event.payload.model).toBe("smart-model");
         expect(event.payload.primaryCheckoutPath).toBe("/repo/project-context-run");
+        expect(event.payload.pmStartState).toBe("ready");
         expect(event.payload.workspaceStatusManifest).toEqual(workspaceStatusManifest);
         expect(event.payload.prompt).toContain("Populate missing or stub project guidance");
         expect(event.payload).not.toHaveProperty("taskId");
@@ -116,6 +118,54 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
         expect(event.payload).not.toHaveProperty("gateId");
         expect(event.payload).not.toHaveProperty("worktreePath");
         expect(event.payload).not.toHaveProperty("prUrl");
+      }
+    }),
+  );
+
+  it.effect("requires explicit arbitration when the PM turn is active", () =>
+    Effect.gen(function* () {
+      const initial = readModel();
+      const result = yield* decideOrchestrationCommand({
+        command: request(),
+        orchestratorDefaults: defaults,
+        readModel: {
+          ...initial,
+          threads: [
+            {
+              id: ThreadId.make("pm:project-context-run"),
+              projectId: ProjectId.make("project-context-run"),
+              title: "PM",
+              modelSelection: selection("global-smart", "smart-model"),
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+              latestTurn: {
+                turnId: TurnId.make("pm-turn"),
+                state: "running",
+                requestedAt: now,
+                startedAt: now,
+                completedAt: null,
+                assistantMessageId: null,
+              },
+              createdAt: now,
+              updatedAt: now,
+              archivedAt: null,
+              deletedAt: null,
+              pendingPmHandoff: null,
+              messages: [],
+              proposedPlans: [],
+              activities: [],
+              checkpoints: [],
+              session: null,
+            },
+          ],
+        },
+      });
+      const event = Array.isArray(result) ? result[0] : result;
+      expect(event.type).toBe("project.context-run-requested");
+      if (event.type === "project.context-run-requested") {
+        expect(event.payload.pmStartState).toBe("awaiting-user");
       }
     }),
   );

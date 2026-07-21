@@ -295,6 +295,7 @@ function makePmRuntimeLayer(input: {
       Layer.succeed(PmProjectRuntimeFactory, {
         getOrCreate: () => Effect.succeed(projectRuntime),
         waitForIdle: () => Effect.void,
+        interruptActive: () => Effect.void,
         invalidateRuntime: () => Effect.void,
         clearSessionStorage: () => Effect.void,
         resetSessionBinding: () => Effect.void,

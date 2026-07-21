@@ -39,10 +39,12 @@ import type {
   ProjectContextOwnershipBaseline,
 } from "../../project/ProjectContext.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
+import { captureProjectContextRunBaselineWithServices } from "./ProjectContextRunCoordinator.ts";
 import { resolveOrchestratorPmRuntimePolicy } from "../orchestratorRuntimeModes.ts";
 import { recoverElapsedProviderQuotaBlocks } from "../quotaResetRecovery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { PmProjectRuntimeFactory } from "../Services/PmRuntime.ts";
 import {
   ProjectContextRunReactor,
   type ProjectContextRunReactorShape,
@@ -115,9 +117,11 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   const vcsProcess = yield* VcsProcess;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const pmRuntimes = yield* PmProjectRuntimeFactory;
   const runByThread = new Map<string, ProjectContextRunId>();
   const assistantText = new Map<string, string>();
   const starting = new Set<string>();
+  const settlingPm = new Set<string>();
   const scheduledQuotaResetAt = new Map<string, string>();
   const quotaResetSchedules = yield* Queue.unbounded<{
     readonly providerInstanceId: string;
@@ -332,6 +336,7 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   const launch = Effect.fn("ProjectContextRunReactor.launch")(function* (
     run: OrchestrationProjectContextRun,
   ) {
+    if (run.status === "pending" && run.pmStartState !== "ready") return;
     const key = String(run.id);
     if (starting.has(key)) return;
     starting.add(key);
@@ -416,11 +421,81 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
     );
   });
 
-  const reconcile: ProjectContextRunReactorShape["reconcile"] = runs.listAll().pipe(
+  const settlePmBeforeStart = Effect.fn("ProjectContextRunReactor.settlePmBeforeStart")(function* (
+    run: OrchestrationProjectContextRun,
+  ) {
+    const key = String(run.id);
+    if (settlingPm.has(key)) return;
+    settlingPm.add(key);
+    yield* Effect.gen(function* () {
+      const fresh = yield* runs.getById({ projectContextRunId: run.id });
+      if (
+        fresh._tag !== "Some" ||
+        fresh.value.status !== "pending" ||
+        (fresh.value.pmStartState !== "waiting-for-idle" &&
+          fresh.value.pmStartState !== "interrupting")
+      ) {
+        return;
+      }
+      if (fresh.value.pmStartState === "interrupting") {
+        yield* pmRuntimes.interruptActive(fresh.value.projectId);
+      }
+      yield* pmRuntimes.waitForIdle(fresh.value.projectId);
+      const baseline = yield* captureProjectContextRunBaselineWithServices(
+        { scanner, vcsProcess, fileSystem, path },
+        {
+          projectId: fresh.value.projectId,
+          workspaceRoot: fresh.value.primaryCheckoutPath,
+        },
+      );
+      const stillPending = yield* runs.getById({ projectContextRunId: run.id });
+      if (
+        stillPending._tag !== "Some" ||
+        stillPending.value.status !== "pending" ||
+        (stillPending.value.pmStartState !== "waiting-for-idle" &&
+          stillPending.value.pmStartState !== "interrupting")
+      ) {
+        return;
+      }
+      yield* engine.dispatch({
+        type: "project.context.run.refresh-baseline",
+        commandId: commandId("refresh-baseline", run.id),
+        projectContextRunId: run.id,
+        schemaVersion: baseline.snapshot.schemaVersion,
+        fingerprint: baseline.snapshot.fingerprint,
+        baselineManifest: baseline.snapshot.ownershipBaseline.files.map((file) => ({
+          path: ProjectContextRunPath.make(file.relativePath),
+          rawContent: file.state.presence === "present" ? file.state.content : null,
+        })),
+        workspaceStatusManifest: baseline.workspaceStatusManifest,
+        gitState: baseline.gitState,
+        createdAt: yield* nowIso,
+      });
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : failRun(
+              run,
+              `Could not settle the PM before context review: ${Cause.pretty(cause)}`,
+              "pm-settlement",
+            ),
+      ),
+      Effect.ensuring(Effect.sync(() => settlingPm.delete(key))),
+    );
+  });
+
+  const reconcile: ProjectContextRunReactorShape["reconcile"] = Effect.suspend(() =>
+    runs.listAll(),
+  ).pipe(
     Effect.flatMap((allRuns) =>
       Effect.forEach(
         allRuns.filter((run) => run.status === "pending" || run.status === "running"),
-        launch,
+        (run) =>
+          run.status === "pending" &&
+          (run.pmStartState === "waiting-for-idle" || run.pmStartState === "interrupting")
+            ? settlePmBeforeStart(run)
+            : launch(run),
         { concurrency: 1, discard: true },
       ),
     ),
@@ -438,12 +513,20 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   ) {
     if (
       event.type === "project.context-run-requested" ||
-      event.type === "project.context-run-revised"
+      event.type === "project.context-run-revised" ||
+      event.type === "project.context-run-baseline-refreshed"
     ) {
       const run = yield* runs.getById({
         projectContextRunId: event.payload.projectContextRunId,
       });
       if (run._tag === "Some") yield* launch(run.value);
+      return;
+    }
+    if (event.type === "project.context-run-start-prepared") {
+      const run = yield* runs.getById({
+        projectContextRunId: event.payload.projectContextRunId,
+      });
+      if (run._tag === "Some") yield* settlePmBeforeStart(run.value);
       return;
     }
     if (event.type === "project.context-run-interrupted") {

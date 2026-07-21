@@ -357,6 +357,7 @@ export function projectEvent(
             workspaceStatusManifest: event.payload.workspaceStatusManifest,
             gitState: event.payload.gitState,
             status: "pending",
+            pmStartState: event.payload.pmStartState,
             providerThreadId: null,
             result: null,
             failureMessage: null,
@@ -375,6 +376,37 @@ export function projectEvent(
             updatedAt: event.payload.updatedAt,
           },
         ],
+      });
+
+    case "project.context-run-start-prepared":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            pmStartState: event.payload.pmStartState,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
+    case "project.context-run-baseline-refreshed":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            schemaVersion: event.payload.schemaVersion,
+            fingerprint: event.payload.fingerprint,
+            baselineManifest: event.payload.baselineManifest,
+            workspaceStatusManifest: event.payload.workspaceStatusManifest,
+            gitState: event.payload.gitState,
+            pmStartState: "ready",
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
       });
 
     case "project.context-run-started":

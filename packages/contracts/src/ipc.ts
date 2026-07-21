@@ -93,6 +93,10 @@ import type {
   OrchestratorRequestPmHandoffResult,
   OrchestratorRequestProjectContextRunInput,
   OrchestratorRequestProjectContextRunResult,
+  OrchestratorResolveProjectContextRunStartInput,
+  OrchestratorResolveProjectContextRunStartResult,
+  OrchestratorCancelProjectContextRunStartInput,
+  OrchestratorCancelProjectContextRunStartResult,
   OrchestratorGetProjectContextRunReviewInput,
   OrchestratorGetProjectContextRunReviewResult,
   OrchestratorReviseProjectContextRunInput,
@@ -684,6 +688,12 @@ export interface EnvironmentApi {
     requestProjectContextRun: (
       input: OrchestratorRequestProjectContextRunInput,
     ) => Promise<OrchestratorRequestProjectContextRunResult>;
+    resolveProjectContextRunStart: (
+      input: OrchestratorResolveProjectContextRunStartInput,
+    ) => Promise<OrchestratorResolveProjectContextRunStartResult>;
+    cancelProjectContextRunStart: (
+      input: OrchestratorCancelProjectContextRunStartInput,
+    ) => Promise<OrchestratorCancelProjectContextRunStartResult>;
     getProjectContextRunReview: (
       input: OrchestratorGetProjectContextRunReviewInput,
     ) => Promise<OrchestratorGetProjectContextRunReviewResult>;

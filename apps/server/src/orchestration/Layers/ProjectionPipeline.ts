@@ -1641,6 +1641,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           workspaceStatusManifest: event.payload.workspaceStatusManifest,
           gitState: event.payload.gitState,
           status: "pending",
+          pmStartState: event.payload.pmStartState,
           providerThreadId: null,
           result: null,
           failureMessage: null,
@@ -1662,6 +1663,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       }
       if (
         event.type !== "project.context-run-started" &&
+        event.type !== "project.context-run-start-prepared" &&
+        event.type !== "project.context-run-baseline-refreshed" &&
         event.type !== "project.context-run-pending-review" &&
         event.type !== "project.context-run-revised" &&
         event.type !== "project.context-run-committed" &&
@@ -1675,6 +1678,27 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         projectContextRunId: event.payload.projectContextRunId,
       });
       if (Option.isNone(existing)) return;
+      if (event.type === "project.context-run-start-prepared") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          pmStartState: event.payload.pmStartState,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-baseline-refreshed") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          schemaVersion: event.payload.schemaVersion,
+          fingerprint: event.payload.fingerprint,
+          baselineManifest: event.payload.baselineManifest,
+          workspaceStatusManifest: event.payload.workspaceStatusManifest,
+          gitState: event.payload.gitState,
+          pmStartState: "ready",
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
       if (event.type === "project.context-run-started") {
         yield* projectionProjectContextRunRepository.upsert({
           ...existing.value,
@@ -1702,6 +1726,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         yield* projectionProjectContextRunRepository.upsert({
           ...existing.value,
           status: "pending",
+          pmStartState: "ready",
           prompt: event.payload.prompt,
           providerThreadId: null,
           result: null,

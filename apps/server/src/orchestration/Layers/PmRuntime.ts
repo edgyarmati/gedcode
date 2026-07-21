@@ -149,6 +149,7 @@ const withLastActionCursor = (message: string, event: SettlementEvent): string =
 type RuntimeCacheEntry = {
   readonly runtime: PmProjectRuntime;
   readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
+  readonly interruptActive: Effect.Effect<void, PmRuntimeError>;
   readonly invalidateRuntime: (reason: string) => Effect.Effect<void, PmRuntimeError>;
 };
 
@@ -1037,6 +1038,17 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       return state.blocked;
     });
 
+    const projectContextHeld = Effect.fn("PmRuntime.projectContextHeld")(function* (
+      projectId: OrchestrationProject["id"],
+    ) {
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      return readModel.projectContextRuns.some(
+        (run) =>
+          run.projectId === projectId &&
+          (run.status === "pending" || run.status === "running" || run.status === "pending-review"),
+      );
+    });
+
     const redriveSettlementBypassingCursor = Effect.fn(
       "PmRuntime.redriveSettlementBypassingCursor",
     )(function* (input: {
@@ -1056,7 +1068,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return false;
       }
 
-      if (yield* pmInstanceQuotaBlocked(envelope.project)) {
+      if (
+        (yield* projectContextHeld(envelope.project.id)) ||
+        (yield* pmInstanceQuotaBlocked(envelope.project))
+      ) {
         yield* Effect.logInfo("PM re-entry redrive held: provider instance quota-blocked", {
           projectId: String(input.marker.projectId),
           kind: input.marker.kind,
@@ -1101,7 +1116,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       // before consuming leaves the settlement un-consumed, so the reconciliation
       // sweep (reconcileNeverConsumedSettlements) re-drives it once quota recovers
       // — exactly-once is preserved because nothing was consumed or acted here.
-      if (yield* pmInstanceQuotaBlocked(envelope.project)) {
+      if (
+        (yield* projectContextHeld(envelope.project.id)) ||
+        (yield* pmInstanceQuotaBlocked(envelope.project))
+      ) {
         yield* Effect.logInfo("PM re-entry held: provider instance quota-blocked", {
           projectId: String(envelope.project.id),
           kind: envelope.kind,
@@ -1706,6 +1724,19 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const queue = yield* makePmReEntryQueue(adapter, {
+          canDrain: projectionSnapshotQuery.getCommandReadModel().pipe(
+            Effect.map(
+              (readModel) =>
+                !readModel.projectContextRuns.some(
+                  (run) =>
+                    run.projectId === project.id &&
+                    (run.status === "pending" ||
+                      run.status === "running" ||
+                      run.status === "pending-review"),
+                ),
+            ),
+            Effect.catch(() => Effect.succeed(false)),
+          ),
           // Detect PM-instance quota exhaustion from the PM's own failed turn. The
           // adapter failure surfaces as a PmRuntimeError (not a `runtime.error`
           // provider event), so it bypasses the ingestion-path detection that marks
@@ -1785,6 +1816,17 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         });
         const currentHarnessConfig = yield* Ref.make(harnessConfig);
         const runtimeActive = yield* Ref.make(true);
+
+        const interruptActive = Effect.gen(function* () {
+          if (!(yield* Ref.get(runtimeActive))) return;
+          yield* Ref.set(runtimeActive, false);
+          yield* adapter.abort;
+          yield* Scope.close(projectRuntimeScope, Exit.void);
+          runtimes.delete(key);
+          yield* Effect.logInfo("PM runtime interrupted for project-context handoff", {
+            projectId: String(project.id),
+          });
+        });
 
         const invalidateRuntime = (reason: string) =>
           queue.runExclusive(
@@ -1936,6 +1978,36 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           Effect.forkIn(projectRuntimeScope),
         );
         yield* watchPmConfigChanges;
+        const watchProjectContextSettlement = orchestrationEngine.streamDomainEvents.pipe(
+          Stream.runForEach((event) => {
+            if (
+              event.type !== "project.context-run-committed" &&
+              event.type !== "project.context-run-discarded" &&
+              event.type !== "project.context-run-failed" &&
+              event.type !== "project.context-run-interrupted"
+            ) {
+              return Effect.void;
+            }
+            return projectionSnapshotQuery.getCommandReadModel().pipe(
+              Effect.flatMap((readModel) => {
+                const run = readModel.projectContextRuns.find(
+                  (candidate) => candidate.id === event.payload.projectContextRunId,
+                );
+                return run?.projectId === project.id ? queue.drain : Effect.void;
+              }),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.void
+                  : Effect.logWarning("failed to release PM queue after context settlement", {
+                      projectId: String(project.id),
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+          }),
+          Effect.forkIn(projectRuntimeScope),
+        );
+        yield* watchProjectContextSettlement;
         const ensureRuntimeActive = Effect.gen(function* () {
           if (yield* Ref.get(runtimeActive)) return;
           return yield* new PmRuntimeError({
@@ -1994,6 +2066,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         runtimes.set(key, {
           runtime,
           waitForIdle,
+          interruptActive,
           invalidateRuntime,
         });
         return runtime;
@@ -2002,6 +2075,11 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
     const waitForIdle: PmProjectRuntimeFactoryShape["waitForIdle"] = (projectId) => {
       const existing = runtimes.get(String(projectId));
       return existing?.waitForIdle ?? Effect.void;
+    };
+
+    const interruptActive: PmProjectRuntimeFactoryShape["interruptActive"] = (projectId) => {
+      const existing = runtimes.get(String(projectId));
+      return existing?.interruptActive ?? Effect.void;
     };
 
     const invalidateRuntimeByProjectId: PmProjectRuntimeFactoryShape["invalidateRuntime"] = (
@@ -2056,6 +2134,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
     return {
       getOrCreate,
       waitForIdle,
+      interruptActive,
       invalidateRuntime: invalidateRuntimeByProjectId,
       clearSessionStorage,
       resetSessionBinding,
