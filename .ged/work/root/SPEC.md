@@ -21,8 +21,10 @@ project-context onboarding plus practical worktree launch actions.
   before verification may start.
 - **No changes needed**: a terminal successful outcome for a task whose accepted work produces no
   commit relative to its base.
-- **Project context run**: an opt-in agent run that creates or reviews durable project guidance outside
-  the task lifecycle.
+- **GED manifest**: committed `.ged/MANIFEST.json`, the single machine-readable version and audit
+  record for every managed GED artifact convention.
+- **Context maintenance**: PM-owned initialization, migration, or review of durable project guidance.
+  It is routine lifecycle work, not a user-managed task or modal workflow.
 
 ## Decisions and Constraints
 
@@ -78,50 +80,74 @@ project-context onboarding plus practical worktree launch actions.
 - Helpers appear in timeline/history but not the task board. Provider-native subagents remain allowed
   and are not managed or duplicated by GedCode.
 
-### Project-context onboarding and skills
+### Manifest-owned context and skills
 
 - Replace the project `grill-me` skill with an integrated `grill-with-docs`, vendoring its `grilling`
   and `domain-modeling` dependencies while retaining GED clarification/planning state transitions.
 - Canonical project context is `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, root
   `CONTEXT.md`, and sparse `docs/adr/*.md`. `.ged/DECISIONS.md` is not created. Task files under
   `.ged/work/root/` remain task-specific, and `.gedcode/` remains runtime-only.
-- On project add or first open in Chat or Orchestrator, inspect canonical files. Missing, whitespace-only,
-  or template-only stubs offer Populate; substantive files offer Review.
-- Dismissal/completion is remembered per project and content fingerprint. Prompt again only after
-  material file changes or an onboarding schema upgrade.
-- Chat and Orchestrator share one project-context operation. It offers Cheap/Smart/Genius cards with
-  the configured harness logo plus model/thinking summary. Smart is the factory choice; the selected
-  preset becomes the global default for later context runs.
-- A context run edits the primary checkout but is not a task. Its result enters a mandatory diff review
-  with Commit, Revise, and Discard; nothing commits automatically.
+- Replace plaintext `.ged/VERSION` and the separate project-context schema with committed
+  `.ged/MANIFEST.json`. Its schema version covers canonical context, planning artifacts, ownership,
+  and lifecycle semantics; timestamps are audit signals, never automatic expiration timers.
+- Check the manifest when a project is first used with GED/Orchestrator and before every PM turn.
+  Missing/legacy manifests migrate once; a newer-than-supported manifest is never downgraded.
+- First use creates substantive context with the configured context preset (Smart by default), not
+  empty stubs. Existing `AGENTS.md` instructions are preserved.
+- The PM owns context freshness. It may update trivial documentation itself or delegate meaningful
+  initialization/migration/review. Age and repository evolution may inform judgment, but age alone
+  never launches token-consuming work.
+- Context updates apply automatically and remain uncommitted. Clean additive work needs no modal;
+  destructive ambiguity and true conflicts require focused user resolution.
+- Before landing, the PM decides whether verified work changed project purpose, architecture, domain
+  language, agent guidance, or GED structure and ensures the appropriate context is updated.
 
-### Context settlement and PM hold
+### Context maintenance safety and compact status
 
-- A project-context request creates a durable PM hold from request until the run is settled. Pending,
-  running, pending-review, revision, reconciliation, and remediation states remain held.
+- Context maintenance creates a durable PM hold from request until files and manifest are settled.
 - Orchestrator keeps the PM conversation visible but disables its composer. User messages already in
   the queue and automatic settlement/re-entry messages are preserved and delivered in order only after
   settlement. Normal Chat and worker controls are not globally frozen.
 - If the PM already has an active turn, the user chooses Wait or Interrupt. Wait lets that one turn
   settle; Interrupt uses the existing PM interrupt actuator. In both cases queue dispatch freezes
   before the choice and context starts before any queued PM turn. The pending choice survives restart.
-- A canceled pre-start request releases the hold. Failure/interruption releases it only when no
-  auditable residue remains; changes or violations enter review and stay held.
-- Review conflicts expose typed recovery rather than a raw terminal error. Retry re-inspects without
-  mutation. Reconcile creates another append-only attempt in the same logical run, reusing its pinned
-  provider/model/options. Discard remains the explicit escape hatch.
+- Remove the mandatory onboarding/review modal, preset cards, dismissal fingerprints, and legacy
+  Commit/Revise/Discard workflow. Keep only compact Ready/Updating/Needs attention status, a manual
+  Review action, PM composer hold, and a focused conflict surface.
+- Failure/interruption releases the hold only when no auditable residue remains. Retry re-inspects;
+  deterministic three-way reconciliation merges non-overlapping context changes.
 - Context-file reconciliation first performs a deterministic three-way rebase of original baseline,
   proposal, and current content, then lets the same agent review/refine it. Ambiguous overlap is never
   chosen automatically.
 - Later HEAD and ordinary non-context workspace drift may be reconciled onto a fresh protected
   baseline. A staged index, Git config, hooks, audited info files, and scope violations recorded during
   the provider run cannot be adopted automatically. Unrelated refs do not block review.
-- Hand to PM starts one constrained remediation turn while ordinary PM delivery stays held. It may
-  inspect and repair only recorded violations, cannot create/delegate tasks, and must pass a fresh
-  server audit. Unsafe restoration asks the user through a bounded remediation question card rather
-  than unlocking the normal composer or guessing.
-- Reconciliation and remediation attempts remain auditable; the latest proposal is primary and prior
-  attempts are available as history.
+- Useful out-of-scope proposals are handed to the full-access PM: it handles trivial work or proposes
+  a proper task. Authenticated/user-scoped operations unavailable to sandboxed workers are likewise
+  performed by the PM, while meaningful external/destructive actions retain user approval gates.
+- Ordinary Chat remains usable during maintenance, but managed context paths are reserved and any
+  concurrent edit is reconciled or surfaced rather than overwritten.
+
+### Agent ownership, Git, and landing
+
+- The PM owns orchestration, trivial edits, authenticated operations, freshness checks, approval, and
+  routing. Planner and verifier agents may edit documentation only; substantive code belongs to workers.
+- Planner output records bounded slices and TDD verification intent in `.ged/work/...`. Workers follow
+  those slices, commit implementation plus task progress, and report deviations. Verifiers run checks,
+  update evidence/canonical context/manifest, and commit documentation separately; code failures return
+  to a worker and verification repeats after the final change.
+- PM sessions have full technical access. Worker prompts disclose auto-approve sandbox limitations and
+  route authenticated CLI operations back to the PM. Remembered allow/ask/deny policy is deferred;
+  existing approval gates remain for meaningful commits, pushes, PRs, releases, publishing, and
+  destructive operations.
+- Before creating a task worktree, the PM fetches and fast-forwards a clean primary branch. Dirty or
+  diverged primary state requires user direction. Target-branch movement before landing updates the
+  task branch and invalidates verification; substantive conflicts return to a worker.
+- Land means create a thoroughly documented GitHub PR, draft by default via the existing setting.
+  No-diff work becomes No changes needed, never landed. Merge is separately user-approved.
+- Non-Git projects must initialize Git, and Git projects must configure a supported GitHub remote,
+  before orchestrated tasks start. Setup and remote creation require approval. If GitHub becomes
+  unavailable, committed work remains Ready to land for retry; local-main merge is not a fallback.
 
 ### Worktree access and branch names
 
@@ -139,6 +165,9 @@ project-context onboarding plus practical worktree launch actions.
 - Provider-native subagent orchestration is not intercepted or configured.
 - PM direct changes do not gain a PR or task history.
 - Existing branch renaming and automatic model escalation are excluded.
+- Remembered PM action allow/ask/deny policy is deferred; full PM access plus existing gates is the
+  temporary behavior.
+- Time-based automatic context reviews are excluded.
 
 ## Acceptance Criteria
 
@@ -148,13 +177,17 @@ project-context onboarding plus practical worktree launch actions.
 - PMs can safely edit/test/commit trivial work under the selected provider permission policy.
 - Orchestrator cannot be bypassed until legacy backend selections are mapped to valid tier presets.
 - Tier routing, escalation, helper runs, and resolved backends remain inspectable after replay/restart.
-- Project-context prompting behaves consistently in Chat and Orchestrator and never treats `.gedcode/`
-  as authorable context.
+- One manifest version governs GED artifacts; legacy `.ged/VERSION` is consumed once and removed.
+- Missing/old context initializes or migrates automatically without a mandatory modal, while newer
+  schemas fail safely and conflict recovery never destroys user content.
 - Editor/file-manager/terminal actions always target the correct checkout.
 - New task branches are readable and collision-safe.
 - Context work cannot race a new PM turn, queued PM messages, or automatic PM re-entry; all held input
   resumes durably after settlement.
-- Context conflicts can be retried, reconciled, or handed to constrained PM remediation without
-  silently adopting provider scope violations or destroying ambiguous content.
+- Context conflicts can be retried, reconciled, or handed to PM without silently adopting provider
+  scope violations or destroying ambiguous content.
+- Planner, worker, verifier, and PM file/code ownership is explicit in prompts and enforced before land.
+- Orchestrated work starts from fresh Git and lands only by GitHub PR; unavailable setup/access produces
+  a durable actionable state rather than a local-main fallback.
 - `CHANGELOG.md`, `bun fmt`, `bun lint`, the relevant package typecheck, and focused `bun run test`
   targets pass for every implementation slice. Full suites are reserved for explicit release checks.

@@ -7,6 +7,42 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 
 ## Verification Evidence
 
+## Manifest-first Context Pivot
+
+### PROJECT-MANIFEST-01
+
+- Parse strict committed manifest metadata and reject unsupported/malformed data without mutation.
+- Adopt `.ged/VERSION` once, delete it after successful migration, and treat unversioned artifacts as
+  schema zero. A newer schema is never downgraded.
+- Prove one version covers canonical context and task-work conventions while `.gedcode/` remains
+  runtime-only.
+
+### PROJECT-MANIFEST-02/03
+
+- First GED/Orchestrator use and the before-PM-turn backstop initialize/migrate exactly once and use
+  Smart by default without empty stubs or a mandatory modal.
+- PM user/automatic delivery stays held through mutation and audit; ordinary Chat stays usable.
+- Clean additive changes settle uncommitted. Non-overlapping concurrent edits merge; ambiguous overlap,
+  protected Git changes, and scope violations remain Needs attention with retry/PM recovery.
+- Compact status, manual review, active-turn Wait/Interrupt, composer locking, restart, and queue ordering
+  work without legacy dismissal or Commit/Revise/Discard UI.
+
+### PROJECT-MANIFEST-04
+
+- Prompt snapshots assign PM/planner/worker/verifier ownership and disclose worker sandbox limits.
+- Planner/verifier mutations outside documentation fail; workers commit code/task progress; verifier
+  records tests and canonical context separately. Code repair returns to worker and invalidates evidence.
+- Landing rejects missing/stale verification or required context/manifest settlement.
+
+### PROJECT-MANIFEST-05/06
+
+- Worktrees start only from a refreshed clean primary branch. Dirty/diverged state and missing Git or
+  GitHub remote produce explicit setup/decision states without a local-main fallback.
+- Target movement updates the task branch and requires fresh verification. GitHub access failure keeps
+  committed work Ready to land; success creates a documented draft PR by default.
+- Legacy active context runs settle as cancelled-by-upgrade; removed APIs cannot create new legacy runs;
+  replay/restart and artifact documentation reflect the manifest lifecycle.
+
 ### PROJECT-RECOVER-01 typed-conflict checkpoint — 2026-07-21
 
 - Focused real-Git review and coordinator suites passed 12/12, including typed HEAD and owned-context

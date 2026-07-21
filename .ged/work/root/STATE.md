@@ -1,8 +1,8 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-RECOVER-01` — typed conflict evidence and reconciliation attempts
-- **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
+- **Active task**: `PROJECT-MANIFEST-01` — single GED manifest and legacy adoption
+- **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
 ## Locked Decisions
@@ -29,13 +29,20 @@
   sparse `docs/adr/*`; `.ged/DECISIONS.md` is omitted and `.gedcode/` is never agent-authored context.
 - Replace `grill-me` with integrated upstream `grill-with-docs`, `grilling`, and `domain-modeling` while
   preserving GED state transitions.
-- Project-context prompting is state/fingerprint-aware across Chat and Orchestrator. Context runs choose
-  a preset card with harness logo/model/thinking, default Smart, and persist the chosen tier globally.
-- Context changes require Commit/Revise/Discard review and never create a task or PR.
-- Context request through settlement durably holds user and automatic PM delivery. Active PM turns
-  require Wait or Interrupt; preserved queue entries resume only after safe settlement.
-- Context conflicts support Retry, same-run agent Reconcile, and constrained Hand to PM remediation.
-  Provider scope violations and protected Git metadata are never silently adopted.
+- `.ged/MANIFEST.json` is the single committed GED schema/audit source. Plain `.ged/VERSION` and the
+  separate context schema are removed through one-time adoption, with no permanent fallback.
+- PM owns automatic initialization/migration/freshness; Smart is the context default. Routine clean
+  updates apply uncommitted without a modal. Only ambiguity/conflict requires user attention.
+- Context maintenance through settlement durably holds PM delivery. Active PM turns require Wait or
+  Interrupt; preserved queue entries resume only after safe settlement.
+- Keep scoped audit, interruption, typed conflicts, and deterministic non-overlap merge. Remove the
+  legacy onboarding cards, dismissal fingerprints, and Commit/Revise/Discard workflow.
+- PM owns orchestration, trivial and authenticated work. Planner/verifier are documentation-only;
+  workers own substantive code. Workers commit implementation; verifier commits evidence/context.
+- PM refreshes clean primary Git before task creation. Orchestrated work requires Git plus supported
+  GitHub remote and lands as a documented draft PR by default; no local-main fallback exists.
+- Remembered PM allow/ask/deny policy is deferred as `PM-APPROVAL-01`; PM currently has full technical
+  access while existing meaningful-action approval gates remain.
 - Ordinary implementation runs focused tests only. Full suites are reserved for explicit release
   verification; broader suite performance work is deferred as `TEST-REV-01`.
 - PM/project headers open project root; worker headers open task worktree. Primary configured-editor
@@ -46,9 +53,9 @@
 
 ## Execution Notes
 
-- `PROJECT-RECOVER-01` partial checkpoint 2026-07-21: review inspection now classifies typed provider
-  scope, context, workspace, HEAD, protected-Git, and unknown conflicts with exact paths, safe-action
-  capabilities, and retry UI. Append-only reconciliation attempts remain the active remainder.
+- The prior `PROJECT-RECOVER-01/02/03` direction was superseded on 2026-07-21 by the manifest-first
+  pivot. Reusable typed conflict, audit, PM hold, and merge primitives remain; user-managed review-run
+  lifecycle and remediation UI are removed rather than completed.
 
 - `PROJECT-LOCK-01` and `PROJECT-LOCK-02` completed 2026-07-21. Project-context requests now create
   a durable PM delivery hold. An active PM turn requires a persisted Wait or Interrupt choice; after
