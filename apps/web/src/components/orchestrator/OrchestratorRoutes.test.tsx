@@ -695,6 +695,22 @@ describe("PmChatComposer", () => {
     expect(markup).not.toContain("Workflow");
   });
 
+  it("keeps the PM surface visible but disables message delivery during a context hold", () => {
+    const markup = renderToStaticMarkup(
+      <PmChatComposer
+        deliveryHoldReason="PM messaging is paused while project context is unsettled"
+        environmentId={environmentId}
+        project={project}
+        projectId={projectId}
+        thread={undefined}
+      />,
+    );
+
+    expect(markup).toContain("PM messaging is paused while project context is unsettled");
+    expect(markup).toContain('aria-label="Message PM"');
+    expect(markup).toContain("disabled");
+  });
+
   it("shows pending PM user-input questions in the PM composer", () => {
     const markup = renderToStaticMarkup(
       <PmChatComposer

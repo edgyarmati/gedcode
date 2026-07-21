@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-LOCK-01` — durable PM hold and context-start arbitration
+- **Active task**: `PROJECT-RECOVER-01` — typed conflict evidence and reconciliation attempts
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -45,6 +45,17 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-LOCK-01` and `PROJECT-LOCK-02` completed 2026-07-21. Project-context requests now create
+  a durable PM delivery hold. An active PM turn requires a persisted Wait or Interrupt choice; after
+  settlement the server recaptures a stable baseline before launching. User sends, automatic PM
+  settlement re-entry, and already queued drain attempts remain held until the context run safely
+  settles or is cancelled. The Orchestrator keeps PM chat visible with phase status and pre-start
+  controls while preserving drafts and non-message approval/input responses.
+- Verification evidence for `PROJECT-LOCK-01/02`: focused server lifecycle, projection, migration,
+  PM runtime/queue, and reactor suites passed 105/105 tests; focused web logic passed 45/45 and
+  Chromium composer coverage passed 7/7. Contracts, server, and web typechecks passed; formatting
+  and lint passed with existing unrelated warnings. Per user direction, no full suite was run.
 
 - `ORCH-WORK-01` completed 2026-07-17. Added append-only Change review, exact-HEAD
   verification, and No changes needed commands/events, strict task schemas, migration 056, durable

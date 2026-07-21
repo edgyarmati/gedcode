@@ -5,6 +5,17 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Project-context runs now hold Orchestrator PM delivery from request through settlement. If a PM
+  turn is active, the run durably waits for an explicit Wait or Interrupt decision, refreshes its
+  baseline after the PM settles, and starts before preserved PM queue entries can resume. The hold
+  survives restarts, blocks both user messages and automatic re-entry, releases on commit, discard,
+  clean failure, interruption, or pre-start cancellation, and avoids stale-baseline launches.
+
+- The Orchestrator keeps PM chat visible during a project-context hold while disabling only ordinary
+  PM message entry. A status panel explains the active phase and offers Wait for PM, Interrupt PM,
+  and pre-start cancellation controls; drafts remain intact and pending access/input controls remain
+  available when needed to let a waiting PM turn settle.
+
 - Fixed project-context Commit and Discard being blocked when an unrelated branch, tag, remote ref,
   or Orchestrator task ref changed after the agent run. Review resolution still fails closed if the
   checked-out HEAD, current branch identity, index, Git configuration, hooks, audited info files,

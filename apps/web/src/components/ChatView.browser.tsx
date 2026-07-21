@@ -314,6 +314,12 @@ function createMockEnvironmentApi(input: {
       requestProjectContextRun: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["requestProjectContextRun"],
+      resolveProjectContextRunStart: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["resolveProjectContextRunStart"],
+      cancelProjectContextRunStart: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["cancelProjectContextRunStart"],
       getProjectContextRunReview: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["getProjectContextRunReview"],

@@ -12,6 +12,7 @@ import {
   TaskId,
   ThreadId,
   type OrchestrationGateDecision,
+  type OrchestrationProjectContextRun,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
@@ -72,6 +73,7 @@ import {
   selectPendingGatesForTaskRef,
   selectProjectPmQuotaBlockByRef,
   selectProjectByRef,
+  selectProjectContextRunsForProjectRef,
   selectProjectsAcrossEnvironments,
   selectSidebarThreadsForProjectRef,
   selectTaskByRef,
@@ -256,6 +258,48 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
   );
   const project = useStore((state) => selectProjectByRef(state, projectRef));
   const tasks = useStore(useShallow((state) => selectTasksForProjectRef(state, projectRef)));
+  const contextRuns = useStore(
+    useShallow((state) => selectProjectContextRunsForProjectRef(state, projectRef)),
+  );
+  const activeContextRun = useMemo(
+    () =>
+      contextRuns.findLast(
+        (run) =>
+          run.status === "pending" || run.status === "running" || run.status === "pending-review",
+      ) ?? null,
+    [contextRuns],
+  );
+  const [contextStartAction, setContextStartAction] = useState<
+    "wait" | "interrupt" | "cancel" | null
+  >(null);
+  const [contextStartError, setContextStartError] = useState<string | null>(null);
+  const resolveContextStart = useCallback(
+    async (action: "wait" | "interrupt" | "cancel") => {
+      if (!activeContextRun || contextStartAction) return;
+      const api = readEnvironmentApi(environmentId);
+      if (!api) {
+        setContextStartError("Environment API unavailable.");
+        return;
+      }
+      setContextStartAction(action);
+      setContextStartError(null);
+      try {
+        if (action === "cancel") {
+          await api.orchestrator.cancelProjectContextRunStart({ runId: activeContextRun.id });
+        } else {
+          await api.orchestrator.resolveProjectContextRunStart({
+            runId: activeContextRun.id,
+            action,
+          });
+        }
+      } catch (error) {
+        setContextStartError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setContextStartAction(null);
+      }
+    },
+    [activeContextRun, contextStartAction, environmentId],
+  );
   const pmThread = useStore((state) => selectThreadByRef(state, pmThreadRef));
   const boardCollapsed = useUiStateStore((state) => state.orchestratorBoardCollapsed);
   const setBoardCollapsed = useUiStateStore((state) => state.setOrchestratorBoardCollapsed);
@@ -352,11 +396,15 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
       <main className={getOrchestratorProjectGridClassName(boardCollapsed)}>
         <section className={getOrchestratorPmSectionClassName(boardCollapsed)}>
           <PmConversation
+            activeContextRun={activeContextRun}
+            contextStartAction={contextStartAction}
+            contextStartError={contextStartError}
             environmentId={environmentId}
             project={project}
             projectId={projectId}
             thread={pmThread}
             threadRef={pmThreadRef}
+            resolveContextStart={resolveContextStart}
           />
         </section>
         {boardCollapsed ? null : (
@@ -385,17 +433,25 @@ function ProjectPmQuotaBanner({ projectRef }: { projectRef: ReturnType<typeof sc
 }
 
 function PmConversation({
+  activeContextRun,
+  contextStartAction,
+  contextStartError,
   environmentId,
   project,
   projectId,
   thread,
   threadRef,
+  resolveContextStart,
 }: {
+  activeContextRun: OrchestrationProjectContextRun | null;
+  contextStartAction: "wait" | "interrupt" | "cancel" | null;
+  contextStartError: string | null;
   environmentId: EnvironmentId;
   project: Project | undefined;
   projectId: ProjectId;
   thread: Thread | undefined;
   threadRef: ScopedThreadRef;
+  resolveContextStart: (action: "wait" | "interrupt" | "cancel") => Promise<void>;
 }) {
   const [isClearing, setIsClearing] = useState(false);
   const projectRef = useMemo(
@@ -454,6 +510,68 @@ function PmConversation({
         </Button>
       </div>
       <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
+      {activeContextRun ? (
+        <div className="border-b border-border bg-muted/30 px-4 py-3" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {activeContextRun.pmStartState === "awaiting-user"
+                  ? "Project context is waiting for the active PM turn"
+                  : activeContextRun.status === "pending-review"
+                    ? "Project context is waiting for your review"
+                    : activeContextRun.status === "running"
+                      ? "Project context is being updated"
+                      : "Project context is waiting for the PM to settle"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                PM messages remain paused until this context run is settled.
+              </p>
+              {contextStartError ? (
+                <p className="mt-1 text-xs text-destructive" role="alert">
+                  {contextStartError}
+                </p>
+              ) : null}
+            </div>
+            {activeContextRun.status === "pending" &&
+            activeContextRun.pmStartState === "awaiting-user" ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  disabled={contextStartAction !== null}
+                  onClick={() => void resolveContextStart("wait")}
+                  size="sm"
+                  variant="outline"
+                >
+                  Wait for PM
+                </Button>
+                <Button
+                  disabled={contextStartAction !== null}
+                  onClick={() => void resolveContextStart("interrupt")}
+                  size="sm"
+                >
+                  Interrupt PM
+                </Button>
+                <Button
+                  disabled={contextStartAction !== null}
+                  onClick={() => void resolveContextStart("cancel")}
+                  size="sm"
+                  variant="ghost"
+                >
+                  Cancel context run
+                </Button>
+              </div>
+            ) : activeContextRun.status === "pending" ? (
+              <Button
+                disabled={contextStartAction !== null}
+                onClick={() => void resolveContextStart("cancel")}
+                size="sm"
+                variant="outline"
+              >
+                Cancel context run
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <SharedThreadTimeline
         cwd={project?.cwd}
         emptyMessage="PM conversation will appear here."
@@ -464,6 +582,9 @@ function PmConversation({
         workspaceRoot={project?.cwd}
       />
       <PmChatComposer
+        {...(activeContextRun
+          ? { deliveryHoldReason: "PM messaging is paused while project context is unsettled" }
+          : {})}
         environmentId={environmentId}
         project={project}
         projectId={projectId}

@@ -1,10 +1,24 @@
 # TESTS — Orchestrator Delegation and Project Context
 
-Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typecheck`, and
-`bun run test`. Never use `bun test`. User-visible changes must update `CHANGELOG.md` under
-`## Unreleased`.
+Every ordinary implementation slice runs focused tests, `bun fmt`, `bun lint`, and the narrowest
+relevant package typechecks. Full workspace test/typecheck suites are reserved for an explicit release
+or major verification request. Never use `bun test`; use `bun run test` with focused paths. User-visible
+changes must update `CHANGELOG.md` under `## Unreleased`.
 
 ## Verification Evidence
+
+### PROJECT-LOCK-01 / PROJECT-LOCK-02 — 2026-07-21
+
+- Focused server: context decider, PM runtime/queue, context reactor, SQL projection, and migration 063
+  passed 105 tests. Coverage includes active-PM arbitration, restart reconciliation, baseline refresh,
+  interrupt-before-start, held queue preservation, and durable start-state persistence.
+- Focused web: Orchestrator route/composer logic passed 45 tests; Chromium composer coverage passed
+  7 tests and confirms the PM surface remains visible while ordinary message input is disabled.
+- Repository: `bun fmt` and `bun lint` passed with only existing unrelated warnings. Contracts, server,
+  and web package typechecks passed. Per user direction, no full workspace suite was run.
+- Manual review: pre-start cancel terminally releases the hold; failed/interrupted runs with residue
+  remain pending review; PM access and structured input controls remain usable while ordinary message
+  delivery is held; queued drain entries are not removed until policy permits delivery.
 
 ### ORCH-WORK-01 — 2026-07-17
 

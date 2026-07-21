@@ -250,11 +250,13 @@ function resolvePmPickerSelection(
 }
 
 export function PmChatComposer({
+  deliveryHoldReason,
   environmentId,
   project,
   projectId,
   thread,
 }: {
+  deliveryHoldReason?: string;
   environmentId: EnvironmentId;
   project: Project | undefined;
   projectId: ProjectId;
@@ -372,7 +374,11 @@ export function PmChatComposer({
         !submitting &&
         !isAnsweringUserInput &&
         activePendingProgress.canAdvance
-      : environmentAvailable && !savingPmModelSelection && !submitting && trimmedMessage.length > 0;
+      : environmentAvailable &&
+        !deliveryHoldReason &&
+        !savingPmModelSelection &&
+        !submitting &&
+        trimmedMessage.length > 0;
 
   const respondToActivePendingUserInput = useCallback(
     async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
@@ -752,7 +758,8 @@ export function PmChatComposer({
               savingPmModelSelection ||
               submitting ||
               isAnsweringUserInput ||
-              activePendingApproval !== null
+              activePendingApproval !== null ||
+              (Boolean(deliveryHoldReason) && !activePendingProgress)
             }
             onChange={(event) => {
               if (activePendingProgress) {
@@ -765,9 +772,11 @@ export function PmChatComposer({
             placeholder={
               activePendingApproval
                 ? "Resolve the PM access request to continue"
-                : activePendingProgress
-                  ? "Type your own answer, or leave this blank to use the selected option"
-                  : "Message PM"
+                : deliveryHoldReason && !activePendingProgress
+                  ? deliveryHoldReason
+                  : activePendingProgress
+                    ? "Type your own answer, or leave this blank to use the selected option"
+                    : "Message PM"
             }
             ref={textareaRef}
             rows={3}

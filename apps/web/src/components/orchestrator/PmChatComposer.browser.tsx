@@ -199,6 +199,34 @@ describe("PmChatComposer model picker", () => {
     useComposerDraftStore.setState({ draftsByThreadKey: {} });
   });
 
+  it("preserves the draft and blocks PM delivery while project context is unsettled", async () => {
+    const sendMessage = vi.fn(async () => ({ accepted: true as const }));
+    __setEnvironmentApiOverrideForTests(environmentId, {
+      orchestration: { dispatchCommand: vi.fn() },
+      orchestrator: { sendMessage },
+    } as unknown as EnvironmentApi);
+    setServerConfigSnapshot(serverConfig);
+
+    await render(
+      <AppAtomRegistryProvider>
+        <PmChatComposer
+          deliveryHoldReason="PM messaging is paused while project context is unsettled"
+          environmentId={environmentId}
+          project={project}
+          projectId={projectId}
+          thread={undefined}
+        />
+      </AppAtomRegistryProvider>,
+    );
+
+    const input = page.getByRole("textbox", { name: "Message PM" });
+    await expect.element(input).toBeDisabled();
+    await expect
+      .element(input)
+      .toHaveAttribute("placeholder", "PM messaging is paused while project context is unsettled");
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it("preserves an unsent PM draft across route unmounts without leaking between projects", async () => {
     const sendMessage = vi.fn(async () => ({ accepted: true as const }));
     __setEnvironmentApiOverrideForTests(environmentId, {
