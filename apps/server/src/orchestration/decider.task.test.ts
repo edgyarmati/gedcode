@@ -1128,6 +1128,38 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("invalidates prior verification as soon as a new verify attempt starts", () =>
+    Effect.gen(function* () {
+      const initial = yield* taskReadModel({
+        status: "review",
+        currentStageThreadId: null,
+        verification: {
+          stageThreadId: asThreadId("thread-old-verification"),
+          head: "old-verified-head",
+          verifiedAt: now,
+        },
+      });
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: initial,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-new-verification"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            startHead: "new-target-head",
+            instructions: "Verify the refreshed task branch.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      const projected = yield* applyEvents(initial, events);
+      expect(projected.tasks[0]?.status).toBe("verifying");
+      expect(projected.tasks[0]?.verification).toBeNull();
+    }),
+  );
+
   it.effect("ignores a legacy false worker opt-in and keeps full access", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(

@@ -3083,6 +3083,8 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "handoffWorker");
     assert.include(prompt, "steerStage");
     assert.include(prompt, "Never poll inspectStage");
+    assert.include(prompt, "A Verify handoff refreshes the clean primary GitHub upstream");
+    assert.include(prompt, "Never verify or land against the pre-movement HEAD");
     assert.include(prompt, "re-enter you automatically");
     assert.include(prompt, "explicit operator status request");
     assert.include(prompt, "last-action cursors");

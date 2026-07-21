@@ -64,7 +64,7 @@ import {
   reserveTaskBranch,
   type TaskBranchReservation,
 } from "../taskBranchReservation.ts";
-import { prepareTaskRepository } from "../taskRepositoryPreparation.ts";
+import { prepareTaskForVerification, prepareTaskRepository } from "../taskRepositoryPreparation.ts";
 import { pmThreadIdForProject } from "./PmEventProjection.ts";
 
 interface CreateTaskParameters {
@@ -890,6 +890,26 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
           const readModelBeforeStart = yield* snapshotQuery.getCommandReadModel();
           const taskBeforeStart = readModelBeforeStart.tasks.find((entry) => entry.id === taskId);
+          if (params.role === "verify") {
+            const project = readModelBeforeStart.projects.find(
+              (entry) => entry.id === taskBeforeStart?.projectId,
+            );
+            if (taskBeforeStart?.worktreePath == null || project === undefined) {
+              return yield* new PmToolExecutionError({
+                detail: `Task '${taskId}' does not have a project-owned worktree to prepare for verification.`,
+              });
+            }
+            if (Option.isNone(vcsProcess)) {
+              return yield* new PmToolExecutionError({
+                detail: "Verification Git preparation services are unavailable.",
+              });
+            }
+            yield* prepareTaskForVerification({
+              primaryCheckoutPath: project.workspaceRoot,
+              worktreePath: taskBeforeStart.worktreePath,
+              process: vcsProcess.value,
+            }).pipe(Effect.mapError((cause) => new PmToolExecutionError({ detail: cause.detail })));
+          }
           const startHead =
             taskBeforeStart?.worktreePath && Option.isSome(vcsProcess)
               ? (yield* inspectTaskWorktreeCompletion({

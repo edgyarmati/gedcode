@@ -140,3 +140,63 @@ export const prepareTaskRepository = Effect.fn("prepareTaskRepository")(function
   }
   return { branch, upstream, head } as const;
 });
+
+/** Refresh primary Git and rebase a clean task branch before exact-HEAD verification. */
+export const prepareTaskForVerification = Effect.fn("prepareTaskForVerification")(
+  function* (input: {
+    readonly primaryCheckoutPath: string;
+    readonly worktreePath: string;
+    readonly process: Pick<VcsProcessShape, "run">;
+  }) {
+    const primary = yield* prepareTaskRepository({
+      cwd: input.primaryCheckoutPath,
+      process: input.process,
+    });
+    const status = yield* run(input.process, input.worktreePath, "verificationStatus", [
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ]);
+    if (status.stdout.trim().length > 0) {
+      return yield* new TaskRepositoryPreparationError({
+        detail: `Cannot start verification because task worktree '${input.worktreePath}' has uncommitted changes. Return it to Work or Change review first.`,
+      });
+    }
+    const beforeHead = (yield* run(input.process, input.worktreePath, "verificationHeadBefore", [
+      "rev-parse",
+      "--verify",
+      "HEAD",
+    ])).stdout.trim();
+    const rebase = yield* Effect.exit(
+      run(input.process, input.worktreePath, "verificationRebase", ["rebase", primary.head]),
+    );
+    if (rebase._tag === "Failure") {
+      yield* input.process
+        .run({
+          operation: "TaskRepositoryPreparation.verificationRebaseAbort",
+          command: "git",
+          args: ["rebase", "--abort"],
+          cwd: input.worktreePath,
+          allowNonZeroExit: true,
+          timeoutMs: 30_000,
+          maxOutputBytes: 256_000,
+        })
+        .pipe(Effect.ignore);
+      return yield* new TaskRepositoryPreparationError({
+        detail: `Task worktree '${input.worktreePath}' could not be rebased cleanly onto refreshed primary HEAD '${primary.head}'. Resolve the target movement in a Work stage before verification.`,
+        cause: rebase.cause,
+      });
+    }
+    const taskHead = (yield* run(input.process, input.worktreePath, "verificationHeadAfter", [
+      "rev-parse",
+      "--verify",
+      "HEAD",
+    ])).stdout.trim();
+    if (!/^[0-9a-f]{40,64}$/iu.test(beforeHead) || !/^[0-9a-f]{40,64}$/iu.test(taskHead)) {
+      return yield* new TaskRepositoryPreparationError({
+        detail: `Git returned an invalid task HEAD while preparing '${input.worktreePath}' for verification.`,
+      });
+    }
+    return { primaryHead: primary.head, taskHead, rebased: taskHead !== beforeHead } as const;
+  },
+);

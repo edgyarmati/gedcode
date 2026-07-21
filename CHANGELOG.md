@@ -8,7 +8,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Orchestrator task creation now refuses stale or unsupported bases. Before reserving a task branch,
   the PM requires a clean attached primary checkout with a GitHub upstream, fetches it, fast-forwards
   safely behind branches, and stops with actionable setup guidance for dirty, ahead, diverged,
-  detached, non-Git, or non-GitHub projects.
+  detached, non-Git, or non-GitHub projects. Verify handoffs repeat that refresh and rebase a clean
+  task worktree onto the new primary HEAD before the verifier starts; conflicts abort cleanly and
+  prior verification evidence is invalidated immediately.
 
 - Clarified and enforced Orchestrator stage ownership. Plan and Verify workers are documentation-only,
   Work owns substantive implementation and clean commits, and the PM owns bounded trivial work plus

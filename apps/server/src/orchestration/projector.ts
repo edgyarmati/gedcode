@@ -1459,7 +1459,9 @@ export function projectEvent(
               status,
               stageThreadIds,
               currentStageThreadId: payload.stageThreadId,
-              ...(payload.role === "work" ? { verification: null } : {}),
+              ...(payload.role === "work" || payload.role === "verify"
+                ? { verification: null }
+                : {}),
               updatedAt: payload.updatedAt,
             }),
             quotaBlockedStages:

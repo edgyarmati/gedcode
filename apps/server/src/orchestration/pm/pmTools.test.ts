@@ -226,6 +226,18 @@ const makeLayer = (
     if (input.operation === "TaskRepositoryPreparation.head") {
       return Effect.succeed(vcsOutput("a".repeat(40)));
     }
+    if (input.operation === "TaskRepositoryPreparation.verificationStatus") {
+      return Effect.succeed(vcsOutput());
+    }
+    if (
+      input.operation === "TaskRepositoryPreparation.verificationHeadBefore" ||
+      input.operation === "TaskRepositoryPreparation.verificationHeadAfter"
+    ) {
+      return Effect.succeed(vcsOutput("b".repeat(40)));
+    }
+    if (input.operation === "TaskRepositoryPreparation.verificationRebase") {
+      return Effect.succeed(vcsOutput());
+    }
     if (input.operation === "TaskBranchReservation.resolveHead") {
       return Effect.succeed(vcsOutput("a".repeat(40)));
     }
@@ -1061,6 +1073,7 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].role, "verify");
       assert.strictEqual(dispatched[0].capabilityTier, "cheap");
+      assert.strictEqual(dispatched[0].startHead, "b".repeat(40));
     }
   }),
 );

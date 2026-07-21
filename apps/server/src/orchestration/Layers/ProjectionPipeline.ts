@@ -1979,7 +1979,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               status,
               stageThreadIds,
               currentStageThreadId: event.payload.stageThreadId,
-              ...(event.payload.role === "work" ? { verification: null } : {}),
+              ...(event.payload.role === "work" || event.payload.role === "verify"
+                ? { verification: null }
+                : {}),
               updatedAt: event.payload.updatedAt,
             });
             return;
