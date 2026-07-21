@@ -1,7 +1,7 @@
 # STATE
 
-- **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-06` — remove obsolete context paths and finish lifecycle docs
+- **Phase**: complete
+- **Active task**: none — all non-deferred roadmap slices are complete
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,18 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-MANIFEST-06` completed 2026-07-21. Migration 066 interrupts active pre-pivot context runs
+  with an explicit upgrade reason and preserves terminal history. Migration 067 removes retired
+  onboarding and manual review events, compacts per-aggregate stream versions through a uniqueness-safe
+  temporary range, and drops the obsolete project dismissal-fingerprint column. The onboarding
+  coordinator, Resolve command, Commit/Revise/Discard actuators, projections, shell routing, and client
+  reducers are removed. Automatic maintenance now produces one replay-safe `applied` settlement.
+- Artifact lifecycle and unreleased release notes now describe the final manifest-owned behavior,
+  including exact creation, retention, cleanup, Git, and privacy boundaries for `.ged/`, workspace
+  `.gedcode/`, and user `~/.gedcode/`. Focused contracts/server/web coverage passed 194 assertions;
+  `bun fmt`, `bun lint`, and all 12 workspace typecheck packages passed. Lint retained only existing
+  warnings, and no full suite ran under the ordinary-work policy.
 
 - `PROJECT-MANIFEST-05` completed 2026-07-21. New task branches require a clean attached primary
   checkout with a GitHub upstream. PM tooling fetches and safely fast-forwards before reservation,

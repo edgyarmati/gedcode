@@ -99,6 +99,18 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - Draft-by-default configuration and documented PR-body behavior remain covered by the existing focused
   worktree-reactor tests. No full suite ran.
 
+#### Evidence — PROJECT-MANIFEST-06 — 2026-07-21
+
+- Focused contracts, project-context lifecycle, decider/projector, SQL repository, replay pipeline,
+  snapshot, migration, coordinator, and web-store tests passed 194 assertions across 13 files.
+- Migration coverage proves active legacy runs become interrupted with a stable upgrade reason while
+  terminal history survives; retired events are removed, surviving aggregate stream versions compact
+  deterministically, and the obsolete onboarding projection column is dropped.
+- Manual review confirmed no runtime contract, coordinator, projection, shell-stream, or client reducer
+  can create or consume dismissal fingerprints or manual Resolve/Commit/Revise/Discard transitions.
+- `bun fmt`, `bun lint`, and all 12 workspace typecheck packages passed. Lint retained existing
+  unrelated warnings only. No full test suite ran under the ordinary focused-test policy.
+
 ### PROJECT-RECOVER-01 typed-conflict checkpoint — 2026-07-21
 
 - Focused real-Git review and coordinator suites passed 12/12, including typed HEAD and owned-context

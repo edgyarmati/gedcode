@@ -5,6 +5,14 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Completed the manifest-owned project-context replacement. Upgrades interrupt obsolete active
+  context runs, remove the former onboarding-resolution column and retired event/command families,
+  and compact affected event streams for deterministic replay. The dormant onboarding coordinator and
+  internal Resolve/Commit/Revise/Discard actuators are gone; automatic maintenance now settles through
+  one audited `applied` event while Retry, deterministic reconciliation, and PM handoff remain for
+  conflicts. Artifact documentation now specifies exactly when `.ged/`, workspace `.gedcode/`, and
+  user `~/.gedcode/` state are created, retained, committed, or cleaned.
+
 - Orchestrator task creation now refuses stale or unsupported bases. Before reserving a task branch,
   the PM requires a clean attached primary checkout with a GitHub upstream, fetches it, fast-forwards
   safely behind branches, and stops with actionable setup guidance for dirty, ahead, diverged,
@@ -33,7 +41,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   non-overlapping context edits, or hand provider scope residue to a full-access PM turn; overlapping,
   staged, protected-Git, or uncleared out-of-scope changes remain blocked without being overwritten.
 
-- Began replacing the mandatory project-context onboarding/review workflow with a PM-owned GED
+- Replaced the mandatory project-context onboarding/review workflow with a PM-owned GED
   manifest lifecycle. Committed `.ged/MANIFEST.json` is now the single schema-version and audit
   source; legacy `.ged/VERSION` can be adopted exactly once and removed, malformed manifests fail
   closed, and projects created by newer GedCode schemas are never downgraded. The manifest is checked
@@ -41,15 +49,16 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   maintenance run, and clean scoped results are audited and applied uncommitted without a modal.
   Automatic settlements and their PM hold state now survive database replay and restart.
 
-- Project-context review now reports structured conflict evidence instead of only a generic failure
-  string. The UI distinguishes provider scope violations, context/workspace drift, checked-out HEAD
-  drift, and protected Git metadata changes; lists implicated paths; disables unsafe Commit/Revise
-  actions; and provides an immediate Retry inspection path while keeping Discard available.
+- Project-context maintenance reports structured conflict evidence instead of only a generic failure
+  string. The focused attention surface distinguishes provider scope violations, context/workspace
+  drift, checked-out HEAD drift, and protected Git metadata changes; lists implicated paths; and offers
+  Retry, deterministic reconciliation, or a held handoff to the full-access PM without overwriting
+  ambiguous changes.
 
 - Project-context runs now hold Orchestrator PM delivery from request through settlement. If a PM
   turn is active, the run durably waits for an explicit Wait or Interrupt decision, refreshes its
   baseline after the PM settles, and starts before preserved PM queue entries can resume. The hold
-  survives restarts, blocks both user messages and automatic re-entry, releases on commit, discard,
+  survives restarts, blocks both user messages and automatic re-entry, releases on audited application,
   clean failure, interruption, or pre-start cancellation, and avoids stale-baseline launches.
 
 - The Orchestrator keeps PM chat visible during a project-context hold while disabling only ordinary
@@ -57,21 +66,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   and pre-start cancellation controls; drafts remain intact and pending access/input controls remain
   available when needed to let a waiting PM turn settle.
 
-- Fixed project-context Commit and Discard being blocked when an unrelated branch, tag, remote ref,
-  or Orchestrator task ref changed after the agent run. Review resolution still fails closed if the
-  checked-out HEAD, current branch identity, index, Git configuration, hooks, audited info files,
-  context files, or non-context workspace paths changed.
-
 - Fixed legacy Orchestrator tasks becoming permanent board clutter after an empty-diff landing was
   recorded as `landed` without a pull request. Startup reconciliation and the PM's no-change tool now
   retire and archive these records when Git proves the task branch still equals its creation baseline,
   including after an obsolete landing failure or removed worktree. Failed landings whose branch has
   commits remain untouched for explicit recovery.
-
-- Fixed **Dismiss for now** (and successful context-run starts) reopening the same project-context
-  prompt when an immediate post-action scan raced the durable projection and returned stale state.
-  The acknowledged schema/fingerprint now closes immediately and remains closed in the shared query
-  cache, while a new context fingerprint still prompts normally.
 
 - New Orchestrator tasks now receive readable server-owned branches such as
   `ged/feature/fix-the-pm-harness`. Task types and titles are normalized into bounded Git-safe slugs;
@@ -95,47 +94,6 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   and never accepts a caller-provided path. Environment capabilities are queryable for disabled UI,
   with unsupported launchers and process failures reported distinctly. Existing general Chat editor
   actions keep their current behavior.
-
-- Added mandatory project-context change review across normal Chat and Orchestrator. Completed
-  context agents now present their bounded summary, changed paths, deterministic diff, and any scope
-  violations before anything is committed. Commit creates a descriptive, run-attributed Git commit
-  containing only the reviewed agent delta; baseline-aware three-way merging preserves pre-existing
-  unstaged edits in the same context file, while stale files, staged indexes, Git drift, and
-  overlapping hunks fail closed. Revise starts another durable agent turn against the original
-  baseline, and Discard restores the exact pre-run bytes without `git restore` or path-wide cleanup.
-  Commit and Discard atomically settle the run plus its resulting context fingerprint, so onboarding
-  stays complete until a material context change or scanner upgrade. These runs remain independent
-  from tasks, worktrees, stages, gates, pull requests, and landing.
-
-- Added shared project-context onboarding across normal Chat and Orchestrator. A fresh bounded scan
-  offers **Populate** for missing or stub guidance and **Review** for substantive context, while
-  exact schema/fingerprint dismissal and active-run detection prevent repeat prompts across surface
-  switches and reconnects. The non-bypassable prompt presents Cheap, Smart, and Genius cards with
-  the effective project/global harness logo, model, and thinking options; Smart is the factory
-  choice, and each explicit selection becomes the durable global default for later context runs.
-  Material context changes and scanner schema upgrades make onboarding eligible again without
-  exposing file contents to the browser.
-
-- Added durable Populate/Review agents for canonical project context. Runs default to the Smart
-  capability preset, permanently stamp the selected harness/model/thinking configuration, and work
-  in the primary checkout without creating a task, worktree, stage, gate, commit, pull request, or
-  landing record. Server-owned raw-file and Git-visible baselines preserve pre-existing dirty work,
-  detect out-of-scope files plus HEAD, index, ref, local-config, hook, and Git info mutations, and
-  survive restart. The audit intentionally covers Git-visible checkout state and selected Git
-  metadata; ignored content and paths outside the checkout remain within the trusted provider-policy
-  boundary. Successful runs and abnormal runs with safely auditable changes stop at pending human
-  diff review; Gedcode never stages, commits, resets, cleans, or silently repairs the checkout.
-  Pending runs wake once at a known quota-reset time even without fresh provider telemetry, while
-  orphaned running runs never replay their prompt after restart and instead audit changes into review
-  or stop safely. Requests are bound to the server-captured checkout identity, so queued deletion or
-  root relocation rejects an obsolete baseline instead of starting a run in a different workspace.
-
-- Added the durable project-context onboarding foundation. A bounded scanner classifies the canonical
-  `AGENTS.md`, `.ged/PROJECT.md`, `.ged/ARCHITECTURE.md`, root `CONTEXT.md`, and root ADR files without
-  crawling `.gedcode/`, task memory, generated output, or secret-bearing paths. Semantic fingerprints
-  ignore formatting/comment noise, detect material context changes and schema upgrades, and compare
-  against append-only per-project Dismissed or Completed resolutions so Chat and Orchestrator can
-  share one restart-safe onboarding decision in the next UI slices.
 
 - Replaced the basic GED `grill-me` clarification prompt with pinned, vendored `grill-with-docs`,
   `grilling`, and `domain-modeling` skills for both Codex and Claude. Non-trivial work now resolves one

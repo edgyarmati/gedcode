@@ -13,8 +13,11 @@ GedCode uses three similarly named locations for different purposes. The short v
 
 ## Workspace `.ged/`: GED Workflow Memory
 
-Enabling GED mode changes the instructions sent to the selected chat model. It does not create files by
-itself. For non-trivial work, the instructed agent uses the installed GED skills to create or refresh:
+Enabling GED mode in ordinary Chat changes the instructions sent to the selected model; the toggle does
+not eagerly create planning files. Orchestrator has an additional manifest check: entering a project or
+starting a PM turn can initialize or refresh canonical context before the PM accepts new work.
+
+For non-trivial work, the PM or instructed agent uses the installed GED skills to create or refresh:
 
 ```text
 .ged/
@@ -31,14 +34,21 @@ Repositories that use the current project-context workflow may also contain `.ge
 workflow runs do not create that file. These are project documents, not application state.
 `.ged/runtime/` is intended for ephemeral session checkpoints and should normally be ignored.
 
-Current repositories also commit `.ged/MANIFEST.json`. Its `schemaVersion` is the single
+Current repositories commit `.ged/MANIFEST.json`. Its `schemaVersion` is the single
 machine-readable version for GED context, planning, ownership, and lifecycle conventions;
 `updatedAt`, `lastReviewedAt`, and `generatedBy` provide audit context. Legacy `.ged/VERSION` is read
 only for one-time migration and is removed after successful adoption. GedCode never downgrades a
 manifest written by a newer schema.
 
-- **Created when:** an agent follows GED planning/execution guidance for a non-trivial task. A normal
-  chat or merely switching the selector to GED does not eagerly create it.
+- **Manifest and context creation:** Orchestrator checks the manifest on project entry and before every
+  PM turn. A missing or outdated supported schema starts one held context-maintenance run (Smart by
+  default); the agent creates or updates substantive canonical guidance, then the server audits the
+  scoped result and atomically writes the current manifest. It does not create empty guidance stubs.
+  Legacy `.ged/VERSION` is adopted once; malformed or newer manifests stop for attention instead of
+  being overwritten.
+- **Planning-file creation:** `.ged/work/root/SPEC.md`, `TASKS.md`, `TESTS.md`, and `STATE.md` are
+  created or refreshed when non-trivial work enters the GED planning/execution workflow. Opening an
+  ordinary chat or merely enabling GED mode does not create them.
 - **Lifetime and cleanup:** project-owned. Keep active documents while they help a future turn resume;
   archive or delete obsolete named work directories during normal repository maintenance.
 - **Commit guidance:** commit durable context, decisions, specs, task status, and verification evidence
@@ -60,12 +70,15 @@ the primary checkout directly:
     └── task-worktree-leases/<task-id>.json
 ```
 
-- **Created when:** a task needs its worktree. The safety hook is installed when a worker provider is
-  started; the runtime renews the matching lease while the task owns the worktree.
+- **Created when:** task creation reserves a descriptive Git ref but does not need a directory. The
+  worktree and lease are created lazily when the task first starts a stage. The safety hook is installed
+  before a worker provider starts; the runtime renews the matching lease while the task owns the
+  worktree.
 - **Lifetime and cleanup:** GedCode removes the worktree and lease after a task is abandoned, or after
-  landing has successfully produced its pull request. Startup reconciliation also cleans terminal
-  worktrees. An orphan reaper uses leases plus a grace period (30 minutes by default) so another live
-  runtime is not mistaken for abandoned work.
+  landing has successfully produced its pull request, or after an accepted no-change completion.
+  Failed PR creation keeps the verified worktree for retry. Startup reconciliation also cleans eligible
+  terminal worktrees. An orphan reaper uses leases plus a grace period (30 minutes by default) so
+  another live runtime is not mistaken for abandoned work.
 - **Commit guidance:** always ignore the entire workspace `.gedcode/` directory. It contains linked
   worktree administration and duplicated checkout files, not source artifacts.
 - **Operator guidance:** do not rename, move, or delete a live task worktree manually. Stop GedCode and
