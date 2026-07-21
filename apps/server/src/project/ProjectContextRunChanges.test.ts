@@ -84,6 +84,7 @@ describe("ProjectContextRunChanges", () => {
   it("recognizes only the four canonical files and non-recursive root ADR Markdown", () => {
     expect(isAllowedProjectContextPath("AGENTS.md")).toBe(true);
     expect(isAllowedProjectContextPath(".ged/PROJECT.md")).toBe(true);
+    expect(isAllowedProjectContextPath(".ged/MANIFEST.json")).toBe(true);
     expect(isAllowedProjectContextPath("docs/adr/0001.md")).toBe(true);
     expect(isAllowedProjectContextPath("docs/adr/nested/0002.md")).toBe(false);
     expect(isAllowedProjectContextPath(".gedcode/CONTEXT.md")).toBe(false);

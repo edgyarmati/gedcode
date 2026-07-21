@@ -1667,6 +1667,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         event.type !== "project.context-run-baseline-refreshed" &&
         event.type !== "project.context-run-pending-review" &&
         event.type !== "project.context-run-revised" &&
+        event.type !== "project.context-run-applied" &&
         event.type !== "project.context-run-committed" &&
         event.type !== "project.context-run-discarded" &&
         event.type !== "project.context-run-failed" &&
@@ -1752,6 +1753,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           status: "completed",
           resolution: "committed",
           commitHash: event.payload.commitHash,
+          resultSchemaVersion: event.payload.resultSchemaVersion,
+          resultFingerprint: event.payload.resultFingerprint,
+          resolvedAt: event.payload.resolvedAt,
+          updatedAt: event.payload.updatedAt,
+        });
+        return;
+      }
+      if (event.type === "project.context-run-applied") {
+        yield* projectionProjectContextRunRepository.upsert({
+          ...existing.value,
+          status: "completed",
+          result: event.payload.result,
+          changes: event.payload.changes,
+          scopeViolationPaths: [],
+          resolution: "applied",
+          commitHash: null,
           resultSchemaVersion: event.payload.resultSchemaVersion,
           resultFingerprint: event.payload.resultFingerprint,
           resolvedAt: event.payload.resolvedAt,

@@ -488,6 +488,27 @@ export function projectEvent(
         ),
       });
 
+    case "project.context-run-applied":
+      return Effect.succeed({
+        ...nextBase,
+        projectContextRuns: updateProjectContextRun(
+          nextBase.projectContextRuns,
+          event.payload.projectContextRunId,
+          {
+            status: "completed",
+            result: event.payload.result,
+            changes: event.payload.changes,
+            scopeViolationPaths: [],
+            resolution: "applied",
+            commitHash: null,
+            resultSchemaVersion: event.payload.resultSchemaVersion,
+            resultFingerprint: event.payload.resultFingerprint,
+            resolvedAt: event.payload.resolvedAt,
+            updatedAt: event.payload.updatedAt,
+          },
+        ),
+      });
+
     case "project.context-run-discarded":
       return Effect.succeed({
         ...nextBase,

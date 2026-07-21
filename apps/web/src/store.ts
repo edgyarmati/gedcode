@@ -2134,6 +2134,20 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       });
 
+    case "project.context-run-applied":
+      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
+        status: "completed",
+        result: event.payload.result,
+        changes: event.payload.changes,
+        scopeViolationPaths: [],
+        resolution: "applied",
+        commitHash: null,
+        resultSchemaVersion: event.payload.resultSchemaVersion,
+        resultFingerprint: event.payload.resultFingerprint,
+        resolvedAt: event.payload.resolvedAt,
+        updatedAt: event.payload.updatedAt,
+      });
+
     case "project.context-run-discarded":
       return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
         status: "discarded",

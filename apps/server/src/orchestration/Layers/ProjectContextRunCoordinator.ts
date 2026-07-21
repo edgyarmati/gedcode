@@ -20,6 +20,8 @@ import type * as PlatformError from "effect/PlatformError";
 
 import { VcsProcess, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { ServerEnvironment } from "../../environment/Services/ServerEnvironment.ts";
+import { GedManifestManager } from "../../project/Services/GedManifest.ts";
 import type { ProjectContextSnapshot } from "../../project/ProjectContext.ts";
 import {
   captureProjectContextRunGitState,
@@ -33,6 +35,10 @@ import {
 } from "../../project/Services/ProjectContextScanner.ts";
 import type { OrchestrationDispatchError } from "../Errors.ts";
 import { withProjectContextRunLifecycleLock } from "../projectContextRunLifecycleCoordinator.ts";
+import {
+  ensureGedManifestBeforePmTurnWithServices,
+  toGedManifestMaintenanceError,
+} from "../gedManifestMaintenance.ts";
 import {
   commitProjectContextRunReview,
   discardProjectContextRunReview,
@@ -268,6 +274,8 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const crypto = yield* Crypto.Crypto;
   const serverSettings = yield* ServerSettingsService;
+  const manifests = yield* GedManifestManager;
+  const environment = yield* ServerEnvironment;
 
   const reviewServices = (run: OrchestrationProjectContextRun) => ({
     scan: (workspaceRoot: string) =>
@@ -358,6 +366,34 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
         { projectId: input.projectId, tier },
       );
     });
+
+  const ensureBeforePmTurn: ProjectContextRunCoordinatorShape["ensureBeforePmTurn"] = Effect.fn(
+    "ProjectContextRunCoordinator.ensureBeforePmTurn",
+  )((projectId) =>
+    ensureGedManifestBeforePmTurnWithServices(
+      {
+        readModel: snapshotQuery
+          .getCommandReadModel()
+          .pipe(Effect.mapError(toGedManifestMaintenanceError)),
+        manifests: {
+          inspect: (workspaceRoot) =>
+            manifests.inspect(workspaceRoot).pipe(Effect.mapError(toGedManifestMaintenanceError)),
+          adoptLegacy: (input) =>
+            manifests.adoptLegacy(input).pipe(Effect.mapError(toGedManifestMaintenanceError)),
+        },
+        request: (requestedProjectId) =>
+          request({ projectId: requestedProjectId }).pipe(
+            Effect.mapError(toGedManifestMaintenanceError),
+          ),
+        now: DateTime.now.pipe(Effect.map(DateTime.formatIso)),
+        generatedBy: environment.getDescriptor.pipe(
+          Effect.map((descriptor) => `gedcode@${descriptor.serverVersion}`),
+          Effect.mapError(toGedManifestMaintenanceError),
+        ),
+      },
+      projectId,
+    ),
+  );
 
   const getReview: ProjectContextRunCoordinatorShape["getReview"] = (input) =>
     Effect.gen(function* () {
@@ -495,7 +531,16 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       }),
     );
 
-  return { request, resolveStart, cancelStart, getReview, revise, commit, discard };
+  return {
+    request,
+    ensureBeforePmTurn,
+    resolveStart,
+    cancelStart,
+    getReview,
+    revise,
+    commit,
+    discard,
+  };
 });
 
 export const ProjectContextRunCoordinatorLive = Layer.effect(

@@ -80,6 +80,7 @@ import {
   type PmProjectRuntimeFactoryShape,
   type PmRuntimeShape,
 } from "../Services/PmRuntime.ts";
+import { ProjectContextRunCoordinator } from "../Services/ProjectContextRunCoordinator.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { defaultTaskTypeRegistry } from "../TaskTypeRegistry.ts";
@@ -717,6 +718,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
     const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
+    const projectContextRuns = yield* ProjectContextRunCoordinator;
     const serverSettings = yield* ServerSettingsService;
     const settings = yield* serverSettings.getSettings;
     const reconciliationIntervalMs = Math.max(
@@ -1041,6 +1043,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const projectContextHeld = Effect.fn("PmRuntime.projectContextHeld")(function* (
       projectId: OrchestrationProject["id"],
     ) {
+      const lifecycle = yield* projectContextRuns.ensureBeforePmTurn(projectId).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("PM re-entry held because GED manifest inspection failed", {
+            projectId: String(projectId),
+            detail: error.message,
+          }).pipe(Effect.as({ status: "maintenance-active" as const })),
+        ),
+      );
+      if (lifecycle.status !== "ready") return true;
       const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       return readModel.projectContextRuns.some(
         (run) =>
@@ -1982,6 +1993,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           Stream.runForEach((event) => {
             if (
               event.type !== "project.context-run-committed" &&
+              event.type !== "project.context-run-applied" &&
               event.type !== "project.context-run-discarded" &&
               event.type !== "project.context-run-failed" &&
               event.type !== "project.context-run-interrupted"

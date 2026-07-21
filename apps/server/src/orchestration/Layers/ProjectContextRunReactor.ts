@@ -19,6 +19,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
 import { ProjectionProjectContextRunRepositoryLive } from "../../persistence/Layers/ProjectionProjectContextRuns.ts";
@@ -27,6 +28,9 @@ import { ProjectionProjectContextRunRepository } from "../../persistence/Service
 import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectContextScanner } from "../../project/Services/ProjectContextScanner.ts";
+import { GedManifestManager } from "../../project/Services/GedManifest.ts";
+import { GED_MANIFEST_PATH } from "../../project/GedManifest.ts";
+import { ServerEnvironment } from "../../environment/Services/ServerEnvironment.ts";
 import {
   auditProjectContextGitStateDrift,
   auditProjectContextWorkspaceDrift,
@@ -54,6 +58,7 @@ const THREAD_PREFIX = "project-context:";
 const SYSTEM_PROMPT = [
   "You are a bounded project-context maintainer working in the primary checkout.",
   "You may read the project, but may write only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, and direct Markdown files in docs/adr/.",
+  "Do not edit .ged/MANIFEST.json; GedCode writes it after auditing your documentation changes.",
   "Do not modify any other path. Do not stage, commit, reset, restore, clean, switch branches, create worktrees, alter Git history, or delegate to another agent.",
   "Do not write inside .gedcode or .ged/work/root. Stop after editing the allowed context files and summarize what changed.",
 ].join(" ");
@@ -114,6 +119,8 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   const quota = yield* ProviderQuotaStatusRepository;
   const providers = yield* ProviderService;
   const scanner = yield* ProjectContextScanner;
+  const manifests = yield* GedManifestManager;
+  const environment = yield* ServerEnvironment;
   const vcsProcess = yield* VcsProcess;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -247,6 +254,39 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
       ),
     );
     if (inspection === null) return;
+    if (
+      inspection.scopeViolationPaths.length === 0 &&
+      !inspection.changes.some((change) => change.path === GED_MANIFEST_PATH)
+    ) {
+      const resolvedAt = yield* nowIso;
+      const descriptor = yield* environment.getDescriptor;
+      const manifestResult = yield* manifests
+        .writeCurrent({
+          workspaceRoot: fresh.value.primaryCheckoutPath,
+          now: resolvedAt,
+          generatedBy: `gedcode@${descriptor.serverVersion}`,
+        })
+        .pipe(Effect.result);
+      if (Result.isSuccess(manifestResult)) {
+        const finalInspection = yield* inspectChanges(fresh.value);
+        const snapshot = yield* scanner.scan(fresh.value.primaryCheckoutPath);
+        yield* engine.dispatch({
+          type: "project.context.run.apply",
+          commandId: commandId("apply", run.id, source),
+          projectContextRunId: run.id,
+          result: boundResult(result),
+          changes: finalInspection.changes,
+          resultSchemaVersion: snapshot.schemaVersion,
+          resultFingerprint: snapshot.fingerprint,
+          createdAt: resolvedAt,
+        });
+        return;
+      }
+      yield* Effect.logWarning("project-context manifest settlement requires attention", {
+        projectContextRunId: String(run.id),
+        detail: manifestResult.failure.detail,
+      });
+    }
     yield* engine.dispatch({
       type: "project.context.run.pending-review",
       commandId: commandId("review", run.id, source),

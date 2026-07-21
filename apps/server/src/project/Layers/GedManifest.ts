@@ -131,7 +131,46 @@ export const makeGedManifestManager = Effect.gen(function* () {
     return result;
   });
 
-  return GedManifestManager.of({ inspect, adoptLegacy });
+  const writeCurrent: GedManifestManagerShape["writeCurrent"] = Effect.fn(
+    "GedManifestManager.writeCurrent",
+  )(function* (input) {
+    const state = yield* inspectFiles(input.workspaceRoot);
+    if (state.inspection.status === "newer") {
+      return yield* manifestError(
+        state.workspaceRoot,
+        "writeCurrent",
+        `GED schema ${state.inspection.sourceSchemaVersion} is newer than supported schema ${CURRENT_GED_SCHEMA_VERSION}`,
+      );
+    }
+    const manifest = {
+      schemaVersion: CURRENT_GED_SCHEMA_VERSION,
+      updatedAt: input.now,
+      lastReviewedAt: input.now,
+      generatedBy: input.generatedBy.trim(),
+    };
+    yield* writeFileStringAtomically({
+      filePath: state.manifest.path,
+      contents: encodeGedManifest(manifest),
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+      Effect.mapError((error) => manifestError(state.workspaceRoot, "write", error)),
+    );
+    if (state.legacy.contents !== null) {
+      yield* fs
+        .remove(state.legacy.path)
+        .pipe(
+          Effect.mapError((error) => manifestError(state.workspaceRoot, "removeLegacy", error)),
+        );
+    }
+    return {
+      status: "current",
+      sourceSchemaVersion: CURRENT_GED_SCHEMA_VERSION,
+      manifest,
+    };
+  });
+
+  return GedManifestManager.of({ inspect, adoptLegacy, writeCurrent });
 });
 
 export const GedManifestManagerLive = Layer.effect(GedManifestManager, makeGedManifestManager);

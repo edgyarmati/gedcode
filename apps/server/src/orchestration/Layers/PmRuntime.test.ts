@@ -81,6 +81,7 @@ import {
   PmRuntime,
   type PmProjectRuntime,
 } from "../Services/PmRuntime.ts";
+import { ProjectContextRunCoordinator } from "../Services/ProjectContextRunCoordinator.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
 import type { DriverPmAdapterOptions } from "../claude/DriverPmAdapter.ts";
@@ -570,6 +571,11 @@ const makeLayer = (input: {
   };
 
   return makePmRuntimeLive({ reconciliationIntervalMsOverride: 60_000 }).pipe(
+    Layer.provide(
+      Layer.mock(ProjectContextRunCoordinator)({
+        ensureBeforePmTurn: () => Effect.succeed({ status: "ready" as const }),
+      }),
+    ),
     Layer.provide(
       Layer.succeed(OrchestrationEngineService, {
         readEvents: (fromSequenceExclusive: number) => {

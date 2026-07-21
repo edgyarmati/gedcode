@@ -90,4 +90,29 @@ it.layer(TestLayer)("GedManifestManagerLive", (it) => {
       ).toMatch(/newer/);
     }),
   );
+
+  it.effect("writes the current manifest after audited context maintenance", () =>
+    Effect.gen(function* () {
+      const manager = yield* GedManifestManager;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "ged-manifest-" });
+
+      const result = yield* manager.writeCurrent({
+        workspaceRoot: cwd,
+        now: "2026-07-21T13:00:00.000Z",
+        generatedBy: "gedcode@0.3.0",
+      });
+
+      expect(result).toMatchObject({ status: "current", sourceSchemaVersion: 3 });
+      expect(
+        decodeGedManifest(yield* fs.readFileString(path.join(cwd, ".ged/MANIFEST.json"))),
+      ).toEqual({
+        schemaVersion: 3,
+        updatedAt: "2026-07-21T13:00:00.000Z",
+        lastReviewedAt: "2026-07-21T13:00:00.000Z",
+        generatedBy: "gedcode@0.3.0",
+      });
+    }),
+  );
 });

@@ -80,6 +80,7 @@ function projectContextRunPrompt(mode: "populate" | "review"): string {
     "You are maintaining the shared project context in the primary checkout.",
     action,
     "You may change only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, and direct Markdown files under docs/adr/.",
+    "Do not edit .ged/MANIFEST.json; GedCode writes it after auditing your documentation changes.",
     "Do not modify application code, runtime state, task files, generated files, secrets, Git history, branches, worktrees, commits, pull requests, or orchestration state.",
     "Do not create tasks, stages, gates, worktrees, commits, pull requests, or delegate to another agent.",
     "Finish with a concise summary of the context changes for human diff review.",
@@ -784,6 +785,84 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+    }
+
+    case "project.context.run.apply": {
+      const run = yield* requireProjectContextRun({
+        readModel,
+        command,
+        projectContextRunId: command.projectContextRunId,
+      });
+      yield* requireProject({ readModel, command, projectId: run.projectId });
+      if (run.status !== "running") {
+        return yield* invariantError(
+          command.type,
+          `Project-context run '${run.id}' cannot be applied from '${run.status}'.`,
+        );
+      }
+      const changePaths = new Set(command.changes.map((change) => change.path));
+      if (changePaths.size !== command.changes.length) {
+        return yield* invariantError(
+          command.type,
+          "Project-context changes contain duplicate paths.",
+        );
+      }
+      const baselineByPath = new Map(
+        run.baselineManifest.map((entry) => [entry.path, entry.rawContent] as const),
+      );
+      for (const change of command.changes) {
+        if (change.beforeRawContent === change.afterRawContent) {
+          return yield* invariantError(
+            command.type,
+            `Project-context change '${change.path}' does not change its raw content.`,
+          );
+        }
+        if (
+          (baselineByPath.has(change.path) &&
+            baselineByPath.get(change.path) !== change.beforeRawContent) ||
+          (!baselineByPath.has(change.path) && change.beforeRawContent !== null)
+        ) {
+          return yield* invariantError(
+            command.type,
+            `Project-context change '${change.path}' does not match the immutable baseline.`,
+          );
+        }
+      }
+      const appliedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "project-context-run",
+          aggregateId: run.id,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "project.context-run-applied",
+        payload: {
+          projectContextRunId: run.id,
+          result: command.result,
+          changes: command.changes,
+          resultSchemaVersion: command.resultSchemaVersion,
+          resultFingerprint: command.resultFingerprint,
+          resolvedAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
+      const completedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "project",
+          aggregateId: run.projectId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: appliedEvent.eventId,
+        type: "project.context-completed",
+        payload: {
+          projectId: run.projectId,
+          schemaVersion: command.resultSchemaVersion,
+          fingerprint: command.resultFingerprint,
+          completedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
+      return [appliedEvent, completedEvent];
     }
 
     case "project.context.run.commit":

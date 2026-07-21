@@ -65,6 +65,7 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
           ".ged/PROJECT.md",
           ".ged/ARCHITECTURE.md",
           "CONTEXT.md",
+          ".ged/MANIFEST.json",
           "docs/adr/0001.md",
           "docs/adr/0002.md",
         ]);

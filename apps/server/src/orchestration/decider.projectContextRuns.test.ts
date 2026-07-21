@@ -381,6 +381,44 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
       });
       expect(running.projectContextRuns[0]?.status).toBe("running");
 
+      const applyPlan = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.context.run.apply",
+          commandId: CommandId.make("cmd-context-run-apply"),
+          projectContextRunId: ProjectContextRunId.make("context-run-1"),
+          result: "Updated shared guidance.",
+          changes: [
+            {
+              path: "AGENTS.md",
+              beforeRawContent: null,
+              afterRawContent: "# Project instructions\n",
+            },
+          ],
+          resultSchemaVersion: ProjectContextSchemaVersion.make(3),
+          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"9".repeat(64)}`),
+          createdAt: "2026-01-01T00:02:00.000Z",
+        },
+        readModel: running,
+      });
+      expect(Array.isArray(applyPlan)).toBe(true);
+      if (Array.isArray(applyPlan)) {
+        expect(applyPlan.map((event) => event.type)).toEqual([
+          "project.context-run-applied",
+          "project.context-completed",
+        ]);
+        const applied = yield* projectEvent(running, {
+          ...applyPlan[0],
+          sequence: 3,
+          eventId: EventId.make("evt-context-run-applied"),
+        });
+        expect(applied.projectContextRuns[0]).toMatchObject({
+          status: "completed",
+          resolution: "applied",
+          commitHash: null,
+          changes: [{ path: "AGENTS.md" }],
+        });
+      }
+
       const reviewPlan = yield* decideOrchestrationCommand({
         command: {
           type: "project.context.run.pending-review",

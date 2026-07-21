@@ -53,6 +53,7 @@ import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
 import { RepositoryIdentityResolverLive } from "./project/Layers/RepositoryIdentityResolver.ts";
 import { ProjectContextScannerLive } from "./project/Layers/ProjectContextScanner.ts";
+import { GedManifestManagerLive } from "./project/Layers/GedManifest.ts";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.ts";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
@@ -157,10 +158,11 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(TaskWorktreeReactorLive),
   Layer.provideMerge(HelperRunReactorLive),
   Layer.provideMerge(ProjectContextRunReactorLive),
-  Layer.provideMerge(ProjectContextRunCoordinatorLive),
   Layer.provideMerge(ProjectContextOnboardingCoordinatorLive),
-  Layer.provideMerge(ProjectContextScannerLive),
   Layer.provideMerge(PmRuntimeLive),
+  Layer.provideMerge(ProjectContextRunCoordinatorLive),
+  Layer.provideMerge(ProjectContextScannerLive),
+  Layer.provideMerge(GedManifestManagerLive),
   Layer.provideMerge(PmProjectRuntimeFactoryLive),
   Layer.provideMerge(OrphanTurnReconcilerLive),
   Layer.provideMerge(TaskCancellationReconcilerLive),

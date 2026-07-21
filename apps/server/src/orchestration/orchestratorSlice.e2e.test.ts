@@ -33,6 +33,7 @@ import {
 } from "../persistence/Services/PmRuntimeState.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
+import { ProjectContextRunCoordinator } from "./Services/ProjectContextRunCoordinator.ts";
 import { PmProjectRuntimeFactory, PmRuntime, type PmProjectRuntime } from "./Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { OrchestrationMcpServerProviderLive } from "./claude/OrchestrationMcpServerProvider.ts";
@@ -300,6 +301,11 @@ function makePmRuntimeLayer(input: {
         clearSessionStorage: () => Effect.void,
         resetSessionBinding: () => Effect.void,
         createHandoffBrief: () => Effect.succeed(Option.none()),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectContextRunCoordinator)({
+        ensureBeforePmTurn: () => Effect.succeed({ status: "ready" as const }),
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),

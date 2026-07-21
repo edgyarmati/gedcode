@@ -35,6 +35,19 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - Compact status, manual review, active-turn Wait/Interrupt, composer locking, restart, and queue ordering
   work without legacy dismissal or Commit/Revise/Discard UI.
 
+#### Evidence — PROJECT-MANIFEST-02 — 2026-07-21
+
+- Focused manifest, scanner, audit, coordinator, decider, reactor, PM-runtime, orchestration replay,
+  SQL migration/projection, and contracts suites passed 190/190 assertions.
+- Replay proves the new `applied` settlement survives restart with its reviewed changes and manifest
+  fingerprint. Migration 064 preserves existing context runs and PM hold state while expanding the
+  terminal resolution constraint.
+- Manual review confirmed first use starts exactly one Smart-default maintenance run, every PM turn
+  rechecks manifest state, legacy manifests adopt once, newer schemas fail closed, and clean scoped
+  results write the server-owned manifest and settle without a Git commit or user modal.
+- `bun fmt`, `bun lint`, and workspace typechecks passed; lint retained only existing unrelated
+  warnings. No full test suite was run under the ordinary focused-test policy.
+
 ### PROJECT-MANIFEST-04
 
 - Prompt snapshots assign PM/planner/worker/verifier ownership and disclose worker sandbox limits.

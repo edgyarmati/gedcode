@@ -8,7 +8,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Began replacing the mandatory project-context onboarding/review workflow with a PM-owned GED
   manifest lifecycle. Committed `.ged/MANIFEST.json` is now the single schema-version and audit
   source; legacy `.ged/VERSION` can be adopted exactly once and removed, malformed manifests fail
-  closed, and projects created by newer GedCode schemas are never downgraded.
+  closed, and projects created by newer GedCode schemas are never downgraded. The manifest is checked
+  before every PM turn; missing or outdated context automatically starts one held Smart-default
+  maintenance run, and clean scoped results are audited and applied uncommitted without a modal.
+  Automatic settlements and their PM hold state now survive database replay and restart.
 
 - Project-context review now reports structured conflict evidence instead of only a generic failure
   string. The UI distinguishes provider scope violations, context/workspace drift, checked-out HEAD

@@ -18,6 +18,8 @@ import {
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
+import type { GedManifestMaintenanceError } from "../gedManifestMaintenance.ts";
+
 export interface RequestProjectContextRunInput {
   readonly projectId: ProjectId;
   readonly tier?: OrchestrationCapabilityTier;
@@ -29,6 +31,14 @@ export interface ProjectContextRunRequestResult {
 }
 
 export interface ProjectContextRunCoordinatorShape {
+  readonly ensureBeforePmTurn: (
+    projectId: ProjectId,
+  ) => Effect.Effect<
+    | { readonly status: "ready" }
+    | { readonly status: "maintenance-active"; readonly projectContextRunId: ProjectContextRunId }
+    | { readonly status: "maintenance-started"; readonly projectContextRunId: ProjectContextRunId },
+    GedManifestMaintenanceError
+  >;
   /**
    * Capture the server-owned project-context baseline and request one durable
    * context run. The caller cannot provide workspace paths or baseline data.

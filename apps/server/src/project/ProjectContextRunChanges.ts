@@ -28,6 +28,7 @@ const MAX_PROJECT_CONTEXT_AUDIT_FILE_BYTES = 1024 * 1024;
 const MAX_PROJECT_CONTEXT_AUDIT_TOTAL_BYTES = 16 * 1024 * 1024;
 const TRUNCATION_MARKER = "\n[project-context diff truncated]\n";
 const CANONICAL_PATH_SET = new Set<string>(CANONICAL_PROJECT_CONTEXT_PATHS);
+const GED_MANIFEST_PATH = ".ged/MANIFEST.json";
 const ROOT_ADR_PATTERN = /^docs\/adr\/[^/\\]+\.md$/;
 
 export type ProjectContextOwnedChangeKind = "add" | "modify" | "delete";
@@ -84,7 +85,11 @@ const compareCodeUnits = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
 export function isAllowedProjectContextPath(relativePath: string): boolean {
-  return CANONICAL_PATH_SET.has(relativePath) || ROOT_ADR_PATTERN.test(relativePath);
+  return (
+    relativePath === GED_MANIFEST_PATH ||
+    CANONICAL_PATH_SET.has(relativePath) ||
+    ROOT_ADR_PATTERN.test(relativePath)
+  );
 }
 
 function freezeState(state: ProjectContextRawFileState): ProjectContextRawFileState {

@@ -37,6 +37,8 @@ import {
 } from "../../provider/Services/ProviderService.ts";
 import { makeProjectContextSnapshot } from "../../project/ProjectContext.ts";
 import { ProjectContextScanner } from "../../project/Services/ProjectContextScanner.ts";
+import { GedManifestError, GedManifestManager } from "../../project/Services/GedManifest.ts";
+import { ServerEnvironment } from "../../environment/Services/ServerEnvironment.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 import type { VcsProcessOutput } from "../../vcs/VcsProcess.ts";
 import {
@@ -178,6 +180,7 @@ const makeHarness = (driver = "codex") =>
     const interruptedTurns: ThreadId[] = [];
     const sessionStarted = yield* Deferred.make<void>();
     const pendingReview = yield* Deferred.make<void>();
+    const applied = yield* Deferred.make<void>();
     const interrupted = yield* Deferred.make<void>();
     const failed = yield* Deferred.make<void>();
     const sessionStopped = yield* Deferred.make<void>();
@@ -187,6 +190,7 @@ const makeHarness = (driver = "codex") =>
     let quotaStatus: "ok" | "blocked-until" | "blocked-unknown" = "ok";
     let quotaResetAt: string | null = null;
     let statusOutput = "";
+    let manifestWritesEnabled = false;
     let stagedIndexOutput = "";
     let refsOutput = "";
     let configOutput = "";
@@ -237,6 +241,20 @@ const makeHarness = (driver = "codex") =>
             updatedAt: command.createdAt,
           });
           yield* Deferred.succeed(pendingReview, undefined);
+        } else if (command.type === "project.context.run.apply") {
+          runs.set(String(current.id), {
+            ...current,
+            status: "completed",
+            result: command.result,
+            changes: command.changes,
+            scopeViolationPaths: [],
+            resolution: "applied",
+            resultSchemaVersion: command.resultSchemaVersion,
+            resultFingerprint: command.resultFingerprint,
+            resolvedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          });
+          yield* Deferred.succeed(applied, undefined);
         } else if (command.type === "project.context.run.refresh-baseline") {
           runs.set(String(current.id), {
             ...current,
@@ -328,6 +346,37 @@ const makeHarness = (driver = "codex") =>
       Layer.provideMerge(repositoryLayer),
       Layer.provideMerge(Layer.succeed(OrchestrationEngineService, engine)),
       Layer.provideMerge(Layer.succeed(ProviderService, provider)),
+      Layer.provideMerge(
+        Layer.mock(GedManifestManager)({
+          inspect: () => Effect.die("not used"),
+          adoptLegacy: () => Effect.die("not used"),
+          writeCurrent: () =>
+            manifestWritesEnabled
+              ? Effect.succeed({
+                  status: "current" as const,
+                  sourceSchemaVersion: 3,
+                  manifest: {
+                    schemaVersion: 3,
+                    updatedAt: now,
+                    lastReviewedAt: now,
+                    generatedBy: "gedcode@0.3.0",
+                  },
+                })
+              : Effect.fail(
+                  new GedManifestError({
+                    workspaceRoot: primaryCheckoutPath,
+                    operation: "writeCurrent",
+                    detail: "test requires pending review",
+                  }),
+                ),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(ServerEnvironment)({
+          getEnvironmentId: Effect.die("not used"),
+          getDescriptor: Effect.succeed({ serverVersion: "0.3.0" } as never),
+        }),
+      ),
       Layer.provideMerge(
         Layer.mock(ProjectionSnapshotQuery)({
           getCommandReadModel: () =>
@@ -479,12 +528,16 @@ const makeHarness = (driver = "codex") =>
       providerEvents,
       sessionStarted,
       pendingReview,
+      applied,
       interrupted,
       failed,
       sessionStopped,
       setQuotaBlocked: (blocked: boolean) => {
         quotaStatus = blocked ? "blocked-unknown" : "ok";
         quotaResetAt = null;
+      },
+      enableManifestWrites: () => {
+        manifestWritesEnabled = true;
       },
       setQuotaBlockedUntil: (resetAt: string) => {
         quotaStatus = "blocked-until";
@@ -661,6 +714,34 @@ it.effect("audits raw canonical changes and outside-scope drift into pending rev
         ]);
         assert.deepStrictEqual(reviewed?.scopeViolationPaths, [".git/index", "src/unexpected.ts"]);
         assert.ok(harness.stopped.includes(threadId));
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  ),
+);
+
+it.effect("applies clean context maintenance uncommitted after writing the manifest", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const run = makeRun("context-auto-apply");
+      harness.runs.set(String(run.id), run);
+      harness.setSnapshot(changedSnapshot);
+      harness.enableManifestWrites();
+
+      yield* Effect.gen(function* () {
+        const reactor = yield* ProjectContextRunReactor;
+        yield* reactor.start();
+        const threadId = projectContextRunThreadId(run.id);
+        yield* PubSub.publish(harness.providerEvents, completedEvent(threadId));
+        yield* Deferred.await(harness.applied).pipe(Effect.timeout("2 seconds"));
+        yield* reactor.drain;
+
+        assert.deepInclude(harness.runs.get(String(run.id)), {
+          status: "completed",
+          resolution: "applied",
+          commitHash: null,
+        });
+        assert.ok(harness.commands.some((command) => command.type === "project.context.run.apply"));
       }).pipe(Effect.provide(harness.layer));
     }),
   ),

@@ -985,13 +985,13 @@ export type ProjectContextRunPmStartState = typeof ProjectContextRunPmStartState
 export const ProjectContextRunPmStartAction = Schema.Literals(["wait", "interrupt"]);
 export type ProjectContextRunPmStartAction = typeof ProjectContextRunPmStartAction.Type;
 
-export const ProjectContextRunResolution = Schema.Literals(["committed", "discarded"]);
+export const ProjectContextRunResolution = Schema.Literals(["applied", "committed", "discarded"]);
 export type ProjectContextRunResolution = typeof ProjectContextRunResolution.Type;
 
 export const ProjectContextRunPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1_024),
   Schema.isPattern(
-    /^(?:AGENTS\.md|CONTEXT\.md|\.ged\/(?:PROJECT|ARCHITECTURE)\.md|docs\/adr\/[^/]+\.md)$/,
+    /^(?:AGENTS\.md|CONTEXT\.md|\.ged\/(?:PROJECT|ARCHITECTURE)\.md|\.ged\/MANIFEST\.json|docs\/adr\/[^/]+\.md)$/,
   ),
 );
 export type ProjectContextRunPath = typeof ProjectContextRunPath.Type;
@@ -1554,6 +1554,17 @@ export const ProjectContextRunPendingReviewCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ProjectContextRunApplyCommand = Schema.Struct({
+  type: Schema.Literal("project.context.run.apply"),
+  commandId: CommandId,
+  projectContextRunId: ProjectContextRunId,
+  result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  changes: ProjectContextRunChanges,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
+  createdAt: IsoDateTime,
+});
+
 /**
  * Reopens a reviewed context run with a server-authored, durable revision
  * prompt. The immutable baseline remains unchanged so a later review covers
@@ -2030,6 +2041,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ProjectContextRunRefreshBaselineCommand,
   ProjectContextRunStartCommand,
   ProjectContextRunPendingReviewCommand,
+  ProjectContextRunApplyCommand,
   ProjectContextRunReviseCommand,
   ProjectContextRunCommitCommand,
   ProjectContextRunDiscardCommand,
@@ -2167,6 +2179,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.context-run-baseline-refreshed",
   "project.context-run-started",
   "project.context-run-pending-review",
+  "project.context-run-applied",
   "project.context-run-revised",
   "project.context-run-committed",
   "project.context-run-discarded",
@@ -2540,6 +2553,16 @@ export const ProjectContextRunPendingReviewPayload = Schema.Struct({
   changes: ProjectContextRunChanges,
   scopeViolationPaths: ProjectContextRunScopeViolationPaths,
   pendingReviewAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectContextRunAppliedPayload = Schema.Struct({
+  projectContextRunId: ProjectContextRunId,
+  result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
+  changes: ProjectContextRunChanges,
+  resultSchemaVersion: ProjectContextSchemaVersion,
+  resultFingerprint: ProjectContextFingerprint,
+  resolvedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -3095,6 +3118,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.context-run-pending-review"),
     payload: ProjectContextRunPendingReviewPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.context-run-applied"),
+    payload: ProjectContextRunAppliedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

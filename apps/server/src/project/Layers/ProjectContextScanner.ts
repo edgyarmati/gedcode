@@ -13,6 +13,7 @@ import {
   type ProjectContextFile,
   type ProjectContextOwnershipFile,
 } from "../ProjectContext.ts";
+import { GED_MANIFEST_PATH } from "../GedManifest.ts";
 import {
   ProjectContextScanner,
   ProjectContextScannerError,
@@ -199,6 +200,18 @@ export const makeProjectContextScanner = Effect.gen(function* () {
           },
         );
       }
+
+      const manifest = yield* readRegularUtf8File(
+        workspaceRoot,
+        realWorkspaceRoot,
+        GED_MANIFEST_PATH,
+      );
+      ownershipFiles.push(
+        manifest?.ownership ?? {
+          relativePath: GED_MANIFEST_PATH,
+          state: { presence: "absent", digest: null, size: 0, content: null },
+        },
+      );
 
       const adrDirectoryPath = yield* resolveInsideRoot(
         workspaceRoot,

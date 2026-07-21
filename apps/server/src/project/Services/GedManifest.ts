@@ -20,6 +20,11 @@ export interface GedManifestManagerShape {
     readonly now: string;
     readonly generatedBy: string;
   }) => Effect.Effect<GedSchemaInspection, GedManifestError>;
+  readonly writeCurrent: (input: {
+    readonly workspaceRoot: string;
+    readonly now: string;
+    readonly generatedBy: string;
+  }) => Effect.Effect<GedSchemaInspection, GedManifestError>;
 }
 
 export class GedManifestManager extends Context.Service<

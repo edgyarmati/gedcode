@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-02` — automatic PM-owned initialization and migration
+- **Active task**: `PROJECT-MANIFEST-03` — remove legacy onboarding/review UI and add compact status
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,16 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-MANIFEST-02` completed 2026-07-21. The server now checks the committed GED manifest before
+  user-triggered and automatic PM delivery. Missing/outdated context starts one durable Smart-default
+  maintenance run; current context proceeds; legacy metadata adopts once; newer schemas fail closed.
+  Clean scoped results write the manifest server-side, audit the final checkout, settle as `applied`
+  without committing, and release the existing PM hold. Migration 064 makes that result replay-safe.
+- Verification evidence for `PROJECT-MANIFEST-02`: 190 focused assertions passed across contracts,
+  manifest/scanner/audit, coordinator, decider, reactor, PM runtime, orchestration replay, and SQL
+  migration/projection coverage. Repository formatting, lint, and workspace typechecks passed with
+  only existing lint warnings. No full suite was run per the ordinary focused-test policy.
 
 - `PROJECT-MANIFEST-01` completed 2026-07-21. Strict `.ged/MANIFEST.json` is now the single current
   schema-version source. The manager classifies missing, legacy, outdated, current, malformed, and

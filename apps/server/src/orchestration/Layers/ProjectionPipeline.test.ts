@@ -301,6 +301,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const projectId = ProjectId.make("project-context-run-replay");
       const reviewRunId = ProjectContextRunId.make("context-run-review");
+      const appliedRunId = ProjectContextRunId.make("context-run-applied");
       const completedRunId = ProjectContextRunId.make("context-run-completed");
       const discardedRunId = ProjectContextRunId.make("context-run-discarded");
       const failedRunId = ProjectContextRunId.make("context-run-failed");
@@ -330,6 +331,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       for (const [index, projectContextRunId] of [
         reviewRunId,
+        appliedRunId,
         completedRunId,
         discardedRunId,
         failedRunId,
@@ -417,6 +419,32 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           ],
           scopeViolationPaths: [],
           pendingReviewAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "project.context-run-applied",
+        eventId: EventId.make("evt-context-run-applied"),
+        aggregateKind: "project-context-run",
+        aggregateId: appliedRunId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-context-run-applied"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-context-run-applied"),
+        metadata: {},
+        payload: {
+          projectContextRunId: appliedRunId,
+          result: "Updated project guidance automatically.",
+          changes: [
+            {
+              path: ".ged/MANIFEST.json",
+              beforeRawContent: null,
+              afterRawContent: '{"schemaVersion":3}\n',
+            },
+          ],
+          resultSchemaVersion: ProjectContextSchemaVersion.make(3),
+          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"4".repeat(64)}`),
+          resolvedAt: now,
           updatedAt: now,
         },
       });
@@ -511,6 +539,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       assert.deepStrictEqual(
         rows.map((row) => [row.id, row.status]),
         [
+          ["context-run-applied", "completed"],
           ["context-run-completed", "completed"],
           ["context-run-discarded", "discarded"],
           ["context-run-failed", "failed"],
@@ -519,17 +548,18 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         ],
       );
       assert.strictEqual(
-        rows[4]?.baselineManifest,
+        rows[5]?.baselineManifest,
         '[{"path":"AGENTS.md","rawContent":"# Existing\\n"}]',
       );
       assert.strictEqual(
-        rows[4]?.workspaceStatusManifest,
+        rows[5]?.workspaceStatusManifest,
         '[{"relativePath":"AGENTS.md","porcelainStatus":" M","contentDigest":null}]',
       );
-      assert.match(rows[4]?.changes ?? "", /Keep changes bounded/);
+      assert.match(rows[5]?.changes ?? "", /Keep changes bounded/);
       assert.deepStrictEqual(
-        rows.slice(0, 2).map((row) => [row.resolution, row.commitHash]),
+        rows.slice(0, 3).map((row) => [row.resolution, row.commitHash]),
         [
+          ["applied", null],
           ["committed", "a".repeat(40)],
           ["discarded", null],
         ],
@@ -539,7 +569,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const replayedCount = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count FROM projection_project_context_runs
       `;
-      assert.strictEqual(replayedCount[0]?.count, 5);
+      assert.strictEqual(replayedCount[0]?.count, 6);
     }),
   );
 

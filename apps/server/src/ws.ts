@@ -262,6 +262,7 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
       | "project.context-run-requested"
       | "project.context-run-started"
       | "project.context-run-pending-review"
+      | "project.context-run-applied"
       | "project.context-run-revised"
       | "project.context-run-committed"
       | "project.context-run-discarded"
@@ -273,6 +274,7 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
     event.type === "project.context-run-requested" ||
     event.type === "project.context-run-started" ||
     event.type === "project.context-run-pending-review" ||
+    event.type === "project.context-run-applied" ||
     event.type === "project.context-run-revised" ||
     event.type === "project.context-run-committed" ||
     event.type === "project.context-run-discarded" ||
@@ -1476,6 +1478,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ORCHESTRATOR_WS_METHODS.sendMessage,
             Effect.gen(function* () {
               const project = yield* loadProjectForPmRuntime(input.projectId);
+              const manifestState = yield* projectContextRunCoordinator
+                .ensureBeforePmTurn(project.id)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationDispatchCommandError({
+                        message: cause.message,
+                        cause,
+                      }),
+                  ),
+                );
               const readModel = yield* projectionSnapshotQuery
                 .getCommandReadModel()
                 .pipe(
@@ -1490,7 +1503,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     run.status === "running" ||
                     run.status === "pending-review"),
               );
-              if (contextRun !== undefined) {
+              if (contextRun !== undefined && manifestState.status !== "maintenance-started") {
                 return yield* new OrchestrationDispatchCommandError({
                   message: `PM delivery is paused while project-context run '${contextRun.id}' is ${contextRun.status}.`,
                 });
