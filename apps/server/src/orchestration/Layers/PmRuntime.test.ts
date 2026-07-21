@@ -3065,6 +3065,14 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "commands plus observed outcomes");
     assert.include(prompt, "other user hunks may exist in the same file");
     assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
+    assert.include(prompt, "authenticated host operations");
+    assert.include(prompt, "sandboxed auto-approve environment");
+    assert.include(prompt, "Planner stages own design documentation only");
+    assert.include(
+      prompt,
+      "Verifier stages own verification evidence and context documentation only",
+    );
+    assert.include(prompt, "Only work stages may modify substantive implementation code");
     assert.include(prompt, "Keep simple, well-understood planning in your own PM turn");
     assert.notInclude(prompt, "native subagents");
     assert.notInclude(prompt, "short read-only commands");

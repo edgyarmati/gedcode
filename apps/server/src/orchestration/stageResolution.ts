@@ -77,6 +77,24 @@ export const pmQuotaPausedActivityId = (pmThreadId: ThreadId, occurredAt: string
 const STAGE_PROMPT_PREFIX_OPEN = "----- BEGIN GEDCODE STAGE PROMPT PREFIX -----";
 const STAGE_PROMPT_PREFIX_CLOSE = "----- END GEDCODE STAGE PROMPT PREFIX -----";
 
+const STAGE_OWNERSHIP_REQUIREMENTS: Record<OrchestrationStageRole, string> = {
+  plan: [
+    "You own design and planning documentation only. Do not implement substantive product code.",
+    "Record accepted slices, dependencies, acceptance criteria, and relevant architecture decisions in the project's GED context framework. Leave implementation to a work stage.",
+  ].join(" "),
+  work: [
+    "You own the substantive implementation for this task, including its implementation commits.",
+    "Complete the implementation with descriptive Git commits and leave the task worktree clean. Before finishing, inspect tracked and untracked changes and commit all intended task changes; explicitly report anything you cannot safely resolve.",
+  ].join(" "),
+  verify: [
+    "You own documentation and verification evidence only. Do not modify substantive implementation code; if code needs repair, report the exact failure so the PM can return it to a work stage.",
+    "Run proportional focused checks, update the GED context and verification evidence when the implementation changes them, commit those documentation changes separately, and leave the worktree clean.",
+  ].join(" "),
+};
+
+const SANDBOX_REQUIREMENT =
+  "You run in a sandboxed auto-approve environment. Do not work around missing authenticated host access, credentials, or sandbox restrictions; report the exact blocked operation to the PM, which owns authenticated host operations.";
+
 export function stripStagePromptPrefix(instructions: string): string {
   const leadingWhitespaceLength = instructions.length - instructions.trimStart().length;
   const trimmedStart = instructions.slice(leadingWhitespaceLength);
@@ -97,11 +115,11 @@ export function prepareStageInstructions(input: {
 }): string {
   const rawInstructions = stripStagePromptPrefix(input.instructions);
   const configuredPrefix = input.rolePromptPrefixes?.[input.role];
-  const workCompletionRequirement =
-    input.role === "work"
-      ? "Complete the implementation with descriptive Git commits and leave the task worktree clean. Before finishing, inspect tracked and untracked changes and commit all intended task changes; explicitly report anything you cannot safely resolve."
-      : undefined;
-  const promptPrefix = [configuredPrefix, workCompletionRequirement]
+  const promptPrefix = [
+    configuredPrefix,
+    STAGE_OWNERSHIP_REQUIREMENTS[input.role],
+    SANDBOX_REQUIREMENT,
+  ]
     .filter((line): line is string => line !== undefined)
     .join("\n\n");
   if (promptPrefix.length === 0) {

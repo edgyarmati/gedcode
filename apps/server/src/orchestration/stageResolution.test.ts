@@ -22,15 +22,32 @@ describe("prepareStageInstructions prompt-prefix", () => {
     expect(prepared).toContain(rawInstructions);
   });
 
-  it("returns the raw instructions unchanged when the role has no configured prefix", () => {
+  it("always adds the built-in ownership boundary when the role has no configured prefix", () => {
     const prepared = prepareStageInstructions({
       instructions: rawInstructions,
       role: "verify",
       rolePromptPrefixes,
     });
 
-    expect(countPrefixBlocks(prepared)).toBe(0);
-    expect(prepared).toBe(rawInstructions);
+    expect(countPrefixBlocks(prepared)).toBe(1);
+    expect(prepared).toContain("documentation and verification evidence only");
+    expect(prepared).toContain("Do not modify substantive implementation code");
+    expect(prepared).toContain("sandboxed auto-approve environment");
+    expect(prepared).toContain(rawInstructions);
+  });
+
+  it.each([
+    ["plan", "Do not implement substantive product code"],
+    ["work", "You own the substantive implementation"],
+    ["verify", "Do not modify substantive implementation code"],
+  ] as const)("adds the %s ownership contract", (role, expected) => {
+    const prepared = prepareStageInstructions({
+      instructions: rawInstructions,
+      role,
+      rolePromptPrefixes: undefined,
+    });
+
+    expect(prepared).toContain(expected);
   });
 
   it("is idempotent — re-preparing an already-prefixed string keeps a single prefix block", () => {
