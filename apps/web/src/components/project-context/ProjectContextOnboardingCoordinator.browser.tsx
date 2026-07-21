@@ -220,16 +220,13 @@ it("renders harness, model, and thinking details, then remembers the chosen tier
     .toHaveAttribute("aria-pressed", "true");
 });
 
-it("uses Populate for missing or stub context, accepts dismissal, and re-prompts for a new fingerprint", async () => {
+it("keeps a successful dismissal closed across a stale refetch and re-prompts for a new fingerprint", async () => {
   installProject();
   let current = onboarding({ fingerprint: "fingerprint-one", promptKind: "populate" });
   const api = installApi({
     getOnboarding: () => current,
     getConfig: () => serverConfig("smart"),
-    dismiss: vi.fn(async () => {
-      current = { shouldPrompt: false } as typeof current;
-      return { sequence: 2 };
-    }),
+    dismiss: vi.fn(async () => ({ sequence: 2 })),
   });
 
   const client = new QueryClient();

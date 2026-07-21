@@ -422,6 +422,15 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
   1,623 tests passing and 1 skipped. Earlier load-sensitive GitManager and server-router flakes also
   passed as complete isolated files before the clean full-suite result.
 
+### PROJECT-CTX-05 — 2026-07-21
+
+- Regression: the dismissal RPC succeeds while every immediate onboarding refetch intentionally keeps
+  returning the old `shouldPrompt: true` fingerprint; the exact prompt must nevertheless close.
+- Scope: a different fingerprint remains eligible and prompts after remount, so acknowledgement cannot
+  suppress later material context changes.
+- Focused result: `ProjectContextOnboardingCoordinator.browser.tsx` passed 4/4 Chromium scenarios. Per
+  request, no broad test suite was run.
+
 - PM editor action receives project root; every worker action receives its owned task worktree.
 - File-manager, terminal, configured editor, and alternate-editor operations validate canonical paths.
 - Arbitrary paths, stale/deleted worktrees, and foreign task IDs fail closed.

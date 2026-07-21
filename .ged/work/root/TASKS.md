@@ -47,6 +47,7 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | PROJECT-CTX-02 | DONE | Add a shared project-context run using a selectable capability preset, primary checkout access, and durable Populate/Review lifecycle ending in pending diff review. | Runtime tests cover Smart factory default, resolved backend, file scope, restart, failure, and no task/stage/PR creation. |
 | PROJECT-CTX-03 | DONE | Prompt state-aware onboarding from Chat and Orchestrator and add Cheap/Smart/Genius picker cards with harness logo/model/thinking. Persist the chosen tier globally. | Chromium covers new/missing/stub/existing files, cross-surface dedupe, dismissal, fingerprint re-prompt, and sticky tier selection. |
 | PROJECT-CTX-04 | DONE | Add context-run diff review with Commit, Revise, and Discard; commit only after explicit review and record the resulting context fingerprint. | Integration/Chromium covers iterative revision, safe discard, commit metadata, overlapping checkout changes, and prompt completion. |
+| PROJECT-CTX-05 | DONE | Keep a successfully dismissed or started project-context prompt closed when the post-action refetch races the server projection and returns the stale fingerprint. | Focused browser coverage leaves the server response stale after successful dismissal and proves the exact prompt closes while a new fingerprint can prompt again. |
 
 ## P2 — Worktree Access and Readable Branches
 

@@ -262,6 +262,13 @@
   decider, Claude adapter, and Orchestrator end-to-end suites passed. `bun fmt`, `bun lint`, and all
   12 typecheck packages passed. Final `bun run test` passed all 12 packages in 12m09s; server passed
   208/208 files with 1,623 tests passing and 1 skipped.
+- `PROJECT-CTX-05` completed 2026-07-21. Successful Dismiss and Start actions now acknowledge the
+  exact project-context schema/fingerprint locally and in the shared query cache after refetch. A
+  stale post-command scan can no longer reopen that prompt, while a materially new fingerprint still
+  prompts normally.
+- Verification evidence for `PROJECT-CTX-05`: the focused onboarding Chromium file passed all 4
+  scenarios, including a successful dismissal whose refetch intentionally stayed stale. Per request,
+  no broad test suite was run.
 
 - Implement one `NEXT` slice at a time in `.ged/work/root/TASKS.md`.
 - Preserve the append-only orchestration event store; compatibility repair must use migrations at

@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed **Dismiss for now** (and successful context-run starts) reopening the same project-context
+  prompt when an immediate post-action scan raced the durable projection and returned stale state.
+  The acknowledged schema/fingerprint now closes immediately and remains closed in the shared query
+  cache, while a new context fingerprint still prompts normally.
+
 - New Orchestrator tasks now receive readable server-owned branches such as
   `ged/feature/fix-the-pm-harness`. Task types and titles are normalized into bounded Git-safe slugs;
   existing names are reserved atomically with deterministic `-2`, `-3`, and later suffixes, including

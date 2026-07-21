@@ -145,6 +145,7 @@ export function ProjectContextOnboardingCoordinator() {
   const [selectedTier, setSelectedTier] = useState<OrchestrationCapabilityTier>("smart");
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<"dismiss" | "start" | null>(null);
+  const [acknowledgedPromptKey, setAcknowledgedPromptKey] = useState<string | null>(null);
   const queryKey = useMemo(
     () => [ONBOARDING_QUERY_PREFIX, projectRef?.environmentId, projectRef?.projectId] as const,
     [projectRef?.environmentId, projectRef?.projectId],
@@ -255,7 +256,20 @@ export function ProjectContextOnboardingCoordinator() {
   }
 
   const onboarding = onboardingQuery.data?.onboarding;
-  if (!onboarding?.shouldPrompt) return null;
+  const onboardingPromptKey = onboarding
+    ? [
+        projectRef.environmentId,
+        projectRef.projectId,
+        onboarding.schemaVersion,
+        onboarding.fingerprint,
+      ].join("\0")
+    : null;
+  if (
+    !onboarding?.shouldPrompt ||
+    (onboardingPromptKey !== null && acknowledgedPromptKey === onboardingPromptKey)
+  ) {
+    return null;
+  }
 
   if (!selections) {
     return (
@@ -290,7 +304,24 @@ export function ProjectContextOnboardingCoordinator() {
           tier: selectedTier,
         });
       }
+      setAcknowledgedPromptKey(onboardingPromptKey);
       await queryClient.invalidateQueries({ queryKey });
+      queryClient.setQueryData<typeof onboardingQuery.data>(queryKey, (current) => {
+        if (
+          !current?.onboarding ||
+          current.onboarding.schemaVersion !== onboarding.schemaVersion ||
+          current.onboarding.fingerprint !== onboarding.fingerprint
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          onboarding: {
+            ...current.onboarding,
+            shouldPrompt: false,
+          },
+        };
+      });
     } catch (error) {
       setActionError(errorMessage(error));
     } finally {
