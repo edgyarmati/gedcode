@@ -467,3 +467,15 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Focused result: 155/155 tests passed across `decider.task.test.ts`, `pmTools.test.ts`, and
   `TaskWorktreeReactor.test.ts`; server package typecheck passed. Full `bun run test` passed all 12
   packages (server 208/208 files, 1,626 passed and 1 skipped).
+
+## Project-context review ref churn
+
+### PROJECT-CTX-06 — 2026-07-21
+
+- A new unrelated branch created after the context run no longer blocks Commit.
+- Advancing the checked-out branch after the run still rejects mutation as `.git/HEAD` drift.
+- Existing real-Git cases continue to protect staged work, stale context files, overlapping user
+  changes, selective commits, and exact discard restoration.
+- Focused result: `projectContextRunReview.test.ts` passed 7/7; formatting and lint passed. Server
+  typecheck remains blocked by the existing Effect beta `Reactivity` module-resolution error. Per
+  request, no full suite was run.

@@ -13,6 +13,7 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ORCH-WORK-05 | DONE | Settle accepted empty work as No changes needed, auto-archive it, and auto-archive successful landed tasks. Add an append-only reconciler for inert landed-without-PR records while preserving genuine PR failures. | Restart/replay tests repair only eligible legacy tasks; board/history tests hide success and retain retryable failures. |
 | ORCH-WORK-06 | DONE | Surface Change review actions/status and No changes needed outcomes in PM/task UI, including safe diff preview and destructive confirmation. | Chromium covers commit, revise, discard, verify-after-resolution, no-change disappearance, and archived history. |
 | ORCH-WORK-07 | DONE | Repair legacy landed-without-PR tasks even when an obsolete landing failure or missing worktree masks an unchanged branch, and let the PM invoke the same evidence-backed no-change transition. | Focused decider, PM-tool, and startup-reactor tests prove unchanged legacy tasks archive while changed failed landings remain untouched. |
+| PROJECT-CTX-06 | DONE | Allow project-context review resolution after unrelated Git refs change, while preserving all checkout, HEAD, index, configuration, hook, and provider-scope guards. | Focused real-Git review tests prove an unrelated branch no longer blocks commit and existing mutation guards remain intact. |
 
 ## P0 — PM Direct Work
 

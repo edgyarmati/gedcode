@@ -20,7 +20,6 @@ import {
   captureProjectContextRunGitState,
   captureProjectContextWorkspaceStatus,
   compareProjectContextOwnership,
-  sameProjectContextRunGitState,
 } from "../project/ProjectContextRunChanges.ts";
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
 
@@ -199,11 +198,14 @@ export const inspectProjectContextRunReview = Effect.fn("inspectProjectContextRu
       fileSystem: services.fileSystem,
       path: services.path,
     }).pipe(Effect.mapError((error) => reviewError(run, error.message)));
-    if (!sameProjectContextRunGitState(run.gitState, currentGitState)) {
-      const changed = auditProjectContextGitStateDrift(run.gitState, currentGitState);
+    const changed = auditProjectContextGitStateDrift(run.gitState, currentGitState);
+    const blockingGitStateChanges = changed.scopeViolationPaths.filter(
+      (relativePath) => relativePath !== ".git/refs",
+    );
+    if (blockingGitStateChanges.length > 0) {
       return yield* reviewError(
         run,
-        `Project-context review cannot mutate because Git state changed since the run: ${changed.scopeViolationPaths.join(", ") || "unknown Git metadata"}.`,
+        `Project-context review cannot mutate because Git state changed since the run: ${blockingGitStateChanges.join(", ")}.`,
       );
     }
 

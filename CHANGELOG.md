@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed project-context Commit and Discard being blocked when an unrelated branch, tag, remote ref,
+  or Orchestrator task ref changed after the agent run. Review resolution still fails closed if the
+  checked-out HEAD, current branch identity, index, Git configuration, hooks, audited info files,
+  context files, or non-context workspace paths changed.
+
 - Fixed legacy Orchestrator tasks becoming permanent board clutter after an empty-diff landing was
   recorded as `landed` without a pull request. Startup reconciliation and the PM's no-change tool now
   retire and archive these records when Git proves the task branch still equals its creation baseline,

@@ -224,6 +224,56 @@ it.layer(TestLayer)("project-context run review", (it) => {
       ),
   );
 
+  it.effect("commits after an unrelated branch is created after the run", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* makeRepository();
+        const before = "one\ntwo\nthree\nfour\n";
+        const after = "ONE\ntwo\nthree\nfour\n";
+        const run = yield* makeReviewRun(cwd, before, after);
+        const services = yield* reviewServices(run);
+        yield* fs.writeFileString(`${cwd}/AGENTS.md`, after);
+        yield* git(cwd, ["branch", "unrelated-task"]);
+
+        const result = yield* commitProjectContextRunReview(
+          services,
+          run,
+          "docs: update project instructions",
+        );
+
+        assert.match(result.commitSha ?? "", /^[a-f0-9]{40}$/u);
+        assert.equal(
+          (yield* git(cwd, ["rev-parse", "unrelated-task"])).stdout.trim(),
+          run.gitState.head,
+        );
+        assert.equal((yield* git(cwd, ["show", "HEAD:AGENTS.md"])).stdout, after);
+      }),
+    ),
+  );
+
+  it.effect("still rejects review when the checked-out branch advances after the run", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* makeRepository();
+        const before = "one\ntwo\nthree\nfour\n";
+        const after = "ONE\ntwo\nthree\nfour\n";
+        const run = yield* makeReviewRun(cwd, before, after);
+        const services = yield* reviewServices(run);
+        yield* fs.writeFileString(`${cwd}/AGENTS.md`, after);
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "Concurrent repository change"]);
+
+        const error = yield* Effect.flip(
+          commitProjectContextRunReview(services, run, "docs: update project instructions"),
+        );
+
+        assert.match(error.message, /Git state changed since the run: \.git\/HEAD/u);
+        assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), after);
+      }),
+    ),
+  );
+
   it.effect("renders persisted review evidence without checking the live checkout", () =>
     Effect.scoped(
       Effect.gen(function* () {

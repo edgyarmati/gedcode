@@ -98,6 +98,15 @@
   warnings. Full `bun run test` passed all 12 packages (server 208/208 files, 1,626 passed and 1
   skipped). The all-package typecheck remains blocked by pre-existing `effect/Scope` resolution errors
   in `packages/effect-codex-app-server` under the installed Effect 4 beta.
+- `PROJECT-CTX-06` completed 2026-07-21. Commit/Discard review inspection now ignores changes to
+  unrelated refs after a completed context run. The run-completion audit still records provider ref
+  mutations, while review resolution continues to reject HEAD/current-branch, index, config, hook,
+  audited info-file, owned-context, and outside-scope workspace drift.
+- Verification evidence for `PROJECT-CTX-06`: the focused real-Git
+  `projectContextRunReview.test.ts` suite passed 7/7, including unrelated-branch acceptance and
+  checked-out-branch advancement rejection; formatting and lint passed with existing warnings. The
+  server typecheck is blocked by a pre-existing missing `effect/unstable/reactivity/Reactivity`
+  module in `NodeSqliteClient.ts`. Per user request, no full test suite was run.
 - `ORCH-PMDIRECT-01` completed 2026-07-17. PM runtime policy is now provider-specific: Codex starts
   workspace-scoped with native auto-review, while Claude and OpenCode retain full access. PM runtime
   approval requests are bridged into durable PM-thread activities and the PM composer exposes their
