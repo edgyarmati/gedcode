@@ -7,6 +7,13 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 
 ## Verification Evidence
 
+### PROJECT-RECOVER-01 typed-conflict checkpoint — 2026-07-21
+
+- Focused real-Git review and coordinator suites passed 12/12, including typed HEAD and owned-context
+  drift evidence. Focused Chromium review-dialog coverage passed 2/2.
+- Manual review: Commit and Revise are disabled for a typed conflict; Retry re-inspects current state;
+  Discard remains available as the explicit terminal recovery action.
+
 ### PROJECT-LOCK-01 / PROJECT-LOCK-02 — 2026-07-21
 
 - Focused server: context decider, PM runtime/queue, context reactor, SQL projection, and migration 063

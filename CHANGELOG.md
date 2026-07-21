@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Project-context review now reports structured conflict evidence instead of only a generic failure
+  string. The UI distinguishes provider scope violations, context/workspace drift, checked-out HEAD
+  drift, and protected Git metadata changes; lists implicated paths; disables unsafe Commit/Revise
+  actions; and provides an immediate Retry inspection path while keeping Discard available.
+
 - Project-context runs now hold Orchestrator PM delivery from request through settlement. If a PM
   turn is active, the run durably waits for an explicit Wait or Interrupt decision, refreshes its
   baseline after the PM settles, and starts before preserved PM queue entries can resume. The hold

@@ -270,6 +270,13 @@ it.layer(TestLayer)("project-context run review", (it) => {
         );
 
         assert.match(error.message, /Git state changed since the run: \.git\/HEAD/u);
+        assert.deepEqual(error.conflict, {
+          kind: "head-drift",
+          detail: error.detail,
+          paths: [".git/HEAD"],
+          autoReconcile: true,
+          actions: ["retry", "reconcile", "hand-to-pm", "discard"],
+        });
         assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), after);
       }),
     ),
@@ -345,6 +352,9 @@ it.layer(TestLayer)("project-context run review", (it) => {
         );
 
         assert.match(error.message, /review is stale/u);
+        assert.equal(error.conflict?.kind, "context-drift");
+        assert.equal(error.conflict?.autoReconcile, true);
+        assert.deepEqual(error.conflict?.paths, ["AGENTS.md"]);
         assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), newer);
         assert.equal((yield* git(cwd, ["diff", "--cached", "--quiet"])).exitCode, 0);
         assert.match(

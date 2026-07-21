@@ -116,6 +116,32 @@ export function ProjectContextRunReviewDialog({
                   before accepting or revising the run: {review.scopeViolationPaths.join(", ")}
                 </div>
               ) : null}
+              {review.conflict ? (
+                <div className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+                  <p className="font-medium text-warning-foreground">Context review is blocked</p>
+                  <p className="text-muted-foreground">{review.conflict.detail}</p>
+                  {review.conflict.paths.length > 0 ? (
+                    <p className="break-all font-mono text-xs text-muted-foreground">
+                      {review.conflict.paths.join(", ")}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={disabled}
+                      onClick={() => void reviewQuery.refetch()}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Retry inspection
+                    </Button>
+                    {review.conflict.autoReconcile ? (
+                      <Badge variant="outline">Can reconcile safely</Badge>
+                    ) : (
+                      <Badge variant="outline">Manual resolution required</Badge>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <div className="max-h-64 overflow-auto rounded-md border border-border bg-background p-2">
                 {review.changes.map((change) => (
                   <div
@@ -147,7 +173,10 @@ export function ProjectContextRunReviewDialog({
               <Button
                 className="w-full"
                 disabled={
-                  disabled || review.changes.length === 0 || commitMessage.trim().length === 0
+                  disabled ||
+                  review.conflict !== null ||
+                  review.changes.length === 0 ||
+                  commitMessage.trim().length === 0
                 }
                 onClick={() =>
                   void runAction("commit", async () => {
@@ -192,7 +221,9 @@ export function ProjectContextRunReviewDialog({
           {review ? (
             <>
               <Button
-                disabled={disabled || revisionInstructions.trim().length === 0}
+                disabled={
+                  disabled || review.conflict !== null || revisionInstructions.trim().length === 0
+                }
                 onClick={() =>
                   void runAction("revise", async () => {
                     const api = readEnvironmentApi(environmentId);

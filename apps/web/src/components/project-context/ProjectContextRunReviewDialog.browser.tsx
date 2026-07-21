@@ -30,6 +30,7 @@ const review = {
   diff: "diff --project-context a/AGENTS.md b/AGENTS.md\n-old guidance\n+new guidance",
   diffTruncated: false,
   scopeViolationPaths: [],
+  conflict: null,
 };
 
 function installApi() {

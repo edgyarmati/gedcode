@@ -360,21 +360,39 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
     });
 
   const getReview: ProjectContextRunCoordinatorShape["getReview"] = (input) =>
-    snapshotQuery.getCommandReadModel().pipe(
-      Effect.map((readModel) => {
-        const run = readModel.projectContextRuns
-          .filter(
-            (candidate) =>
-              candidate.projectId === input.projectId && candidate.status === "pending-review",
-          )
-          .toSorted(
-            (left, right) =>
-              right.updatedAt.localeCompare(left.updatedAt) ||
-              String(right.id).localeCompare(String(left.id)),
-          )[0];
-        return { review: run === undefined ? null : projectContextRunReviewPresentation(run) };
-      }),
-    );
+    Effect.gen(function* () {
+      const readModel = yield* snapshotQuery.getCommandReadModel();
+      const run = readModel.projectContextRuns
+        .filter(
+          (candidate) =>
+            candidate.projectId === input.projectId && candidate.status === "pending-review",
+        )
+        .toSorted(
+          (left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt) ||
+            String(right.id).localeCompare(String(left.id)),
+        )[0];
+      if (run === undefined) return { review: null };
+      const review = projectContextRunReviewPresentation(run);
+      if (review.conflict !== null) return { review };
+      return yield* inspectProjectContextRunReview(reviewServices(run), run).pipe(
+        Effect.as({ review }),
+        Effect.catchTag("ProjectContextRunReviewError", (error) =>
+          Effect.succeed({
+            review: {
+              ...review,
+              conflict: error.conflict ?? {
+                kind: "unknown" as const,
+                detail: error.detail,
+                paths: [],
+                autoReconcile: false,
+                actions: ["retry" as const, "hand-to-pm" as const, "discard" as const],
+              },
+            },
+          }),
+        ),
+      );
+    });
 
   const resolveStart: ProjectContextRunCoordinatorShape["resolveStart"] = (input) =>
     Effect.gen(function* () {

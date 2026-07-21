@@ -1,6 +1,7 @@
 import {
   type OrchestrationProjectContextRun,
   type OrchestratorProjectContextRunReview,
+  type ProjectContextRunReviewConflict,
   type ProjectContextRunId,
 } from "@t3tools/contracts";
 import { createHash } from "node:crypto";
@@ -26,6 +27,7 @@ import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
 export class ProjectContextRunReviewError extends Data.TaggedError("ProjectContextRunReviewError")<{
   readonly projectContextRunId: ProjectContextRunId;
   readonly detail: string;
+  readonly conflict?: ProjectContextRunReviewConflict;
 }> {
   override get message(): string {
     return this.detail;
@@ -60,8 +62,31 @@ const rawStateEquals = (left: ProjectContextRawFileState, right: ProjectContextR
 const compareCodeUnits = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
-const reviewError = (run: OrchestrationProjectContextRun, detail: string) =>
-  new ProjectContextRunReviewError({ projectContextRunId: run.id, detail });
+const reviewError = (
+  run: OrchestrationProjectContextRun,
+  detail: string,
+  conflict?: ProjectContextRunReviewConflict,
+) =>
+  new ProjectContextRunReviewError({
+    projectContextRunId: run.id,
+    detail,
+    ...(conflict === undefined ? {} : { conflict }),
+  });
+
+const recoverableConflict = (
+  kind: ProjectContextRunReviewConflict["kind"],
+  detail: string,
+  paths: ReadonlyArray<string>,
+  autoReconcile: boolean,
+): ProjectContextRunReviewConflict => ({
+  kind,
+  detail,
+  paths: [...paths],
+  autoReconcile,
+  actions: autoReconcile
+    ? ["retry", "reconcile", "hand-to-pm", "discard"]
+    : ["retry", "hand-to-pm", "discard"],
+});
 
 const rawStateFromContent = (content: string | null): ProjectContextRawFileState =>
   content === null
@@ -138,6 +163,15 @@ export function projectContextRunReviewPresentation(
     diff: owned.diff,
     diffTruncated: owned.diffTruncated,
     scopeViolationPaths: run.scopeViolationPaths,
+    conflict:
+      run.scopeViolationPaths.length === 0
+        ? null
+        : recoverableConflict(
+            "provider-scope-violation",
+            `The provider changed state outside its allowed context scope: ${run.scopeViolationPaths.join(", ")}.`,
+            run.scopeViolationPaths,
+            false,
+          ),
   };
 }
 
@@ -155,7 +189,7 @@ function ownershipMismatch(
     const before = expectedByPath.get(relativePath);
     const after = currentByPath.get(relativePath);
     if (before === undefined || after === undefined || !rawStateEquals(before, after)) {
-      return `Project-context review is stale because '${relativePath}' changed after the provider completed. Refresh the review before mutating files.`;
+      return relativePath;
     }
   }
   return null;
@@ -173,7 +207,14 @@ export const inspectProjectContextRunReview = Effect.fn("inspectProjectContextRu
     const expectedOwnership = expectedOwnershipForRun(run);
     const currentSnapshot = yield* services.scan(run.primaryCheckoutPath);
     const mismatch = ownershipMismatch(run, expectedOwnership, currentSnapshot.ownershipBaseline);
-    if (mismatch !== null) return yield* reviewError(run, mismatch);
+    if (mismatch !== null) {
+      const detail = `Project-context review is stale because '${mismatch}' changed after the provider completed.`;
+      return yield* reviewError(
+        run,
+        detail,
+        recoverableConflict("context-drift", detail, [mismatch], true),
+      );
+    }
 
     const currentWorkspaceStatus = yield* captureProjectContextWorkspaceStatus({
       workspaceRoot: run.primaryCheckoutPath,
@@ -186,9 +227,12 @@ export const inspectProjectContextRunReview = Effect.fn("inspectProjectContextRu
       currentWorkspaceStatus,
     );
     if (workspaceDrift.outsideAllowedScope.length > 0) {
+      const paths = workspaceDrift.outsideAllowedScope.map((entry) => entry.relativePath);
+      const detail = `Project-context review cannot mutate while non-context workspace paths changed: ${paths.join(", ")}.`;
       return yield* reviewError(
         run,
-        `Project-context review cannot mutate while non-context workspace paths changed: ${workspaceDrift.outsideAllowedScope.map((entry) => entry.relativePath).join(", ")}.`,
+        detail,
+        recoverableConflict("workspace-drift", detail, paths, true),
       );
     }
 
@@ -203,9 +247,17 @@ export const inspectProjectContextRunReview = Effect.fn("inspectProjectContextRu
       (relativePath) => relativePath !== ".git/refs",
     );
     if (blockingGitStateChanges.length > 0) {
+      const headOnly = blockingGitStateChanges.every((entry) => entry === ".git/HEAD");
+      const detail = `Project-context review cannot mutate because Git state changed since the run: ${blockingGitStateChanges.join(", ")}.`;
       return yield* reviewError(
         run,
-        `Project-context review cannot mutate because Git state changed since the run: ${blockingGitStateChanges.join(", ")}.`,
+        detail,
+        recoverableConflict(
+          headOnly ? "head-drift" : "protected-git-drift",
+          detail,
+          blockingGitStateChanges,
+          headOnly,
+        ),
       );
     }
 
@@ -565,6 +617,11 @@ export const discardProjectContextRunReview = Effect.fn("discardProjectContextRu
       })),
     };
     const mismatch = ownershipMismatch(run, baseline, finalSnapshot.ownershipBaseline);
-    if (mismatch !== null) return yield* reviewError(run, mismatch);
+    if (mismatch !== null) {
+      return yield* reviewError(
+        run,
+        `Project-context discard did not restore '${mismatch}' to its baseline state.`,
+      );
+    }
   },
 );

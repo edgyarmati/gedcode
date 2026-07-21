@@ -46,6 +46,10 @@
 
 ## Execution Notes
 
+- `PROJECT-RECOVER-01` partial checkpoint 2026-07-21: review inspection now classifies typed provider
+  scope, context, workspace, HEAD, protected-Git, and unknown conflicts with exact paths, safe-action
+  capabilities, and retry UI. Append-only reconciliation attempts remain the active remainder.
+
 - `PROJECT-LOCK-01` and `PROJECT-LOCK-02` completed 2026-07-21. Project-context requests now create
   a durable PM delivery hold. An active PM turn requires a persisted Wait or Interrupt choice; after
   settlement the server recaptures a stable baseline before launching. User sends, automatic PM

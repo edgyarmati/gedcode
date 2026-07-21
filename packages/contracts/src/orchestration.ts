@@ -3499,6 +3499,34 @@ export const OrchestratorProjectContextRunReviewChange = Schema.Struct({
 export type OrchestratorProjectContextRunReviewChange =
   typeof OrchestratorProjectContextRunReviewChange.Type;
 
+export const ProjectContextRunReviewConflictKind = Schema.Literals([
+  "provider-scope-violation",
+  "context-drift",
+  "workspace-drift",
+  "head-drift",
+  "protected-git-drift",
+  "unknown",
+]);
+export type ProjectContextRunReviewConflictKind = typeof ProjectContextRunReviewConflictKind.Type;
+
+export const ProjectContextRunReviewRecoveryAction = Schema.Literals([
+  "retry",
+  "reconcile",
+  "hand-to-pm",
+  "discard",
+]);
+export type ProjectContextRunReviewRecoveryAction =
+  typeof ProjectContextRunReviewRecoveryAction.Type;
+
+export const ProjectContextRunReviewConflict = Schema.Struct({
+  kind: ProjectContextRunReviewConflictKind,
+  detail: TrimmedNonEmptyString,
+  paths: Schema.Array(TrimmedNonEmptyString),
+  autoReconcile: Schema.Boolean,
+  actions: Schema.Array(ProjectContextRunReviewRecoveryAction),
+});
+export type ProjectContextRunReviewConflict = typeof ProjectContextRunReviewConflict.Type;
+
 export const OrchestratorProjectContextRunReview = Schema.Struct({
   runId: ProjectContextRunId,
   result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
@@ -3506,6 +3534,7 @@ export const OrchestratorProjectContextRunReview = Schema.Struct({
   diff: Schema.String,
   diffTruncated: Schema.Boolean,
   scopeViolationPaths: ProjectContextRunScopeViolationPaths,
+  conflict: Schema.NullOr(ProjectContextRunReviewConflict),
 });
 export type OrchestratorProjectContextRunReview = typeof OrchestratorProjectContextRunReview.Type;
 
