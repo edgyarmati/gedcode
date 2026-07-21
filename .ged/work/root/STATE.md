@@ -1,7 +1,7 @@
 # STATE
 
-- **Phase**: complete
-- **Active task**: none; all non-deferred roadmap slices are implemented
+- **Phase**: implement
+- **Active task**: `PROJECT-LOCK-01` — durable PM hold and context-start arbitration
 - **Roadmap**: Orchestrator delegation and project context, clarified 2026-07-17
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -32,6 +32,12 @@
 - Project-context prompting is state/fingerprint-aware across Chat and Orchestrator. Context runs choose
   a preset card with harness logo/model/thinking, default Smart, and persist the chosen tier globally.
 - Context changes require Commit/Revise/Discard review and never create a task or PR.
+- Context request through settlement durably holds user and automatic PM delivery. Active PM turns
+  require Wait or Interrupt; preserved queue entries resume only after safe settlement.
+- Context conflicts support Retry, same-run agent Reconcile, and constrained Hand to PM remediation.
+  Provider scope violations and protected Git metadata are never silently adopted.
+- Ordinary implementation runs focused tests only. Full suites are reserved for explicit release
+  verification; broader suite performance work is deferred as `TEST-REV-01`.
 - PM/project headers open project root; worker headers open task worktree. Primary configured-editor
   button has a menu for file manager, terminal, and alternate editors.
 - New branches use `ged/<task-type>/<title-slug>` with deterministic numeric collisions. Existing

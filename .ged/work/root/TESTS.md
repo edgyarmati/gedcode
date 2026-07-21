@@ -479,3 +479,33 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 - Focused result: `projectContextRunReview.test.ts` passed 7/7; formatting and lint passed. Server
   typecheck remains blocked by the existing Effect beta `Reactivity` module-resolution error. Per
   request, no full suite was run.
+
+## Context settlement and recovery verification plan
+
+### PROJECT-LOCK-01
+
+- Persist a hold before PM arbitration and restore it after process restart.
+- Wait lets exactly the active PM turn finish; Interrupt invokes the existing actuator; both start the
+  context run before preserved user/automatic re-entry messages.
+- Cancel-before-start and clean terminal failure release the hold. Pending review or unsafe residue do
+  not. Duplicate events and reconnects do not double-start or double-deliver.
+
+### PROJECT-LOCK-02
+
+- PM route stays mounted while held, composer cannot send through keyboard/button/API, and status plus
+  Wait/Interrupt/Cancel actions survive refetch/reconnect.
+- Existing queued messages remain editable/deletable but do not dispatch until settlement.
+
+### PROJECT-RECOVER-01/02
+
+- Typed inspection distinguishes retry-only protected Git drift, reconcilable HEAD/workspace/context
+  drift, provider scope violations, and ambiguous content overlap.
+- Retry is read-only. Reconcile reuses pinned model configuration, records attempts append-only, merges
+  clean independent hunks, and never chooses overlapping hunks automatically.
+
+### PROJECT-RECOVER-03
+
+- Hand to PM bypasses only the context hold, cannot create/delegate tasks, exposes bounded question
+  cards, and returns to review only after a clean re-audit.
+- Ordinary PM input and automatic re-entry remain held throughout remediation and resume once, in
+  order, after final settlement.

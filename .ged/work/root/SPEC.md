@@ -95,6 +95,34 @@ project-context onboarding plus practical worktree launch actions.
 - A context run edits the primary checkout but is not a task. Its result enters a mandatory diff review
   with Commit, Revise, and Discard; nothing commits automatically.
 
+### Context settlement and PM hold
+
+- A project-context request creates a durable PM hold from request until the run is settled. Pending,
+  running, pending-review, revision, reconciliation, and remediation states remain held.
+- Orchestrator keeps the PM conversation visible but disables its composer. User messages already in
+  the queue and automatic settlement/re-entry messages are preserved and delivered in order only after
+  settlement. Normal Chat and worker controls are not globally frozen.
+- If the PM already has an active turn, the user chooses Wait or Interrupt. Wait lets that one turn
+  settle; Interrupt uses the existing PM interrupt actuator. In both cases queue dispatch freezes
+  before the choice and context starts before any queued PM turn. The pending choice survives restart.
+- A canceled pre-start request releases the hold. Failure/interruption releases it only when no
+  auditable residue remains; changes or violations enter review and stay held.
+- Review conflicts expose typed recovery rather than a raw terminal error. Retry re-inspects without
+  mutation. Reconcile creates another append-only attempt in the same logical run, reusing its pinned
+  provider/model/options. Discard remains the explicit escape hatch.
+- Context-file reconciliation first performs a deterministic three-way rebase of original baseline,
+  proposal, and current content, then lets the same agent review/refine it. Ambiguous overlap is never
+  chosen automatically.
+- Later HEAD and ordinary non-context workspace drift may be reconciled onto a fresh protected
+  baseline. A staged index, Git config, hooks, audited info files, and scope violations recorded during
+  the provider run cannot be adopted automatically. Unrelated refs do not block review.
+- Hand to PM starts one constrained remediation turn while ordinary PM delivery stays held. It may
+  inspect and repair only recorded violations, cannot create/delegate tasks, and must pass a fresh
+  server audit. Unsafe restoration asks the user through a bounded remediation question card rather
+  than unlocking the normal composer or guessing.
+- Reconciliation and remediation attempts remain auditable; the latest proposal is primary and prior
+  attempts are available as history.
+
 ### Worktree access and branch names
 
 - PM headers expose the configured editor button for the project root. Worker headers use the exact
@@ -124,5 +152,9 @@ project-context onboarding plus practical worktree launch actions.
   as authorable context.
 - Editor/file-manager/terminal actions always target the correct checkout.
 - New task branches are readable and collision-safe.
-- `CHANGELOG.md`, `bun fmt`, `bun lint`, `bun typecheck`, and `bun run test` pass for every completed
-  implementation slice.
+- Context work cannot race a new PM turn, queued PM messages, or automatic PM re-entry; all held input
+  resumes durably after settlement.
+- Context conflicts can be retried, reconciled, or handed to constrained PM remediation without
+  silently adopting provider scope violations or destroying ambiguous content.
+- `CHANGELOG.md`, `bun fmt`, `bun lint`, the relevant package typecheck, and focused `bun run test`
+  targets pass for every implementation slice. Full suites are reserved for explicit release checks.

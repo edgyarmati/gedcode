@@ -2,7 +2,11 @@
 
 ## Task Completion Requirements
 
-- All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
+- Run only focused tests for the changed behavior during ordinary implementation. Do not run the full
+  workspace test suite unless the user explicitly requests it or a release is being prepared.
+- `bun fmt`, `bun lint`, and the narrowest relevant package typecheck must pass before considering
+  tasks completed. If an unrelated pre-existing typecheck failure blocks the package check, document
+  it and do not expand scope without user approval.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 - Document relevant unreleased changes in `CHANGELOG.md` before considering a task complete. If the change should matter to users, operators, or release notes, update the `## Unreleased` section as part of the task.
 - Do not implement fallback behavior or alternate degraded paths without asking the user first when a requested approach is blocked.

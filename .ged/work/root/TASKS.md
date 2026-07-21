@@ -51,6 +51,16 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | PROJECT-CTX-04 | DONE | Add context-run diff review with Commit, Revise, and Discard; commit only after explicit review and record the resulting context fingerprint. | Integration/Chromium covers iterative revision, safe discard, commit metadata, overlapping checkout changes, and prompt completion. |
 | PROJECT-CTX-05 | DONE | Keep a successfully dismissed or started project-context prompt closed when the post-action refetch races the server projection and returns the stale fingerprint. | Focused browser coverage leaves the server response stale after successful dismissal and proves the exact prompt closes while a new fingerprint can prompt again. |
 
+## P0 — Context Settlement and Recovery
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| PROJECT-LOCK-01 | NEXT | Add an append-only per-project context hold and durable pre-start arbitration. Freeze user-message and automatic PM delivery before Wait/Interrupt, start context ahead of preserved queue entries, and release only on safe settlement/cancel. | Focused decider, projection, PM queue/runtime, restart, wait, interrupt, failure-residue, and ordering tests. |
+| PROJECT-LOCK-02 | TODO | Keep the Orchestrator PM surface visible while held, disable its composer, show context status/reason, expose Wait/Interrupt/Cancel before start, and retain queued-message management. | Focused logic and Chromium tests cover active/idle PM, reconnect, queue preservation, disabled send paths, and settlement release. |
+| PROJECT-RECOVER-01 | TODO | Return typed review-conflict evidence and actions. Add Retry plus append-only reconciliation attempts in the same logical run, reusing the pinned agent selection and classifying auto-reconcilable versus protected Git drift. | Focused contract, projection, coordinator, replay, and real-Git classification tests. |
+| PROJECT-RECOVER-02 | TODO | Implement deterministic three-way context rebase followed by same-agent reconciliation, preserving attempt history and routing ambiguous overlap to remediation. | Focused real-Git clean/overlap merge tests and reactor restart/idempotency tests. |
+| PROJECT-RECOVER-03 | TODO | Add Hand to PM as a constrained remediation re-entry with task/delegation denial, bounded user-question cards, mandatory re-audit, and locked composer/ordinary queue throughout. | Focused PM policy/tool/runtime, approval/input, audit, restart, and browser action tests. |
+
 ## P2 — Worktree Access and Readable Branches
 
 | ID | Status | Slice | Verification |
@@ -64,3 +74,4 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | ID | Status | Slice |
 | --- | --- | --- |
 | ORCH-ORDER-01 | DEFERRED | Enforce a canonical stage order beyond exact-HEAD verification. Intentional stage skipping remains allowed. |
+| TEST-REV-01 | DEFERRED | Revise the test strategy and slow/stalling suites so broad release verification is faster, diagnostically useful, and does not consume ordinary implementation time or quota. |
