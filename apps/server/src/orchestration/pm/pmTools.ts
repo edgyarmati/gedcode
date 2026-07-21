@@ -64,6 +64,7 @@ import {
   reserveTaskBranch,
   type TaskBranchReservation,
 } from "../taskBranchReservation.ts";
+import { prepareTaskRepository } from "../taskRepositoryPreparation.ts";
 import { pmThreadIdForProject } from "./PmEventProjection.ts";
 
 interface CreateTaskParameters {
@@ -650,6 +651,10 @@ export const makePmToolExecutors = Effect.gen(function* () {
         detail: "Task branch reservation services are unavailable.",
       });
     }
+    yield* prepareTaskRepository({
+      cwd: project.workspaceRoot,
+      process: vcsProcess.value,
+    }).pipe(Effect.mapError((cause) => new PmToolExecutionError({ detail: cause.detail })));
     const reservation = yield* reserveTaskBranch({
       vcsProcess: vcsProcess.value,
       cwd: project.workspaceRoot,

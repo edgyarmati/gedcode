@@ -205,6 +205,27 @@ const makeLayer = (
   let currentReadModel = readModel;
   const reservedRefs = new Set<string>();
   const defaultVcsRun: VcsProcessShape["run"] = (input) => {
+    if (input.operation === "TaskRepositoryPreparation.status") {
+      return Effect.succeed(vcsOutput());
+    }
+    if (input.operation === "TaskRepositoryPreparation.branch") {
+      return Effect.succeed(vcsOutput("main"));
+    }
+    if (input.operation === "TaskRepositoryPreparation.upstream") {
+      return Effect.succeed(vcsOutput("origin/main"));
+    }
+    if (input.operation === "TaskRepositoryPreparation.remote") {
+      return Effect.succeed(vcsOutput("https://github.com/acme/project.git"));
+    }
+    if (input.operation === "TaskRepositoryPreparation.fetch") {
+      return Effect.succeed(vcsOutput());
+    }
+    if (input.operation === "TaskRepositoryPreparation.aheadBehind") {
+      return Effect.succeed(vcsOutput("0 0"));
+    }
+    if (input.operation === "TaskRepositoryPreparation.head") {
+      return Effect.succeed(vcsOutput("a".repeat(40)));
+    }
     if (input.operation === "TaskBranchReservation.resolveHead") {
       return Effect.succeed(vcsOutput("a".repeat(40)));
     }

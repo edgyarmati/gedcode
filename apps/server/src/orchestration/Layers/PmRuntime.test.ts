@@ -3058,6 +3058,8 @@ describe("buildPmSystemPrompt", () => {
     // The PM can handle bounded maintenance directly while delegating proper tasks.
     assert.include(prompt, "shell, and workspace-editing tools");
     assert.include(prompt, "bounded low-risk maintenance");
+    assert.include(prompt, "clean primary checkout with a configured GitHub upstream");
+    assert.include(prompt, "Never bypass dirty, ahead, diverged, detached, non-Git, or non-GitHub");
     assert.include(prompt, "no design decision, migration, public contract change");
     assert.include(prompt, "State the concrete reason it qualifies");
     assert.include(prompt, "inspectDirectChanges");
