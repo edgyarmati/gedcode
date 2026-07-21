@@ -280,6 +280,52 @@ describe("DesktopBackendManager", () => {
     }),
   );
 
+  it.effect(
+    "opens the desktop when a slow backend becomes ready after the bootstrap deadline",
+    () =>
+      Effect.gen(function* () {
+        const respondHealthy = yield* Ref.make(false);
+        const ready = yield* Deferred.make<void>();
+
+        const spawnerLayer = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              makeProcess({
+                exitCode: Effect.never,
+              }),
+            ),
+          ),
+        );
+
+        const managerLayer = makeManagerLayer({
+          spawnerLayer,
+          httpClientLayer: httpClientLayer((request) =>
+            Ref.get(respondHealthy).pipe(
+              Effect.map((healthy) => responseForRequest(request, healthy ? 200 : 503)),
+            ),
+          ),
+          desktopWindow: {
+            handleBackendReady: Deferred.succeed(ready, void 0).pipe(Effect.asVoid),
+          },
+        });
+
+        yield* Effect.gen(function* () {
+          const manager = yield* DesktopBackendManager.DesktopBackendManager;
+          yield* manager.start;
+
+          yield* TestClock.adjust(Duration.minutes(1));
+          assert.isFalse((yield* manager.snapshot).ready);
+
+          yield* Ref.set(respondHealthy, true);
+          yield* TestClock.adjust(Duration.millis(100));
+          yield* Deferred.await(ready);
+
+          assert.isTrue((yield* manager.snapshot).ready);
+        }).pipe(Effect.provide(Layer.merge(TestClock.layer(), managerLayer)));
+      }),
+  );
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.gen(function* () {
       let startCount = 0;

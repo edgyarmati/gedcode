@@ -178,7 +178,7 @@ const closeRun = (
 
 const waitForHttpReady = Effect.fn("desktop.backendManager.waitForHttpReady")(function* (
   baseUrl: URL,
-  timeout: Duration.Duration,
+  timeout?: Duration.Duration,
 ): Effect.fn.Return<void, BackendTimeoutError, HttpClient.HttpClient> {
   const readinessUrl = new URL(BACKEND_READINESS_PATH, baseUrl);
   const client = (yield* HttpClient.HttpClient).pipe(
@@ -187,8 +187,13 @@ const waitForHttpReady = Effect.fn("desktop.backendManager.waitForHttpReady")(fu
     HttpClient.retry(Schedule.spaced(DEFAULT_BACKEND_READINESS_INTERVAL)),
   );
 
-  yield* client.get(readinessUrl).pipe(
-    Effect.asVoid,
+  const readiness = client.get(readinessUrl).pipe(Effect.asVoid);
+  if (timeout === undefined) {
+    yield* readiness.pipe(Effect.orDie);
+    return;
+  }
+
+  yield* readiness.pipe(
     Effect.timeout(timeout),
     Effect.mapError(() => new BackendTimeoutError({ url: readinessUrl })),
   );
@@ -265,12 +270,18 @@ const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     yield* drainBackendOutput("stdout", handle.stdout, onOutput).pipe(Effect.forkScoped);
     yield* drainBackendOutput("stderr", handle.stderr, onOutput).pipe(Effect.forkScoped);
   }
-  yield* waitForHttpReady(
+  const readiness = waitForHttpReady(
     options.httpBaseUrl,
     options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
   ).pipe(
+    Effect.catch((error) =>
+      (options.onReadinessFailure?.(error) ?? Effect.void).pipe(
+        Effect.andThen(waitForHttpReady(options.httpBaseUrl)),
+      ),
+    ),
+  );
+  yield* readiness.pipe(
     Effect.tap(() => options.onReady?.() ?? Effect.void),
-    Effect.catch((error) => options.onReadinessFailure?.(error) ?? Effect.void),
     Effect.forkScoped,
   );
 

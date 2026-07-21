@@ -9,6 +9,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   instead of running a correlated count per event, preventing large orchestration databases from
   stalling desktop startup.
 
+- Fixed dev desktop builds appearing to launch without opening a window when backend startup exceeds
+  the one-minute bootstrap warning. The desktop now keeps watching the live backend and opens
+  automatically when slow migrations finish.
+
 - Completed the manifest-owned project-context replacement. Upgrades interrupt obsolete active
   context runs, remove the former onboarding-resolution column and retired event/command families,
   and compact affected event streams for deterministic replay. The dormant onboarding coordinator and
