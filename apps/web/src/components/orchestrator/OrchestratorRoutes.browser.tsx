@@ -32,6 +32,7 @@ import { SidebarProvider } from "../ui/sidebar";
 import {
   GatePanel,
   OrchestratorHomeRoute,
+  ProjectContextStatusControls,
   StageProposedPlan,
   TaskHeader,
 } from "./OrchestratorRoutes";
@@ -145,6 +146,33 @@ it("opens the add-project flow from the orchestrator landing header", async () =
   await trigger.click();
 
   expect(openAddProject).toHaveBeenCalledOnce();
+});
+
+it("shows compact project-context status and keeps manual review explicit", async () => {
+  const onReview = vi.fn();
+  const view = await render(
+    <ProjectContextStatusControls
+      active={false}
+      latestRun={null}
+      onReview={onReview}
+      requesting={false}
+    />,
+  );
+
+  await expect.element(page.getByText("Context · Ready")).toBeInTheDocument();
+  await page.getByRole("button", { name: "Review project context" }).click();
+  expect(onReview).toHaveBeenCalledOnce();
+
+  await view.rerender(
+    <ProjectContextStatusControls
+      active
+      latestRun={{ status: "pending-review" } as never}
+      onReview={onReview}
+      requesting={false}
+    />,
+  );
+  await expect.element(page.getByText("Context · Needs attention")).toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Review project context" })).toBeDisabled();
 });
 
 it("omits empty Plan and Gates sections and renders them once populated", async () => {

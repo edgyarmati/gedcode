@@ -57,7 +57,6 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectContextRunCoordinator } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
-import { ProjectContextOnboardingCoordinator } from "./orchestration/Services/ProjectContextOnboardingCoordinator.ts";
 import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
@@ -343,9 +342,6 @@ const shouldGuardOrchestratorMethod = (method: string) =>
   method.startsWith("orchestrator.") &&
   method !== ORCHESTRATOR_WS_METHODS.getPresetMigration &&
   method !== ORCHESTRATOR_WS_METHODS.completePresetMigration &&
-  // Read-only context inspection may safely discover current state before the
-  // required preset migration. Dismissal remains a guarded mutation.
-  method !== ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding &&
   method !== ORCHESTRATOR_WS_METHODS.getProjectContextRunReview;
 
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
@@ -355,7 +351,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngineService;
       const projectContextRunCoordinator = yield* ProjectContextRunCoordinator;
-      const projectContextOnboardingCoordinator = yield* ProjectContextOnboardingCoordinator;
       const pmProjectRuntimeFactory = yield* PmProjectRuntimeFactory;
       const checkpointDiffQuery = yield* CheckpointDiffQuery;
       const keybindings = yield* Keybindings;
@@ -2082,30 +2077,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               ),
             { "rpc.aggregate": "orchestrator" },
           ),
-        [ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding]: (input) =>
-          observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding,
-            projectContextOnboardingCoordinator
-              .get(input)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchCommandError(cause, "Failed to scan project context onboarding."),
-                ),
-              ),
-            { "rpc.aggregate": "orchestrator" },
-          ),
-        [ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding]: (input) =>
-          observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding,
-            projectContextOnboardingCoordinator
-              .dismiss(input)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchCommandError(cause, "Failed to dismiss project context onboarding."),
-                ),
-              ),
-            { "rpc.aggregate": "orchestrator" },
-          ),
         [ORCHESTRATOR_WS_METHODS.getProjectContextRunReview]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.getProjectContextRunReview,
@@ -2115,45 +2086,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               .pipe(
                 Effect.mapError((cause) =>
                   toDispatchCommandError(cause, "Failed to inspect project-context review."),
-                ),
-              ),
-            { "rpc.aggregate": "orchestrator" },
-          ),
-        [ORCHESTRATOR_WS_METHODS.reviseProjectContextRun]: (input) =>
-          observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.reviseProjectContextRun,
-            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
-            projectContextRunCoordinator
-              .revise(input)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchCommandError(cause, "Failed to revise project-context changes."),
-                ),
-              ),
-            { "rpc.aggregate": "orchestrator" },
-          ),
-        [ORCHESTRATOR_WS_METHODS.commitProjectContextRun]: (input) =>
-          observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.commitProjectContextRun,
-            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
-            projectContextRunCoordinator
-              .commit(input)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchCommandError(cause, "Failed to commit project-context changes."),
-                ),
-              ),
-            { "rpc.aggregate": "orchestrator" },
-          ),
-        [ORCHESTRATOR_WS_METHODS.discardProjectContextRun]: (input) =>
-          observeRpcEffect(
-            ORCHESTRATOR_WS_METHODS.discardProjectContextRun,
-            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
-            projectContextRunCoordinator
-              .discard(input)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchCommandError(cause, "Failed to discard project-context changes."),
                 ),
               ),
             { "rpc.aggregate": "orchestrator" },

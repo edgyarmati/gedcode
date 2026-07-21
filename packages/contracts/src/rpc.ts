@@ -620,24 +620,6 @@ export const WsOrchestratorRequestPmHandoffRpc = Rpc.make(
   },
 );
 
-export const WsOrchestratorGetProjectContextOnboardingRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding,
-  {
-    payload: OrchestratorRpcSchemas.getProjectContextOnboarding.input,
-    success: OrchestratorRpcSchemas.getProjectContextOnboarding.output,
-    error: OrchestrationDispatchCommandError,
-  },
-);
-
-export const WsOrchestratorDismissProjectContextOnboardingRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding,
-  {
-    payload: OrchestratorRpcSchemas.dismissProjectContextOnboarding.input,
-    success: OrchestratorRpcSchemas.dismissProjectContextOnboarding.output,
-    error: OrchestrationDispatchCommandError,
-  },
-);
-
 export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.requestProjectContextRun,
   {
@@ -670,33 +652,6 @@ export const WsOrchestratorGetProjectContextRunReviewRpc = Rpc.make(
   {
     payload: OrchestratorRpcSchemas.getProjectContextRunReview.input,
     success: OrchestratorRpcSchemas.getProjectContextRunReview.output,
-    error: OrchestrationDispatchCommandError,
-  },
-);
-
-export const WsOrchestratorReviseProjectContextRunRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.reviseProjectContextRun,
-  {
-    payload: OrchestratorRpcSchemas.reviseProjectContextRun.input,
-    success: OrchestratorRpcSchemas.reviseProjectContextRun.output,
-    error: OrchestrationDispatchCommandError,
-  },
-);
-
-export const WsOrchestratorCommitProjectContextRunRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.commitProjectContextRun,
-  {
-    payload: OrchestratorRpcSchemas.commitProjectContextRun.input,
-    success: OrchestratorRpcSchemas.commitProjectContextRun.output,
-    error: OrchestrationDispatchCommandError,
-  },
-);
-
-export const WsOrchestratorDiscardProjectContextRunRpc = Rpc.make(
-  ORCHESTRATOR_WS_METHODS.discardProjectContextRun,
-  {
-    payload: OrchestratorRpcSchemas.discardProjectContextRun.input,
-    success: OrchestratorRpcSchemas.discardProjectContextRun.output,
     error: OrchestrationDispatchCommandError,
   },
 );
@@ -811,15 +766,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorDeleteTaskRpc,
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
-  WsOrchestratorGetProjectContextOnboardingRpc,
-  WsOrchestratorDismissProjectContextOnboardingRpc,
   WsOrchestratorRequestProjectContextRunRpc,
   WsOrchestratorResolveProjectContextRunStartRpc,
   WsOrchestratorCancelProjectContextRunStartRpc,
   WsOrchestratorGetProjectContextRunReviewRpc,
-  WsOrchestratorReviseProjectContextRunRpc,
-  WsOrchestratorCommitProjectContextRunRpc,
-  WsOrchestratorDiscardProjectContextRunRpc,
   WsOrchestratorGetLaunchCapabilitiesRpc,
   WsOrchestratorLaunchRpc,
 );

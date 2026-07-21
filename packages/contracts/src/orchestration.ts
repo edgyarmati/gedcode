@@ -65,15 +65,10 @@ export const ORCHESTRATOR_WS_METHODS = {
   deleteTask: "orchestrator.deleteTask",
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
-  getProjectContextOnboarding: "orchestrator.getProjectContextOnboarding",
-  dismissProjectContextOnboarding: "orchestrator.dismissProjectContextOnboarding",
   requestProjectContextRun: "orchestrator.requestProjectContextRun",
   resolveProjectContextRunStart: "orchestrator.resolveProjectContextRunStart",
   cancelProjectContextRunStart: "orchestrator.cancelProjectContextRunStart",
   getProjectContextRunReview: "orchestrator.getProjectContextRunReview",
-  reviseProjectContextRun: "orchestrator.reviseProjectContextRun",
-  commitProjectContextRun: "orchestrator.commitProjectContextRun",
-  discardProjectContextRun: "orchestrator.discardProjectContextRun",
   getLaunchCapabilities: "orchestrator.getLaunchCapabilities",
   launch: "orchestrator.launch",
 } as const;
@@ -3850,14 +3845,6 @@ export const OrchestratorRpcSchemas = {
     input: OrchestratorRequestPmHandoffInput,
     output: OrchestratorRequestPmHandoffResult,
   },
-  getProjectContextOnboarding: {
-    input: OrchestratorGetProjectContextOnboardingInput,
-    output: OrchestratorGetProjectContextOnboardingResult,
-  },
-  dismissProjectContextOnboarding: {
-    input: OrchestratorDismissProjectContextOnboardingInput,
-    output: OrchestratorDismissProjectContextOnboardingResult,
-  },
   requestProjectContextRun: {
     input: OrchestratorRequestProjectContextRunInput,
     output: OrchestratorRequestProjectContextRunResult,
@@ -3873,18 +3860,6 @@ export const OrchestratorRpcSchemas = {
   getProjectContextRunReview: {
     input: OrchestratorGetProjectContextRunReviewInput,
     output: OrchestratorGetProjectContextRunReviewResult,
-  },
-  reviseProjectContextRun: {
-    input: OrchestratorReviseProjectContextRunInput,
-    output: OrchestratorReviseProjectContextRunResult,
-  },
-  commitProjectContextRun: {
-    input: OrchestratorCommitProjectContextRunInput,
-    output: OrchestratorCommitProjectContextRunResult,
-  },
-  discardProjectContextRun: {
-    input: OrchestratorDiscardProjectContextRunInput,
-    output: OrchestratorDiscardProjectContextRunResult,
   },
   getLaunchCapabilities: {
     input: Schema.Struct({}),

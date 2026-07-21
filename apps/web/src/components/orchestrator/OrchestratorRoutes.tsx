@@ -27,6 +27,7 @@ import {
   GitPullRequestIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
+  RefreshCwIcon,
   SquareIcon,
   Trash2Icon,
   WorkflowIcon,
@@ -105,6 +106,7 @@ import {
   confirmAndCancelTask,
   confirmAndClearPmChat,
   deriveTaskLandingPresentation,
+  deriveProjectContextStatus,
 } from "./OrchestratorRoutes.logic";
 import { PmChatComposer } from "./PmChatComposer";
 import { TaskBoard } from "./TaskBoard";
@@ -269,6 +271,7 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
       ) ?? null,
     [contextRuns],
   );
+  const latestContextRun = contextRuns.at(-1) ?? null;
   const [contextStartAction, setContextStartAction] = useState<
     "wait" | "interrupt" | "cancel" | null
   >(null);
@@ -397,6 +400,7 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
         <section className={getOrchestratorPmSectionClassName(boardCollapsed)}>
           <PmConversation
             activeContextRun={activeContextRun}
+            latestContextRun={latestContextRun}
             contextStartAction={contextStartAction}
             contextStartError={contextStartError}
             environmentId={environmentId}
@@ -432,8 +436,58 @@ function ProjectPmQuotaBanner({ projectRef }: { projectRef: ReturnType<typeof sc
   );
 }
 
+export function ProjectContextStatusControls({
+  active,
+  latestRun,
+  requesting,
+  onReview,
+}: {
+  active: boolean;
+  latestRun: OrchestrationProjectContextRun | null;
+  requesting: boolean;
+  onReview: () => void;
+}) {
+  const status = deriveProjectContextStatus(latestRun);
+  return (
+    <>
+      <Badge
+        className={cn(
+          "gap-1.5",
+          status.kind === "needs-attention" && "border-warning/50 text-warning-foreground",
+        )}
+        variant="outline"
+      >
+        {status.kind === "updating" ? (
+          <LoaderCircleIcon className="size-3 animate-spin" />
+        ) : status.kind === "needs-attention" ? (
+          <CircleAlertIcon className="size-3" />
+        ) : (
+          <CheckIcon className="size-3" />
+        )}
+        Context · {status.label}
+      </Badge>
+      <Button
+        aria-label="Review project context"
+        disabled={active || requesting}
+        onClick={onReview}
+        size="sm"
+        title={active ? "Project context is already updating" : "Review project context"}
+        variant="outline"
+      >
+        {requesting ? (
+          <LoaderCircleIcon className="size-4 animate-spin" />
+        ) : (
+          <RefreshCwIcon className="size-4" />
+        )}
+        Review
+      </Button>
+    </>
+  );
+}
+
 function PmConversation({
   activeContextRun,
+  latestContextRun,
   contextStartAction,
   contextStartError,
   environmentId,
@@ -444,6 +498,7 @@ function PmConversation({
   resolveContextStart,
 }: {
   activeContextRun: OrchestrationProjectContextRun | null;
+  latestContextRun: OrchestrationProjectContextRun | null;
   contextStartAction: "wait" | "interrupt" | "cancel" | null;
   contextStartError: string | null;
   environmentId: EnvironmentId;
@@ -454,6 +509,8 @@ function PmConversation({
   resolveContextStart: (action: "wait" | "interrupt" | "cancel") => Promise<void>;
 }) {
   const [isClearing, setIsClearing] = useState(false);
+  const [isRequestingContextReview, setIsRequestingContextReview] = useState(false);
+  const [contextReviewError, setContextReviewError] = useState<string | null>(null);
   const projectRef = useMemo(
     () => scopeProjectRef(environmentId, projectId),
     [environmentId, projectId],
@@ -490,6 +547,19 @@ function PmConversation({
       setIsClearing(false);
     }
   }, [environmentId, isClearing, projectId]);
+  const requestContextReview = useCallback(async () => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api || isRequestingContextReview || activeContextRun) return;
+    setIsRequestingContextReview(true);
+    setContextReviewError(null);
+    try {
+      await api.orchestrator.requestProjectContextRun({ projectId });
+    } catch (error) {
+      setContextReviewError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRequestingContextReview(false);
+    }
+  }, [activeContextRun, environmentId, isRequestingContextReview, projectId]);
 
   return (
     <>
@@ -497,18 +567,34 @@ function PmConversation({
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">PM chat</h2>
         </div>
-        <Button
-          aria-label="Clear PM chat"
-          disabled={isClearing}
-          onClick={() => void clearPmChat()}
-          size="sm"
-          title="Clear PM chat"
-          variant="outline"
-        >
-          <Trash2Icon className="size-4" />
-          Clear
-        </Button>
+        <div className="flex items-center gap-2">
+          <ProjectContextStatusControls
+            active={activeContextRun !== null}
+            latestRun={latestContextRun}
+            onReview={() => void requestContextReview()}
+            requesting={isRequestingContextReview}
+          />
+          <Button
+            aria-label="Clear PM chat"
+            disabled={isClearing}
+            onClick={() => void clearPmChat()}
+            size="sm"
+            title="Clear PM chat"
+            variant="outline"
+          >
+            <Trash2Icon className="size-4" />
+            Clear
+          </Button>
+        </div>
       </div>
+      {contextReviewError ? (
+        <div
+          className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive"
+          role="alert"
+        >
+          {contextReviewError}
+        </div>
+      ) : null}
       <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
       {activeContextRun ? (
         <div className="border-b border-border bg-muted/30 px-4 py-3" role="status">
@@ -526,6 +612,14 @@ function PmConversation({
               <p className="text-xs text-muted-foreground">
                 PM messages remain paused until this context run is settled.
               </p>
+              {activeContextRun.status === "pending-review" && activeContextRun.result ? (
+                <p className="mt-1 text-xs text-muted-foreground">{activeContextRun.result}</p>
+              ) : null}
+              {activeContextRun.scopeViolationPaths.length > 0 ? (
+                <p className="mt-1 break-all text-xs text-destructive">
+                  Out-of-scope changes: {activeContextRun.scopeViolationPaths.join(", ")}
+                </p>
+              ) : null}
               {contextStartError ? (
                 <p className="mt-1 text-xs text-destructive" role="alert">
                   {contextStartError}

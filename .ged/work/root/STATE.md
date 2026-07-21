@@ -53,6 +53,11 @@
 
 ## Execution Notes
 
+- `PROJECT-MANIFEST-03` checkpoint: the cross-surface mandatory onboarding/review modals, preset cards,
+  dismissal RPCs, and public Commit/Revise/Discard RPCs are removed. Orchestrator PM chat now owns a
+  compact Ready/Updating/Needs attention indicator and explicit manual Review action. Focused conflict
+  recovery and final legacy backend cleanup remain in this active slice.
+
 - `PROJECT-MANIFEST-02` completed 2026-07-21. The server now checks the committed GED manifest before
   user-triggered and automatic PM delivery. Missing/outdated context starts one durable Smart-default
   maintenance run; current context proceeds; legacy metadata adopts once; newer schemas fail closed.

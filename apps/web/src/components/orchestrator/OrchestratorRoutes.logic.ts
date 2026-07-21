@@ -1,4 +1,9 @@
-import type { OrchestrationThreadActivity, ProjectId, TaskId } from "@t3tools/contracts";
+import type {
+  OrchestrationProjectContextRun,
+  OrchestrationThreadActivity,
+  ProjectId,
+  TaskId,
+} from "@t3tools/contracts";
 
 import type { OrchestratorPendingGate, OrchestratorTask } from "../../types";
 
@@ -10,6 +15,23 @@ export type TaskLandingPresentation =
   | { readonly kind: "request-failed"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string }
   | { readonly kind: "landed"; readonly prUrl: string };
+
+export type ProjectContextStatusPresentation =
+  | { readonly kind: "ready"; readonly label: "Ready" }
+  | { readonly kind: "updating"; readonly label: "Updating" }
+  | { readonly kind: "needs-attention"; readonly label: "Needs attention" };
+
+export function deriveProjectContextStatus(
+  latestRun: OrchestrationProjectContextRun | null,
+): ProjectContextStatusPresentation {
+  if (latestRun === null || latestRun.status === "completed" || latestRun.status === "discarded") {
+    return { kind: "ready", label: "Ready" };
+  }
+  if (latestRun.status === "pending" || latestRun.status === "running") {
+    return { kind: "updating", label: "Updating" };
+  }
+  return { kind: "needs-attention", label: "Needs attention" };
+}
 
 function isLandingFailureForTask(activity: OrchestrationThreadActivity, taskId: TaskId): boolean {
   if (activity.kind !== "task.landing.pr-open-failed") {

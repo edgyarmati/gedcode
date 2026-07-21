@@ -84,10 +84,6 @@ import type {
   OrchestratorTaskRetentionInput,
   OrchestrationTask,
   OrchestratorClearPmChatInput,
-  OrchestratorDismissProjectContextOnboardingInput,
-  OrchestratorDismissProjectContextOnboardingResult,
-  OrchestratorGetProjectContextOnboardingInput,
-  OrchestratorGetProjectContextOnboardingResult,
   OrchestratorProjectStreamItem,
   OrchestratorRequestPmHandoffInput,
   OrchestratorRequestPmHandoffResult,
@@ -99,12 +95,6 @@ import type {
   OrchestratorCancelProjectContextRunStartResult,
   OrchestratorGetProjectContextRunReviewInput,
   OrchestratorGetProjectContextRunReviewResult,
-  OrchestratorReviseProjectContextRunInput,
-  OrchestratorReviseProjectContextRunResult,
-  OrchestratorCommitProjectContextRunInput,
-  OrchestratorCommitProjectContextRunResult,
-  OrchestratorDiscardProjectContextRunInput,
-  OrchestratorDiscardProjectContextRunResult,
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
@@ -679,12 +669,6 @@ export interface EnvironmentApi {
     requestPmHandoff: (
       input: OrchestratorRequestPmHandoffInput,
     ) => Promise<OrchestratorRequestPmHandoffResult>;
-    getProjectContextOnboarding: (
-      input: OrchestratorGetProjectContextOnboardingInput,
-    ) => Promise<OrchestratorGetProjectContextOnboardingResult>;
-    dismissProjectContextOnboarding: (
-      input: OrchestratorDismissProjectContextOnboardingInput,
-    ) => Promise<OrchestratorDismissProjectContextOnboardingResult>;
     requestProjectContextRun: (
       input: OrchestratorRequestProjectContextRunInput,
     ) => Promise<OrchestratorRequestProjectContextRunResult>;
@@ -697,15 +681,6 @@ export interface EnvironmentApi {
     getProjectContextRunReview: (
       input: OrchestratorGetProjectContextRunReviewInput,
     ) => Promise<OrchestratorGetProjectContextRunReviewResult>;
-    reviseProjectContextRun: (
-      input: OrchestratorReviseProjectContextRunInput,
-    ) => Promise<OrchestratorReviseProjectContextRunResult>;
-    commitProjectContextRun: (
-      input: OrchestratorCommitProjectContextRunInput,
-    ) => Promise<OrchestratorCommitProjectContextRunResult>;
-    discardProjectContextRun: (
-      input: OrchestratorDiscardProjectContextRunInput,
-    ) => Promise<OrchestratorDiscardProjectContextRunResult>;
     getLaunchCapabilities: () => Promise<OrchestratorLaunchCapabilities>;
     launch: (input: OrchestratorLaunchInput) => Promise<OrchestratorLaunchResult>;
   };

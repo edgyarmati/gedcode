@@ -305,12 +305,6 @@ function createMockEnvironmentApi(input: {
       requestPmHandoff: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["requestPmHandoff"],
-      getProjectContextOnboarding: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["getProjectContextOnboarding"],
-      dismissProjectContextOnboarding: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["dismissProjectContextOnboarding"],
       requestProjectContextRun: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["requestProjectContextRun"],
@@ -323,15 +317,6 @@ function createMockEnvironmentApi(input: {
       getProjectContextRunReview: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["getProjectContextRunReview"],
-      reviseProjectContextRun: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["reviseProjectContextRun"],
-      commitProjectContextRun: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["commitProjectContextRun"],
-      discardProjectContextRun: (() => {
-        throw new Error("Not implemented in browser test.");
-      }) as EnvironmentApi["orchestrator"]["discardProjectContextRun"],
       getLaunchCapabilities: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["getLaunchCapabilities"],

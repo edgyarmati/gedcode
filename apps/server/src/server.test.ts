@@ -3551,7 +3551,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("guards project-context run requests until preset migration completes", () =>
     Effect.gen(function* () {
       let requestCalls = 0;
-      let dismissCalls = 0;
       yield* buildAppUnderTest({
         layers: {
           serverSettings: {
@@ -3565,22 +3564,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   projectContextRunId: ProjectContextRunId.make("context-run-guarded"),
                   sequence: 1,
                 };
-              }),
-          },
-          projectContextOnboardingCoordinator: {
-            get: (input) =>
-              Effect.succeed({
-                projectId: input.projectId,
-                schemaVersion: ProjectContextSchemaVersion.make(1),
-                fingerprint: ProjectContextFingerprint.make(`sha256:${"d".repeat(64)}`),
-                promptKind: "populate",
-                files: [],
-                shouldPrompt: true,
-              }),
-            dismiss: () =>
-              Effect.sync(() => {
-                dismissCalls += 1;
-                return { sequence: 2 };
               }),
           },
         },
@@ -3597,27 +3580,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(result._tag, "Failure");
       assert.equal(requestCalls, 0);
-
-      const onboarding = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding]({
-            projectId: defaultProjectId,
-          }),
-        ),
-      );
-      assert.equal(onboarding.shouldPrompt, true);
-
-      const dismissal = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding]({
-            projectId: defaultProjectId,
-            schemaVersion: onboarding.schemaVersion,
-            fingerprint: onboarding.fingerprint,
-          }),
-        ).pipe(Effect.exit),
-      );
-      assert.equal(dismissal._tag, "Failure");
-      assert.equal(dismissCalls, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3653,70 +3615,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(result, { runId, sequence: 73 });
       assert.deepEqual(requests, [{ projectId: defaultProjectId, tier: "smart" }]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
-
-  it.effect(
-    "routes content-free project-context onboarding inspection and stale-safe dismissal",
-    () =>
-      Effect.gen(function* () {
-        const fingerprint = ProjectContextFingerprint.make(`sha256:${"c".repeat(64)}`);
-        const calls: string[] = [];
-        yield* buildAppUnderTest({
-          layers: {
-            projectContextOnboardingCoordinator: {
-              get: (input) =>
-                Effect.sync(() => {
-                  calls.push(`get:${input.projectId}`);
-                  return {
-                    projectId: input.projectId,
-                    schemaVersion: ProjectContextSchemaVersion.make(1),
-                    fingerprint,
-                    promptKind: "populate" as const,
-                    files: [{ path: "AGENTS.md", classification: "missing" as const }],
-                    shouldPrompt: true,
-                  };
-                }),
-              dismiss: (input) =>
-                Effect.sync(() => {
-                  calls.push(`dismiss:${input.fingerprint}`);
-                  return { sequence: 74 };
-                }),
-            },
-          },
-        });
-
-        const wsUrl = yield* getWsServerUrl("/ws");
-        const result = yield* Effect.scoped(
-          withWsRpcClient(wsUrl, (client) =>
-            Effect.gen(function* () {
-              const onboarding = yield* client[ORCHESTRATOR_WS_METHODS.getProjectContextOnboarding](
-                {
-                  projectId: defaultProjectId,
-                },
-              );
-              const dismissed = yield* client[
-                ORCHESTRATOR_WS_METHODS.dismissProjectContextOnboarding
-              ]({
-                projectId: defaultProjectId,
-                schemaVersion: ProjectContextSchemaVersion.make(1),
-                fingerprint,
-              });
-              return { onboarding, dismissed };
-            }),
-          ),
-        );
-
-        assert.deepEqual(result.onboarding, {
-          projectId: defaultProjectId,
-          schemaVersion: ProjectContextSchemaVersion.make(1),
-          fingerprint,
-          promptKind: "populate",
-          files: [{ path: "AGENTS.md", classification: "missing" }],
-          shouldPrompt: true,
-        });
-        assert.deepEqual(result.dismissed, { sequence: 74 });
-        assert.deepEqual(calls, [`get:${defaultProjectId}`, `dismiss:${fingerprint}`]);
-      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("routes websocket rpc orchestrator methods", () =>

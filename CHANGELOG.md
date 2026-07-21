@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Removed the mandatory project-context onboarding and proposal-review modals. Orchestrator PM chat
+  now shows a compact Ready/Updating/Needs attention indicator with an explicit manual Review action;
+  active maintenance continues to lock PM delivery inline. The obsolete onboarding dismissal and
+  Commit/Revise/Discard WebSocket endpoints are no longer exposed.
+
 - Began replacing the mandatory project-context onboarding/review workflow with a PM-owned GED
   manifest lifecycle. Committed `.ged/MANIFEST.json` is now the single schema-version and audit
   source; legacy `.ged/VERSION` can be adopted exactly once and removed, malformed manifests fail

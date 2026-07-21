@@ -22,7 +22,11 @@ import {
   OrchestratorSidebarNav,
   orchestratorProjectContextMenuItems,
 } from "./OrchestratorSidebarNav";
-import { confirmAndCancelTask, confirmAndClearPmChat } from "./OrchestratorRoutes.logic";
+import {
+  confirmAndCancelTask,
+  confirmAndClearPmChat,
+  deriveProjectContextStatus,
+} from "./OrchestratorRoutes.logic";
 import {
   AbandonedTaskBoardSection,
   activeStageLabel,
@@ -497,6 +501,28 @@ describe("PmChatEmptyState", () => {
 
     expect(markup).toContain("Tell the project manager what you want built.");
     expect(markup).toContain("board to the right");
+  });
+});
+
+describe("project context status", () => {
+  it("stays compact across ready, updating, and attention states", () => {
+    expect(deriveProjectContextStatus(null)).toEqual({ kind: "ready", label: "Ready" });
+    expect(deriveProjectContextStatus({ status: "running" } as never)).toEqual({
+      kind: "updating",
+      label: "Updating",
+    });
+    expect(deriveProjectContextStatus({ status: "pending-review" } as never)).toEqual({
+      kind: "needs-attention",
+      label: "Needs attention",
+    });
+    expect(deriveProjectContextStatus({ status: "failed" } as never)).toEqual({
+      kind: "needs-attention",
+      label: "Needs attention",
+    });
+    expect(deriveProjectContextStatus({ status: "completed" } as never)).toEqual({
+      kind: "ready",
+      label: "Ready",
+    });
   });
 });
 
