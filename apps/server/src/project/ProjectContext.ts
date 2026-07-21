@@ -5,7 +5,12 @@ import {
   type ProjectContextResolution,
 } from "@t3tools/contracts";
 
-export const PROJECT_CONTEXT_SCHEMA_VERSION = ProjectContextSchemaVersion.make(1);
+import { CURRENT_GED_SCHEMA_VERSION } from "./GedManifest.ts";
+
+/** @deprecated The committed GED manifest is the single schema-version source. */
+export const PROJECT_CONTEXT_SCHEMA_VERSION = ProjectContextSchemaVersion.make(
+  CURRENT_GED_SCHEMA_VERSION,
+);
 export const MAX_PROJECT_CONTEXT_FILE_BYTES = 256 * 1024;
 
 export const CANONICAL_PROJECT_CONTEXT_PATHS = [

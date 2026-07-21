@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-01` — single GED manifest and legacy adoption
+- **Active task**: `PROJECT-MANIFEST-02` — automatic PM-owned initialization and migration
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,15 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-MANIFEST-01` completed 2026-07-21. Strict `.ged/MANIFEST.json` is now the single current
+  schema-version source. The manager classifies missing, legacy, outdated, current, malformed, and
+  newer manifests; atomically adopts plaintext `.ged/VERSION` once; removes the legacy source; and
+  refuses missing/outdated migration or newer-schema downgrade until the proper lifecycle handles it.
+- Verification evidence for `PROJECT-MANIFEST-01`: 9 focused tests passed across the manifest parser,
+  filesystem adopter, and legacy context-schema alias. `bun fmt`, `bun lint`, and all 12 workspace
+  typecheck packages passed; lint retained only existing warnings. Per user direction, no full test
+  suite was run.
 
 - The prior `PROJECT-RECOVER-01/02/03` direction was superseded on 2026-07-21 by the manifest-first
   pivot. Reusable typed conflict, audit, PM hold, and merge primitives remain; user-managed review-run

@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Began replacing the mandatory project-context onboarding/review workflow with a PM-owned GED
+  manifest lifecycle. Committed `.ged/MANIFEST.json` is now the single schema-version and audit
+  source; legacy `.ged/VERSION` can be adopted exactly once and removed, malformed manifests fail
+  closed, and projects created by newer GedCode schemas are never downgraded.
+
 - Project-context review now reports structured conflict evidence instead of only a generic failure
   string. The UI distinguishes provider scope violations, context/workspace drift, checked-out HEAD
   drift, and protected Git metadata changes; lists implicated paths; disables unsafe Commit/Revise

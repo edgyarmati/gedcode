@@ -17,6 +17,14 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - Prove one version covers canonical context and task-work conventions while `.gedcode/` remains
   runtime-only.
 
+#### Evidence — 2026-07-21
+
+- Focused parser, filesystem-adoption, and context-schema tests passed 9/9.
+- Manual review confirmed atomic manifest replacement precedes legacy removal, repeated adoption is
+  idempotent, malformed data fails closed, and a newer schema cannot be rewritten.
+- `bun fmt`, `bun lint`, and all 12 workspace typecheck packages passed. Existing unrelated lint
+  warnings remain; no full test suite was run per the ordinary-work policy.
+
 ### PROJECT-MANIFEST-02/03
 
 - First GED/Orchestrator use and the before-PM-turn backstop initialize/migrate exactly once and use

@@ -31,6 +31,12 @@ Repositories that use the current project-context workflow may also contain `.ge
 workflow runs do not create that file. These are project documents, not application state.
 `.ged/runtime/` is intended for ephemeral session checkpoints and should normally be ignored.
 
+Current repositories also commit `.ged/MANIFEST.json`. Its `schemaVersion` is the single
+machine-readable version for GED context, planning, ownership, and lifecycle conventions;
+`updatedAt`, `lastReviewedAt`, and `generatedBy` provide audit context. Legacy `.ged/VERSION` is read
+only for one-time migration and is removed after successful adoption. GedCode never downgrades a
+manifest written by a newer schema.
+
 - **Created when:** an agent follows GED planning/execution guidance for a non-trivial task. A normal
   chat or merely switching the selector to GED does not eagerly create it.
 - **Lifetime and cleanup:** project-owned. Keep active documents while they help a future turn resume;
