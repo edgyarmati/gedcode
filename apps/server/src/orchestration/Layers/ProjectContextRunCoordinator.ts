@@ -1,7 +1,5 @@
 import {
   CommandId,
-  PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS,
-  ProjectContextRunGitObjectId,
   ProjectContextRunId,
   ProjectContextRunPath,
   type OrchestrationProjectContextRun,
@@ -41,8 +39,6 @@ import {
   toGedManifestMaintenanceError,
 } from "../gedManifestMaintenance.ts";
 import {
-  commitProjectContextRunReview,
-  discardProjectContextRunReview,
   inspectProjectContextRunReview,
   projectContextRunBaselineOwnership,
   ProjectContextRunReviewError,
@@ -521,84 +517,6 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       return { runId: input.runId, sequence: result.sequence };
     });
 
-  const revise: ProjectContextRunCoordinatorShape["revise"] = (input) =>
-    withProjectContextRunLifecycleLock(
-      input.runId,
-      Effect.gen(function* () {
-        const run = yield* loadPendingReview(input.runId);
-        yield* inspectProjectContextRunReview(reviewServices(run), run);
-        const prefix = [
-          "Revise the current project-context proposal in the primary checkout.",
-          "Keep every edit within the allowed project-context files and do not stage or commit.",
-          "Apply this reviewer feedback:",
-          "",
-        ].join("\n");
-        const prompt = `${prefix}${input.instructions.trim()}`.slice(
-          0,
-          PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS,
-        );
-        const result = yield* engine.dispatch({
-          type: "project.context.run.revise",
-          commandId: yield* commandId("revise"),
-          projectContextRunId: run.id,
-          prompt,
-          createdAt: yield* createdAt,
-        });
-        return { runId: run.id, sequence: result.sequence };
-      }),
-    );
-
-  const commit: ProjectContextRunCoordinatorShape["commit"] = (input) =>
-    withProjectContextRunLifecycleLock(
-      input.runId,
-      Effect.gen(function* () {
-        const run = yield* loadPendingReview(input.runId);
-        const committed = yield* commitProjectContextRunReview(
-          reviewServices(run),
-          run,
-          input.message,
-        );
-        if (committed.commitSha === null) {
-          return yield* new ProjectContextRunReviewError({
-            projectContextRunId: run.id,
-            detail:
-              "This context run has no changes to commit; discard the empty proposal instead.",
-          });
-        }
-        const commitHash = ProjectContextRunGitObjectId.make(committed.commitSha);
-        const snapshot = yield* scanner.scan(run.primaryCheckoutPath);
-        const result = yield* engine.dispatch({
-          type: "project.context.run.commit",
-          commandId: yield* commandId("commit"),
-          projectContextRunId: run.id,
-          commitHash,
-          resultSchemaVersion: snapshot.schemaVersion,
-          resultFingerprint: snapshot.fingerprint,
-          createdAt: yield* createdAt,
-        });
-        return { runId: run.id, commitHash, sequence: result.sequence };
-      }),
-    );
-
-  const discard: ProjectContextRunCoordinatorShape["discard"] = (input) =>
-    withProjectContextRunLifecycleLock(
-      input.runId,
-      Effect.gen(function* () {
-        const run = yield* loadPendingReview(input.runId);
-        yield* discardProjectContextRunReview(reviewServices(run), run);
-        const snapshot = yield* scanner.scan(run.primaryCheckoutPath);
-        const result = yield* engine.dispatch({
-          type: "project.context.run.discard",
-          commandId: yield* commandId("discard"),
-          projectContextRunId: run.id,
-          resultSchemaVersion: snapshot.schemaVersion,
-          resultFingerprint: snapshot.fingerprint,
-          createdAt: yield* createdAt,
-        });
-        return { runId: run.id, sequence: result.sequence };
-      }),
-    );
-
   return {
     request,
     ensureBeforePmTurn,
@@ -606,9 +524,6 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
     cancelStart,
     getReview,
     resolveAttention,
-    revise,
-    commit,
-    discard,
   };
 });
 

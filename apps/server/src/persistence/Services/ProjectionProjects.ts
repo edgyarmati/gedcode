@@ -12,7 +12,6 @@ import {
   IsoDateTime,
   ModelSelection,
   OrchestratorConfigJson,
-  ProjectContextResolution,
   ProjectId,
   ProjectScript,
 } from "@t3tools/contracts";
@@ -31,7 +30,6 @@ export const ProjectionProject = Schema.Struct({
   roleModelSelections: GedRoleModelSelections,
   rolePromptPrefixes: GedRolePromptPrefixes,
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
-  projectContextResolution: Schema.NullOr(ProjectContextResolution),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

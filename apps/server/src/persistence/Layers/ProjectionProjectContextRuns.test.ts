@@ -42,7 +42,6 @@ it.layer(layer)("ProjectionProjectContextRunRepository", (it) => {
         roleModelSelections: {},
         rolePromptPrefixes: {},
         orchestratorConfig: {},
-        projectContextResolution: null,
         scripts: [],
         createdAt: now,
         updatedAt: now,

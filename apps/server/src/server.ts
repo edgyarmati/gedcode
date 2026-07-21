@@ -47,7 +47,6 @@ import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReac
 import { HelperRunReactorLive } from "./orchestration/Layers/HelperRunReactor.ts";
 import { ProjectContextRunReactorLive } from "./orchestration/Layers/ProjectContextRunReactor.ts";
 import { ProjectContextRunCoordinatorLive } from "./orchestration/Layers/ProjectContextRunCoordinator.ts";
-import { ProjectContextOnboardingCoordinatorLive } from "./orchestration/Layers/ProjectContextOnboardingCoordinator.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
@@ -158,7 +157,6 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(TaskWorktreeReactorLive),
   Layer.provideMerge(HelperRunReactorLive),
   Layer.provideMerge(ProjectContextRunReactorLive),
-  Layer.provideMerge(ProjectContextOnboardingCoordinatorLive),
   Layer.provideMerge(PmRuntimeLive),
   Layer.provideMerge(ProjectContextRunCoordinatorLive),
   Layer.provideMerge(ProjectContextScannerLive),

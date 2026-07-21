@@ -4,7 +4,6 @@ import {
   ProjectContextFingerprint,
   ProjectContextRunContentDigest,
   ProjectContextRunId,
-  ProjectContextRunGitObjectId,
   ProjectContextSchemaVersion,
   ProjectId,
   ProviderInstanceId,
@@ -67,7 +66,6 @@ function readModel(projectOverrides: OrchestrationProject["orchestratorConfig"] 
         roleModelSelections: {},
         rolePromptPrefixes: {},
         orchestratorConfig: projectOverrides,
-        projectContextResolution: null,
         scripts: [],
         createdAt: now,
         updatedAt: now,
@@ -400,24 +398,20 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
         },
         readModel: running,
       });
-      expect(Array.isArray(applyPlan)).toBe(true);
-      if (Array.isArray(applyPlan)) {
-        expect(applyPlan.map((event) => event.type)).toEqual([
-          "project.context-run-applied",
-          "project.context-completed",
-        ]);
-        const applied = yield* projectEvent(running, {
-          ...applyPlan[0],
-          sequence: 3,
-          eventId: EventId.make("evt-context-run-applied"),
-        });
-        expect(applied.projectContextRuns[0]).toMatchObject({
-          status: "completed",
-          resolution: "applied",
-          commitHash: null,
-          changes: [{ path: "AGENTS.md" }],
-        });
-      }
+      expect(Array.isArray(applyPlan)).toBe(false);
+      const appliedEvent = Array.isArray(applyPlan) ? applyPlan[0] : applyPlan;
+      expect(appliedEvent.type).toBe("project.context-run-applied");
+      const applied = yield* projectEvent(running, {
+        ...appliedEvent,
+        sequence: 3,
+        eventId: EventId.make("evt-context-run-applied"),
+      });
+      expect(applied.projectContextRuns[0]).toMatchObject({
+        status: "completed",
+        resolution: "applied",
+        commitHash: null,
+        changes: [{ path: "AGENTS.md" }],
+      });
 
       const reviewPlan = yield* decideOrchestrationCommand({
         command: {
@@ -472,135 +466,6 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
         }),
       );
       expect(invalidInterrupt._tag).toBe("Failure");
-
-      const discardPlan = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.run.discard",
-          commandId: CommandId.make("cmd-context-run-discard"),
-          projectContextRunId: ProjectContextRunId.make("context-run-1"),
-          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
-          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"e".repeat(64)}`),
-          createdAt: "2026-01-01T00:03:00.000Z",
-        },
-        readModel: pendingReview,
-      });
-      expect(Array.isArray(discardPlan)).toBe(true);
-      if (Array.isArray(discardPlan)) {
-        expect(discardPlan.map((event) => event.type)).toEqual([
-          "project.context-run-discarded",
-          "project.context-dismissed",
-        ]);
-        expect(discardPlan[1]?.causationEventId).toBe(discardPlan[0]?.eventId);
-      }
-
-      const revisedPlan = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.run.revise",
-          commandId: CommandId.make("cmd-context-run-revise"),
-          projectContextRunId: ProjectContextRunId.make("context-run-1"),
-          prompt: "Revise AGENTS.md to explain the primary verification command.",
-          createdAt: "2026-01-01T00:03:00.000Z",
-        },
-        readModel: pendingReview,
-      });
-      const revisedEvent = Array.isArray(revisedPlan) ? revisedPlan[0] : revisedPlan;
-      expect(revisedEvent.type).toBe("project.context-run-revised");
-      const revised = yield* projectEvent(pendingReview, {
-        ...revisedEvent,
-        sequence: 4,
-        eventId: EventId.make("evt-context-run-revised"),
-      });
-      expect(revised.projectContextRuns[0]).toMatchObject({
-        status: "pending",
-        result: null,
-        changes: [],
-        scopeViolationPaths: [],
-        prompt: "Revise AGENTS.md to explain the primary verification command.",
-      });
-
-      const revisionStartedPlan = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.run.start",
-          commandId: CommandId.make("cmd-context-run-revision-start"),
-          projectContextRunId: ProjectContextRunId.make("context-run-1"),
-          providerThreadId: ThreadId.make("project-context:context-run-1"),
-          createdAt: "2026-01-01T00:04:00.000Z",
-        },
-        readModel: revised,
-      });
-      const revisionStarted = Array.isArray(revisionStartedPlan)
-        ? revisionStartedPlan[0]
-        : revisionStartedPlan;
-      const revisionRunning = yield* projectEvent(revised, {
-        ...revisionStarted,
-        sequence: 5,
-        eventId: EventId.make("evt-context-run-revision-started"),
-      });
-      const revisionReviewPlan = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.run.pending-review",
-          commandId: CommandId.make("cmd-context-run-revision-review"),
-          projectContextRunId: ProjectContextRunId.make("context-run-1"),
-          result: "Revised project guidance.",
-          changes: [
-            {
-              path: "AGENTS.md",
-              beforeRawContent: null,
-              afterRawContent: "# Project instructions\n\nRun bun typecheck.\n",
-            },
-          ],
-          scopeViolationPaths: [],
-          createdAt: "2026-01-01T00:05:00.000Z",
-        },
-        readModel: revisionRunning,
-      });
-      const revisionReview = Array.isArray(revisionReviewPlan)
-        ? revisionReviewPlan[0]
-        : revisionReviewPlan;
-      const revisionPendingReview = yield* projectEvent(revisionRunning, {
-        ...revisionReview,
-        sequence: 6,
-        eventId: EventId.make("evt-context-run-revision-review"),
-      });
-
-      const commitPlan = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.run.commit",
-          commandId: CommandId.make("cmd-context-run-commit"),
-          projectContextRunId: ProjectContextRunId.make("context-run-1"),
-          commitHash: ProjectContextRunGitObjectId.make("f".repeat(40)),
-          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
-          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"f".repeat(64)}`),
-          createdAt: "2026-01-01T00:06:00.000Z",
-        },
-        readModel: revisionPendingReview,
-      });
-      expect(Array.isArray(commitPlan)).toBe(true);
-      if (Array.isArray(commitPlan)) {
-        expect(commitPlan.map((event) => event.type)).toEqual([
-          "project.context-run-committed",
-          "project.context-completed",
-        ]);
-        const committed = yield* projectEvent(revisionPendingReview, {
-          ...commitPlan[0],
-          sequence: 7,
-          eventId: EventId.make("evt-context-run-committed"),
-        });
-        const completed = yield* projectEvent(committed, {
-          ...commitPlan[1],
-          sequence: 8,
-          eventId: EventId.make("evt-project-context-completed"),
-        });
-        expect(completed.projectContextRuns[0]).toMatchObject({
-          status: "completed",
-          resolution: "committed",
-          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"f".repeat(64)}`),
-        });
-        expect(completed.projects[0]?.projectContextResolution).toMatchObject({
-          outcome: "completed",
-          fingerprint: ProjectContextFingerprint.make(`sha256:${"f".repeat(64)}`),
-        });
-      }
     }),
   );
 

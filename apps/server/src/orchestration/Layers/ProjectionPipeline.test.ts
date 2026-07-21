@@ -7,7 +7,6 @@ import {
   MessageId,
   ProjectContextFingerprint,
   ProjectContextRunContentDigest,
-  ProjectContextRunGitObjectId,
   ProjectContextRunId,
   ProjectContextSchemaVersion,
   ProjectId,
@@ -206,94 +205,6 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect(
-    "replays the latest project-context resolution into the durable project projection",
-    () =>
-      Effect.gen(function* () {
-        const projectionPipeline = yield* OrchestrationProjectionPipeline;
-        const eventStore = yield* OrchestrationEventStore;
-        const sql = yield* SqlClient.SqlClient;
-        const projectId = ProjectId.make("project-context-replay");
-        const createdAt = "2026-01-01T00:00:00.000Z";
-        const dismissedAt = "2026-01-01T00:01:00.000Z";
-        const completedAt = "2026-01-01T00:02:00.000Z";
-
-        yield* eventStore.append({
-          type: "project.created",
-          eventId: EventId.make("evt-project-context-replay-create"),
-          aggregateKind: "project",
-          aggregateId: projectId,
-          occurredAt: createdAt,
-          commandId: CommandId.make("cmd-project-context-replay-create"),
-          causationEventId: null,
-          correlationId: CorrelationId.make("cmd-project-context-replay-create"),
-          metadata: {},
-          payload: {
-            projectId,
-            title: "Project context replay",
-            workspaceRoot: "/tmp/project-context-replay",
-            defaultModelSelection: null,
-            scripts: [],
-            createdAt,
-            updatedAt: createdAt,
-          },
-        });
-        yield* eventStore.append({
-          type: "project.context-dismissed",
-          eventId: EventId.make("evt-project-context-replay-dismissed"),
-          aggregateKind: "project",
-          aggregateId: projectId,
-          occurredAt: dismissedAt,
-          commandId: CommandId.make("cmd-project-context-replay-dismissed"),
-          causationEventId: null,
-          correlationId: CorrelationId.make("cmd-project-context-replay-dismissed"),
-          metadata: {},
-          payload: {
-            projectId,
-            schemaVersion: ProjectContextSchemaVersion.make(1),
-            fingerprint: ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`),
-            dismissedAt,
-          },
-        });
-        yield* eventStore.append({
-          type: "project.context-completed",
-          eventId: EventId.make("evt-project-context-replay-completed"),
-          aggregateKind: "project",
-          aggregateId: projectId,
-          occurredAt: completedAt,
-          commandId: CommandId.make("cmd-project-context-replay-completed"),
-          causationEventId: null,
-          correlationId: CorrelationId.make("cmd-project-context-replay-completed"),
-          metadata: {},
-          payload: {
-            projectId,
-            schemaVersion: ProjectContextSchemaVersion.make(2),
-            fingerprint: ProjectContextFingerprint.make(`sha256:${"b".repeat(64)}`),
-            completedAt,
-          },
-        });
-
-        yield* projectionPipeline.bootstrap;
-
-        const rows = yield* sql<{
-          readonly projectContextResolution: string | null;
-          readonly updatedAt: string;
-        }>`
-        SELECT
-          project_context_onboarding_json AS "projectContextResolution",
-          updated_at AS "updatedAt"
-        FROM projection_projects
-        WHERE project_id = 'project-context-replay'
-      `;
-        assert.deepEqual(rows, [
-          {
-            projectContextResolution: `{"schemaVersion":2,"fingerprint":"sha256:${"b".repeat(64)}","outcome":"completed","resolvedAt":"${completedAt}"}`,
-            updatedAt: completedAt,
-          },
-        ]);
-      }),
-  );
-
   it.effect("replays every project-context run terminal lifecycle", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
@@ -302,8 +213,6 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const projectId = ProjectId.make("project-context-run-replay");
       const reviewRunId = ProjectContextRunId.make("context-run-review");
       const appliedRunId = ProjectContextRunId.make("context-run-applied");
-      const completedRunId = ProjectContextRunId.make("context-run-completed");
-      const discardedRunId = ProjectContextRunId.make("context-run-discarded");
       const failedRunId = ProjectContextRunId.make("context-run-failed");
       const interruptedRunId = ProjectContextRunId.make("context-run-interrupted");
       const now = "2026-07-20T10:00:00.000Z";
@@ -332,8 +241,6 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       for (const [index, projectContextRunId] of [
         reviewRunId,
         appliedRunId,
-        completedRunId,
-        discardedRunId,
         failedRunId,
         interruptedRunId,
       ].entries()) {
@@ -449,43 +356,6 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         },
       });
       yield* eventStore.append({
-        type: "project.context-run-committed",
-        eventId: EventId.make("evt-context-run-committed"),
-        aggregateKind: "project-context-run",
-        aggregateId: completedRunId,
-        occurredAt: now,
-        commandId: CommandId.make("cmd-context-run-committed"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-context-run-committed"),
-        metadata: {},
-        payload: {
-          projectContextRunId: completedRunId,
-          commitHash: ProjectContextRunGitObjectId.make("a".repeat(40)),
-          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
-          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"2".repeat(64)}`),
-          resolvedAt: now,
-          updatedAt: now,
-        },
-      });
-      yield* eventStore.append({
-        type: "project.context-run-discarded",
-        eventId: EventId.make("evt-context-run-discarded"),
-        aggregateKind: "project-context-run",
-        aggregateId: discardedRunId,
-        occurredAt: now,
-        commandId: CommandId.make("cmd-context-run-discarded"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-context-run-discarded"),
-        metadata: {},
-        payload: {
-          projectContextRunId: discardedRunId,
-          resultSchemaVersion: ProjectContextSchemaVersion.make(1),
-          resultFingerprint: ProjectContextFingerprint.make(`sha256:${"3".repeat(64)}`),
-          resolvedAt: now,
-          updatedAt: now,
-        },
-      });
-      yield* eventStore.append({
         type: "project.context-run-failed",
         eventId: EventId.make("evt-context-run-failed"),
         aggregateKind: "project-context-run",
@@ -540,36 +410,27 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         rows.map((row) => [row.id, row.status]),
         [
           ["context-run-applied", "completed"],
-          ["context-run-completed", "completed"],
-          ["context-run-discarded", "discarded"],
           ["context-run-failed", "failed"],
           ["context-run-interrupted", "interrupted"],
           ["context-run-review", "pending-review"],
         ],
       );
       assert.strictEqual(
-        rows[5]?.baselineManifest,
+        rows[3]?.baselineManifest,
         '[{"path":"AGENTS.md","rawContent":"# Existing\\n"}]',
       );
       assert.strictEqual(
-        rows[5]?.workspaceStatusManifest,
+        rows[3]?.workspaceStatusManifest,
         '[{"relativePath":"AGENTS.md","porcelainStatus":" M","contentDigest":null}]',
       );
-      assert.match(rows[5]?.changes ?? "", /Keep changes bounded/);
-      assert.deepStrictEqual(
-        rows.slice(0, 3).map((row) => [row.resolution, row.commitHash]),
-        [
-          ["applied", null],
-          ["committed", "a".repeat(40)],
-          ["discarded", null],
-        ],
-      );
+      assert.match(rows[3]?.changes ?? "", /Keep changes bounded/);
+      assert.deepStrictEqual([rows[0]?.resolution, rows[0]?.commitHash], ["applied", null]);
 
       yield* projectionPipeline.bootstrap;
       const replayedCount = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count FROM projection_project_context_runs
       `;
-      assert.strictEqual(replayedCount[0]?.count, 6);
+      assert.strictEqual(replayedCount[0]?.count, 4);
     }),
   );
 

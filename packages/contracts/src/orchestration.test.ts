@@ -22,7 +22,6 @@ import {
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
-  OrchestrationProject,
   OrchestrationReadModel,
   OrchestrationSession,
   OrchestrationTask,
@@ -57,7 +56,6 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 );
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
-const decodeOrchestrationProject = Schema.decodeUnknownEffect(OrchestrationProject);
 const decodeOrchestrationReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
@@ -212,60 +210,6 @@ it.effect("decodes historical project.created payloads with a default provider",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.defaultModelSelection?.instanceId, "codex");
-  }),
-);
-
-it.effect(
-  "defaults missing project-context resolution to null for legacy project projections",
-  () =>
-    Effect.gen(function* () {
-      const parsed = yield* decodeOrchestrationProject({
-        id: "project-1",
-        title: "Project Title",
-        workspaceRoot: "/tmp/workspace",
-        defaultModelSelection: null,
-        scripts: [],
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        deletedAt: null,
-      });
-
-      assert.strictEqual(parsed.projectContextResolution, null);
-    }),
-);
-
-it.effect("decodes an internal project-context resolution command and its dismissal event", () =>
-  Effect.gen(function* () {
-    const command = yield* decodeOrchestrationCommand({
-      type: "project.context.resolve",
-      commandId: "cmd-context-dismiss",
-      projectId: "project-1",
-      schemaVersion: 1,
-      fingerprint: `sha256:${"a".repeat(64)}`,
-      outcome: "dismissed",
-      resolvedAt: "2026-01-01T00:00:00.000Z",
-    });
-    assert.strictEqual(command.type, "project.context.resolve");
-
-    const event = yield* decodeOrchestrationEvent({
-      sequence: 1,
-      eventId: "event-context-dismiss",
-      aggregateKind: "project",
-      aggregateId: "project-1",
-      occurredAt: "2026-01-01T00:00:00.000Z",
-      commandId: "cmd-context-dismiss",
-      causationEventId: null,
-      correlationId: "cmd-context-dismiss",
-      metadata: {},
-      type: "project.context-dismissed",
-      payload: {
-        projectId: "project-1",
-        schemaVersion: 1,
-        fingerprint: `sha256:${"a".repeat(64)}`,
-        dismissedAt: "2026-01-01T00:00:00.000Z",
-      },
-    });
-    assert.strictEqual(event.type, "project.context-dismissed");
   }),
 );
 

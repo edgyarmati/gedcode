@@ -1,16 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  ProjectContextFingerprint,
-  ProjectContextSchemaVersion,
-  type ProjectContextResolution,
-} from "@t3tools/contracts";
+import { ProjectContextSchemaVersion } from "@t3tools/contracts";
 
 import {
   classifyProjectContextContent,
   fingerprintProjectContext,
   makeProjectContextSnapshot,
   normalizeProjectContextContent,
-  shouldPromptForProjectContext,
 } from "./ProjectContext.ts";
 
 describe("ProjectContext", () => {
@@ -113,35 +108,5 @@ describe("ProjectContext", () => {
         ],
       }).promptKind,
     ).toBe("populate");
-  });
-
-  it("prompts until the exact scanner schema and fingerprint have been resolved", () => {
-    const snapshot = makeProjectContextSnapshot({
-      files: [
-        { relativePath: "AGENTS.md", classification: "template", normalizedContent: "# Agent" },
-      ],
-    });
-    const resolved = (outcome: ProjectContextResolution["outcome"]): ProjectContextResolution => ({
-      schemaVersion: snapshot.schemaVersion,
-      fingerprint: snapshot.fingerprint,
-      outcome,
-      resolvedAt: "2026-07-18T00:00:00.000Z",
-    });
-
-    expect(shouldPromptForProjectContext(snapshot, null)).toBe(true);
-    expect(shouldPromptForProjectContext(snapshot, resolved("dismissed"))).toBe(false);
-    expect(shouldPromptForProjectContext(snapshot, resolved("completed"))).toBe(false);
-    expect(
-      shouldPromptForProjectContext(snapshot, {
-        ...resolved("completed"),
-        schemaVersion: ProjectContextSchemaVersion.make(2),
-      }),
-    ).toBe(true);
-    expect(
-      shouldPromptForProjectContext(snapshot, {
-        ...resolved("completed"),
-        fingerprint: ProjectContextFingerprint.make(`sha256:${"0".repeat(64)}`),
-      }),
-    ).toBe(true);
   });
 });

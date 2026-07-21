@@ -3,8 +3,6 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
-  ProjectContextFingerprint,
-  ProjectContextSchemaVersion,
   ProjectId,
   ThreadId,
   ProviderInstanceId,
@@ -93,91 +91,6 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
       const event = Array.isArray(result) ? result[0] : result;
       expect(event.type).toBe("project.meta-updated");
       expect((event.payload as { scripts?: unknown[] }).scripts).toEqual(scripts);
-    }),
-  );
-
-  it.effect("emits the matching append-only project-context resolution event", () =>
-    Effect.gen(function* () {
-      const now = "2026-01-01T00:00:00.000Z";
-      const projectId = asProjectId("project-context-resolution");
-      const readModel = yield* projectEvent(createEmptyReadModel(now), {
-        sequence: 1,
-        eventId: asEventId("evt-project-create-context-resolution"),
-        aggregateKind: "project",
-        aggregateId: projectId,
-        type: "project.created",
-        occurredAt: now,
-        commandId: CommandId.make("cmd-project-create-context-resolution"),
-        causationEventId: null,
-        correlationId: CommandId.make("cmd-project-create-context-resolution"),
-        metadata: {},
-        payload: {
-          projectId,
-          title: "Context Resolution",
-          workspaceRoot: "/tmp/context-resolution",
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-
-      const fingerprint = `sha256:${"a".repeat(64)}`;
-      const dismissed = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.resolve",
-          commandId: CommandId.make("cmd-project-context-dismiss"),
-          projectId,
-          schemaVersion: ProjectContextSchemaVersion.make(1),
-          fingerprint: ProjectContextFingerprint.make(fingerprint),
-          outcome: "dismissed",
-          resolvedAt: now,
-        },
-        readModel,
-      });
-      const dismissedEvent = Array.isArray(dismissed) ? dismissed[0] : dismissed;
-      expect(dismissedEvent.type).toBe("project.context-dismissed");
-      expect(dismissedEvent.payload).toMatchObject({
-        projectId,
-        schemaVersion: 1,
-        fingerprint,
-        dismissedAt: now,
-      });
-
-      const completed = yield* decideOrchestrationCommand({
-        command: {
-          type: "project.context.resolve",
-          commandId: CommandId.make("cmd-project-context-complete"),
-          projectId,
-          schemaVersion: ProjectContextSchemaVersion.make(2),
-          fingerprint: ProjectContextFingerprint.make(`sha256:${"b".repeat(64)}`),
-          outcome: "completed",
-          resolvedAt: now,
-        },
-        readModel,
-      });
-      const completedEvent = Array.isArray(completed) ? completed[0] : completed;
-      expect(completedEvent.type).toBe("project.context-completed");
-    }),
-  );
-
-  it.effect("rejects project-context resolution for an unknown project", () =>
-    Effect.gen(function* () {
-      const result = yield* Effect.exit(
-        decideOrchestrationCommand({
-          command: {
-            type: "project.context.resolve",
-            commandId: CommandId.make("cmd-missing-project-context"),
-            projectId: asProjectId("project-missing-context"),
-            schemaVersion: ProjectContextSchemaVersion.make(1),
-            fingerprint: ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`),
-            outcome: "dismissed",
-            resolvedAt: "2026-01-01T00:00:00.000Z",
-          },
-          readModel: createEmptyReadModel("2026-01-01T00:00:00.000Z"),
-        }),
-      );
-      expect(result._tag).toBe("Failure");
     }),
   );
 

@@ -43,8 +43,6 @@ import {
   TaskStageStartedPayload,
   TaskSplitPayload,
   TaskVerificationRecordedPayload,
-  ProjectContextCompletedPayload,
-  ProjectContextDismissedPayload,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -442,52 +440,6 @@ export function projectEvent(
         ),
       });
 
-    case "project.context-run-revised":
-      return Effect.succeed({
-        ...nextBase,
-        projectContextRuns: updateProjectContextRun(
-          nextBase.projectContextRuns,
-          event.payload.projectContextRunId,
-          {
-            status: "pending",
-            prompt: event.payload.prompt,
-            providerThreadId: null,
-            result: null,
-            failureMessage: null,
-            changes: [],
-            scopeViolationPaths: [],
-            resolution: null,
-            commitHash: null,
-            resultSchemaVersion: null,
-            resultFingerprint: null,
-            startedAt: null,
-            pendingReviewAt: null,
-            failedAt: null,
-            interruptedAt: null,
-            resolvedAt: null,
-            updatedAt: event.payload.updatedAt,
-          },
-        ),
-      });
-
-    case "project.context-run-committed":
-      return Effect.succeed({
-        ...nextBase,
-        projectContextRuns: updateProjectContextRun(
-          nextBase.projectContextRuns,
-          event.payload.projectContextRunId,
-          {
-            status: "completed",
-            resolution: "committed",
-            commitHash: event.payload.commitHash,
-            resultSchemaVersion: event.payload.resultSchemaVersion,
-            resultFingerprint: event.payload.resultFingerprint,
-            resolvedAt: event.payload.resolvedAt,
-            updatedAt: event.payload.updatedAt,
-          },
-        ),
-      });
-
     case "project.context-run-applied":
       return Effect.succeed({
         ...nextBase,
@@ -500,24 +452,6 @@ export function projectEvent(
             changes: event.payload.changes,
             scopeViolationPaths: [],
             resolution: "applied",
-            commitHash: null,
-            resultSchemaVersion: event.payload.resultSchemaVersion,
-            resultFingerprint: event.payload.resultFingerprint,
-            resolvedAt: event.payload.resolvedAt,
-            updatedAt: event.payload.updatedAt,
-          },
-        ),
-      });
-
-    case "project.context-run-discarded":
-      return Effect.succeed({
-        ...nextBase,
-        projectContextRuns: updateProjectContextRun(
-          nextBase.projectContextRuns,
-          event.payload.projectContextRunId,
-          {
-            status: "discarded",
-            resolution: "discarded",
             commitHash: null,
             resultSchemaVersion: event.payload.resultSchemaVersion,
             resultFingerprint: event.payload.resultFingerprint,
@@ -647,7 +581,6 @@ export function projectEvent(
             roleModelSelections: payload.roleModelSelections ?? {},
             rolePromptPrefixes: payload.rolePromptPrefixes ?? {},
             orchestratorConfig,
-            projectContextResolution: null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -697,58 +630,6 @@ export function projectEvent(
                   ...(orchestratorConfig !== undefined ? { orchestratorConfig } : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   updatedAt: payload.updatedAt,
-                }
-              : project,
-          ),
-        })),
-      );
-
-    case "project.context-dismissed":
-      return decodeForEvent(
-        ProjectContextDismissedPayload,
-        event.payload,
-        event.type,
-        "payload",
-      ).pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          projects: nextBase.projects.map((project) =>
-            project.id === payload.projectId
-              ? {
-                  ...project,
-                  projectContextResolution: {
-                    schemaVersion: payload.schemaVersion,
-                    fingerprint: payload.fingerprint,
-                    outcome: "dismissed",
-                    resolvedAt: payload.dismissedAt,
-                  },
-                  updatedAt: payload.dismissedAt,
-                }
-              : project,
-          ),
-        })),
-      );
-
-    case "project.context-completed":
-      return decodeForEvent(
-        ProjectContextCompletedPayload,
-        event.payload,
-        event.type,
-        "payload",
-      ).pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          projects: nextBase.projects.map((project) =>
-            project.id === payload.projectId
-              ? {
-                  ...project,
-                  projectContextResolution: {
-                    schemaVersion: payload.schemaVersion,
-                    fingerprint: payload.fingerprint,
-                    outcome: "completed",
-                    resolvedAt: payload.completedAt,
-                  },
-                  updatedAt: payload.completedAt,
                 }
               : project,
           ),

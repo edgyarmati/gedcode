@@ -3,8 +3,6 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
-  ProjectContextFingerprint,
-  ProjectContextSchemaVersion,
   ProjectId,
   TaskId,
   TaskTypeId,
@@ -33,7 +31,7 @@ import {
   type OrchestrationEventStoreShape,
 } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
-import { classifyOrchestrationCommand, OrchestrationEngineLive } from "./OrchestrationEngine.ts";
+import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -1410,85 +1408,6 @@ describe("OrchestrationEngine", () => {
       expect(shellEvent.thread.title).toBe("Shell Thread");
       expect(shellEvent.thread.projectId).toBe(asProjectId("project-shell"));
     }
-    await system.dispose();
-  });
-
-  it("routes project-context resolution as a project command and publishes its updated shell", async () => {
-    const system = await createOrchestrationSystem();
-    const { engine } = system;
-    const projectId = asProjectId("project-context-shell");
-    const createdAt = now();
-    const resolvedAt = "2026-01-01T00:00:01.000Z";
-    const fingerprint = ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`);
-    const resolveCommand = {
-      type: "project.context.resolve" as const,
-      commandId: CommandId.make("cmd-project-context-shell-resolve"),
-      projectId,
-      schemaVersion: ProjectContextSchemaVersion.make(1),
-      fingerprint,
-      outcome: "dismissed" as const,
-      resolvedAt,
-    };
-
-    expect(classifyOrchestrationCommand(resolveCommand)).toBe("project");
-
-    await system.run(
-      engine.dispatch({
-        type: "project.create",
-        commandId: CommandId.make("cmd-project-context-shell-create"),
-        projectId,
-        title: "Context shell project",
-        workspaceRoot: "/tmp/project-context-shell",
-        defaultModelSelection: null,
-        createdAt,
-      }),
-    );
-
-    const shellEvent = await system.run(
-      Effect.gen(function* () {
-        const shellQueue = yield* Queue.unbounded<OrchestrationShellStreamEvent>();
-        yield* Effect.forkScoped(
-          Stream.take(
-            engine.streamShellEvents.pipe(
-              Stream.filter(
-                (event) =>
-                  event.kind === "project-upserted" &&
-                  event.project.id === projectId &&
-                  event.project.projectContextResolution?.outcome === "dismissed",
-              ),
-            ),
-            1,
-          ).pipe(Stream.runForEach((event) => Queue.offer(shellQueue, event).pipe(Effect.asVoid))),
-        );
-        yield* Effect.sleep("10 millis");
-        yield* engine.dispatch(resolveCommand);
-        return yield* Queue.take(shellQueue);
-      }).pipe(Effect.scoped),
-    );
-
-    expect(shellEvent.kind).toBe("project-upserted");
-    if (shellEvent.kind === "project-upserted") {
-      expect(shellEvent.project.id).toBe(projectId);
-      expect(shellEvent.project.projectContextResolution).toEqual({
-        schemaVersion: ProjectContextSchemaVersion.make(1),
-        fingerprint,
-        outcome: "dismissed",
-        resolvedAt,
-      });
-    }
-
-    const events = await system.run(
-      Stream.runCollect(engine.readEvents(0)).pipe(
-        Effect.map((chunk): OrchestrationEvent[] => Array.from(chunk)),
-      ),
-    );
-    const resolutionEvent = events.find((event) => event.type === "project.context-dismissed");
-    expect(resolutionEvent).toMatchObject({
-      aggregateKind: "project",
-      aggregateId: projectId,
-      type: "project.context-dismissed",
-    });
-
     await system.dispose();
   });
 

@@ -553,7 +553,6 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
   ) {
     if (
       event.type === "project.context-run-requested" ||
-      event.type === "project.context-run-revised" ||
       event.type === "project.context-run-baseline-refreshed"
     ) {
       const run = yield* runs.getById({

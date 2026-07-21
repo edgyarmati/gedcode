@@ -496,7 +496,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             roleModelSelections: event.payload.roleModelSelections ?? {},
             rolePromptPrefixes: event.payload.rolePromptPrefixes ?? {},
             orchestratorConfig: event.payload.orchestratorConfig ?? {},
-            projectContextResolution: null,
             scripts: event.payload.scripts,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -531,29 +530,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
             updatedAt: event.payload.updatedAt,
-          });
-          return;
-        }
-
-        case "project.context-dismissed":
-        case "project.context-completed": {
-          const existingRow = yield* projectionProjectRepository.getById({
-            projectId: event.payload.projectId,
-          });
-          if (Option.isNone(existingRow)) {
-            return;
-          }
-          const dismissed = event.type === "project.context-dismissed";
-          const resolvedAt = dismissed ? event.payload.dismissedAt : event.payload.completedAt;
-          yield* projectionProjectRepository.upsert({
-            ...existingRow.value,
-            projectContextResolution: {
-              schemaVersion: event.payload.schemaVersion,
-              fingerprint: event.payload.fingerprint,
-              outcome: dismissed ? "dismissed" : "completed",
-              resolvedAt,
-            },
-            updatedAt: resolvedAt,
           });
           return;
         }
@@ -1666,10 +1642,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         event.type !== "project.context-run-start-prepared" &&
         event.type !== "project.context-run-baseline-refreshed" &&
         event.type !== "project.context-run-pending-review" &&
-        event.type !== "project.context-run-revised" &&
         event.type !== "project.context-run-applied" &&
-        event.type !== "project.context-run-committed" &&
-        event.type !== "project.context-run-discarded" &&
         event.type !== "project.context-run-failed" &&
         event.type !== "project.context-run-interrupted"
       ) {
@@ -1723,43 +1696,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         });
         return;
       }
-      if (event.type === "project.context-run-revised") {
-        yield* projectionProjectContextRunRepository.upsert({
-          ...existing.value,
-          status: "pending",
-          pmStartState: "ready",
-          prompt: event.payload.prompt,
-          providerThreadId: null,
-          result: null,
-          failureMessage: null,
-          changes: [],
-          scopeViolationPaths: [],
-          resolution: null,
-          commitHash: null,
-          resultSchemaVersion: null,
-          resultFingerprint: null,
-          startedAt: null,
-          pendingReviewAt: null,
-          failedAt: null,
-          interruptedAt: null,
-          resolvedAt: null,
-          updatedAt: event.payload.updatedAt,
-        });
-        return;
-      }
-      if (event.type === "project.context-run-committed") {
-        yield* projectionProjectContextRunRepository.upsert({
-          ...existing.value,
-          status: "completed",
-          resolution: "committed",
-          commitHash: event.payload.commitHash,
-          resultSchemaVersion: event.payload.resultSchemaVersion,
-          resultFingerprint: event.payload.resultFingerprint,
-          resolvedAt: event.payload.resolvedAt,
-          updatedAt: event.payload.updatedAt,
-        });
-        return;
-      }
       if (event.type === "project.context-run-applied") {
         yield* projectionProjectContextRunRepository.upsert({
           ...existing.value,
@@ -1768,19 +1704,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           changes: event.payload.changes,
           scopeViolationPaths: [],
           resolution: "applied",
-          commitHash: null,
-          resultSchemaVersion: event.payload.resultSchemaVersion,
-          resultFingerprint: event.payload.resultFingerprint,
-          resolvedAt: event.payload.resolvedAt,
-          updatedAt: event.payload.updatedAt,
-        });
-        return;
-      }
-      if (event.type === "project.context-run-discarded") {
-        yield* projectionProjectContextRunRepository.upsert({
-          ...existing.value,
-          status: "discarded",
-          resolution: "discarded",
           commitHash: null,
           resultSchemaVersion: event.payload.resultSchemaVersion,
           resultFingerprint: event.payload.resultFingerprint,

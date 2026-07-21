@@ -2109,31 +2109,6 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       });
 
-    case "project.context-run-revised":
-      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
-        status: "pending",
-        pmStartState: "ready",
-        prompt: event.payload.prompt,
-        providerThreadId: null,
-        result: null,
-        failureMessage: null,
-        changes: [],
-        scopeViolationPaths: [],
-        pendingReviewAt: null,
-        updatedAt: event.payload.updatedAt,
-      });
-
-    case "project.context-run-committed":
-      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
-        status: "completed",
-        resolution: "committed",
-        commitHash: event.payload.commitHash,
-        resultSchemaVersion: event.payload.resultSchemaVersion,
-        resultFingerprint: event.payload.resultFingerprint,
-        resolvedAt: event.payload.resolvedAt,
-        updatedAt: event.payload.updatedAt,
-      });
-
     case "project.context-run-applied":
       return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
         status: "completed",
@@ -2142,16 +2117,6 @@ function applyEnvironmentOrchestrationEvent(
         scopeViolationPaths: [],
         resolution: "applied",
         commitHash: null,
-        resultSchemaVersion: event.payload.resultSchemaVersion,
-        resultFingerprint: event.payload.resultFingerprint,
-        resolvedAt: event.payload.resolvedAt,
-        updatedAt: event.payload.updatedAt,
-      });
-
-    case "project.context-run-discarded":
-      return patchProjectContextRunState(state, String(event.payload.projectContextRunId), {
-        status: "discarded",
-        resolution: "discarded",
         resultSchemaVersion: event.payload.resultSchemaVersion,
         resultFingerprint: event.payload.resultFingerprint,
         resolvedAt: event.payload.resolvedAt,

@@ -2011,9 +2011,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         const watchProjectContextSettlement = orchestrationEngine.streamDomainEvents.pipe(
           Stream.runForEach((event) => {
             if (
-              event.type !== "project.context-run-committed" &&
               event.type !== "project.context-run-applied" &&
-              event.type !== "project.context-run-discarded" &&
               event.type !== "project.context-run-failed" &&
               event.type !== "project.context-run-interrupted"
             ) {

@@ -100,7 +100,6 @@ export function classifyOrchestrationCommand(
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
-    case "project.context.resolve":
     case "project.delete":
       return "project";
     case "project.context.run.request":
@@ -109,9 +108,6 @@ export function classifyOrchestrationCommand(
     case "project.context.run.start":
     case "project.context.run.pending-review":
     case "project.context.run.apply":
-    case "project.context.run.revise":
-    case "project.context.run.commit":
-    case "project.context.run.discard":
     case "project.context.run.fail":
     case "project.context.run.interrupt":
       return "project";
@@ -193,7 +189,6 @@ function commandToAggregateRef(command: OrchestrationCommand): {
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
-    case "project.context.resolve":
     case "project.delete":
       return {
         aggregateKind: "project",
@@ -205,9 +200,6 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "project.context.run.start":
     case "project.context.run.pending-review":
     case "project.context.run.apply":
-    case "project.context.run.revise":
-    case "project.context.run.commit":
-    case "project.context.run.discard":
     case "project.context.run.fail":
     case "project.context.run.interrupt":
       return {
@@ -285,8 +277,6 @@ export const toShellStreamEvent = (
   switch (event.type) {
     case "project.created":
     case "project.meta-updated":
-    case "project.context-dismissed":
-    case "project.context-completed":
       return projectionSnapshotQuery.getProjectShellById(event.payload.projectId).pipe(
         Effect.map((project) =>
           Option.map(project, (nextProject) => ({

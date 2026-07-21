@@ -391,9 +391,6 @@ export const ProjectContextSchemaVersion = PositiveInt.pipe(
 );
 export type ProjectContextSchemaVersion = typeof ProjectContextSchemaVersion.Type;
 
-export const ProjectContextResolutionOutcome = Schema.Literals(["dismissed", "completed"]);
-export type ProjectContextResolutionOutcome = typeof ProjectContextResolutionOutcome.Type;
-
 /** A content-free classification emitted by the server-side context scanner. */
 export const ProjectContextFileClassification = Schema.Literals([
   "missing",
@@ -407,19 +404,6 @@ export type ProjectContextFileClassification = typeof ProjectContextFileClassifi
 export const ProjectContextPromptKind = Schema.Literals(["populate", "review"]);
 export type ProjectContextPromptKind = typeof ProjectContextPromptKind.Type;
 
-/**
- * The latest user resolution of project-context onboarding for one exact
- * scanner schema and content fingerprint. Earlier resolutions remain in the
- * append-only project event stream.
- */
-export const ProjectContextResolution = Schema.Struct({
-  schemaVersion: ProjectContextSchemaVersion,
-  fingerprint: ProjectContextFingerprint,
-  outcome: ProjectContextResolutionOutcome,
-  resolvedAt: IsoDateTime,
-});
-export type ProjectContextResolution = typeof ProjectContextResolution.Type;
-
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -429,9 +413,6 @@ export const OrchestrationProject = Schema.Struct({
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
-  projectContextResolution: Schema.optionalKey(
-    Schema.NullOr(ProjectContextResolution).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  ),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1169,9 +1150,6 @@ export const OrchestrationProjectShell = Schema.Struct({
   roleModelSelections: Schema.optionalKey(GedRoleModelSelections),
   rolePromptPrefixes: Schema.optionalKey(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optionalKey(OrchestratorConfigJson),
-  projectContextResolution: Schema.optionalKey(
-    Schema.NullOr(ProjectContextResolution).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  ),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1283,16 +1261,6 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   rolePromptPrefixes: Schema.optional(GedRolePromptPrefixes),
   orchestratorConfig: Schema.optional(OrchestratorConfigJson),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
-});
-
-const ProjectContextResolveCommand = Schema.Struct({
-  type: Schema.Literal("project.context.resolve"),
-  commandId: CommandId,
-  projectId: ProjectId,
-  schemaVersion: ProjectContextSchemaVersion,
-  fingerprint: ProjectContextFingerprint,
-  outcome: ProjectContextResolutionOutcome,
-  resolvedAt: IsoDateTime,
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -1565,38 +1533,6 @@ export const ProjectContextRunApplyCommand = Schema.Struct({
   projectContextRunId: ProjectContextRunId,
   result: Schema.String.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_RESULT_MAX_CHARS)),
   changes: ProjectContextRunChanges,
-  resultSchemaVersion: ProjectContextSchemaVersion,
-  resultFingerprint: ProjectContextFingerprint,
-  createdAt: IsoDateTime,
-});
-
-/**
- * Reopens a reviewed context run with a server-authored, durable revision
- * prompt. The immutable baseline remains unchanged so a later review covers
- * the whole context-run delta rather than just its final turn.
- */
-export const ProjectContextRunReviseCommand = Schema.Struct({
-  type: Schema.Literal("project.context.run.revise"),
-  commandId: CommandId,
-  projectContextRunId: ProjectContextRunId,
-  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
-  createdAt: IsoDateTime,
-});
-
-export const ProjectContextRunCommitCommand = Schema.Struct({
-  type: Schema.Literal("project.context.run.commit"),
-  commandId: CommandId,
-  projectContextRunId: ProjectContextRunId,
-  commitHash: ProjectContextRunGitObjectId,
-  resultSchemaVersion: ProjectContextSchemaVersion,
-  resultFingerprint: ProjectContextFingerprint,
-  createdAt: IsoDateTime,
-});
-
-export const ProjectContextRunDiscardCommand = Schema.Struct({
-  type: Schema.Literal("project.context.run.discard"),
-  commandId: CommandId,
-  projectContextRunId: ProjectContextRunId,
   resultSchemaVersion: ProjectContextSchemaVersion,
   resultFingerprint: ProjectContextFingerprint,
   createdAt: IsoDateTime,
@@ -2042,16 +1978,12 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
-  ProjectContextResolveCommand,
   ProjectContextRunRequestCommand,
   ProjectContextRunPrepareStartCommand,
   ProjectContextRunRefreshBaselineCommand,
   ProjectContextRunStartCommand,
   ProjectContextRunPendingReviewCommand,
   ProjectContextRunApplyCommand,
-  ProjectContextRunReviseCommand,
-  ProjectContextRunCommitCommand,
-  ProjectContextRunDiscardCommand,
   ProjectContextRunFailCommand,
   ProjectContextRunInterruptCommand,
   ThreadForkCommand,
@@ -2123,8 +2055,6 @@ export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 export const OrchestrationEventType = Schema.Literals([
   "project.created",
   "project.meta-updated",
-  "project.context-dismissed",
-  "project.context-completed",
   "project.deleted",
   "thread.created",
   "thread.deleted",
@@ -2187,9 +2117,6 @@ export const OrchestrationEventType = Schema.Literals([
   "project.context-run-started",
   "project.context-run-pending-review",
   "project.context-run-applied",
-  "project.context-run-revised",
-  "project.context-run-committed",
-  "project.context-run-discarded",
   "project.context-run-failed",
   "project.context-run-interrupted",
 ]);
@@ -2235,20 +2162,6 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
 export const ProjectDeletedPayload = Schema.Struct({
   projectId: ProjectId,
   deletedAt: IsoDateTime,
-});
-
-export const ProjectContextDismissedPayload = Schema.Struct({
-  projectId: ProjectId,
-  schemaVersion: ProjectContextSchemaVersion,
-  fingerprint: ProjectContextFingerprint,
-  dismissedAt: IsoDateTime,
-});
-
-export const ProjectContextCompletedPayload = Schema.Struct({
-  projectId: ProjectId,
-  schemaVersion: ProjectContextSchemaVersion,
-  fingerprint: ProjectContextFingerprint,
-  completedAt: IsoDateTime,
 });
 
 export const ThreadCreatedPayload = Schema.Struct({
@@ -2573,29 +2486,6 @@ export const ProjectContextRunAppliedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
-export const ProjectContextRunRevisedPayload = Schema.Struct({
-  projectContextRunId: ProjectContextRunId,
-  prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS)),
-  updatedAt: IsoDateTime,
-});
-
-export const ProjectContextRunCommittedPayload = Schema.Struct({
-  projectContextRunId: ProjectContextRunId,
-  commitHash: ProjectContextRunGitObjectId,
-  resultSchemaVersion: ProjectContextSchemaVersion,
-  resultFingerprint: ProjectContextFingerprint,
-  resolvedAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-
-export const ProjectContextRunDiscardedPayload = Schema.Struct({
-  projectContextRunId: ProjectContextRunId,
-  resultSchemaVersion: ProjectContextSchemaVersion,
-  resultFingerprint: ProjectContextFingerprint,
-  resolvedAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-
 export const ProjectContextRunFailedPayload = Schema.Struct({
   projectContextRunId: ProjectContextRunId,
   message: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS)),
@@ -2812,16 +2702,6 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.meta-updated"),
     payload: ProjectMetaUpdatedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("project.context-dismissed"),
-    payload: ProjectContextDismissedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("project.context-completed"),
-    payload: ProjectContextCompletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3132,21 +3012,6 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.context-run-applied"),
     payload: ProjectContextRunAppliedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("project.context-run-revised"),
-    payload: ProjectContextRunRevisedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("project.context-run-committed"),
-    payload: ProjectContextRunCommittedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    type: Schema.Literal("project.context-run-discarded"),
-    payload: ProjectContextRunDiscardedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3616,50 +3481,6 @@ export const OrchestratorResolveProjectContextRunAttentionResult = Schema.Struct
 });
 export type OrchestratorResolveProjectContextRunAttentionResult =
   typeof OrchestratorResolveProjectContextRunAttentionResult.Type;
-
-export const OrchestratorReviseProjectContextRunInput = Schema.Struct({
-  runId: ProjectContextRunId,
-  instructions: TrimmedNonEmptyString.check(
-    Schema.isMaxLength(PROJECT_CONTEXT_RUN_PROMPT_MAX_CHARS),
-  ),
-});
-export type OrchestratorReviseProjectContextRunInput =
-  typeof OrchestratorReviseProjectContextRunInput.Type;
-
-export const OrchestratorReviseProjectContextRunResult = Schema.Struct({
-  runId: ProjectContextRunId,
-  sequence: NonNegativeInt,
-});
-export type OrchestratorReviseProjectContextRunResult =
-  typeof OrchestratorReviseProjectContextRunResult.Type;
-
-export const OrchestratorCommitProjectContextRunInput = Schema.Struct({
-  runId: ProjectContextRunId,
-  message: TrimmedNonEmptyString,
-});
-export type OrchestratorCommitProjectContextRunInput =
-  typeof OrchestratorCommitProjectContextRunInput.Type;
-
-export const OrchestratorCommitProjectContextRunResult = Schema.Struct({
-  runId: ProjectContextRunId,
-  commitHash: ProjectContextRunGitObjectId,
-  sequence: NonNegativeInt,
-});
-export type OrchestratorCommitProjectContextRunResult =
-  typeof OrchestratorCommitProjectContextRunResult.Type;
-
-export const OrchestratorDiscardProjectContextRunInput = Schema.Struct({
-  runId: ProjectContextRunId,
-});
-export type OrchestratorDiscardProjectContextRunInput =
-  typeof OrchestratorDiscardProjectContextRunInput.Type;
-
-export const OrchestratorDiscardProjectContextRunResult = Schema.Struct({
-  runId: ProjectContextRunId,
-  sequence: NonNegativeInt,
-});
-export type OrchestratorDiscardProjectContextRunResult =
-  typeof OrchestratorDiscardProjectContextRunResult.Type;
 
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;

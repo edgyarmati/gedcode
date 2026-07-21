@@ -262,9 +262,6 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
       | "project.context-run-started"
       | "project.context-run-pending-review"
       | "project.context-run-applied"
-      | "project.context-run-revised"
-      | "project.context-run-committed"
-      | "project.context-run-discarded"
       | "project.context-run-failed"
       | "project.context-run-interrupted";
   }
@@ -274,9 +271,6 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
     event.type === "project.context-run-started" ||
     event.type === "project.context-run-pending-review" ||
     event.type === "project.context-run-applied" ||
-    event.type === "project.context-run-revised" ||
-    event.type === "project.context-run-committed" ||
-    event.type === "project.context-run-discarded" ||
     event.type === "project.context-run-failed" ||
     event.type === "project.context-run-interrupted"
   );

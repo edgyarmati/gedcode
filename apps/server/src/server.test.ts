@@ -25,9 +25,7 @@ import {
   type ServerSettings,
   ORCHESTRATOR_WS_METHODS,
   ORCHESTRATION_WS_METHODS,
-  ProjectContextFingerprint,
   ProjectContextRunId,
-  ProjectContextSchemaVersion,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -112,10 +110,6 @@ import {
   ProjectContextRunCoordinator,
   type ProjectContextRunCoordinatorShape,
 } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
-import {
-  ProjectContextOnboardingCoordinator,
-  type ProjectContextOnboardingCoordinatorShape,
-} from "./orchestration/Services/ProjectContextOnboardingCoordinator.ts";
 import {
   PmProjectRuntimeFactory,
   type PmProjectRuntimeFactoryShape,
@@ -397,7 +391,6 @@ const buildAppUnderTest = (options?: {
     providerService?: Partial<ProviderServiceShape>;
     orchestrationEngine?: Partial<OrchestrationEngineShape>;
     projectContextRunCoordinator?: Partial<ProjectContextRunCoordinatorShape>;
-    projectContextOnboardingCoordinator?: Partial<ProjectContextOnboardingCoordinatorShape>;
     pmProjectRuntimeFactory?: Partial<PmProjectRuntimeFactoryShape>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQueryShape>;
     providerQuotaStatusRepository?: Partial<ProviderQuotaStatusRepositoryShape>;
@@ -764,12 +757,6 @@ const buildAppUnderTest = (options?: {
                 sequence: 0,
               }),
             ...options?.layers?.projectContextRunCoordinator,
-          }),
-          Layer.mock(ProjectContextOnboardingCoordinator)({
-            get: () => Effect.die("ProjectContextOnboardingCoordinator.get should not be called"),
-            dismiss: () =>
-              Effect.die("ProjectContextOnboardingCoordinator.dismiss should not be called"),
-            ...options?.layers?.projectContextOnboardingCoordinator,
           }),
         ),
       ),
@@ -3916,42 +3903,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           updatedAt: now,
         },
       };
-      const contextDismissedEvent: OrchestrationEvent = {
-        sequence: 20,
-        eventId: EventId.make("event-context-dismissed"),
-        aggregateKind: "project",
-        aggregateId: projectId,
-        type: "project.context-dismissed",
-        occurredAt: now,
-        commandId: CommandId.make("cmd-context-dismissed"),
-        causationEventId: null,
-        correlationId: CommandId.make("cmd-context-dismissed"),
-        metadata: {},
-        payload: {
-          projectId,
-          schemaVersion: ProjectContextSchemaVersion.make(1),
-          fingerprint: ProjectContextFingerprint.make(`sha256:${"a".repeat(64)}`),
-          dismissedAt: now,
-        },
-      };
-      const foreignContextCompletedEvent: OrchestrationEvent = {
-        sequence: 21,
-        eventId: EventId.make("event-foreign-context-completed"),
-        aggregateKind: "project",
-        aggregateId: ProjectId.make("project-foreign"),
-        type: "project.context-completed",
-        occurredAt: now,
-        commandId: CommandId.make("cmd-foreign-context-completed"),
-        causationEventId: null,
-        correlationId: CommandId.make("cmd-foreign-context-completed"),
-        metadata: {},
-        payload: {
-          projectId: ProjectId.make("project-foreign"),
-          schemaVersion: ProjectContextSchemaVersion.make(1),
-          fingerprint: ProjectContextFingerprint.make(`sha256:${"b".repeat(64)}`),
-          completedAt: now,
-        },
-      };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
       const surfacedMessages: string[] = [];
@@ -4032,8 +3983,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               cancellationFailedEvent,
               stageInterruptedEvent,
               helperRequestedEvent,
-              contextDismissedEvent,
-              foreignContextCompletedEvent,
             ),
           },
           providerService: {
@@ -4120,9 +4069,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({
                 projectId,
-              }).pipe(Stream.take(9), Stream.runCollect),
+              }).pipe(Stream.take(8), Stream.runCollect),
             );
-            assert.equal(projectItems.length, 9);
+            assert.equal(projectItems.length, 8);
             const projectSnapshotItem = projectItems[0];
             assert.equal(projectSnapshotItem?.kind, "snapshot");
             if (projectSnapshotItem?.kind === "snapshot") {
@@ -4148,7 +4097,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 "task.cancellation-failed",
                 "task.stage-interrupted",
                 "helper.run-requested",
-                "project.context-dismissed",
               ],
             );
 

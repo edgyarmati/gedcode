@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  ProjectContextFingerprint,
-  ProjectContextSchemaVersion,
-  type ProjectContextResolution,
-} from "@t3tools/contracts";
+import { ProjectContextFingerprint, ProjectContextSchemaVersion } from "@t3tools/contracts";
 
 import { CURRENT_GED_SCHEMA_VERSION } from "./GedManifest.ts";
 
@@ -140,15 +136,4 @@ export function makeProjectContextSnapshot(input: {
     promptKind: files.some((file) => file.classification === "substantive") ? "review" : "populate",
     ownershipBaseline: input.ownershipBaseline ?? { files: [] },
   };
-}
-
-export function shouldPromptForProjectContext(
-  snapshot: Pick<ProjectContextSnapshot, "schemaVersion" | "fingerprint">,
-  resolution: ProjectContextResolution | null,
-): boolean {
-  return (
-    resolution === null ||
-    resolution.schemaVersion !== snapshot.schemaVersion ||
-    resolution.fingerprint !== snapshot.fingerprint
-  );
 }

@@ -471,7 +471,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             roleModelSelections: command.roleModelSelections ?? {},
             rolePromptPrefixes: command.rolePromptPrefixes ?? {},
             orchestratorConfig: command.orchestratorConfig,
-            projectContextResolution: null,
             scripts: [],
             createdAt: command.createdAt,
             updatedAt: command.createdAt,
@@ -554,41 +553,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           updatedAt: occurredAt,
         },
-      };
-    }
-
-    case "project.context.resolve": {
-      yield* requireProject({
-        readModel,
-        command,
-        projectId: command.projectId,
-      });
-
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "project",
-          aggregateId: command.projectId,
-          occurredAt: command.resolvedAt,
-          commandId: command.commandId,
-        })),
-        type:
-          command.outcome === "dismissed"
-            ? "project.context-dismissed"
-            : "project.context-completed",
-        payload:
-          command.outcome === "dismissed"
-            ? {
-                projectId: command.projectId,
-                schemaVersion: command.schemaVersion,
-                fingerprint: command.fingerprint,
-                dismissedAt: command.resolvedAt,
-              }
-            : {
-                projectId: command.projectId,
-                schemaVersion: command.schemaVersion,
-                fingerprint: command.fingerprint,
-                completedAt: command.resolvedAt,
-              },
       };
     }
 
@@ -759,34 +723,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "project.context.run.revise": {
-      const run = yield* requireProjectContextRun({
-        readModel,
-        command,
-        projectContextRunId: command.projectContextRunId,
-      });
-      if (run.status !== "pending-review") {
-        return yield* invariantError(
-          command.type,
-          `Project-context run '${run.id}' cannot be revised from '${run.status}'.`,
-        );
-      }
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "project-context-run",
-          aggregateId: run.id,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        type: "project.context-run-revised",
-        payload: {
-          projectContextRunId: run.id,
-          prompt: command.prompt,
-          updatedAt: command.createdAt,
-        },
-      };
-    }
-
     case "project.context.run.apply": {
       const run = yield* requireProjectContextRun({
         readModel,
@@ -846,108 +782,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       } satisfies PlannedOrchestrationEvent;
-      const completedEvent = {
-        ...(yield* withEventBase({
-          aggregateKind: "project",
-          aggregateId: run.projectId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        causationEventId: appliedEvent.eventId,
-        type: "project.context-completed",
-        payload: {
-          projectId: run.projectId,
-          schemaVersion: command.resultSchemaVersion,
-          fingerprint: command.resultFingerprint,
-          completedAt: command.createdAt,
-        },
-      } satisfies PlannedOrchestrationEvent;
-      return [appliedEvent, completedEvent];
-    }
-
-    case "project.context.run.commit":
-    case "project.context.run.discard": {
-      const run = yield* requireProjectContextRun({
-        readModel,
-        command,
-        projectContextRunId: command.projectContextRunId,
-      });
-      yield* requireProject({
-        readModel,
-        command,
-        projectId: run.projectId,
-      });
-      if (run.status !== "pending-review") {
-        return yield* invariantError(
-          command.type,
-          `Project-context run '${run.id}' cannot be resolved from '${run.status}'.`,
-        );
-      }
-      const eventBase = yield* withEventBase({
-        aggregateKind: "project-context-run",
-        aggregateId: run.id,
-        occurredAt: command.createdAt,
-        commandId: command.commandId,
-      });
-      if (command.type === "project.context.run.commit") {
-        const committedEvent = {
-          ...eventBase,
-          type: "project.context-run-committed",
-          payload: {
-            projectContextRunId: run.id,
-            commitHash: command.commitHash,
-            resultSchemaVersion: command.resultSchemaVersion,
-            resultFingerprint: command.resultFingerprint,
-            resolvedAt: command.createdAt,
-            updatedAt: command.createdAt,
-          },
-        } satisfies PlannedOrchestrationEvent;
-        const completedEvent = {
-          ...(yield* withEventBase({
-            aggregateKind: "project",
-            aggregateId: run.projectId,
-            occurredAt: command.createdAt,
-            commandId: command.commandId,
-          })),
-          causationEventId: committedEvent.eventId,
-          type: "project.context-completed",
-          payload: {
-            projectId: run.projectId,
-            schemaVersion: command.resultSchemaVersion,
-            fingerprint: command.resultFingerprint,
-            completedAt: command.createdAt,
-          },
-        } satisfies PlannedOrchestrationEvent;
-        return [committedEvent, completedEvent];
-      }
-      const discardedEvent = {
-        ...eventBase,
-        type: "project.context-run-discarded",
-        payload: {
-          projectContextRunId: run.id,
-          resultSchemaVersion: command.resultSchemaVersion,
-          resultFingerprint: command.resultFingerprint,
-          resolvedAt: command.createdAt,
-          updatedAt: command.createdAt,
-        },
-      } satisfies PlannedOrchestrationEvent;
-      const dismissedEvent = {
-        ...(yield* withEventBase({
-          aggregateKind: "project",
-          aggregateId: run.projectId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        causationEventId: discardedEvent.eventId,
-        type: "project.context-dismissed",
-        payload: {
-          projectId: run.projectId,
-          schemaVersion: command.resultSchemaVersion,
-          fingerprint: command.resultFingerprint,
-          dismissedAt: command.createdAt,
-        },
-      } satisfies PlannedOrchestrationEvent;
-      return [discardedEvent, dismissedEvent];
+      return appliedEvent;
     }
 
     case "project.context.run.start":
