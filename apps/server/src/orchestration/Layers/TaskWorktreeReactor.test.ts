@@ -506,6 +506,82 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
+  it("repairs an unchanged legacy landing even after PR opening was marked failed", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "landed",
+        landing: {
+          status: "failed",
+          failureMessage: "No commits between the base and task branch.",
+          branchPushed: false,
+          updatedAt: now,
+        },
+      }),
+      vcsProcessRun: (input) =>
+        Effect.succeed(
+          input.operation === "OrchestratorTaskNoChange.head" ||
+            input.operation === "OrchestratorTaskNoChange.base"
+            ? processOutput("abc123\n")
+            : processOutput(),
+        ),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.no-changes-needed",
+        taskId,
+        baseHead: "abc123",
+        head: "abc123",
+      }),
+    );
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
+  it("repairs an unchanged legacy landing after its worktree was already removed", async () => {
+    const workspaceRoot = makeEmptyWorkspace();
+    const harness = await createHarness({
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath: null,
+        taskStatus: "landed",
+      }),
+      vcsProcessRun: (input) =>
+        Effect.succeed(
+          input.operation === "OrchestratorTaskNoChange.head" ||
+            input.operation === "OrchestratorTaskNoChange.base"
+            ? processOutput("abc123\n")
+            : processOutput(),
+        ),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.no-changes-needed",
+        taskId,
+        baseHead: "abc123",
+        head: "abc123",
+      }),
+    );
+    expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
   it("recognizes only deterministic task worktree paths", () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
     expect(
@@ -798,6 +874,15 @@ describe("TaskWorktreeReactor", () => {
           updatedAt: now,
         },
       }),
+      vcsProcessRun: (input) => {
+        if (input.operation === "OrchestratorTaskNoChange.head") {
+          return Effect.succeed(processOutput("def456\n"));
+        }
+        if (input.operation === "OrchestratorTaskNoChange.base") {
+          return Effect.succeed(processOutput("abc123\n"));
+        }
+        return Effect.succeed(processOutput());
+      },
     });
 
     await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
@@ -806,6 +891,9 @@ describe("TaskWorktreeReactor", () => {
     expect(harness.pushCurrentBranch).not.toHaveBeenCalled();
     expect(harness.createChangeRequest).not.toHaveBeenCalled();
     expect(harness.removeWorktree).not.toHaveBeenCalled();
+    expect(harness.vcsProcessRun).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "OrchestratorTaskNoChange.head" }),
+    );
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

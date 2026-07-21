@@ -11,7 +11,9 @@
 - The PM inspects remaining changes and may commit, return/steer, or discard them. Verification runs
   only afterward and must bind to exact current task HEAD.
 - Empty accepted work becomes No changes needed. Successful landed/no-change tasks auto-archive.
-- Inert legacy landed-without-PR tasks become no-change only when they have no genuine landing failure.
+- Legacy landed-without-PR tasks become no-change only when Git proves their clean branch still equals
+  its creation baseline. Obsolete landing-failure markers and missing worktrees do not block this
+  repair; branches containing commits remain untouched for explicit recovery.
 - PMs handle bounded low-risk changes directly in the primary checkout, including overlapping dirty
   files; they review intended hunks, run proportional checks, commit, and report the result.
 - Codex PM uses workspace-write/auto-review with unresolved access forwarded to the user. Claude and
@@ -86,6 +88,16 @@
   server PM/change-review suites (54 tests) passed; `bun fmt`, `bun lint`, and `bun typecheck` passed.
   The full suite passed across all 12 packages: the non-server workspace run completed 11 packages,
   and the separately reported server run passed 183/183 files with 1,504 passed and 1 skipped.
+- `ORCH-WORK-07` completed 2026-07-21. Startup reconciliation now examines landed-without-PR tasks
+  even when an obsolete PR failure is recorded or their worktree was already removed. The PM's
+  no-change actuator accepts the same legacy state. Both paths require exact Git evidence that the
+  branch HEAD equals its creation reflog baseline; dirty or advanced branches remain recoverable and
+  failed landings are never retried automatically.
+- Verification evidence for `ORCH-WORK-07`: focused decider, PM-tool, and worktree-reactor suites
+  passed 155/155 tests; server typecheck passed; repository formatting and lint passed with existing
+  warnings. Full `bun run test` passed all 12 packages (server 208/208 files, 1,626 passed and 1
+  skipped). The all-package typecheck remains blocked by pre-existing `effect/Scope` resolution errors
+  in `packages/effect-codex-app-server` under the installed Effect 4 beta.
 - `ORCH-PMDIRECT-01` completed 2026-07-17. PM runtime policy is now provider-specific: Codex starts
   workspace-scoped with native auto-review, while Claude and OpenCode retain full access. PM runtime
   approval requests are bridged into durable PM-thread activities and the PM composer exposes their

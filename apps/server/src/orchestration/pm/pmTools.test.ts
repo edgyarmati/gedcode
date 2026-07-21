@@ -737,6 +737,44 @@ it.effect("completeTaskWithoutChanges verifies the branch baseline and clean wor
   }),
 );
 
+it.effect("completeTaskWithoutChanges repairs an unchanged failed landing", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const failedLandedTask = makeTask({
+      status: "landed",
+      currentStageThreadId: null,
+      branch: "orchestrator/task-1",
+      landing: {
+        status: "failed",
+        failureMessage: "No commits between the base and task branch.",
+        branchPushed: false,
+        updatedAt: now,
+      },
+    });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([failedLandedTask]), null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(
+                input.operation === "OrchestratorTaskNoChange.head" ||
+                  input.operation === "OrchestratorTaskNoChange.base"
+                  ? vcsOutput("abc123\n")
+                  : vcsOutput(),
+              ),
+          },
+        }),
+      ),
+    );
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "completeTaskWithoutChanges").execute("repair-no-change", { taskId }),
+    );
+    assert.match(result.content[0]?.text ?? "", /Completed and archived/);
+    assert.ok(dispatched.some((entry) => entry.type === "task.no-changes-needed"));
+  }),
+);
+
 it.effect("commitTaskChanges preserves remaining review changes and refreshes their HEAD", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

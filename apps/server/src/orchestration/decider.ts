@@ -2852,8 +2852,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const task = yield* requireTask({ readModel, command, taskId: command.taskId });
       yield* requireTaskNotCancelling({ command, task });
       const reviewCompletion = task.status === "review";
-      const inertLandedRepair =
-        task.status === "landed" && task.prUrl === null && task.landing?.status !== "failed";
+      const inertLandedRepair = task.status === "landed" && task.prUrl === null;
       if ((!reviewCompletion && !inertLandedRepair) || task.currentStageThreadId !== null) {
         return yield* invariantError(
           command.type,

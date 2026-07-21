@@ -82,6 +82,12 @@ type LandedTaskContext = {
   readonly worktreePath: string;
 };
 
+type LegacyLandedTaskContext = {
+  readonly task: OrchestrationTask;
+  readonly project: OrchestrationProject;
+  readonly worktreePath: string | null;
+};
+
 class TaskLandingPrError extends Data.TaggedError("TaskLandingPrError")<{
   readonly detail: string;
 }> {}
@@ -135,6 +141,23 @@ function listPendingLandedTaskContexts(
       return [];
     }
     return [{ task, project, worktreePath: task.worktreePath }];
+  });
+}
+
+function listLegacyLandedTaskContexts(
+  readModel: OrchestrationReadModel,
+): ReadonlyArray<LegacyLandedTaskContext> {
+  const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
+  return readModel.tasks.flatMap((task) => {
+    if (
+      task.status !== "landed" ||
+      task.prUrl !== null ||
+      (task.landing?.status !== "failed" && task.worktreePath !== null)
+    ) {
+      return [];
+    }
+    const project = projectById.get(String(task.projectId));
+    return project === undefined ? [] : [{ task, project, worktreePath: task.worktreePath }];
   });
 }
 
@@ -385,6 +408,71 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         reason: "terminal",
       });
 
+    const repairLandedTaskWithoutChanges = Effect.fn("repairLandedTaskWithoutChanges")(function* (
+      context: LegacyLandedTaskContext,
+    ) {
+      const taskId = String(context.task.id);
+      const branch = context.task.branch;
+      if (branch === null) {
+        return false;
+      }
+      if (
+        context.worktreePath !== null &&
+        !isDeterministicTaskWorktreePath({
+          workspaceRoot: context.project.workspaceRoot,
+          taskId,
+          worktreePath: context.worktreePath,
+        })
+      ) {
+        yield* Effect.logWarning("legacy task repair skipped unexpected worktree path", {
+          taskId,
+          workspaceRoot: context.project.workspaceRoot,
+          worktreePath: context.worktreePath,
+        });
+        return false;
+      }
+
+      const worktreeExists =
+        context.worktreePath !== null && (yield* fileSystem.exists(context.worktreePath));
+      const evidenceExit = yield* Effect.exit(
+        inspectTaskNoChangeEvidence({
+          repositoryPath: context.project.workspaceRoot,
+          branch,
+          ...(worktreeExists ? { worktreePath: context.worktreePath as string } : {}),
+          process: vcsProcess,
+        }),
+      );
+      if (evidenceExit._tag === "Failure") {
+        yield* Effect.logWarning("task no-change eligibility inspection failed", {
+          taskId,
+          branch,
+          cause: Cause.pretty(evidenceExit.cause),
+        });
+        return false;
+      }
+
+      const evidence = evidenceExit.value;
+      if (evidence.dirty || evidence.baseHead !== evidence.head) {
+        return false;
+      }
+      const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+      yield* orchestrationEngine.dispatch({
+        type: "task.no-changes-needed",
+        commandId: taskNoChangesCommandId(taskId),
+        taskId: context.task.id,
+        baseHead: evidence.baseHead,
+        head: evidence.head,
+        worktreeCompletion: { head: evidence.head, dirty: false },
+        createdAt,
+      });
+      if (context.worktreePath !== null) {
+        yield* cleanupSemaphore.withPermits(1)(
+          cleanupLandedTaskContext({ ...context, worktreePath: context.worktreePath }),
+        );
+      }
+      return true;
+    });
+
     const appendLandingFailureActivity = Effect.fn("appendLandingFailureActivity")(
       function* (input: {
         readonly context: LandedTaskContext;
@@ -563,46 +651,8 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         return;
       }
 
-      if (
-        context.task.branch !== null &&
-        isDeterministicTaskWorktreePath({
-          workspaceRoot: context.project.workspaceRoot,
-          taskId: String(context.task.id),
-          worktreePath: context.worktreePath,
-        })
-      ) {
-        const worktreeExists = yield* fileSystem.exists(context.worktreePath);
-        const noChangeEvidence = yield* Effect.exit(
-          inspectTaskNoChangeEvidence({
-            repositoryPath: context.project.workspaceRoot,
-            branch: context.task.branch,
-            ...(worktreeExists ? { worktreePath: context.worktreePath } : {}),
-            process: vcsProcess,
-          }),
-        );
-        if (noChangeEvidence._tag === "Success") {
-          const evidence = noChangeEvidence.value;
-          if (!evidence.dirty && evidence.baseHead === evidence.head) {
-            const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
-            yield* orchestrationEngine.dispatch({
-              type: "task.no-changes-needed",
-              commandId: taskNoChangesCommandId(String(context.task.id)),
-              taskId: context.task.id,
-              baseHead: evidence.baseHead,
-              head: evidence.head,
-              worktreeCompletion: { head: evidence.head, dirty: false },
-              createdAt,
-            });
-            yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
-            return;
-          }
-        } else {
-          yield* Effect.logWarning("task no-change eligibility inspection failed", {
-            taskId: String(context.task.id),
-            branch: context.task.branch,
-            cause: Cause.pretty(noChangeEvidence.cause),
-          });
-        }
+      if (yield* repairLandedTaskWithoutChanges(context)) {
+        return;
       }
 
       let branchPushed = false;
@@ -746,6 +796,25 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
             cause: Cause.pretty(cause),
           });
         }),
+      );
+
+    const repairLegacyLandedTasks = Effect.fn("repairLegacyLandedTasks")(function* (
+      readModel: OrchestrationReadModel,
+    ) {
+      yield* Effect.forEach(
+        listLegacyLandedTaskContexts(readModel),
+        repairLandedTaskWithoutChanges,
+        { concurrency: 1, discard: true },
+      );
+    });
+
+    const repairLegacyLandedTasksSafely = (readModel: OrchestrationReadModel) =>
+      repairLegacyLandedTasks(readModel).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("legacy landed task no-change reconciliation failed", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
       );
 
     const archiveSuccessfulTerminalTasks = Effect.fn("archiveSuccessfulTerminalTasks")(function* (
@@ -923,6 +992,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       if (startupReadModelExit._tag === "Success") {
         yield* refreshLiveTaskWorktreeLeasesSafely(startupReadModelExit.value);
         yield* archiveSuccessfulTerminalTasksSafely(startupReadModelExit.value);
+        yield* repairLegacyLandedTasksSafely(startupReadModelExit.value);
         yield* processPendingLandedTasksSafely(startupReadModelExit.value);
         yield* cleanupTerminalTaskWorktreesSafely(startupReadModelExit.value);
       } else {

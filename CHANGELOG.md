@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed legacy Orchestrator tasks becoming permanent board clutter after an empty-diff landing was
+  recorded as `landed` without a pull request. Startup reconciliation and the PM's no-change tool now
+  retire and archive these records when Git proves the task branch still equals its creation baseline,
+  including after an obsolete landing failure or removed worktree. Failed landings whose branch has
+  commits remain untouched for explicit recovery.
+
 - Fixed **Dismiss for now** (and successful context-run starts) reopening the same project-context
   prompt when an immediate post-action scan raced the durable projection and returned stale state.
   The acknowledged schema/fingerprint now closes immediately and remains closed in the shared query

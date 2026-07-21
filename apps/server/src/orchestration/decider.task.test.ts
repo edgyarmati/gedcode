@@ -3410,6 +3410,42 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           }),
         );
         expect(mismatch._tag).toBe("Failure");
+
+        const failedLandingBase = yield* taskReadModel({
+          status: "landed",
+          currentStageThreadId: null,
+          prUrl: null,
+        });
+        const failedLanding = {
+          ...failedLandingBase,
+          tasks: failedLandingBase.tasks.map((task) => ({
+            ...task,
+            landing: {
+              status: "failed" as const,
+              failureMessage: "No commits between the base and task branch.",
+              branchPushed: false,
+              updatedAt: now,
+            },
+          })),
+        };
+        const repaired = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel: failedLanding,
+            command: {
+              type: "task.no-changes-needed",
+              commandId: asCommandId("cmd-repair-failed-no-changes"),
+              taskId: asTaskId("task-1"),
+              baseHead: "abc123",
+              head: "abc123",
+              worktreeCompletion: { head: "abc123", dirty: false },
+              createdAt: now,
+            },
+          }),
+        );
+        expect(repaired.map((event) => event.type)).toEqual([
+          "task.no-changes-needed",
+          "task.archived",
+        ]);
       }),
   );
 });

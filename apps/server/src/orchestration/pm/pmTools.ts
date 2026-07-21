@@ -1439,7 +1439,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "completeTaskWithoutChanges",
     label: "Complete task without changes",
     description:
-      "Complete and archive a settled task only when its task branch has no commits beyond its creation baseline and its owned worktree is clean. Use after accepting a worker result that correctly requires no repository changes.",
+      "Complete and archive a settled task only when its task branch has no commits beyond its creation baseline and its owned worktree is clean. Use after accepting a worker result that correctly requires no repository changes, or to repair a legacy landed task that has no PR when the same Git evidence proves it is unchanged.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {

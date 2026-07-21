@@ -452,3 +452,18 @@ Every slice must run focused tests first, then `bun fmt`, `bun lint`, `bun typec
 6. New project with stub guidance → prompt in Chat → choose Smart → context run → Revise → Commit → PM
    surface observes completion without a duplicate prompt.
 7. Worker header opens configured editor and terminal in its task worktree; PM header opens project root.
+
+## Legacy landed-task repair
+
+### ORCH-WORK-07 — 2026-07-21
+
+- Decider accepts the evidence-backed no-change transition for a landed-without-PR task even when its
+  last landing attempt is marked failed, while retaining the exact clean-HEAD/baseline invariant.
+- PM `completeTaskWithoutChanges` can explicitly repair the same legacy terminal state.
+- Startup reconciliation archives unchanged legacy landings with a stale failure marker and landings
+  whose worktree has already been removed.
+- A failed landing whose task branch advanced beyond its creation baseline remains untouched: no PR
+  retry, archive, or worktree cleanup occurs.
+- Focused result: 155/155 tests passed across `decider.task.test.ts`, `pmTools.test.ts`, and
+  `TaskWorktreeReactor.test.ts`; server package typecheck passed. Full `bun run test` passed all 12
+  packages (server 208/208 files, 1,626 passed and 1 skipped).

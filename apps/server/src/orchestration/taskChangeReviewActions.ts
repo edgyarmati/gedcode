@@ -243,16 +243,17 @@ export const completeOrchestratorTaskWithoutChanges = Effect.fn(
     Effect.gen(function* () {
       const readModel = yield* services.snapshotQuery.getCommandReadModel();
       const task = readModel.tasks.find((entry) => entry.id === input.taskId);
+      const reviewCompletion = task?.status === "review" && task.worktreePath !== null;
+      const legacyLandedRepair = task?.status === "landed" && task.prUrl === null;
       if (
         task === undefined ||
-        task.status !== "review" ||
+        (!reviewCompletion && !legacyLandedRepair) ||
         task.currentStageThreadId !== null ||
-        task.worktreePath === null ||
         task.branch === null
       ) {
         return yield* actionError(
           input.taskId,
-          `Task '${input.taskId}' must have settled work in review and an owned branch worktree before it can complete without changes.`,
+          `Task '${input.taskId}' must have settled work in review or be a landed task without a PR before it can complete without changes.`,
         );
       }
       const project = readModel.projects.find((entry) => entry.id === task.projectId);
@@ -265,7 +266,7 @@ export const completeOrchestratorTaskWithoutChanges = Effect.fn(
       const evidence = yield* inspectTaskNoChangeEvidence({
         repositoryPath: project.workspaceRoot,
         branch: task.branch,
-        worktreePath: task.worktreePath,
+        ...(task.worktreePath === null ? {} : { worktreePath: task.worktreePath }),
         process: services.vcsProcess,
       });
       const result = yield* input.dispatch({
