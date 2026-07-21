@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -38,8 +39,31 @@ it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()))(
             ('completed', 'project', 'project-before-067', 4, 'project.context-completed',
              '2026-07-21T00:03:00.000Z', NULL, NULL, NULL, 'system', '{}', '{}')
         `;
+        yield* sql`
+          WITH RECURSIVE event_number(value) AS (
+            VALUES (1)
+            UNION ALL
+            SELECT value + 1 FROM event_number WHERE value < 30000
+          )
+          INSERT INTO orchestration_events (
+            event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+            command_id, causation_event_id, correlation_id, actor_kind, payload_json, metadata_json
+          )
+          SELECT
+            printf('large-event-%05d', value),
+            'task',
+            'large-stream-before-067',
+            value,
+            CASE WHEN value % 10 = 0 THEN 'project.context-dismissed' ELSE 'task.meta-updated' END,
+            '2026-07-21T00:00:00.000Z',
+            NULL, NULL, NULL, 'system', '{}', '{}'
+          FROM event_number
+        `;
 
+        const migrationStartedAt = yield* Clock.currentTimeMillis;
         yield* runMigrations({ toMigrationInclusive: 67 });
+        const migrationDurationMs = (yield* Clock.currentTimeMillis) - migrationStartedAt;
+        assert.isBelow(migrationDurationMs, 3_000);
 
         const columns = yield* sql<{
           readonly name: string;
@@ -61,6 +85,17 @@ it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()))(
           { eventType: "project.created", streamVersion: 1 },
           { eventType: "project.meta-updated", streamVersion: 2 },
         ]);
+        const largeStream = yield* sql<{
+          readonly eventCount: number;
+          readonly maximumStreamVersion: number;
+        }>`
+          SELECT
+            COUNT(*) AS "eventCount",
+            MAX(stream_version) AS "maximumStreamVersion"
+          FROM orchestration_events
+          WHERE stream_id = 'large-stream-before-067'
+        `;
+        assert.deepStrictEqual(largeStream, [{ eventCount: 27000, maximumStreamVersion: 27000 }]);
       }),
     );
   },

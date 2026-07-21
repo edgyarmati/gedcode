@@ -21,13 +21,20 @@ export default Effect.gen(function* () {
   // so the unique stream/version index remains valid during renumbering.
   yield* sql`UPDATE orchestration_events SET stream_version = -sequence`;
   yield* sql`
-    UPDATE orchestration_events AS current
+    WITH ranked_events AS (
+      SELECT
+        sequence,
+        ROW_NUMBER() OVER (
+          PARTITION BY aggregate_kind, stream_id
+          ORDER BY sequence
+        ) AS compacted_stream_version
+      FROM orchestration_events
+    )
+    UPDATE orchestration_events
     SET stream_version = (
-      SELECT COUNT(*)
-      FROM orchestration_events AS preceding
-      WHERE preceding.aggregate_kind = current.aggregate_kind
-        AND preceding.stream_id = current.stream_id
-        AND preceding.sequence <= current.sequence
+      SELECT compacted_stream_version
+      FROM ranked_events
+      WHERE ranked_events.sequence = orchestration_events.sequence
     )
   `;
 

@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Accelerated the project-context cleanup upgrade by compacting event streams in one ranked pass
+  instead of running a correlated count per event, preventing large orchestration databases from
+  stalling desktop startup.
+
 - Completed the manifest-owned project-context replacement. Upgrades interrupt obsolete active
   context runs, remove the former onboarding-resolution column and retired event/command families,
   and compact affected event streams for deterministic replay. The dormant onboarding coordinator and
