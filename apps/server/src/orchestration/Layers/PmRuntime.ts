@@ -938,6 +938,16 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           assistantText,
           diff,
         });
+        const ownershipViolation =
+          event.payload.ownershipViolationPaths === undefined ||
+          event.payload.ownershipViolationPaths.length === 0
+            ? ""
+            : [
+                "",
+                "Stage ownership violation: this documentation-only stage changed substantive implementation paths, so its result was not accepted and verification was not recorded.",
+                `Paths: ${event.payload.ownershipViolationPaths.join(", ")}`,
+                "Return the implementation changes to a work stage. Do not land this task until a clean verifier has completed.",
+              ].join("\n");
         return {
           event,
           ...resolved,
@@ -947,7 +957,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             stageThreadId: event.payload.stageThreadId,
             awaitedTurnId: event.payload.awaitedTurnId,
           }),
-          message: withLastActionCursor(serializeStageResultToMessage(stageResult), event),
+          message: withLastActionCursor(
+            `${serializeStageResultToMessage(stageResult)}${ownershipViolation}`,
+            event,
+          ),
         } satisfies SettlementEnvelope;
       }
 

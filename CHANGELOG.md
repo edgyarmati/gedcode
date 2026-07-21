@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Clarified and enforced Orchestrator stage ownership. Plan and Verify workers are documentation-only,
+  Work owns substantive implementation and clean commits, and the PM owns bounded trivial work plus
+  authenticated host operations that sandboxed workers cannot perform. Each stage now records its
+  starting worktree HEAD; committed, dirty, and untracked implementation paths from a planner or
+  verifier are surfaced to the PM, return the task to review, and cannot produce verification evidence.
+  Verifier-owned context/evidence commits remain part of the exact HEAD required for landing.
+
 - Removed the mandatory project-context onboarding and proposal-review modals. Orchestrator PM chat
   now shows a compact Ready/Updating/Needs attention indicator with an explicit manual Review action;
   active maintenance continues to lock PM delivery inline. The obsolete onboarding dismissal and

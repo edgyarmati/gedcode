@@ -2675,6 +2675,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           model: modelSelection.model,
           ...(modelSelection.options === undefined ? {} : { modelOptions: modelSelection.options }),
           runtimeMode: workerRuntimeMode,
+          ...(command.startHead === undefined ? {} : { startHead: command.startHead }),
           updatedAt: command.createdAt,
         },
       };
@@ -2823,10 +2824,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.worktreeCompletion === undefined
             ? {}
             : { worktreeCompletion: command.worktreeCompletion }),
+          ...(command.ownershipViolationPaths === undefined
+            ? {}
+            : { ownershipViolationPaths: command.ownershipViolationPaths }),
           updatedAt: command.createdAt,
         },
       };
-      if (command.role === "verify" && command.worktreeCompletion?.dirty === false) {
+      if (
+        command.role === "verify" &&
+        command.worktreeCompletion?.dirty === false &&
+        (command.ownershipViolationPaths?.length ?? 0) === 0
+      ) {
         const verificationRecordedEvent: PlannedOrchestrationEvent = {
           ...(yield* withEventBase({
             aggregateKind: "task",

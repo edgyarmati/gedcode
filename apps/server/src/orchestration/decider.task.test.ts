@@ -1901,6 +1901,42 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("rejects verifier implementation changes and returns the task to review", () =>
+    Effect.gen(function* () {
+      const stageThreadId = asThreadId("thread-stage-verify-ownership-violation");
+      const readModel = yield* taskReadModel({
+        status: "verifying",
+        currentStageThreadId: stageThreadId,
+        stageThreadIds: [stageThreadId],
+      });
+
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.complete",
+            commandId: asCommandId("cmd-stage-complete-verify-ownership-violation"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            stageThreadId,
+            awaitedTurnId: asTurnId("turn-verify-ownership-violation"),
+            worktreeCompletion: { head: "verifier-code-head", dirty: false },
+            ownershipViolationPaths: ["apps/server/src/changed-by-verifier.ts"],
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual(["task.stage-completed"]);
+      expect(events[0]?.payload).toMatchObject({
+        ownershipViolationPaths: ["apps/server/src/changed-by-verifier.ts"],
+      });
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.tasks[0]?.status).toBe("review");
+      expect(projected.tasks[0]?.verification).toBeNull();
+    }),
+  );
+
   it.effect("omits diffComplete on the event when the command does not set it", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({

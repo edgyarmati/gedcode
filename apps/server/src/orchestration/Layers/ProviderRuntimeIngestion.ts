@@ -54,7 +54,7 @@ import {
 } from "../stageResolution.ts";
 import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
 import { isPmThreadId } from "../pm/PmEventProjection.ts";
-import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
+import { inspectStageWorktreeSettlement } from "../worktreeCompletion.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
@@ -1757,25 +1757,22 @@ const make = Effect.gen(function* () {
           const taskId = taskForStageThread.id;
           const role: OrchestrationStageRole = activeStageRole;
           const stageThreadId = thread.id;
+          const stageStartHead = (yield* projectionSnapshotQuery.getCommandReadModel())
+            .stageHistory[stageThreadId]?.startHead;
           const completionState = normalizeRuntimeTurnState(event.payload.state);
-          const inspectWorktree = () =>
-            (role === "work" || role === "verify") && taskForStageThread.worktreePath !== null
-              ? inspectTaskWorktreeCompletion({
-                  worktreePath: taskForStageThread.worktreePath,
-                  process: vcsProcess,
-                }).pipe(
-                  Effect.map(
-                    (worktreeCompletion) =>
-                      ({ worktreeCompletion }) as {
-                        readonly worktreeCompletion?: typeof worktreeCompletion;
-                      },
-                  ),
-                )
-              : Effect.succeed(
-                  {} as {
-                    readonly worktreeCompletion?: never;
-                  },
-                );
+          const inspectWorktree = Effect.fn("inspectStageWorktreeForRuntimeSettlement")(
+            function* () {
+              if (taskForStageThread.worktreePath === null) {
+                return {};
+              }
+              return yield* inspectStageWorktreeSettlement({
+                worktreePath: taskForStageThread.worktreePath,
+                process: vcsProcess,
+                role,
+                startHead: stageStartHead ?? undefined,
+              });
+            },
+          );
           if (completionState === "interrupted" || completionState === "cancelled") {
             yield* orchestrationEngine.dispatch({
               type: "task.stage.interrupt",

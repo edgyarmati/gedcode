@@ -1994,7 +1994,15 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
-              ...(event.payload.role === "work" ? { status: "review" as const } : {}),
+              ...(event.payload.role === "work"
+                ? { status: "review" as const }
+                : (event.payload.ownershipViolationPaths?.length ?? 0) > 0
+                  ? {
+                      status: (event.payload.role === "verify" ? "review" : "plan-review") as
+                        | "review"
+                        | "plan-review",
+                    }
+                  : {}),
               currentStageThreadId: null,
               updatedAt: event.payload.updatedAt,
             });
@@ -2420,6 +2428,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.runtimeMode === undefined
               ? {}
               : { runtimeMode: event.payload.runtimeMode }),
+            ...(event.payload.startHead === undefined
+              ? {}
+              : { startHead: event.payload.startHead }),
             status: "running",
             startedAt: event.payload.updatedAt,
             endedAt: null,

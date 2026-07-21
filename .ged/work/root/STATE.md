@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-04` — align PM/planner/worker/verifier ownership and prompts
+- **Active task**: `PROJECT-MANIFEST-05` — enforce fresh Git/GitHub worktree and landing boundaries
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,18 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-MANIFEST-04` completed 2026-07-21. Every delegated stage receives an explicit ownership
+  and sandbox contract. Plan and Verify may commit documentation/context only; Work owns substantive
+  implementation and clean descriptive commits; the full-access PM owns trivial and authenticated host
+  operations. The server records each stage's starting HEAD and compares final committed, dirty, and
+  untracked paths. A planner/verifier implementation mutation is surfaced to the PM, returns the task
+  to review, and cannot create verification evidence. Clean verifier documentation commits become part
+  of the exact verified HEAD used by the existing landing guard.
+- Focused contracts and server tests passed across schema, prompts, PM handoff, real-Git path
+  classification, decider/projection, checkpoint/runtime settlement, and PM re-entry. Repository
+  formatting, lint, and workspace typechecks passed with only existing lint warnings. No full suite
+  was run per the ordinary focused-test policy.
 
 - `PROJECT-MANIFEST-03` completed 2026-07-21. The cross-surface mandatory onboarding/review modals,
   preset cards, dismissal RPCs, and public Commit/Revise/Discard RPCs are removed. Orchestrator entry

@@ -62,6 +62,7 @@ export const resumeQuotaBlockedStageWithServices = Effect.fn("resumeQuotaBlocked
       return false;
     }
     const capabilityTier = capabilityTierForStageRetry(readModel, input.stage.stageThreadId);
+    const startHead = readModel.stageHistory[input.stage.stageThreadId]?.startHead;
 
     yield* input.orchestrationEngine.dispatch({
       type: "task.stage.start",
@@ -70,6 +71,7 @@ export const resumeQuotaBlockedStageWithServices = Effect.fn("resumeQuotaBlocked
       role: input.stage.role,
       ...(capabilityTier === null ? {} : { capabilityTier }),
       instructions,
+      ...(startHead == null ? {} : { startHead }),
       createdAt: input.createdAt,
     });
     return true;

@@ -671,6 +671,12 @@ export const OrchestrationTaskWorktreeCompletion = Schema.Struct({
 });
 export type OrchestrationTaskWorktreeCompletion = typeof OrchestrationTaskWorktreeCompletion.Type;
 
+export const OrchestrationStageOwnershipViolationPaths = Schema.Array(
+  TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+).check(Schema.isMaxLength(256));
+export type OrchestrationStageOwnershipViolationPaths =
+  typeof OrchestrationStageOwnershipViolationPaths.Type;
+
 export const OrchestrationTaskCancellationShutdownPhase = Schema.Literals([
   "interrupt-turn",
   "stop-session",
@@ -889,6 +895,8 @@ export const OrchestrationStageHistoryEntry = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   runtimeMode: Schema.optionalKey(Schema.NullOr(RuntimeMode)),
+  /** Worktree HEAD captured before this stage attempt began. */
+  startHead: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
   status: OrchestrationStageHistoryStatus,
   startedAt: IsoDateTime,
   endedAt: Schema.NullOr(IsoDateTime),
@@ -1675,6 +1683,7 @@ const TaskStageStartCommand = Schema.Struct({
   role: OrchestrationStageRole,
   capabilityTier: Schema.optionalKey(OrchestrationCapabilityTier),
   instructions: Schema.String,
+  startHead: Schema.optionalKey(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
 });
 
@@ -1691,6 +1700,7 @@ const TaskStageCompleteCommand = Schema.Struct({
   // Set by the orchestration runtime (apps/server); contracts stays schema-only.
   diffComplete: Schema.optional(Schema.Boolean),
   worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
+  ownershipViolationPaths: Schema.optional(OrchestrationStageOwnershipViolationPaths),
   createdAt: IsoDateTime,
 });
 
@@ -2614,6 +2624,7 @@ export const TaskStageStartedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   modelOptions: Schema.optionalKey(ProviderOptionSelections),
   runtimeMode: Schema.optional(RuntimeMode),
+  startHead: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
 
@@ -2627,6 +2638,7 @@ export const TaskStageCompletedPayload = Schema.Struct({
   // timeout. Optional so existing consumers and on-disk events are unaffected.
   diffComplete: Schema.optional(Schema.Boolean),
   worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
+  ownershipViolationPaths: Schema.optional(OrchestrationStageOwnershipViolationPaths),
   updatedAt: IsoDateTime,
 });
 

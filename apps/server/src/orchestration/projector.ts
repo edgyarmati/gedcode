@@ -1487,6 +1487,7 @@ export function projectEvent(
                       ...(payload.runtimeMode === undefined
                         ? {}
                         : { runtimeMode: payload.runtimeMode }),
+                      ...(payload.startHead === undefined ? {} : { startHead: payload.startHead }),
                       status: "running",
                       startedAt: payload.updatedAt,
                       endedAt: null,
@@ -1507,7 +1508,15 @@ export function projectEvent(
           return {
             ...nextBase,
             tasks: updateTask(nextBase.tasks, payload.taskId, {
-              ...(payload.role === "work" ? { status: "review" as const } : {}),
+              ...(payload.role === "work"
+                ? { status: "review" as const }
+                : (payload.ownershipViolationPaths?.length ?? 0) > 0
+                  ? {
+                      status: (payload.role === "verify" ? "review" : "plan-review") as
+                        | "review"
+                        | "plan-review",
+                    }
+                  : {}),
               currentStageThreadId: null,
               updatedAt: payload.updatedAt,
             }),

@@ -41,7 +41,7 @@ import {
   findTaskForStageThread,
   stageCompleteCommandId,
 } from "../stageResolution.ts";
-import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
+import { inspectStageWorktreeSettlement } from "../worktreeCompletion.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -233,7 +233,8 @@ const make = Effect.gen(function* () {
     readonly turnId: TurnId;
     readonly createdAt: string;
   }) {
-    const { tasks } = yield* projectionSnapshotQuery.getCommandReadModel();
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    const { tasks } = readModel;
     const task = findTaskForStageThread(tasks, input.threadId);
     if (!task) {
       return;
@@ -243,11 +244,13 @@ const make = Effect.gen(function* () {
       return;
     }
     const worktreeInspection =
-      (role === "work" || role === "verify") && task.worktreePath !== null
+      (role === "plan" || role === "work" || role === "verify") && task.worktreePath !== null
         ? yield* Effect.exit(
-            inspectTaskWorktreeCompletion({
+            inspectStageWorktreeSettlement({
               worktreePath: task.worktreePath,
               process: vcsProcess,
+              role,
+              startHead: readModel.stageHistory[input.threadId]?.startHead ?? undefined,
             }),
           )
         : null;
@@ -260,7 +263,7 @@ const make = Effect.gen(function* () {
       });
       return;
     }
-    const worktreeCompletion = worktreeInspection?.value;
+    const worktreeState = worktreeInspection?.value;
     yield* orchestrationEngine.dispatch({
       type: "task.stage.complete",
       commandId: stageCompleteCommandId(input.threadId, input.turnId),
@@ -268,7 +271,7 @@ const make = Effect.gen(function* () {
       role,
       stageThreadId: input.threadId,
       awaitedTurnId: input.turnId,
-      ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
+      ...worktreeState,
       createdAt: input.createdAt,
     });
   });

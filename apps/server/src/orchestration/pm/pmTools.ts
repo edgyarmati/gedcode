@@ -883,6 +883,15 @@ export const makePmToolExecutors = Effect.gen(function* () {
       runPromise(
         Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
+          const readModelBeforeStart = yield* snapshotQuery.getCommandReadModel();
+          const taskBeforeStart = readModelBeforeStart.tasks.find((entry) => entry.id === taskId);
+          const startHead =
+            taskBeforeStart?.worktreePath && Option.isSome(vcsProcess)
+              ? (yield* inspectTaskWorktreeCompletion({
+                  worktreePath: taskBeforeStart.worktreePath,
+                  process: vcsProcess.value,
+                })).head
+              : undefined;
           const sequence = yield* dispatch({
             type: "task.stage.start",
             commandId: yield* commandId("handoff-worker"),
@@ -890,6 +899,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             role: params.role as OrchestrationStageRole,
             capabilityTier: params.tier,
             instructions: params.instructions,
+            ...(startHead === undefined ? {} : { startHead }),
             createdAt: yield* nowIso,
           });
           const readModel = yield* snapshotQuery.getCommandReadModel();

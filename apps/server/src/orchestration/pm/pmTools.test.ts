@@ -224,6 +224,12 @@ const makeLayer = (
       reservedRefs.delete(input.args[2] ?? "");
       return Effect.succeed(vcsOutput());
     }
+    if (input.operation === "OrchestratorTaskCompletion.head") {
+      return Effect.succeed(vcsOutput("b".repeat(40)));
+    }
+    if (input.operation === "OrchestratorTaskCompletion.status") {
+      return Effect.succeed(vcsOutput());
+    }
     return Effect.die(`Unexpected VcsProcess operation '${input.operation}'.`);
   };
   return Layer.mergeAll(
@@ -1004,6 +1010,7 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
     assert.strictEqual(dispatched[0]?.type, "task.stage.start");
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].capabilityTier, "genius");
+      assert.strictEqual(dispatched[0].startHead, "b".repeat(40));
     }
     assert.deepStrictEqual(result.details, {
       taskId,

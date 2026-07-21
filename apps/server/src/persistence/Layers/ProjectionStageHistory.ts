@@ -39,6 +39,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json,
           runtime_mode,
+          start_head,
           status,
           started_at,
           ended_at
@@ -53,6 +54,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           ${row.model},
           ${row.modelOptions === null ? null : JSON.stringify(row.modelOptions)},
           ${row.runtimeMode ?? null},
+          ${row.startHead ?? null},
           ${row.status},
           ${row.startedAt},
           ${row.endedAt}
@@ -67,6 +69,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model = excluded.model,
           model_options_json = excluded.model_options_json,
           runtime_mode = excluded.runtime_mode,
+          start_head = excluded.start_head,
           status = excluded.status,
           started_at = excluded.started_at,
           ended_at = excluded.ended_at
@@ -88,6 +91,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          start_head AS "startHead",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -111,6 +115,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          start_head AS "startHead",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -135,6 +140,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          start_head AS "startHead",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"
@@ -159,6 +165,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          start_head AS "startHead",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"

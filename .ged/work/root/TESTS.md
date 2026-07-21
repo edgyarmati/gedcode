@@ -67,6 +67,19 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
   records tests and canonical context separately. Code repair returns to worker and invalidates evidence.
 - Landing rejects missing/stale verification or required context/manifest settlement.
 
+#### Evidence — PROJECT-MANIFEST-04 — 2026-07-21
+
+- Stage prompts now state planner/verifier documentation ownership, worker implementation/commit
+  ownership, PM authenticated-operation ownership, and the sandbox handoff boundary.
+- New stage-attempt baselines and real-Git path inspection cover committed, tracked-dirty, and
+  untracked changes. Documentation-only stage violations settle visibly, return the task to review,
+  and cannot record verification; verifier documentation commits remain bound to the final exact HEAD.
+- Focused contracts and server tests passed across orchestration schemas, prompt preparation, PM
+  handoff, Git ownership inspection, decider/projection behavior, checkpoint settlement, runtime
+  fallback settlement, and PM re-entry. No full test suite ran.
+- `bun fmt`, `bun lint`, and all workspace typechecks passed with existing unrelated lint warnings
+  only.
+
 ### PROJECT-MANIFEST-05/06
 
 - Worktrees start only from a refreshed clean primary branch. Dirty/diverged state and missing Git or

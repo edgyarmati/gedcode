@@ -1,8 +1,12 @@
-import type { OrchestrationTaskWorktreeCompletion } from "@t3tools/contracts";
+import type {
+  OrchestrationStageRole,
+  OrchestrationTaskWorktreeCompletion,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
 import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
+import { inspectStageOwnershipViolations } from "./stageOwnership.ts";
 
 export const inspectTaskWorktreeCompletion = Effect.fn("inspectTaskWorktreeCompletion")(
   function* (input: {
@@ -37,5 +41,27 @@ export const inspectTaskWorktreeCompletion = Effect.fn("inspectTaskWorktreeCompl
       head: headResult.stdout.trim(),
       dirty: statusResult.stdout.trim().length > 0,
     } satisfies OrchestrationTaskWorktreeCompletion;
+  },
+);
+
+export const inspectStageWorktreeSettlement = Effect.fn("inspectStageWorktreeSettlement")(
+  function* (input: {
+    readonly worktreePath: string;
+    readonly process: Pick<VcsProcessShape, "run">;
+    readonly role: OrchestrationStageRole;
+    readonly startHead: string | undefined;
+  }) {
+    const worktreeCompletion = yield* inspectTaskWorktreeCompletion(input);
+    const ownershipViolationPaths =
+      input.startHead === undefined
+        ? []
+        : yield* inspectStageOwnershipViolations({
+            ...input,
+            startHead: input.startHead,
+          });
+    return {
+      worktreeCompletion,
+      ...(ownershipViolationPaths.length === 0 ? {} : { ownershipViolationPaths }),
+    };
   },
 );
