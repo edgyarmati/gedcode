@@ -629,6 +629,15 @@ export const WsOrchestratorRequestProjectContextRunRpc = Rpc.make(
   },
 );
 
+export const WsOrchestratorEnsureProjectContextRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.ensureProjectContext,
+  {
+    payload: OrchestratorRpcSchemas.ensureProjectContext.input,
+    success: OrchestratorRpcSchemas.ensureProjectContext.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorResolveProjectContextRunStartRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart,
   {
@@ -652,6 +661,15 @@ export const WsOrchestratorGetProjectContextRunReviewRpc = Rpc.make(
   {
     payload: OrchestratorRpcSchemas.getProjectContextRunReview.input,
     success: OrchestratorRpcSchemas.getProjectContextRunReview.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
+export const WsOrchestratorResolveProjectContextRunAttentionRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention,
+  {
+    payload: OrchestratorRpcSchemas.resolveProjectContextRunAttention.input,
+    success: OrchestratorRpcSchemas.resolveProjectContextRunAttention.output,
     error: OrchestrationDispatchCommandError,
   },
 );
@@ -767,9 +785,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorClearPmChatRpc,
   WsOrchestratorRequestPmHandoffRpc,
   WsOrchestratorRequestProjectContextRunRpc,
+  WsOrchestratorEnsureProjectContextRpc,
   WsOrchestratorResolveProjectContextRunStartRpc,
   WsOrchestratorCancelProjectContextRunStartRpc,
   WsOrchestratorGetProjectContextRunReviewRpc,
+  WsOrchestratorResolveProjectContextRunAttentionRpc,
   WsOrchestratorGetLaunchCapabilitiesRpc,
   WsOrchestratorLaunchRpc,
 );

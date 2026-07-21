@@ -48,6 +48,18 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - `bun fmt`, `bun lint`, and workspace typechecks passed; lint retained only existing unrelated
   warnings. No full test suite was run under the ordinary focused-test policy.
 
+#### Evidence — PROJECT-MANIFEST-03 — 2026-07-21
+
+- Focused contracts, WebSocket client/server routing, three-way real-Git reconciliation, compact-status
+  logic, and Chromium interaction suites passed 154 assertions; only unrelated server tests were
+  filtered out, and no full suite ran.
+- Browser coverage proves the global mandatory modal and legacy commit workflow are absent, manual
+  Review remains explicit, and Needs attention offers Retry, deterministic Reconcile, and Hand to PM.
+- Real-Git tests prove non-overlapping context edits merge, overlapping edits remain untouched, staged
+  or protected Git state is rejected, and PM handoff cannot settle until out-of-scope residue is gone.
+- `bun fmt`, `bun lint`, and all workspace typecheck packages passed with existing unrelated lint
+  warnings only.
+
 ### PROJECT-MANIFEST-04
 
 - Prompt snapshots assign PM/planner/worker/verifier ownership and disclose worker sandbox limits.

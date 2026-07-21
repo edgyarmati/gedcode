@@ -3617,6 +3617,51 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("routes focused project-context attention recovery", () =>
+    Effect.gen(function* () {
+      const runId = ProjectContextRunId.make("context-run-attention-rpc");
+      const calls: string[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          projectContextRunCoordinator: {
+            ensureBeforePmTurn: () =>
+              Effect.succeed({
+                status: "maintenance-active" as const,
+                projectContextRunId: runId,
+              }),
+            resolveAttention: (input) =>
+              Effect.sync(() => {
+                calls.push(input.action);
+                return { runId: input.runId, sequence: 74 };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention]({
+            runId,
+            action: "reconcile",
+          }),
+        ),
+      );
+
+      const ensured = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATOR_WS_METHODS.ensureProjectContext]({
+            projectId: defaultProjectId,
+          }),
+        ),
+      );
+
+      assert.deepEqual(result, { runId, sequence: 74 });
+      assert.deepEqual(ensured, { status: "maintenance-active", runId });
+      assert.deepEqual(calls, ["reconcile"]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestrator methods", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";

@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-03` — remove legacy onboarding/review UI and add compact status
+- **Active task**: `PROJECT-MANIFEST-04` — align PM/planner/worker/verifier ownership and prompts
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -53,10 +53,15 @@
 
 ## Execution Notes
 
-- `PROJECT-MANIFEST-03` checkpoint: the cross-surface mandatory onboarding/review modals, preset cards,
-  dismissal RPCs, and public Commit/Revise/Discard RPCs are removed. Orchestrator PM chat now owns a
-  compact Ready/Updating/Needs attention indicator and explicit manual Review action. Focused conflict
-  recovery and final legacy backend cleanup remain in this active slice.
+- `PROJECT-MANIFEST-03` completed 2026-07-21. The cross-surface mandatory onboarding/review modals,
+  preset cards, dismissal RPCs, and public Commit/Revise/Discard RPCs are removed. Orchestrator entry
+  now ensures manifest state automatically; PM chat owns compact Ready/Updating/Needs attention and
+  manual Review controls. Focused recovery re-audits transient state, three-way merges non-overlapping
+  context edits, or dispatches a held full-access PM turn for provider scope residue. The server never
+  settles PM handoff while out-of-scope checkout residue remains.
+- Verification evidence for `PROJECT-MANIFEST-03`: 154 focused assertions passed across contracts,
+  WebSocket routing, real-Git reconciliation, status logic, and Chromium interaction. Repository
+  formatting, lint, and all workspace typechecks passed with existing unrelated warnings only.
 
 - `PROJECT-MANIFEST-02` completed 2026-07-21. The server now checks the committed GED manifest before
   user-triggered and automatic PM delivery. Missing/outdated context starts one durable Smart-default

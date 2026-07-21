@@ -66,9 +66,11 @@ export const ORCHESTRATOR_WS_METHODS = {
   clearPmChat: "orchestrator.clearPmChat",
   requestPmHandoff: "orchestrator.requestPmHandoff",
   requestProjectContextRun: "orchestrator.requestProjectContextRun",
+  ensureProjectContext: "orchestrator.ensureProjectContext",
   resolveProjectContextRunStart: "orchestrator.resolveProjectContextRunStart",
   cancelProjectContextRunStart: "orchestrator.cancelProjectContextRunStart",
   getProjectContextRunReview: "orchestrator.getProjectContextRunReview",
+  resolveProjectContextRunAttention: "orchestrator.resolveProjectContextRunAttention",
   getLaunchCapabilities: "orchestrator.getLaunchCapabilities",
   launch: "orchestrator.launch",
 } as const;
@@ -3479,6 +3481,22 @@ export const OrchestratorRequestProjectContextRunResult = Schema.Struct({
 export type OrchestratorRequestProjectContextRunResult =
   typeof OrchestratorRequestProjectContextRunResult.Type;
 
+export const OrchestratorEnsureProjectContextInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorEnsureProjectContextInput =
+  typeof OrchestratorEnsureProjectContextInput.Type;
+
+export const OrchestratorEnsureProjectContextResult = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("ready") }),
+  Schema.Struct({
+    status: Schema.Literals(["maintenance-active", "maintenance-started"]),
+    runId: ProjectContextRunId,
+  }),
+]);
+export type OrchestratorEnsureProjectContextResult =
+  typeof OrchestratorEnsureProjectContextResult.Type;
+
 export const OrchestratorResolveProjectContextRunStartInput = Schema.Struct({
   runId: ProjectContextRunId,
   action: ProjectContextRunPmStartAction,
@@ -3572,6 +3590,20 @@ export const OrchestratorGetProjectContextRunReviewResult = Schema.Struct({
 });
 export type OrchestratorGetProjectContextRunReviewResult =
   typeof OrchestratorGetProjectContextRunReviewResult.Type;
+
+export const OrchestratorResolveProjectContextRunAttentionInput = Schema.Struct({
+  runId: ProjectContextRunId,
+  action: Schema.Literals(["retry", "reconcile", "hand-to-pm"]),
+});
+export type OrchestratorResolveProjectContextRunAttentionInput =
+  typeof OrchestratorResolveProjectContextRunAttentionInput.Type;
+
+export const OrchestratorResolveProjectContextRunAttentionResult = Schema.Struct({
+  runId: ProjectContextRunId,
+  sequence: NonNegativeInt,
+});
+export type OrchestratorResolveProjectContextRunAttentionResult =
+  typeof OrchestratorResolveProjectContextRunAttentionResult.Type;
 
 export const OrchestratorReviseProjectContextRunInput = Schema.Struct({
   runId: ProjectContextRunId,
@@ -3849,6 +3881,10 @@ export const OrchestratorRpcSchemas = {
     input: OrchestratorRequestProjectContextRunInput,
     output: OrchestratorRequestProjectContextRunResult,
   },
+  ensureProjectContext: {
+    input: OrchestratorEnsureProjectContextInput,
+    output: OrchestratorEnsureProjectContextResult,
+  },
   resolveProjectContextRunStart: {
     input: OrchestratorResolveProjectContextRunStartInput,
     output: OrchestratorResolveProjectContextRunStartResult,
@@ -3860,6 +3896,10 @@ export const OrchestratorRpcSchemas = {
   getProjectContextRunReview: {
     input: OrchestratorGetProjectContextRunReviewInput,
     output: OrchestratorGetProjectContextRunReviewResult,
+  },
+  resolveProjectContextRunAttention: {
+    input: OrchestratorResolveProjectContextRunAttentionInput,
+    output: OrchestratorResolveProjectContextRunAttentionResult,
   },
   getLaunchCapabilities: {
     input: Schema.Struct({}),

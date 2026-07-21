@@ -6,6 +6,7 @@ import type {
 import {
   GateId,
   ORCHESTRATOR_WS_METHODS,
+  ProjectContextRunId,
   ProjectId,
   ProviderInstanceId,
   TaskId,
@@ -116,6 +117,7 @@ describe("wsRpcClient", () => {
     const taskId = TaskId.make("task-1");
     const stageThreadId = ThreadId.make("stage-thread-1");
     const gateId = GateId.make("gate-1");
+    const contextRunId = ProjectContextRunId.make("context-run-1");
     const globalPresets = {
       cheap: { instanceId: ProviderInstanceId.make("codex-cheap"), model: "gpt-cheap" },
       smart: { instanceId: ProviderInstanceId.make("codex-smart"), model: "gpt-smart" },
@@ -157,6 +159,11 @@ describe("wsRpcClient", () => {
         accepted: true,
         mode: "transcript" as const,
       })),
+      [ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention]: vi.fn(() => ({
+        runId: contextRunId,
+        sequence: 16,
+      })),
+      [ORCHESTRATOR_WS_METHODS.ensureProjectContext]: vi.fn(() => ({ status: "ready" as const })),
       [ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]: vi.fn(() => ({
         editors: ["cursor" as const],
         reveal: true,
@@ -240,6 +247,15 @@ describe("wsRpcClient", () => {
     await expect(
       client.orchestrator.requestPmHandoff({ projectId, mode: "transcript" }),
     ).resolves.toEqual({ accepted: true, mode: "transcript" });
+    await expect(
+      client.orchestrator.resolveProjectContextRunAttention({
+        runId: contextRunId,
+        action: "reconcile",
+      }),
+    ).resolves.toEqual({ runId: contextRunId, sequence: 16 });
+    await expect(client.orchestrator.ensureProjectContext({ projectId })).resolves.toEqual({
+      status: "ready",
+    });
     await expect(client.orchestrator.getLaunchCapabilities()).resolves.toEqual({
       editors: ["cursor"],
       reveal: true,

@@ -26,6 +26,7 @@ import type { ProjectContextSnapshot } from "../../project/ProjectContext.ts";
 import {
   captureProjectContextRunGitState,
   captureProjectContextWorkspaceStatus,
+  compareProjectContextOwnership,
   sameProjectContextRunGitState,
   type ProjectContextWorkspaceStatusBaseline,
 } from "../../project/ProjectContextRunChanges.ts";
@@ -43,10 +44,13 @@ import {
   commitProjectContextRunReview,
   discardProjectContextRunReview,
   inspectProjectContextRunReview,
+  projectContextRunBaselineOwnership,
   ProjectContextRunReviewError,
   projectContextRunReviewPresentation,
+  reconcileProjectContextRunReview,
 } from "../projectContextRunReview.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { PmProjectRuntimeFactory } from "../Services/PmRuntime.ts";
 import {
   ProjectionSnapshotQuery,
   type ProjectionSnapshotQueryShape,
@@ -276,6 +280,7 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
   const serverSettings = yield* ServerSettingsService;
   const manifests = yield* GedManifestManager;
   const environment = yield* ServerEnvironment;
+  const pmRuntimeFactory = yield* PmProjectRuntimeFactory;
 
   const reviewServices = (run: OrchestrationProjectContextRun) => ({
     scan: (workspaceRoot: string) =>
@@ -430,6 +435,69 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
       );
     });
 
+  const resolveAttention: ProjectContextRunCoordinatorShape["resolveAttention"] = (input) =>
+    withProjectContextRunLifecycleLock(
+      input.runId,
+      Effect.gen(function* () {
+        const run = yield* loadPendingReview(input.runId);
+        if (input.action === "hand-to-pm") {
+          const readModel = yield* snapshotQuery.getCommandReadModel();
+          const project = readModel.projects.find((candidate) => candidate.id === run.projectId);
+          if (project === undefined) {
+            return yield* new ProjectContextRunReviewError({
+              projectContextRunId: run.id,
+              detail: `Project '${run.projectId}' is unavailable for PM context recovery.`,
+            });
+          }
+          const message = [
+            "GedCode is handing a blocked project-context maintenance run to you for full-access recovery.",
+            `Run: ${run.id}`,
+            `Summary: ${run.result ?? "No provider summary."}`,
+            `Recorded out-of-scope paths: ${run.scopeViolationPaths.join(", ") || "none"}`,
+            "Inspect the primary checkout. Preserve user work, resolve or revert provider residue outside canonical context, and make only trivial context corrections directly.",
+            "For meaningful implementation work, create a proper task instead. Do not commit context maintenance here; the server will re-audit and settle it after this turn.",
+          ].join("\n");
+          const runtime = yield* pmRuntimeFactory.getOrCreate(project);
+          yield* runtime.surfaceUserMessage(message);
+          yield* runtime.enqueue(message).pipe(Effect.andThen(runtime.drain));
+          yield* reconcileProjectContextRunReview(reviewServices(run), run, {
+            allowRecordedScopeViolation: true,
+          });
+        } else if (input.action === "retry") {
+          yield* inspectProjectContextRunReview(reviewServices(run), run);
+        } else {
+          yield* reconcileProjectContextRunReview(reviewServices(run), run);
+        }
+        const now = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+        const descriptor = yield* environment.getDescriptor;
+        yield* manifests.writeCurrent({
+          workspaceRoot: run.primaryCheckoutPath,
+          now,
+          generatedBy: `gedcode@${descriptor.serverVersion}`,
+        });
+        const snapshot = yield* scanner.scan(run.primaryCheckoutPath);
+        const owned = compareProjectContextOwnership(
+          projectContextRunBaselineOwnership(run),
+          snapshot.ownershipBaseline,
+        );
+        const result = yield* engine.dispatch({
+          type: "project.context.run.apply",
+          commandId: yield* commandId(`attention-${input.action}`),
+          projectContextRunId: run.id,
+          result: run.result ?? "Project context maintenance completed.",
+          changes: owned.changes.map((change) => ({
+            path: ProjectContextRunPath.make(change.relativePath),
+            beforeRawContent: change.before.content,
+            afterRawContent: change.after.content,
+          })),
+          resultSchemaVersion: snapshot.schemaVersion,
+          resultFingerprint: snapshot.fingerprint,
+          createdAt: now,
+        });
+        return { runId: run.id, sequence: result.sequence };
+      }),
+    );
+
   const resolveStart: ProjectContextRunCoordinatorShape["resolveStart"] = (input) =>
     Effect.gen(function* () {
       const result = yield* engine.dispatch({
@@ -537,6 +605,7 @@ export const makeProjectContextRunCoordinator = Effect.gen(function* () {
     resolveStart,
     cancelStart,
     getReview,
+    resolveAttention,
     revise,
     commit,
     discard,

@@ -89,12 +89,16 @@ import type {
   OrchestratorRequestPmHandoffResult,
   OrchestratorRequestProjectContextRunInput,
   OrchestratorRequestProjectContextRunResult,
+  OrchestratorEnsureProjectContextInput,
+  OrchestratorEnsureProjectContextResult,
   OrchestratorResolveProjectContextRunStartInput,
   OrchestratorResolveProjectContextRunStartResult,
   OrchestratorCancelProjectContextRunStartInput,
   OrchestratorCancelProjectContextRunStartResult,
   OrchestratorGetProjectContextRunReviewInput,
   OrchestratorGetProjectContextRunReviewResult,
+  OrchestratorResolveProjectContextRunAttentionInput,
+  OrchestratorResolveProjectContextRunAttentionResult,
   OrchestratorResolveGateInput,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
@@ -672,6 +676,9 @@ export interface EnvironmentApi {
     requestProjectContextRun: (
       input: OrchestratorRequestProjectContextRunInput,
     ) => Promise<OrchestratorRequestProjectContextRunResult>;
+    ensureProjectContext: (
+      input: OrchestratorEnsureProjectContextInput,
+    ) => Promise<OrchestratorEnsureProjectContextResult>;
     resolveProjectContextRunStart: (
       input: OrchestratorResolveProjectContextRunStartInput,
     ) => Promise<OrchestratorResolveProjectContextRunStartResult>;
@@ -681,6 +688,9 @@ export interface EnvironmentApi {
     getProjectContextRunReview: (
       input: OrchestratorGetProjectContextRunReviewInput,
     ) => Promise<OrchestratorGetProjectContextRunReviewResult>;
+    resolveProjectContextRunAttention: (
+      input: OrchestratorResolveProjectContextRunAttentionInput,
+    ) => Promise<OrchestratorResolveProjectContextRunAttentionResult>;
     getLaunchCapabilities: () => Promise<OrchestratorLaunchCapabilities>;
     launch: (input: OrchestratorLaunchInput) => Promise<OrchestratorLaunchResult>;
   };

@@ -26,6 +26,7 @@ import {
   discardProjectContextRunReview,
   projectContextRunReviewPresentation,
   ProjectContextRunReviewError,
+  reconcileProjectContextRunReview,
 } from "./projectContextRunReview.ts";
 
 const TestLayer = VcsProcessLive.pipe(Layer.provideMerge(NodeServices.layer));
@@ -361,6 +362,76 @@ it.layer(TestLayer)("project-context run review", (it) => {
           (yield* git(cwd, ["show", "-s", "--format=%s", "HEAD"])).stdout,
           /Initial fixture/u,
         );
+      }),
+    ),
+  );
+
+  it.effect("reconciles non-overlapping provider and current context edits", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* makeRepository();
+        const before = "one\ntwo\nthree\nfour\n";
+        const proposal = "ONE\ntwo\nthree\nfour\n";
+        const current = "one\ntwo\nthree\nUSER four\n";
+        const run = yield* makeReviewRun(cwd, before, proposal);
+        const services = yield* reviewServices(run);
+        yield* fs.writeFileString(`${cwd}/AGENTS.md`, current);
+
+        yield* reconcileProjectContextRunReview(services, run);
+
+        assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), "ONE\ntwo\nthree\nUSER four\n");
+      }),
+    ),
+  );
+
+  it.effect("refuses overlapping context reconciliation without changing the file", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* makeRepository();
+        const before = "one\ntwo\nthree\nfour\n";
+        const proposal = "ONE\ntwo\nthree\nfour\n";
+        const current = "USER ONE\ntwo\nthree\nfour\n";
+        const run = yield* makeReviewRun(cwd, before, proposal);
+        const services = yield* reviewServices(run);
+        yield* fs.writeFileString(`${cwd}/AGENTS.md`, current);
+
+        const error = yield* Effect.flip(reconcileProjectContextRunReview(services, run));
+
+        assert.match(error.detail, /edits overlap/u);
+        assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), current);
+      }),
+    ),
+  );
+
+  it.effect("requires PM handoff to clear out-of-scope residue before settling", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* makeRepository();
+        const before = "one\ntwo\nthree\nfour\n";
+        const proposal = "ONE\ntwo\nthree\nfour\n";
+        const run = {
+          ...(yield* makeReviewRun(cwd, before, proposal)),
+          scopeViolationPaths: ["other.txt"],
+        } as OrchestrationProjectContextRun;
+        const services = yield* reviewServices(run);
+        yield* fs.writeFileString(`${cwd}/AGENTS.md`, proposal);
+        yield* fs.writeFileString(`${cwd}/other.txt`, "provider residue\n");
+
+        const blocked = yield* Effect.flip(
+          reconcileProjectContextRunReview(services, run, {
+            allowRecordedScopeViolation: true,
+          }),
+        );
+        assert.match(blocked.detail, /must resolve out-of-scope/u);
+
+        yield* fs.writeFileString(`${cwd}/other.txt`, "base\n");
+        yield* reconcileProjectContextRunReview(services, run, {
+          allowRecordedScopeViolation: true,
+        });
+        assert.equal(yield* fs.readFileString(`${cwd}/AGENTS.md`), proposal);
       }),
     ),
   );

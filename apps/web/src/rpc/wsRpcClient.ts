@@ -190,6 +190,9 @@ export interface WsRpcClient {
     readonly requestProjectContextRun: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.requestProjectContextRun
     >;
+    readonly ensureProjectContext: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.ensureProjectContext
+    >;
     readonly resolveProjectContextRunStart: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart
     >;
@@ -198,6 +201,9 @@ export interface WsRpcClient {
     >;
     readonly getProjectContextRunReview: RpcUnaryMethod<
       typeof ORCHESTRATOR_WS_METHODS.getProjectContextRunReview
+    >;
+    readonly resolveProjectContextRunAttention: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention
     >;
     readonly getLaunchCapabilities: RpcUnaryNoArgMethod<
       typeof ORCHESTRATOR_WS_METHODS.getLaunchCapabilities
@@ -434,6 +440,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) =>
           client[ORCHESTRATOR_WS_METHODS.requestProjectContextRun](input),
         ),
+      ensureProjectContext: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.ensureProjectContext](input)),
       resolveProjectContextRunStart: (input) =>
         transport.request((client) =>
           client[ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart](input),
@@ -445,6 +453,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       getProjectContextRunReview: (input) =>
         transport.request((client) =>
           client[ORCHESTRATOR_WS_METHODS.getProjectContextRunReview](input),
+        ),
+      resolveProjectContextRunAttention: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention](input),
         ),
       getLaunchCapabilities: () =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.getLaunchCapabilities]({})),

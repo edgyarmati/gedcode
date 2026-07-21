@@ -48,6 +48,7 @@ import { useShallow } from "zustand/react/shallow";
 import { DiffPanelLoadingState, DiffPanelShell } from "../DiffPanelShell";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectContextAttentionDialog } from "../project-context/ProjectContextAttentionDialog";
 import { MessagesTimeline, type PmTaskChipContext } from "../chat/MessagesTimeline";
 import { ProposedPlanCard } from "../chat/ProposedPlanCard";
 import { Badge } from "../ui/badge";
@@ -441,11 +442,13 @@ export function ProjectContextStatusControls({
   latestRun,
   requesting,
   onReview,
+  onResolve,
 }: {
   active: boolean;
   latestRun: OrchestrationProjectContextRun | null;
   requesting: boolean;
   onReview: () => void;
+  onResolve?: () => void;
 }) {
   const status = deriveProjectContextStatus(latestRun);
   return (
@@ -481,6 +484,11 @@ export function ProjectContextStatusControls({
         )}
         Review
       </Button>
+      {status.kind === "needs-attention" && onResolve ? (
+        <Button onClick={onResolve} size="sm" variant="outline">
+          Resolve
+        </Button>
+      ) : null}
     </>
   );
 }
@@ -511,6 +519,7 @@ function PmConversation({
   const [isClearing, setIsClearing] = useState(false);
   const [isRequestingContextReview, setIsRequestingContextReview] = useState(false);
   const [contextReviewError, setContextReviewError] = useState<string | null>(null);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const projectRef = useMemo(
     () => scopeProjectRef(environmentId, projectId),
     [environmentId, projectId],
@@ -531,6 +540,19 @@ function PmConversation({
     }),
     [environmentId, projectId, taskTitleById],
   );
+  useEffect(() => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api) return;
+    let disposed = false;
+    void api.orchestrator.ensureProjectContext({ projectId }).catch((error: unknown) => {
+      if (!disposed) {
+        setContextReviewError(error instanceof Error ? error.message : String(error));
+      }
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [environmentId, projectId]);
   const clearPmChat = useCallback(async () => {
     const api = readEnvironmentApi(environmentId);
     if (!api || isClearing) {
@@ -572,6 +594,9 @@ function PmConversation({
             active={activeContextRun !== null}
             latestRun={latestContextRun}
             onReview={() => void requestContextReview()}
+            {...(activeContextRun?.status === "pending-review"
+              ? { onResolve: () => setAttentionOpen(true) }
+              : {})}
             requesting={isRequestingContextReview}
           />
           <Button
@@ -587,6 +612,15 @@ function PmConversation({
           </Button>
         </div>
       </div>
+      {activeContextRun?.status === "pending-review" ? (
+        <ProjectContextAttentionDialog
+          environmentId={environmentId}
+          onOpenChange={setAttentionOpen}
+          open={attentionOpen}
+          projectId={projectId}
+          runId={activeContextRun.id}
+        />
+      ) : null}
       {contextReviewError ? (
         <div
           className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive"

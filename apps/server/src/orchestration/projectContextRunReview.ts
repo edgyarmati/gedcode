@@ -111,6 +111,16 @@ function baselineToMap(
   return entries;
 }
 
+export function projectContextRunBaselineOwnership(
+  run: OrchestrationProjectContextRun,
+): ProjectContextOwnershipBaseline {
+  return {
+    files: [...baselineToMap(run).entries()]
+      .toSorted(([left], [right]) => compareCodeUnits(left, right))
+      .map(([relativePath, state]) => ({ relativePath, state })),
+  };
+}
+
 function expectedOwnershipForRun(
   run: OrchestrationProjectContextRun,
 ): ProjectContextOwnershipBaseline {
@@ -147,11 +157,7 @@ function expectedOwnershipForRun(
 export function projectContextRunReviewPresentation(
   run: OrchestrationProjectContextRun,
 ): OrchestratorProjectContextRunReview {
-  const baseline: ProjectContextOwnershipBaseline = {
-    files: [...baselineToMap(run).entries()]
-      .toSorted(([left], [right]) => compareCodeUnits(left, right))
-      .map(([relativePath, state]) => ({ relativePath, state })),
-  };
+  const baseline = projectContextRunBaselineOwnership(run);
   const owned = compareProjectContextOwnership(baseline, expectedOwnershipForRun(run));
   return {
     runId: run.id,
@@ -392,6 +398,150 @@ const mergeAgentChange = Effect.fn("ProjectContextRunReview.mergeAgentChange")(f
     }),
   ).pipe(Effect.mapError((error) => reviewError(run, error.message)));
 });
+
+const mergeWorkingTreeChange = Effect.fn("ProjectContextRunReview.mergeWorkingTreeChange")(
+  function* (
+    services: Pick<ProjectContextRunReviewServices, "vcsProcess" | "fileSystem" | "path">,
+    run: OrchestrationProjectContextRun,
+    input: {
+      readonly relativePath: string;
+      readonly baseline: string | null;
+      readonly proposal: string | null;
+      readonly current: string | null;
+    },
+  ): Effect.fn.Return<string | null, ProjectContextRunReviewError> {
+    if (input.current === input.proposal || input.proposal === input.baseline) return input.current;
+    if (input.current === input.baseline) return input.proposal;
+    if (input.baseline === null || input.proposal === null || input.current === null) {
+      return yield* reviewError(
+        run,
+        `Cannot safely reconcile '${input.relativePath}' because its creation or deletion overlaps another edit.`,
+      );
+    }
+    const baseline = input.baseline;
+    const proposal = input.proposal;
+    const current = input.current;
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const directory = yield* services.fileSystem.makeTempDirectoryScoped({
+          prefix: "gedcode-project-context-reconcile-",
+        });
+        const ours = services.path.join(directory, "current.md");
+        const base = services.path.join(directory, "baseline.md");
+        const theirs = services.path.join(directory, "proposal.md");
+        yield* Effect.all([
+          services.fileSystem.writeFileString(ours, current),
+          services.fileSystem.writeFileString(base, baseline),
+          services.fileSystem.writeFileString(theirs, proposal),
+        ]);
+        const merged = yield* runGit(
+          services,
+          run,
+          "ProjectContextRunReview.reconcileThreeWay",
+          ["merge-file", "-p", ours, base, theirs],
+          { allowNonZeroExit: true },
+        );
+        if (merged.exitCode === 1) {
+          return yield* reviewError(
+            run,
+            `Cannot safely reconcile '${input.relativePath}' because the edits overlap.`,
+          );
+        }
+        if (merged.exitCode !== 0) {
+          return yield* reviewError(
+            run,
+            `Three-way reconciliation for '${input.relativePath}' exited ${merged.exitCode}.`,
+          );
+        }
+        return merged.stdout;
+      }),
+    ).pipe(Effect.mapError((error) => reviewError(run, error.message)));
+  },
+);
+
+/** Merge only deterministic non-overlapping context changes into the current checkout. */
+export const reconcileProjectContextRunReview = Effect.fn("reconcileProjectContextRunReview")(
+  function* (
+    services: ProjectContextRunReviewServices,
+    run: OrchestrationProjectContextRun,
+    options?: { readonly allowRecordedScopeViolation?: boolean },
+  ): Effect.fn.Return<void, ProjectContextRunReviewError> {
+    if (run.scopeViolationPaths.length > 0 && options?.allowRecordedScopeViolation !== true) {
+      return yield* reviewError(
+        run,
+        "Provider scope violations cannot be reconciled automatically; hand them to the PM.",
+        recoverableConflict(
+          "provider-scope-violation",
+          "Provider scope violations require PM review.",
+          run.scopeViolationPaths,
+          false,
+        ),
+      );
+    }
+    if (options?.allowRecordedScopeViolation === true) {
+      const workspaceStatus = yield* captureProjectContextWorkspaceStatus({
+        workspaceRoot: run.primaryCheckoutPath,
+        process: services.vcsProcess,
+        fileSystem: services.fileSystem,
+        path: services.path,
+      }).pipe(Effect.mapError((error) => reviewError(run, error.message)));
+      const unresolved = auditProjectContextWorkspaceDrift(
+        run.workspaceStatusManifest,
+        workspaceStatus,
+      ).outsideAllowedScope.map((entry) => entry.relativePath);
+      if (unresolved.length > 0) {
+        return yield* reviewError(
+          run,
+          `The PM must resolve out-of-scope checkout changes before context can settle: ${unresolved.join(", ")}.`,
+          recoverableConflict(
+            "provider-scope-violation",
+            "Out-of-scope checkout residue remains after PM review.",
+            unresolved,
+            false,
+          ),
+        );
+      }
+    }
+    const gitState = yield* captureProjectContextRunGitState({
+      workspaceRoot: run.primaryCheckoutPath,
+      process: services.vcsProcess,
+      fileSystem: services.fileSystem,
+      path: services.path,
+    }).pipe(Effect.mapError((error) => reviewError(run, error.message)));
+    const protectedChanges = auditProjectContextGitStateDrift(
+      run.gitState,
+      gitState,
+    ).scopeViolationPaths.filter((path) => path !== ".git/refs" && path !== ".git/HEAD");
+    if (protectedChanges.length > 0) {
+      return yield* reviewError(
+        run,
+        `Protected Git state must be restored before reconciliation: ${protectedChanges.join(", ")}.`,
+        recoverableConflict(
+          "protected-git-drift",
+          "Protected Git state cannot be adopted automatically.",
+          protectedChanges,
+          false,
+        ),
+      );
+    }
+
+    const current = yield* services.scan(run.primaryCheckoutPath);
+    for (const change of run.changes) {
+      const state = ownershipStateAt(current, change.path);
+      if (state === undefined) {
+        return yield* reviewError(run, `Current context state is missing '${change.path}'.`);
+      }
+      const merged = yield* mergeWorkingTreeChange(services, run, {
+        relativePath: change.path,
+        baseline: change.beforeRawContent,
+        proposal: change.afterRawContent,
+        current: state.content,
+      });
+      if (merged === state.content) continue;
+      yield* setRawState(services, run, change.path, state, rawStateFromContent(merged));
+    }
+  },
+);
 
 const assertCleanIndex = Effect.fn("ProjectContextRunReview.assertCleanIndex")(function* (
   services: Pick<ProjectContextRunReviewServices, "vcsProcess">,

@@ -150,6 +150,7 @@ it("opens the add-project flow from the orchestrator landing header", async () =
 
 it("shows compact project-context status and keeps manual review explicit", async () => {
   const onReview = vi.fn();
+  const onResolve = vi.fn();
   const view = await render(
     <ProjectContextStatusControls
       active={false}
@@ -168,11 +169,14 @@ it("shows compact project-context status and keeps manual review explicit", asyn
       active
       latestRun={{ status: "pending-review" } as never}
       onReview={onReview}
+      onResolve={onResolve}
       requesting={false}
     />,
   );
   await expect.element(page.getByText("Context · Needs attention")).toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Review project context" })).toBeDisabled();
+  await page.getByRole("button", { name: "Resolve" }).click();
+  expect(onResolve).toHaveBeenCalledOnce();
 });
 
 it("omits empty Plan and Gates sections and renders them once populated", async () => {

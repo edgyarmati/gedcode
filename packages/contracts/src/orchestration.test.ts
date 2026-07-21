@@ -41,7 +41,7 @@ import {
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { ProjectId, ThreadId } from "./baseSchemas.ts";
+import { ProjectContextRunId, ProjectId, ThreadId } from "./baseSchemas.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -88,6 +88,9 @@ const decodeOrchestratorSetTaskCapabilityTiersInput = Schema.decodeUnknownEffect
 const decodeOrchestratorClearPmChatInput = Schema.decodeUnknownEffect(OrchestratorClearPmChatInput);
 const decodeOrchestratorRequestProjectContextRunInput = Schema.decodeUnknownEffect(
   OrchestratorRpcSchemas.requestProjectContextRun.input,
+);
+const decodeOrchestratorResolveProjectContextRunAttentionInput = Schema.decodeUnknownEffect(
+  OrchestratorRpcSchemas.resolveProjectContextRunAttention.input,
 );
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
@@ -279,6 +282,20 @@ it.effect("exposes only project and optional tier for project-context run reques
     assert.deepStrictEqual(input, {
       projectId: ProjectId.make("project-1"),
       tier: "genius",
+    });
+  }),
+);
+
+it.effect("accepts only focused project-context recovery actions", () =>
+  Effect.gen(function* () {
+    const input = yield* decodeOrchestratorResolveProjectContextRunAttentionInput({
+      runId: "context-run-1",
+      action: "reconcile",
+      message: "ignored",
+    });
+    assert.deepStrictEqual(input, {
+      runId: ProjectContextRunId.make("context-run-1"),
+      action: "reconcile",
     });
   }),
 );

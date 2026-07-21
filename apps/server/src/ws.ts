@@ -2051,6 +2051,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestrator" },
           ),
+        [ORCHESTRATOR_WS_METHODS.ensureProjectContext]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.ensureProjectContext,
+            projectContextRunCoordinator.ensureBeforePmTurn(input.projectId).pipe(
+              Effect.map((result) =>
+                result.status === "ready"
+                  ? result
+                  : { status: result.status, runId: result.projectContextRunId },
+              ),
+              Effect.mapError((cause) =>
+                toDispatchCommandError(cause, "Failed to ensure project context."),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
         [ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart]: (input) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.resolveProjectContextRunStart,
@@ -2086,6 +2101,19 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               .pipe(
                 Effect.mapError((cause) =>
                   toDispatchCommandError(cause, "Failed to inspect project-context review."),
+                ),
+              ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.resolveProjectContextRunAttention,
+            // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+            projectContextRunCoordinator
+              .resolveAttention(input)
+              .pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to resolve project-context attention."),
                 ),
               ),
             { "rpc.aggregate": "orchestrator" },
