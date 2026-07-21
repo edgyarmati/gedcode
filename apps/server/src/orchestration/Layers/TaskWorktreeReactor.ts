@@ -129,10 +129,10 @@ function listPendingLandedTaskContexts(
   const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
   return readModel.tasks.flatMap((task) => {
     if (
-      task.status !== "landed" ||
       task.prUrl !== null ||
       task.worktreePath === null ||
-      task.landing?.status === "failed"
+      task.landing?.status === "failed" ||
+      (task.landing?.status !== "opening-pr" && task.status !== "landed")
     ) {
       return [];
     }

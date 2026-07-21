@@ -856,7 +856,21 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("does not count landed tasks against the task worktree cap", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "landed" });
+      const base = yield* taskReadModel({ status: "review" });
+      const readModel = {
+        ...base,
+        tasks: [
+          {
+            ...base.tasks[0]!,
+            landing: {
+              status: "opening-pr" as const,
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: now,
+            },
+          },
+        ],
+      };
 
       const event = yield* decideOrchestrationCommand({
         readModel,
@@ -2578,6 +2592,12 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
       const singleEvent = Array.isArray(event) ? event[0] : event;
       expect(singleEvent?.type).toBe("task.landed");
+      const projected = yield* applyEvents(readModel, toEvents(event));
+      expect(projected.tasks[0]).toMatchObject({
+        status: "review",
+        prUrl: null,
+        landing: { status: "opening-pr" },
+      });
     }),
   );
 
@@ -2954,7 +2974,21 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
 
   it.effect("records an opened PR through an internal task command", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "landed" });
+      const base = yield* taskReadModel({ status: "review" });
+      const readModel = {
+        ...base,
+        tasks: [
+          {
+            ...base.tasks[0]!,
+            landing: {
+              status: "opening-pr" as const,
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: now,
+            },
+          },
+        ],
+      };
 
       const event = yield* decideOrchestrationCommand({
         readModel,
@@ -2982,12 +3016,32 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         causationEventId: singleEvent?.eventId,
         payload: { taskId: asTaskId("task-1"), archivedAt: now },
       });
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.tasks[0]).toMatchObject({
+        status: "landed",
+        prUrl: "https://github.com/acme/repo/pull/42",
+        landing: { status: "completed" },
+      });
     }),
   );
 
-  it.effect("records an exhausted PR-open failure on a landed task", () =>
+  it.effect("records an exhausted PR-open failure while the task remains in review", () =>
     Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "landed", prUrl: null });
+      const base = yield* taskReadModel({ status: "review", prUrl: null });
+      const readModel = {
+        ...base,
+        tasks: [
+          {
+            ...base.tasks[0]!,
+            landing: {
+              status: "opening-pr" as const,
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: now,
+            },
+          },
+        ],
+      };
 
       const event = yield* decideOrchestrationCommand({
         readModel,
@@ -3012,9 +3066,9 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("retries only a failed landed task with its worktree retained", () =>
+  it.effect("retries only a failed ready-to-land task with its worktree retained", () =>
     Effect.gen(function* () {
-      const failed = withFreshVerification(yield* taskReadModel({ status: "landed", prUrl: null }));
+      const failed = withFreshVerification(yield* taskReadModel({ status: "review", prUrl: null }));
       const readModel = {
         ...failed,
         tasks: [

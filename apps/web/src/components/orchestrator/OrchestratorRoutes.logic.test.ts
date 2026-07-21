@@ -152,6 +152,36 @@ describe("deriveTaskLandingPresentation", () => {
     ).toEqual({ kind: "failed", message: "durable provider failure" });
     expect(
       deriveTaskLandingPresentation({
+        task: makeTask({
+          status: "review",
+          landing: {
+            status: "opening-pr",
+            failureMessage: null,
+            branchPushed: false,
+            updatedAt: "2026-07-11T00:04:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+      }),
+    ).toEqual({ kind: "opening-pr" });
+    expect(
+      deriveTaskLandingPresentation({
+        task: makeTask({
+          status: "review",
+          landing: {
+            status: "failed",
+            failureMessage: "GitHub unavailable",
+            branchPushed: false,
+            updatedAt: "2026-07-11T00:04:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+      }),
+    ).toEqual({ kind: "failed", message: "GitHub unavailable" });
+    expect(
+      deriveTaskLandingPresentation({
         task: makeTask({ status: "landed" }),
         gates: [],
         activities: [],

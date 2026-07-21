@@ -70,21 +70,21 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
             detail: `Task '${input.taskId}' does not have an owned worktree to inspect before landing.`,
           });
         }
-        if (task.status === "landed") {
-          if (task.prUrl !== null || task.landing?.status === "completed") {
-            return {
-              sequence: readModel.snapshotSequence,
-              alreadyLanded: true,
-              alreadyInProgress: false,
-            };
-          }
-          if (task.landing?.status !== "failed") {
-            return {
-              sequence: readModel.snapshotSequence,
-              alreadyLanded: false,
-              alreadyInProgress: true,
-            };
-          }
+        if (task.prUrl !== null || task.landing?.status === "completed") {
+          return {
+            sequence: readModel.snapshotSequence,
+            alreadyLanded: true,
+            alreadyInProgress: false,
+          };
+        }
+        if (task.landing?.status === "opening-pr") {
+          return {
+            sequence: readModel.snapshotSequence,
+            alreadyLanded: false,
+            alreadyInProgress: true,
+          };
+        }
+        if (task.landing?.status === "failed") {
           const worktreeCompletion = yield* inspectTaskWorktreeCompletion({
             worktreePath: task.worktreePath,
             process: services.vcsProcess,

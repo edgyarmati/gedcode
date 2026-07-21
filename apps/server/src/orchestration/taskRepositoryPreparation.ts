@@ -18,7 +18,7 @@ export function isGitHubRemoteUrl(url: string): boolean {
   const normalized = url.trim().toLowerCase();
   return (
     /^https?:\/\/(?:www\.)?github\.com\//u.test(normalized) ||
-    /^git@github\.com:/u.test(normalized) ||
+    normalized.startsWith("git@github.com:") ||
     /^ssh:\/\/(?:git@)?github\.com\//u.test(normalized)
   );
 }

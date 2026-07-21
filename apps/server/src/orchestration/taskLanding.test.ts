@@ -137,7 +137,12 @@ it.effect("serializes concurrent landing attempts into one command", () =>
         dispatch: () =>
           Effect.sync(() => {
             dispatchCount += 1;
-            readModel = makeReadModel("landed", 11);
+            readModel = makeReadModel("review", 11, {
+              status: "opening-pr",
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: now,
+            });
             return { sequence: 11 };
           }),
       });

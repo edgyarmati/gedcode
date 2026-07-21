@@ -2176,7 +2176,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
-              status: "landed",
+              status: "review",
               landing: {
                 status: "opening-pr",
                 failureMessage: null,
@@ -2325,6 +2325,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
+              status: "landed",
               prUrl: event.payload.prUrl,
               landing: {
                 status: "completed",
@@ -2346,6 +2347,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
+              status: "review",
               landing: {
                 status: "failed",
                 failureMessage: event.payload.message,

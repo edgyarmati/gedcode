@@ -12,6 +12,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   task worktree onto the new primary HEAD before the verifier starts; conflicts abort cleanly and
   prior verification evidence is invalidated immediately.
 
+- Landing no longer marks tasks terminal before GitHub succeeds. Approved work stays in retryable
+  Review/Ready-to-land state while the configured draft-by-default pull request opens; GitHub or
+  authentication failures retain the worktree and exact-HEAD verification. The task becomes `landed`
+  and auto-archives only after a real pull-request URL is recorded, eliminating new landed-without-PR
+  cleanup limbo while preserving repair for legacy records.
+
 - Clarified and enforced Orchestrator stage ownership. Plan and Verify workers are documentation-only,
   Work owns substantive implementation and clean commits, and the PM owns bounded trivial work plus
   authenticated host operations that sandboxed workers cannot perform. Each stage now records its

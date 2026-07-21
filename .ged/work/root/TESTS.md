@@ -89,6 +89,16 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - Legacy active context runs settle as cancelled-by-upgrade; removed APIs cannot create new legacy runs;
   replay/restart and artifact documentation reflect the manifest lifecycle.
 
+#### Evidence — PROJECT-MANIFEST-05 — 2026-07-21
+
+- Focused repository-preparation tests cover GitHub URL recognition, clean fetch/fast-forward, dirty and
+  diverged rejection, pre-verification rebasing, conflict abort, and target-movement invalidation.
+- Focused PM, decider, landing, worktree-reactor, web projection, and landing-presentation tests prove
+  PR opening remains retryable Review/Ready to land, concurrent requests coalesce, access failure keeps
+  the verified worktree, and terminal landing/archive occurs only after a real PR URL is recorded.
+- Draft-by-default configuration and documented PR-body behavior remain covered by the existing focused
+  worktree-reactor tests. No full suite ran.
+
 ### PROJECT-RECOVER-01 typed-conflict checkpoint — 2026-07-21
 
 - Focused real-Git review and coordinator suites passed 12/12, including typed HEAD and owned-context

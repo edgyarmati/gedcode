@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `PROJECT-MANIFEST-05` — enforce fresh Git/GitHub worktree and landing boundaries
+- **Active task**: `PROJECT-MANIFEST-06` — remove obsolete context paths and finish lifecycle docs
 - **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,17 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `PROJECT-MANIFEST-05` completed 2026-07-21. New task branches require a clean attached primary
+  checkout with a GitHub upstream. PM tooling fetches and safely fast-forwards before reservation,
+  rejects dirty/ahead/diverged/detached/unsupported bases, and repeats the refresh before Verify.
+  Clean task worktrees rebase onto target movement before verification; conflicts abort cleanly and
+  stale verification is invalidated. Landing now remains retryable Review/Ready to land while opening
+  the configured draft-by-default PR and becomes terminal `landed` only after a real PR URL exists.
+  GitHub/auth failures retain the worktree and exact-HEAD verification for explicit retry.
+- Focused server and web tests passed across repository preparation, PM tools/prompts, exact-HEAD
+  invalidation, landing serialization/retry, worktree/PR lifecycle, client projection, and landing UI.
+  No full suite was run per the ordinary focused-test policy.
 
 - `PROJECT-MANIFEST-04` completed 2026-07-21. Every delegated stage receives an explicit ownership
   and sandbox contract. Plan and Verify may commit documentation/context only; Work owns substantive

@@ -3428,7 +3428,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireTaskNotCancelling({ command, task });
       if (
-        task.status !== "landed" ||
+        (task.status !== "review" && task.status !== "landed") ||
         task.prUrl !== null ||
         task.worktreePath === null ||
         task.landing?.status !== "failed"
@@ -3572,10 +3572,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         taskId: command.taskId,
       });
       yield* requireTaskNotCancelling({ command, task });
-      if (task.status !== "landed" || task.prUrl !== null) {
+      if (
+        (task.status !== "review" && task.status !== "landed") ||
+        task.prUrl !== null ||
+        task.landing?.status !== "opening-pr"
+      ) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' must be landed without an existing PR before PR success can be recorded.`,
+          `Task '${command.taskId}' must be opening an approved landing without an existing PR before PR success can be recorded.`,
         );
       }
       const project = yield* requireProject({
@@ -3625,10 +3629,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         taskId: command.taskId,
       });
       yield* requireTaskNotCancelling({ command, task });
-      if (task.status !== "landed" || task.prUrl !== null) {
+      if (
+        (task.status !== "review" && task.status !== "landed") ||
+        task.prUrl !== null ||
+        task.landing?.status !== "opening-pr"
+      ) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' must be landed without an opened PR before PR failure can be recorded.`,
+          `Task '${command.taskId}' must be opening an approved landing without an opened PR before PR failure can be recorded.`,
         );
       }
       return {

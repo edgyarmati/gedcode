@@ -2578,7 +2578,7 @@ function applyEnvironmentOrchestrationEvent(
     case "task.landed":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
-        status: "landed",
+        status: "review",
         landing: {
           status: "opening-pr",
           failureMessage: null,
@@ -2650,6 +2650,7 @@ function applyEnvironmentOrchestrationEvent(
     case "task.pr-opened":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
+        status: "landed",
         prUrl: event.payload.prUrl,
         landing: {
           status: "completed",
@@ -2663,6 +2664,7 @@ function applyEnvironmentOrchestrationEvent(
     case "task.pr-open-failed":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
+        status: "review",
         landing: {
           status: "failed",
           failureMessage: event.payload.message,

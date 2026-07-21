@@ -57,14 +57,21 @@ export function deriveTaskLandingPresentation(input: {
   if (task.prUrl !== null) {
     return { kind: "landed", prUrl: task.prUrl };
   }
+  if (task.landing?.status === "failed") {
+    return {
+      kind: "failed",
+      message: task.landing.failureMessage ?? "Pull request creation failed.",
+    };
+  }
+  if (task.landing?.status === "opening-pr") {
+    return { kind: "opening-pr" };
+  }
   const landingFailure =
     task.status === "landed"
       ? input.activities.findLast((activity) => isLandingFailureForTask(activity, task.id))
       : undefined;
   const canRequestLanding =
-    task.status === "review" ||
-    (task.status === "landed" &&
-      (task.landing?.status === "failed" || landingFailure !== undefined));
+    task.status === "review" || (task.status === "landed" && landingFailure !== undefined);
   if (canRequestLanding && input.requestError) {
     return { kind: "request-failed", message: input.requestError };
   }
@@ -73,15 +80,6 @@ export function deriveTaskLandingPresentation(input: {
   }
 
   if (task.status === "landed") {
-    if (task.landing?.status === "failed") {
-      return {
-        kind: "failed",
-        message: task.landing.failureMessage ?? "Pull request creation failed.",
-      };
-    }
-    if (task.landing?.status === "opening-pr") {
-      return { kind: "opening-pr" };
-    }
     return landingFailure
       ? { kind: "failed", message: landingFailure.summary }
       : { kind: "opening-pr" };

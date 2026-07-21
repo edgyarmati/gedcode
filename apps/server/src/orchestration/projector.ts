@@ -1775,12 +1775,12 @@ export function projectEvent(
       );
 
     case "task.landed":
-      // `task.landed → landed` (terminal success).
+      // Landing is not terminal until the PR actuator records a real URL.
       return decodeForEvent(TaskLandedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
-            status: "landed",
+            status: "review",
             landing: {
               status: "opening-pr",
               failureMessage: null,
@@ -1967,6 +1967,7 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "landed",
             prUrl: payload.prUrl,
             landing: {
               status: "completed",
@@ -1984,6 +1985,7 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "review",
             landing: {
               status: "failed",
               failureMessage: payload.message,

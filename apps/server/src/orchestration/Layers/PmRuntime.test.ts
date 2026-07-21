@@ -3067,6 +3067,8 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "commands plus observed outcomes");
     assert.include(prompt, "other user hunks may exist in the same file");
     assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
+    assert.include(prompt, "Landing remains Ready to land");
+    assert.include(prompt, "terminally landed only after a real pull-request URL is recorded");
     assert.include(prompt, "authenticated host operations");
     assert.include(prompt, "sandboxed auto-approve environment");
     assert.include(prompt, "Planner stages own design documentation only");
