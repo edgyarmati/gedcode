@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { ProjectId, TaskId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -79,6 +79,7 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       yield* threads.upsert({
         threadId: ThreadId.make("thread-null-options"),
         projectId: ProjectId.make("project-null-options"),
+        orchestrationOwnership: null,
         title: "Null options thread",
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -129,6 +130,59 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         model: "claude-opus-4-6",
       });
+    }),
+  );
+
+  it.effect("round-trips thread ownership without classifying legacy rows", () =>
+    Effect.gen(function* () {
+      const threads = yield* ProjectionThreadRepository;
+      const createdAt = "2026-03-24T00:00:00.000Z";
+      const base = {
+        projectId: ProjectId.make("project-ownership"),
+        title: "Owned thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        branch: null,
+        worktreePath: null,
+        latestTurnId: null,
+        createdAt,
+        updatedAt: createdAt,
+        archivedAt: null,
+        latestUserMessageAt: null,
+        pendingApprovalCount: 0,
+        pendingUserInputCount: 0,
+        hasActionableProposedPlan: 0,
+        lastClearedSequence: null,
+        pendingPmHandoff: null,
+        deletedAt: null,
+      };
+      const ownedThreadId = ThreadId.make("thread-owned");
+      const legacyThreadId = ThreadId.make("thread-legacy");
+      yield* threads.upsert({
+        ...base,
+        threadId: ownedThreadId,
+        orchestrationOwnership: { kind: "stage", taskId: TaskId.make("task-owned") },
+      });
+      yield* threads.upsert({
+        ...base,
+        threadId: legacyThreadId,
+        orchestrationOwnership: null,
+      });
+
+      assert.deepStrictEqual(
+        Option.getOrNull(yield* threads.getById({ threadId: ownedThreadId }))
+          ?.orchestrationOwnership,
+        { kind: "stage", taskId: TaskId.make("task-owned") },
+      );
+      assert.strictEqual(
+        Option.getOrNull(yield* threads.getById({ threadId: legacyThreadId }))
+          ?.orchestrationOwnership,
+        null,
+      );
     }),
   );
 });

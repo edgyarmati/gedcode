@@ -63,6 +63,12 @@ export interface SourceControlProviderShape {
     readonly cwd: string;
     readonly context?: SourceControlProviderContext;
     readonly reference: string;
+    /**
+     * Allows a provider to make a conditional, cache-aware remote lookup.
+     * Callers use this only for background synchronization; interactive PR
+     * views deliberately continue to request the current result directly.
+     */
+    readonly cacheTtlSeconds?: number;
   }) => Effect.Effect<ChangeRequest, SourceControlProviderError>;
   readonly createChangeRequest: (input: {
     readonly cwd: string;

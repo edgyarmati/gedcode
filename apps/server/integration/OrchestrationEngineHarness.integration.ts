@@ -80,6 +80,8 @@ import { makeTaskWorktreeReactorLive } from "../src/orchestration/Layers/TaskWor
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import { HelperRunReactor } from "../src/orchestration/Services/HelperRunReactor.ts";
 import { ProjectContextRunReactor } from "../src/orchestration/Services/ProjectContextRunReactor.ts";
+import { PullRequestSyncReactor } from "../src/orchestration/Services/PullRequestSyncReactor.ts";
+import { CapabilityPauseReactor } from "../src/orchestration/Services/CapabilityPauseReactor.ts";
 import {
   RuntimeReceiptBus,
   type OrchestrationRuntimeReceipt,
@@ -633,9 +635,17 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.succeed(PmRuntime, {
           start: () => Effect.void,
           drain: Effect.void,
+          retryProject: () => Effect.void,
         }),
       ),
       Layer.provideMerge(taskWorktreeReactorLayer),
+      Layer.provideMerge(Layer.succeed(PullRequestSyncReactor, { start: () => Effect.void })),
+      Layer.provideMerge(
+        Layer.succeed(CapabilityPauseReactor, {
+          start: () => Effect.void,
+          reconcile: () => Effect.succeed(0),
+        }),
+      ),
       Layer.provideMerge(
         Layer.succeed(HelperRunReactor, {
           start: () => Effect.void,

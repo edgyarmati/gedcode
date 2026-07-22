@@ -60,6 +60,8 @@ export interface GitHubCliShape {
   readonly getPullRequest: (input: {
     readonly cwd: string;
     readonly reference: string;
+    /** Use GitHub's HTTP cache (including ETag revalidation) when available. */
+    readonly cacheTtlSeconds?: number;
   }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
 
   readonly getRepositoryCloneUrls: (input: {
@@ -155,6 +157,29 @@ function normalizeGitHubCliError(
     cause: error,
   });
 }
+
+/**
+ * `gh pr view` is GraphQL-backed and has no conditional-request option. For
+ * a durable PR URL we can use the REST endpoint instead, where `gh api
+ * --cache` persists its HTTP cache and revalidates it with GitHub. References
+ * entered by a user (for example `#42`) intentionally keep the normal view
+ * path because they do not contain a repository identity.
+ */
+function pullRequestApiEndpoint(reference: string): string | null {
+  try {
+    const url = new URL(reference);
+    const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/u.exec(url.pathname);
+    if (match === null) return null;
+    const [, owner, repository, number] = match;
+    if (owner === undefined || repository === undefined || number === undefined) return null;
+    return `repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/${number}`;
+  } catch {
+    return null;
+  }
+}
+
+const cachedPullRequestJq =
+  "{number,title,url:.html_url,baseRefName:.base.ref,headRefName:.head.ref,state,mergedAt:.merged_at,isCrossRepository:(.head.repo.full_name != .base.repo.full_name),headRepository:(if .head.repo == null then null else {nameWithOwner:.head.repo.full_name} end),headRepositoryOwner:(if .head.repo == null then null else {login:.head.repo.owner.login} end)}";
 
 const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
@@ -316,16 +341,28 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
               ),
         ),
       ),
-    getPullRequest: (input) =>
-      execute({
+    getPullRequest: (input) => {
+      const cacheEndpoint =
+        input.cacheTtlSeconds === undefined ? null : pullRequestApiEndpoint(input.reference);
+      return execute({
         cwd: input.cwd,
-        args: [
-          "pr",
-          "view",
-          input.reference,
-          "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
-        ],
+        args:
+          cacheEndpoint === null
+            ? [
+                "pr",
+                "view",
+                input.reference,
+                "--json",
+                "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+              ]
+            : [
+                "api",
+                "--cache",
+                `${Math.max(1, Math.floor(input.cacheTtlSeconds!))}s`,
+                cacheEndpoint,
+                "--jq",
+                cachedPullRequestJq,
+              ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -347,7 +384,8 @@ export const make = Effect.fn("makeGitHubCli")(function* () {
             }),
           ),
         ),
-      ),
+      );
+    },
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,

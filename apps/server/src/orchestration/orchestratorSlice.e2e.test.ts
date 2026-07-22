@@ -47,12 +47,19 @@ const now = "2026-06-18T08:00:00.000Z";
 const afterWork = "2026-06-18T08:01:00.000Z";
 const projectId = ProjectId.make("project-orch-e2e");
 const taskId = TaskId.make("task-orch-e2e");
+const dependentTaskId = TaskId.make("task-orch-dependent-e2e");
 const pmMessageId = MessageId.make("pm-message-orch-e2e");
 const planGateId = GateId.make("gate-plan-e2e");
 const landGateId = GateId.make("gate-land-e2e");
 const awaitedTurnId = TurnId.make("turn-worker-e2e");
 const verifyTurnId = TurnId.make("turn-verify-e2e");
 const cleanWorktreeCompletion = { head: "abc123", dirty: false } as const;
+const pullRequestUrl = "https://github.com/acme/orchestrator-e2e/pull/42";
+
+type PmRuntimeReplayState = {
+  readonly consumed: Set<string>;
+  readonly cursorByProject: Map<string, number>;
+};
 
 function makeProjectCreatedEvent(): OrchestrationEvent {
   return {
@@ -187,8 +194,14 @@ function makePmRuntimeLayer(input: {
   readonly liveEvents: ReadonlyArray<OrchestrationEvent>;
   readonly messages: string[];
   readonly consumeCalls: ConsumePmSettlementInput[];
+  readonly replayState?: PmRuntimeReplayState;
 }) {
-  const consumed = new Set<string>();
+  const replayState =
+    input.replayState ??
+    ({
+      consumed: new Set<string>(),
+      cursorByProject: new Map<string, number>(),
+    } satisfies PmRuntimeReplayState);
   const projectRuntime: PmProjectRuntime = {
     surfaceUserMessage: (message) =>
       Effect.sync(() => {
@@ -234,17 +247,33 @@ function makePmRuntimeLayer(input: {
     ),
     Layer.provide(
       Layer.succeed(PmRuntimeStateRepository, {
-        getCursor: () => Effect.succeed(Option.none()),
+        getCursor: ({ projectId }) =>
+          Effect.sync(() => {
+            const lastConsumedSequence = replayState.cursorByProject.get(String(projectId));
+            return lastConsumedSequence === undefined
+              ? Option.none()
+              : Option.some({ projectId, lastConsumedSequence, updatedAt: now });
+          }),
         listConsumedSettlements: () => Effect.succeed([]),
         listPending: () => Effect.succeed([]),
+        recordDeliveryFailure: () => Effect.succeed(0),
+        releaseDeliveryHolds: () => Effect.void,
+        resetDeliveryRecovery: () => Effect.void,
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
             input.consumeCalls.push(consumeInput);
             const key = `${consumeInput.projectId}:${consumeInput.kind}:${consumeInput.settlementKey}`;
-            if (consumed.has(key)) {
+            if (replayState.consumed.has(key)) {
               return false;
             }
-            consumed.add(key);
+            replayState.consumed.add(key);
+            replayState.cursorByProject.set(
+              String(consumeInput.projectId),
+              Math.max(
+                replayState.cursorByProject.get(String(consumeInput.projectId)) ?? 0,
+                consumeInput.sequence,
+              ),
+            );
             return true;
           }),
         markActed: () => Effect.void,
@@ -314,184 +343,290 @@ function makePmRuntimeLayer(input: {
 }
 
 it.layer(NodeServices.layer)("orchestrator slice mocked e2e", (it) => {
-  it.effect("hands off one worker, gates human approval, survives restart replay, and lands", () =>
-    Effect.gen(function* () {
-      let readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
+  it.effect(
+    "wakes the PM, opens a draft PR, and releases dependents only after replay-safe remote merge",
+    () =>
+      Effect.gen(function* () {
+        let readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
 
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.create",
-        commandId: CommandId.make("cmd-task-create-e2e"),
-        taskId,
-        projectId,
-        taskType: TaskTypeId.make("feature"),
-        title: "Finish orchestrator slice",
-        pmMessageId,
-        branch: null,
-        createdAt: now,
-      })).readModel;
-      expect(latestTask(readModel).branch).toBe("ged/feature/finish-orchestrator-slice");
-      expect(latestTask(readModel).worktreePath).toContain("task-orch-e2e");
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.create",
+          commandId: CommandId.make("cmd-task-create-e2e"),
+          taskId,
+          projectId,
+          taskType: TaskTypeId.make("feature"),
+          title: "Finish orchestrator slice",
+          pmMessageId,
+          branch: null,
+          createdAt: now,
+        })).readModel;
+        expect(latestTask(readModel).branch).toBe("ged/feature/finish-orchestrator-slice");
+        expect(latestTask(readModel).worktreePath).toContain("task-orch-e2e");
 
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.classify",
-        commandId: CommandId.make("cmd-classify-e2e"),
-        taskId,
-        taskType: TaskTypeId.make("feature"),
-        playbookVersion: "feature@v1",
-        createdAt: now,
-      })).readModel;
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.classify",
+          commandId: CommandId.make("cmd-classify-e2e"),
+          taskId,
+          taskType: TaskTypeId.make("feature"),
+          playbookVersion: "feature@v1",
+          createdAt: now,
+        })).readModel;
 
-      const handoff = yield* decideAndApply(readModel, {
-        type: "task.stage.start",
-        commandId: CommandId.make("cmd-handoff-e2e"),
-        taskId,
-        role: "work",
-        instructions: "Implement the accepted plan and leave the diff in the task worktree.",
-        createdAt: now,
-      });
-      readModel = handoff.readModel;
-      const stageStarted = findEvent(handoff.events, "task.stage-started");
-      const turnRequested = findEvent(handoff.events, "thread.turn-start-requested");
-      expect(stageStarted.payload.role).toBe("work");
-      expect(turnRequested.payload.threadId).toBe(stageStarted.payload.stageThreadId);
-      expect(latestTask(readModel).status).toBe("working");
+        const handoff = yield* decideAndApply(readModel, {
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-handoff-e2e"),
+          taskId,
+          role: "work",
+          instructions: "Implement the accepted plan and leave the diff in the task worktree.",
+          createdAt: now,
+        });
+        readModel = handoff.readModel;
+        const stageStarted = findEvent(handoff.events, "task.stage-started");
+        const turnRequested = findEvent(handoff.events, "thread.turn-start-requested");
+        expect(stageStarted.payload.role).toBe("work");
+        expect(turnRequested.payload.threadId).toBe(stageStarted.payload.stageThreadId);
+        expect(latestTask(readModel).status).toBe("working");
 
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.gate.request",
-        commandId: CommandId.make("cmd-plan-gate-e2e"),
-        taskId,
-        gateId: planGateId,
-        gate: "plan",
-        contentHash: "sha256:plan-e2e",
-        stageThreadId: stageStarted.payload.stageThreadId,
-        createdAt: now,
-      })).readModel;
-      expect(latestTask(readModel).status).toBe("plan-review");
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.gate.request",
+          commandId: CommandId.make("cmd-plan-gate-e2e"),
+          taskId,
+          gateId: planGateId,
+          gate: "plan",
+          contentHash: "sha256:plan-e2e",
+          stageThreadId: stageStarted.payload.stageThreadId,
+          createdAt: now,
+        })).readModel;
+        expect(latestTask(readModel).status).toBe("plan-review");
 
-      const pmGateAttempt = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.gate.resolve",
-            commandId: CommandId.make("cmd-plan-gate-pm-e2e"),
-            taskId,
-            gateId: planGateId,
-            gate: "plan",
-            approvedHash: "sha256:plan-e2e",
-            decision: "approved",
-            origin: "pm-runtime",
-            createdAt: now,
-          },
-        }),
-      );
-      expect(pmGateAttempt._tag).toBe("Failure");
-
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.gate.resolve",
-        commandId: CommandId.make("cmd-plan-gate-human-e2e"),
-        taskId,
-        gateId: planGateId,
-        gate: "plan",
-        approvedHash: "sha256:plan-e2e",
-        decision: "approved",
-        origin: "human",
-        createdAt: now,
-      })).readModel;
-
-      const stageComplete = yield* decideAndApply(readModel, {
-        type: "task.stage.complete",
-        commandId: CommandId.make("cmd-stage-complete-e2e"),
-        taskId,
-        role: "work",
-        stageThreadId: stageStarted.payload.stageThreadId,
-        awaitedTurnId,
-        worktreeCompletion: cleanWorktreeCompletion,
-        createdAt: now,
-      });
-      readModel = attachWorkerResult(stageComplete.readModel, stageStarted.payload.stageThreadId);
-      const stageCompleted = findEvent(stageComplete.events, "task.stage-completed");
-      expect(latestTask(readModel).status).toBe("review");
-      expect(latestTask(readModel).currentStageThreadId).toBeNull();
-
-      const pmMessages: string[] = [];
-      const consumeCalls: ConsumePmSettlementInput[] = [];
-      yield* Effect.gen(function* () {
-        const runtime = yield* PmRuntime;
-        yield* runtime.start();
-        yield* runtime.drain;
-      }).pipe(
-        Effect.scoped,
-        Effect.provide(
-          makePmRuntimeLayer({
+        const pmGateAttempt = yield* Effect.exit(
+          decideOrchestrationCommand({
             readModel,
-            stageThreadId: stageStarted.payload.stageThreadId,
-            historicalEvents: [stageCompleted],
-            liveEvents: [stageCompleted],
-            messages: pmMessages,
-            consumeCalls,
+            command: {
+              type: "task.gate.resolve",
+              commandId: CommandId.make("cmd-plan-gate-pm-e2e"),
+              taskId,
+              gateId: planGateId,
+              gate: "plan",
+              approvedHash: "sha256:plan-e2e",
+              decision: "approved",
+              origin: "pm-runtime",
+              createdAt: now,
+            },
           }),
-        ),
-      );
-      expect(pmMessages).toHaveLength(1);
-      expect(pmMessages[0]).toContain("A detached worker stage completed.");
-      expect(pmMessages[0]).toContain("SECRET_TOKEN=[REDACTED]");
-      expect(consumeCalls).toHaveLength(1);
+        );
+        expect(pmGateAttempt._tag).toBe("Failure");
 
-      const verifyHandoff = yield* decideAndApply(readModel, {
-        type: "task.stage.start",
-        commandId: CommandId.make("cmd-verify-handoff-e2e"),
-        taskId,
-        role: "verify",
-        instructions: "Verify the completed implementation before landing.",
-        createdAt: afterWork,
-      });
-      const verifyStageStarted = findEvent(verifyHandoff.events, "task.stage-started");
-      readModel = (yield* decideAndApply(verifyHandoff.readModel, {
-        type: "task.stage.complete",
-        commandId: CommandId.make("cmd-verify-complete-e2e"),
-        taskId,
-        role: "verify",
-        stageThreadId: verifyStageStarted.payload.stageThreadId,
-        awaitedTurnId: verifyTurnId,
-        worktreeCompletion: cleanWorktreeCompletion,
-        createdAt: afterWork,
-      })).readModel;
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.gate.resolve",
+          commandId: CommandId.make("cmd-plan-gate-human-e2e"),
+          taskId,
+          gateId: planGateId,
+          gate: "plan",
+          approvedHash: "sha256:plan-e2e",
+          decision: "approved",
+          origin: "human",
+          createdAt: now,
+        })).readModel;
 
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.gate.request",
-        commandId: CommandId.make("cmd-land-gate-e2e"),
-        taskId,
-        gateId: landGateId,
-        gate: "land",
-        contentHash: "sha256:land-e2e",
-        stageThreadId: stageStarted.payload.stageThreadId,
-        worktreeCompletion: cleanWorktreeCompletion,
-        createdAt: now,
-      })).readModel;
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.gate.resolve",
-        commandId: CommandId.make("cmd-land-gate-human-e2e"),
-        taskId,
-        gateId: landGateId,
-        gate: "land",
-        approvedHash: "sha256:land-e2e",
-        decision: "approved",
-        origin: "human",
-        worktreeCompletion: cleanWorktreeCompletion,
-        createdAt: now,
-      })).readModel;
-      readModel = (yield* decideAndApply(readModel, {
-        type: "task.land",
-        commandId: CommandId.make("cmd-land-e2e"),
-        taskId,
-        worktreeCompletion: cleanWorktreeCompletion,
-        createdAt: now,
-      })).readModel;
+        const stageComplete = yield* decideAndApply(readModel, {
+          type: "task.stage.complete",
+          commandId: CommandId.make("cmd-stage-complete-e2e"),
+          taskId,
+          role: "work",
+          stageThreadId: stageStarted.payload.stageThreadId,
+          awaitedTurnId,
+          worktreeCompletion: cleanWorktreeCompletion,
+          createdAt: now,
+        });
+        readModel = attachWorkerResult(stageComplete.readModel, stageStarted.payload.stageThreadId);
+        const stageCompleted = findEvent(stageComplete.events, "task.stage-completed");
+        expect(latestTask(readModel).status).toBe("review");
+        expect(latestTask(readModel).currentStageThreadId).toBeNull();
 
-      expect(latestTask(readModel)).toMatchObject({
-        status: "landed",
-        branch: "ged/feature/finish-orchestrator-slice",
-      });
-    }),
+        const pmMessages: string[] = [];
+        const consumeCalls: ConsumePmSettlementInput[] = [];
+        yield* Effect.gen(function* () {
+          const runtime = yield* PmRuntime;
+          yield* runtime.start();
+          yield* runtime.drain;
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            makePmRuntimeLayer({
+              readModel,
+              stageThreadId: stageStarted.payload.stageThreadId,
+              historicalEvents: [stageCompleted],
+              liveEvents: [stageCompleted],
+              messages: pmMessages,
+              consumeCalls,
+            }),
+          ),
+        );
+        expect(pmMessages).toHaveLength(1);
+        expect(pmMessages[0]).toContain("A detached worker stage completed.");
+        expect(pmMessages[0]).toContain("SECRET_TOKEN=[REDACTED]");
+        expect(consumeCalls).toHaveLength(1);
+        const pmReplayState: PmRuntimeReplayState = {
+          consumed: new Set(
+            consumeCalls.map((entry) => `${entry.projectId}:${entry.kind}:${entry.settlementKey}`),
+          ),
+          cursorByProject: new Map([[String(projectId), stageCompleted.sequence]]),
+        };
+
+        const verifyHandoff = yield* decideAndApply(readModel, {
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-verify-handoff-e2e"),
+          taskId,
+          role: "verify",
+          instructions: "Verify the completed implementation before landing.",
+          createdAt: afterWork,
+        });
+        const verifyStageStarted = findEvent(verifyHandoff.events, "task.stage-started");
+        readModel = (yield* decideAndApply(verifyHandoff.readModel, {
+          type: "task.stage.complete",
+          commandId: CommandId.make("cmd-verify-complete-e2e"),
+          taskId,
+          role: "verify",
+          stageThreadId: verifyStageStarted.payload.stageThreadId,
+          awaitedTurnId: verifyTurnId,
+          worktreeCompletion: cleanWorktreeCompletion,
+          createdAt: afterWork,
+        })).readModel;
+
+        const dependentTask: OrchestrationTask = {
+          ...latestTask(readModel),
+          id: dependentTaskId,
+          title: "Run after remote merge",
+          status: "classified",
+          branch: "ged/feature/run-after-remote-merge",
+          worktreePath: "/tmp/orchestrator-e2e/dependent",
+          prUrl: null,
+          pmMessageId: MessageId.make("pm-message-orch-dependent-e2e"),
+          stageThreadIds: [],
+          currentStageThreadId: null,
+          verification: null,
+          landing: null,
+          archivedAt: null,
+          deletedAt: null,
+          dependsOnTaskIds: [taskId],
+        };
+        readModel = { ...readModel, tasks: [...readModel.tasks, dependentTask] };
+
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.gate.request",
+          commandId: CommandId.make("cmd-land-gate-e2e"),
+          taskId,
+          gateId: landGateId,
+          gate: "land",
+          contentHash: "sha256:land-e2e",
+          stageThreadId: stageStarted.payload.stageThreadId,
+          pullRequest: {
+            title: "feat: finish orchestrator slice",
+            body: "## Summary\n\n- Finish the orchestrator slice.\n\n## Testing\n\n- Focused server coverage.",
+          },
+          worktreeCompletion: cleanWorktreeCompletion,
+          createdAt: now,
+        })).readModel;
+        const landApproved = yield* decideAndApply(readModel, {
+          type: "task.land.approve",
+          commandId: CommandId.make("cmd-land-approve-human-e2e"),
+          taskId,
+          gateId: landGateId,
+          approvedHash: "sha256:land-e2e",
+          worktreeCompletion: cleanWorktreeCompletion,
+          createdAt: now,
+        });
+        readModel = landApproved.readModel;
+        expect(findEvent(landApproved.events, "task.gate-resolved").payload.decision).toBe(
+          "approved",
+        );
+        expect(findEvent(landApproved.events, "task.landed").payload.taskId).toBe(taskId);
+        expect(latestTask(readModel).landing?.status).toBe("opening-pr");
+
+        readModel = (yield* decideAndApply(readModel, {
+          type: "task.pr.opened",
+          commandId: CommandId.make("cmd-pr-opened-e2e"),
+          taskId,
+          prUrl: pullRequestUrl,
+          prNumber: 42,
+          createdAt: now,
+        })).readModel;
+        expect(latestTask(readModel)).toMatchObject({ status: "pr-open", prUrl: pullRequestUrl });
+
+        const blockedDependent = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.stage.start",
+              commandId: CommandId.make("cmd-dependent-before-merge-e2e"),
+              taskId: dependentTaskId,
+              role: "work",
+              instructions: "Run only after the prerequisite merges.",
+              createdAt: now,
+            },
+          }),
+        );
+        expect(blockedDependent._tag).toBe("Failure");
+
+        const remoteMerge = yield* decideAndApply(readModel, {
+          type: "task.pr.merged",
+          commandId: CommandId.make("cmd-pr-merged-e2e"),
+          taskId,
+          prUrl: pullRequestUrl,
+          createdAt: afterWork,
+        });
+        readModel = remoteMerge.readModel;
+        const prMerged = findEvent(remoteMerge.events, "task.pr-merged");
+        expect(latestTask(readModel)).toMatchObject({
+          status: "landed",
+          prUrl: pullRequestUrl,
+          archivedAt: afterWork,
+        });
+
+        // Restart after the work settlement. Historical replay must skip that
+        // already-acted marker and deliver the remote merge exactly once even if
+        // the live subscription also observes the same committed event.
+        const mergeMessages: string[] = [];
+        const mergeConsumeCalls: ConsumePmSettlementInput[] = [];
+        yield* Effect.gen(function* () {
+          const runtime = yield* PmRuntime;
+          yield* runtime.start();
+          yield* runtime.drain;
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            makePmRuntimeLayer({
+              readModel,
+              stageThreadId: stageStarted.payload.stageThreadId,
+              historicalEvents: [stageCompleted, prMerged],
+              liveEvents: [prMerged],
+              messages: mergeMessages,
+              consumeCalls: mergeConsumeCalls,
+              replayState: pmReplayState,
+            }),
+          ),
+        );
+        expect(mergeMessages).toHaveLength(1);
+        expect(mergeMessages[0]).toContain("tracked pull request merged remotely");
+        expect(mergeMessages[0]).toContain(pullRequestUrl);
+        expect(mergeConsumeCalls).toHaveLength(1);
+        expect(mergeConsumeCalls[0]).toMatchObject({
+          kind: "task",
+          settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}`,
+        });
+
+        const dependentStart = yield* decideAndApply(readModel, {
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-dependent-after-merge-e2e"),
+          taskId: dependentTaskId,
+          role: "work",
+          instructions: "The prerequisite merged remotely; continue the dependent work.",
+          createdAt: afterWork,
+        });
+        expect(findEvent(dependentStart.events, "task.stage-started").payload.taskId).toBe(
+          dependentTaskId,
+        );
+      }),
   );
 });

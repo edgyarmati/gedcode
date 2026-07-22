@@ -1537,6 +1537,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           modelOptions: event.payload.modelOptions,
           prompt: event.payload.prompt,
           status: "pending",
+          transientRetryCount: 0,
           providerThreadId: null,
           result: null,
           failureMessage: null,
@@ -2028,10 +2029,29 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             if (Option.isNone(existingRow)) {
               return;
             }
+            if (event.payload.reason === "capability") {
+              yield* projectionTaskRepository.upsert({
+                ...existingRow.value,
+                updatedAt: event.payload.updatedAt,
+              });
+              return;
+            }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               status: "blocked-on-quota",
               currentStageThreadId: null,
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.stage-resumed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -2253,7 +2273,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             }
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
-              status: "landed",
+              status: "pr-open",
               prUrl: event.payload.prUrl,
               landing: {
                 status: "completed",
@@ -2261,6 +2281,36 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 branchPushed: true,
                 updatedAt: event.payload.updatedAt,
               },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.pr-merged": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "landed",
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.pr-closed": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              status: "review",
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -2309,6 +2359,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                     },
               updatedAt: event.payload.updatedAt,
             });
+            if (existingRow.value.currentStageThreadId !== null) {
+              const stage = yield* projectionStageHistoryRepository.getByStageThreadId({
+                stageThreadId: existingRow.value.currentStageThreadId,
+              });
+              if (Option.isSome(stage)) {
+                yield* projectionStageHistoryRepository.upsert({
+                  ...stage.value,
+                  status: "interrupted",
+                  capabilityPauseExpiresAt: null,
+                  endedAt: event.payload.updatedAt,
+                });
+              }
+            }
             return;
           }
 
@@ -2360,6 +2423,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.runtimeMode === undefined
               ? {}
               : { runtimeMode: event.payload.runtimeMode }),
+            ...(event.payload.networkAccess === undefined
+              ? {}
+              : { networkAccess: event.payload.networkAccess }),
             ...(event.payload.startHead === undefined
               ? {}
               : { startHead: event.payload.startHead }),
@@ -2409,8 +2475,25 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionStageHistoryRepository.upsert({
             ...existing.value,
             providerInstanceId: event.payload.providerInstanceId,
-            status: "blocked",
-            endedAt: event.payload.updatedAt,
+            status: event.payload.reason === "capability" ? "paused" : "blocked",
+            ...(event.payload.reason === "capability" && event.payload.expiresAt !== undefined
+              ? { capabilityPauseExpiresAt: event.payload.expiresAt }
+              : {}),
+            endedAt: event.payload.reason === "capability" ? null : event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "task.stage-resumed": {
+          const existing = yield* projectionStageHistoryRepository.getByStageThreadId({
+            stageThreadId: event.payload.stageThreadId,
+          });
+          if (Option.isNone(existing)) return;
+          yield* projectionStageHistoryRepository.upsert({
+            ...existing.value,
+            status: "running",
+            capabilityPauseExpiresAt: null,
+            endedAt: null,
           });
           return;
         }
@@ -2425,6 +2508,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionStageHistoryRepository.upsert({
             ...existing.value,
             status: "interrupted",
+            capabilityPauseExpiresAt: null,
             endedAt: event.payload.updatedAt,
           });
           return;
@@ -2477,6 +2561,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         }
 
         case "task.stage-blocked": {
+          if (event.payload.reason === "capability") {
+            return;
+          }
           const rows = yield* projectionAwaitedStageRepository.listByTaskId({
             taskId: event.payload.taskId,
           });
@@ -2518,6 +2605,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
         case "task.stage-blocked": {
+          if (event.payload.reason === "capability") {
+            return;
+          }
           const rows = yield* projectionQuotaBlockedStageRepository.listByTaskId({
             taskId: event.payload.taskId,
           });

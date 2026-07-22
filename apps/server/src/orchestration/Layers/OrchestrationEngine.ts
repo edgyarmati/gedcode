@@ -125,15 +125,19 @@ export function classifyOrchestrationCommand(
     case "task.verification.record":
     case "task.no-changes-needed":
     case "task.stage.block":
+    case "task.stage.resume":
     case "task.stage.interrupt":
     case "task.gate.request":
     case "task.gate.resolve":
+    case "task.land.approve":
     case "task.land":
     case "task.landing.retry":
     case "task.release.dispatch.request":
     case "task.release.dispatch.complete":
     case "task.release.dispatch.fail":
     case "task.pr.opened":
+    case "task.pr.merged":
+    case "task.pr.closed":
     case "task.pr.open.failed":
     case "task.abandon":
     case "task.cancellation.request":
@@ -220,15 +224,19 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.verification.record":
     case "task.no-changes-needed":
     case "task.stage.block":
+    case "task.stage.resume":
     case "task.stage.interrupt":
     case "task.gate.request":
     case "task.gate.resolve":
+    case "task.land.approve":
     case "task.land":
     case "task.landing.retry":
     case "task.release.dispatch.request":
     case "task.release.dispatch.complete":
     case "task.release.dispatch.fail":
     case "task.pr.opened":
+    case "task.pr.merged":
+    case "task.pr.closed":
     case "task.pr.open.failed":
     case "task.abandon":
     case "task.cancellation.request":

@@ -15,6 +15,8 @@ import { TaskCancellationReconciler } from "../Services/TaskCancellationReconcil
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { HelperRunReactor } from "../Services/HelperRunReactor.ts";
 import { ProjectContextRunReactor } from "../Services/ProjectContextRunReactor.ts";
+import { PullRequestSyncReactor } from "../Services/PullRequestSyncReactor.ts";
+import { CapabilityPauseReactor } from "../Services/CapabilityPauseReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const taskCancellationReconciler = yield* TaskCancellationReconciler;
@@ -26,6 +28,8 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const taskWorktreeReactor = yield* TaskWorktreeReactor;
   const helperRunReactor = yield* HelperRunReactor;
   const projectContextRunReactor = yield* ProjectContextRunReactor;
+  const pullRequestSyncReactor = yield* PullRequestSyncReactor;
+  const capabilityPauseReactor = yield* CapabilityPauseReactor;
   const pmRuntime = yield* PmRuntime;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
@@ -35,6 +39,8 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
     yield* taskWorktreeReactor.start();
+    yield* pullRequestSyncReactor.start();
+    yield* capabilityPauseReactor.start();
     yield* helperRunReactor.start();
     yield* projectContextRunReactor.start();
     // PM startup can replay a settlement and immediately hand off a retry, so

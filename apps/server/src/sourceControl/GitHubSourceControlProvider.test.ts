@@ -68,6 +68,36 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
   }),
 );
 
+it.effect("forwards background cache policy to the GitHub provider", () =>
+  Effect.gen(function* () {
+    let received: Parameters<GitHubCli.GitHubCliShape["getPullRequest"]>[0] | null = null;
+    const provider = yield* makeProvider({
+      getPullRequest: (input) => {
+        received = input;
+        return Effect.succeed({
+          number: 42,
+          title: "Track lifecycle",
+          url: "https://github.com/acme/repo/pull/42",
+          baseRefName: "main",
+          headRefName: "ged/feature/track",
+        });
+      },
+    });
+
+    yield* provider.getChangeRequest({
+      cwd: "/repo",
+      reference: "https://github.com/acme/repo/pull/42",
+      cacheTtlSeconds: 10,
+    });
+
+    assert.deepStrictEqual(received, {
+      cwd: "/repo",
+      reference: "https://github.com/acme/repo/pull/42",
+      cacheTtlSeconds: 10,
+    });
+  }),
+);
+
 it.effect("uses gh json listing for non-open change request state queries", () =>
   Effect.gen(function* () {
     let executeArgs: ReadonlyArray<string> = [];

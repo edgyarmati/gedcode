@@ -30,6 +30,8 @@ import {
   TaskGateResolvedPayload,
   TaskLandedPayload,
   TaskNoChangesNeededPayload,
+  TaskPrClosedPayload,
+  TaskPrMergedPayload,
   TaskPrOpenFailedPayload,
   TaskPrOpenedPayload,
   TaskReleaseDispatchFailedPayload,
@@ -40,6 +42,7 @@ import {
   TaskStageBlockedPayload,
   TaskStageCompletedPayload,
   TaskStageInterruptedPayload,
+  TaskStageResumedPayload,
   TaskStageStartedPayload,
   TaskSplitPayload,
   TaskVerificationRecordedPayload,
@@ -506,6 +509,7 @@ export function projectEvent(
             modelOptions: event.payload.modelOptions,
             prompt: event.payload.prompt,
             status: "pending",
+            transientRetryCount: 0,
             providerThreadId: null,
             result: null,
             failureMessage: null,
@@ -517,16 +521,24 @@ export function projectEvent(
         ],
       });
 
-    case "helper.run-started":
+    case "helper.run-started": {
+      const helperRun = (nextBase.helperRuns ?? []).find(
+        (run) => run.id === event.payload.helperRunId,
+      );
       return Effect.succeed({
         ...nextBase,
         helperRuns: updateHelperRun(nextBase.helperRuns ?? [], event.payload.helperRunId, {
           status: "running",
+          transientRetryCount:
+            event.payload.transportRetry === true
+              ? (helperRun?.transientRetryCount ?? 0) + 1
+              : (helperRun?.transientRetryCount ?? 0),
           providerThreadId: event.payload.providerThreadId,
           startedAt: event.payload.startedAt,
           updatedAt: event.payload.updatedAt,
         }),
       });
+    }
 
     case "helper.run-completed":
       return Effect.succeed({
@@ -665,6 +677,9 @@ export function projectEvent(
           {
             id: payload.threadId,
             projectId: payload.projectId,
+            ...(payload.orchestrationOwnership === undefined
+              ? {}
+              : { orchestrationOwnership: payload.orchestrationOwnership }),
             title: payload.title,
             modelSelection: payload.modelSelection,
             gedWorkflowEnabled: payload.gedWorkflowEnabled ?? true,
@@ -677,9 +692,6 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
             archivedAt: null,
             deletedAt: null,
-            ...(payload.orchestrationOwnership === undefined
-              ? {}
-              : { orchestrationOwnership: payload.orchestrationOwnership }),
             pendingPmHandoff: null,
             messages: [],
             activities: [],
@@ -1373,6 +1385,9 @@ export function projectEvent(
                       ...(payload.runtimeMode === undefined
                         ? {}
                         : { runtimeMode: payload.runtimeMode }),
+                      ...(payload.networkAccess === undefined
+                        ? {}
+                        : { networkAccess: payload.networkAccess }),
                       ...(payload.startHead === undefined ? {} : { startHead: payload.startHead }),
                       status: "running",
                       startedAt: payload.updatedAt,
@@ -1385,9 +1400,6 @@ export function projectEvent(
 
     case "task.stage-completed":
       // Only the `work` stage completing advances status (`work → review`).
-                      ...(payload.networkAccess === undefined
-                        ? {}
-                        : { networkAccess: payload.networkAccess }),
       // Other roles' completion is recorded (updatedAt) but their forward
       // transition is driven by the next stage starting or a gate event, so a
       // completed classify/plan stage does not regress the derived status.
@@ -1521,6 +1533,30 @@ export function projectEvent(
     case "task.stage-blocked":
       return decodeForEvent(TaskStageBlockedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {
+          if (payload.reason === "capability") {
+            return {
+              ...nextBase,
+              tasks: updateTask(nextBase.tasks, payload.taskId, {
+                // A capability pause retains the same live worker session and
+                // current stage; unlike quota it is not a retry/new attempt.
+                updatedAt: payload.updatedAt,
+              }),
+              stageHistory:
+                nextBase.stageHistory[payload.stageThreadId] === undefined
+                  ? nextBase.stageHistory
+                  : {
+                      ...nextBase.stageHistory,
+                      [payload.stageThreadId]: {
+                        ...nextBase.stageHistory[payload.stageThreadId],
+                        status: "paused" as const,
+                        ...(payload.expiresAt === undefined
+                          ? {}
+                          : { capabilityPauseExpiresAt: payload.expiresAt }),
+                        endedAt: null,
+                      },
+                    },
+            };
+          }
           const retryCount =
             nextBase.quotaBlockedStages.filter(
               (stage) => stage.taskId === payload.taskId && stage.role === payload.role,
@@ -1562,6 +1598,26 @@ export function projectEvent(
         }),
       );
 
+    case "task.stage-resumed":
+      return decodeForEvent(TaskStageResumedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, { updatedAt: payload.updatedAt }),
+          stageHistory:
+            nextBase.stageHistory[payload.stageThreadId] === undefined
+              ? nextBase.stageHistory
+              : {
+                  ...nextBase.stageHistory,
+                  [payload.stageThreadId]: {
+                    ...nextBase.stageHistory[payload.stageThreadId],
+                    status: "running" as const,
+                    capabilityPauseExpiresAt: null,
+                    endedAt: null,
+                  },
+                },
+        })),
+      );
+
     case "task.stage-interrupted":
       return decodeForEvent(TaskStageInterruptedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -1579,6 +1635,7 @@ export function projectEvent(
                   [payload.stageThreadId]: {
                     ...nextBase.stageHistory[payload.stageThreadId],
                     status: "interrupted" as const,
+                    capabilityPauseExpiresAt: null,
                     endedAt: payload.updatedAt,
                   },
                 },
@@ -1859,7 +1916,7 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           tasks: updateTask(nextBase.tasks, payload.taskId, {
-            status: "landed",
+            status: "pr-open",
             prUrl: payload.prUrl,
             landing: {
               status: "completed",
@@ -1867,6 +1924,28 @@ export function projectEvent(
               branchPushed: true,
               updatedAt: payload.updatedAt,
             },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.pr-merged":
+      return decodeForEvent(TaskPrMergedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "landed",
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "task.pr-closed":
+      return decodeForEvent(TaskPrClosedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            status: "review",
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -1893,9 +1972,13 @@ export function projectEvent(
       // `task.abandoned → abandoned` (terminal).
       return decodeForEvent(TaskAbandonedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {
-          const cancellation = nextBase.tasks.find(
-            (task) => task.id === payload.taskId,
-          )?.cancellation;
+          const abandonedTask = nextBase.tasks.find((task) => task.id === payload.taskId);
+          const cancellation = abandonedTask?.cancellation;
+          const activeStageThreadId = abandonedTask?.currentStageThreadId;
+          const activeStage =
+            activeStageThreadId === null || activeStageThreadId === undefined
+              ? undefined
+              : nextBase.stageHistory[activeStageThreadId];
           return {
             ...nextBase,
             tasks: updateTask(nextBase.tasks, payload.taskId, {
@@ -1919,6 +2002,20 @@ export function projectEvent(
             pendingGates: (nextBase.pendingGates ?? []).filter(
               (gate) => gate.taskId !== payload.taskId,
             ),
+            stageHistory:
+              activeStageThreadId === null ||
+              activeStageThreadId === undefined ||
+              activeStage === undefined
+                ? nextBase.stageHistory
+                : {
+                    ...nextBase.stageHistory,
+                    [activeStageThreadId]: {
+                      ...activeStage,
+                      status: "interrupted" as const,
+                      capabilityPauseExpiresAt: null,
+                      endedAt: payload.updatedAt,
+                    },
+                  },
           };
         }),
       );

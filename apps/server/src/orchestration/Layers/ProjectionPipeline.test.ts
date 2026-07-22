@@ -125,6 +125,10 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         payload: {
           threadId: ThreadId.make("thread-1"),
           projectId: ProjectId.make("project-1"),
+          orchestrationOwnership: {
+            kind: "stage",
+            taskId: TaskId.make("task-1"),
+          },
           title: "Thread 1",
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
@@ -187,6 +191,15 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         FROM projection_thread_messages
       `;
       assert.deepEqual(messageRows, [{ messageId: "message-1", text: "hello" }]);
+
+      const ownershipRows = yield* sql<{
+        readonly ownership: string | null;
+      }>`
+        SELECT orchestration_ownership_json AS "ownership"
+        FROM projection_threads
+        WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(ownershipRows, [{ ownership: '{"kind":"stage","taskId":"task-1"}' }]);
 
       const stateRows = yield* sql<{
         readonly projector: string;
@@ -1089,13 +1102,15 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       const taskRows = yield* sql<{
         readonly prUrl: string | null;
+        readonly status: string;
         readonly landing: string | null;
       }>`
-        SELECT pr_url AS "prUrl", landing_json AS "landing"
+        SELECT pr_url AS "prUrl", status, landing_json AS "landing"
         FROM projection_tasks
         WHERE task_id = ${taskId}
       `;
       assert.strictEqual(taskRows[0]?.prUrl, "https://github.com/acme/repo/pull/42");
+      assert.strictEqual(taskRows[0]?.status, "pr-open");
       assert.deepEqual(decodeTaskLandingJson(taskRows[0]?.landing), {
         status: "completed",
         failureMessage: null,

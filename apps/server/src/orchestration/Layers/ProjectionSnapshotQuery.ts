@@ -28,9 +28,9 @@ import {
   OrchestrationTaskLanding,
   OrchestrationTaskNoChangesNeeded,
   OrchestrationTaskVerification,
-  OrchestrationThreadOwnership,
   OrchestrationReleaseDispatch,
   OrchestrationThread,
+  OrchestrationThreadOwnership,
   PendingPmHandoff,
   ProjectScript,
   TurnId,
@@ -363,7 +363,19 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
 function mapStageHistoryRows(
   rows: ReadonlyArray<Schema.Schema.Type<typeof ProjectionStageHistoryDbRowSchema>>,
 ): OrchestrationStageHistory {
-  return Object.fromEntries(rows.map((row) => [row.stageThreadId, row]));
+  return Object.fromEntries(
+    rows.map((row) => {
+      const { networkAccess, capabilityPauseExpiresAt, ...stageHistory } = row;
+      return [
+        row.stageThreadId,
+        {
+          ...stageHistory,
+          ...(networkAccess === null ? {} : { networkAccess }),
+          ...(capabilityPauseExpiresAt === null ? {} : { capabilityPauseExpiresAt }),
+        },
+      ];
+    }),
+  );
 }
 
 function mapProposedPlanRow(
@@ -453,6 +465,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",
@@ -470,7 +483,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
-          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -485,6 +497,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",
@@ -502,7 +515,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
-          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -519,6 +531,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",
@@ -536,7 +549,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
-          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -867,6 +879,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           provider_instance_id AS "providerInstanceId",
           model,
           runtime_mode AS "runtimeMode",
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
           started_at AS "startedAt",
@@ -879,8 +893,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const listActiveLatestTurnRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionLatestTurnDbRowSchema,
-          network_access AS "networkAccess",
-          capability_pause_expires_at AS "capabilityPauseExpiresAt",
     execute: () =>
       sql`
         SELECT
@@ -1046,6 +1058,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",
@@ -1065,7 +1078,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
-          orchestration_ownership_json AS "orchestrationOwnership",
         WHERE thread_id = ${threadId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
@@ -1557,6 +1569,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               const threads: ReadonlyArray<OrchestrationThread> = threadRows.map((row) => ({
                 id: row.threadId,
                 projectId: row.projectId,
+                ...(row.orchestrationOwnership === null
+                  ? {}
+                  : { orchestrationOwnership: row.orchestrationOwnership }),
                 title: row.title,
                 modelSelection: row.modelSelection,
                 gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
@@ -1576,9 +1591,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: activitiesByThread.get(row.threadId) ?? [],
-                ...(row.orchestrationOwnership === null
-                  ? {}
-                  : { orchestrationOwnership: row.orchestrationOwnership }),
                 checkpoints: checkpointsByThread.get(row.threadId) ?? [],
                 session: sessionsByThread.get(row.threadId) ?? null,
               }));
@@ -1886,6 +1898,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 threads.push({
                   id: row.threadId,
                   projectId: row.projectId,
+                  ...(row.orchestrationOwnership === null
+                    ? {}
+                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   title: row.title,
                   modelSelection: row.modelSelection,
                   gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
@@ -1905,9 +1920,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                   activities: [],
-                  ...(row.orchestrationOwnership === null
-                    ? {}
-                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   checkpoints: [],
                   session: sessionByThread.get(row.threadId) ?? null,
                 });
@@ -2029,6 +2041,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   ? Result.succeed({
                       id: row.threadId,
                       projectId: row.projectId,
+                      ...(row.orchestrationOwnership === null
+                        ? {}
+                        : { orchestrationOwnership: row.orchestrationOwnership }),
                       title: row.title,
                       modelSelection: row.modelSelection,
                       gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
@@ -2048,9 +2063,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       latestUserMessageAt: row.latestUserMessageAt,
                       hasPendingApprovals: row.pendingApprovalCount > 0,
                       hasPendingUserInput: row.pendingUserInputCount > 0,
-                      ...(row.orchestrationOwnership === null
-                        ? {}
-                        : { orchestrationOwnership: row.orchestrationOwnership }),
                       hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                     } satisfies OrchestrationThreadShell)
                   : Result.failVoid,
@@ -2171,6 +2183,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 (row): OrchestrationThreadShell => ({
                   id: row.threadId,
                   projectId: row.projectId,
+                  ...(row.orchestrationOwnership === null
+                    ? {}
+                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   title: row.title,
                   modelSelection: row.modelSelection,
                   gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
@@ -2190,9 +2205,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   latestUserMessageAt: row.latestUserMessageAt,
                   hasPendingApprovals: row.pendingApprovalCount > 0,
                   hasPendingUserInput: row.pendingUserInputCount > 0,
-                  ...(row.orchestrationOwnership === null
-                    ? {}
-                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                 }),
               ),
@@ -2421,6 +2433,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       return Option.some({
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
+        ...(threadRow.value.orchestrationOwnership === null
+          ? {}
+          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
         title: threadRow.value.title,
         modelSelection: threadRow.value.modelSelection,
         gedWorkflowEnabled: threadRow.value.gedWorkflowEnabled !== 0,
@@ -2440,9 +2455,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
         hasPendingUserInput: threadRow.value.pendingUserInputCount > 0,
-        ...(threadRow.value.orchestrationOwnership === null
-          ? {}
-          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,
       } satisfies OrchestrationThreadShell);
     });
@@ -2523,6 +2535,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       const thread = {
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
+        ...(threadRow.value.orchestrationOwnership === null
+          ? {}
+          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
         title: threadRow.value.title,
         modelSelection: threadRow.value.modelSelection,
         gedWorkflowEnabled: threadRow.value.gedWorkflowEnabled !== 0,
@@ -2542,9 +2557,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,
-        ...(threadRow.value.orchestrationOwnership === null
-          ? {}
-          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
             role: row.role,
             text: row.text,
             turnId: row.turnId,

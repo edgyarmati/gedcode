@@ -16,6 +16,8 @@ import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { HelperRunReactor } from "../Services/HelperRunReactor.ts";
 import { ProjectContextRunReactor } from "../Services/ProjectContextRunReactor.ts";
+import { PullRequestSyncReactor } from "../Services/PullRequestSyncReactor.ts";
+import { CapabilityPauseReactor } from "../Services/CapabilityPauseReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 
 describe("OrchestrationReactor", () => {
@@ -65,6 +67,16 @@ describe("OrchestrationReactor", () => {
               return Effect.void;
             },
             drain: Effect.void,
+            retryProject: () => Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(CapabilityPauseReactor, {
+            start: () => {
+              started.push("capability-pause-reactor");
+              return Effect.void;
+            },
+            reconcile: () => Effect.succeed(0),
           }),
         ),
         Layer.provideMerge(
@@ -104,6 +116,11 @@ describe("OrchestrationReactor", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.succeed(PullRequestSyncReactor, {
+            start: () => Effect.sync(() => void started.push("pull-request-sync-reactor")),
+          }),
+        ),
+        Layer.provideMerge(
           Layer.succeed(HelperRunReactor, {
             start: () => {
               started.push("helper-run-reactor");
@@ -134,6 +151,8 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "thread-deletion-reactor",
       "task-worktree-reactor",
+      "pull-request-sync-reactor",
+      "capability-pause-reactor",
       "helper-run-reactor",
       "project-context-run-reactor",
       "pm-runtime",

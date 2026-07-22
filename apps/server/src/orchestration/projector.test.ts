@@ -578,11 +578,31 @@ describe("orchestration projector", () => {
           stageThreadId: "thread-cancelled-stage",
           role: "work",
           awaitedTurnId: "turn-work",
+          providerInstanceId: "codex",
+          model: "gpt-5-codex",
           updatedAt: now,
         },
       }),
       makeEvent({
         sequence: 6,
+        type: "task.stage-blocked",
+        aggregateKind: "task",
+        aggregateId: "task-cancelled",
+        occurredAt: now,
+        commandId: "cmd-capability-pause-before-abandon",
+        payload: {
+          taskId: "task-cancelled",
+          stageThreadId: "thread-cancelled-stage",
+          role: "work",
+          reason: "capability",
+          providerInstanceId: "codex",
+          requestId: "request-cancelled-stage",
+          expiresAt: "2026-01-01T00:30:00.000Z",
+          updatedAt: now,
+        },
+      }),
+      makeEvent({
+        sequence: 7,
         type: "task.abandoned",
         aggregateKind: "task",
         aggregateId: "task-cancelled",
@@ -605,6 +625,11 @@ describe("orchestration projector", () => {
       null,
     );
     expect((readModel.pendingGates ?? []).map((gate) => gate.gateId)).toEqual(["gate-other"]);
+    expect(readModel.stageHistory[ThreadId.make("thread-cancelled-stage")]).toMatchObject({
+      status: "interrupted",
+      capabilityPauseExpiresAt: null,
+      endedAt: abandonedAt,
+    });
   });
 
   it("replays cancellation progress and failure without losing completed phases", async () => {
@@ -2018,6 +2043,7 @@ describe("orchestration projector", () => {
     expect(afterCreate.tasks[0]?.landing).toBeNull();
     expect(afterLanded.tasks[0]?.landing?.status).toBe("opening-pr");
     expect(afterPrOpened.tasks[0]?.prUrl).toBe("https://github.com/acme/repo/pull/42");
+    expect(afterPrOpened.tasks[0]?.status).toBe("pr-open");
     expect(afterPrOpened.tasks[0]?.landing?.status).toBe("completed");
     expect(afterPrOpenFailed.tasks[0]?.landing).toMatchObject({
       status: "failed",

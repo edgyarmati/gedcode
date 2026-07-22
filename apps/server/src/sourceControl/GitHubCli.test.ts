@@ -135,6 +135,53 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("uses conditional GitHub API caching for a durable pull request URL", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              number: 42,
+              title: "Track lifecycle",
+              url: "https://github.com/acme/repo/pull/42",
+              baseRefName: "main",
+              headRefName: "ged/feature/track",
+              state: "closed",
+              mergedAt: "2026-07-22T00:00:00.000Z",
+              isCrossRepository: false,
+              headRepository: { nameWithOwner: "acme/repo" },
+              headRepositoryOwner: { login: "acme" },
+            }),
+          ),
+        ),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.getPullRequest({
+        cwd: "/repo",
+        reference: "https://github.com/acme/repo/pull/42",
+        cacheTtlSeconds: 10,
+      });
+
+      assert.strictEqual(result.state, "merged");
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "api",
+          "--cache",
+          "10s",
+          "repos/acme/repo/pulls/42",
+          "--jq",
+          "{number,title,url:.html_url,baseRefName:.base.ref,headRefName:.head.ref,state,mergedAt:.merged_at,isCrossRepository:(.head.repo.full_name != .base.repo.full_name),headRepository:(if .head.repo == null then null else {nameWithOwner:.head.repo.full_name} end),headRepositoryOwner:(if .head.repo == null then null else {login:.head.repo.owner.login} end)}",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("skips invalid entries when parsing pr lists", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(
