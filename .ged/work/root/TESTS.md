@@ -5,7 +5,189 @@ relevant package typechecks. Full workspace test/typecheck suites are reserved f
 or major verification request. Never use `bun test`; use `bun run test` with focused paths. User-visible
 changes must update `CHANGELOG.md` under `## Unreleased`.
 
+## Verification Coverage and Evidence — Durable PM Lifecycle and Landing Automation
+
+### ORCH-LIFECYCLE-01 — Inbox, ordering, and replay
+
+- Create a lifecycle event twice with the same source/idempotency key and assert a single persisted
+  pending entry and no duplicate PM turn across concurrent reactors.
+- Restart between recording, dispatch, provider-start acknowledgement, and PM settlement; assert the
+  event is neither lost nor delivered twice.
+- Queue a user message and lifecycle event together: assert one PM turn receives the user message first
+  plus structured lifecycle context, with no synthetic user chat item in either projection.
+- Deliver urgent lifecycle work during an active PM turn and assert it remains high priority pending
+  until settlement, without an implicit interrupt.
+
+### ORCH-LIFECYCLE-02 — Provider recovery and operator state
+
+- Use deterministic time to prove startup/connection failures consume only the configured bounded
+  retry budget and preserve the same durable event.
+- Classify auth, quota, and known rate-limit failures and assert no repeated provider/model invocation
+  occurs until health, credential/quota refresh, restart, or explicit Retry.
+- Assert retained pending count and PM-needs-attention status project through reconnect, clear after
+  successful delivery, and never rely on periodic model polling.
+- Hold, recover, then hold the same settlement again; assert its new durable attention episode restores
+  the PM banner and Retry action rather than being deduplicated behind the earlier recovery.
+
+### ORCH-THREAD-OWNERSHIP-01 — Creation-time ownership
+
+- Create PM, Work/Verify attempts, failed attempts, and helpers; assert each carries explicit
+  orchestration ownership from creation and normal Chat excludes it.
+- Assert task history interleaves stages/attempts and helpers chronologically, defaults to the latest
+  selectable stage, and can open all historical transcripts and read-only helper results.
+- Seed a legacy unowned thread and assert it stays visible in Chat unchanged: no retroactive migration,
+  classification, hiding, or deletion is performed.
+
+#### ORCH-THREAD-OWNERSHIP-01 — Evidence — 2026-07-22
+
+- Helper launch now emits one owned `thread.create` before the provider session and does not backfill an
+  existing helper-id thread. Task history sorts helper and stage entries together while retaining the
+  stage attempt key for selection.
+- Focused server helper/provider tests passed 56 assertions; focused web timeline and Chat-filter logic
+  tests passed 10 assertions. Server typecheck passed.
+
+### ORCH-LAND-APPROVAL-01 — One-click draft PR
+
+- Approve an exact-HEAD verified gate and assert the single command transitions through Landing and
+  creates/updates the draft PR without a second Land action.
+- Assert duplicate approval/retry is idempotent, opening failure presents Retry landing, and a changed
+  task HEAD invalidates approval before any PR mutation.
+- Assert the operation neither marks the PR ready nor merges it, and dependent tasks remain blocked.
+
+### ORCH-PR-LIFECYCLE-02 — Remote merge synchronization
+
+- Stub GitHub conditional requests to verify only tracked open PRs are queried, cadence adapts between
+  active/background operation, ETag/unchanged responses do minimal work, and the scheduler stops when
+  tracking is empty.
+- Detect an external merge and assert exactly one `pr_merged` event survives replay/restart, wakes the
+  PM, and releases eligible dependents; `pr_opened` alone cannot release them.
+- Assert GitHub errors retain last known state, schedule ordinary retry without LLM use, and never
+  fall back to local-main merge.
+
+### ORCH-WORKER-SANDBOX-01 / ORCH-WORKER-CAPABILITY-02 — Worker boundaries
+
+- Assert Codex workers launch workspace-write with network enabled by default; global disable wins over
+  a PM handoff, while a PM handoff may further restrict network. PM permissions stay unchanged.
+- Assert an unowned `ged/*` Chat thread receives neither worker sandbox/environment nor worker network
+  policy; only a matching explicit stage-ownership record may opt into worker policy.
+- Force an authenticated/broader operation from a worker and assert a durable paused capability state
+  retains the provider session and reports the narrow request to the PM.
+- Complete, deny, restart, timeout, and cancel the narrow operation. Assert completion resumes/steers
+  the same session exactly once with recorded result; denial remains recoverable; no automatic full
+  access or model escalation occurs.
+
+#### ORCH-WORKER-SANDBOX-01 — Evidence — 2026-07-22
+
+- Provider startup now derives worker policy only from matching explicit `stage` ownership, never from
+  an `orchestrator/*` or `ged/*` branch prefix. The focused provider regression verifies an unowned
+  `ged/*` thread gets no sandbox, environment, or network override.
+
+#### ORCH-WORKER-CAPABILITY-02 — Evidence — 2026-07-22
+
+- Migration 072 adds the nullable capability-pause deadline without inferring one for historical stage
+  attempts. A provider capability request stores a 30-minute deadline; a duplicate resolution keeps
+  the same session and produces one `task.stage-resumed` event.
+- The deterministic capability-pause reactor scans durable paused attempts on startup and periodically.
+  It skips unexpired/cancelling attempts, excludes paused stages from ordinary orphan recovery, and
+  appends one deterministic `capability-timeout` interruption before stopping the retained session.
+  Cancellation clears the paused stage-history deadline.
+- Capability pauses use the existing pending approval lifecycle as their only PM wake; the companion
+  `task.stage-blocked` event is not treated as a quota settlement. Expired pauses wake the PM once with
+  deadline-specific wording rather than restart-recovery wording.
+- Focused server suites passed 197 tests across provider ingestion, restart/expiry reconciliation,
+  orphan recovery, orchestration startup, projection replay, decider, and migration coverage.
+  The final cross-feature verification subsequently passed contracts, server, and web typechecks;
+  targeted formatting and `bun lint` passed (with existing unrelated warnings).
+
+### ORCH-LIFECYCLE-VERIFY-01 — Cross-feature evidence
+
+- Run focused server/contracts/web tests for a worker completion → inbox → PM → approval → draft PR →
+  external merge → dependent-unblock flow, including restart at each durable boundary.
+- Run focused Chromium coverage for Chat filtering, history access, needs-attention/retry, one-click
+  approval, and paused-worker recovery.
+- Update operator/user documentation and `CHANGELOG.md`; run `bun fmt`, `bun lint`, affected package
+  typechecks, and only the focused `bun run test` targets selected by changed modules.
+
+#### Focused server flow — 2026-07-22
+
+- `orchestratorSlice.e2e.test.ts` now drives one bounded durable flow: accepted Work wakes the PM;
+  human `task.land.approve` atomically starts draft-PR opening; `task.pr-opened` keeps its dependent
+  blocked; the replayed external `task.pr-merged` wakes the PM once with the persisted task/PR key; and
+  the dependent can then start. The restart checkpoint preserves the already-acted Work settlement while
+  a duplicate live observation of the committed merge cannot create a second PM delivery.
+- Focused result: 1 server E2E test passed. The test itself was formatted; no broad test command ran.
+
+#### Final cross-feature verification — 2026-07-22
+
+- `bun fmt`, `bun lint`, and contracts, server, and web typechecks passed.
+- Focused server coverage passed 548 tests across 31 files; focused contracts coverage passed 19 tests;
+  focused non-browser web coverage passed 34 tests.
+- The prior focused browser slices for Chat filtering/history, landing approval, and paused-worker
+  recovery passed. The final combined browser rerun was stopped when its mock WebSocket harness became
+  noisy and stalled; this was a test-harness limitation, not a product failure.
+
 ## Verification Evidence
+
+### ORCH-LIFECYCLE-02 — Evidence — 2026-07-22
+
+- A helper with an explicit `transport_error` stops its first session and retries exactly once with the
+  same helper ID and provider thread. Its durable projection records that retry, so a server restart
+  resumes the helper under the same identity but a subsequent transport failure produces one durable
+  `helper.run.fail` outcome instead of granting another retry.
+- Rate-limit, authentication/provider, permission/capability, and model/provider errors receive no
+  automatic retry and each settle through the same terminal helper-failure lifecycle already consumed
+  by the PM runtime.
+- Migration 071 persists PM delivery backoff/hold state plus the helper retry allowance. PM recovery
+  retains lifecycle events for one transport retry, suppresses quota/auth/provider outcomes until an
+  explicit provider-recovery signal or operator Retry, and exposes the retained delivery count in PM
+  chat without periodic model polling.
+- Migration 073 adds a monotonic delivery episode to each retained settlement. A second hold after
+  recovery increments that durable episode and emits a distinct PM activity/command ID, while the UI
+  reduces the resulting held → recovered → held stream back to one current attention item and Retry.
+- Focused helper/reactor, helper-decider, helper projection, projector, projection pipeline,
+  PM-runtime-state, and migration coverage passed 71 tests; focused PM runtime (50), persistence (4),
+  and migration (1) delivery recovery tests plus the web PM attention reducer (5) passed. Server and
+  web typechecks pass; targeted formatting and lint are recorded with the implementation slice.
+
+### ORCH-LAND-APPROVAL-01 — Evidence — 2026-07-22
+
+- The decider proves one validated approval appends distinct `task.gate-resolved` and `task.landed`
+  events, rejects a changed verified HEAD before any landing transition, and preserves the existing
+  draft-PR reactor path.
+- The guarded landing service supplies server-observed clean worktree evidence to that command; the
+  Chromium task route proves the normal redundant Land control is absent, the gate approval remains the
+  user action, and durable failures still expose Retry landing.
+- Focused results: 83 server tests and 21 Chromium task-route tests passed. Contracts and web
+  typechecks passed; the final cross-feature verification subsequently passed the server typecheck.
+
+### ORCH-LIFECYCLE-01 — Evidence — 2026-07-22
+
+- The focused queue test proves a queued human request is the first PM input and coalesces multiple
+  lifecycle entries into one explicitly delimited server-context block.
+- The PM runtime/state suites retain durable pending/acted markers, duplicate suppression, restart
+  reconciliation, and serialized no-interrupt delivery. The focused websocket router assertion proves
+  persisted human input is marked `user` before queueing; lifecycle traffic remains the default kind.
+- Focused results: 52 PM queue/runtime/state tests passed and the focused websocket router test passed.
+  Targeted formatting passed; `bun lint` passed with existing unrelated warnings. The final
+  cross-feature verification subsequently passed the whole server typecheck.
+
+### ORCH-PR-LIFECYCLE-02 — Non-PM Evidence — 2026-07-22
+
+- The durable task projection is the tracked-PR registry: only `pr-open` tasks with an authoritative
+  PR URL are synchronized from their primary checkout. `task.pr-merged` lands and archives the task;
+  the existing dependency guard requires that landed state, so opening a PR never releases a dependent.
+- The source-control-neutral scheduler wakes on `task.pr-opened`, serializes refreshes, uses a fast
+  active cadence and slower retry cadence, retains the last durable state after provider failure, and
+  stops immediately after terminal observations consume the final tracked PR. It makes no provider or
+  model call when no task is tracked.
+- GitHub tracked URL refreshes use `gh api --cache`, which preserves GitHub's HTTP cache and ETag
+  revalidation; interactive references retain the normal direct `gh pr view` path. The provider
+  interface keeps this cache policy optional, so non-GitHub providers remain source-control neutral.
+- Focused GitHub-client, scheduler-cadence, tracked-PR, decider/dependency, projection/replay, and
+  worktree-retention coverage passed 186 server tests. PM runtime coverage adds one durable `task.pr-merged`
+  lifecycle delivery despite duplicate remote observations, with a stable task/PR key and structured PM
+  message that identifies the merged PR and newly eligible dependents. The combined focused suite passed
+  233 server tests; targeted formatting, lint, and server typecheck passed; no full suite ran.
 
 ## Server-owned Verifier Finalization
 

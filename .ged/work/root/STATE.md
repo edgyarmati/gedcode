@@ -2,10 +2,28 @@
 
 - **Phase**: complete
 - **Active task**: none — all non-deferred roadmap slices are complete
-- **Roadmap**: Repository-aware pull requests and readable stage-attempt history, clarified 2026-07-22
+- **Roadmap**: Durable PM lifecycle and landing automation, clarified 2026-07-22
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
 ## Locked Decisions
+
+- Lifecycle outcomes append to a durable, deduplicated PM inbox and wake server-side without model
+  polling. User messages run first and absorb pending system context; urgent lifecycle events do not
+  silently interrupt an active PM turn.
+- Transient wake failures use bounded retry. Known quota, auth, and rate-limit blocks retain events
+  without repeated model calls until provider recovery, restart, credential/quota refresh, or Retry.
+  The UI exposes PM-needs-attention and retained event count.
+- New orchestration PM/stage/helper threads persist ownership from creation, are hidden from normal
+  Chat, and remain fully reachable in chronological task history. No old threads are migrated,
+  classified, hidden, or deleted because this behavior is unreleased.
+- Landing approval is the one-click command to create/update a draft PR. It is invalidated by a HEAD
+  change; ready/merge remain explicit actions. `pr_opened` does not unblock dependents; an externally
+  detected `pr_merged` does and wakes the PM.
+- Synchronize only tracked open GitHub PRs with adaptive conditional non-LLM requests, stopping when
+  none remain. GitHub failure is durable/retryable and has no local-main fallback.
+- Codex workers use workspace-write with network on by default. A global network setting defaults on;
+  the PM may restrict but cannot override a global disable. Capability-bound workers pause and retain
+  their sessions while the full-access PM resolves the narrow operation under existing approvals.
 
 - Work-agent completion is server-enforced. Dirty tracked/untracked changes pause in Change review.
 - The PM inspects remaining changes and may commit, return/steer, or discard them. Verification runs
@@ -53,6 +71,84 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- Final cross-feature verification for the Durable PM Lifecycle and Landing Automation roadmap passed
+  on 2026-07-22: `bun fmt`, `bun lint`, and contracts, server, and web typechecks passed; focused
+  server coverage passed 548 tests across 31 files, contracts coverage passed 19 tests, and
+  non-browser web coverage passed 34 tests. The prior focused browser slices passed. The final combined
+  browser rerun was stopped because the mock WebSocket harness was noisy and stalled, not because of a
+  product failure; it is not recorded as a failed product check.
+
+- `ORCH-PR-LIFECYCLE-02` non-PM implementation evidence (2026-07-22): a durable `pr-open` task with
+  its authoritative PR URL is the only synchronization registration. The provider-neutral reactor
+  starts/restarts from that projection, serializes adaptive fast-poll/retry work, preserves tracked
+  state after GitHub failure, and immediately stops once its terminal merge/close dispatch consumes the
+  final registration. GitHub uses `gh api --cache` for tracked URL refreshes so GitHub CLI performs
+  HTTP cache/ETag revalidation without an LLM call; ordinary interactive PR reads remain direct. Task
+  merge produces the existing replay-safe `task.pr-merged` plus archive transition, cleanup retains
+  open-PR worktrees, and dependency admission still requires `landed`, not `pr-open`. Focused
+  GitHub-client, scheduler-cadence, tracked-PR, decider/dependency, projection/replay, and
+  worktree-retention coverage passed 186 server tests. The PM consumes `task.pr-merged` with the stable
+  `pull-request-merged:<taskId>:<prUrl>` key as a durable task lifecycle settlement, sends one structured
+  non-user message describing the remote merge and dependent eligibility, and replays/recovers through the
+  same pending/acted inbox path. Combined focused PR and PM coverage passed 233 server tests; targeted
+  formatting, lint, and server typecheck passed.
+
+- `ORCH-WORKER-CAPABILITY-02` completed 2026-07-22. A worker `permissions_approval` request pauses
+  its current stage without clearing its thread or stopping the provider session. The pause persists a
+  30-minute deadline (migration 072); startup and periodic reconciliation leave unexpired pauses alone,
+  then deterministically interrupt and stop an expired worker exactly once. Orphan recovery likewise
+  excludes paused stages, while cancellation clears the paused history entry. The provider's resolved
+  decision, including denial, appends one idempotent same-session resume. Capability pauses never enter
+  the quota projection, and timeline history renders `Paused — capability`. The pending approval
+  lifecycle produces the one PM wake for a capability pause; its companion stage-block event is not
+  treated as quota. A timeout interruption reports the expired approval deadline rather than a server
+  restart.
+
+- `ORCH-WORKER-SANDBOX-01` implementation evidence (2026-07-22): the default-on global
+  `workerNetworkEnabled` setting is exposed in Orchestrator defaults and resolves once per stage
+  attempt. A PM handoff can pass `networkAccess: false`, while a human global disable wins over an
+  attempted PM enable. The effective boolean is stored in events and stage history, then Codex worker
+  session start uses `workspace-write` and its turn start receives the matching network policy. Only
+  matching explicit `stage` ownership receives worker environment, network, sandbox, and auto-review
+  policy; ordinary unowned `ged/*` Chat threads stay normal. PM sessions receive neither worker sandbox
+  nor worker network options. Focused contracts, web settings,
+  PM tool/MCP, Codex runtime, provider-reactor, persistence migration, and task-decider tests passed
+  and the final cross-feature verification passed format, lint, and all affected package typechecks.
+
+- `ORCH-LIFECYCLE-02` completed 2026-07-22. Read-only helpers now retry exactly once only after an
+  explicitly classified provider `transport_error`; the retry releases a raced launch admission marker,
+  stops the prior session, and starts the same helper ID/provider thread again. A second transport
+  error and rate-limit, authentication/provider, permission/capability, validation, or unknown outcomes
+  all produce the ordinary terminal helper failure event. That terminal event continues through the
+  existing durable pending/acted PM lifecycle inbox and wakes the PM after replay/restart.
+  PM lifecycle delivery holds now also retain a monotonic durable episode (migration 073): a recovered
+  settlement that fails again emits a fresh held activity, restoring the PM needs-attention banner and
+  Retry action instead of being deduplicated behind the previous recovery.
+
+- `ORCH-THREAD-OWNERSHIP-01` implementation evidence (2026-07-22): migration 069 adds a nullable
+  creation-time ownership JSON column without touching legacy rows. PM and stage thread creation now
+  records explicit project/task ownership; thread projections and shell snapshots carry it, and Chat
+  filters only that metadata. Helper launch creates a persisted `helper`-owned thread only when no
+  thread exists; legacy helper-id threads are not rewritten. Task history interleaves helper work with
+  selectable chronological stage attempts. No old thread is inferred, hidden, or rewritten. Focused
+  helper/provider server tests passed 56 assertions and focused web logic passed 10 assertions.
+
+- `ORCH-LAND-APPROVAL-01` completed 2026-07-22. Human approval of a current land gate now uses one
+  server-owned command that validates the exact verified worktree HEAD and appends gate resolution plus
+  landing transition atomically. Landing continues through the existing draft-PR reactor; the normal
+  task header no longer exposes a second Land action, while durable PR-opening failures retain Retry
+  landing. No path marks a PR ready or merges it.
+- Focused evidence for `ORCH-LAND-APPROVAL-01`: 83 decider/task-landing server tests and 21 focused
+  Chromium task-route tests passed. The final cross-feature verification passed contracts, server, and
+  web typechecks.
+
+- `ORCH-LIFECYCLE-01` completed 2026-07-22. The existing durable PM consumed-settlement inbox remains
+  the single append-only delivery path: it records pending markers before a PM turn, marks them acted
+  only after success, and replays them after restart. PM re-entry entries are now typed as `user` or
+  `lifecycle`; queued user input is emitted first and any pending lifecycle outcomes are included in
+  the same turn inside an explicit server-context boundary. The websocket route marks only already
+  persisted human input as `user`, so lifecycle outcomes never create synthetic user messages.
 
 - `ORCH-VERIFY-FINALIZE-01` completed 2026-07-22. Verify prompts now prohibit staging and committing;
   the trusted server serializes settlement per task, audits all committed/dirty/untracked paths against

@@ -5,6 +5,49 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Orchestrator-created pull requests are now tracked until their remote merge. Opening a draft PR
+  keeps its task nonterminal, its worktree available, and dependent tasks blocked; a durable
+  provider-neutral merge observation completes and archives the task. Closed pull requests remain
+  visible for review without being presented as landed, and synchronization performs no model calls.
+
+- Codex Orchestrator workers now always run in a workspace-write sandbox with network access enabled
+  by default. The new global Worker network access setting can disable network for every worker; PM
+  handoffs may further restrict one attempt but cannot override a global disable. The effective policy
+  is persisted with each stage attempt, while PM sandbox and approval behavior remains unchanged.
+
+- Worker permission boundaries now pause the existing stage instead of broadening its sandbox or
+  starting a replacement worker. The same worker session resumes when the provider records the narrow
+  approval result, and stage history visibly records the paused interval. Pauses persist a generous
+  deadline, survive restart without orphaning the retained stage, and expire safely if they are not
+  resolved; explicit task cancellation also clears the paused attempt. Capability requests produce one
+  approval-focused PM wake, and expiry clearly reports the approval deadline rather than a restart.
+
+- Read-only Orchestrator helper runs now retry once after an explicitly classified transient transport
+  failure, retaining their helper identity and provider thread. Quota, authentication, permission, and
+  provider/model failures remain terminal and re-enter the PM through the durable helper lifecycle.
+
+- New Orchestrator PM, worker-stage, and read-only helper threads now persist explicit creation-time
+  ownership metadata. Chat filters only those owned threads without relying on id or branch prefixes,
+  while legacy unclassified threads remain visible. Task history interleaves helper work with selectable
+  chronological stage attempts, and normal unowned `ged/*` Chat threads remain outside worker sandbox
+  and network policy.
+
+- Approving a verified Orchestrator landing gate now immediately begins the durable draft-PR opening
+  flow. The duplicate Land control is removed from the normal path; exact-HEAD validation remains
+  server-side, and only a failed PR opening exposes Retry landing.
+
+- Orchestrator PM re-entry now preserves a queued human message as the primary next-turn request while
+  attaching pending worker, gate, helper, and permission outcomes as explicit server lifecycle context.
+  Those outcomes continue using the existing durable pending/acted replay path, so they never appear as
+  synthetic user chat messages and remain recoverable after restart.
+
+- PM lifecycle wakes now retain a bounded transport retry schedule and surface durable
+  needs-attention state for quota, authentication, and provider failures. Provider recovery signals or
+  an explicit Retry release only the affected retained deliveries without polling the PM model. Helper
+  transport retries are likewise persisted, so restarting the server cannot grant an extra attempt.
+  A delivery held again after recovery creates a new durable attention episode, restoring the PM banner
+  and Retry action for that settlement.
+
 - Codex verification no longer depends on committing through a linked-worktree sandbox that cannot
   write shared Git metadata. Verifiers leave documentation and evidence uncommitted; GedCode audits
   every changed path and creates the documentation commit from its trusted server before binding
@@ -56,12 +99,6 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   detached, non-Git, or non-GitHub projects. Verify handoffs repeat that refresh and rebase a clean
   task worktree onto the new primary HEAD before the verifier starts; conflicts abort cleanly and
   prior verification evidence is invalidated immediately.
-
-- Landing no longer marks tasks terminal before GitHub succeeds. Approved work stays in retryable
-  Review/Ready-to-land state while the configured draft-by-default pull request opens; GitHub or
-  authentication failures retain the worktree and exact-HEAD verification. The task becomes `landed`
-  and auto-archives only after a real pull-request URL is recorded, eliminating new landed-without-PR
-  cleanup limbo while preserving repair for legacy records.
 
 - Clarified and enforced Orchestrator stage ownership. Plan and Verify workers are documentation-only,
   Work owns substantive implementation and clean commits, and the PM owns bounded trivial work plus
