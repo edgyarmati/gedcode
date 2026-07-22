@@ -376,14 +376,23 @@ const make = Effect.gen(function* () {
     }
 
     const taskForStageThread = yield* resolveTaskForStageThread(threadId);
+    // Worker policy is intentionally opt-in via durable ownership metadata.
+    // Branch names are user-controlled and historical threads are deliberately
+    // not retrofitted, so neither may grant a normal chat thread worker
+    // sandboxing, network access, or auto-approval behavior.
     const isOrchestratorWorker =
-      taskForStageThread !== undefined ||
-      (thread.branch !== null &&
-        (thread.branch.startsWith("orchestrator/") || thread.branch.startsWith("ged/")));
+      thread.orchestrationOwnership?.kind === "stage" &&
+      taskForStageThread !== undefined &&
+      String(thread.orchestrationOwnership.taskId) === String(taskForStageThread.id);
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
     const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
+    const workerNetworkAccess = isOrchestratorWorker
+      ? ((yield* projectionSnapshotQuery.getCommandReadModel()).stageHistory[threadId]
+          ?.networkAccess ??
+        (yield* serverSettingsService.getSettings).orchestratorDefaults.workerNetworkEnabled)
+      : undefined;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -574,6 +583,8 @@ const make = Effect.gen(function* () {
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
             runtimeMode: desiredRuntimeMode,
             ...(desiredApprovalReviewer ? { approvalReviewer: desiredApprovalReviewer } : {}),
+            ...(usesCodexWorkerAutoReview ? { sandboxMode: "workspace-write" as const } : {}),
+            ...(workerNetworkAccess !== undefined ? { networkAccess: workerNetworkAccess } : {}),
             ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
           });
           return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;
@@ -788,7 +799,11 @@ const make = Effect.gen(function* () {
       const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
       if (targetBranch === oldBranch) return;
 
-      const renamed = yield* gitWorkflow.renameBranch({ cwd, oldBranch, newBranch: targetBranch });
+      const renamed = yield* gitWorkflow.renameBranch({
+        cwd,
+        oldBranch,
+        newBranch: targetBranch,
+      });
       yield* orchestrationEngine.dispatch({
         type: "thread.meta.update",
         commandId: yield* serverCommandId("worktree-branch-rename"),

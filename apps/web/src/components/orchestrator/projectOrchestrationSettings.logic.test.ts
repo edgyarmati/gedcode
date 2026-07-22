@@ -191,6 +191,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         capabilityPresets: null,
         projectContextDefaultTier: "smart",
         openPrAsDraft: true,
+        workerNetworkEnabled: true,
       }),
     ).toEqual({
       pmModelSelection: selection("openai", "gpt-5-pm"),

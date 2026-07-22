@@ -176,7 +176,12 @@ const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate.mapFields(
     pullRequest: Schema.NullOr(Schema.fromJsonString(OrchestrationPullRequestProposal)),
   }),
 );
-const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry;
+const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry.mapFields(
+  Struct.assign({
+    networkAccess: Schema.NullOr(Schema.BooleanFromBit),
+    capabilityPauseExpiresAt: Schema.NullOr(Schema.String),
+  }),
+);
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
@@ -874,6 +879,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const listActiveLatestTurnRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionLatestTurnDbRowSchema,
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
     execute: () =>
       sql`
         SELECT

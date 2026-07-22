@@ -62,6 +62,7 @@ export const ProviderSessionStartInput = Schema.Struct({
   resumeCursor: Schema.optional(Schema.Unknown),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
+  networkAccess: Schema.optional(Schema.Boolean),
   runtimeMode: RuntimeMode,
   approvalReviewer: Schema.optional(ProviderApprovalReviewer),
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),

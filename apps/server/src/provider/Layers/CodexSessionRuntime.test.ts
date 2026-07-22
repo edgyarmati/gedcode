@@ -47,6 +47,24 @@ function makeThreadOpenResponse(
 }
 
 describe("buildTurnStartParams", () => {
+  it("keeps worker turns workspace-write while applying their persisted network policy", () => {
+    const params = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-worker-thread",
+        runtimeMode: "auto-accept-edits",
+        sandboxMode: "workspace-write",
+        networkAccess: false,
+        prompt: "Implement without network.",
+      }),
+    );
+
+    assert.equal(params.approvalPolicy, "on-request");
+    assert.deepStrictEqual(params.sandboxPolicy, {
+      type: "workspaceWrite",
+      networkAccess: false,
+    });
+  });
+
   it("includes plan collaboration mode when requested", () => {
     const params = Effect.runSync(
       buildTurnStartParams({

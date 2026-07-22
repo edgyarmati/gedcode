@@ -228,6 +228,10 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   maxRetriesPerStage: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_RETRIES_PER_STAGE)),
   ),
+  // Workers use workspace-write sandboxes. This human-controlled global floor
+  // defaults on; a PM handoff may restrict a single attempt but cannot turn a
+  // globally disabled network back on.
+  workerNetworkEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   pmReconciliationIntervalMs: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PM_RECONCILIATION_INTERVAL_MS)),
   ),

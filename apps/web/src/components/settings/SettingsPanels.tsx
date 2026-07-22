@@ -975,6 +975,8 @@ export function OrchestratorDefaultsSettingsPanel() {
   );
 
   const openPrAsDraftDirty = draft.openPrAsDraft !== defaultDraft.openPrAsDraft;
+  const workerNetworkEnabledDirty =
+    draft.workerNetworkEnabled !== defaultDraft.workerNetworkEnabled;
   const resourceDefaultsDirty = !Equal.equals(
     draft.resourceDefaults,
     defaultDraft.resourceDefaults,
@@ -1056,6 +1058,33 @@ export function OrchestratorDefaultsSettingsPanel() {
               aria-label="Open landing PRs as draft by default"
               onCheckedChange={(checked) =>
                 updateDraft({ ...draft, openPrAsDraft: Boolean(checked) })
+              }
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Worker network access"
+          description="Allow Codex workers network access inside their workspace-write sandbox. A PM may disable it for an individual handoff, but cannot override this setting when it is off."
+          resetAction={
+            workerNetworkEnabledDirty ? (
+              <SettingResetButton
+                label="Worker network access"
+                onClick={() =>
+                  updateDraft({
+                    ...draft,
+                    workerNetworkEnabled: defaultDraft.workerNetworkEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={draft.workerNetworkEnabled}
+              aria-label="Allow network access for workers"
+              onCheckedChange={(checked) =>
+                updateDraft({ ...draft, workerNetworkEnabled: Boolean(checked) })
               }
             />
           }

@@ -2515,6 +2515,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           aggregateKind: "task",
           aggregateId: command.taskId,
           occurredAt: command.createdAt,
+      const workerNetworkAccess =
+        (orchestratorDefaults.workerNetworkEnabled ?? true) && (command.networkAccess ?? true);
           commandId: command.commandId,
         })),
         type: "task.stage-started",
@@ -2534,6 +2536,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
       const threadCreatedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
+          networkAccess: workerNetworkAccess,
           aggregateKind: "thread",
           aggregateId: stageThreadId,
           occurredAt: command.createdAt,

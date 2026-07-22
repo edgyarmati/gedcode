@@ -60,6 +60,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
     expect(decoded.maxRetriesPerStage).toBe(DEFAULT_MAX_RETRIES_PER_STAGE);
     expect(decoded.pmReconciliationIntervalMs).toBe(DEFAULT_PM_RECONCILIATION_INTERVAL_MS);
     expect(decoded.worktreeReaperIntervalMinutes).toBe(DEFAULT_WORKTREE_REAPER_INTERVAL_MINUTES);
+    expect(decoded.workerNetworkEnabled).toBe(true);
   });
 
   it("global defaults include the full stage set and require-approval gate policy", () => {
@@ -93,6 +94,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
       },
       projectContextDefaultTier: "genius",
       openPrAsDraft: true,
+      workerNetworkEnabled: false,
     });
 
     const reDecoded = decodeGlobalDefaults(encodeGlobalDefaults(decoded));
@@ -110,6 +112,7 @@ describe("OrchestratorProjectConfig — legacy worker access setting", () => {
     });
     expect(reDecoded.openPrAsDraft).toBe(true);
     expect(reDecoded.projectContextDefaultTier).toBe("genius");
+    expect(reDecoded.workerNetworkEnabled).toBe(false);
   });
 });
 

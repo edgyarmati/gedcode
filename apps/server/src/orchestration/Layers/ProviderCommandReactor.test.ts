@@ -519,6 +519,9 @@ describe("ProviderCommandReactor", () => {
       },
       runtimeMode: "approval-required",
     });
+    const pmStartInput = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(pmStartInput).not.toHaveProperty("sandboxMode");
+    expect(pmStartInput).not.toHaveProperty("networkAccess");
 
     let readModel = await harness.readModel();
     let thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
@@ -575,6 +578,54 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("keeps unowned ged branch threads on normal chat policy", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const threadId = ThreadId.make("thread-ged-unowned");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-create-ged-unowned"),
+        threadId,
+        projectId: asProjectId("project-1"),
+        title: "Ordinary GED chat",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: "ged/feature/ordinary-chat",
+        worktreePath: harness.projectRoot,
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-ged-unowned"),
+        threadId,
+        message: {
+          messageId: asMessageId("user-message-ged-unowned"),
+          role: "user",
+          text: "Remain a normal chat thread.",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    const startInput = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(startInput).toMatchObject({ runtimeMode: "approval-required" });
+    expect(startInput).not.toHaveProperty("sandboxMode");
+    expect(startInput).not.toHaveProperty("networkAccess");
+    expect(startInput).not.toHaveProperty("environment");
+  });
+
   it("keeps Codex task workers workspace-scoped with auto-review before start or restart", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -607,6 +658,8 @@ describe("ProviderCommandReactor", () => {
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
       runtimeMode: "auto-accept-edits",
       approvalReviewer: "auto-review",
+      sandboxMode: "workspace-write",
+      networkAccess: true,
     });
 
     const readModelAfterStageStart = await harness.readModel();
@@ -1063,6 +1116,8 @@ describe("ProviderCommandReactor", () => {
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
       runtimeMode: "auto-accept-edits",
       approvalReviewer: "auto-review",
+      sandboxMode: "workspace-write",
+      networkAccess: true,
     });
 
     const readModel = await harness.readModel();
@@ -1070,6 +1125,48 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+  });
+
+  it("keeps a Codex worker offline when the global human setting is disabled", async () => {
+    const harness = await createHarness({
+      serverSettingsOverrides: {
+        orchestratorDefaults: { workerNetworkEnabled: false },
+      },
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-network-disabled"),
+        taskId: asTaskId("task-network-disabled"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Offline worker",
+        pmMessageId: null,
+        branch: "orchestrator/task-network-disabled",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-network-disabled"),
+        taskId: asTaskId("task-network-disabled"),
+        role: "work",
+        networkAccess: true,
+        instructions: "Implement the task without using network access.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      runtimeMode: "auto-accept-edits",
+      approvalReviewer: "auto-review",
+      sandboxMode: "workspace-write",
+      networkAccess: false,
+    });
   });
 
   it("ignores legacy false opt-ins and keeps OpenCode workers full-access", async () => {
@@ -1667,7 +1764,9 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    const request = harness.sendTurn.mock.calls[0]?.[0] as {
+      readonly input?: string;
+    };
     expect(request.input).toContain("GED workflow mode is enabled");
     expect(request.input).toContain("grill-with-docs skill");
     expect(request.input).toContain("transition from clarify to ged-planning");
@@ -1714,7 +1813,9 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    const request = harness.sendTurn.mock.calls[0]?.[0] as {
+      readonly input?: string;
+    };
     expect(request.input).toBe("keep this prompt unchanged");
     expect((await harness.readModel()).threads[0]?.gedWorkflowEnabled).toBe(false);
   });
@@ -1795,7 +1896,9 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string };
+    const request = harness.sendTurn.mock.calls[0]?.[0] as {
+      readonly input?: string;
+    };
     expect(request.input).toContain("<forked_conversation_history>");
     expect(request.input).toContain("Original request");
     expect(request.input).toContain("Original answer");
@@ -1859,7 +1962,10 @@ describe("ProviderCommandReactor", () => {
 
   it("starts a first turn on the requested provider instance even when it differs from the thread model", async () => {
     const harness = await createHarness({
-      threadModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
     });
     const now = "2026-01-01T00:00:00.000Z";
 

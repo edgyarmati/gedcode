@@ -1385,6 +1385,9 @@ export function projectEvent(
 
     case "task.stage-completed":
       // Only the `work` stage completing advances status (`work → review`).
+                      ...(payload.networkAccess === undefined
+                        ? {}
+                        : { networkAccess: payload.networkAccess }),
       // Other roles' completion is recorded (updatedAt) but their forward
       // transition is driven by the next stage starting or a gate event, so a
       // completed classify/plan stage does not regress the derived status.

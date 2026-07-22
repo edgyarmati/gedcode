@@ -1671,6 +1671,9 @@ const TaskStageCompleteCommand = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
+  // The PM may restrict a handoff but cannot re-enable the global worker
+  // network floor once a human has disabled it.
+  networkAccess: Schema.optionalKey(Schema.Boolean),
   // Whether the stage turn's diff was confirmed captured before completion.
   // Absent = normal completion (a real diff was present when the stage settled).
   // `false` = fail-loud completion via the diff-wait timeout (no confirmed diff).
@@ -2631,6 +2634,9 @@ export const TaskStageInterruptedPayload = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   reason: Schema.Literals(["orphaned", "operator"]),
+  // Persist the effective policy for this specific stage attempt. Optional so
+  // append-only events from before the worker-network policy still decode.
+  networkAccess: Schema.optionalKey(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 
