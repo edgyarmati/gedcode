@@ -1431,6 +1431,10 @@ export function projectEvent(
             status: "change-review",
             changeReview: {
               status: "pending",
+              stageRole: payload.stageRole ?? "work",
+              ...(payload.finalizationError === undefined
+                ? {}
+                : { finalizationError: payload.finalizationError }),
               workStageThreadId: payload.workStageThreadId,
               detectedHead: payload.detectedHead,
               resolution: null,

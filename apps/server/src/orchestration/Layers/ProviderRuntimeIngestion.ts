@@ -54,7 +54,7 @@ import {
 } from "../stageResolution.ts";
 import { resumeQuotaBlockedStagesForProviderWithServices } from "../quotaStageResumption.ts";
 import { isPmThreadId } from "../pm/PmEventProjection.ts";
-import { inspectStageWorktreeSettlement } from "../worktreeCompletion.ts";
+import { finalizeStageWorktreeSettlement } from "../worktreeCompletion.ts";
 import { VcsProcess } from "../../vcs/VcsProcess.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
@@ -1765,7 +1765,9 @@ const make = Effect.gen(function* () {
               if (taskForStageThread.worktreePath === null) {
                 return {};
               }
-              return yield* inspectStageWorktreeSettlement({
+              return yield* finalizeStageWorktreeSettlement({
+                taskId: taskForStageThread.id,
+                taskTitle: taskForStageThread.title,
                 worktreePath: taskForStageThread.worktreePath,
                 process: vcsProcess,
                 role,

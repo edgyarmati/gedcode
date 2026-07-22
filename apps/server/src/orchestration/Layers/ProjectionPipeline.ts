@@ -1944,6 +1944,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               status: "change-review",
               changeReview: {
                 status: "pending",
+                stageRole: event.payload.stageRole ?? "work",
+                ...(event.payload.finalizationError === undefined
+                  ? {}
+                  : { finalizationError: event.payload.finalizationError }),
                 workStageThreadId: event.payload.workStageThreadId,
                 detectedHead: event.payload.detectedHead,
                 resolution: null,

@@ -624,6 +624,10 @@ export type OrchestrationTaskChangeReviewResolution =
 
 export const OrchestrationTaskChangeReview = Schema.Struct({
   status: Schema.Literals(["pending", "resolved"]),
+  // Optional for append-only compatibility. Historical reviews were always
+  // produced by Work and only persisted the legacy-named thread field.
+  stageRole: Schema.optional(OrchestrationStageRole),
+  finalizationError: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
   workStageThreadId: ThreadId,
   detectedHead: TrimmedNonEmptyString,
   resolution: Schema.NullOr(OrchestrationTaskChangeReviewResolution),
@@ -1649,6 +1653,9 @@ const TaskStageCompleteCommand = Schema.Struct({
   diffComplete: Schema.optional(Schema.Boolean),
   worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   ownershipViolationPaths: Schema.optional(OrchestrationStageOwnershipViolationPaths),
+  verificationFinalizationError: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -1656,6 +1663,8 @@ const TaskChangeReviewRequestCommand = Schema.Struct({
   type: Schema.Literal("task.change-review.request"),
   commandId: CommandId,
   taskId: TaskId,
+  stageRole: Schema.optional(OrchestrationStageRole),
+  finalizationError: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
   workStageThreadId: ThreadId,
   detectedHead: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
@@ -2542,11 +2551,16 @@ export const TaskStageCompletedPayload = Schema.Struct({
   diffComplete: Schema.optional(Schema.Boolean),
   worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   ownershipViolationPaths: Schema.optional(OrchestrationStageOwnershipViolationPaths),
+  verificationFinalizationError: Schema.optional(
+    TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+  ),
   updatedAt: IsoDateTime,
 });
 
 export const TaskChangeReviewRequestedPayload = Schema.Struct({
   taskId: TaskId,
+  stageRole: Schema.optional(OrchestrationStageRole),
+  finalizationError: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
   workStageThreadId: ThreadId,
   detectedHead: TrimmedNonEmptyString,
   requestedAt: IsoDateTime,

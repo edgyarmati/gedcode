@@ -1507,6 +1507,7 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-completion-records-test-"))
           assert.equal(rows[0]?.status, "no-changes-needed");
           assert.deepEqual(decodeTaskChangeReviewJson(rows[0]?.changeReview), {
             status: "resolved",
+            stageRole: "work",
             workStageThreadId,
             detectedHead: "abc123",
             resolution: "committed",

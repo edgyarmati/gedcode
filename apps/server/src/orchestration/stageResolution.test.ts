@@ -32,6 +32,8 @@ describe("prepareStageInstructions prompt-prefix", () => {
     expect(countPrefixBlocks(prepared)).toBe(1);
     expect(prepared).toContain("documentation and verification evidence only");
     expect(prepared).toContain("Do not modify substantive implementation code");
+    expect(prepared).toContain("Do not stage or commit those documentation changes");
+    expect(prepared).toContain("trusted server finalizer");
     expect(prepared).toContain("sandboxed auto-approve environment");
     expect(prepared).toContain(rawInstructions);
   });

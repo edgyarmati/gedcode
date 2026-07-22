@@ -5,6 +5,15 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Codex verification no longer depends on committing through a linked-worktree sandbox that cannot
+  write shared Git metadata. Verifiers leave documentation and evidence uncommitted; GedCode audits
+  every changed path and creates the documentation commit from its trusted server before binding
+  verification to the resulting clean HEAD. Concurrent settlement remains idempotent, implementation
+  paths are never included, and commit/index failures now enter a PM-resolvable Change review instead
+  of leaving the task wedged in `verifying` with no verification record. Durable orchestration
+  snapshots now retain the immutable stage-start HEAD needed for that audit instead of dropping it
+  during snapshot reads.
+
 - Retrying a durable pull-request landing failure now keeps the disabled Landing indicator visible
   until the server emits the renewed opening state, instead of flashing back to Retry immediately.
 
@@ -59,7 +68,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   authenticated host operations that sandboxed workers cannot perform. Each stage now records its
   starting worktree HEAD; committed, dirty, and untracked implementation paths from a planner or
   verifier are surfaced to the PM, return the task to review, and cannot produce verification evidence.
-  Verifier-owned context/evidence commits remain part of the exact HEAD required for landing.
+  Verifier-owned context/evidence remains part of the exact HEAD required for landing.
 
 - Removed the mandatory project-context onboarding and proposal-review modals. Orchestrator PM chat
   now shows a compact Ready/Updating/Needs attention indicator with an explicit manual Review action;

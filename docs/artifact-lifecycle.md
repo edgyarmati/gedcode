@@ -57,8 +57,10 @@ manifest written by a newer schema.
 - **Lifetime and cleanup:** project-owned. Keep active documents while they help a future turn resume;
   archive or delete obsolete named work directories during normal repository maintenance.
 - **Commit guidance:** commit durable context, decisions, specs, task status, and verification evidence
-  when the team wants them shared. Ignore runtime/session scratch files. The repository's own policy
-  takes precedence.
+  when the team wants them shared. In an Orchestrator Verify stage, the verifier leaves its owned
+  documentation uncommitted; GedCode audits the paths and creates the evidence commit from the trusted
+  server before recording exact-HEAD verification. Ignore runtime/session scratch files. The
+  repository's own policy takes precedence.
 - **Privacy:** the selected model can read these files. Do not put API keys, credentials, private
   transcripts, or secrets in `.ged/`.
 

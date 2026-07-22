@@ -104,6 +104,7 @@ const settleOrRefresh = Effect.fn("settleOrRefreshTaskChangeReview")(function* (
       `Task '${input.taskId}' lost its change-review context.`,
     );
   }
+  const stageRole = task.changeReview?.stageRole ?? "work";
   let result = yield* input.dispatch({
     type: "task.change-review.resolve",
     commandId: yield* input.commandId(`change-review-${input.resolution}`),
@@ -116,6 +117,10 @@ const settleOrRefresh = Effect.fn("settleOrRefreshTaskChangeReview")(function* (
       type: "task.change-review.request",
       commandId: yield* input.commandId("change-review-remaining"),
       taskId: input.taskId,
+      stageRole,
+      ...(task.changeReview?.finalizationError === undefined
+        ? {}
+        : { finalizationError: task.changeReview.finalizationError }),
       workStageThreadId,
       detectedHead: input.changes.head,
       createdAt: yield* input.createdAt,
@@ -199,21 +204,22 @@ export const returnOrchestratorTaskChanges = Effect.fn("returnOrchestratorTaskCh
     input.taskId,
     Effect.gen(function* () {
       const pendingTask = yield* loadPendingChangeReview(services, input.taskId);
-      const previousWorkTier = pendingTask.changeReview
+      const stageRole = pendingTask.changeReview?.stageRole ?? "work";
+      const previousStageTier = pendingTask.changeReview
         ? (yield* services.snapshotQuery.getCommandReadModel()).stageHistory[
             pendingTask.changeReview.workStageThreadId
           ]?.capabilityTier
         : null;
       const capabilityTier =
         input.capabilityTier ??
-        pendingTask.roleCapabilityTiers?.work ??
-        previousWorkTier ??
+        pendingTask.roleCapabilityTiers?.[stageRole] ??
+        previousStageTier ??
         "smart";
       const started = yield* input.dispatch({
         type: "task.stage.start",
         commandId: yield* input.commandId("return-task-changes"),
         taskId: input.taskId,
-        role: "work",
+        role: stageRole,
         capabilityTier,
         instructions: input.instructions.trim(),
         createdAt: yield* input.createdAt,

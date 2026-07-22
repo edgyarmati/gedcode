@@ -88,7 +88,7 @@ const STAGE_OWNERSHIP_REQUIREMENTS: Record<OrchestrationStageRole, string> = {
   ].join(" "),
   verify: [
     "You own documentation and verification evidence only. Do not modify substantive implementation code; if code needs repair, report the exact failure so the PM can return it to a work stage.",
-    "Run proportional focused checks, update the GED context and verification evidence when the implementation changes them, commit those documentation changes separately, and leave the worktree clean.",
+    "Run proportional focused checks and update the GED context and verification evidence when the implementation changes them. Do not stage or commit those documentation changes: leave them for GedCode to audit and commit through its trusted server finalizer.",
   ].join(" "),
 };
 

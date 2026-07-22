@@ -1918,7 +1918,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("does not record verification when the inspected worktree is dirty", () =>
+  it.effect("parks dirty verifier documentation in a recoverable change review", () =>
     Effect.gen(function* () {
       const stageThreadId = asThreadId("thread-stage-verify-dirty");
       const readModel = yield* taskReadModel({
@@ -1938,12 +1938,64 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             stageThreadId,
             awaitedTurnId: asTurnId("turn-verify-dirty"),
             worktreeCompletion: { head: "dirty-head", dirty: true },
+            verificationFinalizationError: "Git could not acquire index.lock.",
             createdAt: now,
           },
         }),
       );
 
-      expect(events.map((event) => event.type)).toEqual(["task.stage-completed"]);
+      expect(events.map((event) => event.type)).toEqual([
+        "task.stage-completed",
+        "task.change-review-requested",
+      ]);
+      expect(events[0]?.payload).toMatchObject({
+        verificationFinalizationError: "Git could not acquire index.lock.",
+      });
+      expect(events[1]?.payload).toMatchObject({
+        stageRole: "verify",
+        finalizationError: "Git could not acquire index.lock.",
+        workStageThreadId: stageThreadId,
+        detectedHead: "dirty-head",
+      });
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.tasks[0]?.status).toBe("change-review");
+      expect(projected.tasks[0]?.changeReview).toMatchObject({
+        status: "pending",
+        stageRole: "verify",
+        finalizationError: "Git could not acquire index.lock.",
+        workStageThreadId: stageThreadId,
+      });
+      expect(projected.tasks[0]?.verification).toBeNull();
+
+      const retryEvents = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: projected,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-return-dirty-verifier-docs"),
+            taskId: asTaskId("task-1"),
+            role: "verify",
+            instructions: "Resolve the verifier documentation residue and verify again.",
+            createdAt: now,
+          },
+        }),
+      );
+      const retryStarted = retryEvents.find((event) => event.type === "task.stage-started");
+      expect(retryStarted?.payload).toMatchObject({ role: "verify" });
+      const retrying = yield* applyEvents(projected, retryEvents);
+      const resolved = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: retrying,
+          command: {
+            type: "task.change-review.resolve",
+            commandId: asCommandId("cmd-resolve-returned-verifier-docs"),
+            taskId: asTaskId("task-1"),
+            resolution: "returned",
+            createdAt: now,
+          },
+        }),
+      );
+      expect(resolved.map((event) => event.type)).toEqual(["task.change-review-resolved"]);
     }),
   );
 

@@ -38,7 +38,8 @@
 - Keep scoped audit, interruption, typed conflicts, and deterministic non-overlap merge. Remove the
   legacy onboarding cards, dismissal fingerprints, and Commit/Revise/Discard workflow.
 - PM owns orchestration, trivial and authenticated work. Planner/verifier are documentation-only;
-  workers own substantive code. Workers commit implementation; verifier commits evidence/context.
+  workers own substantive code. Workers commit implementation; verifiers leave evidence/context
+  changes for GedCode's audited server-owned finalizer.
 - PM refreshes clean primary Git before task creation. Orchestrated work requires Git plus supported
   GitHub remote and lands as a documented draft PR by default; no local-main fallback exists.
 - Remembered PM allow/ask/deny policy is deferred as `PM-APPROVAL-01`; PM currently has full technical
@@ -52,6 +53,19 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `ORCH-VERIFY-FINALIZE-01` completed 2026-07-22. Verify prompts now prohibit staging and committing;
+  the trusted server serializes settlement per task, audits all committed/dirty/untracked paths against
+  the stage start HEAD, stages only documentation, creates one hook-free unsigned evidence commit, and
+  re-inspects the clean resulting HEAD before verification is recorded. Duplicate checkpoint/timeout
+  settlement creates only one commit. Durable snapshots retain the immutable stage-start HEAD used by
+  the audit. Implementation residue is rejected, while Git/index failures settle into a role-aware
+  Change review that the PM can inspect, commit, discard, or return to Verify; resolution always
+  requires a fresh verification attempt.
+- Focused evidence for `ORCH-VERIFY-FINALIZE-01`: 310 server assertions passed across real-Git
+  finalization, prompt ownership, task decider/projection, checkpoint and runtime settlement, PM
+  recovery, and task-change tools; 69 focused contracts assertions passed. Contracts and server
+  typechecks passed. No full suite ran under the ordinary focused-test policy.
 
 - `ORCH-LAND-RETRY-01` completed 2026-07-22. A local landing retry now takes presentation
   precedence over the preceding durable failure and remains pending until a new opening-PR event or
@@ -105,12 +119,12 @@
   No full suite was run per the ordinary focused-test policy.
 
 - `PROJECT-MANIFEST-04` completed 2026-07-21. Every delegated stage receives an explicit ownership
-  and sandbox contract. Plan and Verify may commit documentation/context only; Work owns substantive
+  and sandbox contract. Plan and Verify own documentation/context only; Work owns substantive
   implementation and clean descriptive commits; the full-access PM owns trivial and authenticated host
   operations. The server records each stage's starting HEAD and compares final committed, dirty, and
   untracked paths. A planner/verifier implementation mutation is surfaced to the PM, returns the task
-  to review, and cannot create verification evidence. Clean verifier documentation commits become part
-  of the exact verified HEAD used by the existing landing guard.
+  to review, and cannot create verification evidence. Verifier documentation is now committed by the
+  server-owned finalizer from `ORCH-VERIFY-FINALIZE-01` and becomes part of the exact verified HEAD.
 - Focused contracts and server tests passed across schema, prompts, PM handoff, real-Git path
   classification, decider/projection, checkpoint/runtime settlement, and PM re-entry. Repository
   formatting, lint, and workspace typechecks passed with only existing lint warnings. No full suite

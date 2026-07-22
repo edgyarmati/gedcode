@@ -2258,6 +2258,47 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("describes verifier documentation residue as a verification change review", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const verifyChangeReviewEvent: OrchestrationEvent = {
+        ...changeReviewRequestedEvent,
+        eventId: EventId.make("evt-verify-change-review-requested"),
+        commandId: CommandId.make("cmd-verify-change-review-requested"),
+        correlationId: CommandId.make("cmd-verify-change-review-requested"),
+        payload: {
+          ...changeReviewRequestedEvent.payload,
+          stageRole: "verify",
+          finalizationError: "Git could not acquire index.lock for OPENAI_API_KEY=sk-secret.",
+        },
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [verifyChangeReviewEvent],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /Verification for task/);
+      assert.match(messages[0] ?? "", /Review the verifier-owned documentation/);
+      assert.match(messages[0] ?? "", /Git could not acquire index\.lock/);
+      assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
+      assert.notMatch(messages[0] ?? "", /sk-secret/);
+      assert.match(messages[0] ?? "", /run Verify again/);
+      assert.notMatch(messages[0] ?? "", /return the work to the worker/);
+    }),
+  );
+
   it.effect("re-enters the requesting PM exactly once with a scrubbed helper result", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
@@ -3067,6 +3108,9 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "commands plus observed outcomes");
     assert.include(prompt, "other user hunks may exist in the same file");
     assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
+    assert.include(prompt, "Verifiers leave their documentation changes uncommitted");
+    assert.include(prompt, "trusted server before recording exact-HEAD verification");
+    assert.include(prompt, "A verifier finalization failure requires a fresh Verify");
     assert.include(prompt, "Landing remains Ready to land");
     assert.include(prompt, "exact pull-request title and Markdown body");
     assert.include(prompt, "requestApproval.pullRequest");

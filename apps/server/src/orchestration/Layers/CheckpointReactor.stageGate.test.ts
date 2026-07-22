@@ -27,6 +27,7 @@ import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
+  type OrchestrationEvent,
   ProjectId,
   TaskId,
   TaskTypeId,
@@ -151,7 +152,7 @@ function createProviderServiceHarness() {
 
 async function waitForEvent(
   engine: OrchestrationEngineShape,
-  predicate: (event: { type: string }) => boolean,
+  predicate: (event: OrchestrationEvent) => boolean,
   timeoutMs = CHECKPOINT_STAGE_GATE_WAIT_TIMEOUT_MS,
 ) {
   const deadline = (await Effect.runPromise(Clock.currentTimeMillis)) + timeoutMs;
@@ -435,6 +436,118 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     expect(snapshot.tasks.find((task) => task.id === "task-stage-gate")?.status).toBe(
       "change-review",
     );
+  });
+
+  it("server-finalizes dirty verifier documentation before recording the clean exact HEAD", async () => {
+    const harness = await createHarness();
+    const workStageThreadId = await startWorkingStage(harness);
+    const beforeVerifyHead = runGit(harness.worktreePath, ["rev-parse", "HEAD"]).trim();
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.complete",
+        commandId: CommandId.make("cmd-stage-gate-finish-work-for-verify"),
+        taskId: TaskId.make("task-stage-gate"),
+        role: "work",
+        stageThreadId: workStageThreadId,
+        awaitedTurnId: asTurnId("turn-stage-gate-work-complete"),
+        worktreeCompletion: { head: beforeVerifyHead, dirty: false },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-stage-gate-start-verify"),
+        taskId: TaskId.make("task-stage-gate"),
+        role: "verify",
+        startHead: beforeVerifyHead,
+        instructions: "Verify and record focused evidence.",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const task = (await harness.readModel()).tasks.find(
+      (entry) => entry.id === TaskId.make("task-stage-gate"),
+    );
+    const verifyStageThreadId = task?.currentStageThreadId;
+    expect(task?.status).toBe("verifying");
+    expect(verifyStageThreadId).not.toBeNull();
+    expect(verifyStageThreadId).not.toBeUndefined();
+    if (verifyStageThreadId === null || verifyStageThreadId === undefined) return;
+    const beforeVerifyEvents = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const verifyStarted = beforeVerifyEvents.find(
+      (event) =>
+        event.type === "task.stage-started" && event.payload.stageThreadId === verifyStageThreadId,
+    );
+    expect(verifyStarted?.type).toBe("task.stage-started");
+    if (verifyStarted?.type === "task.stage-started") {
+      expect(verifyStarted.payload.startHead).toBe(beforeVerifyHead);
+    }
+    expect((await harness.readModel()).stageHistory[verifyStageThreadId]?.startHead).toBe(
+      beforeVerifyHead,
+    );
+    harness.provider.setSession(verifyStageThreadId, harness.worktreePath);
+    const turnId = asTurnId("turn-stage-gate-verify-finalize");
+
+    harness.provider.emit({
+      type: "turn.started",
+      eventId: EventId.make("evt-stage-gate-verify-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: verifyStageThreadId,
+      turnId,
+    });
+    await harness.drain();
+
+    fs.mkdirSync(path.join(harness.worktreePath, ".ged", "work", "root"), { recursive: true });
+    fs.writeFileSync(
+      path.join(harness.worktreePath, ".ged", "work", "root", "TESTS.md"),
+      "# Focused verification\n\n- passed\n",
+      "utf8",
+    );
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.make("evt-stage-gate-verify-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: verifyStageThreadId,
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const events = await waitForEvent(
+      harness.engine,
+      (event) =>
+        event.type === "task.stage-completed" &&
+        event.payload.stageThreadId === verifyStageThreadId,
+    );
+    const verifyCompletion = events
+      .filter((event) => event.type === "task.stage-completed")
+      .find(
+        (event) =>
+          event.type === "task.stage-completed" &&
+          event.payload.stageThreadId === verifyStageThreadId,
+      );
+    expect(verifyCompletion?.type).toBe("task.stage-completed");
+    if (verifyCompletion?.type === "task.stage-completed") {
+      expect(verifyCompletion.payload.verificationFinalizationError).toBeUndefined();
+      expect(verifyCompletion.payload.ownershipViolationPaths).toBeUndefined();
+      expect(verifyCompletion.payload.worktreeCompletion).toMatchObject({ dirty: false });
+    }
+    const verification = events.find((event) => event.type === "task.verification-recorded");
+    expect(verification?.type).toBe("task.verification-recorded");
+    const finalizedHead = runGit(harness.worktreePath, ["rev-parse", "HEAD"]).trim();
+    expect(finalizedHead).not.toBe(beforeVerifyHead);
+    expect(runGit(harness.worktreePath, ["status", "--porcelain"])).toBe("");
+    expect(runGit(harness.worktreePath, ["log", "-1", "--pretty=%s"]).trim()).toBe(
+      "docs: record verification evidence for Stage gate task",
+    );
+    if (verification?.type === "task.verification-recorded") {
+      expect(verification.payload.head).toBe(finalizedHead);
+    }
   });
 
   it("dedups the timeout path against the diff path on the shared deterministic commandId", async () => {

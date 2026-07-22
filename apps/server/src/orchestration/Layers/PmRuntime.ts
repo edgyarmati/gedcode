@@ -181,12 +181,12 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "You run with full project access and own authenticated host operations that sandboxed workers cannot perform, such as authenticated GitHub CLI calls. Treat meaningful external, destructive, or publishing actions as human-gated; never delegate them merely to escape that approval boundary.",
     "Keep simple, well-understood planning in your own PM turn and give the resulting bounded plan directly to the worker. Delegate planning only when complexity, risk, or uncertainty merits a separate attempt; delegated plans default to the Genius tier. When a plan is doubtful, dispatch another Genius `plan` attempt with explicit critique instructions.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs or critiques complex implementation, work implements, and verify validates completed work before landing.",
-    "Planner stages own design documentation only. Verifier stages own verification evidence and context documentation only. Only work stages may modify substantive implementation code; if verification finds a code defect, return it to a work stage instead of asking the verifier to repair it.",
+    "Planner stages own design documentation only. Verifier stages own verification evidence and context documentation only. Only work stages may modify substantive implementation code; if verification finds a code defect, return it to a work stage instead of asking the verifier to repair it. Verifiers leave their documentation changes uncommitted: GedCode audits and commits allowed verifier paths through the trusted server before recording exact-HEAD verification.",
     "Worker stages run in a sandboxed auto-approve environment. Include relevant sandbox constraints in each handoff. When a task needs credentials or authenticated host access, have the worker stop at the boundary and report the exact operation; perform that operation yourself only when it is within the user's granted authority, otherwise ask the human.",
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
     "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, worker permission requests, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
     "For bounded read-only context gathering, use startHelperRun instead of creating an exploration task. Attach it to the PM for project-wide context or to an existing task when later stages should receive the result. Cheap is the default; choose Smart or Genius only when the investigation itself requires more judgment. Helper completion, failure, and interruption re-enter you automatically, so never poll inspectHelperRun. Helpers create no task, stage, gate, worktree, commit, PR, landing action, or task-board card.",
-    "When work settles in change review, call inspectTaskChanges once. Commit only intended paths or an exact intended patch with commitTaskChanges, use discardTaskChanges only for explicitly selected changes that are outside task intent, or use returnTaskChanges with precise revision instructions. Never bypass change review or start verification while changes remain pending.",
+    "When Work or Verify settles in change review, call inspectTaskChanges once. Commit only intended paths or an exact intended patch with commitTaskChanges, use discardTaskChanges only for explicitly selected changes that are outside task intent, or use returnTaskChanges with precise revision instructions. A verifier finalization failure requires a fresh Verify after resolution. Never bypass change review or start ordinary verification while changes remain pending.",
     "A Verify handoff refreshes the clean primary GitHub upstream and rebases the clean task worktree before the verifier starts. If target movement conflicts, return the task to Work for resolution. Never verify or land against the pre-movement HEAD.",
     "When settled work is clean and you accept that the task correctly requires no repository changes, call completeTaskWithoutChanges. It verifies the task branch against its creation baseline and archives the no-change result; never request land approval for empty work.",
     "Before requesting land approval, prepare the exact pull-request title and Markdown body. Read current repository guidance from CONTRIBUTING.md in the root, .github, or docs; pull_request_template.md in the root, docs, or .github; Markdown templates directly under .github/PULL_REQUEST_TEMPLATE; relevant AGENTS.md rules; and the internal .ged/PULL_REQUESTS.md fallback. Public repository guidance wins over the internal fallback. Use the task purpose and acceptance criteria, behavioral changes, commits, and verifier evidence; preserve required template headings and checkboxes; identify risks, migrations, and visual evidence when relevant; never substitute a commit list plus diff stat for an explanation. Pass the exact title and body as requestApproval.pullRequest for a land gate so the human approves what will be published.",
@@ -952,6 +952,15 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
                 `Paths: ${event.payload.ownershipViolationPaths.join(", ")}`,
                 "Return the implementation changes to a work stage. Do not land this task until a clean verifier has completed.",
               ].join("\n");
+        const finalizationFailure =
+          event.payload.verificationFinalizationError === undefined
+            ? ""
+            : [
+                "",
+                "GedCode could not finalize the verifier-owned documentation on the server.",
+                `Detail: ${boundUntrustedContent(scrubSecrets(event.payload.verificationFinalizationError))}`,
+                "The remaining changes were moved to Change review. Inspect them and either commit the intended documentation, return it to Verify, or discard only unintended residue; verification must run again afterward.",
+              ].join("\n");
         return {
           event,
           ...resolved,
@@ -962,17 +971,28 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             awaitedTurnId: event.payload.awaitedTurnId,
           }),
           message: withLastActionCursor(
-            `${serializeStageResultToMessage(stageResult)}${ownershipViolation}`,
+            `${serializeStageResultToMessage(stageResult)}${ownershipViolation}${finalizationFailure}`,
             event,
           ),
         } satisfies SettlementEnvelope;
       }
 
       if (event.type === "task.change-review-requested") {
+        const stageRole = event.payload.stageRole ?? "work";
+        const stageLabel = stageRole === "verify" ? "Verification" : "Work";
+        const finalizationDetail =
+          event.payload.finalizationError === undefined
+            ? []
+            : [
+                `Server finalization failed: ${boundUntrustedContent(scrubSecrets(event.payload.finalizationError))}`,
+              ];
         const message = [
-          `Work for task "${resolved.task.title}" (${resolved.task.id}) settled with tracked or untracked changes still present.`,
-          `Work stage: ${event.payload.workStageThreadId}. Detected HEAD: ${event.payload.detectedHead}.`,
-          "Review the task worktree changes before verification. Commit the intended changes, return the work to the worker, or discard only changes that are not part of the task. Verification is blocked until this review is resolved.",
+          `${stageLabel} for task "${resolved.task.title}" (${resolved.task.id}) settled with tracked or untracked changes still present.`,
+          `${stageLabel} stage: ${event.payload.workStageThreadId}. Detected HEAD: ${event.payload.detectedHead}.`,
+          ...finalizationDetail,
+          stageRole === "verify"
+            ? "Review the verifier-owned documentation. Commit the intended evidence, return it to Verify, or discard only unintended residue. The prior verification was not recorded; run Verify again after resolving this review."
+            : "Review the task worktree changes before verification. Commit the intended changes, return the work to the worker, or discard only changes that are not part of the task. Verification is blocked until this review is resolved.",
         ].join("\n");
         return {
           event,

@@ -857,6 +857,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           provider_instance_id AS "providerInstanceId",
           model,
           runtime_mode AS "runtimeMode",
+          start_head AS "startHead",
           status,
           started_at AS "startedAt",
           ended_at AS "endedAt"

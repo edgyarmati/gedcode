@@ -2426,7 +2426,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
         );
       }
-      if (command.role === "verify" && task.changeReview?.status === "pending") {
+      if (
+        command.role === "verify" &&
+        task.changeReview?.status === "pending" &&
+        (task.changeReview.stageRole ?? "work") !== "verify"
+      ) {
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' cannot start verification while worktree changes await PM review.`,
@@ -2673,13 +2677,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.ownershipViolationPaths === undefined
             ? {}
             : { ownershipViolationPaths: command.ownershipViolationPaths }),
+          ...(command.verificationFinalizationError === undefined
+            ? {}
+            : { verificationFinalizationError: command.verificationFinalizationError }),
           updatedAt: command.createdAt,
         },
       };
       if (
         command.role === "verify" &&
         command.worktreeCompletion?.dirty === false &&
-        (command.ownershipViolationPaths?.length ?? 0) === 0
+        (command.ownershipViolationPaths?.length ?? 0) === 0 &&
+        command.verificationFinalizationError === undefined
       ) {
         const verificationRecordedEvent: PlannedOrchestrationEvent = {
           ...(yield* withEventBase({
@@ -2700,7 +2708,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         };
         return [stageCompletedEvent, verificationRecordedEvent];
       }
-      if (command.role !== "work" || command.worktreeCompletion?.dirty !== true) {
+      if (
+        (command.role !== "work" && command.role !== "verify") ||
+        command.worktreeCompletion?.dirty !== true ||
+        (command.ownershipViolationPaths?.length ?? 0) > 0
+      ) {
         return stageCompletedEvent;
       }
       const changeReviewEvent: PlannedOrchestrationEvent = {
@@ -2714,6 +2726,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "task.change-review-requested",
         payload: {
           taskId: command.taskId,
+          stageRole: command.role,
+          ...(command.verificationFinalizationError === undefined
+            ? {}
+            : { finalizationError: command.verificationFinalizationError }),
           workStageThreadId: command.stageThreadId,
           detectedHead: command.worktreeCompletion.head,
           requestedAt: command.createdAt,
@@ -2732,16 +2748,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' must have settled work in review before remaining changes can be reviewed.`,
         );
       }
+      const stageRole = command.stageRole ?? "work";
       const workStage = readModel.stageHistory[command.workStageThreadId];
       if (
         !task.stageThreadIds.includes(command.workStageThreadId) ||
         workStage?.taskId !== task.id ||
-        workStage.role !== "work" ||
+        workStage.role !== stageRole ||
         workStage.status !== "completed"
       ) {
         return yield* invariantError(
           command.type,
-          `Stage thread '${command.workStageThreadId}' is not completed work for task '${command.taskId}'.`,
+          `Stage thread '${command.workStageThreadId}' is not completed ${stageRole} for task '${command.taskId}'.`,
         );
       }
       if (task.changeReview?.status === "pending") {
@@ -2760,6 +2777,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "task.change-review-requested",
         payload: {
           taskId: command.taskId,
+          stageRole,
+          ...(command.finalizationError === undefined
+            ? {}
+            : { finalizationError: command.finalizationError }),
           workStageThreadId: command.workStageThreadId,
           detectedHead: command.detectedHead,
           requestedAt: command.createdAt,
@@ -2775,15 +2796,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         task.currentStageThreadId === null
           ? undefined
           : readModel.stageHistory[task.currentStageThreadId];
-      const returningToActiveWork =
+      const returningToActiveStage =
         command.resolution === "returned" &&
-        task.status === "working" &&
+        (task.status === "working" || task.status === "verifying") &&
         activeStage?.taskId === task.id &&
-        activeStage.role === "work" &&
+        activeStage.role === (task.changeReview?.stageRole ?? "work") &&
         activeStage.status === "running";
       if (
         task.changeReview?.status !== "pending" ||
-        (task.status !== "change-review" && !returningToActiveWork)
+        (task.status !== "change-review" && !returningToActiveStage)
       ) {
         return yield* invariantError(
           command.type,

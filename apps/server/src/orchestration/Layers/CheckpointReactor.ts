@@ -41,7 +41,7 @@ import {
   findTaskForStageThread,
   stageCompleteCommandId,
 } from "../stageResolution.ts";
-import { inspectStageWorktreeSettlement } from "../worktreeCompletion.ts";
+import { finalizeStageWorktreeSettlement } from "../worktreeCompletion.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -246,7 +246,9 @@ const make = Effect.gen(function* () {
     const worktreeInspection =
       (role === "plan" || role === "work" || role === "verify") && task.worktreePath !== null
         ? yield* Effect.exit(
-            inspectStageWorktreeSettlement({
+            finalizeStageWorktreeSettlement({
+              taskId: task.id,
+              taskTitle: task.title,
               worktreePath: task.worktreePath,
               process: vcsProcess,
               role,

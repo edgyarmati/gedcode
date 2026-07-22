@@ -69,7 +69,9 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model = excluded.model,
           model_options_json = excluded.model_options_json,
           runtime_mode = excluded.runtime_mode,
-          start_head = excluded.start_head,
+          -- A later compatibility upsert (for example thread.created adding a
+          -- runtime mode) must not erase the immutable stage boundary.
+          start_head = COALESCE(excluded.start_head, projection_stage_history.start_head),
           status = excluded.status,
           started_at = excluded.started_at,
           ended_at = excluded.ended_at

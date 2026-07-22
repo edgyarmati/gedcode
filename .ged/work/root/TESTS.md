@@ -7,6 +7,23 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 
 ## Verification Evidence
 
+## Server-owned Verifier Finalization
+
+### ORCH-VERIFY-FINALIZE-01 — Evidence — 2026-07-22
+
+- A real linked-worktree verifier documentation edit is audited and committed by the server, leaving
+  one clean commit and binding settlement to its new HEAD even under concurrent completion attempts.
+- Dirty implementation paths are never committed by the documentation finalizer and continue through
+  the existing ownership-violation review path.
+- Git index/commit failures preserve the dirty files, record a bounded failure, and atomically enter a
+  role-aware Change review instead of leaving a terminally idle `verifying` state.
+- Durable projection snapshots retain the immutable stage-start HEAD so checkpoint and timeout
+  settlement audit against the same boundary after replay or restart.
+- Change-review return can retry Verify, PM messaging explains the documentation-specific recovery,
+  and historical Work reviews decode with the compatible default role.
+- Focused server coverage passed 310 assertions; focused contracts coverage passed 69 assertions.
+  Contracts and server typechecks passed. No full suite ran.
+
 ## Repository-aware Pull Requests
 
 ### ORCH-PR-01
