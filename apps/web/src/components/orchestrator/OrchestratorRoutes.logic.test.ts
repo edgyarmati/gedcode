@@ -164,6 +164,22 @@ describe("deriveTaskLandingPresentation", () => {
     expect(
       deriveTaskLandingPresentation({
         task: makeTask({
+          status: "landed",
+          landing: {
+            status: "failed",
+            failureMessage: "durable provider failure",
+            branchPushed: true,
+            updatedAt: "2026-07-11T00:04:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+        requestPending: true,
+      }),
+    ).toEqual({ kind: "pending" });
+    expect(
+      deriveTaskLandingPresentation({
+        task: makeTask({
           status: "review",
           landing: {
             status: "opening-pr",

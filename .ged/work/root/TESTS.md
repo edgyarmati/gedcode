@@ -49,6 +49,15 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 - Web typecheck and `bun fmt` passed. A broader run exposed the unrelated durable landing-retry
   pending-state defect, recorded separately as `ORCH-LAND-RETRY-01`; no full suite ran.
 
+## Landing Retry Feedback
+
+### ORCH-LAND-RETRY-01 — Evidence — 2026-07-22
+
+- Focused landing presentation and component suites passed 53 tests.
+- The focused Chromium durable-failure retry scenario passed and kept the disabled Landing indicator
+  visible after the retry actuator returned, with 21 unrelated scenarios skipped.
+- Web typecheck and formatting passed; no full suite ran.
+
 ## Manifest-first Context Pivot
 
 ### PROJECT-MANIFEST-01

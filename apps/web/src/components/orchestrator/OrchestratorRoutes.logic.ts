@@ -63,6 +63,20 @@ export function deriveTaskLandingPresentation(input: {
   if (task.prUrl !== null) {
     return { kind: "landed", prUrl: task.prUrl };
   }
+  const landingFailure =
+    task.status === "landed"
+      ? input.activities.findLast((activity) => isLandingFailureForTask(activity, task.id))
+      : undefined;
+  const canRequestLanding =
+    task.status === "review" ||
+    (task.status === "landed" &&
+      (task.landing?.status === "failed" || landingFailure !== undefined));
+  if (canRequestLanding && input.requestError) {
+    return { kind: "request-failed", message: input.requestError };
+  }
+  if (canRequestLanding && input.requestPending) {
+    return { kind: "pending" };
+  }
   if (task.landing?.status === "failed") {
     return {
       kind: "failed",
@@ -71,18 +85,6 @@ export function deriveTaskLandingPresentation(input: {
   }
   if (task.landing?.status === "opening-pr") {
     return { kind: "opening-pr" };
-  }
-  const landingFailure =
-    task.status === "landed"
-      ? input.activities.findLast((activity) => isLandingFailureForTask(activity, task.id))
-      : undefined;
-  const canRequestLanding =
-    task.status === "review" || (task.status === "landed" && landingFailure !== undefined);
-  if (canRequestLanding && input.requestError) {
-    return { kind: "request-failed", message: input.requestError };
-  }
-  if (canRequestLanding && input.requestPending) {
-    return { kind: "pending" };
   }
 
   if (task.status === "landed") {

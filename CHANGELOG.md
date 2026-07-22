@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Retrying a durable pull-request landing failure now keeps the disabled Landing indicator visible
+  until the server emits the renewed opening state, instead of flashing back to Retry immediately.
+
 - Orchestrator task history now keeps every Plan, Work, and Verify attempt readable. Stage cards are
   numbered, selectable, and visibly highlighted; selecting one stores its thread in the task URL so
   the exact transcript and diff survive refresh and can be shared. Invalid historical links recover

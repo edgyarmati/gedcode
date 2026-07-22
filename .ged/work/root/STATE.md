@@ -1,7 +1,7 @@
 # STATE
 
-- **Phase**: implement
-- **Active task**: `ORCH-LAND-RETRY-01` — durable failed-landing retry feedback
+- **Phase**: complete
+- **Active task**: none — all non-deferred roadmap slices are complete
 - **Roadmap**: Repository-aware pull requests and readable stage-attempt history, clarified 2026-07-22
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,14 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `ORCH-LAND-RETRY-01` completed 2026-07-22. A local landing retry now takes presentation
+  precedence over the preceding durable failure and remains pending until a new opening-PR event or
+  real PR URL arrives. The effect no longer clears pending state merely because legacy landing uses the
+  transitional `landed` task status.
+- Verification evidence for `ORCH-LAND-RETRY-01`: 53 focused landing logic/component tests passed,
+  and the previously failing focused Chromium retry scenario passed with 21 unrelated scenarios
+  skipped. Web typecheck and formatting passed; no full suite ran.
 
 - `ORCH-STAGES-01` completed 2026-07-22. Every persisted stage attempt is now a numbered selectable
   card. A valid `stage` task-route search parameter selects the subscribed transcript/diff and invalid

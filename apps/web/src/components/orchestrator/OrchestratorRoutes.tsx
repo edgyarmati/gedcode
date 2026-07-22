@@ -1029,11 +1029,11 @@ export function TaskHeader({
     requestError: landingError,
   });
   useEffect(() => {
-    if (task.status !== "review") {
+    if (task.landing?.status === "opening-pr" || task.prUrl !== null) {
       setLandingPending(false);
       setLandingError(null);
     }
-  }, [task.landing?.status, task.status]);
+  }, [task.landing?.status, task.prUrl]);
   useEffect(() => {
     setInterruptPending(false);
     setInterruptError(null);

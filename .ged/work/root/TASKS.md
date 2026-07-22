@@ -80,7 +80,7 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| ORCH-LAND-RETRY-01 | NEXT | Keep the pending landing indicator visible when retrying a durable failed landing whose task already has the transitional `landed` status. | Focused landing-presentation logic and Chromium retry coverage pass without waiting for an unrelated full suite. |
+| ORCH-LAND-RETRY-01 | DONE | Keep the pending landing indicator visible when retrying a durable failed landing whose task already has the transitional `landed` status. | Focused landing-presentation logic and Chromium retry coverage pass without waiting for an unrelated full suite. |
 
 ## P2 — Worktree Access and Readable Branches
 
