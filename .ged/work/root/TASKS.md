@@ -64,6 +64,18 @@ Status values: `NEXT`, `TODO`, `BLOCKED`, `DONE`, `DEFERRED`. Only one slice is 
 | PROJECT-MANIFEST-05 | DONE | Enforce fresh Git/GitHub orchestration boundaries: PM refreshes clean primary state before worktree creation, requires explicit setup for non-Git/no-GitHub projects, preserves Ready-to-land on access failure, and defines Land as documented draft-by-default PR creation. | Focused real-Git, PM tool, landing, permission, and state tests cover dirty/diverged bases, missing remotes, target movement, retry, no-diff, and PR metadata. |
 | PROJECT-MANIFEST-06 | DONE | Remove obsolete persistence/code paths, migrate active legacy context runs to cancelled-by-upgrade, update lifecycle/artifact documentation and changelog, and verify the replacement is replay/restart safe. | Focused migration/replay/retention tests plus repository format, lint, and relevant package typechecks pass. |
 
+## P0 — Repository-aware Pull Requests
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| ORCH-PR-01 | DONE | Extend project context with repository contribution and pull-request guidance, create an internal `.ged/PULL_REQUESTS.md` convention only when public guidance is absent, and generate reviewed PR metadata from task intent, verification evidence, and current authoritative templates. | Focused scanner/context-run, prompt, PR-generation, and landing tests cover discovery precedence, fallback creation, stale-guidance rereads, required fields, and descriptive output. |
+
+## P1 — Stage Attempt Navigation
+
+| ID | Status | Slice | Verification |
+| --- | --- | --- | --- |
+| ORCH-STAGES-01 | NEXT | Make every Work/Verify attempt in task history selectable, persist the selected stage thread in the task URL, highlight it, default to the active/latest attempt, and repair the narrow detail-rail gate/diff layout. | Focused route/timeline logic and Chromium coverage prove old attempts remain readable, deep links survive refresh, invalid selections recover, and narrow layouts do not clip controls. |
+
 ## P2 — Worktree Access and Readable Branches
 
 | ID | Status | Slice | Verification |

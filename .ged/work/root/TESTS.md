@@ -7,6 +7,39 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
 
 ## Verification Evidence
 
+## Repository-aware Pull Requests
+
+### ORCH-PR-01
+
+- Discover conventional contribution documentation and GitHub pull-request templates without making
+  those public files context-maintainer-owned.
+- Create `.ged/PULL_REQUESTS.md` only when no authoritative repository PR guidance exists, and include
+  it in the current GED schema, scoped context audit, and maintenance prompt.
+- Re-read authoritative guidance at landing time and generate a descriptive title/body from task
+  intent, acceptance criteria, commits, diff, and exact-HEAD verification evidence.
+- Preserve required template headings/checklists and fail for PM attention when required content cannot
+  be populated rather than publishing a knowingly deficient pull request.
+
+#### Evidence — 2026-07-22
+
+- Focused contracts, scanner/manifest, context-run decider, task decider, PM prompt/tool,
+  projection/replay, migration 068, landing-reactor, web store, and gate-presentation suites passed
+  430 tests.
+- Manual review confirmed public contribution files remain outside the context ownership baseline;
+  `.ged/PULL_REQUESTS.md` is the only context-owned fallback; new land requests without exact PR
+  content fail closed; approved content survives persistence and is written verbatim to GitHub.
+- `bun fmt`, `bun lint`, and contracts/server/web typechecks passed. Lint retained existing unrelated
+  warnings. No full suite ran under the ordinary focused-test policy.
+
+## Stage Attempt Navigation
+
+### ORCH-STAGES-01
+
+- Select any persisted Work/Verify stage attempt from its timeline card and render that thread.
+- Encode selection in the task URL, retain it across refresh, and recover invalid or removed selections
+  to the active/latest attempt.
+- Highlight the selected attempt and keep land-gate and diff controls usable in the narrow detail rail.
+
 ## Manifest-first Context Pivot
 
 ### PROJECT-MANIFEST-01

@@ -55,6 +55,7 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
           ["AGENTS.md", "template"],
           [".ged/PROJECT.md", "whitespace"],
           [".ged/ARCHITECTURE.md", "substantive"],
+          [".ged/PULL_REQUESTS.md", "missing"],
           ["CONTEXT.md", "missing"],
           ["docs/adr/0001.md", "substantive"],
           ["docs/adr/0002.md", "template"],
@@ -64,6 +65,7 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
           "AGENTS.md",
           ".ged/PROJECT.md",
           ".ged/ARCHITECTURE.md",
+          ".ged/PULL_REQUESTS.md",
           "CONTEXT.md",
           ".ged/MANIFEST.json",
           "docs/adr/0001.md",
@@ -134,6 +136,27 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
       }),
     );
 
+    it.effect("discovers public contribution guidance without making it context-owned", () =>
+      Effect.gen(function* () {
+        const scanner = yield* ProjectContextScanner;
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "CONTRIBUTING.md", "# Contributing\n");
+        yield* writeTextFile(cwd, ".github/pull_request_template.md", "## Summary\n");
+        yield* writeTextFile(cwd, ".github/PULL_REQUEST_TEMPLATE/security.md", "## Risk\n");
+
+        const snapshot = yield* scanner.scan(cwd);
+
+        expect(snapshot.repositoryPullRequestGuidancePaths).toEqual([
+          "CONTRIBUTING.md",
+          ".github/pull_request_template.md",
+          ".github/PULL_REQUEST_TEMPLATE/security.md",
+        ]);
+        expect(snapshot.ownershipBaseline.files.map((file) => file.relativePath)).not.toContain(
+          "CONTRIBUTING.md",
+        );
+      }),
+    );
+
     it.effect("distinguishes an empty context file from a missing one", () =>
       Effect.gen(function* () {
         const scanner = yield* ProjectContextScanner;
@@ -146,6 +169,7 @@ it.layer(TestLayer)("ProjectContextScannerLive", (it) => {
           ["AGENTS.md", "missing"],
           [".ged/PROJECT.md", "missing"],
           [".ged/ARCHITECTURE.md", "missing"],
+          [".ged/PULL_REQUESTS.md", "missing"],
           ["CONTEXT.md", "empty"],
         ]);
         expect(snapshot.promptKind).toBe("populate");

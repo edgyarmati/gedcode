@@ -7,6 +7,7 @@ import {
   type ChangeRequest,
   CommandId,
   EventId,
+  GateId,
   GitCommandError,
   ProviderInstanceId,
   ProjectId,
@@ -140,7 +141,28 @@ function makeReadModel(input: {
         deletedAt: null,
       },
     ],
-    pendingGates: [],
+    pendingGates:
+      input.taskStatus === "landed"
+        ? [
+            {
+              gateId: GateId.make("gate-land"),
+              taskId,
+              gate: "land",
+              contentHash: "abc123",
+              pullRequest: {
+                title: "fix: describe the task outcome",
+                body: "## Summary\n\n- Explain the behavior change.\n\n## Testing\n\n- Focused tests passed.",
+              },
+              stageThreadId,
+              status: "resolved",
+              approvedHash: "abc123",
+              decision: "approved",
+              origin: "human",
+              requestedAt: now,
+              resolvedAt: now,
+            },
+          ]
+        : [],
     projectContextRuns: [],
     quotaBlockedStages: [],
     stageHistory: {},
@@ -294,6 +316,7 @@ async function createHarness(input: {
   const readModelRef = { current: input.readModel };
   const eventPubSub = input.eventPubSub ?? Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
   const order: string[] = [];
+  let createdPullRequestBody: string | null = null;
   const removeWorktree = vi.fn<GitWorkflowServiceShape["removeWorktree"]>(() => Effect.void);
   const pushCurrentBranch = vi.fn<GitWorkflowServiceShape["pushCurrentBranch"]>(
     input.pushCurrentBranch ??
@@ -323,6 +346,7 @@ async function createHarness(input: {
     SourceControlProvider.SourceControlProviderShape["createChangeRequest"]
   >((request) => {
     order.push("createChangeRequest");
+    createdPullRequestBody = fs.readFileSync(request.bodyFile, "utf8");
     return Effect.succeed({
       ...createdChangeRequest,
       title: request.title,
@@ -425,6 +449,9 @@ async function createHarness(input: {
     reactor,
     scope,
     readModelRef,
+    get createdPullRequestBody() {
+      return createdPullRequestBody;
+    },
     eventPubSub,
     removeWorktree,
     pushCurrentBranch,
@@ -771,9 +798,12 @@ describe("TaskWorktreeReactor", () => {
         cwd: worktreePath,
         baseRefName: "main",
         headSelector: "orchestrator/task-1",
-        title: "Task",
+        title: "fix: describe the task outcome",
         draft: true,
       }),
+    );
+    expect(harness.createdPullRequestBody).toBe(
+      "## Summary\n\n- Explain the behavior change.\n\n## Testing\n\n- Focused tests passed.\n",
     );
     expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({

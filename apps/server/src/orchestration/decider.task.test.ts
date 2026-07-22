@@ -2376,6 +2376,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           gateId: asGateId("gate-land"),
           gate: "land",
           contentHash: "sha256:land",
+          pullRequest: {
+            title: "fix: explain the reviewed change",
+            body: "## Summary\n\n- Explain the behavior.\n\n## Testing\n\n- Focused tests passed.",
+          },
           stageThreadId: asThreadId("thread-stage-work"),
           worktreeCompletion: { head: "verified-head", dirty: false },
           createdAt: now,

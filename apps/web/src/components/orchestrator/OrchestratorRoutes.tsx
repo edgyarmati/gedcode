@@ -1318,7 +1318,7 @@ export function GatePanel({
   );
 }
 
-function GateCard({
+export function GateCard({
   environmentId,
   gate,
   taskId,
@@ -1357,12 +1357,31 @@ function GateCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold capitalize">{gate.gate}</h3>
-          <p className="mt-1 text-xs text-muted-foreground">{gate.contentHash}</p>
+          <p className="mt-1 break-all text-xs text-muted-foreground">
+            {gate.gate === "land" ? "Verified commit: " : "Content: "}
+            {gate.contentHash}
+          </p>
         </div>
         <Badge variant={resolved ? "success" : "warning"}>
           {resolved ? "Resolved" : "Pending"}
         </Badge>
       </div>
+      {gate.pullRequest ? (
+        <div className="mt-3 space-y-2 rounded-md border border-border/70 bg-background/60 p-3">
+          <div>
+            <p className="text-[11px] font-medium text-muted-foreground uppercase">PR title</p>
+            <p className="mt-1 text-sm font-medium">{gate.pullRequest.title}</p>
+          </div>
+          <details>
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Review PR description
+            </summary>
+            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-sans text-xs">
+              {gate.pullRequest.body}
+            </pre>
+          </details>
+        </div>
+      ) : null}
       {gate.decision ? (
         <div className="mt-3 flex items-center gap-2 text-sm">
           {gate.decision === "approved" ? (

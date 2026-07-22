@@ -257,6 +257,7 @@ export const requestProjectContextRunWithServices = Effect.fn(
     baselineManifest: projectContextBaselineManifest(snapshot),
     workspaceStatusManifest,
     gitState,
+    repositoryPullRequestGuidancePaths: snapshot.repositoryPullRequestGuidancePaths,
     createdAt: yield* runtime.createdAt,
   });
   return {

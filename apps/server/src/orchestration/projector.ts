@@ -1590,6 +1590,7 @@ export function projectEvent(
             taskId: payload.taskId,
             gate: payload.gate,
             contentHash: payload.contentHash,
+            pullRequest: payload.pullRequest ?? null,
             stageThreadId: payload.stageThreadId,
             status: "pending",
             approvedHash: existingGate?.approvedHash ?? null,

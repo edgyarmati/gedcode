@@ -13,6 +13,7 @@ export const CANONICAL_PROJECT_CONTEXT_PATHS = [
   "AGENTS.md",
   ".ged/PROJECT.md",
   ".ged/ARCHITECTURE.md",
+  ".ged/PULL_REQUESTS.md",
   "CONTEXT.md",
 ] as const;
 
@@ -62,6 +63,7 @@ export interface ProjectContextSnapshot {
   readonly fingerprint: ProjectContextFingerprint;
   readonly promptKind: "populate" | "review";
   readonly ownershipBaseline: ProjectContextOwnershipBaseline;
+  readonly repositoryPullRequestGuidancePaths: ReadonlyArray<string>;
 }
 
 const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
@@ -126,6 +128,7 @@ export function makeProjectContextSnapshot(input: {
   readonly schemaVersion?: ProjectContextSchemaVersion;
   readonly files: ReadonlyArray<ProjectContextFile>;
   readonly ownershipBaseline?: ProjectContextOwnershipBaseline;
+  readonly repositoryPullRequestGuidancePaths?: ReadonlyArray<string>;
 }): ProjectContextSnapshot {
   const schemaVersion = input.schemaVersion ?? PROJECT_CONTEXT_SCHEMA_VERSION;
   const files = [...input.files];
@@ -135,5 +138,6 @@ export function makeProjectContextSnapshot(input: {
     fingerprint: fingerprintProjectContext({ schemaVersion, files }),
     promptKind: files.some((file) => file.classification === "substantive") ? "review" : "populate",
     ownershipBaseline: input.ownershipBaseline ?? { files: [] },
+    repositoryPullRequestGuidancePaths: input.repositoryPullRequestGuidancePaths ?? [],
   };
 }

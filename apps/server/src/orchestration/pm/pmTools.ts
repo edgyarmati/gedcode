@@ -120,6 +120,10 @@ interface RequestApprovalParameters {
   readonly gate: OrchestrationGateKind;
   readonly contentHash: string;
   readonly stageThreadId?: string;
+  readonly pullRequest?: {
+    readonly title: string;
+    readonly body: string;
+  };
 }
 
 interface SetTaskTierParameters {
@@ -1055,7 +1059,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
   > = {
     name: "requestApproval",
     label: "Request approval",
-    description: "Open a human approval gate for a task.",
+    description:
+      "Open a human approval gate for a task. Land gates require the exact repository-aware pull-request title and Markdown body that the human will approve and the landing actuator will publish.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -1090,6 +1095,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             gateId,
             gate: params.gate as OrchestrationGateKind,
             contentHash: params.contentHash,
+            ...(params.pullRequest === undefined ? {} : { pullRequest: params.pullRequest }),
             stageThreadId:
               params.stageThreadId === undefined ? null : ThreadId.make(params.stageThreadId),
             ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),

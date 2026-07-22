@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Pull-request landing is now repository-aware and human-reviewable. Project-context maintenance
+  discovers conventional contribution guides and GitHub PR templates, creates an internal
+  `.ged/PULL_REQUESTS.md` convention only when public guidance is absent, and never rewrites public
+  contribution files automatically. The PM must attach the exact descriptive PR title and body to the
+  land gate; the UI previews that immutable proposal and landing publishes it verbatim instead of
+  reducing the change to commit subjects and diff statistics.
+
 - Fixed initial Orchestrator worker handoffs failing before their lazily managed task worktree exists.
   Stage ownership now records the reserved task branch HEAD from the primary checkout on first
   dispatch, then continues reading subsequent stage boundaries from the created worktree.

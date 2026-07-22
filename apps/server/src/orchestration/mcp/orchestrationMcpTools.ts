@@ -92,6 +92,16 @@ export const mcpInputSchemas = {
     gate: z.enum(["plan", "land", "release"]),
     contentHash: z.string(),
     stageThreadId: z.string().optional(),
+    pullRequest: z
+      .object({
+        title: z.string().trim().min(1).max(256),
+        body: z
+          .string()
+          .trim()
+          .min(1)
+          .max(64 * 1024),
+      })
+      .optional(),
   },
   setTaskTier: {
     taskId: z.string(),

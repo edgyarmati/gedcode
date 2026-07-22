@@ -57,7 +57,7 @@ import {
 const THREAD_PREFIX = "project-context:";
 const SYSTEM_PROMPT = [
   "You are a bounded project-context maintainer working in the primary checkout.",
-  "You may read the project, but may write only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, and direct Markdown files in docs/adr/.",
+  "You may read the project, but may write only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, .ged/PULL_REQUESTS.md, and direct Markdown files in docs/adr/.",
   "Do not edit .ged/MANIFEST.json; GedCode writes it after auditing your documentation changes.",
   "Do not modify any other path. Do not stage, commit, reset, restore, clean, switch branches, create worktrees, alter Git history, or delegate to another agent.",
   "Do not write inside .gedcode or .ged/work/root. Stop after editing the allowed context files and summarize what changed.",

@@ -5,6 +5,7 @@ import {
   ApprovalRequestId,
   EnvironmentId,
   EventId,
+  GateId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -49,7 +50,12 @@ import {
   runPmHarnessSwitchAction,
 } from "./PmChatComposer";
 import { TaskPrLink } from "./TaskPrLink";
-import { OrchestratorHomeRoute, PmChatEmptyState, TaskHeader } from "./OrchestratorRoutes";
+import {
+  GateCard,
+  OrchestratorHomeRoute,
+  PmChatEmptyState,
+  TaskHeader,
+} from "./OrchestratorRoutes";
 
 type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children?: ReactNode;
@@ -647,6 +653,40 @@ describe("release dispatch presentation", () => {
     expect(markup).toContain(
       'href="https://github.com/acme/project/actions/workflows/release.yml"',
     );
+  });
+});
+
+describe("land approval presentation", () => {
+  it("shows the exact pull request proposal alongside the verified commit", () => {
+    const markup = renderToStaticMarkup(
+      <GateCard
+        environmentId={boardEnvironmentId}
+        taskId={TaskId.make("task-land")}
+        gate={{
+          environmentId: boardEnvironmentId,
+          gateId: GateId.make("gate-land"),
+          taskId: TaskId.make("task-land"),
+          gate: "land",
+          contentHash: "verified-head",
+          pullRequest: {
+            title: "fix: explain the reviewed behavior",
+            body: "## What Changed\n\nThe complete approved description.",
+          },
+          stageThreadId: null,
+          status: "pending",
+          approvedHash: null,
+          decision: null,
+          origin: null,
+          requestedAt: "2026-07-22T00:00:00.000Z",
+          resolvedAt: null,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Verified commit:");
+    expect(markup).toContain("verified-head");
+    expect(markup).toContain("fix: explain the reviewed behavior");
+    expect(markup).toContain("The complete approved description.");
   });
 });
 

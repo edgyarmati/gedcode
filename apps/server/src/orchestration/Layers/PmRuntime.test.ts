@@ -3068,6 +3068,10 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "other user hunks may exist in the same file");
     assert.include(prompt, "Direct work creates no task, gate, worktree, PR, or landing action");
     assert.include(prompt, "Landing remains Ready to land");
+    assert.include(prompt, "exact pull-request title and Markdown body");
+    assert.include(prompt, "requestApproval.pullRequest");
+    assert.include(prompt, ".ged/PULL_REQUESTS.md");
+    assert.include(prompt, "publishes the exact approved pull-request proposal");
     assert.include(prompt, "terminally landed only after a real pull-request URL is recorded");
     assert.include(prompt, "authenticated host operations");
     assert.include(prompt, "sandboxed auto-approve environment");

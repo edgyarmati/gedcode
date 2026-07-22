@@ -1,8 +1,8 @@
 # STATE
 
-- **Phase**: complete
-- **Active task**: none — all non-deferred roadmap slices are complete
-- **Roadmap**: Manifest-first PM-owned GED context, clarified 2026-07-21
+- **Phase**: implement
+- **Active task**: `ORCH-STAGES-01` — selectable stage-attempt history and narrow rail layout
+- **Roadmap**: Repository-aware pull requests and readable stage-attempt history, clarified 2026-07-22
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
 ## Locked Decisions
@@ -52,6 +52,17 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `ORCH-PR-01` completed 2026-07-22. GED schema 4 adds `.ged/PULL_REQUESTS.md` as the internal
+  fallback while the scanner reports conventional public contribution guides and GitHub PR templates
+  as authoritative read-only inputs. New land gates require and persist the exact PM-authored PR title
+  and body; the gate previews that proposal and the landing reactor publishes it verbatim. Migration
+  068 adds nullable proposal fields so historical gates still replay without inventing content.
+- Verification evidence for `ORCH-PR-01`: focused contracts, scanner/manifest, context decider,
+  task-decider, PM prompt/tool, projection/replay, migration, landing-reactor, web store, and gate UI
+  suites passed 430 tests. Contracts, server, and web typechecks passed; repository format and lint
+  passed with existing unrelated warnings. No full suite ran under the ordinary focused-test policy.
+
 
 - `PROJECT-MANIFEST-06` completed 2026-07-21. Migration 066 interrupts active pre-pivot context runs
   with an explicit upgrade reason and preserves terminal history. Migration 067 removes retired

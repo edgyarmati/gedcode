@@ -2575,6 +2575,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             taskId: event.payload.taskId,
             gate: event.payload.gate,
             contentHash: event.payload.contentHash,
+            pullRequest: event.payload.pullRequest ?? null,
             stageThreadId: event.payload.stageThreadId,
             status: "pending",
             approvedHash: Option.isSome(existingRow) ? existingRow.value.approvedHash : null,

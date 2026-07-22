@@ -95,7 +95,12 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
   it.effect("defaults to Smart and stamps the resolved backend and primary checkout", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({
-        command: request(),
+        command: request({
+          repositoryPullRequestGuidancePaths: [
+            "CONTRIBUTING.md",
+            ".github/pull_request_template.md",
+          ],
+        }),
         orchestratorDefaults: defaults,
         readModel: readModel(),
       });
@@ -111,6 +116,9 @@ it.layer(NodeServices.layer)("project-context run decider", (it) => {
         expect(event.payload.pmStartState).toBe("ready");
         expect(event.payload.workspaceStatusManifest).toEqual(workspaceStatusManifest);
         expect(event.payload.prompt).toContain("Populate missing or stub project guidance");
+        expect(event.payload.prompt).toContain("CONTRIBUTING.md");
+        expect(event.payload.prompt).toContain(".github/pull_request_template.md");
+        expect(event.payload.prompt).toContain(".ged/PULL_REQUESTS.md");
         expect(event.payload).not.toHaveProperty("taskId");
         expect(event.payload).not.toHaveProperty("stageThreadId");
         expect(event.payload).not.toHaveProperty("gateId");

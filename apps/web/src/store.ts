@@ -2487,6 +2487,7 @@ function applyEnvironmentOrchestrationEvent(
           taskId: event.payload.taskId,
           gate: event.payload.gate,
           contentHash: event.payload.contentHash,
+          pullRequest: event.payload.pullRequest ?? null,
           stageThreadId: event.payload.stageThreadId,
           status: existingGate?.status ?? "pending",
           approvedHash: existingGate?.approvedHash ?? null,

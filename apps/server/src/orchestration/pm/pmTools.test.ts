@@ -2382,6 +2382,49 @@ it.effect("requestApproval dispatches a task.gate.request command", () =>
   }),
 );
 
+it.effect("requestApproval preserves the exact pull request proposed for land", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel([
+      makeTask({ status: "review", currentStageThreadId: null, worktreePath: "/tmp/task" }),
+    ]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          vcsProcess: {
+            run: (input) =>
+              Effect.succeed(vcsOutput(input.args[0] === "rev-parse" ? "verified-head\n" : "")),
+          },
+        }),
+      ),
+    );
+    const pullRequest = {
+      title: "fix: explain the reviewed behavior",
+      body: "## Summary\n\n- Explain what changed.\n\n## Testing\n\n- Focused tests passed.",
+    };
+
+    yield* Effect.promise(() =>
+      findTool(tools, "requestApproval").execute("tool-land-approval", {
+        taskId,
+        gate: "land",
+        contentHash: "verified-head",
+        stageThreadId,
+        pullRequest,
+      }),
+    );
+
+    const command = dispatched[0];
+    assert.strictEqual(command?.type, "task.gate.request");
+    if (command?.type !== "task.gate.request") return;
+    assert.strictEqual(command.taskId, taskId);
+    assert.strictEqual(command.gate, "land");
+    assert.strictEqual(command.contentHash, "verified-head");
+    assert.deepStrictEqual(command.pullRequest, pullRequest);
+    assert.strictEqual(command.stageThreadId, stageThreadId);
+    assert.deepStrictEqual(command.worktreeCompletion, { head: "verified-head", dirty: false });
+  }),
+);
+
 it.effect("landTask delegates one task.land command to the guarded landing executor", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

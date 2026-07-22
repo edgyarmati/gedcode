@@ -34,6 +34,11 @@ Repositories that use the current project-context workflow may also contain `.ge
 workflow runs do not create that file. These are project documents, not application state.
 `.ged/runtime/` is intended for ephemeral session checkpoints and should normally be ignored.
 
+Project-context maintenance also discovers conventional `CONTRIBUTING.md` files and GitHub pull-request
+templates as authoritative read-only guidance. If the repository defines no PR convention, the
+maintainer may create `.ged/PULL_REQUESTS.md` as an internal generator convention. GedCode never
+creates or rewrites a public contribution guide or PR template without an explicit user request.
+
 Current repositories commit `.ged/MANIFEST.json`. Its `schemaVersion` is the single
 machine-readable version for GED context, planning, ownership, and lifecycle conventions;
 `updatedAt`, `lastReviewedAt`, and `generatedBy` provide audit context. Legacy `.ged/VERSION` is read

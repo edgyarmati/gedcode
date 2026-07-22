@@ -816,11 +816,18 @@ export type OrchestrationGateDecision = typeof OrchestrationGateDecision.Type;
 export const OrchestrationPendingGateStatus = Schema.Literals(["pending", "resolved"]);
 export type OrchestrationPendingGateStatus = typeof OrchestrationPendingGateStatus.Type;
 
+export const OrchestrationPullRequestProposal = Schema.Struct({
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  body: TrimmedNonEmptyString.check(Schema.isMaxLength(64 * 1024)),
+});
+export type OrchestrationPullRequestProposal = typeof OrchestrationPullRequestProposal.Type;
+
 export const OrchestrationPendingGate = Schema.Struct({
   gateId: GateId,
   taskId: TaskId,
   gate: OrchestrationGateKind,
   contentHash: TrimmedNonEmptyString,
+  pullRequest: Schema.optionalKey(Schema.NullOr(OrchestrationPullRequestProposal)),
   stageThreadId: Schema.NullOr(ThreadId),
   status: OrchestrationPendingGateStatus,
   approvedHash: Schema.NullOr(TrimmedNonEmptyString),
@@ -977,7 +984,7 @@ export type ProjectContextRunResolution = typeof ProjectContextRunResolution.Typ
 export const ProjectContextRunPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1_024),
   Schema.isPattern(
-    /^(?:AGENTS\.md|CONTEXT\.md|\.ged\/(?:PROJECT|ARCHITECTURE)\.md|\.ged\/MANIFEST\.json|docs\/adr\/[^/]+\.md)$/,
+    /^(?:AGENTS\.md|CONTEXT\.md|\.ged\/(?:PROJECT|ARCHITECTURE|PULL_REQUESTS)\.md|\.ged\/MANIFEST\.json|docs\/adr\/[^/]+\.md)$/,
   ),
 );
 export type ProjectContextRunPath = typeof ProjectContextRunPath.Type;
@@ -1486,6 +1493,11 @@ export const ProjectContextRunRequestCommand = Schema.Struct({
   baselineManifest: ProjectContextRunBaselineManifest,
   workspaceStatusManifest: ProjectContextRunWorkspaceStatusManifest,
   gitState: ProjectContextRunGitState,
+  repositoryPullRequestGuidancePaths: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(1_024))).check(
+      Schema.isMaxLength(64),
+    ),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -1706,6 +1718,7 @@ const TaskGateRequestCommand = Schema.Struct({
   gateId: GateId,
   gate: OrchestrationGateKind,
   contentHash: TrimmedNonEmptyString,
+  pullRequest: Schema.optional(OrchestrationPullRequestProposal),
   stageThreadId: Schema.NullOr(ThreadId),
   worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
   createdAt: IsoDateTime,
@@ -2586,6 +2599,7 @@ export const TaskGateRequestedPayload = Schema.Struct({
   gateId: GateId,
   gate: OrchestrationGateKind,
   contentHash: TrimmedNonEmptyString,
+  pullRequest: Schema.optionalKey(Schema.NullOr(OrchestrationPullRequestProposal)),
   stageThreadId: Schema.NullOr(ThreadId),
   updatedAt: IsoDateTime,
 });

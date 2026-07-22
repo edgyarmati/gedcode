@@ -7,6 +7,7 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationPendingGate,
+  OrchestrationPullRequestProposal,
   OrchestrationQuotaBlockedStage,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
@@ -168,7 +169,11 @@ const ProjectionProjectContextRunDbRowSchema = ProjectionProjectContextRun.mapFi
     scopeViolationPaths: Schema.fromJsonString(ProjectContextRunScopeViolationPaths),
   }),
 );
-const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate;
+const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate.mapFields(
+  Struct.assign({
+    pullRequest: Schema.NullOr(Schema.fromJsonString(OrchestrationPullRequestProposal)),
+  }),
+);
 const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
@@ -803,6 +808,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           task_id AS "taskId",
           gate,
           content_hash AS "contentHash",
+          CASE
+            WHEN pull_request_title IS NULL OR pull_request_body IS NULL THEN NULL
+            ELSE json_object('title', pull_request_title, 'body', pull_request_body)
+          END AS "pullRequest",
           stage_thread_id AS "stageThreadId",
           status,
           approved_hash AS "approvedHash",

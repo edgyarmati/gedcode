@@ -7,6 +7,7 @@ import {
   type ChangeRequest,
   type OrchestrationEvent,
   type OrchestrationProject,
+  type OrchestrationPullRequestProposal,
   type OrchestrationReadModel,
   type OrchestrationTask,
 } from "@t3tools/contracts";
@@ -82,6 +83,10 @@ type LandedTaskContext = {
   readonly worktreePath: string;
 };
 
+type ProposedLandedTaskContext = LandedTaskContext & {
+  readonly pullRequest: OrchestrationPullRequestProposal;
+};
+
 type LegacyLandedTaskContext = {
   readonly task: OrchestrationTask;
   readonly project: OrchestrationProject;
@@ -125,7 +130,7 @@ export function listTerminalTaskWorktreeCleanupCandidates(
 
 function listPendingLandedTaskContexts(
   readModel: OrchestrationReadModel,
-): ReadonlyArray<LandedTaskContext> {
+): ReadonlyArray<ProposedLandedTaskContext> {
   const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
   return readModel.tasks.flatMap((task) => {
     if (
@@ -140,7 +145,20 @@ function listPendingLandedTaskContexts(
     if (!project) {
       return [];
     }
-    return [{ task, project, worktreePath: task.worktreePath }];
+    const approvedLandGate = (readModel.pendingGates ?? []).findLast(
+      (gate) =>
+        gate.taskId === task.id &&
+        gate.gate === "land" &&
+        gate.status === "resolved" &&
+        gate.decision === "approved" &&
+        gate.approvedHash === gate.contentHash,
+    );
+    if (approvedLandGate?.pullRequest == null) {
+      return [];
+    }
+    return [
+      { task, project, worktreePath: task.worktreePath, pullRequest: approvedLandGate.pullRequest },
+    ];
   });
 }
 
@@ -198,34 +216,6 @@ function landingFailureActivityId(taskId: string): EventId {
 
 function firstTaskThread(task: OrchestrationTask) {
   return task.currentStageThreadId ?? task.stageThreadIds.at(-1) ?? null;
-}
-
-function createPrBody(input: {
-  readonly task: OrchestrationTask;
-  readonly baseRefName: string;
-  readonly headRefName: string;
-  readonly commitSummary: string;
-  readonly diffSummary: string;
-}): string {
-  const commitSummary = input.commitSummary.trim() || `Task: ${input.task.title}`;
-  const diffSummary = input.diffSummary.trim() || "No diff stats were available.";
-  return [
-    "## Summary",
-    "",
-    commitSummary,
-    "",
-    "## Diff stats",
-    "",
-    "```",
-    diffSummary,
-    "```",
-    "",
-    `Base: ${input.baseRefName}`,
-    `Head: ${input.headRefName}`,
-    "",
-    "Opened by GedCode orchestrator",
-    "",
-  ].join("\n");
 }
 
 function errorDetail(cause: Cause.Cause<unknown>): string {
@@ -525,7 +515,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     );
 
     const recordLandingFailure = Effect.fn("recordLandingFailure")(function* (input: {
-      readonly context: LandedTaskContext;
+      readonly context: ProposedLandedTaskContext;
       readonly detail: string;
       readonly branchPushed: boolean;
     }) {
@@ -545,7 +535,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     });
 
     const openTaskPrAndRecord = Effect.fn("openTaskPrAndRecord")(function* (input: {
-      readonly context: LandedTaskContext;
+      readonly context: ProposedLandedTaskContext;
       readonly onBranchPushed: Effect.Effect<void, never>;
     }) {
       const { context } = input;
@@ -603,29 +593,16 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         existing[0] ??
         (yield* Effect.scoped(
           Effect.gen(function* () {
-            const rangeContext = yield* gitWorkflow.readRangeContext({
-              cwd: context.worktreePath,
-              baseRef: baseRefName,
-            });
             const bodyFile = yield* fileSystem.makeTempFileScoped({
               prefix: "gedcode-task-pr-",
               suffix: ".md",
             });
-            yield* fileSystem.writeFileString(
-              bodyFile,
-              createPrBody({
-                task: context.task,
-                baseRefName,
-                headRefName: branch,
-                commitSummary: rangeContext.commitSummary,
-                diffSummary: rangeContext.diffSummary,
-              }),
-            );
+            yield* fileSystem.writeFileString(bodyFile, `${context.pullRequest.body.trim()}\n`);
             return yield* handle.provider.createChangeRequest({
               cwd: context.worktreePath,
               baseRefName,
               headSelector: branch,
-              title: context.task.title,
+              title: context.pullRequest.title,
               bodyFile,
               draft: openPrAsDraft,
             });
@@ -644,7 +621,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     });
 
     const processLandedTaskContext = Effect.fn("processLandedTaskContext")(function* (
-      context: LandedTaskContext,
+      context: ProposedLandedTaskContext,
     ) {
       if (context.task.prUrl !== null) {
         yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));

@@ -71,7 +71,10 @@ function requireNoActiveProjectContextRun(input: {
   );
 }
 
-function projectContextRunPrompt(mode: "populate" | "review"): string {
+function projectContextRunPrompt(
+  mode: "populate" | "review",
+  repositoryPullRequestGuidancePaths: ReadonlyArray<string>,
+): string {
   const action =
     mode === "populate"
       ? "Populate missing or stub project guidance with concise, project-specific content."
@@ -79,7 +82,12 @@ function projectContextRunPrompt(mode: "populate" | "review"): string {
   return [
     "You are maintaining the shared project context in the primary checkout.",
     action,
-    "You may change only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, and direct Markdown files under docs/adr/.",
+    "Inspect repository contribution guidance before editing context: root, .github, and docs CONTRIBUTING.md files; root, docs, and .github pull_request_template.md files; every Markdown template directly under .github/PULL_REQUEST_TEMPLATE/; and relevant PR rules in AGENTS.md.",
+    repositoryPullRequestGuidancePaths.length === 0
+      ? "The server found no conventional public contribution document or pull-request template; inspect AGENTS.md for PR-specific rules and create .ged/PULL_REQUESTS.md if it provides none."
+      : `The server found these conventional public guidance files; read them as current authoritative inputs: ${repositoryPullRequestGuidancePaths.join(", ")}.`,
+    "Public contribution documents and pull-request templates are authoritative read-only inputs. Never create or edit them. If none of those sources defines pull-request guidance, create or improve .ged/PULL_REQUESTS.md with a concise internal convention covering purpose, behavioral changes, concrete verification, risks/migrations, visual evidence when relevant, and issue/task links. If public guidance exists, do not duplicate it into a new fallback file; retain an existing .ged/PULL_REQUESTS.md only when it adds non-conflicting project-specific guidance.",
+    "You may change only AGENTS.md, CONTEXT.md, .ged/PROJECT.md, .ged/ARCHITECTURE.md, .ged/PULL_REQUESTS.md, and direct Markdown files under docs/adr/.",
     "Do not edit .ged/MANIFEST.json; GedCode writes it after auditing your documentation changes.",
     "Do not modify application code, runtime state, task files, generated files, secrets, Git history, branches, worktrees, commits, pull requests, or orchestration state.",
     "Do not create tasks, stages, gates, worktrees, commits, pull requests, or delegate to another agent.",
@@ -649,7 +657,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           primaryCheckoutPath: project.workspaceRoot,
           schemaVersion: command.schemaVersion,
           fingerprint: command.fingerprint,
-          prompt: projectContextRunPrompt(command.mode),
+          prompt: projectContextRunPrompt(
+            command.mode,
+            command.repositoryPullRequestGuidancePaths ?? [],
+          ),
           baselineManifest: command.baselineManifest,
           workspaceStatusManifest: command.workspaceStatusManifest,
           gitState: command.gitState,
@@ -3023,6 +3034,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
       if (command.gate === "land") {
+        if (command.pullRequest === undefined) {
+          return yield* invariantError(
+            command.type,
+            `Land approval for task '${command.taskId}' requires the exact pull-request title and body.`,
+          );
+        }
         if (task.status !== "review" || task.currentStageThreadId !== null) {
           return yield* invariantError(
             command.type,
@@ -3035,6 +3052,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           task,
           worktreeCompletion: command.worktreeCompletion,
         });
+      } else if (command.pullRequest !== undefined) {
+        return yield* invariantError(
+          command.type,
+          `Pull-request content is valid only for a land approval gate.`,
+        );
       }
       if (command.gate === "release") {
         if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
@@ -3071,6 +3093,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           gateId: command.gateId,
           gate: command.gate,
           contentHash: command.contentHash,
+          pullRequest: command.pullRequest ?? null,
           stageThreadId: command.stageThreadId,
           updatedAt: command.createdAt,
         },

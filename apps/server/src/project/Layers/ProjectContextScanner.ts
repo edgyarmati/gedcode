@@ -22,6 +22,21 @@ import {
 import { WorkspacePaths } from "../../workspace/Services/WorkspacePaths.ts";
 
 const ADR_DIRECTORY = "docs/adr";
+const REPOSITORY_PR_GUIDANCE_CANDIDATES = [
+  "CONTRIBUTING.md",
+  ".github/CONTRIBUTING.md",
+  "docs/CONTRIBUTING.md",
+  "pull_request_template.md",
+  "PULL_REQUEST_TEMPLATE.md",
+  ".github/pull_request_template.md",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  "docs/pull_request_template.md",
+  "docs/PULL_REQUEST_TEMPLATE.md",
+] as const;
+const REPOSITORY_PR_TEMPLATE_DIRECTORIES = [
+  ".github/PULL_REQUEST_TEMPLATE",
+  ".github/pull_request_template",
+] as const;
 const isMarkdownFileName = (name: string): boolean =>
   name.endsWith(".md") && !name.includes("/") && !name.includes("\\");
 
@@ -184,6 +199,7 @@ export const makeProjectContextScanner = Effect.gen(function* () {
 
       const files: ProjectContextFile[] = [];
       const ownershipFiles: ProjectContextOwnershipFile[] = [];
+      const repositoryPullRequestGuidancePaths: string[] = [];
       for (const relativePath of CANONICAL_PROJECT_CONTEXT_PATHS) {
         const result = yield* readRegularUtf8File(workspaceRoot, realWorkspaceRoot, relativePath);
         files.push(
@@ -212,6 +228,49 @@ export const makeProjectContextScanner = Effect.gen(function* () {
           state: { presence: "absent", digest: null, size: 0, content: null },
         },
       );
+
+      for (const relativePath of REPOSITORY_PR_GUIDANCE_CANDIDATES) {
+        if ((yield* readRegularUtf8File(workspaceRoot, realWorkspaceRoot, relativePath)) !== null) {
+          repositoryPullRequestGuidancePaths.push(relativePath);
+        }
+      }
+      for (const directory of REPOSITORY_PR_TEMPLATE_DIRECTORIES) {
+        const directoryPath = yield* resolveInsideRoot(workspaceRoot, realWorkspaceRoot, directory);
+        if (
+          !(yield* fileSystem
+            .exists(directoryPath)
+            .pipe(
+              Effect.mapError(() =>
+                scannerError(workspaceRoot, "exists", `Cannot inspect ${directory}`),
+              ),
+            ))
+        )
+          continue;
+        const directoryInfo = yield* fileSystem
+          .stat(directoryPath)
+          .pipe(
+            Effect.mapError(() =>
+              scannerError(workspaceRoot, "stat", `Cannot inspect ${directory}`),
+            ),
+          );
+        if (directoryInfo.type !== "Directory") continue;
+        for (const entry of (yield* fileSystem
+          .readDirectory(directoryPath)
+          .pipe(
+            Effect.mapError(() =>
+              scannerError(workspaceRoot, "readDirectory", `Cannot list ${directory}`),
+            ),
+          ))
+          .filter(isMarkdownFileName)
+          .toSorted()) {
+          const relativePath = `${directory}/${entry}`;
+          if (
+            (yield* readRegularUtf8File(workspaceRoot, realWorkspaceRoot, relativePath)) !== null
+          ) {
+            repositoryPullRequestGuidancePaths.push(relativePath);
+          }
+        }
+      }
 
       const adrDirectoryPath = yield* resolveInsideRoot(
         workspaceRoot,
@@ -276,9 +335,15 @@ export const makeProjectContextScanner = Effect.gen(function* () {
         }
       }
 
+      const uniqueGuidancePaths = repositoryPullRequestGuidancePaths.filter(
+        (relativePath, index, paths) =>
+          paths.findIndex((candidate) => candidate.toLowerCase() === relativePath.toLowerCase()) ===
+          index,
+      );
       return makeProjectContextSnapshot({
         files,
         ownershipBaseline: { files: ownershipFiles },
+        repositoryPullRequestGuidancePaths: uniqueGuidancePaths,
       });
     },
   );

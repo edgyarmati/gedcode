@@ -3,7 +3,7 @@ import * as Option from "effect/Option";
 
 export const GED_MANIFEST_PATH = ".ged/MANIFEST.json";
 export const LEGACY_GED_VERSION_PATH = ".ged/VERSION";
-export const CURRENT_GED_SCHEMA_VERSION = 3;
+export const CURRENT_GED_SCHEMA_VERSION = 4;
 
 export interface GedManifest {
   readonly schemaVersion: number;
