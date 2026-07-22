@@ -258,6 +258,55 @@ it("shows the effective worker permission mode in stage history", async () => {
   await expect.element(page.getByText("codex · gpt-5.6", { exact: true })).toBeInTheDocument();
 });
 
+it("selects and highlights any persisted stage attempt", async () => {
+  const firstStageThreadId = ThreadId.make("stage-work-first");
+  const secondStageThreadId = ThreadId.make("stage-work-second");
+  const selected = vi.fn();
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        stageHistoryByTaskId: {
+          [taskId]: Object.fromEntries(
+            [firstStageThreadId, secondStageThreadId].map((stageThreadId, index) => [
+              stageThreadId,
+              {
+                projectId: ProjectId.make("project-browser"),
+                taskId,
+                stageThreadId,
+                role: "work" as const,
+                capabilityTier: null,
+                providerInstanceId: ProviderInstanceId.make("codex"),
+                model: "gpt-5.6-terra",
+                modelOptions: null,
+                runtimeMode: "full-access" as const,
+                status: "completed" as const,
+                startedAt: `2026-07-22T10:0${index}:00.000Z`,
+                endedAt: `2026-07-22T10:0${index}:30.000Z`,
+              },
+            ]),
+          ),
+        },
+      },
+    },
+  });
+
+  await render(
+    <StageTimeline
+      environmentId={environmentId}
+      onSelectStageThread={selected}
+      selectedStageThreadId={secondStageThreadId}
+      taskId={taskId}
+    />,
+  );
+
+  const firstAttempt = page.getByRole("button", { name: /Work · Attempt 1/ });
+  const secondAttempt = page.getByRole("button", { name: /Work · Attempt 2/ });
+  await expect.element(secondAttempt).toHaveAttribute("aria-current", "true");
+  await firstAttempt.click();
+  expect(selected).toHaveBeenCalledWith(firstStageThreadId);
+});
+
 it("shows read-only helper history without adding a task-board card", async () => {
   const projectId = ProjectId.make("project-browser");
   const helperRunId = HelperRunId.make("helper-browser");

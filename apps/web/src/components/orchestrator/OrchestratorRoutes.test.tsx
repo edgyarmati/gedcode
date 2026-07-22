@@ -54,6 +54,7 @@ import {
   GateCard,
   OrchestratorHomeRoute,
   PmChatEmptyState,
+  stageThreadIdForTask,
   TaskHeader,
 } from "./OrchestratorRoutes";
 
@@ -687,6 +688,26 @@ describe("land approval presentation", () => {
     expect(markup).toContain("verified-head");
     expect(markup).toContain("fix: explain the reviewed behavior");
     expect(markup).toContain("The complete approved description.");
+  });
+});
+
+describe("task stage selection", () => {
+  const first = ThreadId.make("stage-work-1");
+  const latest = ThreadId.make("stage-verify-2");
+  const task = {
+    ...makeBoardTask("task-history", "review", "History"),
+    stageThreadIds: [first, latest],
+    currentStageThreadId: null,
+  };
+
+  it("defaults to the active or latest attempt", () => {
+    expect(stageThreadIdForTask(task)).toBe(latest);
+    expect(stageThreadIdForTask({ ...task, currentStageThreadId: first })).toBe(first);
+  });
+
+  it("honors a valid URL selection and recovers an invalid one", () => {
+    expect(stageThreadIdForTask(task, String(first))).toBe(first);
+    expect(stageThreadIdForTask(task, "missing-stage")).toBe(latest);
   });
 });
 

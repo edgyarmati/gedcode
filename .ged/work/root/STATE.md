@@ -1,7 +1,7 @@
 # STATE
 
 - **Phase**: implement
-- **Active task**: `ORCH-STAGES-01` — selectable stage-attempt history and narrow rail layout
+- **Active task**: `ORCH-LAND-RETRY-01` — durable failed-landing retry feedback
 - **Roadmap**: Repository-aware pull requests and readable stage-attempt history, clarified 2026-07-22
 - **Prior milestone**: v0.3.0 released; completed roadmap history remains in Git and `CHANGELOG.md`
 
@@ -52,6 +52,15 @@
 - Canonical pipeline-order enforcement remains deferred except exact-HEAD verification before landing.
 
 ## Execution Notes
+
+- `ORCH-STAGES-01` completed 2026-07-22. Every persisted stage attempt is now a numbered selectable
+  card. A valid `stage` task-route search parameter selects the subscribed transcript/diff and invalid
+  deep links recover to the active/latest attempt. The sidebar diff header uses two rows at narrow
+  width, while gate and stage cards constrain long content instead of clipping status controls.
+- Verification evidence for `ORCH-STAGES-01`: focused route, timeline, presentation, and diff-shell
+  suites passed 60 unit/component tests; the focused Chromium selection scenario passed with 21
+  unrelated scenarios skipped. Web typecheck and formatting passed. The broader browser file exposed
+  the pre-existing durable landing-retry pending-state issue now tracked as `ORCH-LAND-RETRY-01`.
 
 - `ORCH-PR-01` completed 2026-07-22. GED schema 4 adds `.ged/PULL_REQUESTS.md` as the internal
   fallback while the scanner reports conventional public contribution guides and GitHub PR templates

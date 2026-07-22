@@ -40,6 +40,15 @@ changes must update `CHANGELOG.md` under `## Unreleased`.
   to the active/latest attempt.
 - Highlight the selected attempt and keep land-gate and diff controls usable in the narrow detail rail.
 
+#### Evidence — 2026-07-22
+
+- Focused route-search, selection fallback, timeline projection, task-route presentation, and
+  diff-shell suites passed 60 tests.
+- Focused Chromium coverage selected an earlier attempt, observed the current selection highlight,
+  and passed with the other 21 scenarios skipped.
+- Web typecheck and `bun fmt` passed. A broader run exposed the unrelated durable landing-retry
+  pending-state defect, recorded separately as `ORCH-LAND-RETRY-01`; no full suite ran.
+
 ## Manifest-first Context Pivot
 
 ### PROJECT-MANIFEST-01

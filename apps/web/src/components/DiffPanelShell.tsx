@@ -9,6 +9,12 @@ export type DiffPanelMode = "inline" | "sheet" | "sidebar";
 
 function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
   const shouldUseDragRegion = isElectron && mode !== "sheet";
+  if (mode === "sidebar") {
+    return cn(
+      "flex min-w-0 flex-col items-stretch gap-2 px-2 py-2",
+      shouldUseDragRegion && "drag-region border-b border-border",
+    );
+  }
   return cn(
     "flex items-center justify-between gap-2 px-4",
     shouldUseDragRegion

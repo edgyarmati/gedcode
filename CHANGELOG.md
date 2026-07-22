@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Orchestrator task history now keeps every Plan, Work, and Verify attempt readable. Stage cards are
+  numbered, selectable, and visibly highlighted; selecting one stores its thread in the task URL so
+  the exact transcript and diff survive refresh and can be shared. Invalid historical links recover
+  to the active or latest attempt. The narrow task rail now stacks diff selectors and controls instead
+  of clipping them, and gate hashes/statuses wrap safely.
+
 - Pull-request landing is now repository-aware and human-reviewable. Project-context maintenance
   discovers conventional contribution guides and GitHub PR templates, creates an internal
   `.ged/PULL_REQUESTS.md` convention only when public guidance is absent, and never rewrites public

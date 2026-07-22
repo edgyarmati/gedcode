@@ -10,7 +10,18 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { OrchestratorPendingGate, OrchestratorTask } from "../../types";
-import { deriveTaskLandingPresentation } from "./OrchestratorRoutes.logic";
+import { deriveTaskLandingPresentation, parseTaskStageSearch } from "./OrchestratorRoutes.logic";
+
+describe("parseTaskStageSearch", () => {
+  it("keeps a deep-linked stage and drops missing or invalid values", () => {
+    expect(parseTaskStageSearch({ stage: "stage-verify-2" })).toEqual({
+      stage: "stage-verify-2",
+    });
+    expect(parseTaskStageSearch({})).toEqual({});
+    expect(parseTaskStageSearch({ stage: "  " })).toEqual({});
+    expect(parseTaskStageSearch({ stage: 42 })).toEqual({});
+  });
+});
 
 const taskId = TaskId.make("task-landing");
 

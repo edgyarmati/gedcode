@@ -7,6 +7,12 @@ import type {
 
 import type { OrchestratorPendingGate, OrchestratorTask } from "../../types";
 
+export function parseTaskStageSearch(search: Record<string, unknown>): { readonly stage?: string } {
+  return typeof search.stage === "string" && search.stage.trim() !== ""
+    ? { stage: search.stage }
+    : {};
+}
+
 export type TaskLandingPresentation =
   | { readonly kind: "unavailable" }
   | { readonly kind: "ready" }

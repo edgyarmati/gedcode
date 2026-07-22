@@ -32,6 +32,7 @@ describe("buildStageTimelineRows", () => {
     expect(row).toMatchObject({
       role: "verify",
       roleLabel: "Verify",
+      attemptNumber: 1,
       status: "completed",
       statusLabel: "Completed",
       statusVariant: "success",
@@ -79,6 +80,22 @@ describe("buildStageTimelineRows", () => {
     ]);
     expect(rows.map((row) => row.key)).toEqual(["stage-plan", "stage-work", "stage-verify"]);
     expect(rows.map((row) => row.roleLabel)).toEqual(["Plan", "Work", "Verify"]);
+  });
+
+  it("numbers retries independently for each stage role", () => {
+    const rows = buildStageTimelineRows([
+      makeEntry({ stageThreadId: ThreadId.make("work-1"), role: "work" }),
+      makeEntry({ stageThreadId: ThreadId.make("verify-1"), role: "verify" }),
+      makeEntry({ stageThreadId: ThreadId.make("verify-2"), role: "verify" }),
+      makeEntry({ stageThreadId: ThreadId.make("work-2"), role: "work" }),
+    ]);
+
+    expect(rows.map((row) => [row.role, row.attemptNumber])).toEqual([
+      ["work", 1],
+      ["verify", 1],
+      ["verify", 2],
+      ["work", 2],
+    ]);
   });
 
   it("returns an empty list for no entries", () => {

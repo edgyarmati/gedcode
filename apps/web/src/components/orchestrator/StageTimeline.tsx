@@ -4,11 +4,13 @@ import {
   type OrchestrationStageHistoryStatus,
   type OrchestrationStageRole,
   type TaskId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Badge } from "../ui/badge";
+import { cn } from "../../lib/utils";
 import { selectTaskStageHistoryByRef, useStore, type ScopedTaskRef } from "../../store";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
@@ -28,6 +30,7 @@ export interface StageTimelineRow {
   readonly key: string;
   readonly role: OrchestrationStageRole;
   readonly roleLabel: string;
+  readonly attemptNumber: number;
   readonly status: OrchestrationStageHistoryStatus;
   readonly statusLabel: string;
   readonly statusVariant: StageStatusVariant;
@@ -44,12 +47,16 @@ export interface StageTimelineRow {
 export function buildStageTimelineRows(
   entries: ReadonlyArray<OrchestrationStageHistoryEntry>,
 ): StageTimelineRow[] {
+  const attemptsByRole = new Map<OrchestrationStageRole, number>();
   return entries.map((entry) => {
     const statusDisplay = STAGE_STATUS_DISPLAY[entry.status];
+    const attemptNumber = (attemptsByRole.get(entry.role) ?? 0) + 1;
+    attemptsByRole.set(entry.role, attemptNumber);
     return {
       key: String(entry.stageThreadId),
       role: entry.role,
       roleLabel: STAGE_ROLE_LABELS[entry.role],
+      attemptNumber,
       status: entry.status,
       statusLabel: statusDisplay.label,
       statusVariant: statusDisplay.variant,
@@ -82,9 +89,13 @@ function formatStageTime(iso: string): string | null {
 // nothing until at least one stage has started.
 export function StageTimeline({
   environmentId,
+  onSelectStageThread,
+  selectedStageThreadId = null,
   taskId,
 }: {
   environmentId: EnvironmentId;
+  onSelectStageThread?: ((stageThreadId: string | undefined) => void) | undefined;
+  selectedStageThreadId?: ThreadId | null;
   taskId: TaskId;
 }) {
   const taskRef = useMemo<ScopedTaskRef>(
@@ -102,24 +113,36 @@ export function StageTimeline({
       <ol className="space-y-2">
         {rows.map((row) => {
           const startedLabel = formatStageTime(row.startedAt);
+          const selected = row.key === String(selectedStageThreadId);
           return (
-            <li
-              key={row.key}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
-            >
-              <div className="flex min-w-0 flex-col">
-                <span className="text-sm font-medium">{row.roleLabel}</span>
-                <span className="truncate text-xs text-muted-foreground">{row.backendLabel}</span>
-                <span className="text-xs text-muted-foreground">{row.permissionLabel}</span>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {startedLabel === null ? null : (
-                  <span className="text-xs text-muted-foreground">{startedLabel}</span>
+            <li key={row.key}>
+              <button
+                type="button"
+                aria-current={selected ? "true" : undefined}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded-lg border bg-card p-3 text-left transition-colors",
+                  selected
+                    ? "border-primary/70 bg-primary/5 ring-1 ring-primary/25"
+                    : "border-border hover:border-foreground/25 hover:bg-accent/40",
                 )}
-                <Badge size="sm" variant={row.statusVariant}>
-                  {row.statusLabel}
-                </Badge>
-              </div>
+                onClick={() => onSelectStageThread?.(row.key)}
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-sm font-medium">
+                    {row.roleLabel} · Attempt {row.attemptNumber}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">{row.backendLabel}</span>
+                  <span className="text-xs text-muted-foreground">{row.permissionLabel}</span>
+                </div>
+                <div className="flex min-w-0 shrink-0 flex-col items-end gap-1">
+                  {startedLabel === null ? null : (
+                    <span className="text-xs text-muted-foreground">{startedLabel}</span>
+                  )}
+                  <Badge size="sm" variant={row.statusVariant}>
+                    {row.statusLabel}
+                  </Badge>
+                </div>
+              </button>
             </li>
           );
         })}

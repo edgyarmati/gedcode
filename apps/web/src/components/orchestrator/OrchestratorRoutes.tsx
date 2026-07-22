@@ -152,7 +152,16 @@ function toTaskId(value: string): TaskId {
   return TaskId.make(value);
 }
 
-function stageThreadIdForTask(task: OrchestratorTask): ThreadId | null {
+export function stageThreadIdForTask(
+  task: OrchestratorTask,
+  requestedStageThreadId?: string,
+): ThreadId | null {
+  if (
+    requestedStageThreadId !== undefined &&
+    task.stageThreadIds.some((stageThreadId) => String(stageThreadId) === requestedStageThreadId)
+  ) {
+    return ThreadId.make(requestedStageThreadId);
+  }
   return task.currentStageThreadId ?? task.stageThreadIds.at(-1) ?? null;
 }
 
@@ -886,7 +895,10 @@ export function OrchestratorTaskRoute(props: {
   environmentId: string;
   projectId: string;
   taskId: string;
+  requestedStageThreadId?: string | undefined;
+  onSelectStageThread?: ((stageThreadId: string | undefined) => void) | undefined;
 }) {
+  const { onSelectStageThread, requestedStageThreadId } = props;
   const environmentId = toEnvironmentId(props.environmentId);
   const projectId = toProjectId(props.projectId);
   const taskId = toTaskId(props.taskId);
@@ -899,7 +911,7 @@ export function OrchestratorTaskRoute(props: {
   );
   const task = useStore((state) => selectTaskByRef(state, taskRef));
   const gates = useStore(useShallow((state) => selectPendingGatesForTaskRef(state, taskRef)));
-  const stageThreadId = task ? stageThreadIdForTask(task) : null;
+  const stageThreadId = task ? stageThreadIdForTask(task, requestedStageThreadId) : null;
   const stageThreadRef = useMemo(
     () => (stageThreadId ? scopeThreadRef(environmentId, stageThreadId) : null),
     [environmentId, stageThreadId],
@@ -922,6 +934,17 @@ export function OrchestratorTaskRoute(props: {
     }
     return retainThreadDetailSubscription(environmentId, stageThreadId);
   }, [environmentId, stageThreadId]);
+
+  useEffect(() => {
+    if (
+      !task ||
+      requestedStageThreadId === undefined ||
+      requestedStageThreadId === String(stageThreadId)
+    ) {
+      return;
+    }
+    onSelectStageThread?.(stageThreadId === null ? undefined : String(stageThreadId));
+  }, [onSelectStageThread, requestedStageThreadId, stageThreadId, task]);
 
   return (
     <OrchestratorPage>
@@ -971,6 +994,8 @@ export function OrchestratorTaskRoute(props: {
             project={project}
             stageThread={stageThread}
             stageThreadRef={stageThreadRef}
+            selectedStageThreadId={stageThreadId}
+            onSelectStageThread={onSelectStageThread}
             task={task}
             taskId={taskId}
           />
@@ -1208,6 +1233,8 @@ function TaskDetailRail({
   project,
   stageThread,
   stageThreadRef,
+  selectedStageThreadId,
+  onSelectStageThread,
   task,
   taskId,
 }: {
@@ -1216,6 +1243,8 @@ function TaskDetailRail({
   project: Project | undefined;
   stageThread: Thread | undefined;
   stageThreadRef: ScopedThreadRef | null;
+  selectedStageThreadId: ThreadId | null;
+  onSelectStageThread?: ((stageThreadId: string | undefined) => void) | undefined;
   task: OrchestratorTask | undefined;
   taskId: TaskId;
 }) {
@@ -1226,7 +1255,12 @@ function TaskDetailRail({
       ) : null}
       {task ? <TaskChangeReviewPanel environmentId={environmentId} task={task} /> : null}
       <HelperRunTimeline environmentId={environmentId} taskId={taskId} />
-      <StageTimeline environmentId={environmentId} taskId={taskId} />
+      <StageTimeline
+        environmentId={environmentId}
+        onSelectStageThread={onSelectStageThread}
+        selectedStageThreadId={selectedStageThreadId}
+        taskId={taskId}
+      />
       <GatePanel environmentId={environmentId} gates={gates} taskId={taskId} />
       <StageProposedPlan
         environmentId={environmentId}
@@ -1353,16 +1387,16 @@ export function GateCard({
   };
 
   return (
-    <article className="rounded-lg border border-border bg-card p-4">
+    <article className="overflow-hidden rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold capitalize">{gate.gate}</h3>
           <p className="mt-1 break-all text-xs text-muted-foreground">
             {gate.gate === "land" ? "Verified commit: " : "Content: "}
             {gate.contentHash}
           </p>
         </div>
-        <Badge variant={resolved ? "success" : "warning"}>
+        <Badge className="shrink-0" variant={resolved ? "success" : "warning"}>
           {resolved ? "Resolved" : "Pending"}
         </Badge>
       </div>
@@ -1370,7 +1404,7 @@ export function GateCard({
         <div className="mt-3 space-y-2 rounded-md border border-border/70 bg-background/60 p-3">
           <div>
             <p className="text-[11px] font-medium text-muted-foreground uppercase">PR title</p>
-            <p className="mt-1 text-sm font-medium">{gate.pullRequest.title}</p>
+            <p className="mt-1 break-words text-sm font-medium">{gate.pullRequest.title}</p>
           </div>
           <details>
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground">

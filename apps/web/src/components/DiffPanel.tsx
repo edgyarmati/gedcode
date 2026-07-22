@@ -573,7 +573,12 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
           ))}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
+      <div
+        className={cn(
+          "flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]",
+          mode === "sidebar" && "justify-end",
+        )}
+      >
         <ToggleGroup
           className="shrink-0"
           variant="outline"
