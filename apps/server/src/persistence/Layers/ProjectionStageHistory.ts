@@ -1,6 +1,7 @@
 import { ProviderOptionSelections } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
@@ -19,8 +20,22 @@ import {
 const ProjectionStageHistoryDbRow = ProjectionStageHistoryEntry.mapFields(
   Struct.assign({
     modelOptions: Schema.NullOr(Schema.fromJsonString(ProviderOptionSelections)),
+    networkAccess: Schema.NullOr(Schema.BooleanFromBit),
+    capabilityPauseExpiresAt: Schema.NullOr(Schema.String),
   }),
 );
+type ProjectionStageHistoryDbRow = typeof ProjectionStageHistoryDbRow.Type;
+
+const mapProjectionStageHistoryDbRow = (
+  row: ProjectionStageHistoryDbRow,
+): ProjectionStageHistoryEntry => {
+  const { networkAccess, capabilityPauseExpiresAt, ...stageHistory } = row;
+  return {
+    ...stageHistory,
+    ...(networkAccess === null ? {} : { networkAccess }),
+    ...(capabilityPauseExpiresAt === null ? {} : { capabilityPauseExpiresAt }),
+  };
+};
 
 const makeProjectionStageHistoryRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -39,6 +54,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json,
           runtime_mode,
+          network_access,
+          capability_pause_expires_at,
           start_head,
           status,
           started_at,
@@ -54,6 +71,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           ${row.model},
           ${row.modelOptions === null ? null : JSON.stringify(row.modelOptions)},
           ${row.runtimeMode ?? null},
+          ${row.networkAccess === undefined ? null : Number(row.networkAccess)},
+          ${row.capabilityPauseExpiresAt ?? null},
           ${row.startHead ?? null},
           ${row.status},
           ${row.startedAt},
@@ -69,6 +88,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model = excluded.model,
           model_options_json = excluded.model_options_json,
           runtime_mode = excluded.runtime_mode,
+          network_access = COALESCE(excluded.network_access, projection_stage_history.network_access),
+          capability_pause_expires_at = excluded.capability_pause_expires_at,
           -- A later compatibility upsert (for example thread.created adding a
           -- runtime mode) must not erase the immutable stage boundary.
           start_head = COALESCE(excluded.start_head, projection_stage_history.start_head),
@@ -93,6 +114,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
           started_at AS "startedAt",
@@ -117,6 +140,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
           started_at AS "startedAt",
@@ -142,6 +167,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
           started_at AS "startedAt",
@@ -167,6 +194,8 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
+          network_access AS "networkAccess",
+          capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
           started_at AS "startedAt",
@@ -183,6 +212,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const getByStageThreadId: ProjectionStageHistoryRepositoryShape["getByStageThreadId"] = (input) =>
     getStageHistoryRow(input).pipe(
+      Effect.map(Option.map(mapProjectionStageHistoryDbRow)),
       Effect.mapError(
         toPersistenceSqlError("ProjectionStageHistoryRepository.getByStageThreadId:query"),
       ),
@@ -190,6 +220,7 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const listByProjectId: ProjectionStageHistoryRepositoryShape["listByProjectId"] = (input) =>
     listStageHistoryRowsByProject(input).pipe(
+      Effect.map((rows) => rows.map(mapProjectionStageHistoryDbRow)),
       Effect.mapError(
         toPersistenceSqlError("ProjectionStageHistoryRepository.listByProjectId:query"),
       ),
@@ -197,11 +228,13 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
 
   const listByTaskId: ProjectionStageHistoryRepositoryShape["listByTaskId"] = (input) =>
     listStageHistoryRowsByTask(input).pipe(
+      Effect.map((rows) => rows.map(mapProjectionStageHistoryDbRow)),
       Effect.mapError(toPersistenceSqlError("ProjectionStageHistoryRepository.listByTaskId:query")),
     );
 
   const listAll: ProjectionStageHistoryRepositoryShape["listAll"] = () =>
     listAllStageHistoryRows(undefined).pipe(
+      Effect.map((rows) => rows.map(mapProjectionStageHistoryDbRow)),
       Effect.mapError(toPersistenceSqlError("ProjectionStageHistoryRepository.listAll:query")),
     );
 

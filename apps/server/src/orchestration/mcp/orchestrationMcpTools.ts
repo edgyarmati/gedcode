@@ -76,6 +76,7 @@ export const mcpInputSchemas = {
     taskId: z.string(),
     role: stageRole,
     tier: capabilityTier,
+    networkAccess: z.boolean().optional(),
     instructions: z.string(),
   },
   steerStage: {

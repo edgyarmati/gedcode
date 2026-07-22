@@ -3096,6 +3096,143 @@ describe("ProviderRuntimeIngestion", () => {
     ).toHaveLength(1);
   });
 
+  it("pauses and resumes the same worker stage around a capability approval", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const requestId = ApprovalRequestId.make("req-worker-capability");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-provider-project-enable-capability"),
+        projectId: asProjectId("project-1"),
+        orchestratorConfig: {},
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-provider-task-create-capability"),
+        taskId: asTaskId("task-capability"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Provider capability task",
+        pmMessageId: null,
+        branch: "orchestrator/task-capability",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-provider-task-stage-start-capability"),
+        taskId: asTaskId("task-capability"),
+        role: "work",
+        instructions: "Implement the capability-sensitive task.",
+        createdAt: now,
+      }),
+    );
+    const task = await waitForTask(
+      harness.readModel,
+      (entry) => entry.id === asTaskId("task-capability") && entry.currentStageThreadId !== null,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-capability"),
+    );
+    const stageThreadId = task.currentStageThreadId;
+    if (stageThreadId === null) return;
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-capability-turn-started"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: now,
+      threadId: stageThreadId,
+      turnId: asTurnId("turn-capability"),
+      payload: {},
+    });
+    await waitForThread(
+      harness.readModel,
+      (thread) => thread.session?.status === "running",
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      stageThreadId,
+    );
+
+    harness.emit({
+      type: "request.opened",
+      eventId: asEventId("evt-capability-opened"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:01.000Z",
+      threadId: stageThreadId,
+      turnId: asTurnId("turn-capability"),
+      requestId,
+      payload: { requestType: "permissions_approval", detail: "Authenticate to GitHub." },
+    });
+    await waitForTask(
+      harness.readModel,
+      (entry) =>
+        entry.id === asTaskId("task-capability") && entry.currentStageThreadId === stageThreadId,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-capability"),
+    );
+    let readModel = await harness.readModel();
+    expect(readModel.stageHistory[stageThreadId]?.status).toBe("paused");
+    expect(readModel.stageHistory[stageThreadId]?.capabilityPauseExpiresAt).toBe(
+      "2026-01-01T00:30:01.000Z",
+    );
+    expect(readModel.threads.find((thread) => thread.id === stageThreadId)?.session?.status).toBe(
+      "running",
+    );
+
+    harness.emit({
+      type: "request.resolved",
+      eventId: asEventId("evt-capability-resolved"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:02.000Z",
+      threadId: stageThreadId,
+      turnId: asTurnId("turn-capability"),
+      requestId,
+      payload: { requestType: "permissions_approval", decision: "decline" },
+    });
+    await waitForTask(
+      harness.readModel,
+      (entry) =>
+        entry.id === asTaskId("task-capability") && entry.currentStageThreadId === stageThreadId,
+      ORCHESTRATION_WAIT_TIMEOUT_MS,
+      asTaskId("task-capability"),
+    );
+    readModel = await harness.readModel();
+    expect(readModel.stageHistory[stageThreadId]?.status).toBe("running");
+    // A replayed/duplicated provider resolution must not create another stage
+    // attempt or replace the retained session.
+    harness.emit({
+      type: "request.resolved",
+      eventId: asEventId("evt-capability-resolved-duplicate"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId,
+      createdAt: "2026-01-01T00:00:03.000Z",
+      threadId: stageThreadId,
+      turnId: asTurnId("turn-capability"),
+      requestId,
+      payload: { requestType: "permissions_approval", decision: "decline" },
+    });
+    await harness.drain();
+    readModel = await harness.readModel();
+    expect(readModel.stageHistory[stageThreadId]?.status).toBe("running");
+    expect(readModel.threads.find((thread) => thread.id === stageThreadId)?.session?.status).toBe(
+      "running",
+    );
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    expect(events.filter((event) => event.type === "task.stage-resumed")).toHaveLength(1);
+  });
+
   it("keeps the session running when a runtime.warning arrives during an active turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

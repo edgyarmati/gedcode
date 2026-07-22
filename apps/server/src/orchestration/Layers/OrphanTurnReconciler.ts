@@ -55,6 +55,7 @@ export function findOrphanedActiveStages(input: {
       task.cancellation != null ||
       task.status === "landed" ||
       task.status === "abandoned" ||
+      input.readModel.stageHistory[threadId]?.status === "paused" ||
       liveThreadIds.has(String(threadId))
     ) {
       return [];

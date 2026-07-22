@@ -101,6 +101,8 @@ interface HandoffWorkerParameters {
   readonly taskId: string;
   readonly role: OrchestrationStageRole;
   readonly tier: OrchestrationCapabilityTier;
+  /** Further restrict this attempt; the human global setting remains the upper bound. */
+  readonly networkAccess?: boolean;
   readonly instructions: string;
 }
 
@@ -936,6 +938,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
             taskId,
             role: params.role as OrchestrationStageRole,
             capabilityTier: params.tier,
+            ...(params.networkAccess === undefined ? {} : { networkAccess: params.networkAccess }),
             instructions: params.instructions,
             ...(startHead === undefined ? {} : { startHead }),
             createdAt: yield* nowIso,

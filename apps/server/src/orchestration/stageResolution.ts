@@ -31,6 +31,17 @@ export const stageBlockCommandId = (
 ): CommandId =>
   CommandId.make(`server:task-stage-block:${stageThreadId}:${providerInstanceId}:${sourceKey}`);
 
+/** One durable pause/resume boundary per provider approval request. */
+export const stageCapabilityPauseCommandId = (
+  stageThreadId: ThreadId,
+  requestId: string,
+): CommandId => CommandId.make(`server:task-stage-capability-pause:${stageThreadId}:${requestId}`);
+
+export const stageCapabilityResumeCommandId = (
+  stageThreadId: ThreadId,
+  requestId: string,
+): CommandId => CommandId.make(`server:task-stage-capability-resume:${stageThreadId}:${requestId}`);
+
 export const quotaStageResumeCommandId = (stageThreadId: ThreadId, retryCount: number): CommandId =>
   CommandId.make(`server:quota-stage-resume:${stageThreadId}:retry-${retryCount}`);
 
@@ -93,7 +104,7 @@ const STAGE_OWNERSHIP_REQUIREMENTS: Record<OrchestrationStageRole, string> = {
 };
 
 const SANDBOX_REQUIREMENT =
-  "You run in a sandboxed auto-approve environment. Do not work around missing authenticated host access, credentials, or sandbox restrictions; report the exact blocked operation to the PM, which owns authenticated host operations.";
+  "You run in a sandboxed auto-approve workspace-write environment. Network access is controlled by the human's global setting and may be further disabled for this handoff; it never authorizes authenticated host access or sandbox escalation. Do not work around missing authenticated host access, credentials, network, or sandbox restrictions; report the exact blocked operation to the PM, which owns authenticated host operations.";
 
 export function stripStagePromptPrefix(instructions: string): string {
   const leadingWhitespaceLength = instructions.length - instructions.trimStart().length;

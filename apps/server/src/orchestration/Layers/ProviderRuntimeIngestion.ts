@@ -46,6 +46,8 @@ import {
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   activeStageRoleForTaskStatus,
+  stageCapabilityPauseCommandId,
+  stageCapabilityResumeCommandId,
   findTaskForStageThread,
   stageBlockCommandId,
   stageCompleteCommandId,
@@ -80,6 +82,9 @@ const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFEC
 // arrives (e.g. a non-git workspace). Configurability via ServerSettings is a
 // deliberate follow-up; that file is owned by other WPs.
 export const STAGE_COMPLETION_DIFF_TIMEOUT = Duration.seconds(30);
+
+/** A generous, persisted deadline for a worker awaiting PM capability help. */
+export const CAPABILITY_PAUSE_TIMEOUT = Duration.minutes(30);
 
 type TurnStartRequestedDomainEvent = Extract<
   OrchestrationEvent,
@@ -1923,6 +1928,67 @@ const make = Effect.gen(function* () {
               files: [],
               assistantMessageId,
               checkpointTurnCount: maxCheckpointTurnCount(checkpointContext.checkpoints) + 1,
+              createdAt: now,
+            });
+          }
+        }
+      }
+
+      if (
+        (event.type === "request.opened" || event.type === "request.resolved") &&
+        event.payload.requestType === "permissions_approval"
+      ) {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const task = findTaskForStageThread(readModel.tasks, thread.id);
+        const role = task === undefined ? null : activeStageRoleForTaskStatus(task.status);
+        const stage = readModel.stageHistory[thread.id];
+        const requestId = toApprovalRequestId(event.requestId);
+        const decision =
+          event.type === "request.resolved" &&
+          (event.payload.decision === "accept" ||
+            event.payload.decision === "acceptForSession" ||
+            event.payload.decision === "decline" ||
+            event.payload.decision === "cancel")
+            ? event.payload.decision
+            : undefined;
+        if (
+          task !== undefined &&
+          role !== null &&
+          stage !== undefined &&
+          requestId !== undefined &&
+          sameId(task.currentStageThreadId, thread.id)
+        ) {
+          if (event.type === "request.opened") {
+            const expiresAt = DateTime.formatIso(
+              DateTime.add(DateTime.makeUnsafe(now), {
+                milliseconds: Duration.toMillis(CAPABILITY_PAUSE_TIMEOUT),
+              }),
+            );
+            yield* orchestrationEngine.dispatch({
+              type: "task.stage.block",
+              commandId: stageCapabilityPauseCommandId(thread.id, String(requestId)),
+              taskId: task.id,
+              stageThreadId: thread.id,
+              role,
+              reason: "capability",
+              providerInstanceId: event.providerInstanceId ?? stage.providerInstanceId,
+              requestId,
+              requestKind: "permissions",
+              ...(event.payload.detail
+                ? { detail: truncateDetail(event.payload.detail, 4_096) }
+                : {}),
+              expiresAt,
+              createdAt: now,
+            });
+          } else if (decision !== undefined) {
+            yield* orchestrationEngine.dispatch({
+              type: "task.stage.resume",
+              commandId: stageCapabilityResumeCommandId(thread.id, String(requestId)),
+              taskId: task.id,
+              stageThreadId: thread.id,
+              role,
+              requestId,
+              decision,
               createdAt: now,
             });
           }

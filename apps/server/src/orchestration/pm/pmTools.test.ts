@@ -548,6 +548,7 @@ it.effect(
             modelOptions: null,
             prompt: "Inspect the task invariants.",
             status: "running",
+            transientRetryCount: 0,
             providerThreadId: ThreadId.make("helper:helper-existing"),
             result: null,
             failureMessage: null,
@@ -1045,6 +1046,7 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
         taskId,
         role: "plan",
         tier: "genius",
+        networkAccess: false,
         instructions: "Plan the work.",
       }),
     );
@@ -1053,6 +1055,7 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
     assert.strictEqual(dispatched[0]?.type, "task.stage.start");
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].capabilityTier, "genius");
+      assert.strictEqual(dispatched[0].networkAccess, false);
       assert.strictEqual(dispatched[0].startHead, "b".repeat(40));
     }
     assert.deepStrictEqual(result.details, {

@@ -20,6 +20,7 @@ const makeRun = (overrides: Partial<OrchestrationHelperRun> = {}): Orchestration
   modelOptions: null,
   prompt: "Find the relevant implementation paths.",
   status: "completed",
+  transientRetryCount: 0,
   providerThreadId: ThreadId.make("helper:helper-ui"),
   result: "The implementation is in src/example.ts.",
   failureMessage: null,
