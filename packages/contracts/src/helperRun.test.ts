@@ -24,6 +24,7 @@ const run = {
   modelOptions: null,
   prompt: "Inspect the codebase.",
   status: "completed" as const,
+  transientRetryCount: 0,
   providerThreadId: ThreadId.make("provider-contract"),
   result: "Bounded result",
   failureMessage: null,
@@ -38,6 +39,7 @@ it.effect("decodes a helper run without task lifecycle fields", () =>
     const decoded = yield* decodeRun(run);
     assert.strictEqual(decoded.attachment.kind, "pm");
     assert.strictEqual(decoded.status, "completed");
+    assert.strictEqual(decoded.transientRetryCount, 0);
     assert.ok(!Object.hasOwn(decoded, "stageThreadIds"));
     assert.ok(!Object.hasOwn(decoded, "pendingGates"));
     assert.ok(!Object.hasOwn(decoded, "worktreePath"));
