@@ -677,6 +677,9 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
             archivedAt: null,
             deletedAt: null,
+            ...(payload.orchestrationOwnership === undefined
+              ? {}
+              : { orchestrationOwnership: payload.orchestrationOwnership }),
             pendingPmHandoff: null,
             messages: [],
             activities: [],

@@ -133,6 +133,10 @@ const makePmEventProjectionRuntimeWithNonce = (input: PmEventProjectionRuntimeIn
           commandId: nextCommandId("thread-create"),
           threadId: pmThreadId,
           projectId: input.project.id,
+          orchestrationOwnership: {
+            kind: "pm",
+            projectId: input.project.id,
+          },
           title: `${input.project.title} PM`,
           modelSelection: input.pmModelSelection,
           runtimeMode: runtimePolicy.runtimeMode,

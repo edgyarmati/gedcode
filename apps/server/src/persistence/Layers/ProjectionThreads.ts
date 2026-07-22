@@ -15,11 +15,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, PendingPmHandoff } from "@t3tools/contracts";
+import { ModelSelection, OrchestrationThreadOwnership, PendingPmHandoff } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    orchestrationOwnership: Schema.NullOr(Schema.fromJsonString(OrchestrationThreadOwnership)),
     gedWorkflowEnabled: Schema.Number,
     pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
   }),
@@ -41,6 +42,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         INSERT INTO projection_threads (
           thread_id,
           project_id,
+          orchestration_ownership_json,
           title,
           model_selection_json,
           ged_workflow_enabled,
@@ -63,6 +65,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         VALUES (
           ${row.threadId},
           ${row.projectId},
+          ${
+            row.orchestrationOwnership === null ? null : JSON.stringify(row.orchestrationOwnership)
+          },
           ${row.title},
           ${JSON.stringify(row.modelSelection)},
           ${(row.gedWorkflowEnabled ?? true) ? 1 : 0},
@@ -85,6 +90,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         ON CONFLICT (thread_id)
         DO UPDATE SET
           project_id = excluded.project_id,
+          orchestration_ownership_json = excluded.orchestration_ownership_json,
           title = excluded.title,
           model_selection_json = excluded.model_selection_json,
           ged_workflow_enabled = excluded.ged_workflow_enabled,
@@ -114,6 +120,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",
@@ -145,6 +152,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          orchestration_ownership_json AS "orchestrationOwnership",
           title,
           model_selection_json AS "modelSelection",
           ged_workflow_enabled AS "gedWorkflowEnabled",

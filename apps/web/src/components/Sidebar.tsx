@@ -1059,11 +1059,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   // thread-list change).
   const sidebarThreadByKeyRef = useRef(sidebarThreadByKey);
   sidebarThreadByKeyRef.current = sidebarThreadByKey;
-  // Orchestrator-owned threads (worker stage threads on an `orchestrator/<uuid>`
-  // branch; the `pm:` PM chat) must not appear in the chat thread list — they
-  // are reached from the orchestrator workspace / task detail view. Detected
-  // from the thread shell alone, so this works in chat mode where orchestrator
-  // task data is not subscribed.
+  // Orchestrator-owned threads are excluded from Chat using creation-time
+  // ownership metadata. Unclassified legacy threads stay visible.
   const projectThreads = useMemo(
     () => sidebarThreads.filter((thread) => !isOrchestratorManagedThread(thread)),
     [sidebarThreads],
@@ -3077,11 +3074,7 @@ export default function Sidebar() {
     return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
   }, [routeThreadKey, sidebarThreadByKey, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
 
-  // Chat-mode thread list excludes orchestrator-owned threads: the PM chat
-  // (`pm:` prefix) and worker stage threads (on an `orchestrator/<uuid>`
-  // branch). They are reachable from the orchestrator workspace / task detail
-  // view instead. Filtering here keeps the rendered rows and the jump-key
-  // ordering derived below in lockstep.
+  // Filtering here keeps rendered rows and jump-key ordering in lockstep.
   const chatListThreads = useMemo(
     () => sidebarThreads.filter((thread) => !isOrchestratorManagedThread(thread)),
     [sidebarThreads],

@@ -594,6 +594,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             threadId: event.payload.threadId,
             projectId: event.payload.projectId,
+            orchestrationOwnership: event.payload.orchestrationOwnership ?? null,
             title: event.payload.title,
             modelSelection: event.payload.modelSelection,
             gedWorkflowEnabled: event.payload.gedWorkflowEnabled ?? true,

@@ -1,38 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isOrchestratorManagedThread,
-  isOrchestratorStageBranch,
-  isPmThreadId,
-  pmThreadIdForProject,
-} from "./orchestratorThreads";
-import { ProjectId } from "@t3tools/contracts";
+import { isOrchestratorManagedThread, pmThreadIdForProject } from "./orchestratorThreads";
+import { HelperRunId, ProjectId, TaskId } from "@t3tools/contracts";
 
 describe("orchestrator thread detection", () => {
   it("derives the stable PM thread id for a project", () => {
     expect(pmThreadIdForProject(ProjectId.make("project-1"))).toBe("pm:project-1");
   });
 
-  it("flags PM chat threads by their `pm:` id prefix", () => {
-    expect(isPmThreadId("pm:project-1")).toBe(true);
-    expect(isPmThreadId("thread-123")).toBe(false);
+  it("excludes only threads marked with creation-time orchestration ownership", () => {
+    expect(
+      isOrchestratorManagedThread({
+        orchestrationOwnership: { kind: "pm", projectId: ProjectId.make("project-1") },
+      }),
+    ).toBe(true);
+    expect(
+      isOrchestratorManagedThread({
+        orchestrationOwnership: { kind: "stage", taskId: TaskId.make("task-1") },
+      }),
+    ).toBe(true);
+    expect(
+      isOrchestratorManagedThread({
+        orchestrationOwnership: { kind: "helper", helperRunId: HelperRunId.make("helper-1") },
+      }),
+    ).toBe(true);
   });
 
-  it("flags worker stage threads by their `orchestrator/` branch", () => {
-    expect(isOrchestratorStageBranch("orchestrator/9f3b-uuid")).toBe(true);
-    expect(isOrchestratorStageBranch("feature/login")).toBe(false);
-    expect(isOrchestratorStageBranch(null)).toBe(false);
-  });
-
-  it("excludes both PM and stage threads from the chat list, keeps normal threads", () => {
-    // Stage thread: normal-looking id but on an orchestrator branch.
-    expect(isOrchestratorManagedThread({ id: "thread-abc", branch: "orchestrator/task-1" })).toBe(
-      true,
-    );
-    // PM thread: pm: id, no branch.
-    expect(isOrchestratorManagedThread({ id: "pm:project-1", branch: null })).toBe(true);
-    // Normal chat thread on a normal branch (or no branch) stays.
-    expect(isOrchestratorManagedThread({ id: "thread-abc", branch: "main" })).toBe(false);
-    expect(isOrchestratorManagedThread({ id: "thread-abc", branch: null })).toBe(false);
+  it("keeps legacy unclassified threads visible even when their old identifiers look managed", () => {
+    expect(isOrchestratorManagedThread({})).toBe(false);
+    expect(isOrchestratorManagedThread({ orchestrationOwnership: null })).toBe(false);
   });
 });

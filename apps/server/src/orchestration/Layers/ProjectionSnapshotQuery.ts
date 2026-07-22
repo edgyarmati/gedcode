@@ -28,6 +28,7 @@ import {
   OrchestrationTaskLanding,
   OrchestrationTaskNoChangesNeeded,
   OrchestrationTaskVerification,
+  OrchestrationThreadOwnership,
   OrchestrationReleaseDispatch,
   OrchestrationThread,
   PendingPmHandoff,
@@ -110,6 +111,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    orchestrationOwnership: Schema.NullOr(Schema.fromJsonString(OrchestrationThreadOwnership)),
     gedWorkflowEnabled: Schema.Number,
     pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
   }),
@@ -463,6 +465,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -494,6 +497,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -527,6 +531,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          orchestration_ownership_json AS "orchestrationOwnership",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -1053,6 +1058,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           pending_pm_handoff_json AS "pendingPmHandoff",
           deleted_at AS "deletedAt"
         FROM projection_threads
+          orchestration_ownership_json AS "orchestrationOwnership",
         WHERE thread_id = ${threadId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
@@ -1563,6 +1569,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: activitiesByThread.get(row.threadId) ?? [],
+                ...(row.orchestrationOwnership === null
+                  ? {}
+                  : { orchestrationOwnership: row.orchestrationOwnership }),
                 checkpoints: checkpointsByThread.get(row.threadId) ?? [],
                 session: sessionsByThread.get(row.threadId) ?? null,
               }));
@@ -1889,6 +1898,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                   activities: [],
+                  ...(row.orchestrationOwnership === null
+                    ? {}
+                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   checkpoints: [],
                   session: sessionByThread.get(row.threadId) ?? null,
                 });
@@ -2029,6 +2041,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       latestUserMessageAt: row.latestUserMessageAt,
                       hasPendingApprovals: row.pendingApprovalCount > 0,
                       hasPendingUserInput: row.pendingUserInputCount > 0,
+                      ...(row.orchestrationOwnership === null
+                        ? {}
+                        : { orchestrationOwnership: row.orchestrationOwnership }),
                       hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                     } satisfies OrchestrationThreadShell)
                   : Result.failVoid,
@@ -2168,6 +2183,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   latestUserMessageAt: row.latestUserMessageAt,
                   hasPendingApprovals: row.pendingApprovalCount > 0,
                   hasPendingUserInput: row.pendingUserInputCount > 0,
+                  ...(row.orchestrationOwnership === null
+                    ? {}
+                    : { orchestrationOwnership: row.orchestrationOwnership }),
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
                 }),
               ),
@@ -2415,6 +2433,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
         hasPendingUserInput: threadRow.value.pendingUserInputCount > 0,
+        ...(threadRow.value.orchestrationOwnership === null
+          ? {}
+          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,
       } satisfies OrchestrationThreadShell);
     });
@@ -2514,6 +2535,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,
+        ...(threadRow.value.orchestrationOwnership === null
+          ? {}
+          : { orchestrationOwnership: threadRow.value.orchestrationOwnership }),
             role: row.role,
             text: row.text,
             turnId: row.turnId,

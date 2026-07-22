@@ -532,6 +532,28 @@ export const PendingPmHandoff = Schema.Struct({
 export type PendingPmHandoff = typeof PendingPmHandoff.Type;
 
 const OrchestrationLatestTurnState = Schema.Literals([
+/**
+ * Creation-time ownership for threads created by the orchestration runtime.
+ *
+ * Missing ownership intentionally means an older, unclassified thread. It
+ * remains visible in Chat; no id or branch heuristic is used to infer one.
+ */
+export const OrchestrationThreadOwnership = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("pm"),
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("stage"),
+    taskId: TaskId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("helper"),
+    helperRunId: HelperRunId,
+  }),
+]);
+export type OrchestrationThreadOwnership = typeof OrchestrationThreadOwnership.Type;
+
   "running",
   "interrupted",
   "completed",
@@ -554,6 +576,7 @@ export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
+  orchestrationOwnership: Schema.optionalKey(Schema.NullOr(OrchestrationThreadOwnership)),
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   runtimeMode: RuntimeMode,
@@ -1182,6 +1205,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  orchestrationOwnership: Schema.optionalKey(Schema.NullOr(OrchestrationThreadOwnership)),
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
@@ -1298,6 +1322,7 @@ const ThreadCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
 const ThreadDeleteCommand = Schema.Struct({
   type: Schema.Literal("thread.delete"),
   commandId: CommandId,
@@ -2259,6 +2284,7 @@ export const ThreadClearedPayload = Schema.Struct({
   clearedAt: IsoDateTime,
 });
 
+  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
 export const ThreadPmHandoffRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   mode: PmHandoffMode,

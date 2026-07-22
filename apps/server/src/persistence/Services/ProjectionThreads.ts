@@ -10,6 +10,7 @@ import {
   IsoDateTime,
   ModelSelection,
   NonNegativeInt,
+  OrchestrationThreadOwnership,
   PendingPmHandoff,
   ProjectId,
   ProviderInteractionMode,
@@ -27,6 +28,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionThread = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
+  orchestrationOwnership: Schema.NullOr(OrchestrationThreadOwnership),
   title: Schema.String,
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),

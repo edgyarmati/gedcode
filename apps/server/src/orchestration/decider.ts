@@ -998,6 +998,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           projectId: command.projectId,
+          ...(command.orchestrationOwnership === undefined
+            ? {}
+            : { orchestrationOwnership: command.orchestrationOwnership }),
           title: command.title,
           modelSelection: command.modelSelection,
           gedWorkflowEnabled: command.gedWorkflowEnabled ?? true,
@@ -2550,6 +2553,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
+          orchestrationOwnership: {
+            kind: "stage",
+            taskId: command.taskId,
+          },
       };
       const userMessageEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({

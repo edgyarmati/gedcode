@@ -1,4 +1,5 @@
 import {
+  DEFAULT_PROVIDER_INTERACTION_MODE,
   CommandId,
   HELPER_RUN_FAILURE_MAX_CHARS,
   HELPER_RUN_RESULT_MAX_CHARS,
@@ -59,6 +60,11 @@ export const makeHelperRunReactor = Effect.gen(function* () {
   const helpers = yield* ProjectionHelperRunRepository;
   const quota = yield* ProviderQuotaStatusRepository;
   const providers = yield* ProviderService;
+  // This is only an in-process de-duplication guard. On restart the projected
+  // thread is checked again; notably, an existing legacy thread is left alone
+  // rather than being backfilled with ownership metadata.
+  const ensuredThreadIds = new Set<string>();
+
   const fileSystem = yield* FileSystem.FileSystem;
   const helperByThread = new Map<string, HelperRunId>();
   const assistantText = new Map<string, string>();
@@ -71,6 +77,41 @@ export const makeHelperRunReactor = Effect.gen(function* () {
   };
 
   const stopSession = (threadId: ThreadId) =>
+  const ensureOwnedHelperThread = Effect.fn("HelperRunReactor.ensureOwnedHelperThread")(function* (
+    run: OrchestrationHelperRun,
+    threadId: ThreadId,
+    cwd: string,
+  ) {
+    const key = String(threadId);
+    if (ensuredThreadIds.has(key)) return;
+
+    const readModel = yield* snapshots.getCommandReadModel();
+    const existing = readModel.threads.find((thread) => String(thread.id) === key);
+    if (existing === undefined) {
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: helperCommandId("thread-create", run.id),
+        threadId,
+        projectId: run.projectId,
+        orchestrationOwnership: { kind: "helper", helperRunId: run.id },
+        title: "Read-only exploration helper",
+        modelSelection: {
+          instanceId: run.providerInstanceId,
+          model: run.model,
+          ...(run.modelOptions === null ? {} : { options: run.modelOptions }),
+        },
+        gedWorkflowEnabled: false,
+        runtimeMode: "approval-required",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        branch: null,
+        worktreePath: cwd,
+        createdAt: yield* nowIso,
+      });
+    }
+
+    ensuredThreadIds.add(key);
+  });
+
     providers.stopSession({ threadId }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
@@ -184,6 +225,7 @@ export const makeHelperRunReactor = Effect.gen(function* () {
         modelSelection: {
           instanceId: run.providerInstanceId,
           model: run.model,
+      yield* ensureOwnedHelperThread(run, threadId, cwd);
           ...(run.modelOptions === null ? {} : { options: run.modelOptions }),
         },
       });

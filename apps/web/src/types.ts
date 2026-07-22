@@ -3,6 +3,7 @@ import type {
   OrchestratorConfigJson,
   ModelSelection,
   OrchestrationLatestTurn,
+  OrchestrationThreadOwnership,
   OrchestrationProposedPlanId,
   RepositoryIdentity,
   OrchestrationSessionStatus,
@@ -113,6 +114,7 @@ export interface Thread {
   environmentId: EnvironmentId;
   codexThreadId: string | null;
   projectId: ProjectId;
+  orchestrationOwnership?: OrchestrationThreadOwnership | null;
   title: string;
   modelSelection: ModelSelection;
   gedWorkflowEnabled?: boolean;
@@ -139,6 +141,7 @@ export interface ThreadShell {
   environmentId: EnvironmentId;
   codexThreadId: string | null;
   projectId: ProjectId;
+  orchestrationOwnership?: OrchestrationThreadOwnership | null;
   title: string;
   modelSelection: ModelSelection;
   gedWorkflowEnabled?: boolean;
@@ -162,6 +165,7 @@ export interface SidebarThreadSummary {
   id: ThreadId;
   environmentId: EnvironmentId;
   projectId: ProjectId;
+  orchestrationOwnership?: OrchestrationThreadOwnership | null;
   title: string;
   interactionMode: ProviderInteractionMode;
   session: ThreadSession | null;

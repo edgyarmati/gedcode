@@ -331,6 +331,9 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     environmentId,
     codexThreadId: null,
     projectId: thread.projectId,
+    ...(thread.orchestrationOwnership === undefined
+      ? {}
+      : { orchestrationOwnership: thread.orchestrationOwnership }),
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
     gedWorkflowEnabled: thread.gedWorkflowEnabled ?? true,
@@ -369,6 +372,9 @@ function mapThreadShell(
     environmentId,
     codexThreadId: null,
     projectId: thread.projectId,
+    ...(thread.orchestrationOwnership === undefined
+      ? {}
+      : { orchestrationOwnership: thread.orchestrationOwnership }),
     title: thread.title,
     modelSelection: normalizeModelSelection(thread.modelSelection),
     gedWorkflowEnabled: thread.gedWorkflowEnabled ?? true,
@@ -393,6 +399,9 @@ function mapThreadShell(
     id: thread.id,
     environmentId,
     projectId: thread.projectId,
+    ...(thread.orchestrationOwnership === undefined
+      ? {}
+      : { orchestrationOwnership: thread.orchestrationOwnership }),
     title: thread.title,
     interactionMode: thread.interactionMode,
     session,
