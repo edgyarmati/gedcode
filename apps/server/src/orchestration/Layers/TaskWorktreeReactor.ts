@@ -55,6 +55,7 @@ type WorktreeLifecycleEvent = Extract<
       | "task.created"
       | "task.split"
       | "task.landed"
+      | "task.pr-merged"
       | "task.no-changes-needed"
       | "task.landing-retry-requested"
       | "task.abandoned";
@@ -624,7 +625,6 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       context: ProposedLandedTaskContext,
     ) {
       if (context.task.prUrl !== null) {
-        yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
         return;
       }
 
@@ -647,7 +647,6 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
       );
       const exit = yield* Effect.exit(landing);
       if (exit._tag === "Success") {
-        yield* cleanupSemaphore.withPermits(1)(cleanupLandedTaskContext(context));
         return;
       }
 
@@ -955,6 +954,7 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
           (event.type !== "task.created" &&
             event.type !== "task.split" &&
             event.type !== "task.landed" &&
+            event.type !== "task.pr-merged" &&
             event.type !== "task.no-changes-needed" &&
             event.type !== "task.landing-retry-requested" &&
             event.type !== "task.abandoned") ||

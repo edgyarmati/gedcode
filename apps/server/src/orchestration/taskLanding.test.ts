@@ -1,5 +1,6 @@
 import {
   CommandId,
+  GateId,
   ProjectId,
   TaskId,
   TaskTypeId,
@@ -12,7 +13,11 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as Effect from "effect/Effect";
 
 import { createEmptyReadModel } from "./projector.ts";
-import { landOrchestrationTaskWithServices, OrchestrationLandTaskError } from "./taskLanding.ts";
+import {
+  approveOrchestrationLandTaskWithServices,
+  landOrchestrationTaskWithServices,
+  OrchestrationLandTaskError,
+} from "./taskLanding.ts";
 
 const now = "2026-07-11T00:00:00.000Z";
 const taskId = TaskId.make("task-land");
@@ -153,6 +158,50 @@ it.effect("serializes concurrent landing attempts into one command", () =>
 
     assert.strictEqual(dispatchCount, 1);
     assert.strictEqual(results.filter((result) => result.alreadyInProgress).length, 1);
+  }),
+);
+
+it.effect("approves a land gate and starts landing with one guarded command", () =>
+  Effect.gen(function* () {
+    let readModel: OrchestrationReadModel = makeReadModel("review");
+    const commands: OrchestrationCommand[] = [];
+    const result = yield* approveOrchestrationLandTaskWithServices(
+      {
+        snapshotQuery: { getCommandReadModel: () => Effect.succeed(readModel) },
+        vcsProcess,
+      },
+      {
+        taskId,
+        gateId: GateId.make("gate-land"),
+        approvedHash: "sha256:land",
+        commandId: Effect.succeed(CommandId.make("cmd-land-approve")),
+        createdAt: Effect.succeed(now),
+        dispatch: (command) =>
+          Effect.sync(() => {
+            commands.push(command);
+            readModel = makeReadModel("review", 11, {
+              status: "opening-pr",
+              failureMessage: null,
+              branchPushed: false,
+              updatedAt: now,
+            });
+            return { sequence: 11 };
+          }),
+      },
+    );
+
+    assert.deepStrictEqual(result, {
+      sequence: 11,
+      alreadyLanded: false,
+      alreadyInProgress: false,
+    });
+    assert.strictEqual(commands.length, 1);
+    const command = commands[0];
+    assert.strictEqual(command?.type, "task.land.approve");
+    if (command?.type !== "task.land.approve") return;
+    assert.strictEqual(command.gateId, GateId.make("gate-land"));
+    assert.strictEqual(command.approvedHash, "sha256:land");
+    assert.deepStrictEqual(command.worktreeCompletion, { head: "verified-head", dirty: false });
   }),
 );
 

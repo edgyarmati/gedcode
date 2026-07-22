@@ -761,7 +761,7 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
-  it("pushes, opens a draft PR, records it, then cleans a landed task worktree", async () => {
+  it("pushes, opens a draft PR, and retains the worktree until remote merge", async () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
     const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
     const harness = await createHarness({
@@ -784,7 +784,9 @@ describe("TaskWorktreeReactor", () => {
       openPrAsDraft: true,
     });
     await Effect.runPromise(PubSub.publish(eventPubSub, makeTerminalTaskEvent("task.landed")));
-    await waitFor(() => harness.removeWorktree.mock.calls.length === 1);
+    await waitFor(() =>
+      harness.dispatch.mock.calls.some(([command]) => command.type === "task.pr.opened"),
+    );
     await harness.runtime.runPromise(harness.reactor.drain);
 
     expect(harness.resolveHandle).toHaveBeenCalledWith({ cwd: worktreePath });
@@ -815,11 +817,7 @@ describe("TaskWorktreeReactor", () => {
       }),
     );
     expect(harness.order).toEqual(["push", "createChangeRequest", "dispatchPrOpened"]);
-    expect(harness.removeWorktree).toHaveBeenCalledWith({
-      cwd: workspaceRoot,
-      path: worktreePath,
-      force: true,
-    });
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();
@@ -972,7 +970,7 @@ describe("TaskWorktreeReactor", () => {
     expect(harness.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "task.pr.opened" }),
     );
-    expect(harness.removeWorktree).toHaveBeenCalledTimes(1);
+    expect(harness.removeWorktree).not.toHaveBeenCalled();
 
     await Effect.runPromise(Scope.close(harness.scope, Exit.void));
     await harness.runtime.dispose();

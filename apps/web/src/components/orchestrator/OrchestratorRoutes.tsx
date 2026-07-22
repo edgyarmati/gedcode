@@ -106,6 +106,7 @@ import {
 import {
   confirmAndCancelTask,
   confirmAndClearPmChat,
+  derivePmLifecycleDeliveryAttention,
   deriveTaskLandingPresentation,
   deriveProjectContextStatus,
 } from "./OrchestratorRoutes.logic";
@@ -128,6 +129,7 @@ const TASK_STATUS_LABELS: Record<OrchestratorTask["status"], string> = {
   "change-review": "Change review",
   classified: "Classified",
   draft: "Draft",
+  "pr-open": "PR open",
   landed: "Landed",
   "no-changes-needed": "No changes needed",
   planning: "Planning",
@@ -298,7 +300,9 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
       setContextStartError(null);
       try {
         if (action === "cancel") {
-          await api.orchestrator.cancelProjectContextRunStart({ runId: activeContextRun.id });
+          await api.orchestrator.cancelProjectContextRunStart({
+            runId: activeContextRun.id,
+          });
         } else {
           await api.orchestrator.resolveProjectContextRunStart({
             runId: activeContextRun.id,
@@ -527,6 +531,8 @@ function PmConversation({
 }) {
   const [isClearing, setIsClearing] = useState(false);
   const [isRequestingContextReview, setIsRequestingContextReview] = useState(false);
+  const [isRetryingLifecycleDelivery, setIsRetryingLifecycleDelivery] = useState(false);
+  const [lifecycleDeliveryError, setLifecycleDeliveryError] = useState<string | null>(null);
   const [contextReviewError, setContextReviewError] = useState<string | null>(null);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const projectRef = useMemo(
@@ -548,6 +554,10 @@ function PmConversation({
       resolveTaskTitle: (taskId: string) => taskTitleById.get(taskId),
     }),
     [environmentId, projectId, taskTitleById],
+  );
+  const lifecycleDeliveryAttention = useMemo(
+    () => derivePmLifecycleDeliveryAttention(thread?.activities ?? []),
+    [thread?.activities],
   );
   useEffect(() => {
     const api = readEnvironmentApi(environmentId);
@@ -591,6 +601,19 @@ function PmConversation({
       setIsRequestingContextReview(false);
     }
   }, [activeContextRun, environmentId, isRequestingContextReview, projectId]);
+  const retryLifecycleDelivery = useCallback(async () => {
+    const api = readEnvironmentApi(environmentId);
+    if (!api || isRetryingLifecycleDelivery) return;
+    setIsRetryingLifecycleDelivery(true);
+    setLifecycleDeliveryError(null);
+    try {
+      await api.orchestrator.retryPmLifecycleDelivery({ projectId });
+    } catch (error) {
+      setLifecycleDeliveryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRetryingLifecycleDelivery(false);
+    }
+  }, [environmentId, isRetryingLifecycleDelivery, projectId]);
 
   return (
     <>
@@ -636,6 +659,37 @@ function PmConversation({
           role="alert"
         >
           {contextReviewError}
+        </div>
+      ) : null}
+      {lifecycleDeliveryAttention.count > 0 ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-warning/30 bg-warning/5 px-4 py-2 text-xs"
+          role="alert"
+        >
+          <div className="flex min-w-0 items-center gap-2 text-warning-foreground">
+            <CircleAlertIcon className="size-4 shrink-0" />
+            <span>
+              {lifecycleDeliveryAttention.count} retained PM lifecycle
+              {lifecycleDeliveryAttention.count === 1 ? " delivery needs" : " deliveries need"}{" "}
+              attention ({lifecycleDeliveryAttention.reasons.join(", ")}).
+            </span>
+          </div>
+          <Button
+            disabled={isRetryingLifecycleDelivery}
+            onClick={() => void retryLifecycleDelivery()}
+            size="sm"
+            variant="outline"
+          >
+            <RefreshCwIcon
+              className={cn("size-3.5", isRetryingLifecycleDelivery && "animate-spin")}
+            />
+            Retry delivery
+          </Button>
+        </div>
+      ) : null}
+      {lifecycleDeliveryError ? (
+        <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          {lifecycleDeliveryError}
         </div>
       ) : null}
       <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
@@ -720,7 +774,9 @@ function PmConversation({
       />
       <PmChatComposer
         {...(activeContextRun
-          ? { deliveryHoldReason: "PM messaging is paused while project context is unsettled" }
+          ? {
+              deliveryHoldReason: "PM messaging is paused while project context is unsettled",
+            }
           : {})}
         environmentId={environmentId}
         project={project}
@@ -860,7 +916,10 @@ function formatQuotaResetLabel(iso: string): string | null {
   if (!Number.isFinite(ms)) {
     return null;
   }
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 // Calm "paused on subscription quota" badge. Rendered only for blocked-on-quota
@@ -1064,13 +1123,7 @@ export function TaskHeader({
   }, [canCancel, isCancelling, landingPending, task.environmentId, task.id]);
   const landTask = useCallback(async () => {
     const api = readEnvironmentApi(task.environmentId);
-    if (
-      !api ||
-      (landing.kind !== "ready" &&
-        landing.kind !== "request-failed" &&
-        landing.kind !== "failed") ||
-      isCancelling
-    ) {
+    if (!api || (landing.kind !== "request-failed" && landing.kind !== "failed") || isCancelling) {
       return;
     }
     setLandingPending(true);
@@ -1124,7 +1177,11 @@ export function TaskHeader({
                 : undefined
             }
             environmentId={task.environmentId}
-            target={{ kind: "task-worktree", projectId: task.projectId, taskId: task.id }}
+            target={{
+              kind: "task-worktree",
+              projectId: task.projectId,
+              taskId: task.id,
+            }}
           />
           {task.currentStageThreadId !== null ? (
             <Button
@@ -1149,21 +1206,15 @@ export function TaskHeader({
               Stop failed
             </Badge>
           ) : null}
-          {landing.kind === "ready" ||
-          landing.kind === "request-failed" ||
-          landing.kind === "failed" ? (
+          {landing.kind === "request-failed" || landing.kind === "failed" ? (
             <>
-              {landing.kind === "request-failed" || landing.kind === "failed" ? (
-                <Badge size="lg" title={landing.message} variant="error">
-                  <CircleAlertIcon className="size-4" />
-                  {landing.kind === "failed" ? "Landing failed" : "Landing request failed"}
-                </Badge>
-              ) : null}
+              <Badge size="lg" title={landing.message} variant="error">
+                <CircleAlertIcon className="size-4" />
+                {landing.kind === "failed" ? "Landing failed" : "Landing request failed"}
+              </Badge>
               <Button disabled={isCancelling} onClick={() => void landTask()} size="sm">
                 <GitPullRequestIcon className="size-4" />
-                {landing.kind === "request-failed" || landing.kind === "failed"
-                  ? "Retry landing"
-                  : "Land task"}
+                Retry landing
               </Button>
             </>
           ) : landing.kind === "pending" ? (
@@ -1190,7 +1241,25 @@ export function TaskHeader({
               Cancel task
             </Button>
           ) : null}
-          {landing.kind === "landed" ? <TaskPrLink prUrl={landing.prUrl} /> : null}
+          {landing.kind === "pr-open" ? (
+            <>
+              <Badge size="lg" variant="info">
+                <GitPullRequestIcon className="size-4" />
+                Pull request open
+              </Badge>
+              <TaskPrLink prUrl={landing.prUrl} />
+            </>
+          ) : landing.kind === "pr-closed" ? (
+            <>
+              <Badge size="lg" variant="warning">
+                <GitPullRequestIcon className="size-4" />
+                Pull request closed
+              </Badge>
+              <TaskPrLink prUrl={landing.prUrl} />
+            </>
+          ) : landing.kind === "landed" ? (
+            <TaskPrLink prUrl={landing.prUrl} />
+          ) : null}
           {task.releaseDispatch?.status === "dispatching" ? (
             <Badge size="lg" variant="info">
               <LoaderCircleIcon className="size-4 animate-spin" />
@@ -1254,7 +1323,6 @@ function TaskDetailRail({
         <TaskRoleBackendSettings environmentId={environmentId} project={project} task={task} />
       ) : null}
       {task ? <TaskChangeReviewPanel environmentId={environmentId} task={task} /> : null}
-      <HelperRunTimeline environmentId={environmentId} taskId={taskId} />
       <StageTimeline
         environmentId={environmentId}
         onSelectStageThread={onSelectStageThread}

@@ -1823,7 +1823,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         commandId: command.commandId,
       });
       if (command.type === "helper.run.start") {
-        if (helperRun.status !== "pending") {
+        const isInitialStart = helperRun.status === "pending" && command.transportRetry !== true;
+        const isTransportRetry =
+          helperRun.status === "running" &&
+          helperRun.transientRetryCount < 1 &&
+          command.transportRetry === true;
+        if (!isInitialStart && !isTransportRetry) {
           return yield* invariantError(
             command.type,
             `Helper run '${command.helperRunId}' cannot start from '${helperRun.status}'.`,
@@ -1835,6 +1840,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           payload: {
             helperRunId: command.helperRunId,
             providerThreadId: command.providerThreadId,
+            ...(command.transportRetry === true ? { transportRetry: true as const } : {}),
             startedAt: command.createdAt,
             updatedAt: command.createdAt,
           },
@@ -2509,14 +2515,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         rolePromptPrefixes: project.rolePromptPrefixes,
       });
       const workerRuntimeMode = resolveWorkerStageRuntimeMode();
+      const workerNetworkAccess =
+        (orchestratorDefaults.workerNetworkEnabled ?? true) && (command.networkAccess ?? true);
 
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
           aggregateId: command.taskId,
           occurredAt: command.createdAt,
-      const workerNetworkAccess =
-        (orchestratorDefaults.workerNetworkEnabled ?? true) && (command.networkAccess ?? true);
           commandId: command.commandId,
         })),
         type: "task.stage-started",
@@ -2530,13 +2536,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           model: modelSelection.model,
           ...(modelSelection.options === undefined ? {} : { modelOptions: modelSelection.options }),
           runtimeMode: workerRuntimeMode,
+          networkAccess: workerNetworkAccess,
           ...(command.startHead === undefined ? {} : { startHead: command.startHead }),
           updatedAt: command.createdAt,
         },
       };
       const threadCreatedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
-          networkAccess: workerNetworkAccess,
           aggregateKind: "thread",
           aggregateId: stageThreadId,
           occurredAt: command.createdAt,
@@ -2547,6 +2553,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: stageThreadId,
           projectId: task.projectId,
+          orchestrationOwnership: {
+            kind: "stage",
+            taskId: command.taskId,
+          },
           title: `${task.title} (${command.role})`,
           modelSelection,
           runtimeMode: workerRuntimeMode,
@@ -2556,10 +2566,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
-          orchestrationOwnership: {
-            kind: "stage",
-            taskId: command.taskId,
-          },
       };
       const userMessageEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
@@ -2977,6 +2983,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' active stage role '${activeRole}' cannot be blocked as '${command.role}'.`,
         );
       }
+      if (command.reason === "capability" && command.requestId === undefined) {
+        return yield* invariantError(
+          command.type,
+          "A capability-paused stage must retain the provider approval request id.",
+        );
+      }
 
       return {
         ...(yield* withEventBase({
@@ -2992,10 +3004,55 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           stageThreadId: command.stageThreadId,
           reason: command.reason,
           providerInstanceId: command.providerInstanceId,
+          ...(command.requestId === undefined ? {} : { requestId: command.requestId }),
+          ...(command.requestKind === undefined ? {} : { requestKind: command.requestKind }),
+          ...(command.detail === undefined ? {} : { detail: command.detail }),
+          ...(command.expiresAt === undefined ? {} : { expiresAt: command.expiresAt }),
           ...(command.resetAt !== undefined ? { resetAt: command.resetAt } : {}),
           updatedAt: command.createdAt,
         },
       };
+    }
+
+    case "task.stage.resume": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.currentStageThreadId !== command.stageThreadId) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' does not retain paused stage thread '${command.stageThreadId}'.`,
+        );
+      }
+      const stage = readModel.stageHistory[command.stageThreadId];
+      if (stage?.status !== "paused") {
+        return yield* invariantError(
+          command.type,
+          `Stage thread '${command.stageThreadId}' is not capability-paused.`,
+        );
+      }
+      if (stage.role !== command.role) {
+        return yield* invariantError(
+          command.type,
+          `Paused stage role '${stage.role}' cannot resume as '${command.role}'.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.stage-resumed",
+        payload: {
+          taskId: command.taskId,
+          role: command.role,
+          stageThreadId: command.stageThreadId,
+          requestId: command.requestId,
+          decision: command.decision,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
     }
 
     case "task.stage.interrupt": {
@@ -3154,6 +3211,76 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
 
       return [gateRequestedEvent, gateResolvedEvent];
+    }
+
+    case "task.land.approve": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      const project = yield* requireProject({
+        readModel,
+        command,
+        projectId: task.projectId,
+      });
+      yield* requireOrchestratorConfig({ command, project });
+      if (task.status !== "review" || task.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be idle and in review before its approved landing can start.`,
+        );
+      }
+      const pendingGate = (readModel.pendingGates ?? []).find(
+        (gate) => gate.gateId === command.gateId,
+      );
+      if (
+        pendingGate === undefined ||
+        pendingGate.taskId !== command.taskId ||
+        pendingGate.gate !== "land" ||
+        pendingGate.status !== "pending" ||
+        pendingGate.contentHash !== command.approvedHash
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Land gate '${command.gateId}' is not a current, content-matched pending gate for task '${command.taskId}'.`,
+        );
+      }
+      yield* requireFreshVerification({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: command.worktreeCompletion,
+      });
+
+      const resolvedBase = yield* withEventBase({
+        aggregateKind: "task",
+        aggregateId: command.taskId,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      return [
+        {
+          ...resolvedBase,
+          type: "task.gate-resolved" as const,
+          payload: {
+            taskId: command.taskId,
+            gateId: command.gateId,
+            gate: "land" as const,
+            approvedHash: command.approvedHash,
+            decision: "approved" as const,
+            origin: "human" as const,
+            updatedAt: command.createdAt,
+          },
+        },
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "task",
+            aggregateId: command.taskId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "task.landed" as const,
+          payload: { taskId: command.taskId, updatedAt: command.createdAt },
+        },
+      ] satisfies ReadonlyArray<PlannedOrchestrationEvent>;
     }
 
     case "task.gate.resolve": {
@@ -3493,6 +3620,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       } satisfies PlannedOrchestrationEvent;
+      return prOpenedEvent;
+    }
+
+    case "task.pr.merged": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "pr-open" || task.prUrl !== command.prUrl) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have the matching open pull request before its merge can be recorded.`,
+        );
+      }
+      const prMergedEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.pr-merged",
+        payload: {
+          taskId: command.taskId,
+          prUrl: command.prUrl,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
       const archivedEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -3500,7 +3657,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
         })),
-        causationEventId: prOpenedEvent.eventId,
+        causationEventId: prMergedEvent.eventId,
         type: "task.archived",
         payload: {
           taskId: command.taskId,
@@ -3508,7 +3665,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       } satisfies PlannedOrchestrationEvent;
-      return [prOpenedEvent, archivedEvent];
+      return [prMergedEvent, archivedEvent];
+    }
+
+    case "task.pr.closed": {
+      const task = yield* requireTask({
+        readModel,
+        command,
+        taskId: command.taskId,
+      });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "pr-open" || task.prUrl !== command.prUrl) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have the matching open pull request before its closure can be recorded.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.pr-closed",
+        payload: {
+          taskId: command.taskId,
+          prUrl: command.prUrl,
+          updatedAt: command.createdAt,
+        },
+      } satisfies PlannedOrchestrationEvent;
     }
 
     case "task.pr.open.failed": {

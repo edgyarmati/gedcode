@@ -981,6 +981,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       const stageStarted = events.find((event) => event.type === "task.stage-started");
       const turnRequested = events.find((event) => event.type === "thread.turn-start-requested");
       expect(threadCreated?.payload).toMatchObject({
+        orchestrationOwnership: {
+          kind: "stage",
+          taskId: asTaskId("task-1"),
+        },
         runtimeMode: "full-access",
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
@@ -989,6 +993,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       });
       expect(stageStarted?.payload).toMatchObject({
         runtimeMode: "full-access",
+        networkAccess: true,
       });
       expect(turnRequested?.payload).toMatchObject({
         runtimeMode: "full-access",
@@ -996,6 +1001,56 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
         },
+      });
+    }),
+  );
+
+  it.effect("persists the global network floor for every worker attempt", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        orchestratorDefaults: { workerNetworkEnabled: false },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-network-global-off"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          // A PM request may restrict access but never re-enable the global human setting.
+          networkAccess: true,
+          instructions: "Implement the accepted plan.",
+          createdAt: now,
+        },
+      });
+
+      const stageStarted = toEvents(result).find((event) => event.type === "task.stage-started");
+      expect(stageStarted).toMatchObject({
+        type: "task.stage-started",
+        payload: { networkAccess: false },
+      });
+    }),
+  );
+
+  it.effect("persists a PM handoff network restriction when the global floor allows it", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-network-pm-off"),
+          taskId: asTaskId("task-1"),
+          role: "work",
+          networkAccess: false,
+          instructions: "Implement the accepted plan offline.",
+          createdAt: now,
+        },
+      });
+
+      const stageStarted = toEvents(result).find((event) => event.type === "task.stage-started");
+      expect(stageStarted).toMatchObject({
+        type: "task.stage-started",
+        payload: { networkAccess: false },
       });
     }),
   );
@@ -2657,6 +2712,95 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("approves a verified land gate and starts landing in one command", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:land",
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const planned = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.land.approve",
+          commandId: asCommandId("cmd-land-approve"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-land"),
+          approvedHash: "sha256:land",
+          worktreeCompletion: { head: "verified-head", dirty: false },
+          createdAt: now,
+        },
+      });
+      const events = toEvents(planned);
+      expect(events.map((event) => event.type)).toEqual(["task.gate-resolved", "task.landed"]);
+      expect(events[0]?.eventId).not.toBe(events[1]?.eventId);
+
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.pendingGates?.[0]).toMatchObject({
+        status: "resolved",
+        decision: "approved",
+        approvedHash: "sha256:land",
+      });
+      expect(projected.tasks[0]).toMatchObject({
+        status: "review",
+        landing: { status: "opening-pr" },
+      });
+    }),
+  );
+
+  it.effect("rejects one-click landing approval when the verified head changed", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "sha256:land",
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const exit = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land.approve",
+            commandId: asCommandId("cmd-land-approve-stale"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-land"),
+            approvedHash: "sha256:land",
+            worktreeCompletion: { head: "new-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+      expect(exit._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("rejects task.land without a successfully completed verification stage", () =>
     Effect.gen(function* () {
       const readModel = {
@@ -3067,14 +3211,10 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         prNumber: 42,
         updatedAt: now,
       });
-      expect(events[1]).toMatchObject({
-        type: "task.archived",
-        causationEventId: singleEvent?.eventId,
-        payload: { taskId: asTaskId("task-1"), archivedAt: now },
-      });
+      expect(events).toHaveLength(1);
       const projected = yield* applyEvents(readModel, events);
       expect(projected.tasks[0]).toMatchObject({
-        status: "landed",
+        status: "pr-open",
         prUrl: "https://github.com/acme/repo/pull/42",
         landing: { status: "completed" },
       });
@@ -3118,6 +3258,54 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         message: "provider unavailable",
         branchPushed: true,
         updatedAt: now,
+      });
+    }),
+  );
+
+  it.effect("records a matching external PR merge as the terminal landing transition", () =>
+    Effect.gen(function* () {
+      const base = yield* taskReadModel({
+        status: "pr-open",
+        prUrl: "https://github.com/acme/repo/pull/42",
+      });
+      const readModel = {
+        ...base,
+        tasks: [
+          {
+            ...base.tasks[0]!,
+            landing: {
+              status: "completed" as const,
+              failureMessage: null,
+              branchPushed: true,
+              updatedAt: now,
+            },
+          },
+        ],
+      };
+
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.pr.merged",
+            commandId: asCommandId("cmd-pr-merged"),
+            taskId: asTaskId("task-1"),
+            prUrl: "https://github.com/acme/repo/pull/42",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({ type: "task.pr-merged" });
+      expect(events[1]).toMatchObject({
+        type: "task.archived",
+        causationEventId: events[0]?.eventId,
+      });
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.tasks[0]).toMatchObject({
+        status: "landed",
+        archivedAt: now,
       });
     }),
   );

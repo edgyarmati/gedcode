@@ -20,6 +20,8 @@ export type TaskLandingPresentation =
   | { readonly kind: "opening-pr" }
   | { readonly kind: "request-failed"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "pr-open"; readonly prUrl: string }
+  | { readonly kind: "pr-closed"; readonly prUrl: string }
   | { readonly kind: "landed"; readonly prUrl: string };
 
 export type ProjectContextStatusPresentation =
@@ -37,6 +39,47 @@ export function deriveProjectContextStatus(
     return { kind: "updating", label: "Updating" };
   }
   return { kind: "needs-attention", label: "Needs attention" };
+}
+
+export type PmLifecycleDeliveryAttention = {
+  readonly count: number;
+  readonly reasons: readonly string[];
+};
+
+/** Reduces the lifecycle activity stream to settlements currently held for attention. */
+export function derivePmLifecycleDeliveryAttention(
+  activities: readonly OrchestrationThreadActivity[],
+): PmLifecycleDeliveryAttention {
+  const latestStateBySettlement = new Map<string, "held" | "recovered">();
+  const reasonBySettlement = new Map<string, string>();
+  for (const activity of activities) {
+    if (
+      activity.kind !== "pm.lifecycle.delivery-held" &&
+      activity.kind !== "pm.lifecycle.delivery-recovered"
+    ) {
+      continue;
+    }
+    const payload = activity.payload;
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !("settlementKey" in payload) ||
+      typeof payload.settlementKey !== "string"
+    ) {
+      continue;
+    }
+    latestStateBySettlement.set(
+      payload.settlementKey,
+      activity.kind === "pm.lifecycle.delivery-held" ? "held" : "recovered",
+    );
+    if ("reason" in payload && typeof payload.reason === "string") {
+      reasonBySettlement.set(payload.settlementKey, payload.reason);
+    }
+  }
+  const heldReasons = [...latestStateBySettlement.entries()]
+    .filter(([, state]) => state === "held")
+    .map(([settlementKey]) => reasonBySettlement.get(settlementKey) ?? "provider");
+  return { count: heldReasons.length, reasons: [...new Set(heldReasons)] };
 }
 
 function isLandingFailureForTask(activity: OrchestrationThreadActivity, taskId: TaskId): boolean {
@@ -61,7 +104,11 @@ export function deriveTaskLandingPresentation(input: {
 }): TaskLandingPresentation {
   const { task } = input;
   if (task.prUrl !== null) {
-    return { kind: "landed", prUrl: task.prUrl };
+    return task.status === "pr-open"
+      ? { kind: "pr-open", prUrl: task.prUrl }
+      : task.status === "review"
+        ? { kind: "pr-closed", prUrl: task.prUrl }
+        : { kind: "landed", prUrl: task.prUrl };
   }
   const landingFailure =
     task.status === "landed"

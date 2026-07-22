@@ -10,7 +10,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import type { OrchestratorPendingGate, OrchestratorTask } from "../../types";
-import { deriveTaskLandingPresentation, parseTaskStageSearch } from "./OrchestratorRoutes.logic";
+import {
+  derivePmLifecycleDeliveryAttention,
+  deriveTaskLandingPresentation,
+  parseTaskStageSearch,
+} from "./OrchestratorRoutes.logic";
 
 describe("parseTaskStageSearch", () => {
   it("keeps a deep-linked stage and drops missing or invalid values", () => {
@@ -20,6 +24,33 @@ describe("parseTaskStageSearch", () => {
     expect(parseTaskStageSearch({})).toEqual({});
     expect(parseTaskStageSearch({ stage: "  " })).toEqual({});
     expect(parseTaskStageSearch({ stage: 42 })).toEqual({});
+  });
+});
+
+describe("derivePmLifecycleDeliveryAttention", () => {
+  it("restores attention when the same settlement is held after recovery", () => {
+    const settlementKey = "thread-stage-1::turn-1";
+    const lifecycleActivity = (
+      id: string,
+      kind: "pm.lifecycle.delivery-held" | "pm.lifecycle.delivery-recovered",
+      reason: string,
+    ) => ({
+      id: EventId.make(id),
+      tone: kind === "pm.lifecycle.delivery-held" ? ("error" as const) : ("info" as const),
+      kind,
+      summary: kind === "pm.lifecycle.delivery-held" ? "Delivery held" : "Delivery recovered",
+      payload: { settlementKey, reason },
+      turnId: null,
+      createdAt: "2026-07-22T00:00:00.000Z",
+    });
+
+    expect(
+      derivePmLifecycleDeliveryAttention([
+        lifecycleActivity("lifecycle-held-1", "pm.lifecycle.delivery-held", "auth"),
+        lifecycleActivity("lifecycle-recovered-1", "pm.lifecycle.delivery-recovered", "auth"),
+        lifecycleActivity("lifecycle-held-2", "pm.lifecycle.delivery-held", "auth"),
+      ]),
+    ).toEqual({ count: 1, reasons: ["auth"] });
   });
 });
 
@@ -233,10 +264,10 @@ describe("deriveTaskLandingPresentation", () => {
     ).toEqual({ kind: "failed", message: failure.summary });
     expect(
       deriveTaskLandingPresentation({
-        task: makeTask({ status: "landed", prUrl: "https://example.com/pull/42" }),
+        task: makeTask({ status: "pr-open", prUrl: "https://example.com/pull/42" }),
         gates: [],
         activities: [failure],
       }),
-    ).toEqual({ kind: "landed", prUrl: "https://example.com/pull/42" });
+    ).toEqual({ kind: "pr-open", prUrl: "https://example.com/pull/42" });
   });
 });

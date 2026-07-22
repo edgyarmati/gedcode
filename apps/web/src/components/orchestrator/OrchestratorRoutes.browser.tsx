@@ -327,6 +327,7 @@ it("shows read-only helper history without adding a task-board card", async () =
             modelOptions: null,
             prompt: "Inspect the project architecture.",
             status: "running",
+            transientRetryCount: 0,
             providerThreadId: ThreadId.make("helper:helper-pm-browser"),
             result: null,
             failureMessage: null,
@@ -346,6 +347,7 @@ it("shows read-only helper history without adding a task-board card", async () =
             modelOptions: null,
             prompt: "Inspect the task architecture.",
             status: "completed",
+            transientRetryCount: 0,
             providerThreadId: ThreadId.make("helper:helper-browser"),
             result: "Found the relevant architecture module.",
             failureMessage: null,
@@ -711,41 +713,35 @@ it("expands a split parent to show children in their declared order", async () =
   expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 });
 
-it("lands a review task with the current approved gate", async () => {
-  const landTask = vi.fn(async () => ({ sequence: 2, alreadyLanded: false }));
+it("uses land-gate approval as the only normal landing action", async () => {
+  const resolveGate = vi.fn(async () => ({ sequence: 2 }));
   __setEnvironmentApiOverrideForTests(environmentId, {
-    orchestrator: { landTask },
+    orchestrator: { resolveGate },
   } as unknown as EnvironmentApi);
 
   render(<TaskHeader gates={[approvedLandGate]} task={makeTask("review")} />);
 
-  await page.getByRole("button", { name: "Land task" }).click();
-
-  await expect.poll(() => landTask.mock.calls.length).toBe(1);
-  expect(landTask).toHaveBeenCalledWith({ taskId });
-  await expect.element(page.getByRole("button", { name: "Landing task" })).toBeDisabled();
   await expect.element(page.getByRole("button", { name: "Land task" })).not.toBeInTheDocument();
-});
-
-it("keeps a failed landing request retryable", async () => {
-  const landTask = vi
-    .fn<EnvironmentApi["orchestrator"]["landTask"]>()
-    .mockRejectedValueOnce(new Error("connection reset"))
-    .mockResolvedValueOnce({ sequence: 3, alreadyLanded: false });
-  __setEnvironmentApiOverrideForTests(environmentId, {
-    orchestrator: { landTask },
-  } as unknown as EnvironmentApi);
-
-  render(<TaskHeader gates={[approvedLandGate]} task={makeTask("review")} />);
-  await page.getByRole("button", { name: "Land task" }).click();
-
-  await expect
-    .element(page.getByText("Landing request failed", { exact: true }).first())
-    .toBeInTheDocument();
-  await page.getByRole("button", { name: "Retry landing" }).click();
-
-  await expect.poll(() => landTask.mock.calls.length).toBe(2);
-  await expect.element(page.getByRole("button", { name: "Landing task" })).toBeDisabled();
+  const pendingLandGate = {
+    ...approvedLandGate,
+    status: "pending" as const,
+    approvedHash: null,
+    decision: null,
+    origin: null,
+    resolvedAt: null,
+  };
+  await render(
+    <GatePanel environmentId={environmentId} gates={[pendingLandGate]} taskId={taskId} />,
+  );
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect.poll(() => resolveGate.mock.calls.length).toBe(1);
+  expect(resolveGate).toHaveBeenCalledWith({
+    taskId,
+    gateId: approvedLandGate.gateId,
+    gate: "land",
+    approvedHash: approvedLandGate.contentHash,
+    decision: "approved",
+  });
 });
 
 it("retries a durable exhausted landing failure", async () => {
