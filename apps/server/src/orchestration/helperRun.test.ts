@@ -131,8 +131,44 @@ it.layer(NodeServices.layer)("helper run decisions", (it) => {
         status: "running",
         providerThreadId: "provider-helper-thread",
       });
-      const completed = yield* decideOrchestrationCommand({
+      const unmarkedRestart = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel: running,
+          command: {
+            type: "helper.run.start",
+            commandId: CommandId.make("command-helper-restart-without-transport"),
+            helperRunId,
+            providerThreadId: ThreadId.make("provider-helper-thread"),
+            createdAt: now,
+          },
+        }),
+      );
+      expect(unmarkedRestart._tag).toBe("Failure");
+
+      const retryStarted = yield* decideOrchestrationCommand({
         readModel: running,
+        command: {
+          type: "helper.run.start",
+          commandId: CommandId.make("command-helper-transport-retry"),
+          helperRunId,
+          providerThreadId: ThreadId.make("provider-helper-thread"),
+          transportRetry: true,
+          createdAt: now,
+        },
+      });
+      const retryStartedEvent = retryStarted as Omit<
+        Extract<OrchestrationEvent, { type: "helper.run-started" }>,
+        "sequence"
+      >;
+      expect(retryStartedEvent.payload.transportRetry).toBe(true);
+      const retried = yield* projectEvent(running, { ...retryStartedEvent, sequence: 5 });
+      expect(retried.helperRuns?.[0]).toMatchObject({
+        status: "running",
+        transientRetryCount: 1,
+      });
+
+      const completed = yield* decideOrchestrationCommand({
+        readModel: retried,
         command: {
           type: "helper.run.complete",
           commandId: CommandId.make("command-helper-complete"),
@@ -145,7 +181,7 @@ it.layer(NodeServices.layer)("helper run decisions", (it) => {
         Extract<OrchestrationEvent, { type: "helper.run-completed" }>,
         "sequence"
       >;
-      const terminal = yield* projectEvent(running, { ...completedEvent, sequence: 5 });
+      const terminal = yield* projectEvent(retried, { ...completedEvent, sequence: 6 });
       expect(terminal.helperRuns?.[0]).toMatchObject({
         status: "completed",
         result: "The projection boundary is append-only.",

@@ -42,7 +42,11 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
           kind,
           settlement_key AS "settlementKey",
           consumed_at AS "consumedAt",
-          status
+          status,
+          retry_attempts AS "retryAttempts",
+          hold_reason AS "holdReason",
+          next_retry_at AS "nextRetryAt",
+          delivery_episode AS "deliveryEpisode"
         FROM pm_consumed_settlements
         WHERE project_id = ${projectId}
           AND kind = ${kind}
@@ -60,7 +64,11 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
           kind,
           settlement_key AS "settlementKey",
           consumed_at AS "consumedAt",
-          status
+          status,
+          retry_attempts AS "retryAttempts",
+          hold_reason AS "holdReason",
+          next_retry_at AS "nextRetryAt",
+          delivery_episode AS "deliveryEpisode"
         FROM pm_consumed_settlements
         WHERE project_id = ${projectId}
           AND status = 'pending'
@@ -157,12 +165,90 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
       Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.markActed:query")),
     );
 
+  const recordDeliveryFailure: PmRuntimeStateRepositoryShape["recordDeliveryFailure"] = (input) =>
+    withBusyRetry(
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`
+            UPDATE pm_consumed_settlements
+            SET retry_attempts = ${input.retryAttempts},
+                hold_reason = ${input.holdReason},
+                next_retry_at = ${input.nextRetryAt},
+                delivery_episode = CASE
+                  WHEN ${input.holdReason} IS NULL THEN delivery_episode
+                  ELSE delivery_episode + 1
+                END
+            WHERE project_id = ${input.projectId}
+              AND kind = ${input.kind}
+              AND settlement_key = ${input.settlementKey}
+              AND status = 'pending'
+          `;
+          const rows = yield* sql<{ readonly deliveryEpisode: number }>`
+            SELECT delivery_episode AS "deliveryEpisode"
+            FROM pm_consumed_settlements
+            WHERE project_id = ${input.projectId}
+              AND kind = ${input.kind}
+              AND settlement_key = ${input.settlementKey}
+          `;
+          return rows[0]?.deliveryEpisode ?? 0;
+        }),
+      ),
+    ).pipe(
+      Effect.mapError(
+        toPersistenceSqlError("PmRuntimeStateRepository.recordDeliveryFailure:query"),
+      ),
+    );
+
+  const releaseDeliveryHolds: PmRuntimeStateRepositoryShape["releaseDeliveryHolds"] = (input) =>
+    input.reasons.length === 0
+      ? Effect.void
+      : withBusyRetry(
+          sql.withTransaction(
+            sql`
+              UPDATE pm_consumed_settlements
+              SET hold_reason = NULL,
+                  next_retry_at = NULL,
+                  retry_attempts = 0
+              WHERE project_id = ${input.projectId}
+                AND status = 'pending'
+                AND hold_reason IN (${sql.in(input.reasons)})
+            `,
+          ),
+        ).pipe(
+          Effect.asVoid,
+          Effect.mapError(
+            toPersistenceSqlError("PmRuntimeStateRepository.releaseDeliveryHolds:query"),
+          ),
+        );
+
+  const resetDeliveryRecovery: PmRuntimeStateRepositoryShape["resetDeliveryRecovery"] = (input) =>
+    withBusyRetry(
+      sql.withTransaction(
+        sql`
+          UPDATE pm_consumed_settlements
+          SET hold_reason = NULL,
+              next_retry_at = NULL,
+              retry_attempts = 0
+          WHERE project_id = ${input.projectId}
+            AND status = 'pending'
+        `,
+      ),
+    ).pipe(
+      Effect.asVoid,
+      Effect.mapError(
+        toPersistenceSqlError("PmRuntimeStateRepository.resetDeliveryRecovery:query"),
+      ),
+    );
+
   return {
     getCursor,
     listConsumedSettlements,
     consumeSettlementAndAdvanceCursor,
     markActed,
     listPending,
+    recordDeliveryFailure,
+    releaseDeliveryHolds,
+    resetDeliveryRecovery,
   } satisfies PmRuntimeStateRepositoryShape;
 });
 

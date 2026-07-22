@@ -24,12 +24,16 @@ import * as Schema from "effect/Schema";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
-export const PmConsumedSettlementKind = Schema.Literals(["stage", "gate", "approval"]);
+export const PmConsumedSettlementKind = Schema.Literals(["stage", "gate", "approval", "task"]);
 export type PmConsumedSettlementKind = typeof PmConsumedSettlementKind.Type;
 
 export const PmConsumedSettlementConsumptionStatus = Schema.Literals(["pending", "acted"]);
 export type PmConsumedSettlementConsumptionStatus =
   typeof PmConsumedSettlementConsumptionStatus.Type;
+
+/** Why a durable PM lifecycle delivery is deliberately being held. */
+export const PmLifecycleDeliveryHoldReason = Schema.Literals(["quota", "auth", "provider"]);
+export type PmLifecycleDeliveryHoldReason = typeof PmLifecycleDeliveryHoldReason.Type;
 
 export const PmRuntimeCursor = Schema.Struct({
   projectId: ProjectId,
@@ -44,6 +48,11 @@ export const PmConsumedSettlement = Schema.Struct({
   settlementKey: TrimmedNonEmptyString,
   consumedAt: IsoDateTime,
   status: PmConsumedSettlementConsumptionStatus,
+  retryAttempts: NonNegativeInt,
+  holdReason: Schema.NullOr(PmLifecycleDeliveryHoldReason),
+  nextRetryAt: Schema.NullOr(IsoDateTime),
+  /** Monotonically distinguishes durable operator-attention episodes. */
+  deliveryEpisode: NonNegativeInt,
 });
 export type PmConsumedSettlement = typeof PmConsumedSettlement.Type;
 
@@ -80,6 +89,29 @@ export const ListPendingPmSettlementsInput = Schema.Struct({
 });
 export type ListPendingPmSettlementsInput = typeof ListPendingPmSettlementsInput.Type;
 
+export const RecordPmLifecycleDeliveryFailureInput = Schema.Struct({
+  projectId: ProjectId,
+  kind: PmConsumedSettlementKind,
+  settlementKey: TrimmedNonEmptyString,
+  retryAttempts: NonNegativeInt,
+  holdReason: Schema.NullOr(PmLifecycleDeliveryHoldReason),
+  nextRetryAt: Schema.NullOr(IsoDateTime),
+});
+export type RecordPmLifecycleDeliveryFailureInput =
+  typeof RecordPmLifecycleDeliveryFailureInput.Type;
+
+export const ReleasePmLifecycleDeliveryHoldsInput = Schema.Struct({
+  projectId: ProjectId,
+  reasons: Schema.Array(PmLifecycleDeliveryHoldReason),
+});
+export type ReleasePmLifecycleDeliveryHoldsInput = typeof ReleasePmLifecycleDeliveryHoldsInput.Type;
+
+export const ResetPmLifecycleDeliveryRecoveryInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type ResetPmLifecycleDeliveryRecoveryInput =
+  typeof ResetPmLifecycleDeliveryRecoveryInput.Type;
+
 export const makeStageSettlementKey = (input: {
   readonly stageThreadId: ThreadId;
   readonly awaitedTurnId: TurnId | null;
@@ -107,6 +139,21 @@ export interface PmRuntimeStateRepositoryShape {
   readonly listPending: (
     input: ListPendingPmSettlementsInput,
   ) => Effect.Effect<ReadonlyArray<PmConsumedSettlement>, ProjectionRepositoryError>;
+
+  /** Persist a bounded retry schedule or a durable operator-attention hold. */
+  readonly recordDeliveryFailure: (
+    input: RecordPmLifecycleDeliveryFailureInput,
+  ) => Effect.Effect<number, ProjectionRepositoryError>;
+
+  /** Release only the requested holds (provider recovery or an operator retry). */
+  readonly releaseDeliveryHolds: (
+    input: ReleasePmLifecycleDeliveryHoldsInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+
+  /** Explicit operator recovery: make every retained pending delivery eligible now. */
+  readonly resetDeliveryRecovery: (
+    input: ResetPmLifecycleDeliveryRecoveryInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
 export class PmRuntimeStateRepository extends Context.Service<

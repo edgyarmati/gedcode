@@ -131,4 +131,71 @@ layer("PmRuntimeStateRepository", (it) => {
       assert.strictEqual(cursor.value.lastConsumedSequence, 15);
     }),
   );
+
+  it.effect("durably holds and releases lifecycle delivery recovery state", () =>
+    Effect.gen(function* () {
+      const repository = yield* PmRuntimeStateRepository;
+      const projectId = ProjectId.make("project-recovery");
+      yield* repository.consumeSettlementAndAdvanceCursor({
+        projectId,
+        kind: "stage",
+        settlementKey: "thread-1::turn-1",
+        sequence: 10,
+        consumedAt: "2026-06-14T00:00:00.000Z",
+      });
+
+      const firstHoldEpisode = yield* repository.recordDeliveryFailure({
+        projectId,
+        kind: "stage",
+        settlementKey: "thread-1::turn-1",
+        retryAttempts: 1,
+        holdReason: "auth",
+        nextRetryAt: null,
+      });
+      const held = yield* repository.listPending({ projectId });
+      assert.deepStrictEqual(
+        held.map((row) => ({
+          retryAttempts: row.retryAttempts,
+          holdReason: row.holdReason,
+          nextRetryAt: row.nextRetryAt,
+          deliveryEpisode: row.deliveryEpisode,
+        })),
+        [{ retryAttempts: 1, holdReason: "auth", nextRetryAt: null, deliveryEpisode: 1 }],
+      );
+      assert.strictEqual(firstHoldEpisode, 1);
+
+      yield* repository.releaseDeliveryHolds({ projectId, reasons: ["auth"] });
+      const released = yield* repository.listPending({ projectId });
+      assert.deepStrictEqual(
+        released.map((row) => ({
+          retryAttempts: row.retryAttempts,
+          holdReason: row.holdReason,
+          nextRetryAt: row.nextRetryAt,
+          deliveryEpisode: row.deliveryEpisode,
+        })),
+        [{ retryAttempts: 0, holdReason: null, nextRetryAt: null, deliveryEpisode: 1 }],
+      );
+
+      const secondHoldEpisode = yield* repository.recordDeliveryFailure({
+        projectId,
+        kind: "stage",
+        settlementKey: "thread-1::turn-1",
+        retryAttempts: 1,
+        holdReason: "auth",
+        nextRetryAt: null,
+      });
+      assert.strictEqual(secondHoldEpisode, 2);
+      yield* repository.resetDeliveryRecovery({ projectId });
+      const manuallyReset = yield* repository.listPending({ projectId });
+      assert.deepStrictEqual(
+        manuallyReset.map((row) => ({
+          retryAttempts: row.retryAttempts,
+          holdReason: row.holdReason,
+          nextRetryAt: row.nextRetryAt,
+          deliveryEpisode: row.deliveryEpisode,
+        })),
+        [{ retryAttempts: 0, holdReason: null, nextRetryAt: null, deliveryEpisode: 2 }],
+      );
+    }),
+  );
 });

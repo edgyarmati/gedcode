@@ -53,6 +53,8 @@ import {
   type ConsumePmSettlementInput,
   type MarkPmSettlementActedInput,
   type PmConsumedSettlement,
+  type RecordPmLifecycleDeliveryFailureInput,
+  type ReleasePmLifecycleDeliveryHoldsInput,
 } from "../../persistence/Services/PmRuntimeState.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -268,6 +270,25 @@ const dirtyStageCompletedEvent: OrchestrationEvent = {
   },
 };
 
+const pullRequestUrl = "https://github.com/acme/repo/pull/42";
+const pullRequestMergedEvent: OrchestrationEvent = {
+  sequence: 14,
+  eventId: EventId.make("evt-pr-merged"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.pr-merged",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-pr-merged"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-pr-merged"),
+  metadata: {},
+  payload: {
+    taskId,
+    prUrl: pullRequestUrl,
+    updatedAt: now,
+  },
+};
+
 const helperRunId = HelperRunId.make("helper-pm-context");
 const helperCompletedEvent: OrchestrationEvent = {
   sequence: 13,
@@ -360,6 +381,31 @@ const stageBlockedEvent: OrchestrationEvent = {
   },
 };
 
+const capabilityBlockedEvent: OrchestrationEvent = {
+  sequence: 10,
+  eventId: EventId.make("evt-stage-capability-blocked"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.stage-blocked",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-stage-capability-blocked"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-stage-capability-blocked"),
+  metadata: {},
+  payload: {
+    taskId,
+    role: "work",
+    stageThreadId,
+    reason: "capability",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    requestId: approvalRequestId,
+    requestKind: "permissions",
+    detail: "Needs a narrow network permission.",
+    expiresAt: "2026-06-14T12:30:00.000Z",
+    updatedAt: now,
+  },
+};
+
 const stageInterruptedEvent: OrchestrationEvent = {
   sequence: 12,
   eventId: EventId.make("evt-stage-interrupted"),
@@ -376,6 +422,26 @@ const stageInterruptedEvent: OrchestrationEvent = {
     role: "work",
     stageThreadId,
     reason: "orphaned",
+    updatedAt: now,
+  },
+};
+
+const capabilityTimeoutInterruptedEvent: OrchestrationEvent = {
+  sequence: 13,
+  eventId: EventId.make("evt-stage-capability-timeout"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.stage-interrupted",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-stage-capability-timeout"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-stage-capability-timeout"),
+  metadata: {},
+  payload: {
+    taskId,
+    role: "work",
+    stageThreadId,
+    reason: "capability-timeout",
     updatedAt: now,
   },
 };
@@ -532,7 +598,12 @@ const makeLayer = (input: {
   readonly messages: string[];
   readonly consumeCalls: ConsumePmSettlementInput[];
   readonly markActedCalls?: MarkPmSettlementActedInput[];
+  readonly deliveryFailureCalls?: RecordPmLifecycleDeliveryFailureInput[];
+  readonly releaseDeliveryHoldCalls?: ReleasePmLifecycleDeliveryHoldsInput[];
+  readonly resetDeliveryRecoveryCalls?: ProjectId[];
   readonly pendingSettlements?: PmConsumedSettlement[];
+  readonly providerEvents?: Stream.Stream<ProviderRuntimeEvent>;
+  readonly pmDrain?: Effect.Effect<void, PmRuntimeError>;
   readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
   readonly cursorByProject?: Map<string, number>;
   readonly readEventCursors?: number[];
@@ -567,7 +638,7 @@ const makeLayer = (input: {
       Effect.sync(() => {
         input.messages.push(message);
       }),
-    drain: Effect.void,
+    drain: input.pmDrain ?? Effect.void,
   };
 
   return makePmRuntimeLive({ reconciliationIntervalMsOverride: 60_000 }).pipe(
@@ -655,6 +726,68 @@ const makeLayer = (input: {
           }),
         listConsumedSettlements: () => Effect.succeed([]),
         listPending: () => Effect.succeed(input.pendingSettlements ?? []),
+        recordDeliveryFailure: (deliveryFailure) =>
+          Effect.sync(() => {
+            input.deliveryFailureCalls?.push(deliveryFailure);
+            const index = input.pendingSettlements?.findIndex(
+              (settlement) =>
+                settlement.projectId === deliveryFailure.projectId &&
+                settlement.kind === deliveryFailure.kind &&
+                settlement.settlementKey === deliveryFailure.settlementKey,
+            );
+            if (index === undefined || index < 0 || input.pendingSettlements === undefined) {
+              return 0;
+            }
+            const marker = input.pendingSettlements[index]!;
+            const deliveryEpisode =
+              deliveryFailure.holdReason === null
+                ? marker.deliveryEpisode
+                : marker.deliveryEpisode + 1;
+            input.pendingSettlements[index] = {
+              ...marker,
+              retryAttempts: deliveryFailure.retryAttempts,
+              holdReason: deliveryFailure.holdReason,
+              nextRetryAt: deliveryFailure.nextRetryAt,
+              deliveryEpisode,
+            };
+            return deliveryEpisode;
+          }),
+        releaseDeliveryHolds: (release) =>
+          Effect.sync(() => {
+            input.releaseDeliveryHoldCalls?.push(release);
+            if (input.pendingSettlements) {
+              for (const [index, marker] of input.pendingSettlements.entries()) {
+                if (
+                  marker.projectId === release.projectId &&
+                  marker.holdReason !== null &&
+                  release.reasons.includes(marker.holdReason)
+                ) {
+                  input.pendingSettlements[index] = {
+                    ...marker,
+                    retryAttempts: 0,
+                    holdReason: null,
+                    nextRetryAt: null,
+                  };
+                }
+              }
+            }
+          }),
+        resetDeliveryRecovery: ({ projectId }) =>
+          Effect.sync(() => {
+            input.resetDeliveryRecoveryCalls?.push(projectId);
+            if (input.pendingSettlements) {
+              for (const [index, marker] of input.pendingSettlements.entries()) {
+                if (marker.projectId === projectId) {
+                  input.pendingSettlements[index] = {
+                    ...marker,
+                    retryAttempts: 0,
+                    holdReason: null,
+                    nextRetryAt: null,
+                  };
+                }
+              }
+            }
+          }),
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
             input.consumeCalls.push(consumeInput);
@@ -788,6 +921,24 @@ const makeLayer = (input: {
         resetSessionBinding: () => Effect.void,
         createHandoffBrief: () => Effect.succeed(Option.none()),
       }),
+    ),
+    Layer.provide(
+      Layer.succeed(ProviderService, {
+        startSession: () => Effect.die("ProviderService.startSession should not be called"),
+        sendTurn: () => Effect.die("ProviderService.sendTurn should not be called"),
+        interruptTurn: () => Effect.die("ProviderService.interruptTurn should not be called"),
+        respondToRequest: () => Effect.die("ProviderService.respondToRequest should not be called"),
+        respondToUserInput: () =>
+          Effect.die("ProviderService.respondToUserInput should not be called"),
+        stopSession: () => Effect.die("ProviderService.stopSession should not be called"),
+        listSessions: () => Effect.die("ProviderService.listSessions should not be called"),
+        getCapabilities: () => Effect.die("ProviderService.getCapabilities should not be called"),
+        getInstanceInfo: () => Effect.die("ProviderService.getInstanceInfo should not be called"),
+        rollbackConversation: () =>
+          Effect.die("ProviderService.rollbackConversation should not be called"),
+        forkConversation: () => Effect.die("ProviderService.forkConversation should not be called"),
+        streamEvents: input.providerEvents ?? Stream.empty,
+      } satisfies ProviderServiceShape),
     ),
     Layer.provide(ServerSettingsService.layerTest()),
     Layer.provide(OrchestrationMcpServerProviderLive),
@@ -2224,6 +2375,61 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("wakes the PM exactly once when a tracked pull request merges remotely", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const duplicateMergeObservation: OrchestrationEvent = {
+        ...pullRequestMergedEvent,
+        sequence: 15,
+        eventId: EventId.make("evt-pr-merged-duplicate"),
+        commandId: CommandId.make("cmd-pr-merged-duplicate"),
+        correlationId: CommandId.make("cmd-pr-merged-duplicate"),
+      };
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [pullRequestMergedEvent, duplicateMergeObservation],
+        consumed,
+        messages,
+        consumeCalls,
+        commandReadModel: {
+          ...readModel,
+          tasks: [
+            {
+              ...task,
+              status: "landed",
+              prUrl: pullRequestUrl,
+              archivedAt: now,
+            },
+          ],
+        },
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /tracked pull request merged remotely/);
+      assert.match(messages[0] ?? "", new RegExp(pullRequestUrl));
+      assert.match(messages[0] ?? "", /permits dependents/);
+      assert.match(
+        messages[0] ?? "",
+        new RegExp(`Last-action cursor: ${pullRequestMergedEvent.sequence}`),
+      );
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [
+          { kind: "task", settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}` },
+          { kind: "task", settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}` },
+        ],
+      );
+    }),
+  );
+
   it.effect("re-enters exactly once for dirty worktree review instead of work completion", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
@@ -2318,6 +2524,7 @@ describe("PmRuntime", () => {
             modelOptions: null,
             prompt: "Gather project context.",
             status: "completed",
+            transientRetryCount: 0,
             providerThreadId: ThreadId.make(`helper:${helperRunId}`),
             result: helperCompletedEvent.payload.result,
             failureMessage: null,
@@ -2389,6 +2596,46 @@ describe("PmRuntime", () => {
       assert.match(messages[0] ?? "", /Request: permissions \(approval-worker-1\)/);
       assert.match(messages[0] ?? "", /OPENAI_API_KEY=\[REDACTED\]/);
       assert.notMatch(messages[0] ?? "", /sk-live-secret/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "approval", settlementKey: approvalRequestId }],
+      );
+    }),
+  );
+
+  it.effect("uses the approval lifecycle as the only PM wake for a capability pause", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [capabilityBlockedEvent, approvalRequestedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        pendingApprovals: [
+          {
+            requestId: approvalRequestId,
+            threadId: stageThreadId,
+            turnId,
+            status: "pending",
+            decision: null,
+            createdAt: now,
+            resolvedAt: null,
+          },
+        ],
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /Worker permission request for task/);
+      assert.notMatch(messages[0] ?? "", /subscription quota|blocked-on-quota/);
       assert.deepStrictEqual(
         consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
         [{ kind: "approval", settlementKey: approvalRequestId }],
@@ -2504,6 +2751,36 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("tells the PM when a capability approval deadline interrupts a stage", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [capabilityTimeoutInterruptedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /capability approval deadline expired/);
+      assert.match(messages[0] ?? "", /not resolved before its deadline/);
+      assert.notMatch(messages[0] ?? "", /server restart recovery/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+        [{ kind: "stage", settlementKey: interruptedSettlementKey }],
+      );
+    }),
+  );
+
   // WP-Q5: when the PM's own provider instance is quota-blocked, re-entry is held
   // BEFORE the settlement is consumed — nothing is delivered to the PM and nothing
   // is consumed, so the reconciliation sweep re-drives it once quota recovers
@@ -2556,6 +2833,7 @@ describe("PmRuntime", () => {
             modelOptions: null,
             prompt: "Gather project context.",
             status: "completed",
+            transientRetryCount: 0,
             providerThreadId: ThreadId.make(`helper:${helperRunId}`),
             result: helperCompletedEvent.payload.result,
             failureMessage: null,
@@ -2667,6 +2945,10 @@ describe("PmRuntime", () => {
             settlementKey: "thread-stage-1::turn-1",
             consumedAt: now,
             status: "pending",
+            retryAttempts: 0,
+            holdReason: null,
+            nextRetryAt: null,
+            deliveryEpisode: 0,
           },
         ];
         const cursorByProject = new Map<string, number>([
@@ -2704,6 +2986,226 @@ describe("PmRuntime", () => {
         );
         assert.deepStrictEqual(pendingSettlements, []);
       }),
+  );
+
+  it.effect("does not poll the PM model while a retained lifecycle delivery is auth-held", () =>
+    Effect.gen(function* () {
+      const messages: string[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed: new Set(),
+        messages,
+        consumeCalls: [],
+        pendingSettlements: [
+          {
+            projectId,
+            kind: "stage",
+            settlementKey: "thread-stage-1::turn-1",
+            consumedAt: now,
+            status: "pending",
+            retryAttempts: 0,
+            holdReason: "auth",
+            nextRetryAt: null,
+            deliveryEpisode: 1,
+          },
+        ],
+        cursorByProject: new Map([[String(projectId), stageCompletedEvent.sequence]]),
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* Effect.yieldNow;
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(messages, []);
+    }),
+  );
+
+  it.effect("persists exactly one bounded transport retry instead of looping PM delivery", () =>
+    Effect.gen(function* () {
+      const deliveryFailureCalls: RecordPmLifecycleDeliveryFailureInput[] = [];
+      const messages: string[] = [];
+      const failure = new PmRuntimeError({
+        operation: "DriverPmAdapter.prompt",
+        detail: "PM transport failed.",
+        cause: new Error("connection reset by peer"),
+      });
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed: new Set(),
+        messages,
+        consumeCalls: [],
+        deliveryFailureCalls,
+        pmDrain: Effect.fail(failure),
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.strictEqual(messages.length, 1);
+      assert.deepStrictEqual(deliveryFailureCalls, [
+        {
+          projectId,
+          kind: "stage",
+          settlementKey: "thread-stage-1::turn-1",
+          retryAttempts: 1,
+          holdReason: null,
+          nextRetryAt: deliveryFailureCalls[0]?.nextRetryAt ?? null,
+        },
+      ]);
+      assert.notStrictEqual(deliveryFailureCalls[0]?.nextRetryAt, null);
+    }),
+  );
+
+  it.effect("releases auth-held lifecycle delivery on an authenticated provider signal", () =>
+    Effect.gen(function* () {
+      const releaseDeliveryHoldCalls: ReleasePmLifecycleDeliveryHoldsInput[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed: new Set(),
+        messages: [],
+        consumeCalls: [],
+        releaseDeliveryHoldCalls,
+        providerEvents: Stream.make({
+          eventId: EventId.make("event-pm-auth-recovered"),
+          provider: claudeDriver,
+          providerInstanceId: claudeInstanceId,
+          threadId: ThreadId.make("provider-auth-status"),
+          createdAt: now,
+          type: "auth.status",
+          payload: { isAuthenticating: false },
+        }),
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(releaseDeliveryHoldCalls, [{ projectId, reasons: ["auth"] }]);
+    }),
+  );
+
+  it.effect(
+    "retains a new lifecycle attention activity when a recovered delivery is held again",
+    () =>
+      Effect.gen(function* () {
+        const dispatchCalls: unknown[] = [];
+        const pendingSettlements: PmConsumedSettlement[] = [
+          {
+            projectId,
+            kind: "stage",
+            settlementKey: "thread-stage-1::turn-1",
+            consumedAt: now,
+            status: "pending",
+            retryAttempts: 0,
+            holdReason: "auth",
+            nextRetryAt: null,
+            deliveryEpisode: 1,
+          },
+        ];
+        const layer = makeLayer({
+          liveEvents: [],
+          historicalEvents: [stageCompletedEvent],
+          consumed: new Set(),
+          messages: [],
+          consumeCalls: [],
+          pendingSettlements,
+          cursorByProject: new Map([[String(projectId), stageCompletedEvent.sequence]]),
+          dispatchCalls,
+          pmDrain: Effect.fail(
+            new PmRuntimeError({
+              operation: "DriverPmAdapter.prompt",
+              detail: "PM authentication failed.",
+              cause: new Error("invalid API key"),
+            }),
+          ),
+          providerEvents: Stream.make({
+            eventId: EventId.make("event-pm-auth-recovered-repeat-hold"),
+            provider: claudeDriver,
+            providerInstanceId: claudeInstanceId,
+            threadId: ThreadId.make("provider-auth-status-repeat-hold"),
+            createdAt: now,
+            type: "auth.status",
+            payload: { isAuthenticating: false },
+          }),
+        });
+
+        yield* Effect.gen(function* () {
+          const runtime = yield* PmRuntime;
+          yield* runtime.start();
+          yield* Effect.yieldNow;
+          yield* Effect.yieldNow;
+          yield* Effect.yieldNow;
+          yield* runtime.drain;
+        }).pipe(Effect.scoped, Effect.provide(layer));
+
+        const lifecycleActivities = dispatchCalls
+          .filter(
+            (
+              command,
+            ): command is {
+              readonly type: "thread.activity.append";
+              readonly commandId: string;
+              readonly activity: { readonly kind: string; readonly payload: unknown };
+            } =>
+              typeof command === "object" &&
+              command !== null &&
+              "type" in command &&
+              command.type === "thread.activity.append",
+          )
+          .filter(
+            (command) =>
+              command.activity.kind === "pm.lifecycle.delivery-recovered" ||
+              command.activity.kind === "pm.lifecycle.delivery-held",
+          );
+
+        assert.deepStrictEqual(
+          lifecycleActivities.map((command) => command.activity.kind),
+          ["pm.lifecycle.delivery-recovered", "pm.lifecycle.delivery-held"],
+        );
+        assert.notStrictEqual(lifecycleActivities[0]?.commandId, lifecycleActivities[1]?.commandId);
+        assert.deepStrictEqual(
+          pendingSettlements.map((marker) => ({
+            holdReason: marker.holdReason,
+            deliveryEpisode: marker.deliveryEpisode,
+          })),
+          [{ holdReason: "auth", deliveryEpisode: 2 }],
+        );
+      }),
+  );
+
+  it.effect("explicitly resets retained lifecycle delivery before a manual retry", () =>
+    Effect.gen(function* () {
+      const resetDeliveryRecoveryCalls: ProjectId[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [],
+        consumed: new Set(),
+        messages: [],
+        consumeCalls: [],
+        resetDeliveryRecoveryCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.retryProject(projectId);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(resetDeliveryRecoveryCalls, [projectId]);
+    }),
   );
 
   it.effect("resumes quota-blocked stages during reconciliation when the provider is ok", () =>

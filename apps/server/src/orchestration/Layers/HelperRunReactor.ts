@@ -1,6 +1,6 @@
 import {
-  DEFAULT_PROVIDER_INTERACTION_MODE,
   CommandId,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
   HELPER_RUN_FAILURE_MAX_CHARS,
   HELPER_RUN_RESULT_MAX_CHARS,
   HelperRunId,
@@ -60,15 +60,19 @@ export const makeHelperRunReactor = Effect.gen(function* () {
   const helpers = yield* ProjectionHelperRunRepository;
   const quota = yield* ProviderQuotaStatusRepository;
   const providers = yield* ProviderService;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const helperByThread = new Map<string, HelperRunId>();
   // This is only an in-process de-duplication guard. On restart the projected
   // thread is checked again; notably, an existing legacy thread is left alone
   // rather than being backfilled with ownership metadata.
   const ensuredThreadIds = new Set<string>();
-
-  const fileSystem = yield* FileSystem.FileSystem;
-  const helperByThread = new Map<string, HelperRunId>();
   const assistantText = new Map<string, string>();
   const starting = new Set<string>();
+  // This only closes the small projection-update race after the durable retry
+  // start event is appended. The authoritative allowance is the persisted
+  // `transientRetryCount` on the helper run, so a restart never grants another
+  // transport retry.
+  const transientRetryStarting = new Set<string>();
 
   const remember = (run: OrchestrationHelperRun) => {
     const threadId = run.providerThreadId ?? helperRunThreadId(run.id);
@@ -76,7 +80,6 @@ export const makeHelperRunReactor = Effect.gen(function* () {
     return threadId;
   };
 
-  const stopSession = (threadId: ThreadId) =>
   const ensureOwnedHelperThread = Effect.fn("HelperRunReactor.ensureOwnedHelperThread")(function* (
     run: OrchestrationHelperRun,
     threadId: ThreadId,
@@ -112,6 +115,7 @@ export const makeHelperRunReactor = Effect.gen(function* () {
     ensuredThreadIds.add(key);
   });
 
+  const stopSession = (threadId: ThreadId) =>
     providers.stopSession({ threadId }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
@@ -189,6 +193,7 @@ export const makeHelperRunReactor = Effect.gen(function* () {
       }
 
       const threadId = remember(run);
+      yield* ensureOwnedHelperThread(run, threadId, cwd);
       const active = (yield* providers.listSessions()).find(
         (session) => session.threadId === threadId,
       );
@@ -225,7 +230,6 @@ export const makeHelperRunReactor = Effect.gen(function* () {
         modelSelection: {
           instanceId: run.providerInstanceId,
           model: run.model,
-      yield* ensureOwnedHelperThread(run, threadId, cwd);
           ...(run.modelOptions === null ? {} : { options: run.modelOptions }),
         },
       });
@@ -248,7 +252,9 @@ export const makeHelperRunReactor = Effect.gen(function* () {
     Effect.catchCause((cause) =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.void
-        : Effect.logWarning("helper run reconciliation failed", { cause: Cause.pretty(cause) }),
+        : Effect.logWarning("helper run reconciliation failed", {
+            cause: Cause.pretty(cause),
+          }),
     ),
   );
 
@@ -256,7 +262,9 @@ export const makeHelperRunReactor = Effect.gen(function* () {
     event: OrchestrationEvent,
   ) {
     if (event.type === "helper.run-requested") {
-      const run = yield* helpers.getById({ helperRunId: event.payload.helperRunId });
+      const run = yield* helpers.getById({
+        helperRunId: event.payload.helperRunId,
+      });
       if (run._tag === "Some") yield* launch(run.value);
       return;
     }
@@ -356,6 +364,38 @@ export const makeHelperRunReactor = Effect.gen(function* () {
           resetAt: null,
           updatedAt: event.createdAt,
         });
+      }
+      // The provider has explicitly classified this as transport infrastructure
+      // failure. Retry once on the same helper run/thread; all other classes
+      // (rate limit, permission/capability, provider/model, validation, and
+      // unknown failures) settle through the ordinary durable failure path.
+      if (
+        event.payload.class === "transport_error" &&
+        run.transientRetryCount < 1 &&
+        !transientRetryStarting.has(key)
+      ) {
+        transientRetryStarting.add(key);
+        assistantText.delete(key);
+        // Persist the retry reservation before replacing the provider session.
+        // The retry-marked start event keeps the helper identity and provider
+        // thread stable while persisting the one allowed replacement attempt.
+        yield* engine.dispatch({
+          type: "helper.run.start",
+          commandId: helperCommandId("retry-start", helperRunId, "transport-1"),
+          helperRunId,
+          providerThreadId: event.threadId,
+          transportRetry: true,
+          createdAt: event.createdAt,
+        });
+        yield* stopSession(event.threadId).pipe(Effect.ignore);
+        // A transport error can race the launch effect's finalizer. Release the
+        // per-run admission marker before the one permitted replacement start.
+        starting.delete(key);
+        const refreshed = yield* helpers.getById({ helperRunId });
+        if (refreshed._tag === "Some") {
+          yield* launch(refreshed.value);
+        }
+        return;
       }
       yield* failRun(run, event.payload.message, String(event.eventId));
       assistantText.delete(key);

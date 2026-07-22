@@ -47,6 +47,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   getPresetMigration: "orchestrator.getPresetMigration",
   completePresetMigration: "orchestrator.completePresetMigration",
   sendMessage: "orchestrator.sendMessage",
+  retryPmLifecycleDelivery: "orchestrator.retryPmLifecycleDelivery",
   subscribeProject: "orchestrator.subscribeProject",
   subscribeTask: "orchestrator.subscribeTask",
   resolveGate: "orchestrator.resolveGate",
@@ -531,7 +532,6 @@ export const PendingPmHandoff = Schema.Struct({
 });
 export type PendingPmHandoff = typeof PendingPmHandoff.Type;
 
-const OrchestrationLatestTurnState = Schema.Literals([
 /**
  * Creation-time ownership for threads created by the orchestration runtime.
  *
@@ -554,6 +554,7 @@ export const OrchestrationThreadOwnership = Schema.Union([
 ]);
 export type OrchestrationThreadOwnership = typeof OrchestrationThreadOwnership.Type;
 
+const OrchestrationLatestTurnState = Schema.Literals([
   "running",
   "interrupted",
   "completed",
@@ -575,8 +576,8 @@ export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
-  title: TrimmedNonEmptyString,
   orchestrationOwnership: Schema.optionalKey(Schema.NullOr(OrchestrationThreadOwnership)),
+  title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   runtimeMode: RuntimeMode,
@@ -629,6 +630,7 @@ export const OrchestrationTaskStatus = Schema.Literals([
   "review",
   "change-review",
   "verifying",
+  "pr-open",
   "landed",
   "no-changes-needed",
   "abandoned",
@@ -890,6 +892,7 @@ export type OrchestrationPmQuotaBlock = typeof OrchestrationPmQuotaBlock.Type;
 
 export const OrchestrationStageHistoryStatus = Schema.Literals([
   "running",
+  "paused",
   "completed",
   "blocked",
   "interrupted",
@@ -910,6 +913,9 @@ export const OrchestrationStageHistoryEntry = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   runtimeMode: Schema.optionalKey(Schema.NullOr(RuntimeMode)),
+  /** Resolved at handoff time from the global worker-network floor and PM restriction. */
+  networkAccess: Schema.optionalKey(Schema.Boolean),
+  capabilityPauseExpiresAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   /** Worktree HEAD captured before this stage attempt began. */
   startHead: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
   status: OrchestrationStageHistoryStatus,
@@ -960,6 +966,12 @@ export const OrchestrationHelperRun = Schema.Struct({
   modelOptions: Schema.NullOr(ProviderOptionSelections),
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(HELPER_RUN_PROMPT_MAX_CHARS)),
   status: OrchestrationHelperRunStatus,
+  /**
+   * A read-only helper may make one replacement attempt after an explicitly
+   * classified transport failure. This is persisted with the run so a process
+   * restart cannot grant another retry.
+   */
+  transientRetryCount: NonNegativeInt,
   providerThreadId: Schema.NullOr(ThreadId),
   result: Schema.NullOr(Schema.String.check(Schema.isMaxLength(HELPER_RUN_RESULT_MAX_CHARS))),
   failureMessage: Schema.NullOr(
@@ -1193,6 +1205,7 @@ export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  orchestrationOwnership: Schema.optionalKey(Schema.NullOr(OrchestrationThreadOwnership)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
@@ -1205,7 +1218,6 @@ export const OrchestrationThreadShell = Schema.Struct({
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
-  orchestrationOwnership: Schema.optionalKey(Schema.NullOr(OrchestrationThreadOwnership)),
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
@@ -1310,6 +1322,7 @@ const ThreadCreateCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   projectId: ProjectId,
+  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
@@ -1322,7 +1335,6 @@ const ThreadCreateCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
 const ThreadDeleteCommand = Schema.Struct({
   type: Schema.Literal("thread.delete"),
   commandId: CommandId,
@@ -1659,6 +1671,9 @@ const TaskStageStartCommand = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
   capabilityTier: Schema.optionalKey(OrchestrationCapabilityTier),
+  // The PM may restrict a handoff but cannot re-enable the global worker
+  // network floor once a human has disabled it.
+  networkAccess: Schema.optionalKey(Schema.Boolean),
   instructions: Schema.String,
   startHead: Schema.optionalKey(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -1671,9 +1686,6 @@ const TaskStageCompleteCommand = Schema.Struct({
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
   awaitedTurnId: Schema.NullOr(TurnId),
-  // The PM may restrict a handoff but cannot re-enable the global worker
-  // network floor once a human has disabled it.
-  networkAccess: Schema.optionalKey(Schema.Boolean),
   // Whether the stage turn's diff was confirmed captured before completion.
   // Absent = normal completion (a real diff was present when the stage settled).
   // `false` = fail-loud completion via the diff-wait timeout (no confirmed diff).
@@ -1732,9 +1744,24 @@ const TaskStageBlockCommand = Schema.Struct({
   taskId: TaskId,
   stageThreadId: ThreadId,
   role: OrchestrationStageRole,
-  reason: Schema.Literal("quota"),
+  reason: Schema.Literals(["quota", "capability"]),
   providerInstanceId: ProviderInstanceId,
+  requestId: Schema.optional(ApprovalRequestId),
+  requestKind: Schema.optional(ProviderRequestKind),
+  detail: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
+  expiresAt: Schema.optional(IsoDateTime),
   resetAt: Schema.optional(IsoDateTime),
+  createdAt: IsoDateTime,
+});
+
+const TaskStageResumeCommand = Schema.Struct({
+  type: Schema.Literal("task.stage.resume"),
+  commandId: CommandId,
+  taskId: TaskId,
+  stageThreadId: ThreadId,
+  role: OrchestrationStageRole,
+  requestId: ApprovalRequestId,
+  decision: ProviderApprovalDecision,
   createdAt: IsoDateTime,
 });
 
@@ -1744,7 +1771,7 @@ const TaskStageInterruptCommand = Schema.Struct({
   taskId: TaskId,
   stageThreadId: ThreadId,
   role: OrchestrationStageRole,
-  reason: Schema.Literals(["orphaned", "operator"]),
+  reason: Schema.Literals(["orphaned", "operator", "capability-timeout"]),
   createdAt: IsoDateTime,
 });
 
@@ -1774,6 +1801,21 @@ const TaskGateResolveCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+/**
+ * Human approval of a land gate is the landing command. Keeping both the gate
+ * resolution and the landing transition in one append-only command prevents a
+ * successfully approved gate from being stranded between two client RPCs.
+ */
+const TaskLandApproveCommand = Schema.Struct({
+  type: Schema.Literal("task.land.approve"),
+  commandId: CommandId,
+  taskId: TaskId,
+  gateId: GateId,
+  approvedHash: TrimmedNonEmptyString,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
+  createdAt: IsoDateTime,
+});
+
 const TaskLandCommand = Schema.Struct({
   type: Schema.Literal("task.land"),
   commandId: CommandId,
@@ -1788,6 +1830,22 @@ const TaskPrOpenedCommand = Schema.Struct({
   taskId: TaskId,
   prUrl: TrimmedNonEmptyString,
   prNumber: Schema.optional(PositiveInt),
+  createdAt: IsoDateTime,
+});
+
+const TaskPrMergedCommand = Schema.Struct({
+  type: Schema.Literal("task.pr.merged"),
+  commandId: CommandId,
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const TaskPrClosedCommand = Schema.Struct({
+  type: Schema.Literal("task.pr.closed"),
+  commandId: CommandId,
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
 });
 
@@ -1892,6 +1950,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskStageStartCommand,
   TaskGateRequestCommand,
   TaskGateResolveCommand,
+  TaskLandApproveCommand,
   TaskLandCommand,
   HelperRunRequestCommand,
 ]);
@@ -2054,12 +2113,15 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskVerificationRecordCommand,
   TaskNoChangesNeededCommand,
   TaskStageBlockCommand,
+  TaskStageResumeCommand,
   TaskStageInterruptCommand,
   TaskLandingRetryCommand,
   TaskReleaseDispatchRequestCommand,
   TaskReleaseDispatchCompleteCommand,
   TaskReleaseDispatchFailCommand,
   TaskPrOpenedCommand,
+  TaskPrMergedCommand,
+  TaskPrClosedCommand,
   TaskPrOpenFailedCommand,
   TaskAbandonCommand,
   TaskCancellationRequestCommand,
@@ -2071,6 +2133,8 @@ const InternalOrchestrationCommand = Schema.Union([
     commandId: CommandId,
     helperRunId: HelperRunId,
     providerThreadId: ThreadId,
+    /** Internal-only proof that a running helper is being retried after transport failure. */
+    transportRetry: Schema.optionalKey(Schema.Literal(true)),
     createdAt: IsoDateTime,
   }),
   Schema.Struct({
@@ -2142,6 +2206,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.verification-recorded",
   "task.no-changes-needed",
   "task.stage-blocked",
+  "task.stage-resumed",
   "task.stage-interrupted",
   "task.gate-requested",
   "task.gate-resolved",
@@ -2154,6 +2219,8 @@ export const OrchestrationEventType = Schema.Literals([
   "task.release-dispatched",
   "task.release-dispatch-failed",
   "task.pr-opened",
+  "task.pr-merged",
+  "task.pr-closed",
   "task.pr-open-failed",
   "task.abandoned",
   "helper.run-requested",
@@ -2217,6 +2284,7 @@ export const ProjectDeletedPayload = Schema.Struct({
 export const ThreadCreatedPayload = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
+  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
@@ -2287,7 +2355,6 @@ export const ThreadClearedPayload = Schema.Struct({
   clearedAt: IsoDateTime,
 });
 
-  orchestrationOwnership: Schema.optionalKey(OrchestrationThreadOwnership),
 export const ThreadPmHandoffRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   mode: PmHandoffMode,
@@ -2449,6 +2516,8 @@ export const HelperRunRequestedPayload = Schema.Struct({
 export const HelperRunStartedPayload = Schema.Struct({
   helperRunId: HelperRunId,
   providerThreadId: ThreadId,
+  /** Present only for the single durable retry after a transport failure. */
+  transportRetry: Schema.optionalKey(Schema.Literal(true)),
   startedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -2565,6 +2634,9 @@ export const TaskStageStartedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   modelOptions: Schema.optionalKey(ProviderOptionSelections),
   runtimeMode: Schema.optional(RuntimeMode),
+  // Persist the effective policy for this specific stage attempt. Optional so
+  // append-only events from before the worker-network policy still decode.
+  networkAccess: Schema.optionalKey(Schema.Boolean),
   startHead: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
@@ -2623,9 +2695,22 @@ export const TaskStageBlockedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
-  reason: Schema.Literal("quota"),
+  reason: Schema.Literals(["quota", "capability"]),
   providerInstanceId: ProviderInstanceId,
+  requestId: Schema.optional(ApprovalRequestId),
+  requestKind: Schema.optional(ProviderRequestKind),
+  detail: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
+  expiresAt: Schema.optional(IsoDateTime),
   resetAt: Schema.optional(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskStageResumedPayload = Schema.Struct({
+  taskId: TaskId,
+  role: OrchestrationStageRole,
+  stageThreadId: ThreadId,
+  requestId: ApprovalRequestId,
+  decision: ProviderApprovalDecision,
   updatedAt: IsoDateTime,
 });
 
@@ -2633,10 +2718,7 @@ export const TaskStageInterruptedPayload = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
   stageThreadId: ThreadId,
-  reason: Schema.Literals(["orphaned", "operator"]),
-  // Persist the effective policy for this specific stage attempt. Optional so
-  // append-only events from before the worker-network policy still decode.
-  networkAccess: Schema.optionalKey(Schema.Boolean),
+  reason: Schema.Literals(["orphaned", "operator", "capability-timeout"]),
   updatedAt: IsoDateTime,
 });
 
@@ -2689,6 +2771,18 @@ export const TaskPrOpenedPayload = Schema.Struct({
   taskId: TaskId,
   prUrl: TrimmedNonEmptyString,
   prNumber: Schema.optional(PositiveInt),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskPrMergedPayload = Schema.Struct({
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
+export const TaskPrClosedPayload = Schema.Struct({
+  taskId: TaskId,
+  prUrl: TrimmedNonEmptyString,
   updatedAt: IsoDateTime,
 });
 
@@ -2950,6 +3044,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("task.stage-resumed"),
+    payload: TaskStageResumedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("task.stage-interrupted"),
     payload: TaskStageInterruptedPayload,
   }),
@@ -3007,6 +3106,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.pr-opened"),
     payload: TaskPrOpenedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.pr-merged"),
+    payload: TaskPrMergedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.pr-closed"),
+    payload: TaskPrClosedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3108,6 +3217,19 @@ export const OrchestratorSendMessageResult = Schema.Struct({
   accepted: Schema.Literal(true),
 });
 export type OrchestratorSendMessageResult = typeof OrchestratorSendMessageResult.Type;
+
+/** Re-releases retained PM lifecycle context after an operator fixes the cause. */
+export const OrchestratorRetryPmLifecycleDeliveryInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type OrchestratorRetryPmLifecycleDeliveryInput =
+  typeof OrchestratorRetryPmLifecycleDeliveryInput.Type;
+
+export const OrchestratorRetryPmLifecycleDeliveryResult = Schema.Struct({
+  accepted: Schema.Literal(true),
+});
+export type OrchestratorRetryPmLifecycleDeliveryResult =
+  typeof OrchestratorRetryPmLifecycleDeliveryResult.Type;
 
 export const OrchestratorPresetMigrationProject = Schema.Struct({
   projectId: ProjectId,
@@ -3697,6 +3819,10 @@ export const OrchestratorRpcSchemas = {
   sendMessage: {
     input: OrchestratorSendMessageInput,
     output: OrchestratorSendMessageResult,
+  },
+  retryPmLifecycleDelivery: {
+    input: OrchestratorRetryPmLifecycleDeliveryInput,
+    output: OrchestratorRetryPmLifecycleDeliveryResult,
   },
   subscribeProject: {
     input: OrchestratorSubscribeProjectInput,

@@ -44,7 +44,9 @@ import { TaskCancellationReconcilerLive } from "./orchestration/Layers/TaskCance
 import { PmProjectRuntimeFactoryLive, PmRuntimeLive } from "./orchestration/Layers/PmRuntime.ts";
 import { WorkerStartAdmissionLive } from "./orchestration/Layers/WorkerStartAdmission.ts";
 import { TaskWorktreeReactorLive } from "./orchestration/Layers/TaskWorktreeReactor.ts";
+import { PullRequestSyncReactorLive } from "./orchestration/Layers/PullRequestSyncReactor.ts";
 import { HelperRunReactorLive } from "./orchestration/Layers/HelperRunReactor.ts";
+import { CapabilityPauseReactorLive } from "./orchestration/Layers/CapabilityPauseReactor.ts";
 import { ProjectContextRunReactorLive } from "./orchestration/Layers/ProjectContextRunReactor.ts";
 import { ProjectContextRunCoordinatorLive } from "./orchestration/Layers/ProjectContextRunCoordinator.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -155,7 +157,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(TaskWorktreeReactorLive),
+  Layer.provideMerge(PullRequestSyncReactorLive),
   Layer.provideMerge(HelperRunReactorLive),
+  Layer.provideMerge(CapabilityPauseReactorLive),
   Layer.provideMerge(ProjectContextRunReactorLive),
   Layer.provideMerge(PmRuntimeLive),
   Layer.provideMerge(ProjectContextRunCoordinatorLive),

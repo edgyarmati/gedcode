@@ -2005,6 +2005,7 @@ function applyEnvironmentOrchestrationEvent(
         modelOptions: event.payload.modelOptions,
         prompt: event.payload.prompt,
         status: "pending",
+        transientRetryCount: 0,
         providerThreadId: null,
         result: null,
         failureMessage: null,
@@ -2017,6 +2018,13 @@ function applyEnvironmentOrchestrationEvent(
     case "helper.run-started":
       return patchHelperRunState(state, String(event.payload.helperRunId), {
         status: "running",
+        ...(event.payload.transportRetry === true
+          ? {
+              transientRetryCount:
+                (state.helperRunById[String(event.payload.helperRunId)]?.transientRetryCount ?? 0) +
+                1,
+            }
+          : {}),
         providerThreadId: event.payload.providerThreadId,
         startedAt: event.payload.startedAt,
         updatedAt: event.payload.updatedAt,
@@ -2456,6 +2464,12 @@ function applyEnvironmentOrchestrationEvent(
 
     case "task.stage-blocked": {
       const taskId = String(event.payload.taskId);
+      if (event.payload.reason === "capability") {
+        return patchStageHistoryEntry(state, taskId, String(event.payload.stageThreadId), {
+          status: "paused",
+          endedAt: null,
+        });
+      }
       const withTask = updateTaskState(state, taskId, (task) => ({
         ...task,
         status: "blocked-on-quota" as const,
@@ -2473,6 +2487,14 @@ function applyEnvironmentOrchestrationEvent(
         providerInstanceId: event.payload.providerInstanceId,
       });
     }
+
+    case "task.stage-resumed":
+      return patchStageHistoryEntry(
+        state,
+        String(event.payload.taskId),
+        String(event.payload.stageThreadId),
+        { status: "running", endedAt: null },
+      );
 
     case "task.stage-interrupted": {
       const taskId = String(event.payload.taskId);

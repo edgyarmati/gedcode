@@ -29,6 +29,7 @@ const run = (overrides?: Partial<OrchestrationHelperRun>): OrchestrationHelperRu
   completedAt: "2026-07-18T00:00:02.000Z",
   updatedAt: "2026-07-18T00:00:02.000Z",
   ...overrides,
+  transientRetryCount: overrides?.transientRetryCount ?? 0,
 });
 
 describe("helper result context", () => {

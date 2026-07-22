@@ -61,6 +61,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       getPresetMigration: rpcClient.orchestrator.getPresetMigration,
       completePresetMigration: rpcClient.orchestrator.completePresetMigration,
       sendMessage: rpcClient.orchestrator.sendMessage,
+      retryPmLifecycleDelivery: rpcClient.orchestrator.retryPmLifecycleDelivery,
       subscribeProject: (input, callback, options) =>
         rpcClient.orchestrator.subscribeProject(input, callback, options),
       subscribeTask: (input, callback, options) =>

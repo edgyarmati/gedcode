@@ -6,9 +6,42 @@ import type { PmAdapterShape } from "../claude/pmHarness.ts";
 import type { PmRuntimeError } from "./Errors.ts";
 
 export type PmReEntryQueueShape = {
-  readonly enqueue: (message: string) => Effect.Effect<void>;
+  readonly enqueue: (message: string, kind?: PmReEntryQueueEntryKind) => Effect.Effect<void>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
   readonly runExclusive: <A, E>(operation: Effect.Effect<A, E>) => Effect.Effect<A, E>;
+};
+
+/**
+ * User entries retain their position as the PM's primary request. Lifecycle
+ * entries are structured, server-authored context that accompanies that
+ * request instead of becoming synthetic user messages.
+ */
+export type PmReEntryQueueEntryKind = "lifecycle" | "user";
+
+type PmReEntryQueueEntry = {
+  readonly kind: PmReEntryQueueEntryKind;
+  readonly message: string;
+};
+
+const serializeEntries = (entries: ReadonlyArray<PmReEntryQueueEntry>): string => {
+  const userMessages = entries
+    .filter((entry) => entry.kind === "user")
+    .map((entry) => entry.message);
+  const lifecycleMessages = entries
+    .filter((entry) => entry.kind === "lifecycle")
+    .map((entry) => entry.message);
+  const userPayload = userMessages.join("\n\n");
+  if (lifecycleMessages.length === 0) return userPayload;
+
+  const lifecyclePayload = lifecycleMessages.join("\n\n");
+  if (userPayload.length === 0) return lifecyclePayload;
+
+  return [
+    userPayload,
+    "--- BEGIN LIFECYCLE CONTEXT ---",
+    lifecyclePayload,
+    "--- END LIFECYCLE CONTEXT ---",
+  ].join("\n\n");
 };
 
 export type PmReEntryQueueOptions = {
@@ -26,7 +59,7 @@ export const makePmReEntryQueue = (
   options?: PmReEntryQueueOptions,
 ): Effect.Effect<PmReEntryQueueShape> =>
   Effect.gen(function* () {
-    const queue = yield* Queue.unbounded<string>();
+    const queue = yield* Queue.unbounded<PmReEntryQueueEntry>();
     const semaphore = yield* Semaphore.make(1);
     const onTurnError = options?.onTurnError;
 
@@ -43,10 +76,10 @@ export const makePmReEntryQueue = (
     const drain = semaphore.withPermits(1)(
       Effect.gen(function* () {
         if (options?.canDrain !== undefined && !(yield* options.canDrain)) return;
-        const messages = yield* Queue.takeAll(queue);
-        if (messages.length === 0) return;
+        const entries = yield* Queue.takeAll(queue);
+        if (entries.length === 0) return;
 
-        const payload = messages.join("\n\n");
+        const payload = serializeEntries(entries);
         const idle = yield* adapter.isIdle;
         const turn = idle ? adapter.prompt(payload) : adapter.followUp(payload);
         yield* onTurnError === undefined ? turn : turn.pipe(Effect.tapError(onTurnError));
@@ -54,7 +87,8 @@ export const makePmReEntryQueue = (
     );
 
     return {
-      enqueue: (message) => Queue.offer(queue, message).pipe(Effect.asVoid),
+      enqueue: (message, kind = "lifecycle") =>
+        Queue.offer(queue, { message, kind }).pipe(Effect.asVoid),
       drain,
       runExclusive: (operation) => semaphore.withPermits(1)(operation),
     } satisfies PmReEntryQueueShape;

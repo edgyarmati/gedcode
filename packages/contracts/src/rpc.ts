@@ -483,6 +483,15 @@ export const WsOrchestratorSendMessageRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.sen
   error: OrchestrationDispatchCommandError,
 });
 
+export const WsOrchestratorRetryPmLifecycleDeliveryRpc = Rpc.make(
+  ORCHESTRATOR_WS_METHODS.retryPmLifecycleDelivery,
+  {
+    payload: OrchestratorRpcSchemas.retryPmLifecycleDelivery.input,
+    success: OrchestratorRpcSchemas.retryPmLifecycleDelivery.output,
+    error: OrchestrationDispatchCommandError,
+  },
+);
+
 export const WsOrchestratorSubscribeProjectRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.subscribeProject,
   {
@@ -766,6 +775,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorGetPresetMigrationRpc,
   WsOrchestratorCompletePresetMigrationRpc,
   WsOrchestratorSendMessageRpc,
+  WsOrchestratorRetryPmLifecycleDeliveryRpc,
   WsOrchestratorSubscribeProjectRpc,
   WsOrchestratorSubscribeTaskRpc,
   WsOrchestratorResolveGateRpc,

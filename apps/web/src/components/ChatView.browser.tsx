@@ -255,6 +255,9 @@ function createMockEnvironmentApi(input: {
       sendMessage: (() => {
         throw new Error("Not implemented in browser test.");
       }) as EnvironmentApi["orchestrator"]["sendMessage"],
+      retryPmLifecycleDelivery: (() => {
+        throw new Error("Not implemented in browser test.");
+      }) as EnvironmentApi["orchestrator"]["retryPmLifecycleDelivery"],
       subscribeProject: (() => () =>
         undefined) as EnvironmentApi["orchestrator"]["subscribeProject"],
       subscribeTask: (() => () => undefined) as EnvironmentApi["orchestrator"]["subscribeTask"],

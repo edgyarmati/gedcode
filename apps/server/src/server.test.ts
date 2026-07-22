@@ -751,6 +751,7 @@ const buildAppUnderTest = (options?: {
             ...options?.layers?.orchestrationEngine,
           }),
           Layer.mock(ProjectContextRunCoordinator)({
+            ensureBeforePmTurn: () => Effect.succeed({ status: "ready" as const }),
             request: () =>
               Effect.succeed({
                 projectContextRunId: ProjectContextRunId.make("context-run-default"),
@@ -3905,6 +3906,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       };
       const dispatched: OrchestrationCommand[] = [];
       const enqueuedMessages: string[] = [];
+      const enqueuedKinds: Array<"lifecycle" | "user" | undefined> = [];
       const surfacedMessages: string[] = [];
       const runtimeCalls: string[] = [];
       const cancellationCalls: string[] = [];
@@ -4012,10 +4014,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                       runtimeCalls.push(`surface:${message}`);
                     }),
                   createHandoffBrief: Effect.succeed("handoff brief"),
-                  enqueue: (message) =>
+                  enqueue: (message, kind) =>
                     Effect.sync(() => {
                       enqueuedMessages.push(message);
-                      runtimeCalls.push(`enqueue:${message}`);
+                      enqueuedKinds.push(kind);
+                      runtimeCalls.push(`enqueue:${kind ?? "lifecycle"}:${message}`);
                     }),
                   drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
                 };
@@ -4064,7 +4067,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             assert.deepEqual(runtimeProjects, [projectId]);
             assert.deepEqual(surfacedMessages, ["What is next?"]);
             assert.deepEqual(enqueuedMessages, ["What is next?"]);
-            assert.deepEqual(runtimeCalls, ["surface:What is next?", "enqueue:What is next?"]);
+            assert.deepEqual(enqueuedKinds, ["user"]);
+            assert.deepEqual(runtimeCalls, ["surface:What is next?", "enqueue:user:What is next?"]);
 
             const projectItems = Array.from(
               yield* client[ORCHESTRATOR_WS_METHODS.subscribeProject]({

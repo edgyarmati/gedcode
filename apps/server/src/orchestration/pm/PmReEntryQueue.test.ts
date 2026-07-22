@@ -65,6 +65,28 @@ describe("PmReEntryQueue", () => {
     }),
   );
 
+  it.effect(
+    "prioritizes a queued user message and attaches lifecycle entries as system context",
+    () =>
+      Effect.gen(function* () {
+        const prompts: string[] = [];
+        const queue = yield* makePmReEntryQueue({
+          isIdle: Effect.succeed(true),
+          prompt: (message) => Effect.sync(() => prompts.push(message)) as never,
+          followUp: () => Effect.void as never,
+        });
+
+        yield* queue.enqueue("Worker stage completed.");
+        yield* queue.enqueue("Please tell me what needs review.", "user");
+        yield* queue.enqueue("A helper result is available.");
+        yield* queue.drain;
+
+        assert.deepStrictEqual(prompts, [
+          "Please tell me what needs review.\n\n--- BEGIN LIFECYCLE CONTEXT ---\n\nWorker stage completed.\n\nA helper result is available.\n\n--- END LIFECYCLE CONTEXT ---",
+        ]);
+      }),
+  );
+
   // Pins the serialization invariant the `drain` comment relies on: because
   // `PmAdapterShape.prompt` blocks for the whole turn while holding the drain
   // semaphore, a settlement that lands mid-turn cannot be observed by a second

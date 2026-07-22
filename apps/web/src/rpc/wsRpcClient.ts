@@ -163,6 +163,9 @@ export interface WsRpcClient {
       typeof ORCHESTRATOR_WS_METHODS.completePresetMigration
     >;
     readonly sendMessage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.sendMessage>;
+    readonly retryPmLifecycleDelivery: RpcUnaryMethod<
+      typeof ORCHESTRATOR_WS_METHODS.retryPmLifecycleDelivery
+    >;
     readonly subscribeProject: RpcInputStreamMethod<
       typeof ORCHESTRATOR_WS_METHODS.subscribeProject
     >;
@@ -387,6 +390,10 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
       sendMessage: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.sendMessage](input)),
+      retryPmLifecycleDelivery: (input) =>
+        transport.request((client) =>
+          client[ORCHESTRATOR_WS_METHODS.retryPmLifecycleDelivery](input),
+        ),
       subscribeProject: (input, listener, options) =>
         transport.subscribe(
           (client) => client[ORCHESTRATOR_WS_METHODS.subscribeProject](input),

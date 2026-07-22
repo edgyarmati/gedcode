@@ -11,6 +11,7 @@ import {
   type OrchestrationProject,
   type OrchestrationReadModel,
   type OrchestrationTask,
+  type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -128,6 +129,7 @@ type SettlementEvent = Extract<
       | "task.stage-blocked"
       | "task.stage-interrupted"
       | "task.gate-resolved"
+      | "task.pr-merged"
       | "thread.activity-appended"
       | "helper.run-completed"
       | "helper.run-failed"
@@ -139,7 +141,7 @@ type SettlementEnvelope = {
   readonly event: SettlementEvent;
   readonly project: OrchestrationProject;
   readonly task: OrchestrationTask | null;
-  readonly kind: "stage" | "gate" | "approval";
+  readonly kind: PmConsumedSettlementKind;
   readonly settlementKey: string;
   readonly message: string;
 };
@@ -182,9 +184,9 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Keep simple, well-understood planning in your own PM turn and give the resulting bounded plan directly to the worker. Delegate planning only when complexity, risk, or uncertainty merits a separate attempt; delegated plans default to the Genius tier. When a plan is doubtful, dispatch another Genius `plan` attempt with explicit critique instructions.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs or critiques complex implementation, work implements, and verify validates completed work before landing.",
     "Planner stages own design documentation only. Verifier stages own verification evidence and context documentation only. Only work stages may modify substantive implementation code; if verification finds a code defect, return it to a work stage instead of asking the verifier to repair it. Verifiers leave their documentation changes uncommitted: GedCode audits and commits allowed verifier paths through the trusted server before recording exact-HEAD verification.",
-    "Worker stages run in a sandboxed auto-approve environment. Include relevant sandbox constraints in each handoff. When a task needs credentials or authenticated host access, have the worker stop at the boundary and report the exact operation; perform that operation yourself only when it is within the user's granted authority, otherwise ask the human.",
+    "Worker stages run in a sandboxed auto-approve environment with workspace-write access. The human's global worker-network setting is the upper bound: handoffWorker.networkAccess may further disable network for one attempt but can never re-enable a globally disabled network. This never grants authenticated host access or sandbox escalation. Include relevant sandbox constraints in each handoff. When a task needs credentials or authenticated host access, have the worker stop at the boundary and report the exact operation; perform that operation yourself only when it is within the user's granted authority, otherwise ask the human.",
     "Steer running workers with steerStage for course corrections, added context, or answers when a worker has drifted; use interruptStage when the active turn must stop immediately, and prefer steering over interruption when the same stage can continue.",
-    "Never poll inspectStage or schedule recurring status checks. Worker settlements, gate resolutions, worker permission requests, quota changes, and interrupt outcomes re-enter you automatically. Use inspectStage only for an explicit operator status request or one bounded diagnostic immediately before a concrete steer/cancel decision.",
+    "Never poll inspectStage, inspectTask, or schedule recurring status checks. Worker settlements, gate resolutions, tracked pull-request merges, worker permission requests, quota changes, and interrupt outcomes re-enter you automatically. Use an inspect tool only for an explicit operator status request or one bounded diagnostic immediately before a concrete decision.",
     "For bounded read-only context gathering, use startHelperRun instead of creating an exploration task. Attach it to the PM for project-wide context or to an existing task when later stages should receive the result. Cheap is the default; choose Smart or Genius only when the investigation itself requires more judgment. Helper completion, failure, and interruption re-enter you automatically, so never poll inspectHelperRun. Helpers create no task, stage, gate, worktree, commit, PR, landing action, or task-board card.",
     "When Work or Verify settles in change review, call inspectTaskChanges once. Commit only intended paths or an exact intended patch with commitTaskChanges, use discardTaskChanges only for explicitly selected changes that are outside task intent, or use returnTaskChanges with precise revision instructions. A verifier finalization failure requires a fresh Verify after resolution. Never bypass change review or start ordinary verification while changes remain pending.",
     "A Verify handoff refreshes the clean primary GitHub upstream and rebases the clean task worktree before the verifier starts. If target movement conflicts, return the task to Work for resolution. Never verify or land against the pre-movement HEAD.",
@@ -259,6 +261,17 @@ const ABORT_ERROR_MESSAGE_PATTERNS: readonly RegExp[] = [
   /\bcancel(?:led|ed)\b/i,
 ];
 
+// A PM adapter does not retain a provider runtime error class, so only retry
+// failures whose text is unambiguously transport infrastructure. Everything
+// else is held for a health/credential signal or an explicit operator retry.
+const TRANSIENT_TRANSPORT_ERROR_MESSAGE_PATTERNS: readonly RegExp[] = [
+  /\bconnection (?:reset|refused|closed|timed out)\b/i,
+  /\beconn(?:reset|refused|aborted)\b/i,
+  /\bnetwork (?:error|unreachable|timed out)\b/i,
+  /\b(?:socket|tls|dns) (?:error|failure|timed out)\b/i,
+  /\b(?:gateway timeout|temporarily unavailable|service unavailable)\b/i,
+];
+
 function compactOneLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -311,7 +324,20 @@ function pmTurnFailedActivityId(projectId: OrchestrationProject["id"], message: 
   return EventId.make(`server:pm-turn-failed:${projectId}:${stableHash(message)}`);
 }
 
-type PmTurnFailureCategory = "rate_limit" | "auth" | "aborted" | "provider_error";
+function pmLifecycleDeliveryActivityId(input: {
+  readonly projectId: OrchestrationProject["id"];
+  readonly kind: PmConsumedSettlementKind;
+  readonly settlementKey: string;
+  readonly state: "held" | "recovered";
+  /** Distinguishes successive durable hold/recovery episodes for one settlement. */
+  readonly episode: number;
+}): EventId {
+  return EventId.make(
+    `server:pm-lifecycle-delivery:${input.state}:${input.projectId}:${stableHash(`${input.kind}:${input.settlementKey}:${input.episode}`)}`,
+  );
+}
+
+type PmTurnFailureCategory = "rate_limit" | "auth" | "transport" | "aborted" | "provider_error";
 
 function classifyPmTurnFailure(message: string): PmTurnFailureCategory {
   if (classifyRuntimeErrorClass({ message, fallback: "provider_error" }) === "rate_limit") {
@@ -319,6 +345,9 @@ function classifyPmTurnFailure(message: string): PmTurnFailureCategory {
   }
   if (AUTH_ERROR_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
     return "auth";
+  }
+  if (TRANSIENT_TRANSPORT_ERROR_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+    return "transport";
   }
   if (ABORT_ERROR_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
     return "aborted";
@@ -381,9 +410,13 @@ const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent 
   (event.type === "task.stage-completed" &&
     !(event.payload.role === "work" && event.payload.worktreeCompletion?.dirty === true)) ||
   event.type === "task.change-review-requested" ||
-  event.type === "task.stage-blocked" ||
+  // Capability pauses publish their own approval lifecycle entry. Treating the
+  // accompanying stage state change as a quota settlement would both mislabel
+  // the pause and wake the PM twice for one approval request.
+  (event.type === "task.stage-blocked" && event.payload.reason === "quota") ||
   event.type === "task.stage-interrupted" ||
   event.type === "task.gate-resolved" ||
+  event.type === "task.pr-merged" ||
   event.type === "helper.run-completed" ||
   event.type === "helper.run-failed" ||
   event.type === "helper.run-interrupted" ||
@@ -392,9 +425,11 @@ const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
   event.type === "task.gate-resolved"
     ? "gate"
-    : event.type === "thread.activity-appended"
-      ? "approval"
-      : "stage";
+    : event.type === "task.pr-merged"
+      ? "task"
+      : event.type === "thread.activity-appended"
+        ? "approval"
+        : "stage";
 
 const quotaBlockedStageSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::quota-blocked`;
@@ -406,6 +441,9 @@ const changeReviewSettlementKey = (stageThreadId: ThreadId): string =>
   `${stageThreadId}::change-review`;
 
 const helperSettlementKey = (helperRunId: string): string => `helper:${helperRunId}`;
+
+const mergedPullRequestSettlementKey = (taskId: OrchestrationTask["id"], prUrl: string): string =>
+  `pull-request-merged:${taskId}:${prUrl}`;
 
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
@@ -425,7 +463,9 @@ const settlementEventKey = (event: SettlementEvent): string =>
             ? helperSettlementKey(event.payload.helperRunId)
             : event.type === "task.gate-resolved"
               ? makeGateSettlementKey(event.payload.gateId)
-              : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
+              : event.type === "task.pr-merged"
+                ? mergedPullRequestSettlementKey(event.payload.taskId, event.payload.prUrl)
+                : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
 
 const approvalRequestIdFromEvent = (
   event: Extract<SettlementEvent, { type: "thread.activity-appended" }>,
@@ -517,16 +557,39 @@ const interruptedStageMessage = (input: {
 }): string => {
   const payload = input.event.payload;
   const operatorInterrupted = payload.reason === "operator";
-  return boundUntrustedContent(`A worker stage was interrupted${operatorInterrupted ? " by an operator" : " during server restart recovery"}.
+  const capabilityTimedOut = payload.reason === "capability-timeout";
+  const interruptionContext = operatorInterrupted
+    ? " by an operator"
+    : capabilityTimedOut
+      ? " because its capability approval deadline expired"
+      : " during server restart recovery";
+  const reason = operatorInterrupted
+    ? "the provider confirmed the requested turn interruption"
+    : capabilityTimedOut
+      ? "the narrow capability request was not resolved before its deadline"
+      : "the projected active stage had no live provider session";
+  return boundUntrustedContent(`A worker stage was interrupted${interruptionContext}.
 
 Task: ${input.task.title}
 Task ID: ${input.task.id}
 Stage role: ${payload.role}
 Stage thread ID: ${payload.stageThreadId}
-Reason: ${operatorInterrupted ? "the provider confirmed the requested turn interruption" : "the projected active stage had no live provider session"}.
+Reason: ${reason}.
 
 The stage ownership was cleared and the task is blocked. Retry the same role with a fresh worker handoff after checking whether the prior attempt left useful work in the task worktree.`);
 };
+
+const mergedPullRequestMessage = (input: {
+  readonly event: Extract<SettlementEvent, { type: "task.pr-merged" }>;
+  readonly task: OrchestrationTask;
+}): string =>
+  boundUntrustedContent(`A tracked pull request merged remotely.
+
+Task: ${input.task.title}
+Task ID: ${input.task.id}
+Pull request: ${input.event.payload.prUrl}
+
+The server recorded the merge, landed and archived this task, and now permits dependents whose remaining prerequisites are satisfied. Review the task ledger and continue eligible dependent work; do not infer or perform any further remote action without current evidence.`);
 
 type ResolvedPmHarnessConfig = {
   readonly selection: ModelSelection;
@@ -725,6 +788,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const providerQuotaStatusRepository = yield* ProviderQuotaStatusRepository;
     const pmRuntimeStateRepository = yield* PmRuntimeStateRepository;
     const projectRuntimeFactory = yield* PmProjectRuntimeFactory;
+    const providerService = yield* Effect.serviceOption(ProviderService);
     const projectContextRuns = yield* ProjectContextRunCoordinator;
     const serverSettings = yield* ServerSettingsService;
     const settings = yield* serverSettings.getSettings;
@@ -1032,6 +1096,20 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         } satisfies SettlementEnvelope;
       }
 
+      if (event.type === "task.pr-merged") {
+        return {
+          event,
+          ...resolved,
+          task: resolved.task,
+          kind: "task" as const,
+          settlementKey: mergedPullRequestSettlementKey(event.payload.taskId, event.payload.prUrl),
+          message: withLastActionCursor(
+            mergedPullRequestMessage({ event, task: resolved.task }),
+            event,
+          ),
+        } satisfies SettlementEnvelope;
+      }
+
       return {
         event,
         ...resolved,
@@ -1080,6 +1158,126 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       return state.blocked;
     });
 
+    const appendLifecycleDeliveryActivity = Effect.fn("PmRuntime.appendLifecycleDeliveryActivity")(
+      function* (input: {
+        readonly project: OrchestrationProject;
+        readonly marker: Pick<PmConsumedSettlement, "kind" | "settlementKey">;
+        readonly reason: "quota" | "auth" | "provider";
+        readonly state: "held" | "recovered";
+        /** Monotonic episode persisted with the retained settlement. */
+        readonly episode: number;
+      }) {
+        const createdAt = DateTime.formatIso(yield* DateTime.now);
+        const threadId = pmThreadIdForProject(input.project);
+        yield* orchestrationEngine
+          .dispatch({
+            type: "thread.activity.append",
+            commandId: CommandId.make(
+              `server:pm-lifecycle-delivery:${input.state}:${input.project.id}:${stableHash(`${input.marker.kind}:${input.marker.settlementKey}:${input.episode}`)}`,
+            ),
+            threadId,
+            activity: {
+              id: pmLifecycleDeliveryActivityId({
+                projectId: input.project.id,
+                kind: input.marker.kind,
+                settlementKey: input.marker.settlementKey,
+                state: input.state,
+                episode: input.episode,
+              }),
+              tone: input.state === "held" ? "error" : "info",
+              kind:
+                input.state === "held"
+                  ? "pm.lifecycle.delivery-held"
+                  : "pm.lifecycle.delivery-recovered",
+              summary:
+                input.state === "held"
+                  ? `PM lifecycle delivery needs attention (${input.reason})`
+                  : "PM lifecycle delivery recovered",
+              payload: {
+                itemType: "pm-lifecycle-delivery",
+                state: input.state,
+                reason: input.reason,
+                settlementKind: input.marker.kind,
+                settlementKey: input.marker.settlementKey,
+              },
+              turnId: null,
+              createdAt,
+            },
+            createdAt,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to append PM lifecycle delivery activity", {
+                projectId: String(input.project.id),
+                kind: input.marker.kind,
+                settlementKey: input.marker.settlementKey,
+                state: input.state,
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+      },
+    );
+
+    const recordLifecycleDeliveryFailure = Effect.fn("PmRuntime.recordLifecycleDeliveryFailure")(
+      function* (input: {
+        readonly envelope: SettlementEnvelope;
+        readonly priorAttempts: number;
+        readonly error: PmRuntimeError;
+      }) {
+        const failure = formatPmTurnFailure(input.error);
+        const isFirstTransientRetry = failure.category === "transport" && input.priorAttempts < 1;
+        const now = yield* DateTime.now;
+        const holdReason = isFirstTransientRetry
+          ? null
+          : failure.category === "rate_limit"
+            ? "quota"
+            : failure.category === "auth"
+              ? "auth"
+              : "provider";
+        const retryAt = isFirstTransientRetry
+          ? DateTime.formatIso(
+              DateTime.add(now, { milliseconds: Math.max(1, reconciliationIntervalMs) }),
+            )
+          : null;
+        const deliveryEpisode = yield* pmRuntimeStateRepository.recordDeliveryFailure({
+          projectId: input.envelope.project.id,
+          kind: input.envelope.kind,
+          settlementKey: input.envelope.settlementKey,
+          retryAttempts: isFirstTransientRetry ? input.priorAttempts + 1 : input.priorAttempts,
+          holdReason,
+          nextRetryAt: retryAt,
+        });
+        if (holdReason !== null) {
+          yield* appendLifecycleDeliveryActivity({
+            project: input.envelope.project,
+            marker: input.envelope,
+            reason: holdReason,
+            state: "held",
+            episode: deliveryEpisode,
+          });
+        }
+        yield* Effect.logWarning("PM lifecycle delivery held after PM turn failure", {
+          projectId: String(input.envelope.project.id),
+          kind: input.envelope.kind,
+          settlementKey: input.envelope.settlementKey,
+          category: failure.category,
+          retryAttempts: isFirstTransientRetry ? input.priorAttempts + 1 : input.priorAttempts,
+          holdReason,
+          nextRetryAt: retryAt,
+        });
+      },
+    );
+
+    const pendingDeliveryIsEligible = Effect.fn("PmRuntime.pendingDeliveryIsEligible")(function* (
+      marker: PmConsumedSettlement,
+    ) {
+      if (marker.holdReason != null) return false;
+      if (marker.nextRetryAt == null) return true;
+      const now = yield* DateTime.now;
+      return Date.parse(marker.nextRetryAt) <= now.epochMilliseconds;
+    });
+
     const projectContextHeld = Effect.fn("PmRuntime.projectContextHeld")(function* (
       projectId: OrchestrationProject["id"],
     ) {
@@ -1119,6 +1317,17 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         return false;
       }
 
+      if (!(yield* pendingDeliveryIsEligible(input.marker))) {
+        yield* Effect.logInfo("PM lifecycle redrive remains durably held", {
+          projectId: String(input.marker.projectId),
+          kind: input.marker.kind,
+          settlementKey: input.marker.settlementKey,
+          holdReason: input.marker.holdReason,
+          nextRetryAt: input.marker.nextRetryAt,
+        });
+        return false;
+      }
+
       if (
         (yield* projectContextHeld(envelope.project.id)) ||
         (yield* pmInstanceQuotaBlocked(envelope.project))
@@ -1134,6 +1343,13 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       const projectRuntime = yield* projectRuntimeFactory.getOrCreate(envelope.project);
       yield* projectRuntime.enqueue(envelope.message).pipe(
         Effect.andThen(projectRuntime.drain),
+        Effect.tapError((error) =>
+          recordLifecycleDeliveryFailure({
+            envelope,
+            priorAttempts: input.marker.retryAttempts ?? 0,
+            error,
+          }),
+        ),
         withMetrics({
           timer: orchestrationPmReEntryDuration,
           attributes: { kind: input.marker.kind, path: "pending" },
@@ -1206,6 +1422,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
 
       yield* projectRuntime.enqueue(envelope.message).pipe(
         Effect.andThen(projectRuntime.drain),
+        Effect.tapError((error) =>
+          recordLifecycleDeliveryFailure({ envelope, priorAttempts: 0, error }),
+        ),
         withMetrics({
           timer: orchestrationPmReEntryDuration,
           attributes: { kind: envelope.kind, path: "live" },
@@ -1285,6 +1504,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
                 helperRun.status === "interrupted"),
           )
           .map((helperRun) => helperSettlementKey(helperRun.id));
+        const mergedPullRequestKeys = tasks
+          .filter((task) => task.status === "landed" && task.prUrl !== null)
+          .map((task) => mergedPullRequestSettlementKey(task.id, task.prUrl!));
         const approvalRows = yield* Effect.forEach(
           tasks.flatMap((task) => task.stageThreadIds),
           (threadId) => projectionPendingApprovalRepository.listByThreadId({ threadId }),
@@ -1303,6 +1525,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             ...helperRunKeys,
           ],
           gateKeys,
+          taskKeys: mergedPullRequestKeys,
           approvalKeys,
         };
       },
@@ -1319,7 +1542,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         readModel: input.readModel,
         project: input.project,
       });
-      const [consumedStages, consumedGates, consumedApprovals] = yield* Effect.all(
+      const [consumedStages, consumedGates, consumedTasks, consumedApprovals] = yield* Effect.all(
         [
           pmRuntimeStateRepository.listConsumedSettlements({
             projectId: input.project.id,
@@ -1328,6 +1551,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           pmRuntimeStateRepository.listConsumedSettlements({
             projectId: input.project.id,
             kind: "gate",
+          }),
+          pmRuntimeStateRepository.listConsumedSettlements({
+            projectId: input.project.id,
+            kind: "task",
           }),
           pmRuntimeStateRepository.listConsumedSettlements({
             projectId: input.project.id,
@@ -1340,6 +1567,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         consumedStages.map((settlement) => settlement.settlementKey),
       );
       const consumedGateKeys = new Set(consumedGates.map((settlement) => settlement.settlementKey));
+      const consumedTaskKeys = new Set(consumedTasks.map((settlement) => settlement.settlementKey));
       const consumedApprovalKeys = new Set(
         consumedApprovals.map((settlement) => settlement.settlementKey),
       );
@@ -1371,6 +1599,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         discard: true,
       });
       yield* Effect.forEach(keys.gateKeys, (key) => processKey("gate", consumedGateKeys, key), {
+        concurrency: 1,
+        discard: true,
+      });
+      yield* Effect.forEach(keys.taskKeys, (key) => processKey("task", consumedTaskKeys, key), {
         concurrency: 1,
         discard: true,
       });
@@ -1585,6 +1817,91 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       ),
     );
 
+    const releaseDeliveriesForProviderRecovery = Effect.fn(
+      "PmRuntime.releaseDeliveriesForProviderRecovery",
+    )(function* (event: ProviderRuntimeEvent) {
+      const providerInstanceId = event.providerInstanceId;
+      if (providerInstanceId === undefined) return;
+      const reasons =
+        event.type === "account.rate-limits.updated" && event.payload.status === "ok"
+          ? (["quota"] as const)
+          : event.type === "auth.status" &&
+              event.payload.isAuthenticating !== true &&
+              event.payload.error === undefined
+            ? (["auth"] as const)
+            : event.type === "account.updated"
+              ? (["provider"] as const)
+              : [];
+      if (reasons.length === 0) return;
+
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+      const matchingProjects = readModel.projects.filter((project) => {
+        const selection = resolveProjectConfig(project).pmModelSelection;
+        return selection?.instanceId === providerInstanceId;
+      });
+      if (matchingProjects.length === 0) return;
+      yield* Effect.forEach(
+        matchingProjects,
+        (project) =>
+          Effect.gen(function* () {
+            const held = (yield* pmRuntimeStateRepository.listPending({
+              projectId: project.id,
+            })).filter(
+              (marker) =>
+                marker.holdReason !== null &&
+                (reasons as ReadonlyArray<string>).includes(marker.holdReason),
+            );
+            yield* pmRuntimeStateRepository.releaseDeliveryHolds({
+              projectId: project.id,
+              reasons: [...reasons],
+            });
+            yield* Effect.forEach(
+              held,
+              (marker) =>
+                appendLifecycleDeliveryActivity({
+                  project,
+                  marker,
+                  reason: marker.holdReason!,
+                  state: "recovered",
+                  episode: marker.deliveryEpisode,
+                }),
+              { concurrency: 1, discard: true },
+            );
+          }),
+        { concurrency: 1, discard: true },
+      );
+      // This is event-driven recovery, not a timer poll: a recovered provider or
+      // credential explicitly releases retained lifecycle context once.
+      yield* runReconciliationSweep;
+    });
+
+    const retryProject: PmRuntimeShape["retryProject"] = (projectId) =>
+      Effect.gen(function* () {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const project = readModel.projects.find((candidate) => candidate.id === projectId);
+        if (project === undefined) return;
+        const retained = yield* pmRuntimeStateRepository.listPending({ projectId });
+        yield* pmRuntimeStateRepository.resetDeliveryRecovery({ projectId });
+        yield* Effect.forEach(
+          retained.filter((marker) => marker.holdReason !== null),
+          (marker) =>
+            appendLifecycleDeliveryActivity({
+              project,
+              marker,
+              reason: marker.holdReason!,
+              state: "recovered",
+              episode: marker.deliveryEpisode,
+            }),
+          { concurrency: 1, discard: true },
+        );
+        yield* runReconciliationSweep;
+        yield* worker.drain;
+      }).pipe(
+        Effect.mapError(
+          toPmRuntimeError("PmRuntime.retryProject", "Failed to retry PM lifecycle delivery."),
+        ),
+      );
+
     const getReplayStartSequence = Effect.fn("PmRuntime.getReplayStartSequence")(function* () {
       const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       if (readModel.projects.length === 0) {
@@ -1620,6 +1937,21 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
 
     const start: PmRuntimeShape["start"] = Effect.fn("start")(function* () {
       const liveSettlementQueue = yield* Queue.unbounded<SettlementEvent>();
+      if (Option.isSome(providerService)) {
+        yield* Stream.runForEach(
+          providerService.value.streamEvents,
+          releaseDeliveriesForProviderRecovery,
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.void
+              : Effect.logWarning("PM lifecycle provider recovery subscription failed", {
+                  cause: Cause.pretty(cause),
+                }),
+          ),
+          Effect.forkScoped,
+        );
+      }
       yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
         isSettlementEvent(event)
           ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
@@ -1671,6 +2003,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     return {
       start,
       drain: worker.drain,
+      retryProject,
     } satisfies PmRuntimeShape;
   });
 
@@ -2107,7 +2440,8 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
               ),
             ),
           ),
-          enqueue: (message) => ensureRuntimeActive.pipe(Effect.andThen(queue.enqueue(message))),
+          enqueue: (message, kind) =>
+            ensureRuntimeActive.pipe(Effect.andThen(queue.enqueue(message, kind))),
           drain: ensureRuntimeActive.pipe(
             Effect.andThen(queue.drain),
             Effect.andThen(eventProjection.drain),

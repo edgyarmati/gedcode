@@ -100,6 +100,8 @@ import type {
   OrchestratorResolveProjectContextRunAttentionInput,
   OrchestratorResolveProjectContextRunAttentionResult,
   OrchestratorResolveGateInput,
+  OrchestratorRetryPmLifecycleDeliveryInput,
+  OrchestratorRetryPmLifecycleDeliveryResult,
   OrchestratorSendMessageInput,
   OrchestratorSendMessageResult,
   OrchestratorSetTaskCapabilityTiersInput,
@@ -625,6 +627,9 @@ export interface EnvironmentApi {
       input: OrchestratorCompletePresetMigrationInput,
     ) => Promise<OrchestratorPresetMigrationState>;
     sendMessage: (input: OrchestratorSendMessageInput) => Promise<OrchestratorSendMessageResult>;
+    retryPmLifecycleDelivery: (
+      input: OrchestratorRetryPmLifecycleDeliveryInput,
+    ) => Promise<OrchestratorRetryPmLifecycleDeliveryResult>;
     subscribeProject: (
       input: OrchestratorSubscribeProjectInput,
       callback: (event: OrchestratorProjectStreamItem) => void,

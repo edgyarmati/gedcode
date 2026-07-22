@@ -31,13 +31,13 @@ const makeRepository = Effect.gen(function* () {
     execute: (run) => sql`
       INSERT INTO projection_helper_runs (
         helper_run_id, project_id, attachment_json, access_mode, tier, provider_instance_id, model,
-        model_options_json, prompt, status, provider_thread_id, result, failure_message,
+        model_options_json, prompt, status, transient_retry_count, provider_thread_id, result, failure_message,
         created_at, started_at, completed_at, updated_at
       ) VALUES (
         ${run.id}, ${run.projectId}, ${JSON.stringify(run.attachment)}, ${run.accessMode}, ${run.tier},
         ${run.providerInstanceId}, ${run.model},
         ${run.modelOptions === null ? null : JSON.stringify(run.modelOptions)}, ${run.prompt},
-        ${run.status}, ${run.providerThreadId}, ${run.result}, ${run.failureMessage},
+        ${run.status}, ${run.transientRetryCount}, ${run.providerThreadId}, ${run.result}, ${run.failureMessage},
         ${run.createdAt}, ${run.startedAt}, ${run.completedAt}, ${run.updatedAt}
       )
       ON CONFLICT (helper_run_id) DO UPDATE SET
@@ -50,6 +50,7 @@ const makeRepository = Effect.gen(function* () {
         model_options_json = excluded.model_options_json,
         prompt = excluded.prompt,
         status = excluded.status,
+        transient_retry_count = excluded.transient_retry_count,
         provider_thread_id = excluded.provider_thread_id,
         result = excluded.result,
         failure_message = excluded.failure_message,
@@ -66,6 +67,7 @@ const makeRepository = Effect.gen(function* () {
       access_mode AS "accessMode",
       tier, provider_instance_id AS "providerInstanceId", model,
       model_options_json AS "modelOptions", prompt, status,
+      transient_retry_count AS "transientRetryCount",
       provider_thread_id AS "providerThreadId", result,
       failure_message AS "failureMessage", created_at AS "createdAt",
       started_at AS "startedAt", completed_at AS "completedAt", updated_at AS "updatedAt"

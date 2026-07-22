@@ -18,7 +18,14 @@ import type { PmRuntimeError } from "../pm/Errors.ts";
 export interface PmProjectRuntime {
   readonly surfaceUserMessage: (message: string) => Effect.Effect<void, PmRuntimeError>;
   readonly createHandoffBrief: Effect.Effect<string, PmRuntimeError>;
-  readonly enqueue: (message: string) => Effect.Effect<void, PmRuntimeError>;
+  /**
+   * Queue server lifecycle context or an already-persisted human request for
+   * the next PM turn. User entries are ordered ahead of lifecycle entries.
+   */
+  readonly enqueue: (
+    message: string,
+    kind?: "lifecycle" | "user",
+  ) => Effect.Effect<void, PmRuntimeError>;
   readonly drain: Effect.Effect<void, PmRuntimeError>;
 }
 
@@ -61,6 +68,9 @@ export interface PmRuntimeShape {
    * Resolves when the internal event worker is empty and idle.
    */
   readonly drain: Effect.Effect<void>;
+
+  /** Explicitly re-release retained lifecycle context after the operator fixes it. */
+  readonly retryProject: (projectId: ProjectId) => Effect.Effect<void, PmRuntimeError>;
 }
 
 export class PmRuntime extends Context.Service<PmRuntime, PmRuntimeShape>()(

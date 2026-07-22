@@ -57,7 +57,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
 import { ProjectContextRunCoordinator } from "./orchestration/Services/ProjectContextRunCoordinator.ts";
-import { PmProjectRuntimeFactory } from "./orchestration/Services/PmRuntime.ts";
+import { PmProjectRuntimeFactory, PmRuntime } from "./orchestration/Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isPmThreadId, pmThreadIdForProject } from "./orchestration/pm/PmEventProjection.ts";
 import { cancelOrchestrationTaskWithServices } from "./orchestration/taskCancellation.ts";
@@ -68,10 +68,10 @@ import {
 } from "./orchestration/orchestratorLauncher.ts";
 import { forkOrchestrationThreadWithServices } from "./orchestration/threadFork.ts";
 import {
+  approveOrchestrationLandTaskWithServices,
   landOrchestrationTaskWithServices,
   OrchestrationLandTaskError as TaskLandingError,
 } from "./orchestration/taskLanding.ts";
-import { inspectTaskWorktreeCompletion } from "./orchestration/worktreeCompletion.ts";
 import {
   commitOrchestratorTaskChanges,
   completeOrchestratorTaskWithoutChanges,
@@ -197,6 +197,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.stage-started"
       | "task.stage-completed"
       | "task.stage-blocked"
+      | "task.stage-resumed"
       | "task.stage-interrupted"
       | "task.gate-requested"
       | "task.gate-resolved"
@@ -220,6 +221,7 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.stage-started" ||
     event.type === "task.stage-completed" ||
     event.type === "task.stage-blocked" ||
+    event.type === "task.stage-resumed" ||
     event.type === "task.stage-interrupted" ||
     event.type === "task.gate-requested" ||
     event.type === "task.gate-resolved" ||
@@ -1515,7 +1517,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     }),
                 ),
               );
-              yield* runtime.enqueue(input.message).pipe(
+              // The message has already been durably projected as user-authored
+              // content above. Preserve that priority in the PM re-entry queue;
+              // any pending stage/gate/helper lifecycle entries join this same
+              // turn as structured server context instead of synthetic user chat.
+              yield* runtime.enqueue(input.message, "user").pipe(
                 Effect.mapError(
                   (cause) =>
                     new OrchestrationDispatchCommandError({
@@ -1532,6 +1538,31 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   }),
                 ),
                 Effect.forkDetach,
+              );
+              return { accepted: true as const };
+            }),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.retryPmLifecycleDelivery]: (input: { projectId: ProjectId }) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.retryPmLifecycleDelivery,
+            Effect.gen(function* () {
+              yield* loadProjectForPmRuntime(input.projectId);
+              const pmRuntime = yield* Effect.serviceOption(PmRuntime);
+              if (Option.isNone(pmRuntime)) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: "PM lifecycle runtime is not available",
+                  cause: input.projectId,
+                });
+              }
+              yield* pmRuntime.value.retryProject(input.projectId).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationDispatchCommandError({
+                      message: "Failed to retry retained PM lifecycle delivery",
+                      cause,
+                    }),
+                ),
               );
               return { accepted: true as const };
             }),
@@ -1626,22 +1657,21 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(
             ORCHESTRATOR_WS_METHODS.resolveGate,
             Effect.gen(function* () {
+              if (input.gate === "land" && input.decision === "approved") {
+                return yield* approveOrchestrationLandTaskWithServices(
+                  { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+                  {
+                    taskId: input.taskId,
+                    gateId: input.gateId,
+                    approvedHash: input.approvedHash,
+                    commandId: serverCommandId("orchestrator-approve-land-task"),
+                    createdAt: nowIso,
+                    dispatch: dispatchNormalizedCommand,
+                  },
+                );
+              }
               const commandId = yield* serverCommandId("orchestrator-resolve-gate");
               const createdAt = yield* nowIso;
-              const worktreeCompletion =
-                input.gate === "land" && input.decision === "approved"
-                  ? yield* projectionSnapshotQuery.getCommandReadModel().pipe(
-                      Effect.flatMap((readModel) => {
-                        const task = readModel.tasks.find((entry) => entry.id === input.taskId);
-                        return task?.worktreePath
-                          ? inspectTaskWorktreeCompletion({
-                              worktreePath: task.worktreePath,
-                              process: vcsProcess,
-                            }).pipe(Effect.map(Option.some))
-                          : Effect.succeed(Option.none());
-                      }),
-                    )
-                  : Option.none();
               return yield* dispatchNormalizedCommand({
                 type: "task.gate.resolve",
                 commandId,
@@ -1651,9 +1681,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 approvedHash: input.approvedHash,
                 decision: input.decision,
                 origin: "human",
-                ...(Option.isSome(worktreeCompletion)
-                  ? { worktreeCompletion: worktreeCompletion.value }
-                  : {}),
                 createdAt,
               });
             }).pipe(

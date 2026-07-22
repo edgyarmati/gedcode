@@ -77,6 +77,8 @@ import Migration0064 from "./Migrations/064_ProjectContextRunAppliedResolution.t
 import Migration0065 from "./Migrations/065_ProjectionStageStartHead.ts";
 import Migration0066 from "./Migrations/066_SettleLegacyProjectContextRuns.ts";
 import Migration0069 from "./Migrations/069_ProjectionThreadOrchestrationOwnership.ts";
+import Migration0071 from "./Migrations/071_PmLifecycleDeliveryRecovery.ts";
+import Migration0073 from "./Migrations/073_PmLifecycleDeliveryEpisodes.ts";
 import Migration0067 from "./Migrations/067_RemoveLegacyProjectContextOnboarding.ts";
 import Migration0068 from "./Migrations/068_ProjectionPendingGatePullRequest.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
@@ -163,6 +165,8 @@ export const migrationEntries = [
   [69, "ProjectionThreadOrchestrationOwnership", Migration0069],
   [67, "RemoveLegacyProjectContextOnboarding", Migration0067],
   [68, "ProjectionPendingGatePullRequest", Migration0068],
+  [71, "PmLifecycleDeliveryRecovery", Migration0071],
+  [73, "PmLifecycleDeliveryEpisodes", Migration0073],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
