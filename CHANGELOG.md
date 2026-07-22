@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed initial Orchestrator worker handoffs failing before their lazily managed task worktree exists.
+  Stage ownership now records the reserved task branch HEAD from the primary checkout on first
+  dispatch, then continues reading subsequent stage boundaries from the created worktree.
+
 - Accelerated the project-context cleanup upgrade by compacting event streams in one ranked pass
   instead of running a correlated count per event, preventing large orchestration databases from
   stalling desktop startup.

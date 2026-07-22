@@ -24,6 +24,7 @@ import { assert, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -259,6 +260,9 @@ const makeLayer = (
     }
     if (input.operation === "OrchestratorTaskCompletion.head") {
       return Effect.succeed(vcsOutput("b".repeat(40)));
+    }
+    if (input.operation === "OrchestratorTaskCompletion.startHead") {
+      return Effect.succeed(vcsOutput("a".repeat(40)));
     }
     if (input.operation === "OrchestratorTaskCompletion.status") {
       return Effect.succeed(vcsOutput());
@@ -1026,8 +1030,14 @@ it.effect("splitTask derives stable children and resolves dependencies by earlie
 
 it.effect("handoffWorker dispatches a guarded task.stage.start command and returns a handle", () =>
   Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const worktreePath = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "gedcode-pm-handoff-existing-",
+    });
     const dispatched: OrchestrationCommand[] = [];
-    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel([makeTask({ worktreePath })]))),
+    );
     const handoffWorker = findTool(tools, "handoffWorker");
 
     const result = yield* Effect.promise(() =>
@@ -1051,13 +1061,76 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
       stageThreadId,
       awaitedTurnId: null,
     });
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("handoffWorker starts the first worker before its lazy worktree exists", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const vcsCalls: Array<{
+      readonly operation: string;
+      readonly cwd: string;
+      readonly args: ReadonlyArray<string>;
+    }> = [];
+    const initialTask = makeTask({
+      status: "draft",
+      branch: "ged/feature/first-worker",
+      worktreePath: "/repo/.worktrees/first-worker",
+      stageThreadIds: [],
+      currentStageThreadId: null,
+    });
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([initialTask], []), null, {
+          vcsProcess: {
+            run: (input) => {
+              vcsCalls.push({ operation: input.operation, cwd: input.cwd, args: input.args });
+              if (input.operation === "OrchestratorTaskCompletion.startHead") {
+                return Effect.succeed(vcsOutput("a".repeat(40)));
+              }
+              return Effect.die(
+                `Unexpected VCS operation before first worktree: ${input.operation}`,
+              );
+            },
+          },
+        }),
+      ),
+    );
+    const handoffWorker = findTool(tools, "handoffWorker");
+
+    yield* Effect.promise(() =>
+      handoffWorker.execute("tool-first-worker", {
+        taskId,
+        role: "work",
+        tier: "smart",
+        instructions: "Implement the task.",
+      }),
+    );
+
+    assert.deepStrictEqual(vcsCalls, [
+      {
+        operation: "OrchestratorTaskCompletion.startHead",
+        cwd: "/repo",
+        args: ["rev-parse", "--verify", "ged/feature/first-worker"],
+      },
+    ]);
+    assert.strictEqual(dispatched[0]?.type, "task.stage.start");
+    if (dispatched[0]?.type === "task.stage.start") {
+      assert.strictEqual(dispatched[0].startHead, "a".repeat(40));
+    }
   }),
 );
 
 it.effect("handoffWorker accepts verify stage handoffs", () =>
   Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const worktreePath = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "gedcode-pm-verify-existing-",
+    });
     const dispatched: OrchestrationCommand[] = [];
-    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(makeLayer(dispatched, makeReadModel([makeTask({ worktreePath })]))),
+    );
     const handoffWorker = findTool(tools, "handoffWorker");
 
     yield* Effect.promise(() =>
@@ -1075,7 +1148,7 @@ it.effect("handoffWorker accepts verify stage handoffs", () =>
       assert.strictEqual(dispatched[0].capabilityTier, "cheap");
       assert.strictEqual(dispatched[0].startHead, "b".repeat(40));
     }
-  }),
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect(

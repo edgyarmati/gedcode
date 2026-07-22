@@ -3,6 +3,7 @@ import type {
   OrchestrationTaskWorktreeCompletion,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
 import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
@@ -43,6 +44,26 @@ export const inspectTaskWorktreeCompletion = Effect.fn("inspectTaskWorktreeCompl
     } satisfies OrchestrationTaskWorktreeCompletion;
   },
 );
+
+export const inspectTaskStageStartHead = Effect.fn("inspectTaskStageStartHead")(function* (input: {
+  readonly worktreePath: string;
+  readonly primaryCheckoutPath: string;
+  readonly branch: string;
+  readonly process: Pick<VcsProcessShape, "run">;
+  readonly fileSystem: Pick<FileSystem.FileSystem, "exists">;
+}) {
+  if (yield* input.fileSystem.exists(input.worktreePath)) {
+    return (yield* inspectTaskWorktreeCompletion(input)).head;
+  }
+
+  const result = yield* input.process.run({
+    operation: "OrchestratorTaskCompletion.startHead",
+    command: "git",
+    args: ["rev-parse", "--verify", input.branch],
+    cwd: input.primaryCheckoutPath,
+  });
+  return result.stdout.trim();
+});
 
 export const inspectStageWorktreeSettlement = Effect.fn("inspectStageWorktreeSettlement")(
   function* (input: {

@@ -29,6 +29,7 @@ import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import { createHash } from "node:crypto";
 
@@ -41,7 +42,7 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../../terminal/Services/Manager.ts";
 import { cancelOrchestrationTaskWithServices } from "../taskCancellation.ts";
 import { landOrchestrationTaskWithServices } from "../taskLanding.ts";
-import { inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
+import { inspectTaskStageStartHead, inspectTaskWorktreeCompletion } from "../worktreeCompletion.ts";
 import { interruptOrchestrationStageWithServices } from "../stageInterrupt.ts";
 import { dispatchReleaseWithServices, releaseDispatchContentHash } from "../releaseDispatch.ts";
 import { GitHubCli } from "../../sourceControl/GitHubCli.ts";
@@ -573,6 +574,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const runtimeContext = yield* Effect.context<never>();
   const vcsProcess = Context.getOption(runtimeContext, VcsProcess);
+  const fileSystem = Context.getOption(runtimeContext, FileSystem.FileSystem);
   const branchReservationsByTaskId = new Map<
     TaskId,
     { readonly cwd: string; readonly reservation: TaskBranchReservation }
@@ -890,11 +892,11 @@ export const makePmToolExecutors = Effect.gen(function* () {
           const taskId = TaskId.make(params.taskId);
           const readModelBeforeStart = yield* snapshotQuery.getCommandReadModel();
           const taskBeforeStart = readModelBeforeStart.tasks.find((entry) => entry.id === taskId);
+          const projectBeforeStart = readModelBeforeStart.projects.find(
+            (entry) => entry.id === taskBeforeStart?.projectId,
+          );
           if (params.role === "verify") {
-            const project = readModelBeforeStart.projects.find(
-              (entry) => entry.id === taskBeforeStart?.projectId,
-            );
-            if (taskBeforeStart?.worktreePath == null || project === undefined) {
+            if (taskBeforeStart?.worktreePath == null || projectBeforeStart === undefined) {
               return yield* new PmToolExecutionError({
                 detail: `Task '${taskId}' does not have a project-owned worktree to prepare for verification.`,
               });
@@ -905,17 +907,24 @@ export const makePmToolExecutors = Effect.gen(function* () {
               });
             }
             yield* prepareTaskForVerification({
-              primaryCheckoutPath: project.workspaceRoot,
+              primaryCheckoutPath: projectBeforeStart.workspaceRoot,
               worktreePath: taskBeforeStart.worktreePath,
               process: vcsProcess.value,
             }).pipe(Effect.mapError((cause) => new PmToolExecutionError({ detail: cause.detail })));
           }
           const startHead =
-            taskBeforeStart?.worktreePath && Option.isSome(vcsProcess)
-              ? (yield* inspectTaskWorktreeCompletion({
+            taskBeforeStart?.worktreePath &&
+            taskBeforeStart.branch !== null &&
+            projectBeforeStart !== undefined &&
+            Option.isSome(vcsProcess) &&
+            Option.isSome(fileSystem)
+              ? yield* inspectTaskStageStartHead({
                   worktreePath: taskBeforeStart.worktreePath,
+                  primaryCheckoutPath: projectBeforeStart.workspaceRoot,
+                  branch: taskBeforeStart.branch,
                   process: vcsProcess.value,
-                })).head
+                  fileSystem: fileSystem.value,
+                })
               : undefined;
           const sequence = yield* dispatch({
             type: "task.stage.start",
