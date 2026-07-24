@@ -2,7 +2,6 @@ import * as Effect from "effect/Effect";
 import * as Data from "effect/Data";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
-import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
 
 export interface TaskNoChangeEvidence {
   readonly baseHead: string;
@@ -45,14 +44,10 @@ export const inspectTaskNoChangeEvidence = Effect.fn("inspectTaskNoChangeEvidenc
           : input.process.run({
               operation: "OrchestratorTaskNoChange.status",
               command: "git",
-              args: [
-                "status",
-                "--porcelain=v1",
-                "--untracked-files=all",
-                "--",
-                ".",
-                `:(exclude)${TASK_WORKTREE_HOOKS_DIR}/**`,
-              ],
+              // The managed hooks directory is kept out of the worktree via
+              // info/exclude, so an untracked-files status here never surfaces
+              // it and no negative pathspec (which would exit 1) is needed.
+              args: ["status", "--porcelain=v1", "--untracked-files=all", "--", "."],
               cwd: input.worktreePath,
             }),
       ],

@@ -2,7 +2,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
-import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
+import { isTaskWorktreeHooksPath } from "./workerSafety.ts";
 
 const STATUS_PREFIX_LENGTH = 3;
 const MAX_DIFF_BYTES = 250_000;
@@ -24,7 +24,11 @@ export interface TaskWorktreeChanges {
   readonly diffTruncated: boolean;
 }
 
-const reviewPathspec = [".", `:(exclude)${TASK_WORKTREE_HOOKS_DIR}/**`] as const;
+// The managed hooks directory is excluded from staging via the worktree's
+// info/exclude (see workerSafety.ensureTaskWorktreeHooksIgnored); a negative
+// `:(exclude)` pathspec would make git exit 1 once the directory is ignored.
+// Selected paths are additionally guarded against the hooks dir below.
+const reviewPathspec = ["."] as const;
 
 function parsePorcelainPaths(output: string): ReadonlyArray<string> {
   const records = output.split("\0");
@@ -63,8 +67,7 @@ function validateSelectedPaths(
       path.startsWith("../") ||
       path.includes("/../") ||
       path.includes("\\") ||
-      path === TASK_WORKTREE_HOOKS_DIR ||
-      path.startsWith(`${TASK_WORKTREE_HOOKS_DIR}/`)
+      isTaskWorktreeHooksPath(path)
     ) {
       return Effect.fail(
         new TaskChangeReviewError({
@@ -127,7 +130,9 @@ export const inspectTaskWorktreeChanges = Effect.fn("inspectTaskWorktreeChanges"
       ],
       { concurrency: "unbounded" },
     );
-    const paths = parsePorcelainPaths(status.stdout);
+    const paths = parsePorcelainPaths(status.stdout).filter(
+      (path) => !isTaskWorktreeHooksPath(path),
+    );
     if (head.stdout.trim().length === 0) {
       return yield* new TaskChangeReviewError({
         detail: "Task worktree HEAD could not be resolved.",

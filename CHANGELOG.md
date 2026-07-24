@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed Orchestrator task verification never recording, which left every task stuck at the landing gate
+  in worktrees whose repository does not ignore the managed `.gedcode-hooks` directory. Worker safety
+  now registers the hooks directory in the worktree's git `info/exclude` on every handoff, and change
+  inspection, staging, and stage-ownership audits use a plain pathspec instead of a negative
+  `:(exclude)` term (which git rejects with exit 1 once the directory is ignored). The managed hooks
+  are still never surfaced as task changes or committed into the server-owned verification commit.
+
 - Fixed packaged dev desktop builds failing before opening a window when persisted helper runs contain
   transport retry state. Projection snapshots now select the retry count required by their schema.
 

@@ -5,7 +5,7 @@ import type {
 import * as Effect from "effect/Effect";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
-import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
+import { isTaskWorktreeHooksPath } from "./workerSafety.ts";
 
 const DOCUMENTATION_EXTENSIONS = [".adoc", ".md", ".mdx", ".mmd", ".rst", ".txt"];
 
@@ -19,9 +19,7 @@ export function isStageDocumentationPath(path: string): boolean {
 }
 
 const parseNulPaths = (output: string): ReadonlyArray<string> =>
-  output
-    .split("\0")
-    .filter((path) => path.length > 0 && !path.startsWith(`${TASK_WORKTREE_HOOKS_DIR}/`));
+  output.split("\0").filter((path) => path.length > 0 && !isTaskWorktreeHooksPath(path));
 
 export const inspectStageOwnershipViolations = Effect.fn("inspectStageOwnershipViolations")(
   function* (input: {

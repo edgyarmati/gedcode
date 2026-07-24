@@ -1304,6 +1304,10 @@ describe("ProviderCommandReactor", () => {
           ],
           cwd: expectedWorktreePath,
         }),
+        expect.objectContaining({
+          args: ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+          cwd: expectedWorktreePath,
+        }),
       ]);
     } finally {
       for (const [name, value] of Object.entries(previousEnv)) {

@@ -7,11 +7,14 @@ import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 
 import type { VcsProcessShape } from "../vcs/VcsProcess.ts";
-import { TASK_WORKTREE_HOOKS_DIR } from "./workerSafety.ts";
 import { inspectStageOwnershipViolations } from "./stageOwnership.ts";
 import { withTaskLifecycleLock } from "./taskLifecycleCoordinator.ts";
 
-const TASK_WORKTREE_PATHSPEC = [".", `:(exclude)${TASK_WORKTREE_HOOKS_DIR}/**`] as const;
+// The managed hooks directory is kept out of staging via the worktree's
+// info/exclude (see workerSafety.ensureTaskWorktreeHooksIgnored), so a plain
+// pathspec is sufficient here — a negative `:(exclude)` term makes git exit 1
+// once the directory is ignored.
+const TASK_WORKTREE_PATHSPEC = ["."] as const;
 const VERIFICATION_COMMIT_TITLE_MAX_CHARS = 72;
 const VERIFICATION_FINALIZATION_ERROR_MAX_CHARS = 4_096;
 
@@ -52,8 +55,7 @@ export const inspectTaskWorktreeCompletion = Effect.fn("inspectTaskWorktreeCompl
             "--porcelain=v1",
             "--untracked-files=all",
             "--",
-            ".",
-            `:(exclude)${TASK_WORKTREE_HOOKS_DIR}/**`,
+            ...TASK_WORKTREE_PATHSPEC,
           ],
           cwd: input.worktreePath,
         }),

@@ -7,6 +7,19 @@ import { ORCHESTRATOR_WORKER_RUNTIME_MODE } from "./orchestratorRuntimeModes.ts"
 
 export const TASK_WORKTREE_HOOKS_DIR = ".gedcode-hooks";
 
+// Anchored to the worktree root so plain `git add -A` / `git status` skip the
+// managed hooks without a negative pathspec (which git rejects with exit 1 when
+// the directory is already ignored). Registered in the repository's info/exclude
+// rather than a tracked `.gitignore`, so target repos are never mutated.
+const TASK_WORKTREE_HOOKS_IGNORE_ENTRY = `/${TASK_WORKTREE_HOOKS_DIR}/`;
+
+// A repository-relative path that belongs to the managed hooks directory.
+// Used to keep the server-owned safety hooks out of change inspection, staging
+// selection, and stage-ownership audits, independent of git-ignore state.
+export function isTaskWorktreeHooksPath(path: string): boolean {
+  return path === TASK_WORKTREE_HOOKS_DIR || path.startsWith(`${TASK_WORKTREE_HOOKS_DIR}/`);
+}
+
 export function resolveWorkerStageRuntimeMode() {
   return ORCHESTRATOR_WORKER_RUNTIME_MODE;
 }
@@ -97,5 +110,40 @@ export const installTaskWorktreePushBlockHook = Effect.fn("installTaskWorktreePu
       args: ["config", "--worktree", "core.hooksPath", hooksDir],
       cwd: worktreePath,
     });
+    yield* ensureTaskWorktreeHooksIgnored(worktreePath);
+  },
+);
+
+// Ensures the managed hooks directory is git-ignored inside the worktree so the
+// server-owned staging step (`git add -A`) neither fails on it nor commits it.
+// Idempotent: safe to run on every handoff. Writes to the repository's
+// info/exclude (resolved via git so linked worktrees share the common dir),
+// leaving any tracked `.gitignore` untouched.
+export const ensureTaskWorktreeHooksIgnored = Effect.fn("ensureTaskWorktreeHooksIgnored")(
+  function* (worktreePath: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const vcsProcess = yield* VcsProcess;
+    const resolved = yield* vcsProcess.run({
+      operation: "OrchestratorWorkerSafety.resolveInfoExclude",
+      command: "git",
+      args: ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+      cwd: worktreePath,
+    });
+    const excludePath = resolved.stdout.trim();
+    if (excludePath.length === 0) {
+      return;
+    }
+    const current = (yield* fs.exists(excludePath)) ? yield* fs.readFileString(excludePath) : "";
+    const alreadyIgnored = current
+      .split("\n")
+      .some((line) => line.trim() === TASK_WORKTREE_HOOKS_IGNORE_ENTRY);
+    if (alreadyIgnored) {
+      return;
+    }
+    const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+    yield* fs.writeFileString(
+      excludePath,
+      `${current}${separator}${TASK_WORKTREE_HOOKS_IGNORE_ENTRY}\n`,
+    );
   },
 );
