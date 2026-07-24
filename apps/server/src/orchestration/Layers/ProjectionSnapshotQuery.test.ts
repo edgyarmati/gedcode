@@ -504,6 +504,63 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
+  it.effect("hydrates persisted helper transport retry counts", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_helper_runs`;
+      yield* sql`
+        INSERT INTO projection_helper_runs (
+          helper_run_id,
+          project_id,
+          attachment_json,
+          access_mode,
+          tier,
+          provider_instance_id,
+          model,
+          model_options_json,
+          prompt,
+          status,
+          transient_retry_count,
+          provider_thread_id,
+          result,
+          failure_message,
+          created_at,
+          started_at,
+          completed_at,
+          updated_at
+        ) VALUES (
+          'helper-run-retried',
+          'project-1',
+          '{"kind":"pm","threadId":"thread-1"}',
+          'read-only',
+          'cheap',
+          'codex',
+          'gpt-5-codex',
+          NULL,
+          'Inspect the failure',
+          'running',
+          1,
+          'helper-thread-1',
+          NULL,
+          NULL,
+          '2026-07-23T08:00:00.000Z',
+          '2026-07-23T08:01:00.000Z',
+          NULL,
+          '2026-07-23T08:02:00.000Z'
+        )
+      `;
+
+      const commandReadModel = yield* snapshotQuery.getCommandReadModel();
+      const snapshot = yield* snapshotQuery.getSnapshot();
+
+      assert.strictEqual(commandReadModel.helperRuns?.[0]?.transientRetryCount, 1);
+      assert.strictEqual(snapshot.helperRuns?.[0]?.transientRetryCount, 1);
+      yield* sql`DELETE FROM projection_helper_runs WHERE helper_run_id = 'helper-run-retried'`;
+    }),
+  );
+
   it.effect("keeps archived threads out of the main shell snapshot", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;

@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fixed packaged dev desktop builds failing before opening a window when persisted helper runs contain
+  transport retry state. Projection snapshots now select the retry count required by their schema.
+
 - Orchestrator-created pull requests are now tracked until their remote merge. Opening a draft PR
   keeps its task nonterminal, its worktree available, and dependent tasks blocked; a durable
   provider-neutral merge observation completes and archives the task. Closed pull requests remain

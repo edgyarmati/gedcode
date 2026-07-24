@@ -786,6 +786,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           access_mode AS "accessMode",
           tier, provider_instance_id AS "providerInstanceId", model,
           model_options_json AS "modelOptions", prompt, status,
+          transient_retry_count AS "transientRetryCount",
           provider_thread_id AS "providerThreadId", result,
           failure_message AS "failureMessage", created_at AS "createdAt",
           started_at AS "startedAt", completed_at AS "completedAt", updated_at AS "updatedAt"
