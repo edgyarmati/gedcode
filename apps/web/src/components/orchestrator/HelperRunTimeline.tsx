@@ -1,19 +1,26 @@
 import {
+  HelperRunId,
   type EnvironmentId,
   type OrchestrationHelperRun,
   type ProjectId,
   type TaskId,
 } from "@t3tools/contracts";
 import { XIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useId, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import {
+  dismissPmHelper,
+  selectDismissedPmHelperIds,
+  useHelperDismissalStore,
+} from "../../helperDismissalStore";
 import {
   selectHelperRunsForProjectRef,
   selectHelperRunsForTaskRef,
   useStore,
   type ScopedTaskRef,
 } from "../../store";
+import { formatClockTime } from "../../timestampFormat";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 
@@ -153,23 +160,42 @@ function HelperRunDetails({ row }: { readonly row: HelperRunTimelineRow }) {
 export interface PmHelperCardProps {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
-  // Provided once dismissal is wired; a terminal card only shows its close
-  // control when there is somewhere to record the dismissal.
+  // Dismissed runs are client-local state owned by the caller, so the card stays
+  // a pure projection of the store plus what this browser has already closed.
+  readonly dismissedHelperRunIds?: ReadonlySet<string>;
+  // A terminal card only shows its close control when there is somewhere to
+  // record the dismissal.
   readonly onDismiss?: (helperRunId: string) => void;
 }
 
 // Only the newest PM helper is pinned. Replaced runs stay reachable through
 // project Helper history rather than stacking cards on the PM surface.
-export function PmHelperCard({ environmentId, projectId, onDismiss }: PmHelperCardProps) {
+export function PmHelperCard({
+  dismissedHelperRunIds,
+  environmentId,
+  onDismiss,
+  projectId,
+}: PmHelperCardProps) {
   const runs = useStore(
     useShallow((state) => selectHelperRunsForProjectRef(state, { environmentId, projectId })),
   );
-  const card = useMemo(() => selectPinnedPmHelperCard(runs), [runs]);
+  const card = useMemo(
+    () => selectPinnedPmHelperCard(runs, dismissedHelperRunIds),
+    [dismissedHelperRunIds, runs],
+  );
+  const headingId = useId();
   if (card === null) return null;
 
   return (
-    <section className="space-y-2 border-b border-border bg-muted/12 px-3 py-2">
-      <h2 className="text-xs font-semibold text-muted-foreground uppercase">Latest helper</h2>
+    // Named so the pinned card is a distinct landmark from Helper history, which
+    // repeats the same run text once the card is replaced.
+    <section
+      aria-labelledby={headingId}
+      className="space-y-2 border-b border-border bg-muted/12 px-3 py-2"
+    >
+      <h2 className="text-xs font-semibold text-muted-foreground uppercase" id={headingId}>
+        Latest helper
+      </h2>
       <div className="rounded-lg border border-border bg-card p-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -197,6 +223,87 @@ export function PmHelperCard({ environmentId, projectId, onDismiss }: PmHelperCa
         <HelperRunDetails row={card} />
       </div>
     </section>
+  );
+}
+
+// Every PM helper stays here after its card is replaced or dismissed, so a result
+// the user closed is still recoverable. Collapsed by default: the pinned card is
+// the live surface, history is the archive.
+function PmHelperHistory({ rows }: { readonly rows: ReadonlyArray<PmHelperHistoryRow> }) {
+  if (rows.length === 0) return null;
+
+  return (
+    <details className="border-b border-border bg-muted/12 px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold text-muted-foreground uppercase">
+        Helper history ({rows.length})
+      </summary>
+      <ol className="mt-2 space-y-2">
+        {rows.map((row) => {
+          const startedLabel = formatClockTime(row.startedAt);
+          return (
+            <li key={row.id} className="rounded-lg border border-border bg-card p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-sm font-medium">{row.prompt}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {row.tierLabel} · {row.backendLabel} · Read only
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {startedLabel === null ? null : (
+                    <span className="text-xs text-muted-foreground">{startedLabel}</span>
+                  )}
+                  <Badge size="sm" variant={row.statusVariant}>
+                    {row.statusLabel}
+                  </Badge>
+                </div>
+              </div>
+              {row.result === null && row.failureMessage === null ? null : (
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-xs font-sans">
+                  {row.result ?? row.failureMessage}
+                </pre>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </details>
+  );
+}
+
+// The PM helper surface: one pinned card for the newest run plus the durable
+// history behind it. Dismissal is recorded client-side here rather than passed in,
+// so closing a card survives navigation, remounts, and reloads.
+export function PmHelperSurface({
+  environmentId,
+  projectId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+}) {
+  const projectRef = useMemo(() => ({ environmentId, projectId }), [environmentId, projectId]);
+  const runs = useStore(useShallow((state) => selectHelperRunsForProjectRef(state, projectRef)));
+  const dismissedHelperRunIds = useHelperDismissalStore(
+    useShallow((state) => selectDismissedPmHelperIds(state, projectRef)),
+  );
+  const historyRows = useMemo(() => buildPmHelperHistoryRows(runs), [runs]);
+  const onDismiss = useCallback(
+    (helperRunId: string) => {
+      dismissPmHelper({ ...projectRef, helperRunId: HelperRunId.make(helperRunId) });
+    },
+    [projectRef],
+  );
+
+  return (
+    <>
+      <PmHelperCard
+        dismissedHelperRunIds={dismissedHelperRunIds}
+        environmentId={environmentId}
+        onDismiss={onDismiss}
+        projectId={projectId}
+      />
+      <PmHelperHistory rows={historyRows} />
+    </>
   );
 }
 

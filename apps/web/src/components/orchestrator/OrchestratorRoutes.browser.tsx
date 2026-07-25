@@ -11,7 +11,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { afterEach, expect, it, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import {
   RouterProvider,
@@ -25,6 +25,7 @@ import {
   __resetEnvironmentApiOverridesForTests,
   __setEnvironmentApiOverrideForTests,
 } from "../../environmentApi";
+import { dismissPmHelper, useHelperDismissalStore } from "../../helperDismissalStore";
 import { __resetLocalApiForTests } from "../../localApi";
 import { initialEnvironmentState, useStore } from "../../store";
 import type { Thread } from "../../types";
@@ -39,7 +40,7 @@ import {
 import { TaskBoard } from "./TaskBoard";
 import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
 import { StageTimeline } from "./StageTimeline";
-import { HelperRunTimeline, PmHelperCard } from "./HelperRunTimeline";
+import { HelperRunTimeline, PmHelperCard, PmHelperSurface } from "./HelperRunTimeline";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
@@ -128,6 +129,9 @@ afterEach(async () => {
       [environmentId]: initialEnvironmentState,
     },
   });
+  // Dismissal persists by design, so it has to be cleared explicitly between tests.
+  useHelperDismissalStore.persist.clearStorage();
+  useHelperDismissalStore.setState({ dismissedAtByHelperKey: {} });
 });
 
 it("opens the add-project flow from the orchestrator landing header", async () => {
@@ -407,6 +411,112 @@ it("pins only the newest PM helper without adding a task-board card", async () =
     .element(page.getByText("Smart · codex · gpt-5.6-sol · Read only"))
     .toBeInTheDocument();
   await expect.element(page.getByText("Browser task")).not.toBeInTheDocument();
+});
+
+const pmProjectId = ProjectId.make("project-browser");
+const dismissedHelperRunId = HelperRunId.make("helper-pm-dismissed");
+const replacementHelperRunId = HelperRunId.make("helper-pm-replacement");
+
+const makeSettledPmHelper = (
+  id: HelperRunId,
+  { createdAt, prompt }: { readonly createdAt: string; readonly prompt: string },
+) => ({
+  id,
+  projectId: pmProjectId,
+  attachment: { kind: "pm" as const, threadId: ThreadId.make("pm:project-browser") },
+  accessMode: "read-only" as const,
+  tier: "cheap" as const,
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  model: "gpt-5.6-mini",
+  modelOptions: null,
+  prompt,
+  status: "completed" as const,
+  transientRetryCount: 0,
+  providerThreadId: ThreadId.make(`helper:${String(id)}`),
+  result: "Two blockers remain in the verify stage.",
+  failureMessage: null,
+  createdAt,
+  startedAt: createdAt,
+  completedAt: createdAt,
+  updatedAt: createdAt,
+});
+
+const settledPmHelper = makeSettledPmHelper(dismissedHelperRunId, {
+  createdAt: "2026-07-18T12:00:00.000Z",
+  prompt: "Summarize the release blockers.",
+});
+
+it("dismisses a settled PM helper while keeping it in project Helper history", async () => {
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        helperRunById: { [dismissedHelperRunId]: settledPmHelper },
+      },
+    },
+  });
+
+  await render(<PmHelperSurface environmentId={environmentId} projectId={pmProjectId} />);
+
+  const pinnedCard = page.getByRole("region", { name: "Latest helper" });
+  const dismiss = page.getByRole("button", { name: "Dismiss latest helper" });
+  await expect.element(dismiss).toBeInTheDocument();
+  // Keyboard users must be able to close the card without a pointer.
+  await userEvent.tab();
+  await expect.element(dismiss).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+
+  await expect.element(pinnedCard).not.toBeInTheDocument();
+  // The run itself is not lost: history keeps the prompt, backend, timing, and result.
+  await page.getByText(/Helper history/).click();
+  await expect.element(page.getByText("Summarize the release blockers.")).toBeInTheDocument();
+  await expect.element(page.getByText(/codex · gpt-5\.6-mini/)).toBeInTheDocument();
+  await expect
+    .element(page.getByText("Two blockers remain in the verify stage."))
+    .toBeInTheDocument();
+
+  // A newer helper pins normally: the earlier dismissal cannot hide it.
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        helperRunById: {
+          [dismissedHelperRunId]: settledPmHelper,
+          [replacementHelperRunId]: makeSettledPmHelper(replacementHelperRunId, {
+            createdAt: "2026-07-18T12:05:00.000Z",
+            prompt: "Recheck the release blockers.",
+          }),
+        },
+      },
+    },
+  });
+
+  await expect.element(pinnedCard).toBeInTheDocument();
+  await expect.element(pinnedCard.getByText("Recheck the release blockers.")).toBeInTheDocument();
+});
+
+// A dismissal recorded before this mount stands in for the previous page load, so
+// the surface must read it on mount rather than only reacting to the click.
+it("keeps a helper dismissed by an earlier page load out of the pinned card", async () => {
+  useStore.setState({
+    environmentStateById: {
+      [environmentId]: {
+        ...initialEnvironmentState,
+        helperRunById: { [dismissedHelperRunId]: settledPmHelper },
+      },
+    },
+  });
+  dismissPmHelper({
+    environmentId,
+    projectId: pmProjectId,
+    helperRunId: dismissedHelperRunId,
+  });
+
+  await render(<PmHelperSurface environmentId={environmentId} projectId={pmProjectId} />);
+
+  await expect.element(page.getByRole("region", { name: "Latest helper" })).not.toBeInTheDocument();
+  await page.getByText(/Helper history/).click();
+  await expect.element(page.getByText("Summarize the release blockers.")).toBeInTheDocument();
 });
 
 it("cancels a non-terminal task from the task header", async () => {

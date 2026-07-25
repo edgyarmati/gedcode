@@ -18,6 +18,7 @@ import {
   useStore,
   type ScopedTaskRef,
 } from "../../store";
+import { formatClockTime } from "../../timestampFormat";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
 type StageStatusVariant = "info" | "success" | "warning" | "destructive";
@@ -137,17 +138,6 @@ export function buildTaskHistoryRows(
   );
 }
 
-function formatStageTime(iso: string): string | null {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) {
-    return null;
-  }
-  return new Date(ms).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 // Durable stage timeline for a task: the classify → plan → review → work →
 // verify pipeline with each stage's backend/model and live status. Seeded from
 // the task/project snapshot and kept live by streamed stage events. Renders
@@ -178,7 +168,7 @@ export function StageTimeline({
       <h2 className="text-xs font-semibold text-muted-foreground uppercase">Task history</h2>
       <ol className="space-y-2">
         {rows.map((row) => {
-          const startedLabel = formatStageTime(row.startedAt);
+          const startedLabel = formatClockTime(row.startedAt);
           if (row.kind === "helper") {
             return (
               <li key={`helper:${row.key}`} className="rounded-lg border border-border bg-card p-3">

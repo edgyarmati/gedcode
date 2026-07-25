@@ -44,6 +44,21 @@ export function formatTimestamp(isoDate: string, timestampFormat: TimestampForma
   return getTimestampFormatter(timestampFormat, true).format(new Date(isoDate));
 }
 
+const clockTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/**
+ * Wall-clock hour and minute for timeline rows, or `null` when the stamp cannot be
+ * parsed — callers omit the label rather than render an "Invalid Date".
+ */
+export function formatClockTime(isoDate: string): string | null {
+  const ms = Date.parse(isoDate);
+  if (!Number.isFinite(ms)) return null;
+  return clockTimeFormatter.format(new Date(ms));
+}
+
 const monthNameFormatter = new Intl.DateTimeFormat(undefined, { month: "long" });
 
 function ordinalSuffix(day: number): string {

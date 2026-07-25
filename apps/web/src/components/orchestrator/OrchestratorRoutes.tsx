@@ -60,7 +60,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { StageTimeline } from "./StageTimeline";
-import { PmHelperCard } from "./HelperRunTimeline";
+import { PmHelperSurface } from "./HelperRunTimeline";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { readEnvironmentApi } from "../../environmentApi";
@@ -692,7 +692,7 @@ function PmConversation({
           {lifecycleDeliveryError}
         </div>
       ) : null}
-      <PmHelperCard environmentId={environmentId} projectId={projectId} />
+      <PmHelperSurface environmentId={environmentId} projectId={projectId} />
       {activeContextRun ? (
         <div className="border-b border-border bg-muted/30 px-4 py-3" role="status">
           <div className="flex flex-wrap items-center justify-between gap-3">
