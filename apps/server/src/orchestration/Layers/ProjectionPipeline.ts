@@ -2423,9 +2423,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.runtimeMode === undefined
               ? {}
               : { runtimeMode: event.payload.runtimeMode }),
-            ...(event.payload.networkAccess === undefined
-              ? {}
-              : { networkAccess: event.payload.networkAccess }),
             ...(event.payload.startHead === undefined
               ? {}
               : { startHead: event.payload.startHead }),

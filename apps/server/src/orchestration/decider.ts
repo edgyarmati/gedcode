@@ -2515,8 +2515,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         rolePromptPrefixes: project.rolePromptPrefixes,
       });
       const workerRuntimeMode = resolveWorkerStageRuntimeMode();
-      const workerNetworkAccess =
-        (orchestratorDefaults.workerNetworkEnabled ?? true) && (command.networkAccess ?? true);
 
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
@@ -2536,7 +2534,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           model: modelSelection.model,
           ...(modelSelection.options === undefined ? {} : { modelOptions: modelSelection.options }),
           runtimeMode: workerRuntimeMode,
-          networkAccess: workerNetworkAccess,
           ...(command.startHead === undefined ? {} : { startHead: command.startHead }),
           updatedAt: command.createdAt,
         },

@@ -1385,9 +1385,6 @@ export function projectEvent(
                       ...(payload.runtimeMode === undefined
                         ? {}
                         : { runtimeMode: payload.runtimeMode }),
-                      ...(payload.networkAccess === undefined
-                        ? {}
-                        : { networkAccess: payload.networkAccess }),
                       ...(payload.startHead === undefined ? {} : { startHead: payload.startHead }),
                       status: "running",
                       startedAt: payload.updatedAt,

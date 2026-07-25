@@ -178,7 +178,6 @@ const ProjectionPendingGateDbRowSchema = OrchestrationPendingGate.mapFields(
 );
 const ProjectionStageHistoryDbRowSchema = OrchestrationStageHistoryEntry.mapFields(
   Struct.assign({
-    networkAccess: Schema.NullOr(Schema.BooleanFromBit),
     capabilityPauseExpiresAt: Schema.NullOr(Schema.String),
   }),
 );
@@ -365,12 +364,11 @@ function mapStageHistoryRows(
 ): OrchestrationStageHistory {
   return Object.fromEntries(
     rows.map((row) => {
-      const { networkAccess, capabilityPauseExpiresAt, ...stageHistory } = row;
+      const { capabilityPauseExpiresAt, ...stageHistory } = row;
       return [
         row.stageThreadId,
         {
           ...stageHistory,
-          ...(networkAccess === null ? {} : { networkAccess }),
           ...(capabilityPauseExpiresAt === null ? {} : { capabilityPauseExpiresAt }),
         },
       ];
@@ -880,7 +878,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           provider_instance_id AS "providerInstanceId",
           model,
           runtime_mode AS "runtimeMode",
-          network_access AS "networkAccess",
           capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,

@@ -20,7 +20,6 @@ import {
 const ProjectionStageHistoryDbRow = ProjectionStageHistoryEntry.mapFields(
   Struct.assign({
     modelOptions: Schema.NullOr(Schema.fromJsonString(ProviderOptionSelections)),
-    networkAccess: Schema.NullOr(Schema.BooleanFromBit),
     capabilityPauseExpiresAt: Schema.NullOr(Schema.String),
   }),
 );
@@ -29,10 +28,9 @@ type ProjectionStageHistoryDbRow = typeof ProjectionStageHistoryDbRow.Type;
 const mapProjectionStageHistoryDbRow = (
   row: ProjectionStageHistoryDbRow,
 ): ProjectionStageHistoryEntry => {
-  const { networkAccess, capabilityPauseExpiresAt, ...stageHistory } = row;
+  const { capabilityPauseExpiresAt, ...stageHistory } = row;
   return {
     ...stageHistory,
-    ...(networkAccess === null ? {} : { networkAccess }),
     ...(capabilityPauseExpiresAt === null ? {} : { capabilityPauseExpiresAt }),
   };
 };
@@ -54,7 +52,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json,
           runtime_mode,
-          network_access,
           capability_pause_expires_at,
           start_head,
           status,
@@ -71,7 +68,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           ${row.model},
           ${row.modelOptions === null ? null : JSON.stringify(row.modelOptions)},
           ${row.runtimeMode ?? null},
-          ${row.networkAccess === undefined ? null : Number(row.networkAccess)},
           ${row.capabilityPauseExpiresAt ?? null},
           ${row.startHead ?? null},
           ${row.status},
@@ -88,7 +84,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model = excluded.model,
           model_options_json = excluded.model_options_json,
           runtime_mode = excluded.runtime_mode,
-          network_access = COALESCE(excluded.network_access, projection_stage_history.network_access),
           capability_pause_expires_at = excluded.capability_pause_expires_at,
           -- A later compatibility upsert (for example thread.created adding a
           -- runtime mode) must not erase the immutable stage boundary.
@@ -114,7 +109,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
-          network_access AS "networkAccess",
           capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
@@ -140,7 +134,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
-          network_access AS "networkAccess",
           capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
@@ -167,7 +160,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
-          network_access AS "networkAccess",
           capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,
@@ -194,7 +186,6 @@ const makeProjectionStageHistoryRepository = Effect.gen(function* () {
           model,
           model_options_json AS "modelOptions",
           runtime_mode AS "runtimeMode",
-          network_access AS "networkAccess",
           capability_pause_expires_at AS "capabilityPauseExpiresAt",
           start_head AS "startHead",
           status,

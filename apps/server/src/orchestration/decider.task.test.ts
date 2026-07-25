@@ -993,8 +993,8 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       });
       expect(stageStarted?.payload).toMatchObject({
         runtimeMode: "full-access",
-        networkAccess: true,
       });
+      expect(stageStarted?.payload).not.toHaveProperty("networkAccess");
       expect(turnRequested?.payload).toMatchObject({
         runtimeMode: "full-access",
         modelSelection: {
@@ -1005,53 +1005,24 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("persists the global network floor for every worker attempt", () =>
+  it.effect("does not persist a worker network policy for a stage attempt", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
       const result = yield* decideOrchestrationCommand({
         readModel,
-        orchestratorDefaults: { workerNetworkEnabled: false },
         command: {
           type: "task.stage.start",
-          commandId: asCommandId("cmd-stage-network-global-off"),
+          commandId: asCommandId("cmd-stage-network-none"),
           taskId: asTaskId("task-1"),
           role: "work",
-          // A PM request may restrict access but never re-enable the global human setting.
-          networkAccess: true,
           instructions: "Implement the accepted plan.",
           createdAt: now,
         },
       });
 
       const stageStarted = toEvents(result).find((event) => event.type === "task.stage-started");
-      expect(stageStarted).toMatchObject({
-        type: "task.stage-started",
-        payload: { networkAccess: false },
-      });
-    }),
-  );
-
-  it.effect("persists a PM handoff network restriction when the global floor allows it", () =>
-    Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "review", currentStageThreadId: null });
-      const result = yield* decideOrchestrationCommand({
-        readModel,
-        command: {
-          type: "task.stage.start",
-          commandId: asCommandId("cmd-stage-network-pm-off"),
-          taskId: asTaskId("task-1"),
-          role: "work",
-          networkAccess: false,
-          instructions: "Implement the accepted plan offline.",
-          createdAt: now,
-        },
-      });
-
-      const stageStarted = toEvents(result).find((event) => event.type === "task.stage-started");
-      expect(stageStarted).toMatchObject({
-        type: "task.stage-started",
-        payload: { networkAccess: false },
-      });
+      expect(stageStarted?.payload).toMatchObject({ runtimeMode: "full-access" });
+      expect(stageStarted?.payload).not.toHaveProperty("networkAccess");
     }),
   );
 

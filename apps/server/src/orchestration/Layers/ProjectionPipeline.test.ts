@@ -1027,6 +1027,9 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           providerInstanceId: ProviderInstanceId.make("claude_smart"),
           model: "claude-sonnet-4-6",
           modelOptions: [{ id: "thinking", value: "high" }],
+          // Historical attempts recorded an effective worker network policy.
+          // Replay must decode the field and project no network column.
+          ...({ networkAccess: true } as {}),
           updatedAt: "2026-06-22T00:00:02.000Z",
         },
       });
@@ -1076,6 +1079,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         readonly model: string;
         readonly capabilityTier: string | null;
         readonly modelOptions: string | null;
+        readonly networkAccess: number | null;
         readonly status: string;
         readonly endedAt: string | null;
       }>`
@@ -1084,6 +1088,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           model,
           capability_tier AS "capabilityTier",
           model_options_json AS "modelOptions",
+          network_access AS "networkAccess",
           status,
           ended_at AS "endedAt"
         FROM projection_stage_history
@@ -1095,6 +1100,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           model: "claude-sonnet-4-6",
           capabilityTier: "smart",
           modelOptions: '[{"id":"thinking","value":"high"}]',
+          networkAccess: null,
           status: "blocked",
           endedAt: "2026-06-22T00:00:03.000Z",
         },
