@@ -90,6 +90,52 @@ If the trust proof fails:
 - Use focused Chromium coverage for keyboard-accessible close behavior, latest-card replacement,
   persistence, and history disclosure.
 
+## WORKER-TRIPWIRE-02 — Recorded evidence (2026-07-26)
+
+Trust proof and runtime mechanics are in `NOTES.md`; this section records what the implementation
+verifies and what it deliberately does not.
+
+- **Rule coverage** — `apps/server/src/orchestration/workerTripwire.test.ts` (45 tests) executes the
+  exact materialized script (`WORKER_TRIPWIRE_HOOK_SCRIPT`) as a child process. It denies out-of-worktree
+  `rm`/`rm -rf`, `mv` destinations and sources, `> file` truncation and `tee`, `chown`/`chmod`, and
+  `git apply`/`patch`; allows the same operations inside the task worktree; and allows writes under
+  `$HOME/.cache`, `$HOME/.local`, `$HOME/Library/Caches`, `$TMPDIR`, and `uv`/package-manager and
+  compiler cache paths. Relative paths, normalized `..`, quoted and escaped paths, symlinked roots
+  (`/tmp` → `/private/tmp`, resolved through the nearest existing ancestor), and `--` argument
+  terminators are covered.
+- **Deny protocol / no approval loop** — the script emits one
+  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+  "permissionDecisionReason":"…"}}` object on stdout and exits `0`. A non-zero exit would surface as a
+  hook failure and an approval request would stall an unattended worker, so neither is used. Pinned by
+  `workerTripwire.test.ts` and by the live A/B in `NOTES.md`, where the trusted hook produced
+  `hook: PreToolUse Blocked` once with no permission request re-entering the PM.
+- **Narrow trust only** — `apps/server/src/provider/Layers/codexTripwireHook.test.ts` (9 tests) and
+  `codexTripwireHook.script.test.ts` (2 tests) pin the definition override shape
+  (`hooks.PreToolUse=[…]`), the trust override built from the hash Codex itself reports
+  (`hooks.state={ "<key>" = { trusted_hash = "sha256:…", enabled = true } }`, observed
+  `sha256:6a35caff…` for the proof script), selection of the `sessionFlags`/`preToolUse` entry only, and
+  that `-c` overrides precede the `app-server` subcommand. No `--dangerously-bypass-hook-trust` or any
+  process-wide trust switch exists anywhere in the tree.
+- **Runtime wiring** — `apps/server/src/provider/Layers/CodexAdapter.test.ts` proves two
+  `destructiveTripwire` sessions share one hook probe (`configOverrides` on both runtime calls, probe
+  count `1`) and that a session without the flag gets `configOverrides: undefined` and triggers no probe.
+  `apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts` proves a stage worker's provider
+  input carries `destructiveTripwire: true` while a chat thread's input has no such property.
+- **Failure policy (explicit decision, no degraded fallback)** — probe spawn failure, malformed
+  `hooks/list`, or a probe exceeding 15s logs a warning and yields no overrides: the worker starts
+  without the tripwire rather than not starting. This is the spec-sanctioned best-effort behavior, not an
+  alternate enforcement path.
+- **Known gaps (by design)** — scripts and opaque subprocesses, tools that do not report through
+  `PreToolUse`, and anything reached after the hook's decision are outside the guardrail. Host
+  cache/config/temp locations are allowed by an allowlist, so a destructive operation aimed there is not
+  denied.
+- **Known gap (recovery path)** — `ProviderService.recoverSessionForThread` rebuilds a session from the
+  persisted binding, which does not record `destructiveTripwire`, so a recovered worker session runs
+  without the tripwire. Exposure is narrow: `ProviderCommandReactor.ensureSessionForThread` always starts
+  worker sessions with the flag, and recovery only applies when that session is already gone. Persisting
+  the flag would mean threading it through `runtimePayload`/`toRuntimePayloadFromSession` and every
+  `upsertSessionBinding` site; deliberately out of scope here.
+
 ## Final Quality Gates
 
 - Update `CHANGELOG.md` under `## Unreleased` with the user-visible full-access worker change, removed
@@ -101,3 +147,21 @@ If the trust proof fails:
 - Run `bun lint`.
 - Run the narrowest contracts, server, and web typechecks.
 - Do not run the full workspace suite unless the user explicitly requests release verification.
+
+### Recorded run (2026-07-26)
+
+| Command | Result |
+| --- | --- |
+| `packages/contracts`: `bun run test --run src/provider.test.ts src/orchestration.test.ts src/orchestrator/config.test.ts src/settings.test.ts src/helperRun.test.ts src/providerRuntime.test.ts` | 6 files, 132 tests passed |
+| `apps/server`: `bun run test --run src/orchestration/Layers/ProviderCommandReactor.test.ts src/provider/Layers/CodexAdapter.test.ts src/provider/Layers/CodexSessionRuntime.test.ts src/provider/Layers/codexTripwireHook.test.ts src/provider/Layers/codexTripwireHook.script.test.ts src/orchestration/workerTripwire.test.ts src/orchestration/workerSafety.test.ts src/cli/config.test.ts` | 8 files, 170 tests passed |
+| `apps/server`: `bun run test --run src/orchestration/Layers/PmRuntime.test.ts src/orchestration/decider.task.test.ts src/orchestration/Layers/ProjectionPipeline.test.ts src/orchestration/mcp/orchestrationMcpTools.test.ts src/orchestration/pm/pmTools.test.ts src/provider/Layers/ProviderService.test.ts` | 6 files, 251 tests passed |
+| `apps/web`: `bun run test --run src/components/orchestrator/HelperRunTimeline.logic.test.ts src/components/orchestrator/projectOrchestrationSettings.logic.test.ts src/components/settings/SettingsPanels.logic.test.ts src/helperDismissalStore.test.ts` | 4 files, 33 tests passed |
+| `apps/web`: `bun run test:browser src/components/orchestrator/OrchestratorRoutes.browser.tsx src/components/settings/OrchestratorDefaultsSettingsPanel.browser.tsx` | 2 files, 24 tests passed (Chromium) |
+| `bun fmt` | clean (1426 files) |
+| `bun lint` | exit 0; only pre-existing `unicorn`/`no-unused-vars` warnings in untouched files |
+| `packages/contracts`, `apps/server`, `apps/web`: `bun typecheck` | all clean |
+
+Stale-wording sweep: no `workspace-write`, `workerNetworkEnabled`, `worker network`, or `networkAccess`
+remains in shipped code, copy, or docs. Surviving matches are negative assertions in tests, historical
+planning text in this directory, and `.docs/runtime-modes.md`, which documents the unrelated chat
+**Supervised** runtime mode. The full workspace suite was not run.

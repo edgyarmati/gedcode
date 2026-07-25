@@ -20,10 +20,28 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   provider-neutral merge observation completes and archives the task. Closed pull requests remain
   visible for review without being presented as landed, and synchronization performs no model calls.
 
-- Codex Orchestrator workers now always run in a workspace-write sandbox with network access enabled
-  by default. The new global Worker network access setting can disable network for every worker; PM
-  handoffs may further restrict one attempt but cannot override a global disable. The effective policy
-  is persisted with each stage attempt, while PM sandbox and approval behavior remains unchanged.
+- Orchestrator workers now run at full access on every backend and inherit the host environment,
+  credentials included, so their tools and provider CLIs behave exactly as they do for you. Worker
+  network controls are gone: there is no global Worker network access setting and PM handoffs no longer
+  choose a sandbox or network policy for an attempt. Containment is unchanged and unaffected — each
+  attempt still works in its own task worktree under stage ownership with a worktree-local hook that
+  refuses direct pushes to protected refs, and worker admission and concurrency limits still apply. PM,
+  Claude, OpenCode, and read-only helper policies are unchanged.
+
+- Codex workers additionally run behind a best-effort accident tripwire: a server-owned hook refuses
+  clearly destructive commands — deleting, moving, truncating, changing ownership or mode, or patching —
+  whose target resolves outside the worker's own task worktree, while ordinary in-worktree work and
+  writes to cache, config, and temporary locations proceed untouched. A refusal is a single concise
+  denial with no approval prompt or retry loop. This is accident prevention, not a sandbox or a security
+  boundary: scripts, opaque subprocesses, and tools that do not report through the hook stay outside it,
+  and a worker whose tripwire cannot be installed starts without one rather than not starting at all.
+
+- The PM surface now pins only the newest read-only helper instead of stacking a card per run. A
+  settled card (completed, failed, or interrupted) can be closed with an accessible control; a helper
+  still running has nothing to dismiss. Closing a card is remembered by that browser across reloads and
+  reconnects, scoped to the environment, project, and helper, and never hides a newer helper. Every PM
+  helper remains in project Helper history — newest first, with prompt, backend and model, timing,
+  status, and its full result or failure — and task-attached helpers stay in Task history as before.
 
 - Worker permission boundaries now pause the existing stage instead of broadening its sandbox or
   starting a replacement worker. The same worker session resumes when the provider records the narrow

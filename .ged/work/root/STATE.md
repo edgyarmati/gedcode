@@ -1,9 +1,12 @@
 # STATE
 
-- **Phase**: implement
-- **Active task**: `WORKER-FULL-01` — remove worker network controls end to end
+- **Phase**: complete
+- **Active task**: none — all 13 slices are `DONE` in `TASKS.md`
 - **Roadmap**: Full-access Codex workers and dismissible helper results
 - **Clarified**: 2026-07-23
+- **Completed**: 2026-07-26 — evidence and known gaps recorded in `TESTS.md`; the optional Codex
+  destructive-target tripwire was implemented after `WORKER-TRIPWIRE-01` proved narrow hook trust
+  (see `NOTES.md`)
 
 ## Locked Decisions
 
