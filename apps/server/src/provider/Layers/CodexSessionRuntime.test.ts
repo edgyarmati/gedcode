@@ -47,21 +47,18 @@ function makeThreadOpenResponse(
 }
 
 describe("buildTurnStartParams", () => {
-  it("keeps worker turns workspace-write while applying their persisted network policy", () => {
+  it("runs worker turns at full access without approvals", () => {
     const params = Effect.runSync(
       buildTurnStartParams({
         threadId: "provider-worker-thread",
-        runtimeMode: "auto-accept-edits",
-        sandboxMode: "workspace-write",
-        networkAccess: false,
-        prompt: "Implement without network.",
+        runtimeMode: "full-access",
+        prompt: "Implement the slice.",
       }),
     );
 
-    assert.equal(params.approvalPolicy, "on-request");
+    assert.equal(params.approvalPolicy, "never");
     assert.deepStrictEqual(params.sandboxPolicy, {
-      type: "workspaceWrite",
-      networkAccess: false,
+      type: "dangerFullAccess",
     });
   });
 

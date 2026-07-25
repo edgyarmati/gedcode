@@ -378,8 +378,8 @@ const make = Effect.gen(function* () {
     const taskForStageThread = yield* resolveTaskForStageThread(threadId);
     // Worker policy is intentionally opt-in via durable ownership metadata.
     // Branch names are user-controlled and historical threads are deliberately
-    // not retrofitted, so neither may grant a normal chat thread worker
-    // sandboxing, network access, or auto-approval behavior.
+    // not retrofitted, so neither may grant a normal chat thread full-access
+    // worker policy.
     const isOrchestratorWorker =
       thread.orchestrationOwnership?.kind === "stage" &&
       taskForStageThread !== undefined &&
@@ -388,11 +388,6 @@ const make = Effect.gen(function* () {
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
     const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
-    const workerNetworkAccess = isOrchestratorWorker
-      ? ((yield* projectionSnapshotQuery.getCommandReadModel()).stageHistory[threadId]
-          ?.networkAccess ??
-        (yield* serverSettingsService.getSettings).orchestratorDefaults.workerNetworkEnabled)
-      : undefined;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -459,15 +454,12 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
-    const usesCodexWorkerAutoReview = isOrchestratorWorker && preferredProvider === "codex";
-    const desiredRuntimeMode = usesCodexWorkerAutoReview
-      ? ("auto-accept-edits" as const)
-      : isOrchestratorWorker
-        ? ORCHESTRATOR_WORKER_RUNTIME_MODE
-        : thread.runtimeMode;
-    const desiredApprovalReviewer = usesCodexWorkerAutoReview
-      ? ("auto-review" as const)
-      : undefined;
+    // Every orchestration worker — Codex included — runs at full access. Workers
+    // are bounded by their task worktree, stage ownership, and the worktree-local
+    // protected-ref pre-push hook, not by a provider sandbox.
+    const desiredRuntimeMode = isOrchestratorWorker
+      ? ORCHESTRATOR_WORKER_RUNTIME_MODE
+      : thread.runtimeMode;
     if (isOrchestratorWorker) {
       const quotaState = yield* providerQuotaStatusRepository.isInstanceQuotaBlocked({
         providerInstanceId: desiredInstanceId,
@@ -582,9 +574,6 @@ const make = Effect.gen(function* () {
             modelSelection: desiredModelSelection,
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
             runtimeMode: desiredRuntimeMode,
-            ...(desiredApprovalReviewer ? { approvalReviewer: desiredApprovalReviewer } : {}),
-            ...(usesCodexWorkerAutoReview ? { sandboxMode: "workspace-write" as const } : {}),
-            ...(workerNetworkAccess !== undefined ? { networkAccess: workerNetworkAccess } : {}),
             ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
           });
           return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;

@@ -626,7 +626,7 @@ describe("ProviderCommandReactor", () => {
     expect(startInput).not.toHaveProperty("environment");
   });
 
-  it("keeps Codex task workers workspace-scoped with auto-review before start or restart", async () => {
+  it("starts and restarts Codex task workers with full access", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -655,12 +655,11 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
-    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "auto-accept-edits",
-      approvalReviewer: "auto-review",
-      sandboxMode: "workspace-write",
-      networkAccess: true,
-    });
+    const workerStartInput = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(workerStartInput).toMatchObject({ runtimeMode: "full-access" });
+    expect(workerStartInput).not.toHaveProperty("approvalReviewer");
+    expect(workerStartInput).not.toHaveProperty("sandboxMode");
+    expect(workerStartInput).not.toHaveProperty("networkAccess");
 
     const readModelAfterStageStart = await harness.readModel();
     const stageThreadId = readModelAfterStageStart.tasks[0]?.stageThreadIds[0];
@@ -702,14 +701,14 @@ describe("ProviderCommandReactor", () => {
     expect(
       harness.startSession.mock.calls.every((call) => {
         const input = call[1] as { readonly runtimeMode?: string } | undefined;
-        return input?.runtimeMode === "auto-accept-edits";
+        return input?.runtimeMode === "full-access";
       }),
     ).toBe(true);
 
     const readModel = await harness.readModel();
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
-    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
   it("starts provider work for a normally active task stage", async () => {
@@ -1079,7 +1078,7 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("starts a Codex auto-reviewed workspace worker without a global opt-in", async () => {
+  it("starts a full-access Codex worker without a global opt-in", async () => {
     const harness = await createHarness({
       serverSettingsOverrides: {
         orchestratorDefaults: {},
@@ -1113,21 +1112,23 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "auto-accept-edits",
-      approvalReviewer: "auto-review",
-      sandboxMode: "workspace-write",
-      networkAccess: true,
-    });
+    const globalOptInStartInput = harness.startSession.mock.calls[0]?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(globalOptInStartInput).toMatchObject({ runtimeMode: "full-access" });
+    expect(globalOptInStartInput).not.toHaveProperty("approvalReviewer");
+    expect(globalOptInStartInput).not.toHaveProperty("sandboxMode");
+    expect(globalOptInStartInput).not.toHaveProperty("networkAccess");
 
     const readModel = await harness.readModel();
     const stageThreadId = readModel.tasks[0]?.stageThreadIds[0];
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
-    expect(stageThread?.session?.runtimeMode).toBe("auto-accept-edits");
+    expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("keeps a Codex worker offline when the global human setting is disabled", async () => {
+  it("ignores persisted worker-network settings and legacy handoff network requests", async () => {
     const harness = await createHarness({
       serverSettingsOverrides: {
         orchestratorDefaults: { workerNetworkEnabled: false },
@@ -1154,19 +1155,20 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-task-stage-network-disabled"),
         taskId: asTaskId("task-network-disabled"),
         role: "work",
-        networkAccess: true,
+        networkAccess: false,
         instructions: "Implement the task without using network access.",
         createdAt: now,
       }),
     );
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
-    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      runtimeMode: "auto-accept-edits",
-      approvalReviewer: "auto-review",
-      sandboxMode: "workspace-write",
-      networkAccess: false,
-    });
+    const legacyNetworkStartInput = harness.startSession.mock.calls[0]?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(legacyNetworkStartInput).toMatchObject({ runtimeMode: "full-access" });
+    expect(legacyNetworkStartInput).not.toHaveProperty("networkAccess");
+    expect(legacyNetworkStartInput).not.toHaveProperty("sandboxMode");
   });
 
   it("ignores legacy false opt-ins and keeps OpenCode workers full-access", async () => {

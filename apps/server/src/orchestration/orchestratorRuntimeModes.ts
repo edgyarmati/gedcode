@@ -1,10 +1,10 @@
 import type { ProviderApprovalReviewer, ProviderDriverKind, RuntimeMode } from "@t3tools/contracts";
 
+// Provider-neutral worker policy: every orchestration worker — Codex, Claude,
+// and OpenCode alike — starts and resumes at full access. Worker containment is
+// the task worktree, stage ownership, and the worktree-local protected-ref
+// pre-push hook, not a provider sandbox.
 export const ORCHESTRATOR_WORKER_RUNTIME_MODE: RuntimeMode = "full-access";
-
-// Codex workers override this provider-neutral default at session admission:
-// workspace-write plus Codex auto-review replaces danger-full-access. Claude
-// and OpenCode workers continue to use this full-access default.
 
 export type OrchestratorPmRuntimePolicy = {
   readonly runtimeMode: RuntimeMode;

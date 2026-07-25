@@ -10,7 +10,6 @@ import {
   type ProviderEvent,
   type ProviderInteractionMode,
   type ProviderRequestKind,
-  type ProviderSandboxMode,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
@@ -103,8 +102,6 @@ export interface CodexSessionRuntimeOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
-  readonly sandboxMode?: ProviderSandboxMode;
-  readonly networkAccess?: boolean;
   readonly readOnly?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model?: string;
@@ -283,7 +280,6 @@ function readResumeCursorThreadId(
 function runtimeModeToThreadConfig(
   input: RuntimeMode,
   readOnly = false,
-  sandboxMode?: ProviderSandboxMode,
 ): {
   readonly approvalPolicy: EffectCodexSchema.V2ThreadStartParams__AskForApproval;
   readonly sandbox: EffectCodexSchema.V2ThreadStartParams__SandboxMode;
@@ -292,12 +288,6 @@ function runtimeModeToThreadConfig(
     return {
       approvalPolicy: "never",
       sandbox: "read-only",
-    };
-  }
-  if (sandboxMode !== undefined) {
-    return {
-      approvalPolicy: input === "auto-accept-edits" ? "on-request" : "never",
-      sandbox: sandboxMode,
     };
   }
   switch (input) {
@@ -324,14 +314,13 @@ function buildThreadStartParams(input: {
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
   readonly readOnly?: boolean;
-  readonly sandboxMode?: ProviderSandboxMode;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly systemPromptAppend: string | undefined;
   readonly config: Record<string, unknown> | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
-  const config = runtimeModeToThreadConfig(input.runtimeMode, input.readOnly, input.sandboxMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.readOnly);
   return {
     cwd: input.cwd,
     approvalPolicy: config.approvalPolicy,
@@ -349,20 +338,9 @@ function buildThreadStartParams(input: {
 function runtimeModeToTurnSandboxPolicy(
   input: RuntimeMode,
   readOnly = false,
-  sandboxMode?: ProviderSandboxMode,
-  networkAccess?: boolean,
 ): EffectCodexSchema.V2TurnStartParams__SandboxPolicy {
   if (readOnly) {
     return { type: "readOnly" };
-  }
-  if (sandboxMode === "workspace-write") {
-    return { type: "workspaceWrite", networkAccess: networkAccess ?? false };
-  }
-  if (sandboxMode === "read-only") {
-    return { type: "readOnly", ...(networkAccess === undefined ? {} : { networkAccess }) };
-  }
-  if (sandboxMode === "danger-full-access") {
-    return { type: "dangerFullAccess" };
   }
   switch (input) {
     case "approval-required":
@@ -407,8 +385,6 @@ export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
   readonly readOnly?: boolean;
-  readonly sandboxMode?: ProviderSandboxMode;
-  readonly networkAccess?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
@@ -445,12 +421,7 @@ export function buildTurnStartParams(input: {
     threadId: input.threadId,
     input: turnInput,
     approvalPolicy: config.approvalPolicy,
-    sandboxPolicy: runtimeModeToTurnSandboxPolicy(
-      input.runtimeMode,
-      input.readOnly,
-      input.sandboxMode,
-      input.networkAccess,
-    ),
+    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode, input.readOnly),
     ...(input.approvalReviewer
       ? { approvalsReviewer: input.approvalReviewer === "auto-review" ? "auto_review" : "user" }
       : {}),
@@ -607,8 +578,6 @@ export const openCodexThread = (input: {
   readonly threadId: ThreadId;
   readonly runtimeMode: RuntimeMode;
   readonly readOnly?: boolean;
-  readonly sandboxMode?: ProviderSandboxMode;
-  readonly networkAccess?: boolean;
   readonly approvalReviewer?: ProviderApprovalReviewer;
   readonly cwd: string;
   readonly requestedModel: string | undefined;
@@ -622,7 +591,6 @@ export const openCodexThread = (input: {
     cwd: input.cwd,
     runtimeMode: input.runtimeMode,
     ...(input.readOnly === true ? { readOnly: true } : {}),
-    ...(input.sandboxMode ? { sandboxMode: input.sandboxMode } : {}),
     ...(input.approvalReviewer ? { approvalReviewer: input.approvalReviewer } : {}),
     model: input.requestedModel,
     serviceTier: input.serviceTier,
@@ -1485,8 +1453,6 @@ export const makeCodexSessionRuntime = (
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
         ...(options.readOnly === true ? { readOnly: true } : {}),
-        ...(options.sandboxMode ? { sandboxMode: options.sandboxMode } : {}),
-        ...(options.networkAccess !== undefined ? { networkAccess: options.networkAccess } : {}),
         ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
         cwd: options.cwd,
         requestedModel,
@@ -1553,10 +1519,6 @@ export const makeCodexSessionRuntime = (
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
             ...(options.readOnly === true ? { readOnly: true } : {}),
-            ...(options.sandboxMode ? { sandboxMode: options.sandboxMode } : {}),
-            ...(options.networkAccess !== undefined
-              ? { networkAccess: options.networkAccess }
-              : {}),
             ...(options.approvalReviewer ? { approvalReviewer: options.approvalReviewer } : {}),
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),

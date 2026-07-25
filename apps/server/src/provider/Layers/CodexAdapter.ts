@@ -1460,8 +1460,6 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             : {}),
           runtimeMode: input.runtimeMode,
           ...(input.readOnly === true ? { readOnly: true } : {}),
-          ...(input.sandboxMode ? { sandboxMode: input.sandboxMode } : {}),
-          ...(input.networkAccess !== undefined ? { networkAccess: input.networkAccess } : {}),
           ...(input.approvalReviewer ? { approvalReviewer: input.approvalReviewer } : {}),
           ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
           ...(orchestrationMcpEndpoint
