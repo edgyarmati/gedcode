@@ -146,7 +146,6 @@ describe("Orchestrator global defaults settings logic", () => {
       pmModelSelection,
       defaultWorkerModelSelection: workerModelSelection,
       openPrAsDraft: true,
-      workerNetworkEnabled: false,
     });
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
@@ -157,7 +156,7 @@ describe("Orchestrator global defaults settings logic", () => {
       plan: "require-approval",
     });
     expect(draft.openPrAsDraft).toBe(true);
-    expect(draft.workerNetworkEnabled).toBe(false);
+    expect(draft).not.toHaveProperty("workerNetworkEnabled");
     expect(draft.resourceDefaults).toEqual({
       maxParallelTasks: 2,
       maxParallelWorkers: 3,
@@ -185,7 +184,6 @@ describe("Orchestrator global defaults settings logic", () => {
         worktreeReaperIntervalMinutes: 9,
       },
       openPrAsDraft: true,
-      workerNetworkEnabled: false,
     });
 
     expect(patch.orchestratorDefaults).toEqual({
@@ -204,7 +202,6 @@ describe("Orchestrator global defaults settings logic", () => {
       capabilityPresets,
       projectContextDefaultTier: "smart",
       openPrAsDraft: true,
-      workerNetworkEnabled: false,
     });
   });
 });

@@ -111,7 +111,6 @@ export interface OrchestratorGlobalDefaultsDraft {
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
   readonly gatePolicy: Readonly<Record<EditableOrchestratorGate, OrchestratorGatePolicy>>;
   readonly openPrAsDraft: boolean;
-  readonly workerNetworkEnabled: boolean;
   readonly resourceDefaults: OrchestratorGlobalResourceDefaultsDraft;
 }
 
@@ -142,8 +141,6 @@ export function seedOrchestratorGlobalDefaultsDraft(
       plan: defaults.gatePolicy.plan,
     },
     openPrAsDraft: defaults.openPrAsDraft ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.openPrAsDraft,
-    workerNetworkEnabled:
-      defaults.workerNetworkEnabled ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.workerNetworkEnabled,
     resourceDefaults: {
       maxParallelTasks:
         defaults.maxParallelTasks ?? DEFAULT_ORCHESTRATOR_GLOBAL_DEFAULTS.maxParallelTasks,
@@ -183,7 +180,6 @@ export function buildOrchestratorGlobalDefaultsPatch(
       pmReconciliationIntervalMs: draft.resourceDefaults.pmReconciliationIntervalMs,
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
       openPrAsDraft: draft.openPrAsDraft,
-      workerNetworkEnabled: draft.workerNetworkEnabled,
       pmModelSelection: draft.pmModelSelection,
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
       capabilityPresets: draft.capabilityPresets,

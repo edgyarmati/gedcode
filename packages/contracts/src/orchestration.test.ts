@@ -1584,6 +1584,64 @@ it.effect("decodes stage history keyed by stage thread id", () =>
   }),
 );
 
+it.effect("strips the removed worker network policy from stage handoffs and history", () =>
+  Effect.gen(function* () {
+    // Workers always run at full access. Legacy commands, append-only events, and
+    // projected history rows that still carry the field must decode and drop it.
+    const command = yield* decodeOrchestrationCommand({
+      type: "task.stage.start",
+      commandId: "cmd-stage-start-legacy-network",
+      taskId: "task-1",
+      role: "work",
+      networkAccess: false,
+      instructions: "Implement the accepted plan.",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.ok(!("networkAccess" in command));
+
+    const event = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-stage-started-legacy-network",
+      aggregateKind: "task",
+      aggregateId: "task-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-stage-start-legacy-network",
+      causationEventId: null,
+      correlationId: "cmd-stage-start-legacy-network",
+      metadata: {},
+      type: "task.stage-started",
+      payload: {
+        taskId: "task-1",
+        role: "work",
+        stageThreadId: "thread-stage-legacy-network",
+        awaitedTurnId: null,
+        runtimeMode: "full-access",
+        networkAccess: true,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.ok(!("networkAccess" in event.payload));
+
+    const history = yield* decodeStageHistory({
+      "thread-stage-legacy-network": {
+        projectId: "project-1",
+        taskId: "task-1",
+        stageThreadId: "thread-stage-legacy-network",
+        role: "work",
+        providerInstanceId: "codex_worker",
+        model: "gpt-5.2",
+        networkAccess: true,
+        status: "completed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:10:00.000Z",
+      },
+    });
+    const legacyStage = history[ThreadId.make("thread-stage-legacy-network")];
+    assert.ok(legacyStage !== undefined);
+    assert.ok(!("networkAccess" in legacyStage));
+  }),
+);
+
 it.effect("defaults proposed plan implementation metadata for historical rows", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeOrchestrationProposedPlan({

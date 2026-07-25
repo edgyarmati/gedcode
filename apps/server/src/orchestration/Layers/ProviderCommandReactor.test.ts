@@ -1128,49 +1128,6 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("ignores persisted worker-network settings and legacy handoff network requests", async () => {
-    const harness = await createHarness({
-      serverSettingsOverrides: {
-        orchestratorDefaults: { workerNetworkEnabled: false },
-      },
-    });
-    const now = "2026-01-01T00:00:00.000Z";
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "task.create",
-        commandId: CommandId.make("cmd-task-create-network-disabled"),
-        taskId: asTaskId("task-network-disabled"),
-        projectId: asProjectId("project-1"),
-        taskType: asTaskTypeId("feature"),
-        title: "Offline worker",
-        pmMessageId: null,
-        branch: "orchestrator/task-network-disabled",
-        createdAt: now,
-      }),
-    );
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "task.stage.start",
-        commandId: CommandId.make("cmd-task-stage-network-disabled"),
-        taskId: asTaskId("task-network-disabled"),
-        role: "work",
-        networkAccess: false,
-        instructions: "Implement the task without using network access.",
-        createdAt: now,
-      }),
-    );
-
-    await waitFor(() => harness.startSession.mock.calls.length === 1);
-    const legacyNetworkStartInput = harness.startSession.mock.calls[0]?.[1] as Record<
-      string,
-      unknown
-    >;
-    expect(legacyNetworkStartInput).toMatchObject({ runtimeMode: "full-access" });
-    expect(legacyNetworkStartInput).not.toHaveProperty("networkAccess");
-    expect(legacyNetworkStartInput).not.toHaveProperty("sandboxMode");
-  });
-
   it("ignores legacy false opt-ins and keeps OpenCode workers full-access", async () => {
     const harness = await createHarness({
       threadModelSelection: {

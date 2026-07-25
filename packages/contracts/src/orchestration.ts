@@ -913,8 +913,6 @@ export const OrchestrationStageHistoryEntry = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   runtimeMode: Schema.optionalKey(Schema.NullOr(RuntimeMode)),
-  /** Resolved at handoff time from the global worker-network floor and PM restriction. */
-  networkAccess: Schema.optionalKey(Schema.Boolean),
   capabilityPauseExpiresAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   /** Worktree HEAD captured before this stage attempt began. */
   startHead: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
@@ -1671,9 +1669,6 @@ const TaskStageStartCommand = Schema.Struct({
   taskId: TaskId,
   role: OrchestrationStageRole,
   capabilityTier: Schema.optionalKey(OrchestrationCapabilityTier),
-  // The PM may restrict a handoff but cannot re-enable the global worker
-  // network floor once a human has disabled it.
-  networkAccess: Schema.optionalKey(Schema.Boolean),
   instructions: Schema.String,
   startHead: Schema.optionalKey(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
@@ -2634,9 +2629,6 @@ export const TaskStageStartedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   modelOptions: Schema.optionalKey(ProviderOptionSelections),
   runtimeMode: Schema.optional(RuntimeMode),
-  // Persist the effective policy for this specific stage attempt. Optional so
-  // append-only events from before the worker-network policy still decode.
-  networkAccess: Schema.optionalKey(Schema.Boolean),
   startHead: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
