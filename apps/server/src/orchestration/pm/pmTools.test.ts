@@ -1055,7 +1055,9 @@ it.effect("handoffWorker dispatches a guarded task.stage.start command and retur
     assert.strictEqual(dispatched[0]?.type, "task.stage.start");
     if (dispatched[0]?.type === "task.stage.start") {
       assert.strictEqual(dispatched[0].capabilityTier, "genius");
-      assert.strictEqual(dispatched[0].networkAccess, false);
+      // Workers always run at full access, so a requested network restriction is
+      // not forwarded onto the stage-start command.
+      assert.ok(!("networkAccess" in dispatched[0]));
       assert.strictEqual(dispatched[0].startHead, "b".repeat(40));
     }
     assert.deepStrictEqual(result.details, {

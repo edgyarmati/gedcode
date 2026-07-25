@@ -22,16 +22,17 @@ describe("orchestration MCP capability-tier inputs", () => {
     ).toBe(true);
   });
 
-  it("accepts an optional per-handoff worker network restriction", () => {
-    expect(
-      z.object(mcpInputSchemas.handoffWorker).safeParse({
-        taskId: "task-1",
-        role: "work",
-        tier: "smart",
-        networkAccess: false,
-        instructions: "Implement without network access.",
-      }).success,
-    ).toBe(true);
+  it("does not expose a per-handoff worker network restriction", () => {
+    expect(mcpInputSchemas.handoffWorker).not.toHaveProperty("networkAccess");
+    const parsed = z.object(mcpInputSchemas.handoffWorker).safeParse({
+      taskId: "task-1",
+      role: "work",
+      tier: "smart",
+      networkAccess: false,
+      instructions: "Implement the bounded change.",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).not.toHaveProperty("networkAccess");
   });
 
   it("exposes semantic task tiers instead of raw task backends", () => {
