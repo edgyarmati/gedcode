@@ -60,11 +60,51 @@ export function buildHelperRunTimelineRows(
   return runs.map(buildHelperRunTimelineRow);
 }
 
+export interface PmHelperHistoryRow extends HelperRunTimelineRow {
+  // Stamp the run was requested or started, so history can show when each helper
+  // ran without depending on wall-clock now.
+  readonly startedAt: string;
+}
+
+// One canonical notion of "newest" for PM helpers, so the pinned card and the
+// history list can never disagree about which run replaced which. Requested time
+// wins over start time: a run still waiting to start is already the newer one.
+function compareHelperRunRecency(
+  left: OrchestrationHelperRun,
+  right: OrchestrationHelperRun,
+): number {
+  return (
+    right.createdAt.localeCompare(left.createdAt) || String(right.id).localeCompare(String(left.id))
+  );
+}
+
+// The durable project-level record behind the single pinned card: every PM helper
+// stays listed after it is replaced or dismissed, newest first.
+export function buildPmHelperHistoryRows(
+  runs: ReadonlyArray<OrchestrationHelperRun>,
+): PmHelperHistoryRow[] {
+  return runs
+    .filter((run) => run.attachment.kind === "pm")
+    .toSorted(compareHelperRunRecency)
+    .map(buildPmHelperHistoryRow);
+}
+
+function buildPmHelperHistoryRow(run: OrchestrationHelperRun): PmHelperHistoryRow {
+  return {
+    ...buildHelperRunTimelineRow(run),
+    // A run that never started still needs a stamp, so history falls back to when
+    // it was requested.
+    startedAt: run.startedAt ?? run.createdAt,
+  };
+}
+
 export interface PinnedPmHelperCard extends HelperRunTimelineRow {
   // Dismissal is only offered for settled runs, so a helper the user is still
   // waiting on cannot be hidden before it produces a result or failure.
   readonly dismissible: boolean;
 }
+
+const EMPTY_DISMISSED_HELPER_RUN_IDS: ReadonlySet<string> = new Set();
 
 const TERMINAL_HELPER_STATUSES: ReadonlySet<OrchestrationHelperRun["status"]> = new Set([
   "completed",
@@ -75,18 +115,21 @@ const TERMINAL_HELPER_STATUSES: ReadonlySet<OrchestrationHelperRun["status"]> = 
 // The PM surface pins exactly one helper card, so a newer run has to replace the
 // previous one rather than stack. Canonical ordering lives here so the route and
 // its tests cannot disagree about which run is "newest".
+//
+// Dismissal is applied to the newest run only, never used to walk further back:
+// a helper dismissed earlier must not resurface, and a dismissal recorded against
+// a superseded run must not suppress the run that replaced it.
 export function selectPinnedPmHelperCard(
   runs: ReadonlyArray<OrchestrationHelperRun>,
+  dismissedHelperRunIds: ReadonlySet<string> = EMPTY_DISMISSED_HELPER_RUN_IDS,
 ): PinnedPmHelperCard | null {
   const newest = runs.reduce<OrchestrationHelperRun | null>((pinned, run) => {
     if (run.attachment.kind !== "pm") return pinned;
     if (pinned === null) return run;
-    const byCreatedAt = run.createdAt.localeCompare(pinned.createdAt);
-    if (byCreatedAt > 0) return run;
-    if (byCreatedAt < 0) return pinned;
-    return String(run.id).localeCompare(String(pinned.id)) > 0 ? run : pinned;
+    return compareHelperRunRecency(run, pinned) < 0 ? run : pinned;
   }, null);
   if (newest === null) return null;
+  if (dismissedHelperRunIds.has(String(newest.id))) return null;
   return {
     ...buildHelperRunTimelineRow(newest),
     dismissible: TERMINAL_HELPER_STATUSES.has(newest.status),
