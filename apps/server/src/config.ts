@@ -44,6 +44,12 @@ export interface ServerDerivedPaths {
   readonly environmentIdPath: string;
   readonly serverRuntimeStatePath: string;
   readonly secretsDir: string;
+  /**
+   * Server-owned scripts handed to provider CLIs as hooks. Outside every task
+   * worktree, so a worker's own repository never contains the rules it runs
+   * under, and rewritten by whichever server version is running.
+   */
+  readonly hooksDir: string;
 }
 
 /**
@@ -110,6 +116,7 @@ export const deriveServerPaths = Effect.fn(function* (
     environmentIdPath: join(stateDir, "environment-id"),
     serverRuntimeStatePath: join(stateDir, "server-runtime.json"),
     secretsDir: join(stateDir, "secrets"),
+    hooksDir: join(stateDir, "hooks"),
   };
 });
 

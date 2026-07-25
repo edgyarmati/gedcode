@@ -570,6 +570,10 @@ const make = Effect.gen(function* () {
             modelSelection: desiredModelSelection,
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
             runtimeMode: desiredRuntimeMode,
+            // Workers only: an unattended full-access session gets the
+            // destructive-target tripwire. Chat threads (PM included) are driven
+            // by the user turn by turn and keep their unmodified tool surface.
+            ...(isOrchestratorWorker ? { destructiveTripwire: true } : {}),
           });
           return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;
         }),

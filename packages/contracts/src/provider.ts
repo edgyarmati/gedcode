@@ -64,6 +64,10 @@ export const ProviderSessionStartInput = Schema.Struct({
   approvalReviewer: Schema.optional(ProviderApprovalReviewer),
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   readOnly: Schema.optional(Schema.Boolean),
+  // Best-effort accident prevention for full-access orchestrator workers: the
+  // driver refuses clearly destructive operations whose target resolves outside
+  // the session's own worktree. Not a sandbox and not a security boundary.
+  destructiveTripwire: Schema.optional(Schema.Boolean),
   enableOrchestrationTools: Schema.optional(Schema.Boolean),
   // Extra instructions appended to the provider's base system prompt for this
   // session (e.g. the orchestrator PM role/delegation rules). Drivers that use a

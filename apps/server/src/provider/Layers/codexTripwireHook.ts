@@ -6,12 +6,18 @@
 
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import type * as CodexErrors from "effect-codex-app-server/errors";
+import * as CodexClient from "effect-codex-app-server/client";
+import * as CodexErrors from "effect-codex-app-server/errors";
 import type * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { WORKER_TRIPWIRE_HOOK_SCRIPT } from "../../orchestration/workerTripwire.ts";
+import { expandHomePath } from "../../pathExpansion.ts";
+import { buildCodexInitializeParams } from "./CodexProvider.ts";
 
 const TRIPWIRE_SCRIPT_FILENAME = "workerTripwire.mjs";
 
@@ -108,3 +114,105 @@ export const buildCodexAppServerArgs = (
   ...configOverrides.flatMap((override) => ["-c", override]),
   "app-server",
 ];
+
+// Long enough for a cold `codex app-server` start, short enough that a hung
+// binary delays a worker rather than stranding it.
+const PROBE_TIMEOUT = "15 seconds" as const;
+const PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
+
+// One throwaway `app-server` whose only job is to report the hook it was handed.
+// It is torn down with the scope, before the session that uses the answer starts.
+const probeCodexHooks = (input: {
+  readonly binaryPath: string;
+  readonly cwd: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly definitionOverride: string;
+}) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const args = buildCodexAppServerArgs([input.definitionOverride]);
+      const child = yield* spawner
+        .spawn(
+          ChildProcess.make(input.binaryPath, args, {
+            cwd: input.cwd,
+            env: input.environment,
+            forceKillAfter: PROBE_FORCE_KILL_AFTER,
+            shell: process.platform === "win32",
+          }),
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new CodexErrors.CodexAppServerSpawnError({
+                command: `${input.binaryPath} ${args.join(" ")}`,
+                cause,
+              }),
+          ),
+        );
+      const clientContext = yield* Layer.build(CodexClient.layerChildProcess(child));
+      const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
+        Effect.provide(clientContext),
+      );
+      yield* client.request("initialize", buildCodexInitializeParams());
+      yield* client.notify("initialized", undefined);
+      return yield* client.request("hooks/list", { cwds: [input.cwd] });
+    }),
+  ).pipe(
+    Effect.timeoutOption(PROBE_TIMEOUT),
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.fail(
+            new CodexErrors.CodexAppServerTransportError({
+              detail: `codex app-server did not list its hooks within ${PROBE_TIMEOUT}.`,
+              cause: undefined,
+            }),
+          ),
+        onSome: Effect.succeed,
+      }),
+    ),
+  );
+
+// The whole tripwire installation for one provider instance: the rules land in a
+// server-owned directory, Codex is asked what it would trust, and the answer
+// becomes the `-c` overrides a worker session spawns with. Never fails — a
+// tripwire that cannot be installed costs coverage, not the worker.
+export const resolveWorkerTripwireOverrides = (input: {
+  readonly binaryPath: string;
+  readonly directory: string;
+  readonly cwd: string;
+  readonly environment?: NodeJS.ProcessEnv | undefined;
+  readonly homePath?: string | undefined;
+}): Effect.Effect<
+  ReadonlyArray<string>,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> => {
+  const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
+  const environment = {
+    ...(input.environment ?? process.env),
+    ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
+  };
+  return Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const scriptPath = yield* materializeTripwireScript(input.directory);
+    return yield* resolveTripwireHookOverrides({
+      hookCommand: buildTripwireHookCommand({ nodePath: process.execPath, scriptPath }),
+      probe: (definitionOverride) =>
+        probeCodexHooks({
+          binaryPath: input.binaryPath,
+          cwd: input.cwd,
+          environment,
+          definitionOverride,
+        }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
+    });
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning(
+        "Could not install the worker destructive-target tripwire; workers start without it.",
+        { cause },
+      ).pipe(Effect.as([] as ReadonlyArray<string>)),
+    ),
+  );
+};

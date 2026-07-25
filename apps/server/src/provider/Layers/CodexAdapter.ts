@@ -29,6 +29,7 @@ import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -65,6 +66,7 @@ import {
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
+import { resolveWorkerTripwireOverrides } from "./codexTripwireHook.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
@@ -88,6 +90,10 @@ export interface CodexAdapterLiveOptions {
   >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  // `-c` overrides that install the worker destructive-target tripwire. Resolved
+  // lazily and at most once per adapter, because probing Codex for the hook's
+  // trusted hash costs a throwaway `app-server`.
+  readonly tripwireOverrides?: Effect.Effect<ReadonlyArray<string>>;
 }
 
 interface CodexAdapterSessionContext {
@@ -1403,6 +1409,24 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
 
+  // The hook script and its trusted hash depend only on this provider instance,
+  // so the probe runs on the first worker session and every later one reuses it.
+  const path = yield* Path.Path;
+  const tripwireOverrides = yield* Effect.cached(
+    options?.tripwireOverrides ??
+      resolveWorkerTripwireOverrides({
+        binaryPath: codexConfig.binaryPath,
+        directory: path.join(serverConfig.hooksDir, boundInstanceId),
+        cwd: serverConfig.cwd,
+        ...(options?.environment ? { environment: options.environment } : {}),
+        ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+        Effect.provideService(Path.Path, path),
+      ),
+  );
+
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1448,6 +1472,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 ...orchestrationEnvironment,
               }
             : undefined;
+        const configOverrides =
+          input.destructiveTripwire === true ? yield* tripwireOverrides : undefined;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
@@ -1464,6 +1490,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
           ...(orchestrationMcpEndpoint
             ? { config: makeCodexMcpServerConfig(orchestrationMcpEndpoint) }
+            : {}),
+          ...(configOverrides !== undefined && configOverrides.length > 0
+            ? { configOverrides }
             : {}),
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }

@@ -37,6 +37,7 @@ import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
+import { buildCodexAppServerArgs } from "./codexTripwireHook.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
@@ -108,6 +109,10 @@ export interface CodexSessionRuntimeOptions {
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly systemPromptAppend?: string;
   readonly config?: Record<string, unknown>;
+  // `-c` config overrides applied to the whole `codex app-server` process. Used
+  // for settings Codex only reads at startup, such as session-flag hooks; per
+  // thread settings belong in `config`.
+  readonly configOverrides?: ReadonlyArray<string>;
   readonly resumeCursor?: CodexResumeCursor;
 }
 
@@ -873,9 +878,10 @@ export const makeCodexSessionRuntime = (
       ...(options.environment ?? process.env),
       ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
     };
+    const appServerArgs = buildCodexAppServerArgs(options.configOverrides ?? []);
     const child = yield* spawner
       .spawn(
-        ChildProcess.make(options.binaryPath, ["app-server"], {
+        ChildProcess.make(options.binaryPath, appServerArgs, {
           cwd: options.cwd,
           env,
           forceKillAfter: CODEX_APP_SERVER_FORCE_KILL_AFTER,
@@ -887,7 +893,7 @@ export const makeCodexSessionRuntime = (
         Effect.mapError(
           (cause) =>
             new CodexErrors.CodexAppServerSpawnError({
-              command: `${options.binaryPath} app-server`,
+              command: `${options.binaryPath} ${appServerArgs.join(" ")}`,
               cause,
             }),
         ),

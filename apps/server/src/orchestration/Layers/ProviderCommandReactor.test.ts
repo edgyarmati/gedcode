@@ -522,6 +522,9 @@ describe("ProviderCommandReactor", () => {
     const pmStartInput = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(pmStartInput).not.toHaveProperty("sandboxMode");
     expect(pmStartInput).not.toHaveProperty("networkAccess");
+    // The worker tripwire is worker-only: a chat thread's tool surface is
+    // unchanged, whatever runtime mode the user picked.
+    expect(pmStartInput).not.toHaveProperty("destructiveTripwire");
 
     let readModel = await harness.readModel();
     let thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
@@ -1179,6 +1182,42 @@ describe("ProviderCommandReactor", () => {
     const stageThread = readModel.threads.find((thread) => thread.id === stageThreadId);
     expect(stageThread?.runtimeMode).toBe("full-access");
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
+  });
+
+  it("asks for the destructive-target tripwire on worker sessions", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.create",
+        commandId: CommandId.make("cmd-task-create-tripwire"),
+        taskId: asTaskId("task-tripwire"),
+        projectId: asProjectId("project-1"),
+        taskType: asTaskTypeId("feature"),
+        title: "Task Tripwire",
+        pmMessageId: null,
+        branch: "orchestrator/task-tripwire",
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "task.stage.start",
+        commandId: CommandId.make("cmd-task-stage-start-tripwire"),
+        taskId: asTaskId("task-tripwire"),
+        role: "work",
+        instructions: "Implement the task.",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    // Workers run at full access, so the provider is asked for the accident
+    // tripwire that keeps destructive commands inside the task worktree.
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      destructiveTripwire: true,
+    });
   });
 
   it("starts task workers in their worktree with the inherited host environment", async () => {
