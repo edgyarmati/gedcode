@@ -1224,19 +1224,13 @@ describe("ProviderCommandReactor", () => {
     expect(stageThread?.session?.runtimeMode).toBe("full-access");
   });
 
-  it("starts task workers with a secret-stripped environment override", async () => {
+  it("starts task workers in their worktree with the inherited host environment", async () => {
     const previousEnv = {
-      PATH: process.env.PATH,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      CUSTOM_SECRET: process.env.CUSTOM_SECRET,
-      ORCHESTRATOR_PUBLIC_FLAG: process.env.ORCHESTRATOR_PUBLIC_FLAG,
     };
-    process.env.PATH = "/usr/bin";
-    process.env.OPENAI_API_KEY = "do-not-forward";
-    process.env.GITHUB_TOKEN = "do-not-forward";
-    process.env.CUSTOM_SECRET = "do-not-forward";
-    process.env.ORCHESTRATOR_PUBLIC_FLAG = "do-not-forward-either";
+    process.env.OPENAI_API_KEY = "inherited-by-workers";
+    process.env.GITHUB_TOKEN = "inherited-by-workers";
 
     try {
       const harness = await createHarness();
@@ -1268,14 +1262,10 @@ describe("ProviderCommandReactor", () => {
 
       await waitFor(() => harness.startSession.mock.calls.length === 1);
       await waitFor(() => harness.sendTurn.mock.calls.length === 1);
-      const input = harness.startSession.mock.calls[0]?.[1] as
-        | { readonly environment?: Record<string, string> }
-        | undefined;
-      expect(input?.environment).toMatchObject({ PATH: "/usr/bin" });
-      expect(input?.environment).not.toHaveProperty("OPENAI_API_KEY");
-      expect(input?.environment).not.toHaveProperty("GITHUB_TOKEN");
-      expect(input?.environment).not.toHaveProperty("CUSTOM_SECRET");
-      expect(input?.environment).not.toHaveProperty("ORCHESTRATOR_PUBLIC_FLAG");
+      // Workers inherit the host environment, credentials included; the provider
+      // is started without an environment override.
+      const input = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+      expect(input).not.toHaveProperty("environment");
       const expectedWorktreePath = path.join(
         harness.projectRoot,
         ".gedcode/orchestrator/tasks/task-env",

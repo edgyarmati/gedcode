@@ -37,56 +37,9 @@ done
 exit 0
 `;
 
-const WORKER_ENV_ALLOWLIST = new Set([
-  "CI",
-  "COMSPEC",
-  "HOME",
-  "LANG",
-  "LOGNAME",
-  "PATH",
-  "Path",
-  "PATHEXT",
-  "PWD",
-  "SHELL",
-  "SystemRoot",
-  "TEMP",
-  "TERM",
-  "TMP",
-  "TMPDIR",
-  "USER",
-  "USERNAME",
-  "WINDIR",
-  "windir",
-  "XDG_CACHE_HOME",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-  "XDG_RUNTIME_DIR",
-]);
-
-const SENSITIVE_WORKER_ENV_NAME = /(^|_)(KEY|TOKEN|SECRET)$/i;
-
-export function isSensitiveWorkerEnvironmentName(name: string): boolean {
-  return SENSITIVE_WORKER_ENV_NAME.test(name);
-}
-
-export function makeWorkerProviderEnvironment(
-  baseEnv: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
-  const entries: Array<[string, string]> = [];
-  for (const [name, value] of Object.entries(baseEnv)) {
-    if (value === undefined) {
-      continue;
-    }
-    if (isSensitiveWorkerEnvironmentName(name)) {
-      continue;
-    }
-    if (WORKER_ENV_ALLOWLIST.has(name) || name.startsWith("LC_")) {
-      entries.push([name, value]);
-    }
-  }
-  return Object.fromEntries(entries);
-}
-
+// Workers inherit the host environment — credentials included — so their tools
+// and provider CLIs behave exactly as they do for the user. Containment is the
+// task worktree, stage ownership, and this pre-push hook, not env scrubbing.
 export const installTaskWorktreePushBlockHook = Effect.fn("installTaskWorktreePushBlockHook")(
   function* (worktreePath: string) {
     const fs = yield* FileSystem.FileSystem;

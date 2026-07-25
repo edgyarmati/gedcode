@@ -45,10 +45,7 @@ import { WorkerStartAdmission } from "../Services/WorkerStartAdmission.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
-import {
-  installTaskWorktreePushBlockHook,
-  makeWorkerProviderEnvironment,
-} from "../workerSafety.ts";
+import { installTaskWorktreePushBlockHook } from "../workerSafety.ts";
 import { ORCHESTRATOR_WORKER_RUNTIME_MODE } from "../orchestratorRuntimeModes.ts";
 import { activeStageRoleForTaskStatus, stageBlockCommandId } from "../stageResolution.ts";
 import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
@@ -387,7 +384,6 @@ const make = Effect.gen(function* () {
     const workerBranch = thread.branch ?? taskForStageThread?.branch ?? null;
     const workerWorktreePath = thread.worktreePath ?? taskForStageThread?.worktreePath ?? null;
     const project = yield* resolveProject(thread.projectId);
-    const workerEnvironment = isOrchestratorWorker ? makeWorkerProviderEnvironment() : null;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -574,7 +570,6 @@ const make = Effect.gen(function* () {
             modelSelection: desiredModelSelection,
             ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
             runtimeMode: desiredRuntimeMode,
-            ...(workerEnvironment !== null ? { environment: workerEnvironment } : {}),
           });
           return isOrchestratorWorker ? workerStartAdmission.withWorkerStartPermit(start) : start;
         }),
