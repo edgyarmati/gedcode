@@ -2,12 +2,13 @@ import {
   HelperRunId,
   ProjectId,
   ProviderInstanceId,
+  TaskId,
   ThreadId,
   type OrchestrationHelperRun,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
-import { buildHelperRunTimelineRows } from "./HelperRunTimeline";
+import { buildHelperRunTimelineRows, selectPinnedPmHelperCard } from "./HelperRunTimeline";
 
 const makeRun = (overrides: Partial<OrchestrationHelperRun> = {}): OrchestrationHelperRun => ({
   id: HelperRunId.make("helper-ui"),
@@ -56,6 +57,67 @@ describe("buildHelperRunTimelineRows", () => {
     ).toEqual([
       ["Failed", "destructive"],
       ["Interrupted", "destructive"],
+    ]);
+  });
+});
+
+describe("selectPinnedPmHelperCard", () => {
+  // The PM surface pins exactly one card, so the selector — not the renderer —
+  // has to settle which run wins when several are in flight.
+  it("pins the newest PM helper regardless of input order", () => {
+    const card = selectPinnedPmHelperCard([
+      makeRun({ id: HelperRunId.make("helper-middle"), createdAt: "2026-07-18T12:00:01.000Z" }),
+      makeRun({ id: HelperRunId.make("helper-newest"), createdAt: "2026-07-18T12:00:03.000Z" }),
+      makeRun({ id: HelperRunId.make("helper-oldest"), createdAt: "2026-07-18T12:00:00.000Z" }),
+    ]);
+
+    expect(card?.id).toBe("helper-newest");
+  });
+
+  it("breaks identical creation stamps by helper id", () => {
+    const card = selectPinnedPmHelperCard([
+      makeRun({ id: HelperRunId.make("helper-b"), createdAt: "2026-07-18T12:00:00.000Z" }),
+      makeRun({ id: HelperRunId.make("helper-a"), createdAt: "2026-07-18T12:00:00.000Z" }),
+    ]);
+
+    expect(card?.id).toBe("helper-b");
+  });
+
+  it("has nothing to pin without PM helpers", () => {
+    expect(selectPinnedPmHelperCard([])).toBeNull();
+  });
+
+  // Task-attached helpers belong to Task history; a newer one must not steal the
+  // project card, and it must not become the card when it is the only run.
+  it("never pins a task-attached helper", () => {
+    const taskHelper = makeRun({
+      id: HelperRunId.make("helper-task"),
+      attachment: { kind: "task", taskId: TaskId.make("task-1") },
+      createdAt: "2026-07-18T12:00:09.000Z",
+    });
+
+    expect(selectPinnedPmHelperCard([taskHelper])).toBeNull();
+    expect(
+      selectPinnedPmHelperCard([
+        taskHelper,
+        makeRun({ id: HelperRunId.make("helper-pm"), createdAt: "2026-07-18T12:00:01.000Z" }),
+      ])?.id,
+    ).toBe("helper-pm");
+  });
+
+  // A run in flight has nothing to dismiss yet: hiding it would strand the user
+  // with no way back to a result they are still waiting for.
+  it("only offers dismissal once the pinned helper is terminal", () => {
+    const dismissibleByStatus = (
+      ["pending", "running", "completed", "failed", "interrupted"] as const
+    ).map((status) => [status, selectPinnedPmHelperCard([makeRun({ status })])?.dismissible]);
+
+    expect(dismissibleByStatus).toEqual([
+      ["pending", false],
+      ["running", false],
+      ["completed", true],
+      ["failed", true],
+      ["interrupted", true],
     ]);
   });
 });

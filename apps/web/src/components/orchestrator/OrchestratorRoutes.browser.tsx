@@ -39,7 +39,7 @@ import {
 import { TaskBoard } from "./TaskBoard";
 import { TaskChangeReviewPanel } from "./TaskChangeReviewPanel";
 import { StageTimeline } from "./StageTimeline";
-import { HelperRunTimeline } from "./HelperRunTimeline";
+import { HelperRunTimeline, PmHelperCard } from "./HelperRunTimeline";
 
 const environmentId = EnvironmentId.make("environment-browser");
 const taskId = TaskId.make("task-browser");
@@ -307,15 +307,36 @@ it("selects and highlights any persisted stage attempt", async () => {
   expect(selected).toHaveBeenCalledWith(firstStageThreadId);
 });
 
-it("shows read-only helper history without adding a task-board card", async () => {
+it("pins only the newest PM helper without adding a task-board card", async () => {
   const projectId = ProjectId.make("project-browser");
   const helperRunId = HelperRunId.make("helper-browser");
   const pmHelperRunId = HelperRunId.make("helper-pm-browser");
+  const olderPmHelperRunId = HelperRunId.make("helper-pm-browser-older");
   useStore.setState({
     environmentStateById: {
       [environmentId]: {
         ...initialEnvironmentState,
         helperRunById: {
+          [olderPmHelperRunId]: {
+            id: olderPmHelperRunId,
+            projectId,
+            attachment: { kind: "pm", threadId: ThreadId.make("pm:project-browser") },
+            accessMode: "read-only",
+            tier: "cheap",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.6-mini",
+            modelOptions: null,
+            prompt: "Inspect the superseded project question.",
+            status: "running",
+            transientRetryCount: 0,
+            providerThreadId: ThreadId.make("helper:helper-pm-browser-older"),
+            result: null,
+            failureMessage: null,
+            createdAt: "2026-07-18T11:59:00.000Z",
+            startedAt: "2026-07-18T11:59:01.000Z",
+            completedAt: null,
+            updatedAt: "2026-07-18T11:59:01.000Z",
+          },
           [pmHelperRunId]: {
             id: pmHelperRunId,
             projectId,
@@ -363,7 +384,7 @@ it("shows read-only helper history without adding a task-board card", async () =
 
   await render(
     <>
-      <HelperRunTimeline environmentId={environmentId} projectId={projectId} />
+      <PmHelperCard environmentId={environmentId} projectId={projectId} />
       <HelperRunTimeline environmentId={environmentId} taskId={taskId} />
       <TaskBoard environmentId={environmentId} projectId={projectId} tasks={[]} />
     </>,
@@ -372,6 +393,15 @@ it("shows read-only helper history without adding a task-board card", async () =
   await expect
     .element(page.getByText("Cheap · codex · gpt-5.6-mini · Read only"))
     .toBeInTheDocument();
+  // The older PM run is superseded, so it must not stack a second card even while
+  // it is still running.
+  await expect
+    .element(page.getByText("Inspect the superseded project question."))
+    .not.toBeInTheDocument();
+  // A running card has nothing to dismiss yet.
+  await expect
+    .element(page.getByRole("button", { name: "Dismiss latest helper" }))
+    .not.toBeInTheDocument();
   await expect.element(page.getByText("Inspect the task architecture.")).toBeInTheDocument();
   await expect
     .element(page.getByText("Smart · codex · gpt-5.6-sol · Read only"))

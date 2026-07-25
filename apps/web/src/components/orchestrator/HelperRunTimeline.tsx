@@ -4,6 +4,7 @@ import {
   type ProjectId,
   type TaskId,
 } from "@t3tools/contracts";
+import { XIcon } from "lucide-react";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -14,6 +15,7 @@ import {
   type ScopedTaskRef,
 } from "../../store";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 
 type HelperStatusVariant = "info" | "success" | "warning" | "destructive";
 
@@ -39,10 +41,8 @@ export interface HelperRunTimelineRow {
   readonly failureMessage: string | null;
 }
 
-export function buildHelperRunTimelineRows(
-  runs: ReadonlyArray<OrchestrationHelperRun>,
-): HelperRunTimelineRow[] {
-  return runs.map((run) => ({
+function buildHelperRunTimelineRow(run: OrchestrationHelperRun): HelperRunTimelineRow {
+  return {
     id: String(run.id),
     prompt: run.prompt,
     tierLabel: `${run.tier[0]?.toUpperCase() ?? ""}${run.tier.slice(1)}`,
@@ -51,7 +51,110 @@ export function buildHelperRunTimelineRows(
     statusVariant: STATUS_DISPLAY[run.status].variant,
     result: run.result,
     failureMessage: run.failureMessage,
-  }));
+  };
+}
+
+export function buildHelperRunTimelineRows(
+  runs: ReadonlyArray<OrchestrationHelperRun>,
+): HelperRunTimelineRow[] {
+  return runs.map(buildHelperRunTimelineRow);
+}
+
+export interface PinnedPmHelperCard extends HelperRunTimelineRow {
+  // Dismissal is only offered for settled runs, so a helper the user is still
+  // waiting on cannot be hidden before it produces a result or failure.
+  readonly dismissible: boolean;
+}
+
+const TERMINAL_HELPER_STATUSES: ReadonlySet<OrchestrationHelperRun["status"]> = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+]);
+
+// The PM surface pins exactly one helper card, so a newer run has to replace the
+// previous one rather than stack. Canonical ordering lives here so the route and
+// its tests cannot disagree about which run is "newest".
+export function selectPinnedPmHelperCard(
+  runs: ReadonlyArray<OrchestrationHelperRun>,
+): PinnedPmHelperCard | null {
+  const newest = runs.reduce<OrchestrationHelperRun | null>((pinned, run) => {
+    if (run.attachment.kind !== "pm") return pinned;
+    if (pinned === null) return run;
+    const byCreatedAt = run.createdAt.localeCompare(pinned.createdAt);
+    if (byCreatedAt > 0) return run;
+    if (byCreatedAt < 0) return pinned;
+    return String(run.id).localeCompare(String(pinned.id)) > 0 ? run : pinned;
+  }, null);
+  if (newest === null) return null;
+  return {
+    ...buildHelperRunTimelineRow(newest),
+    dismissible: TERMINAL_HELPER_STATUSES.has(newest.status),
+  };
+}
+
+function HelperRunDetails({ row }: { readonly row: HelperRunTimelineRow }) {
+  if (row.result === null && row.failureMessage === null) return null;
+  return (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-muted-foreground">
+        {row.failureMessage === null ? "Result" : "Failure details"}
+      </summary>
+      <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 font-sans">
+        {row.result ?? row.failureMessage}
+      </pre>
+    </details>
+  );
+}
+
+export interface PmHelperCardProps {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+  // Provided once dismissal is wired; a terminal card only shows its close
+  // control when there is somewhere to record the dismissal.
+  readonly onDismiss?: (helperRunId: string) => void;
+}
+
+// Only the newest PM helper is pinned. Replaced runs stay reachable through
+// project Helper history rather than stacking cards on the PM surface.
+export function PmHelperCard({ environmentId, projectId, onDismiss }: PmHelperCardProps) {
+  const runs = useStore(
+    useShallow((state) => selectHelperRunsForProjectRef(state, { environmentId, projectId })),
+  );
+  const card = useMemo(() => selectPinnedPmHelperCard(runs), [runs]);
+  if (card === null) return null;
+
+  return (
+    <section className="space-y-2 border-b border-border bg-muted/12 px-3 py-2">
+      <h2 className="text-xs font-semibold text-muted-foreground uppercase">Latest helper</h2>
+      <div className="rounded-lg border border-border bg-card p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="line-clamp-2 text-sm font-medium">{card.prompt}</p>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {card.tierLabel} · {card.backendLabel} · Read only
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge size="sm" variant={card.statusVariant}>
+              {card.statusLabel}
+            </Badge>
+            {card.dismissible && onDismiss !== undefined ? (
+              <Button
+                aria-label="Dismiss latest helper"
+                onClick={() => onDismiss(card.id)}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <XIcon className="size-3.5" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <HelperRunDetails row={card} />
+      </div>
+    </section>
+  );
 }
 
 type HelperRunTimelineProps =
@@ -100,16 +203,7 @@ export function HelperRunTimeline(props: HelperRunTimelineProps) {
                 {row.statusLabel}
               </Badge>
             </div>
-            {row.result === null && row.failureMessage === null ? null : (
-              <details className="mt-2 text-xs">
-                <summary className="cursor-pointer text-muted-foreground">
-                  {row.failureMessage === null ? "Result" : "Failure details"}
-                </summary>
-                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 font-sans">
-                  {row.result ?? row.failureMessage}
-                </pre>
-              </details>
-            )}
+            <HelperRunDetails row={row} />
           </li>
         ))}
       </ol>
