@@ -103,8 +103,10 @@ const STAGE_OWNERSHIP_REQUIREMENTS: Record<OrchestrationStageRole, string> = {
   ].join(" "),
 };
 
-const SANDBOX_REQUIREMENT =
-  "You run in a sandboxed auto-approve workspace-write environment. Network access is controlled by the human's global setting and may be further disabled for this handoff; it never authorizes authenticated host access or sandbox escalation. Do not work around missing authenticated host access, credentials, network, or sandbox restrictions; report the exact blocked operation to the PM, which owns authenticated host operations.";
+// Workers run with the project's full host access, so the boundary this line
+// draws is task scope plus the human approval gates — not a provider sandbox.
+const HOST_SCOPE_REQUIREMENT =
+  "You run with the project's full host access. Keep every change inside your task worktree and this task's scope; make no unrelated host, repository, or global configuration changes. Leave external, destructive, or publishing actions to the human approval gates that already cover them. When something genuinely blocks you, report the exact blocked operation to the PM instead of working around it.";
 
 export function stripStagePromptPrefix(instructions: string): string {
   const leadingWhitespaceLength = instructions.length - instructions.trimStart().length;
@@ -129,7 +131,7 @@ export function prepareStageInstructions(input: {
   const promptPrefix = [
     configuredPrefix,
     STAGE_OWNERSHIP_REQUIREMENTS[input.role],
-    SANDBOX_REQUIREMENT,
+    HOST_SCOPE_REQUIREMENT,
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n\n");

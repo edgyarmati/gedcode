@@ -3619,8 +3619,6 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, ".ged/PULL_REQUESTS.md");
     assert.include(prompt, "publishes the exact approved pull-request proposal");
     assert.include(prompt, "terminally landed only after a real pull-request URL is recorded");
-    assert.include(prompt, "authenticated host operations");
-    assert.include(prompt, "sandboxed auto-approve environment");
     assert.include(prompt, "Planner stages own design documentation only");
     assert.include(
       prompt,
@@ -3662,6 +3660,29 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "classify");
     assert.include(prompt, "Use the interactive question tool");
     assert.notInclude(prompt, "For decisions, ask in plain text and end your turn.");
+  });
+
+  // Workers now run at the same full access as the PM, so the prompt must stop
+  // describing them as sandboxed, network-limited, or unable to perform
+  // authenticated host operations, while keeping task scope and human gates.
+  it("describes workers as full-access within task scope and human gates", () => {
+    const prompt = buildPmSystemPrompt(project, codexDriver);
+
+    assert.include(prompt, "full project access");
+    assert.include(prompt, "external, destructive, or publishing actions as human-gated");
+    assert.include(prompt, "task worktree");
+    assert.include(prompt, "unrelated host");
+    // Auto-approved workers make an incoming permission request exceptional, but
+    // the durable resolution path for one is unchanged.
+    assert.include(prompt, "a worker permission request is unexpected");
+    assert.include(prompt, "listPendingStageApprovals");
+    assert.include(prompt, "respondToStageApproval");
+    assert.notInclude(prompt, "sandbox");
+    assert.notInclude(prompt, "workspace-write");
+    assert.notInclude(prompt, "networkAccess");
+    assert.notInclude(prompt, "worker-network");
+    assert.notInclude(prompt, "credential");
+    assert.notInclude(prompt, "authenticated host");
   });
 
   it("uses plain-text decision guidance for Codex PM prompts", () => {

@@ -114,12 +114,12 @@ export const inspectStageWorktreeSettlement = Effect.fn("inspectStageWorktreeSet
 /**
  * Finalizes verifier-owned documentation from the trusted server process.
  *
- * Codex verifier sessions use workspace-write sandboxing. A linked worktree's
- * index, object database, and refs live outside that writable root, so asking
- * the verifier itself to commit creates an impossible prompt/runtime contract.
- * This boundary audits every change against the stage start HEAD, stages only
- * after the audit passes, creates one documentation commit under the per-task
- * lifecycle lock, and re-inspects the exact resulting HEAD before settlement.
+ * Verifiers own documentation and evidence only, so their changes are committed
+ * here rather than by the verifier itself: a self-committing verifier could
+ * record any tree as verified. This boundary audits every change against the
+ * stage start HEAD, stages only after the audit passes, creates one
+ * documentation commit under the per-task lifecycle lock, and re-inspects the
+ * exact resulting HEAD before settlement.
  *
  * A Git failure is returned as a dirty, recoverable settlement instead of
  * failing the reactor and leaving an idle verifier stage active forever.

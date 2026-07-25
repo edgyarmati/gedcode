@@ -34,8 +34,28 @@ describe("prepareStageInstructions prompt-prefix", () => {
     expect(prepared).toContain("Do not modify substantive implementation code");
     expect(prepared).toContain("Do not stage or commit those documentation changes");
     expect(prepared).toContain("trusted server finalizer");
-    expect(prepared).toContain("sandboxed auto-approve environment");
     expect(prepared).toContain(rawInstructions);
+  });
+
+  // Workers run at full access, so the boundary the prompt has to draw is task
+  // scope and the human approval gates — not a sandbox, network floor, or a
+  // missing-credential handoff back to the PM.
+  it("draws the worker boundary as task scope and human gates, not a sandbox", () => {
+    const prepared = prepareStageInstructions({
+      instructions: rawInstructions,
+      role: "work",
+      rolePromptPrefixes: undefined,
+    });
+
+    expect(prepared).toContain("task worktree");
+    expect(prepared).toContain("unrelated");
+    expect(prepared).toContain("external, destructive, or publishing");
+    expect(prepared).toContain("report the exact blocked operation");
+    expect(prepared).not.toContain("sandbox");
+    expect(prepared).not.toContain("workspace-write");
+    expect(prepared).not.toContain("Network access");
+    expect(prepared).not.toContain("credential");
+    expect(prepared).not.toContain("authenticated host");
   });
 
   it.each([
