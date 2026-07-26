@@ -162,9 +162,12 @@ const tokenize = (input) => {
       flush();
       continue;
     }
+    // Operators keep their spelling: a \`cd\` only outlives its segment when the
+    // separator that ends it runs in the same shell, and \`(\`/\`)\` bound a subshell
+    // whose directory changes die with it.
     if (char === ";" || char === "&" || char === "|" || char === "(" || char === ")") {
       flush();
-      items.push({ kind: OPERATOR });
+      items.push({ kind: OPERATOR, value: char });
       continue;
     }
     // Redirects become their own word so \`> file\`, \`>file\`, and \`1> file\` all
@@ -236,6 +239,19 @@ const WRAPPERS = new Set([
 ]);
 
 const NESTED_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
+
+// The script a nested shell was handed, or \`undefined\` if it was not given one.
+// Short flags cluster, so \`bash -lc "…"\` carries its script exactly like
+// \`bash -c "…"\` does; matching \`-c\` exactly let the clustered spelling through.
+const nestedShellScript = (operands) => {
+  for (let index = 0; index < operands.length; index += 1) {
+    const word = operands[index];
+    if (!word.startsWith("-") || word.startsWith("--")) continue;
+    if (!word.includes("c")) continue;
+    return operands[index + 1];
+  }
+  return undefined;
+};
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
@@ -316,51 +332,71 @@ const externalTarget = (resolved) => {
 
 const inspectCommand = (input, startDir, depth) => {
   if (depth > 3) return null;
-  const segments = [[]];
+  // Each segment keeps the operator that ends it, because that operator decides
+  // whether the segment's directory change survives into the next one.
+  const segments = [{ words: [], separator: "" }];
   for (const item of tokenize(input)) {
     if (item.kind === OPERATOR) {
-      segments.push([]);
+      segments[segments.length - 1].separator = item.value;
+      segments.push({ words: [], separator: "" });
       continue;
     }
-    segments[segments.length - 1].push(item.value);
+    segments[segments.length - 1].words.push(item.value);
   }
 
   let current = startDir;
+  // Directories to restore: one entry per open subshell, one per \`pushd\`. Reading
+  // a single running directory instead treated \`(cd /elsewhere && ls)\` as moving
+  // the worker for good, so the next \`rm -rf dist\` looked like an external delete.
+  const subshells = [];
+  const pushed = [];
   for (const segment of segments) {
+    const { words: segmentWords, separator } = segment;
+    // A directory change inside a pipeline stage runs in that stage's own shell,
+    // so it is gone by the time the next segment runs.
+    const transient = separator === "|";
+
     // A lone \`>\` truncates its target before the command even runs, whatever the
     // command is. \`>>\` appends, which adds to a file instead of destroying it.
-    for (let index = 0; index + 1 < segment.length; index += 1) {
-      if (segment[index] !== ">") continue;
-      const target = externalTarget(resolve(current, expandPath(segment[index + 1])));
+    for (let index = 0; index + 1 < segmentWords.length; index += 1) {
+      if (segmentWords[index] !== ">") continue;
+      const target = externalTarget(resolve(current, expandPath(segmentWords[index + 1])));
       if (target !== null) return describe(">", target);
     }
 
-    const words = dropWrappers(segment);
-    if (words.length === 0) continue;
-    const verb = basename(words[0]);
+    const words = dropWrappers(segmentWords);
+    const verb = words.length === 0 ? "" : basename(words[0]);
     const operands = words.slice(1);
 
     if (verb === "cd" || verb === "pushd") {
       const target = operands.find((word) => !word.startsWith("-"));
-      if (target !== undefined) current = resolve(current, expandPath(target));
-      continue;
-    }
-
-    if (NESTED_SHELLS.has(verb)) {
-      const flagIndex = operands.indexOf("-c");
-      const nested = flagIndex >= 0 ? operands[flagIndex + 1] : undefined;
+      if (target !== undefined && !transient) {
+        if (verb === "pushd") pushed.push(current);
+        current = resolve(current, expandPath(target));
+      }
+    } else if (verb === "popd") {
+      const restored = pushed.pop();
+      if (restored !== undefined && !transient) current = restored;
+    } else if (NESTED_SHELLS.has(verb)) {
+      const nested = nestedShellScript(operands);
       if (nested !== undefined) {
         const reason = inspectCommand(nested, current, depth + 1);
         if (reason !== null) return reason;
       }
-      continue;
+    } else if (DESTRUCTIVE_VERBS.has(verb)) {
+      for (const candidate of candidateTargets(operands)) {
+        const target = externalTarget(resolve(current, expandPath(candidate)));
+        if (target !== null) return describe(verb, target);
+      }
     }
 
-    if (!DESTRUCTIVE_VERBS.has(verb)) continue;
-
-    for (const candidate of candidateTargets(operands)) {
-      const target = externalTarget(resolve(current, expandPath(candidate)));
-      if (target !== null) return describe(verb, target);
+    // \`(\` opens a subshell after this segment; \`)\` closes the innermost one and
+    // puts its caller's directory back.
+    if (separator === "(") {
+      subshells.push(current);
+    } else if (separator === ")") {
+      const restored = subshells.pop();
+      if (restored !== undefined) current = restored;
     }
   }
   return null;

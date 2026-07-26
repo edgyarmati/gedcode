@@ -209,6 +209,46 @@ describe("worker destructive-target tripwire", () => {
     expect(decision.denied).toBe(false);
   });
 
+  // A `cd` inside a subshell or a pipeline stage does not survive it, so reading
+  // it as a lasting change refused the worker permission to clean its own build
+  // output — naming a directory the command never touched.
+  it.each([
+    ["a subshell", `(cd ${outside} && ls) ; rm -rf dist`],
+    ["a pushd/popd pair", `pushd ${outside} ; popd ; rm -rf dist`],
+    ["a pipeline stage", `cd ${outside} | true ; rm -rf dist`],
+    ["a subshell that stays open", `(cd ${outside}) ; rm -rf dist`],
+  ])("allows in-worktree destruction after %s changed directory", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(false);
+  });
+
+  it("still denies destruction after a directory change that does persist", () => {
+    const decision = evaluatePayload(shellCall(`cd ${outside} ; rm -rf data`));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it("denies destruction inside a subshell that changed directory itself", () => {
+    const decision = evaluatePayload(shellCall(`(cd ${outside} && rm -rf data)`));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  // `bash -lc` is the most common way an agent wraps a shell command, and the
+  // nested-shell recursion only matched a standalone `-c`.
+  it.each([
+    ["a login shell", `bash -lc "rm -rf ${outside}/keep"`],
+    ["a clustered trace flag", `sh -cx "rm -rf ${outside}/keep"`],
+    ["an interactive zsh", `zsh -ic "rm -rf ${outside}/keep"`],
+    ["a separated flag", `bash -x -c "rm -rf ${outside}/keep"`],
+    ["a long option first", `bash --noprofile -c "rm -rf ${outside}/keep"`],
+  ])("denies destruction inside %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
   // Agents write scripts, not one-liners: a newline separates one command from
   // the next exactly like `;` does. Reading it as plain whitespace hid every
   // command after the first behind the first line's harmless verb.
