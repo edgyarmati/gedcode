@@ -150,6 +150,14 @@ const tokenize = (input) => {
       }
       continue;
     }
+    // A newline ends a command the same way \`;\` does. Treating it as ordinary
+    // whitespace made every line after the first read as operands of the first
+    // line's verb, which hid the destructive verbs in a shell script.
+    if (char === "\\n" || char === "\\r") {
+      flush();
+      items.push({ kind: OPERATOR, value: ";" });
+      continue;
+    }
     if (/\\s/.test(char)) {
       flush();
       continue;
@@ -281,6 +289,15 @@ if (typeof command !== "string" || typeof sessionCwd !== "string") allow();
 // a \`cd\` inside a command only changes how its relative paths resolve.
 const worktree = canonicalize(sessionCwd);
 
+// The shell tool carries its own working directory, and the command runs there
+// rather than in the session cwd. Resolving relative paths against the worktree
+// instead would read \`rm -rf .\` in a sibling checkout as an in-worktree delete.
+const toolWorkdir = payload?.tool_input?.workdir ?? payload?.tool_input?.cwd;
+const startDir =
+  typeof toolWorkdir === "string" && toolWorkdir.length > 0
+    ? resolve(worktree, expandPath(toolWorkdir))
+    : worktree;
+
 const describe = (verb, target) =>
   \`GedCode worker tripwire: refusing "\${verb}" on \${target}, which is outside this task worktree (\${worktree}). Keep destructive changes inside the worktree, and ask the PM if an external change is genuinely required.\`;
 
@@ -366,7 +383,7 @@ const inspectPatch = (patch) => {
 const reason =
   payload?.tool_name === "apply_patch"
     ? inspectPatch(command)
-    : inspectCommand(command, worktree, 0);
+    : inspectCommand(command, startDir, 0);
 if (reason !== null) deny(reason);
 allow();
 `;

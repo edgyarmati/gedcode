@@ -209,6 +209,54 @@ describe("worker destructive-target tripwire", () => {
     expect(decision.denied).toBe(false);
   });
 
+  // Agents write scripts, not one-liners: a newline separates one command from
+  // the next exactly like `;` does. Reading it as plain whitespace hid every
+  // command after the first behind the first line's harmless verb.
+  it.each([
+    ["a leading echo", `echo starting\nrm -rf ${outside}/keep`],
+    ["a leading assignment", `export FORCE=1\nrm -rf ${outside}/keep`],
+    ["a shell options header", `set -euo pipefail\nrm -rf ${outside}/keep`],
+    ["carriage returns", `echo starting\r\nrm -rf ${outside}/keep`],
+    ["a trailing comment line", `rm -rf ${outside}/keep\necho done`],
+  ])("denies destruction on a later line after %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it("allows a multi-line script that stays inside the worktree", () => {
+    const decision = evaluatePayload(
+      shellCall("set -euo pipefail\nrm -rf dist\nbun run build > build.log"),
+    );
+
+    expect(decision.denied).toBe(false);
+  });
+
+  // The shell tool takes a per-call working directory, so a relative path is not
+  // relative to the session cwd. Judging it against the worktree let a plain
+  // `rm -rf .` delete a sibling checkout.
+  it.each([
+    ["a current-directory delete", "rm -rf ."],
+    ["a bare relative delete", "rm -f keep"],
+    ["a relative redirect", "echo broken > config.yaml"],
+  ])("denies %s issued with an external tool workdir", (_label, command) => {
+    const decision = evaluatePayload({
+      ...shellCall(command),
+      tool_input: { command, workdir: outside },
+    });
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it("allows a relative delete issued with a workdir inside the worktree", () => {
+    const decision = evaluatePayload({
+      ...shellCall("rm -rf build"),
+      tool_input: { command: "rm -rf build", workdir: `${worktree}/packages/app` },
+    });
+
+    expect(decision.denied).toBe(false);
+  });
+
   // Discarding output is how agents keep a command quiet. These are not files and
   // destroying them is not possible, so treating them as external targets would
   // refuse ordinary build and probe commands.
