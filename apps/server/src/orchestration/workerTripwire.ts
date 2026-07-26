@@ -3,9 +3,22 @@
 // Workers run with full access (see `workerSafety.ts`), so this is not a
 // security boundary and never pretends to be one: it is best-effort accident
 // prevention that rejects clearly destructive operations whose explicit target
-// resolves outside the worker's task worktree. Anything a worker does through a
-// script, an opaque subprocess, or a tool that opts out of hooks is invisible
-// here by design.
+// resolves outside the worker's task worktree, plus any of them aimed at the
+// host's signed-in credentials and CLI state wherever they run.
+//
+// What it does not see — deliberately, and worth knowing before trusting it:
+//
+//   - Targets the command does not spell out: `xargs rm` reading paths from
+//     stdin, `apply_patch < patch`, a path assembled by command substitution or
+//     an unset variable.
+//   - Anything inside a script, an interpreter, a Makefile, or any other opaque
+//     subprocess, and any tool that opts out of hooks.
+//   - Destructive git operations that rewrite a checkout without naming a path
+//     (`git reset --hard`, `git checkout -- .`) — they are ordinary worker work
+//     in the worktree and are not distinguished elsewhere.
+//   - Writes under the allowlisted maintenance locations (temporary dirs, the
+//     usual package/tool caches, `node_modules`), which are treated as
+//     disposable so ordinary builds and installs are not refused.
 //
 // The script is materialized to disk and handed to Codex as a session-flag hook,
 // so it must stay self-contained: `apps/server` ships as a single bundled file,
