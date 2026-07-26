@@ -222,6 +222,29 @@ const DESTRUCTIVE_VERBS = new Set([
   "dd",
 ]);
 
+// Verbs that write every path they are handed, without deleting anything first.
+const OVERWRITE_VERBS = new Set(["tee"]);
+
+// Copies, links, and syncs overwrite only their destination. Their other operands
+// are read, and judging those would refuse ordinary vendoring out of the host.
+const DESTINATION_VERBS = new Set(["cp", "install", "ln", "rsync", "scp"]);
+
+const TARGET_DIRECTORY_FLAG = /^(?:-t|--target-directory)(?:=(.*))?$/;
+
+// \`sed\` rewrites its operands only in place; \`-i\` clusters with other short flags
+// and carries an optional backup suffix (\`-i.bak\`, \`-Ei\`).
+const IN_PLACE_FLAG = /^(?:--in-place(?:=.*)?|-[A-Za-z]*i.*)$/;
+
+// With an explicit script flag every operand is a file; without one the first
+// operand is the script itself.
+const SED_SCRIPT_FLAG = /^(?:-[A-Za-z]*[ef]|--expression|--file)(?:=.*)?$/;
+
+// \`find\` actions that destroy what they match.
+const FIND_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
+
+// Git subcommands that discard files in the working tree they run against.
+const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(["clean", "rm"]);
+
 // Prefixes that carry no target of their own; the real verb follows them.
 const WRAPPERS = new Set([
   "sudo",
@@ -288,6 +311,94 @@ const candidateTargets = (words) => {
     candidates.push(word);
   }
   return candidates;
+};
+
+// Operands that are not flags. A flag's separately passed value (\`-m 644\`) looks
+// like a positional here; it resolves inside the worktree and costs nothing.
+const positionalOperands = (operands) => {
+  const positionals = [];
+  let terminated = false;
+  for (const word of operands) {
+    if (!terminated && word === "--") {
+      terminated = true;
+      continue;
+    }
+    if (!terminated && word.length > 1 && word.startsWith("-")) continue;
+    if (word.length > 0) positionals.push(word);
+  }
+  return positionals;
+};
+
+// The one operand a copy or sync writes: an explicit target directory if given,
+// otherwise the last one. A lone operand is a source whose destination is the
+// current directory, so it destroys nothing outside the worktree.
+const destinationTargets = (operands) => {
+  for (let index = 0; index < operands.length; index += 1) {
+    const matched = TARGET_DIRECTORY_FLAG.exec(operands[index]);
+    if (matched === null) continue;
+    const value = matched[1] ?? operands[index + 1];
+    return value === undefined ? [] : [value];
+  }
+  const positionals = positionalOperands(operands);
+  return positionals.length < 2 ? [] : [positionals[positionals.length - 1]];
+};
+
+const sedTargets = (operands) => {
+  if (!operands.some((word) => IN_PLACE_FLAG.test(word))) return [];
+  const positionals = positionalOperands(operands);
+  return operands.some((word) => SED_SCRIPT_FLAG.test(word)) ? positionals : positionals.slice(1);
+};
+
+const findTargets = (operands) => {
+  const destroys = operands.some((word, index) => {
+    if (word === "-delete") return true;
+    if (!FIND_ACTIONS.has(word)) return false;
+    const invoked = operands[index + 1];
+    return invoked !== undefined && DESTRUCTIVE_VERBS.has(basename(invoked));
+  });
+  if (!destroys) return [];
+  // \`find\`'s expression begins at its first operator, so the paths it walks are
+  // the operands before that.
+  const paths = [];
+  for (const word of operands) {
+    if (word.startsWith("-")) break;
+    paths.push(word);
+  }
+  return paths;
+};
+
+// Only the tree git runs against is judged. Pathspecs are repo-relative and git
+// refuses ones outside the repo, so the working tree's location answers it.
+const gitTargets = (operands) => {
+  let index = 0;
+  let directory;
+  while (index < operands.length) {
+    const word = operands[index];
+    if (word === "-C") {
+      directory = operands[index + 1];
+      index += 2;
+      continue;
+    }
+    if (word.startsWith("-")) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  const subcommand = operands[index];
+  if (subcommand === undefined || !GIT_DESTRUCTIVE_SUBCOMMANDS.has(subcommand)) return [];
+  return [directory ?? "."];
+};
+
+// The operands a verb can destroy, or nothing when the verb is not one the
+// tripwire judges.
+const destructiveTargets = (verb, operands) => {
+  if (DESTRUCTIVE_VERBS.has(verb) || OVERWRITE_VERBS.has(verb)) return candidateTargets(operands);
+  if (DESTINATION_VERBS.has(verb)) return destinationTargets(operands);
+  if (verb === "sed") return sedTargets(operands);
+  if (verb === "find") return findTargets(operands);
+  if (verb === "git") return gitTargets(operands);
+  return [];
 };
 
 let payload;
@@ -377,14 +488,19 @@ const inspectCommand = (input, startDir, depth) => {
     } else if (verb === "popd") {
       const restored = pushed.pop();
       if (restored !== undefined && !transient) current = restored;
+    } else if (verb === "apply_patch") {
+      // Codex also drives \`apply_patch\` through the shell, usually with the patch
+      // inline in a heredoc. The body is scanned as a patch, not as shell words.
+      const reason = inspectPatch(input, current);
+      if (reason !== null) return reason;
     } else if (NESTED_SHELLS.has(verb)) {
       const nested = nestedShellScript(operands);
       if (nested !== undefined) {
         const reason = inspectCommand(nested, current, depth + 1);
         if (reason !== null) return reason;
       }
-    } else if (DESTRUCTIVE_VERBS.has(verb)) {
-      for (const candidate of candidateTargets(operands)) {
+    } else {
+      for (const candidate of destructiveTargets(verb, operands)) {
         const target = externalTarget(resolve(current, expandPath(candidate)));
         if (target !== null) return describe(verb, target);
       }
@@ -406,11 +522,11 @@ const inspectCommand = (input, startDir, depth) => {
 // touches. Those paths are the patch's explicit targets.
 const PATCH_TARGET = /^\\*\\*\\* (?:Add File|Update File|Delete File|Move to): (.+)$/;
 
-const inspectPatch = (patch) => {
+const inspectPatch = (patch, base) => {
   for (const line of patch.split(/\\r?\\n/)) {
     const matched = PATCH_TARGET.exec(line.trim());
     if (matched === null) continue;
-    const target = externalTarget(resolve(worktree, expandPath(matched[1].trim())));
+    const target = externalTarget(resolve(base, expandPath(matched[1].trim())));
     if (target !== null) return describe("apply_patch", target);
   }
   return null;
@@ -418,7 +534,7 @@ const inspectPatch = (patch) => {
 
 const reason =
   payload?.tool_name === "apply_patch"
-    ? inspectPatch(command)
+    ? inspectPatch(command, worktree)
     : inspectCommand(command, startDir, 0);
 if (reason !== null) deny(reason);
 allow();

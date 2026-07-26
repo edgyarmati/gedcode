@@ -323,6 +323,80 @@ describe("worker destructive-target tripwire", () => {
     expect(decision.denied).toBe(true);
   });
 
+  // Deleting is not the only way to destroy someone's work: a copy, a sync, or a
+  // redirect-by-another-name overwrites just as thoroughly, and only `rm`-shaped
+  // verbs were being checked.
+  it.each([
+    ["a copy onto an external file", `cp report.pdf ${outside}/report.pdf`],
+    ["a recursive copy into external space", `cp -R dist ${outside}/site`],
+    ["a copy into an external target directory", `cp -t ${outside} dist/index.html`],
+    ["an install onto an external path", `install -m 644 build/app ${outside}/app`],
+    ["a link planted outside the worktree", `ln -sf ${worktree}/dist ${outside}/dist`],
+    ["a sync into external space", `rsync -a dist/ ${outside}/site/`],
+    ["a mirroring sync that prunes", `rsync -a --delete dist/ ${outside}/site/`],
+    ["a tee onto an external file", `echo broken | tee ${outside}/config.yaml`],
+  ])("denies %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  // Reading the host is fine; only the written side is judged. Denying sources
+  // would refuse ordinary vendoring and inspection.
+  it.each([
+    ["a copy out of external space into the worktree", `cp -R ${outside}/tree src/vendor`],
+    ["a copy of many files into a worktree directory", "cp a.ts b.ts src/"],
+    ["a sync out of external space", `rsync -a ${outside}/assets/ public/`],
+    ["a link created in the worktree", `ln -sf ${outside}/shared shared`],
+    ["a single-operand link", `ln -s ${outside}/shared`],
+    ["a tee into a worktree file", "echo generated | tee src/generated.ts"],
+  ])("allows %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(false);
+  });
+
+  // Tools that destroy only in one mode: the flag decides whether the operand is
+  // read or rewritten, so the verb alone cannot answer it.
+  it.each([
+    ["an in-place edit", `sed -i '' 's/a/b/' ${outside}/config.yaml`],
+    ["an in-place edit with a backup suffix", `sed -i.bak -e 's/a/b/' ${outside}/config.yaml`],
+    ["a clustered in-place edit", `sed -Ei 's/a/b/' ${outside}/config.yaml`],
+    ["a long in-place edit", `sed --in-place 's/a/b/' ${outside}/config.yaml`],
+    ["a find that deletes", `find ${outside} -name '*.log' -delete`],
+    ["a find that shells out to rm", `find ${outside} -type f -exec rm {} +`],
+    ["a git clean in another checkout", `git -C ${outside} clean -fdx`],
+    ["a git clean after moving there", `cd ${outside} && git clean -fdx`],
+    ["a git rm in another checkout", `git -C ${outside} rm -r data`],
+    [
+      "an apply_patch run as a shell command",
+      `apply_patch <<'EOF'\n*** Begin Patch\n*** Delete File: ${outside}/notes.md\n*** End Patch\nEOF`,
+    ],
+  ])("denies %s outside the worktree", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it.each([
+    ["a read-only sed", `sed 's/a/b/' ${outside}/config.yaml > summary.txt`],
+    ["a printing sed", `sed -n '1,5p' ${outside}/service.log`],
+    ["a searching find", `find ${outside} -name '*.log'`],
+    ["a find that only prints", `find ${outside} -type f -print0`],
+    ["an in-worktree in-place edit", "sed -i '' 's/a/b/' src/index.ts"],
+    ["an in-worktree find that deletes", "find dist -name '*.map' -delete"],
+    ["an in-worktree git clean", "git clean -fdx"],
+    ["a git log elsewhere", `git -C ${outside} log --oneline -5`],
+    [
+      "an apply_patch run as a shell command inside the worktree",
+      `apply_patch <<'EOF'\n*** Begin Patch\n*** Update File: src/index.ts\n@@\n-a\n+b\n*** End Patch\nEOF`,
+    ],
+  ])("allows %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(false);
+  });
+
   it("denies once with a single-line reason naming the target and the worktree", () => {
     const decision = evaluatePayload(shellCall(`rm -rf ${outside}`));
 
