@@ -33,6 +33,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
@@ -1412,19 +1413,37 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   // The hook script and its trusted hash depend only on this provider instance,
   // so the probe runs on the first worker session and every later one reuses it.
   const path = yield* Path.Path;
-  const tripwireOverrides = yield* Effect.cached(
+  const probeTripwireOverrides =
     options?.tripwireOverrides ??
-      resolveWorkerTripwireOverrides({
-        binaryPath: codexConfig.binaryPath,
-        directory: path.join(serverConfig.hooksDir, boundInstanceId),
-        cwd: serverConfig.cwd,
-        ...(options?.environment ? { environment: options.environment } : {}),
-        ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
-      }).pipe(
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
-        Effect.provideService(Path.Path, path),
-      ),
+    resolveWorkerTripwireOverrides({
+      binaryPath: codexConfig.binaryPath,
+      directory: path.join(serverConfig.hooksDir, boundInstanceId),
+      cwd: serverConfig.cwd,
+      ...(options?.environment ? { environment: options.environment } : {}),
+      ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+      Effect.provideService(Path.Path, path),
+    );
+  // Only a probe that produced overrides is remembered. An empty answer means the
+  // probe failed, and caching that would strip the tripwire from every later
+  // worker in the process — as would one interrupted worker start. The permit
+  // keeps concurrent starts from each paying for a throwaway `app-server`.
+  const tripwireProbePermit = yield* Semaphore.make(1);
+  let installedTripwireOverrides: ReadonlyArray<string> | undefined;
+  const tripwireOverrides = tripwireProbePermit.withPermits(1)(
+    Effect.suspend(() =>
+      installedTripwireOverrides !== undefined && installedTripwireOverrides.length > 0
+        ? Effect.succeed(installedTripwireOverrides)
+        : probeTripwireOverrides.pipe(
+            Effect.tap((resolved) =>
+              Effect.sync(() => {
+                installedTripwireOverrides = resolved;
+              }),
+            ),
+          ),
+    ),
   );
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>

@@ -452,6 +452,55 @@ validationLayer("CodexAdapterLive validation", (it) => {
     }).pipe(Effect.provide(layer));
   });
 
+  // A probe that answers nothing is a failure, not a decision: caching it would
+  // silently strip the tripwire from every later worker in the process.
+  it.effect("re-probes for the tripwire after a probe that produced no overrides", () => {
+    const runtimeFactory = makeRuntimeFactory();
+    const overrides = ["hooks.PreToolUse=[]", "hooks.state={}"] as const;
+    let probes = 0;
+    const layer = Layer.effect(
+      CodexAdapter,
+      Effect.gen(function* () {
+        const codexConfig = decodeCodexSettings({});
+        return yield* makeCodexAdapter(codexConfig, {
+          makeRuntime: runtimeFactory.factory,
+          tripwireOverrides: Effect.sync(() => {
+            probes += 1;
+            return probes === 1 ? ([] as ReadonlyArray<string>) : overrides;
+          }),
+        });
+      }),
+    ).pipe(
+      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(providerSessionDirectoryTestLayer),
+      Layer.provideMerge(NodeServices.layer),
+    );
+
+    return Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-tripwire-failed-probe"),
+        runtimeMode: "full-access",
+        destructiveTripwire: true,
+      });
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-tripwire-retried-probe"),
+        runtimeMode: "full-access",
+        destructiveTripwire: true,
+      });
+
+      // The first worker starts unguarded, which is the documented best-effort
+      // behavior; the second must not inherit that failure.
+      assert.equal(runtimeFactory.factory.mock.calls[0]?.[0].configOverrides, undefined);
+      assert.deepStrictEqual(runtimeFactory.factory.mock.calls[1]?.[0].configOverrides, overrides);
+      assert.equal(probes, 2);
+    }).pipe(Effect.provide(layer));
+  });
+
   // A user's own session keeps its unmodified tool surface, and never pays for a
   // probe it does not use.
   it.effect("leaves sessions that did not ask for the tripwire unguarded", () => {
