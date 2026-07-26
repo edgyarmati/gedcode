@@ -15,6 +15,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "./lib/storage";
 
 export const HELPER_DISMISSAL_STORAGE_KEY = "t3code:helper-dismissals:v1";
+export const HELPER_DISMISSAL_STORAGE_VERSION = 1;
 
 export interface HelperDismissalRef extends ScopedProjectRef {
   readonly helperRunId: HelperRunId;
@@ -63,11 +64,18 @@ export function migratePersistedHelperDismissalState(
 export const useHelperDismissalStore = create<HelperDismissalStoreState>()(
   persist(() => ({ dismissedAtByHelperKey: {} }), {
     name: HELPER_DISMISSAL_STORAGE_KEY,
-    version: 1,
+    version: HELPER_DISMISSAL_STORAGE_VERSION,
     storage: createJSONStorage(() =>
       resolveStorage(typeof window === "undefined" ? undefined : window.localStorage),
     ),
     migrate: migratePersistedHelperDismissalState,
+    // `migrate` only runs when the stored version differs, so a same-version blob
+    // written by a corrupt client would land in state as-is. Hydration normalizes
+    // through the same narrowing either way.
+    merge: (persistedState, currentState) => ({
+      ...currentState,
+      ...migratePersistedHelperDismissalState(persistedState, HELPER_DISMISSAL_STORAGE_VERSION),
+    }),
   }),
 );
 

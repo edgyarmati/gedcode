@@ -70,6 +70,27 @@ describe("helperDismissalStore", () => {
     ).toEqual(new Set());
   });
 
+  // `migrate` only runs when the persisted version differs, so a same-version
+  // blob written by a corrupt client reaches state unnormalized unless hydration
+  // normalizes it too.
+  it("normalizes a corrupt same-version persisted blob on hydration", async () => {
+    const storage = useHelperDismissalStore.persist.getOptions().storage;
+    await storage?.setItem(HELPER_DISMISSAL_STORAGE_KEY, {
+      state: { dismissedAtByHelperKey: null },
+      version: 1,
+    } as unknown as Parameters<NonNullable<typeof storage>["setItem"]>[1]);
+
+    await useHelperDismissalStore.persist.rehydrate();
+
+    expect(useHelperDismissalStore.getState().dismissedAtByHelperKey).toEqual({});
+    expect(
+      selectDismissedPmHelperIds(useHelperDismissalStore.getState(), {
+        environmentId,
+        projectId,
+      }),
+    ).toEqual(new Set());
+  });
+
   it("keeps distinct keys per scope", () => {
     expect(helperDismissalKey({ environmentId, projectId, helperRunId })).not.toBe(
       helperDismissalKey({ environmentId: otherEnvironmentId, projectId, helperRunId }),
