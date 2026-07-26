@@ -29,14 +29,20 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   Claude, OpenCode, and read-only helper policies are unchanged.
 
 - Codex workers additionally run behind a best-effort accident tripwire: a server-owned hook refuses
-  clearly destructive commands — deleting, moving, truncating, changing ownership or mode, or patching —
-  whose target resolves outside the worker's own task worktree, while ordinary in-worktree work and
-  writes to cache, config, and temporary locations proceed untouched. A refusal is a single concise
-  denial with no approval prompt or retry loop. This is accident prevention, not a sandbox or a security
-  boundary: scripts, opaque subprocesses, and tools that do not report through the hook stay outside it,
-  and a worker whose tripwire cannot be installed starts without one rather than not starting at all.
-  A worker session the server has to recover — after a provider restart, or after everything was
-  stopped — comes back with the same tripwire, because the flag is persisted with the session binding.
+  clearly destructive commands — deleting, moving, truncating, overwriting, changing ownership or mode,
+  copying or syncing over, editing in place, or patching — whose target resolves outside the worker's
+  own task worktree, and refuses any of them aimed at the host's signed-in credentials and CLI state
+  (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.codex`, `~/.claude`, and the like) wherever they
+  run. Ordinary in-worktree work and writes to cache, config, and temporary locations proceed untouched,
+  including output discarded to `/dev/null`. The hook reads a command the way a shell does — every line,
+  each `;`/`&&`/`|` segment, `cd` scoped to the subshell or pipeline stage that ran it, `~` and `$VAR`
+  expanded, nested `bash -lc` and `xargs`/`env` wrappers followed, and the tool's own working directory
+  respected. A refusal is a single concise denial with no approval prompt or retry loop. This is accident
+  prevention, not a sandbox or a security boundary: scripts, opaque subprocesses, targets a command reads
+  from stdin or a file, and tools that do not report through the hook stay outside it, and a worker whose
+  tripwire cannot be installed starts without one rather than not starting at all. A transient failure
+  while installing it affects only that session, and a worker session the server has to recover — after
+  a provider restart, or after everything was stopped — comes back with the same tripwire.
 
 - The PM surface now pins only the newest read-only helper instead of stacking a card per run. A
   settled card (completed, failed, or interrupted) can be closed with an accessible control; a helper
@@ -45,9 +51,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   helper remains in project Helper history — newest first, with prompt, backend and model, timing,
   status, and its full result or failure — and task-attached helpers stay in Task history as before.
 
-- Worker permission boundaries now pause the existing stage instead of broadening its sandbox or
-  starting a replacement worker. The same worker session resumes when the provider records the narrow
-  approval result, and stage history visibly records the paused interval. Pauses persist a generous
+- Worker capability requests now pause the existing stage instead of starting a replacement worker.
+  The same worker session resumes when the provider records the narrow approval result, and stage
+  history visibly records the paused interval. Pauses persist a generous
   deadline, survive restart without orphaning the retained stage, and expire safely if they are not
   resolved; explicit task cancellation also clears the paused attempt. Capability requests produce one
   approval-focused PM wake, and expiry clearly reports the approval deadline rather than a restart.
@@ -59,8 +65,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - New Orchestrator PM, worker-stage, and read-only helper threads now persist explicit creation-time
   ownership metadata. Chat filters only those owned threads without relying on id or branch prefixes,
   while legacy unclassified threads remain visible. Task history interleaves helper work with selectable
-  chronological stage attempts, and normal unowned `ged/*` Chat threads remain outside worker sandbox
-  and network policy.
+  chronological stage attempts, and normal unowned `ged/*` Chat threads are never treated as worker
+  stages.
 
 - Approving a verified Orchestrator landing gate now immediately begins the durable draft-PR opening
   flow. The duplicate Land control is removed from the normal path; exact-HEAD validation remains
@@ -132,7 +138,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 - Clarified and enforced Orchestrator stage ownership. Plan and Verify workers are documentation-only,
   Work owns substantive implementation and clean commits, and the PM owns bounded trivial work plus
-  authenticated host operations that sandboxed workers cannot perform. Each stage now records its
+  host operations that belong outside a task worktree. Each stage now records its
   starting worktree HEAD; committed, dirty, and untracked implementation paths from a planner or
   verifier are surfaced to the PM, return the task to review, and cannot produce verification evidence.
   Verifier-owned context/evidence remains part of the exact HEAD required for landing.
