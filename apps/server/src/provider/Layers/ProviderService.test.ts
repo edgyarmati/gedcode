@@ -1141,6 +1141,99 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  // A recovered worker is still a full-access worker. Nothing in the binding said
+  // so, so recovery used to bring it back with the destructive-target tripwire
+  // silently switched off.
+  it.effect("recovers stale worker sessions with the destructive tripwire intact", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+
+      const initial = yield* provider.startSession(asThreadId("thread-worker-tripwire"), {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId: asThreadId("thread-worker-tripwire"),
+        cwd: "/tmp/project-worker-tripwire",
+        runtimeMode: "full-access",
+        destructiveTripwire: true,
+      });
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+
+      yield* provider.sendTurn({
+        threadId: initial.threadId,
+        input: "resume",
+        attachments: [],
+      });
+
+      const resumed = routing.codex.startSession.mock.calls[0]?.[0] as
+        | { readonly destructiveTripwire?: boolean }
+        | undefined;
+      assert.equal(resumed?.destructiveTripwire, true);
+    }),
+  );
+
+  // Stopping every session rewrites the bindings, and the flag has to survive that
+  // rewrite or the next recovery loses it again.
+  it.effect("keeps the worker tripwire flag across a shutdown that rewrites bindings", () =>
+    Effect.gen(function* () {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-tripwire-"));
+      const dbPath = path.join(tempDir, "orchestration.sqlite");
+      const persistenceLayer = makeSqlitePersistenceLive(dbPath);
+      const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+        Layer.provide(persistenceLayer),
+      );
+      const makeLayerFor = (adapter: ProviderAdapterShape<ProviderAdapterError>) =>
+        makeProviderServiceLive().pipe(
+          Layer.provide(
+            Layer.succeed(
+              ProviderAdapterRegistry,
+              makeAdapterRegistryMock({ [CODEX_DRIVER]: adapter }),
+            ),
+          ),
+          Layer.provide(ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer))),
+          Layer.provide(defaultServerSettingsLayer),
+          Layer.provide(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+        );
+
+      const beforeShutdown = makeFakeCodexAdapter();
+      const threadId = asThreadId("thread-worker-tripwire-shutdown");
+
+      // Providing the layer scopes the service, so completing this effect runs the
+      // shutdown finalizer that stops every session and rewrites its binding.
+      const initial = yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        return yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          cwd: "/tmp/project-worker-tripwire-shutdown",
+          runtimeMode: "full-access",
+          destructiveTripwire: true,
+        });
+      }).pipe(Effect.provide(makeLayerFor(beforeShutdown.adapter)));
+
+      const afterShutdown = makeFakeCodexAdapter();
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        yield* provider.sendTurn({
+          threadId: initial.threadId,
+          input: "resume after shutdown",
+          attachments: [],
+        });
+      }).pipe(Effect.provide(makeLayerFor(afterShutdown.adapter)));
+
+      assert.equal(afterShutdown.startSession.mock.calls.length, 1);
+      const resumed = afterShutdown.startSession.mock.calls[0]?.[0] as
+        | { readonly cwd?: string; readonly destructiveTripwire?: boolean }
+        | undefined;
+      assert.equal(resumed?.cwd, "/tmp/project-worker-tripwire-shutdown");
+      assert.equal(resumed?.destructiveTripwire, true);
+
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("recovers stale claudeAgent sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService;

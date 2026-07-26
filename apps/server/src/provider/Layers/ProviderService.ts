@@ -122,6 +122,7 @@ function toRuntimePayloadFromSession(
     readonly modelSelection?: unknown;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
+    readonly destructiveTripwire?: boolean;
   },
 ): Record<string, unknown> {
   return {
@@ -129,6 +130,7 @@ function toRuntimePayloadFromSession(
     model: session.model ?? null,
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
+    ...(extra?.destructiveTripwire === true ? { destructiveTripwire: true } : {}),
     ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
@@ -137,23 +139,36 @@ function toRuntimePayloadFromSession(
   };
 }
 
+// Bindings are persisted as opaque JSON, so every read narrows the payload the
+// same way.
+function asRuntimePayloadRecord(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): Record<string, unknown> {
+  return runtimePayload && typeof runtimePayload === "object" && !Array.isArray(runtimePayload)
+    ? (runtimePayload as Record<string, unknown>)
+    : {};
+}
+
 function readPersistedModelSelection(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): ModelSelection | undefined {
-  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
-    return undefined;
-  }
-  const raw = "modelSelection" in runtimePayload ? runtimePayload.modelSelection : undefined;
+  const raw = asRuntimePayloadRecord(runtimePayload).modelSelection;
   return isModelSelection(raw) ? raw : undefined;
+}
+
+// Only orchestrator workers ask for the destructive-target tripwire, and the
+// binding is the only thing recovery has to go on. Without it a recovered worker
+// came back with the tripwire silently switched off.
+function readPersistedDestructiveTripwire(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): boolean {
+  return asRuntimePayloadRecord(runtimePayload).destructiveTripwire === true;
 }
 
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
-  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
-    return undefined;
-  }
-  const rawCwd = "cwd" in runtimePayload ? runtimePayload.cwd : undefined;
+  const rawCwd = asRuntimePayloadRecord(runtimePayload).cwd;
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
   return trimmed.length > 0 ? trimmed : undefined;
@@ -247,6 +262,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       readonly modelSelection?: unknown;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
+      readonly destructiveTripwire?: boolean;
     },
   ) =>
     Effect.gen(function* () {
@@ -261,6 +277,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         runtimeMode: session.runtimeMode,
         status: toRuntimeStatus(session),
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
+        // `ProviderSessionDirectory.upsert` merges payload records, so upserts
+        // that do not mention the tripwire keep the persisted answer.
         runtimePayload: toRuntimePayloadFromSession(session, extra),
       });
     });
@@ -375,6 +393,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
+      const persistedDestructiveTripwire = readPersistedDestructiveTripwire(
+        input.binding.runtimePayload,
+      );
 
       const resumed = yield* adapter.startSession({
         threadId: input.binding.threadId,
@@ -383,6 +404,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         ...(persistedCwd ? { cwd: persistedCwd } : {}),
         ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
         ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
+        ...(persistedDestructiveTripwire ? { destructiveTripwire: true } : {}),
         runtimeMode: input.binding.runtimeMode ?? "full-access",
       });
       if (resumed.provider !== adapter.provider) {
@@ -579,6 +601,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          ...(input.destructiveTripwire === true ? { destructiveTripwire: true } : {}),
         });
         return sessionWithInstance;
       }).pipe(

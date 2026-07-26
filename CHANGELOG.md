@@ -35,6 +35,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   denial with no approval prompt or retry loop. This is accident prevention, not a sandbox or a security
   boundary: scripts, opaque subprocesses, and tools that do not report through the hook stay outside it,
   and a worker whose tripwire cannot be installed starts without one rather than not starting at all.
+  A worker session the server has to recover — after a provider restart, or after everything was
+  stopped — comes back with the same tripwire, because the flag is persisted with the session binding.
 
 - The PM surface now pins only the newest read-only helper instead of stacking a card per run. A
   settled card (completed, failed, or interrupted) can be closed with an accessible control; a helper
