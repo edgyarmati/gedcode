@@ -25,7 +25,12 @@ import {
   __resetEnvironmentApiOverridesForTests,
   __setEnvironmentApiOverrideForTests,
 } from "../../environmentApi";
-import { dismissPmHelper, useHelperDismissalStore } from "../../helperDismissalStore";
+import {
+  HELPER_DISMISSAL_STORAGE_KEY,
+  dismissPmHelper,
+  selectDismissedPmHelperIds,
+  useHelperDismissalStore,
+} from "../../helperDismissalStore";
 import { __resetLocalApiForTests } from "../../localApi";
 import { initialEnvironmentState, useStore } from "../../store";
 import type { Thread } from "../../types";
@@ -511,6 +516,21 @@ it("keeps a helper dismissed by an earlier page load out of the pinned card", as
     projectId: pmProjectId,
     helperRunId: dismissedHelperRunId,
   });
+  // Simulate the reload for real: keep what the previous load wrote to this
+  // browser's localStorage, start from empty in-memory state, and let hydration be
+  // the only thing that can still hide the card. Resetting state persists too, so
+  // the stored entry has to be put back before rehydrating.
+  const persistedByPreviousLoad = window.localStorage.getItem(HELPER_DISMISSAL_STORAGE_KEY);
+  expect(persistedByPreviousLoad).toContain(String(dismissedHelperRunId));
+  useHelperDismissalStore.setState({ dismissedAtByHelperKey: {} });
+  window.localStorage.setItem(HELPER_DISMISSAL_STORAGE_KEY, persistedByPreviousLoad ?? "");
+  await useHelperDismissalStore.persist.rehydrate();
+  expect(
+    selectDismissedPmHelperIds(useHelperDismissalStore.getState(), {
+      environmentId,
+      projectId: pmProjectId,
+    }),
+  ).toEqual(new Set([String(dismissedHelperRunId)]));
 
   await render(<PmHelperSurface environmentId={environmentId} projectId={pmProjectId} />);
 

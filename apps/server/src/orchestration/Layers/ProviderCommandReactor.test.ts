@@ -1259,7 +1259,8 @@ describe("ProviderCommandReactor", () => {
       await waitFor(() => harness.startSession.mock.calls.length === 1);
       await waitFor(() => harness.sendTurn.mock.calls.length === 1);
       // Workers inherit the host environment, credentials included; the provider
-      // is started without an environment override.
+      // is started without an environment override. What the child then receives is
+      // covered by `resolveCodexSessionEnvironment` in CodexSessionRuntime.test.ts.
       const input = harness.startSession.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
       expect(input).not.toHaveProperty("environment");
       const expectedWorktreePath = path.join(

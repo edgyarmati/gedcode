@@ -852,6 +852,26 @@ function parseThreadSnapshot(
   };
 }
 
+/**
+ * Environment for the spawned `codex app-server`.
+ *
+ * With no explicit override the child inherits the server's environment as-is,
+ * credentials included, so a worker's tools and provider CLIs behave exactly as
+ * they do for the operator. `~` is not shell-expanded when env vars are set via
+ * `child_process.spawn`, so a configured `CODEX_HOME=~/.codex_work` is expanded
+ * here and wins over an inherited one.
+ */
+export function resolveCodexSessionEnvironment(options: {
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly homePath?: string;
+}): NodeJS.ProcessEnv {
+  const resolvedHomePath = options.homePath ? expandHomePath(options.homePath) : undefined;
+  return {
+    ...(options.environment ?? process.env),
+    ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
+  };
+}
+
 export const makeCodexSessionRuntime = (
   options: CodexSessionRuntimeOptions,
 ): Effect.Effect<
@@ -870,14 +890,7 @@ export const makeCodexSessionRuntime = (
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
     const closedRef = yield* Ref.make(false);
 
-    // `~` is not shell-expanded when env vars are set via
-    // `child_process.spawn`; `expandHomePath` lets a configured
-    // `CODEX_HOME=~/.codex_work` reach codex as an absolute path.
-    const resolvedHomePath = options.homePath ? expandHomePath(options.homePath) : undefined;
-    const env = {
-      ...(options.environment ?? process.env),
-      ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
-    };
+    const env = resolveCodexSessionEnvironment(options);
     const appServerArgs = buildCodexAppServerArgs(options.configOverrides ?? []);
     const child = yield* spawner
       .spawn(

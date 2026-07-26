@@ -1,4 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -19,6 +22,7 @@ import {
   openCodexThread,
   permissionResponseForDecision,
   requestCodexTurn,
+  resolveCodexSessionEnvironment,
   resolveGuardianDeniedAction,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
@@ -670,5 +674,53 @@ describe("openCodexThread", () => {
     );
 
     assert.equal("developerInstructions" in calls[0]!.payload, false);
+  });
+});
+
+describe("resolveCodexSessionEnvironment", () => {
+  // Workers are started without an environment override precisely so their tools
+  // keep the credentials the host is signed in with. Asserting the absence of an
+  // override does not prove the child receives them; this does.
+  it("hands the host environment, credentials included, to the child process", () => {
+    const previous = {
+      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    };
+    process.env.GITHUB_TOKEN = "host-github-token";
+    process.env.OPENAI_API_KEY = "host-openai-key";
+    try {
+      const env = resolveCodexSessionEnvironment({});
+
+      assert.equal(env.GITHUB_TOKEN, "host-github-token");
+      assert.equal(env.OPENAI_API_KEY, "host-openai-key");
+      assert.equal(env.PATH, process.env.PATH);
+    } finally {
+      process.env.GITHUB_TOKEN = previous.GITHUB_TOKEN;
+      process.env.OPENAI_API_KEY = previous.OPENAI_API_KEY;
+    }
+  });
+
+  it("replaces the host environment when an explicit override is supplied", () => {
+    const previous = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "host-github-token";
+    try {
+      const env = resolveCodexSessionEnvironment({ environment: { PATH: "/usr/bin" } });
+
+      assert.equal(env.PATH, "/usr/bin");
+      assert.equal("GITHUB_TOKEN" in env, false);
+    } finally {
+      process.env.GITHUB_TOKEN = previous;
+    }
+  });
+
+  // `~` is not shell-expanded for spawn env vars, and a configured home must win
+  // over whatever the host exported.
+  it("expands a configured codex home over an inherited one", () => {
+    const env = resolveCodexSessionEnvironment({
+      environment: { CODEX_HOME: "/inherited/.codex" },
+      homePath: "~/.codex_work",
+    });
+
+    assert.equal(env.CODEX_HOME, path.join(os.homedir(), ".codex_work"));
   });
 });
