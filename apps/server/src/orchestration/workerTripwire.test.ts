@@ -30,9 +30,13 @@ afterAll(() => {
 
 type Decision = { readonly denied: false } | { readonly denied: true; readonly reason: string };
 
-function evaluatePayload(payload: Readonly<Record<string, unknown>>): Decision {
+function evaluatePayload(
+  payload: Readonly<Record<string, unknown>>,
+  env: Readonly<Record<string, string>> = {},
+): Decision {
   const result = spawnSync(process.execPath, [scriptPath], {
     encoding: "utf8",
+    env: { ...process.env, ...env },
     input: JSON.stringify(payload),
   });
   // A non-zero exit would reach the worker as a hook failure rather than a
@@ -395,6 +399,86 @@ describe("worker destructive-target tripwire", () => {
     const decision = evaluatePayload(shellCall(command));
 
     expect(decision.denied).toBe(false);
+  });
+
+  // A flag's inline value is an option, not a target. Reading every `key=value`
+  // word as a path invented targets the command only ever reads from.
+  it.each([
+    ["an ownership reference", "chown --reference=/etc/passwd src/app"],
+    ["a mode reference", `chmod --reference=${outside}/template src/app`],
+    ["a size reference", `truncate --reference=${outside}/template logs/app.log`],
+  ])("allows %s while writing inside the worktree", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(false);
+  });
+
+  it.each([
+    ["a raw device write target", `dd if=/dev/urandom of=${outside}/disk.img`],
+    ["an explicit size flag", `truncate --size=0 ${outside}/service.log`],
+  ])("still denies %s outside the worktree", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  // The shell expands variables before the command runs, so a target hidden in
+  // one is as explicit as a literal path.
+  it.each([
+    ["a bare variable", "rm -rf $PROJECT_ROOT/data"],
+    ["a braced variable", "rm -rf ${PROJECT_ROOT}/data"],
+    ["a variable in a redirect", "echo broken > $PROJECT_ROOT/config.yaml"],
+  ])("denies destruction named through %s pointing outside", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command), { PROJECT_ROOT: outside });
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it("allows destruction named through a variable pointing inside the worktree", () => {
+    const decision = evaluatePayload(shellCall("rm -rf $BUILD_DIR/artifacts"), {
+      BUILD_DIR: `${worktree}/build`,
+    });
+
+    expect(decision.denied).toBe(false);
+  });
+
+  // Workers inherit the host environment including credentials, and the
+  // maintenance allowlist opens `~/.config` and `~/.local` wide. Losing an SSH key
+  // or a signed-in CLI's state is not ordinary cache pruning.
+  it.each([
+    ["ssh keys", "rm -rf ~/.ssh"],
+    ["an aws credentials file", "rm -f ~/.aws/credentials"],
+    ["a netrc", "rm ~/.netrc"],
+    ["a global git config", "echo broken > ~/.gitconfig"],
+    ["a signed-in gh cli", "rm -rf ~/.config/gh"],
+    ["git config under XDG", "rm -rf ~/.config/git"],
+    ["gcloud state", "rm -rf ~/.config/gcloud"],
+    ["keyrings under .local", "rm -rf ~/.local/share/keyrings"],
+    ["codex home", "rm -rf ~/.codex"],
+    ["claude home", "rm -rf ~/.claude"],
+    ["kube config", "rm -rf ~/.kube"],
+    ["docker credentials", "rm -f ~/.docker/config.json"],
+    ["gnupg keys", "rm -rf ~/.gnupg"],
+    ["an ancestor of protected state", "rm -rf ~/.config"],
+  ])("denies destroying %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  it("still allows pruning an ordinary tool directory under the same roots", () => {
+    const decision = evaluatePayload(shellCall("rm -rf ~/.config/some-tool/cache"));
+
+    expect(decision.denied).toBe(false);
+  });
+
+  it("says why a credential path was refused rather than blaming the worktree", () => {
+    const decision = evaluatePayload(shellCall("rm -rf ~/.ssh"));
+
+    if (!decision.denied) throw new Error("expected the credential delete to be denied");
+    expect(decision.reason.split("\n")).toHaveLength(1);
+    expect(decision.reason).toContain(path.join(os.homedir(), ".ssh"));
+    expect(decision.reason).toContain("credential");
   });
 
   it("denies once with a single-line reason naming the target and the worktree", () => {

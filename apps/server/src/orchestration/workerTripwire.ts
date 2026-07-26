@@ -92,6 +92,33 @@ const isExternalMaintenance = (target) =>
   EXTERNAL_MAINTENANCE_ROOTS.some((root) => isInside(root, target)) ||
   target.split(sep).includes("node_modules");
 
+// Credentials and signed-in tool state. Workers inherit the host environment, and
+// the maintenance allowlist opens \`~/.config\` and \`~/.local\` wide, so losing an
+// SSH key or a logged-in CLI would otherwise read as ordinary cache pruning.
+const PROTECTED_ROOTS = [
+  ".ssh",
+  ".aws",
+  ".azure",
+  ".netrc",
+  ".gitconfig",
+  ".git-credentials",
+  ".config/gh",
+  ".config/git",
+  ".config/gcloud",
+  ".config/op",
+  ".local/share/keyrings",
+  ".codex",
+  ".claude",
+  ".kube",
+  ".docker",
+  ".gnupg",
+  ".password-store",
+].map((entry) => canonicalize(join(home, ...entry.split("/"))));
+
+// A parent counts too: \`rm -rf ~/.config\` takes every signed-in CLI with it.
+const isProtected = (target) =>
+  PROTECTED_ROOTS.some((root) => isInside(root, target) || isInside(target, root));
+
 // Standard pseudo devices are sinks and sources, never the user's work. Agents
 // silence commands with \`>/dev/null\` constantly, so reading those as external
 // files would refuse ordinary builds while protecting nothing. Real devices such
@@ -189,22 +216,31 @@ const tokenize = (input) => {
   return items;
 };
 
-// The shell expands home and temp references before the command runs, so the
+const VARIABLE_REFERENCE = /\\$(?:\\{([A-Za-z_][A-Za-z0-9_]*)\\}|([A-Za-z_][A-Za-z0-9_]*))/g;
+
+// Workers inherit the host environment, so a variable in a path is as explicit as
+// the literal it stands for. \`HOME\` and \`TMPDIR\` fall back to the process values
+// because the shell would resolve them even when they are absent from the
+// environment we were handed.
+const variableValue = (name) => {
+  if (name === "HOME") return home;
+  if (name === "TMPDIR") return tmpdir();
+  return process.env[name];
+};
+
+// The shell expands home and variable references before the command runs, so the
 // tripwire has to expand them too or it would read \`~/Documents\` as a
-// worktree-relative path and wave it through.
+// worktree-relative path and wave it through. A variable this process cannot
+// resolve is left as written: it names no path the tripwire can judge, and
+// rewriting it would invent one.
 const expandPath = (token) => {
-  if (token === "~") return home;
-  if (token.startsWith("~/")) return join(home, token.slice(2));
-  for (const [reference, value] of [
-    ["\${HOME}", home],
-    ["$HOME", home],
-    ["\${TMPDIR}", tmpdir()],
-    ["$TMPDIR", tmpdir()],
-  ]) {
-    if (token === reference) return value;
-    if (token.startsWith(\`\${reference}/\`)) return join(value, token.slice(reference.length + 1));
-  }
-  return token;
+  const expanded = token.replace(VARIABLE_REFERENCE, (whole, braced, bare) => {
+    const value = variableValue(braced ?? bare);
+    return value === undefined || value.length === 0 ? whole : value;
+  });
+  if (expanded === "~") return home;
+  if (expanded.startsWith("~/")) return join(home, expanded.slice(2));
+  return expanded;
 };
 
 // Deletion, destructive moves, truncation, and ownership or mode changes.
@@ -295,19 +331,19 @@ const dropWrappers = (words) => {
   return words.slice(index);
 };
 
-// The words a destructive verb acts on. Bare flags carry no path, but shells
-// pass \`--file=...\` and \`of=...\` through verbatim, so inline values still count.
-// \`if=\` is skipped: it names the source a command reads, never what it destroys.
+// The words a destructive verb acts on. Flags carry options rather than targets —
+// reading \`--reference=/etc/passwd\` as one invented a path the command only reads.
+// \`dd\`-style \`key=value\` operands are not flags and do name targets, except \`if=\`,
+// which names the source a command reads.
 const candidateTargets = (words) => {
   const candidates = [];
   for (const word of words) {
+    if (word.startsWith("-")) continue;
     const separator = word.indexOf("=");
     if (separator > 0) {
-      const key = word.slice(0, separator).replace(/^-+/, "");
-      if (key !== "if") candidates.push(word.slice(separator + 1));
+      if (word.slice(0, separator) !== "if") candidates.push(word.slice(separator + 1));
       continue;
     }
-    if (word.startsWith("-")) continue;
     candidates.push(word);
   }
   return candidates;
@@ -426,7 +462,9 @@ const startDir =
     : worktree;
 
 const describe = (verb, target) =>
-  \`GedCode worker tripwire: refusing "\${verb}" on \${target}, which is outside this task worktree (\${worktree}). Keep destructive changes inside the worktree, and ask the PM if an external change is genuinely required.\`;
+  isProtected(target)
+    ? \`GedCode worker tripwire: refusing "\${verb}" on \${target}, which holds host credentials or signed-in tool state. Nothing in the task requires destroying it; ask the PM if you believe otherwise.\`
+    : \`GedCode worker tripwire: refusing "\${verb}" on \${target}, which is outside this task worktree (\${worktree}). Keep destructive changes inside the worktree, and ask the PM if an external change is genuinely required.\`;
 
 // The one place that decides whether a target is fair game, so the redirect,
 // verb, and patch paths cannot drift apart. Returns the canonical path when the
@@ -437,6 +475,9 @@ const externalTarget = (resolved) => {
   // Both spellings are checked: \`/dev/stdout\` canonicalizes to whatever the
   // hook's own descriptor points at, which is not a device path at all.
   if (isDiscardDevice(resolved) || isDiscardDevice(canonical)) return null;
+  // Checked before the allowlist, which would otherwise wave through everything
+  // under \`~/.config\` and \`~/.local\`.
+  if (isProtected(canonical)) return canonical;
   if (isExternalMaintenance(canonical)) return null;
   return canonical;
 };
