@@ -209,6 +209,32 @@ describe("worker destructive-target tripwire", () => {
     expect(decision.denied).toBe(false);
   });
 
+  // Discarding output is how agents keep a command quiet. These are not files and
+  // destroying them is not possible, so treating them as external targets would
+  // refuse ordinary build and probe commands.
+  it.each([
+    ["a discarded stdout redirect", "make >/dev/null"],
+    ["a discarded stderr redirect", "bun run build 2>/dev/null"],
+    ["a spaced discard", "git diff --quiet > /dev/null"],
+    ["a capability probe", "command -v uv >/dev/null 2>&1"],
+    ["a terminal redirect", "printf progress > /dev/tty"],
+    ["a descriptor redirect", "echo hi > /dev/fd/3"],
+    ["a device sink for dd", "dd if=large.bin of=/dev/null"],
+    ["a mode change on a pseudo device", "chmod 666 /dev/null"],
+  ])("allows %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(false);
+  });
+
+  // A real block device is not a discard sink; the allowance is for the standard
+  // pseudo devices only.
+  it("still denies writing over a real device", () => {
+    const decision = evaluatePayload(shellCall("dd if=/dev/zero of=/dev/disk0"));
+
+    expect(decision.denied).toBe(true);
+  });
+
   it("denies once with a single-line reason naming the target and the worktree", () => {
     const decision = evaluatePayload(shellCall(`rm -rf ${outside}`));
 

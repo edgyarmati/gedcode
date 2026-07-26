@@ -92,6 +92,25 @@ const isExternalMaintenance = (target) =>
   EXTERNAL_MAINTENANCE_ROOTS.some((root) => isInside(root, target)) ||
   target.split(sep).includes("node_modules");
 
+// Standard pseudo devices are sinks and sources, never the user's work. Agents
+// silence commands with \`>/dev/null\` constantly, so reading those as external
+// files would refuse ordinary builds while protecting nothing. Real devices such
+// as \`/dev/disk0\` are deliberately not listed.
+const DISCARD_DEVICES = new Set([
+  "/dev/null",
+  "/dev/zero",
+  "/dev/random",
+  "/dev/urandom",
+  "/dev/stdin",
+  "/dev/stdout",
+  "/dev/stderr",
+  "/dev/tty",
+  "/dev/console",
+]);
+
+const isDiscardDevice = (target) =>
+  DISCARD_DEVICES.has(target) || target.startsWith("/dev/fd/");
+
 const WORD = 0;
 const OPERATOR = 1;
 
@@ -265,6 +284,19 @@ const worktree = canonicalize(sessionCwd);
 const describe = (verb, target) =>
   \`GedCode worker tripwire: refusing "\${verb}" on \${target}, which is outside this task worktree (\${worktree}). Keep destructive changes inside the worktree, and ask the PM if an external change is genuinely required.\`;
 
+// The one place that decides whether a target is fair game, so the redirect,
+// verb, and patch paths cannot drift apart. Returns the canonical path when the
+// target is external and must be refused, and \`null\` when it is allowed.
+const externalTarget = (resolved) => {
+  const canonical = canonicalize(resolved);
+  if (isInside(worktree, canonical)) return null;
+  // Both spellings are checked: \`/dev/stdout\` canonicalizes to whatever the
+  // hook's own descriptor points at, which is not a device path at all.
+  if (isDiscardDevice(resolved) || isDiscardDevice(canonical)) return null;
+  if (isExternalMaintenance(canonical)) return null;
+  return canonical;
+};
+
 const inspectCommand = (input, startDir, depth) => {
   if (depth > 3) return null;
   const segments = [[]];
@@ -282,10 +314,8 @@ const inspectCommand = (input, startDir, depth) => {
     // command is. \`>>\` appends, which adds to a file instead of destroying it.
     for (let index = 0; index + 1 < segment.length; index += 1) {
       if (segment[index] !== ">") continue;
-      const target = canonicalize(resolve(current, expandPath(segment[index + 1])));
-      if (!isInside(worktree, target) && !isExternalMaintenance(target)) {
-        return describe(">", target);
-      }
+      const target = externalTarget(resolve(current, expandPath(segment[index + 1])));
+      if (target !== null) return describe(">", target);
     }
 
     const words = dropWrappers(segment);
@@ -312,10 +342,8 @@ const inspectCommand = (input, startDir, depth) => {
     if (!DESTRUCTIVE_VERBS.has(verb)) continue;
 
     for (const candidate of candidateTargets(operands)) {
-      const target = canonicalize(resolve(current, expandPath(candidate)));
-      if (!isInside(worktree, target) && !isExternalMaintenance(target)) {
-        return describe(verb, target);
-      }
+      const target = externalTarget(resolve(current, expandPath(candidate)));
+      if (target !== null) return describe(verb, target);
     }
   }
   return null;
@@ -329,10 +357,8 @@ const inspectPatch = (patch) => {
   for (const line of patch.split(/\\r?\\n/)) {
     const matched = PATCH_TARGET.exec(line.trim());
     if (matched === null) continue;
-    const target = canonicalize(resolve(worktree, expandPath(matched[1].trim())));
-    if (!isInside(worktree, target) && !isExternalMaintenance(target)) {
-      return describe("apply_patch", target);
-    }
+    const target = externalTarget(resolve(worktree, expandPath(matched[1].trim())));
+    if (target !== null) return describe("apply_patch", target);
   }
   return null;
 };
