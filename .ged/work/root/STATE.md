@@ -1,11 +1,11 @@
 # STATE
 
-- **Phase**: implement
-- **Phase**: complete
-- **Active task**: none — all worker-thread continuation slices are `DONE`
+- **Phase**: verify
+- **Active task**: none — 0.4.0 release candidate verification is complete
 - **Roadmap**: Worker Thread Continuation Policy
 - **Clarified**: 2026-07-27
 - **Completed**: 2026-07-27 — focused verification evidence is recorded in `TESTS.md`
+- **Release candidate**: 0.4.0 — full tests, formatting, lint, typecheck, and release smoke passed
 
 ## Worker Thread Continuation Completion
 

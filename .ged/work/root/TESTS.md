@@ -91,3 +91,29 @@ prefers `steerStage`, while independent judgment, materially different approache
 changes, context or terminal-session recovery, failed continuation, and post-newer-stage correction
 remain fresh attempts. Verifiers still cannot repair implementation and every post-fix validation is
 a fresh Verify.
+
+## 0.4.0 Release Candidate Verification Evidence
+
+The release candidate includes the completed orchestrator, provider, workflow, landing, and release
+documentation changes recorded in the 0.4.0 changelog. The pre-existing working tree was split into
+atomic commits before release preparation; no unrelated changes were folded into the release notes
+or test fixes.
+
+| Check | Result |
+| --- | --- |
+| Full workspace `bun run test` | Passed; 231 test files, 1,884 passed, 1 skipped (1,885 total) |
+| `bun fmt` | Passed; 1,426 files formatted/checked |
+| `bun lint` | Exit 0; existing repository warnings only |
+| Full workspace `bun typecheck` | Passed; 12/12 packages |
+| Focused landing integration tests | Passed; 6 tests |
+| Focused Claude adapter tests | Passed; 61 tests |
+| Focused Phase 4/pipeline/live-globals integration tests | Passed; 7 tests across 3 files |
+| Focused GED manifest test | Passed; 3 tests |
+| `bun run release:smoke` | Passed |
+| `git diff --check` | Passed |
+
+The full suite emits expected test-injected warnings for unsupported synthetic VCS operations,
+best-effort Codex tripwire probing, and no-change baseline inspection. These are covered behaviors,
+not failed assertions. The release candidate keeps the documented compatibility boundary: workers
+retain full host/backend access, while worktree ownership, protected-ref hooks, admission limits,
+and the best-effort Codex tripwire remain active safeguards rather than a security sandbox.
