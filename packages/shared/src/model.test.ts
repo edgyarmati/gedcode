@@ -75,7 +75,10 @@ describe("normalizeModelSlug", () => {
     const claude = ProviderDriverKind.make("claudeAgent");
     expect(normalizeModelSlug("gpt-5-codex")).toBe("gpt-5.4");
     expect(normalizeModelSlug("5.3")).toBe("gpt-5.3-codex");
-    expect(normalizeModelSlug("sonnet", claude)).toBe("claude-sonnet-4-6");
+    expect(normalizeModelSlug("sonnet", claude)).toBe("claude-sonnet-5");
+    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
+    expect(normalizeModelSlug("sonnet-5", claude)).toBe("claude-sonnet-5");
+    expect(normalizeModelSlug("opus-5", claude)).toBe("claude-opus-5");
     expect(normalizeModelSlug("fable", claude)).toBe("claude-fable-5");
   });
 
@@ -108,7 +111,7 @@ describe("resolveSelectableModel", () => {
   it("resolves exact slugs, labels, and aliases", () => {
     const options = [
       { slug: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
-      { slug: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+      { slug: "claude-sonnet-5", name: "Claude Sonnet 5" },
     ];
     expect(resolveSelectableModel(ProviderDriverKind.make("codex"), "gpt-5.3-codex", options)).toBe(
       "gpt-5.3-codex",
@@ -117,7 +120,7 @@ describe("resolveSelectableModel", () => {
       "gpt-5.3-codex",
     );
     expect(resolveSelectableModel(ProviderDriverKind.make("claudeAgent"), "sonnet", options)).toBe(
-      "claude-sonnet-4-6",
+      "claude-sonnet-5",
     );
   });
 });

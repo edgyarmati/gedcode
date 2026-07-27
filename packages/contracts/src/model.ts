@@ -136,7 +136,7 @@ export const DEFAULT_GIT_TEXT_GENERATION_MODEL = "gpt-5.4-mini";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-sonnet-4-6",
+  [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
 
@@ -163,7 +163,8 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   [CLAUDE_DRIVER_KIND]: {
     fable: "claude-fable-5",
     "fable-5": "claude-fable-5",
-    opus: "claude-opus-4-8",
+    opus: "claude-opus-5",
+    "opus-5": "claude-opus-5",
     "opus-4.8": "claude-opus-4-8",
     "claude-opus-4.8": "claude-opus-4-8",
     "opus-4.7": "claude-opus-4-7",
@@ -171,7 +172,8 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "opus-4.6": "claude-opus-4-6",
     "claude-opus-4.6": "claude-opus-4-6",
     "claude-opus-4-6-20251117": "claude-opus-4-6",
-    sonnet: "claude-sonnet-4-6",
+    sonnet: "claude-sonnet-5",
+    "sonnet-5": "claude-sonnet-5",
     "sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4.6": "claude-sonnet-4-6",
     "claude-sonnet-4-6-20251117": "claude-sonnet-4-6",

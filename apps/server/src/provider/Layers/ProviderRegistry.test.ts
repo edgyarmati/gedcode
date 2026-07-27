@@ -1383,6 +1383,129 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
         ),
       );
 
+      it.effect("includes Claude Opus 5 and Sonnet 5 with native capabilities", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          const opus = status.models.find((model) => model.slug === "claude-opus-5");
+          const sonnet = status.models.find((model) => model.slug === "claude-sonnet-5");
+          assert.strictEqual(opus?.name, "Claude Opus 5");
+          assert.strictEqual(sonnet?.name, "Claude Sonnet 5");
+
+          const opusDescriptors = opus?.capabilities?.optionDescriptors ?? [];
+          const sonnetDescriptors = sonnet?.capabilities?.optionDescriptors ?? [];
+          assert.strictEqual(
+            opusDescriptors.some(
+              (descriptor) => descriptor.type === "boolean" && descriptor.id === "fastMode",
+            ),
+            true,
+          );
+          assert.strictEqual(
+            sonnetDescriptors.some((descriptor) => descriptor.id === "fastMode"),
+            false,
+          );
+          for (const descriptors of [opusDescriptors, sonnetDescriptors]) {
+            const effort = descriptors.find(
+              (descriptor) => descriptor.type === "select" && descriptor.id === "effort",
+            );
+            assert.deepStrictEqual(
+              effort?.type === "select"
+                ? effort.options.map((option) => [option.id, option.isDefault === true])
+                : [],
+              [
+                ["low", false],
+                ["medium", false],
+                ["high", true],
+                ["xhigh", false],
+                ["max", false],
+              ],
+            );
+            assert.strictEqual(
+              descriptors.some((descriptor) => descriptor.id === "contextWindow"),
+              false,
+            );
+          }
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "2.1.219\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return {
+                  stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                  stderr: "",
+                  code: 0,
+                };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("gates Claude 5 models on their Claude Code release versions", () =>
+        Effect.gen(function* () {
+          const beforeSonnet = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          ).pipe(
+            Effect.provide(
+              mockSpawnerLayer((args) => {
+                const joined = args.join(" ");
+                if (joined === "--version") return { stdout: "2.1.196\n", stderr: "", code: 0 };
+                if (joined === "auth status")
+                  return {
+                    stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                    stderr: "",
+                    code: 0,
+                  };
+                throw new Error(`Unexpected args: ${joined}`);
+              }),
+            ),
+          );
+          assert.strictEqual(
+            beforeSonnet.models.some((model) => model.slug === "claude-sonnet-5"),
+            false,
+          );
+          assert.strictEqual(
+            beforeSonnet.message,
+            "Claude Code v2.1.196 is too old for Claude Sonnet 5. Upgrade to v2.1.197 or newer to access it.",
+          );
+
+          const beforeOpus = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          ).pipe(
+            Effect.provide(
+              mockSpawnerLayer((args) => {
+                const joined = args.join(" ");
+                if (joined === "--version") return { stdout: "2.1.218\n", stderr: "", code: 0 };
+                if (joined === "auth status")
+                  return {
+                    stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                    stderr: "",
+                    code: 0,
+                  };
+                throw new Error(`Unexpected args: ${joined}`);
+              }),
+            ),
+          );
+          assert.strictEqual(
+            beforeOpus.models.some((model) => model.slug === "claude-sonnet-5"),
+            true,
+          );
+          assert.strictEqual(
+            beforeOpus.models.some((model) => model.slug === "claude-opus-5"),
+            false,
+          );
+          assert.strictEqual(
+            beforeOpus.message,
+            "Claude Code v2.1.218 is too old for Claude Opus 5. Upgrade to v2.1.219 or newer to access it.",
+          );
+        }),
+      );
+
       it.effect("includes Claude Fable 5 on supported Claude Code versions", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(

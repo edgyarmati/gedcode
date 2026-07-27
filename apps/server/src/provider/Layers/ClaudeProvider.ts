@@ -49,10 +49,19 @@ const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
 } as const;
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
+const MINIMUM_CLAUDE_SONNET_5_VERSION = "2.1.197";
+const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 
 const CLAUDE_EFFORT_OPTIONS = {
+  generation5: [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High", isDefault: true },
+    { value: "xhigh", label: "Extra High" },
+    { value: "max", label: "Max" },
+  ],
   opus48: [
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
@@ -93,6 +102,38 @@ const CLAUDE_EFFORT_OPTIONS = {
 } as const;
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "claude-opus-5",
+    name: "Claude Opus 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: CLAUDE_EFFORT_OPTIONS.generation5,
+        }),
+        buildBooleanOptionDescriptor({
+          id: "fastMode",
+          label: "Fast Mode",
+        }),
+      ],
+    }),
+  },
+  {
+    slug: "claude-sonnet-5",
+    name: "Claude Sonnet 5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: CLAUDE_EFFORT_OPTIONS.generation5,
+        }),
+      ],
+    }),
+  },
   {
     slug: "claude-fable-5",
     name: "Claude Fable 5",
@@ -249,6 +290,14 @@ function supportsClaudeFable5(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_VERSION) >= 0 : false;
 }
 
+function supportsClaudeSonnet5(version: string | null | undefined): boolean {
+  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_SONNET_5_VERSION) >= 0 : false;
+}
+
+function supportsClaudeOpus5(version: string | null | undefined): boolean {
+  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_5_VERSION) >= 0 : false;
+}
+
 function supportsClaudeOpus48(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_4_8_VERSION) >= 0 : false;
 }
@@ -261,6 +310,12 @@ function getBuiltInClaudeModelsForVersion(
   version: string | null | undefined,
 ): ReadonlyArray<ServerProviderModel> {
   return BUILT_IN_MODELS.filter((model) => {
+    if (model.slug === "claude-opus-5") {
+      return supportsClaudeOpus5(version);
+    }
+    if (model.slug === "claude-sonnet-5") {
+      return supportsClaudeSonnet5(version);
+    }
     if (model.slug === "claude-fable-5") {
       return supportsClaudeFable5(version);
     }
@@ -272,6 +327,16 @@ function getBuiltInClaudeModelsForVersion(
     }
     return true;
   });
+}
+
+function formatClaudeOpus5UpgradeMessage(version: string | null): string {
+  const versionLabel = version ? `v${version}` : "the installed version";
+  return `Claude Code ${versionLabel} is too old for Claude Opus 5. Upgrade to v${MINIMUM_CLAUDE_OPUS_5_VERSION} or newer to access it.`;
+}
+
+function formatClaudeSonnet5UpgradeMessage(version: string | null): string {
+  const versionLabel = version ? `v${version}` : "the installed version";
+  return `Claude Code ${versionLabel} is too old for Claude Sonnet 5. Upgrade to v${MINIMUM_CLAUDE_SONNET_5_VERSION} or newer to access it.`;
 }
 
 function formatClaudeFable5UpgradeMessage(version: string | null): string {
@@ -330,7 +395,13 @@ export function normalizeClaudeCliEffort(
   if (effort === "ultracode") {
     return "xhigh";
   }
-  if (effort === "xhigh" && model !== "claude-fable-5" && model !== "claude-opus-4-8") {
+  if (
+    effort === "xhigh" &&
+    model !== "claude-fable-5" &&
+    model !== "claude-opus-5" &&
+    model !== "claude-sonnet-5" &&
+    model !== "claude-opus-4-8"
+  ) {
     return "max";
   }
   if (effort === "max" && model === "claude-sonnet-4-6") {
@@ -724,13 +795,17 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
-  const versionUpgradeMessage = supportsClaudeFable5(parsedVersion)
-    ? undefined
-    : supportsClaudeOpus48(parsedVersion)
-      ? formatClaudeFable5UpgradeMessage(parsedVersion)
-      : supportsClaudeOpus47(parsedVersion)
-        ? formatClaudeOpus48UpgradeMessage(parsedVersion)
-        : formatClaudeOpus47UpgradeMessage(parsedVersion);
+  const versionUpgradeMessage = !supportsClaudeOpus47(parsedVersion)
+    ? formatClaudeOpus47UpgradeMessage(parsedVersion)
+    : !supportsClaudeOpus48(parsedVersion)
+      ? formatClaudeOpus48UpgradeMessage(parsedVersion)
+      : !supportsClaudeFable5(parsedVersion)
+        ? formatClaudeFable5UpgradeMessage(parsedVersion)
+        : !supportsClaudeSonnet5(parsedVersion)
+          ? formatClaudeSonnet5UpgradeMessage(parsedVersion)
+          : !supportsClaudeOpus5(parsedVersion)
+            ? formatClaudeOpus5UpgradeMessage(parsedVersion)
+            : undefined;
 
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
