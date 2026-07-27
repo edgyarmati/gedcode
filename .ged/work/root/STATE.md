@@ -1,9 +1,11 @@
 # STATE
 
-- **Phase**: implement
+- **Phase**: review
 - **Active roadmap**: Reliable Replay, Then Task-Oriented Inbox
-- **Active PR**: PR 1 — Durable Subscription Bootstrap
-- **Active task**: WS-10 — commit, push, and open detailed PR 1
+- **Active PR**: [PR 1 — Durable Subscription Bootstrap](https://github.com/edgyarmati/gedcode/pull/67)
+- **Active branch**: `agent/harden-orchestration-replay`
+- **Published commit**: `5170f0b20`
+- **Active task**: MERGE-01 — wait for human review and merge; do not self-merge
 - **Clarified**: 2026-07-27
 - **PR 2 status**: blocked on human review and merge of PR 1
 

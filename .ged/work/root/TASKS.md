@@ -15,13 +15,13 @@ Status values: `NEXT`, `TODO`, `DONE`, `BLOCKED`.
 | WS-07 | DONE | Add one shared WebSocket payload projector with explicit truncation metadata, then apply it to replay and live delivery. | Persistence/detail reads retain full payloads; replay/live transport previews share the same limit and metadata. |
 | WS-08 | DONE | Migrate all shell, thread, project, and task subscriptions to the shared bootstrap primitive and align defensive client recovery. | Focused server/web tests prove identical bootstrap behavior across all four surfaces. |
 | WS-09 | DONE | Document PR 1 and run required quality gates. | `CHANGELOG.md`, `docs/upstream-decisions.md`, focused tests, `bun fmt`, `bun lint`, narrow typechecks, and `git diff --check` pass. |
-| WS-10 | NEXT | Commit, push, and open a detailed PR 1. | Remote branch and PR exist; PR describes architecture, behavior, compatibility boundary, and verification. |
+| WS-10 | DONE | Commit, push, and open a detailed PR 1. | Remote branch and PR exist; PR describes architecture, behavior, compatibility boundary, and verification. |
 
 ## Merge Checkpoint
 
 | ID | Status | Bounded slice | Verification |
 | --- | --- | --- | --- |
-| MERGE-01 | TODO | Wait for human review and merge of PR 1; do not self-merge without explicit approval. | PR 1 is merged and the local PR 2 base is updated to that merge. |
+| MERGE-01 | NEXT | Wait for human review and merge of PR 1; do not self-merge without explicit approval. | PR 1 is merged and the local PR 2 base is updated to that merge. |
 
 ## PR 2 — Task-Oriented Inbox
 

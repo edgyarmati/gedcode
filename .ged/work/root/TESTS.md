@@ -483,6 +483,14 @@ snapshots/events and retain explicit byte metadata; persistence, HTTP/detail rea
 streams retain their full or existing semantics. The source diff contains no protocol-compatibility
 shim. WS-09 is complete; WS-10 is next.
 
+### WS-10 publication (2026-07-28)
+
+- Branch: `agent/harden-orchestration-replay`
+- Implementation commit: `5170f0b20`
+- Draft pull request: <https://github.com/edgyarmati/gedcode/pull/67>
+- Target: `edgyarmati/gedcode:main`
+- Status: awaiting human review and merge; PR 2 must start from the merged PR 1 base.
+
 ## PR 2 Planned Behavior Coverage
 
 1. Settle/snooze/activate lifecycle events survive persistence, restart, snapshot, and replay.
