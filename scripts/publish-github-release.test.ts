@@ -7,6 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  extractReleaseNotes,
   publishGithubRelease,
   type CommandResult,
   type PublishGithubReleaseOptions,
@@ -37,13 +38,14 @@ const options = (overrides: Partial<PublishGithubReleaseOptions> = {}) => ({
   prerelease: false,
   makeLatest: true,
   releaseAssetsDir: assetsDirectory(),
+  notes: "Extensive release notes.",
   ...overrides,
 });
 
 const ok: CommandResult = { status: 0, stdout: "", stderr: "" };
 
 describe("publish-github-release", () => {
-  it("creates a release with the explicit tag, target, notes range, metadata, and all assets", () => {
+  it("creates a release with changelog notes, explicit metadata, and all assets", () => {
     const calls: Array<ReadonlyArray<string>> = [];
     const result = publishGithubRelease(options(), (args) => {
       calls.push(args);
@@ -61,9 +63,8 @@ describe("publish-github-release", () => {
         "abc123",
         "--title",
         "GedCode v0.3.0",
-        "--generate-notes",
-        "--notes-start-tag",
-        "v0.2.1",
+        "--notes",
+        "Extensive release notes.",
         "--latest=true",
       ]),
     );
@@ -91,6 +92,8 @@ describe("publish-github-release", () => {
       "abc123",
       "--title",
       "GedCode v0.3.0",
+      "--notes",
+      "Extensive release notes.",
       "--prerelease=true",
       "--latest=false",
     ]);
@@ -114,6 +117,42 @@ describe("publish-github-release", () => {
 
     expect(() => publishGithubRelease(options({ releaseAssetsDir: incomplete }), () => ok)).toThrow(
       "Missing required release assets",
+    );
+  });
+
+  it("extracts only the requested changelog release section", () => {
+    expect(
+      extractReleaseNotes(
+        [
+          "# Changelog",
+          "",
+          "## Unreleased",
+          "",
+          "- Future change",
+          "",
+          "## 0.4.0 - 2026-07-27",
+          "",
+          "Major release.",
+          "",
+          "### Highlights",
+          "",
+          "- Durable workflows",
+          "",
+          "## 0.3.0 - 2026-06-01",
+          "",
+          "Previous release.",
+        ].join("\n"),
+        "v0.4.0",
+      ),
+    ).toBe("Major release.\n\n### Highlights\n\n- Durable workflows");
+  });
+
+  it("fails closed when changelog notes are missing or empty", () => {
+    expect(() => extractReleaseNotes("## 0.3.0\nOld notes", "v0.4.0")).toThrow(
+      "does not contain a release section",
+    );
+    expect(() => extractReleaseNotes("## 0.4.0\n\n## 0.3.0\nOld notes", "v0.4.0")).toThrow(
+      "release section for v0.4.0 is empty",
     );
   });
 });

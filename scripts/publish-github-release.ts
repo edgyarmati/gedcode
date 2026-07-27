@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
 
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
@@ -22,9 +22,32 @@ export interface PublishGithubReleaseOptions {
   readonly prerelease: boolean;
   readonly makeLatest: boolean;
   readonly releaseAssetsDir: string;
+  readonly notes: string;
 }
 
 const REQUIRED_ASSET_EXTENSIONS = [".dmg", ".zip", ".AppImage", ".exe", ".blockmap", ".yml"];
+
+export function extractReleaseNotes(changelog: string, tag: string): string {
+  const version = tag.replace(/^v/, "");
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const heading = new RegExp(`^##[\\t ]+v?${escapedVersion}(?:[\\t ]|$)`);
+  const lines = changelog.split(/\r?\n/);
+  const start = lines.findIndex((line) => heading.test(line));
+  if (start === -1) {
+    throw new Error(`CHANGELOG.md does not contain a release section for ${tag}.`);
+  }
+
+  const endOffset = lines.slice(start + 1).findIndex((line) => /^##[\t ]+/.test(line));
+  const end = endOffset === -1 ? lines.length : start + 1 + endOffset;
+  const notes = lines
+    .slice(start + 1, end)
+    .join("\n")
+    .trim();
+  if (notes.length === 0) {
+    throw new Error(`CHANGELOG.md release section for ${tag} is empty.`);
+  }
+  return notes;
+}
 
 function listReleaseAssets(releaseAssetsDir: string): ReadonlyArray<string> {
   if (!statSync(releaseAssetsDir, { throwIfNoEntry: false })?.isDirectory()) {
@@ -71,6 +94,8 @@ export function publishGithubRelease(
         options.target,
         "--title",
         options.name,
+        "--notes",
+        options.notes,
         `--prerelease=${options.prerelease}`,
         `--latest=${options.makeLatest}`,
       ]),
@@ -92,12 +117,10 @@ export function publishGithubRelease(
     options.target,
     "--title",
     options.name,
-    "--generate-notes",
+    "--notes",
+    options.notes,
     `--latest=${options.makeLatest}`,
   ];
-  if (options.previousTag) {
-    args.push("--notes-start-tag", options.previousTag);
-  }
   if (options.prerelease) {
     args.push("--prerelease");
   }
@@ -153,6 +176,7 @@ if (import.meta.main) {
       prerelease: prerelease === "true",
       makeLatest: makeLatest === "true",
       releaseAssetsDir,
+      notes: extractReleaseNotes(readFileSync("CHANGELOG.md", "utf8"), tag),
     },
     runGh,
   );

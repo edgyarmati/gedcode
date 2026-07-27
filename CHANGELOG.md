@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Publish GitHub release descriptions from the matching version section in `CHANGELOG.md`
+  instead of ignoring the curated notes and asking GitHub to generate a comparison-only body.
+  Re-running publication now also restores the changelog notes on an existing release while
+  reconciling its assets and metadata.
 - Test: Make Orchestrator reactor fixtures portable across macOS and Linux by deriving temporary
   and workspace roots from the runtime instead of hardcoding `/private/tmp` and `/tmp`. Pending
   project-context session waits now fail within their bounded diagnostic window instead of consuming

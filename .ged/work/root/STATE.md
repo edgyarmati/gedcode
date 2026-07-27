@@ -8,6 +8,8 @@
 - **Release candidate**: 0.4.0 — full tests, formatting, lint, typecheck, and release smoke passed
 - **Test stabilization**: Cross-platform reactor fixtures and turn-send synchronization verified;
   full workspace suite passed on 2026-07-27
+- **Release notes publication**: v0.4.0 body restored from `CHANGELOG.md`; publisher regression
+  coverage passed on 2026-07-27
 
 ## Worker Thread Continuation Completion
 

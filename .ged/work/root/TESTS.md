@@ -137,3 +137,20 @@ bounded diagnostic timeout.
 The full workspace run completed in 10m8.49s on macOS. Ordinary hosted CI and release preflight now
 retain a 30-minute finite timeout so serialized server Git/SQLite integration tests have sufficient
 Linux-runner headroom.
+
+## GitHub Release Notes Publication Evidence
+
+The publisher now extracts the exact requested version section from `CHANGELOG.md`, supplies it when
+creating a release, and restores it when reconciling an existing release. Missing and empty version
+sections fail before publication.
+
+| Check | Result |
+| --- | --- |
+| `bun run test publish-github-release.test.ts` | Passed; 1 file, 6 tests |
+| `bun run fmt:check` | Passed; 1,426 files |
+| `bun run lint` | Exit 0; existing repository warnings only |
+| `scripts`: `bun run typecheck` | Passed |
+| `git diff --check` | Passed |
+
+Manual verification with `gh release view v0.4.0` confirmed that the published release body begins
+with the curated GedCode 0.4.0 summary rather than GitHub's comparison-only placeholder.
