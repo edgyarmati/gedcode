@@ -91,13 +91,6 @@ export const ProviderApprovalPolicy = Schema.Literals([
 export type ProviderApprovalPolicy = typeof ProviderApprovalPolicy.Type;
 export const ProviderApprovalReviewer = Schema.Literals(["user", "auto-review"]);
 export type ProviderApprovalReviewer = typeof ProviderApprovalReviewer.Type;
-export const ProviderSandboxMode = Schema.Literals([
-  "read-only",
-  "workspace-write",
-  "danger-full-access",
-]);
-export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
-
 /**
  * `ModelSelection` — selection of a model on a configured provider instance.
  *
