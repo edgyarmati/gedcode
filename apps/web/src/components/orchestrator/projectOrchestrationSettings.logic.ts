@@ -53,6 +53,7 @@ export interface OrchestrationSettingsDraft {
 
 export interface OrchestratorConfigDraft {
   readonly pmModelSelection: ModelSelection | null;
+  readonly pmPromptPrefix: string | null;
   readonly openPrAsDraft: boolean | null;
   readonly capabilityPresets: Readonly<
     Record<(typeof ORCHESTRATION_CAPABILITY_TIERS)[number], ModelSelection | null>
@@ -174,6 +175,7 @@ export function seedOrchestratorConfigDraft(
   const capabilityPresets = asRecord(raw.capabilityPresets);
   return {
     pmModelSelection: asModelSelection(raw.pmModelSelection),
+    pmPromptPrefix: typeof raw.pmPromptPrefix === "string" ? raw.pmPromptPrefix : null,
     openPrAsDraft: typeof raw.openPrAsDraft === "boolean" ? raw.openPrAsDraft : null,
     capabilityPresets: {
       cheap: asModelSelection(capabilityPresets?.cheap),
@@ -233,6 +235,7 @@ export function buildOrchestratorProjectConfig(
 
   return {
     pmModelSelection: draft.pmModelSelection,
+    ...(draft.pmPromptPrefix === null ? {} : { pmPromptPrefix: draft.pmPromptPrefix.trim() }),
     capabilityPresets,
     ...(draft.openPrAsDraft === null ? {} : { openPrAsDraft: draft.openPrAsDraft }),
     ...(Object.keys(featureConfig).length > 1 ? { taskTypes: [featureConfig] } : {}),
@@ -244,6 +247,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
   globalDefaults: OrchestratorGlobalDefaults | undefined,
 ): {
   readonly pmModelSelection: ModelSelection | null;
+  readonly pmPromptPrefix: string;
   readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly capabilityPresets: OrchestratorCapabilityPresets | null;
   readonly optionalStages: Readonly<Record<OptionalOrchestratorStage, boolean>>;
@@ -254,6 +258,7 @@ export function seedOrchestratorInheritedDefaultsDraft(
   const normalizedGlobals = normalizeOrchestratorGlobalDefaults(globalDefaults);
   return {
     pmModelSelection: normalizedGlobals.pmModelSelection,
+    pmPromptPrefix: normalizedGlobals.pmPromptPrefix,
     defaultWorkerModelSelection: normalizedGlobals.defaultWorkerModelSelection,
     capabilityPresets: normalizedGlobals.capabilityPresets,
     optionalStages: {},
@@ -310,6 +315,8 @@ export function orchestratorConfigDraftsEqual(
 ): boolean {
   return (
     modelSelectionsEqual(left.pmModelSelection, right.pmModelSelection) &&
+    (left.pmPromptPrefix === null ? null : left.pmPromptPrefix.trim()) ===
+      (right.pmPromptPrefix === null ? null : right.pmPromptPrefix.trim()) &&
     ORCHESTRATION_CAPABILITY_TIERS.every((preset) =>
       modelSelectionsEqual(left.capabilityPresets[preset], right.capabilityPresets[preset]),
     ) &&

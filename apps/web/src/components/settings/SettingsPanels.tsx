@@ -1,7 +1,8 @@
 import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps } from "react";
 import {
   defaultInstanceIdForDriver,
   type DesktopUpdateChannel,
@@ -58,6 +59,7 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
@@ -107,6 +109,37 @@ const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
   pmReconciliationIntervalMs: "PM reconciliation interval",
   worktreeReaperIntervalMinutes: "Worktree cleanup interval",
 } as const satisfies Record<OrchestratorGlobalNumberDefaultKey, string>;
+
+function BufferedTextarea({
+  value,
+  onCommit,
+  ...props
+}: Omit<ComponentProps<typeof Textarea>, "value" | "onChange" | "onBlur"> & {
+  readonly value: string;
+  readonly onCommit: (next: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(value);
+  }, [value]);
+
+  return (
+    <Textarea
+      {...props}
+      value={draft}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        focusedRef.current = false;
+        if (draft !== value) onCommit(draft);
+      }}
+    />
+  );
+}
 
 function withoutProviderInstanceKey<V>(
   record: Readonly<Record<ProviderInstanceId, V>> | undefined,
@@ -999,6 +1032,31 @@ export function OrchestratorDefaultsSettingsPanel() {
               onSelectionChange={(selection) =>
                 updateDraft({ ...draft, pmModelSelection: selection })
               }
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="PM prompt prefix"
+          description="Optional instructions appended to the built-in PM system prompt. Projects can override or disable them."
+          resetAction={
+            draft.pmPromptPrefix !== defaultDraft.pmPromptPrefix ? (
+              <SettingResetButton
+                label="PM prompt prefix"
+                onClick={() =>
+                  updateDraft({ ...draft, pmPromptPrefix: defaultDraft.pmPromptPrefix })
+                }
+              />
+            ) : null
+          }
+        >
+          <div className="pb-4 pt-3">
+            <BufferedTextarea
+              aria-label="Default PM prompt prefix"
+              placeholder="Optional custom instructions for every Orchestrator PM"
+              value={draft.pmPromptPrefix}
+              rows={3}
+              onCommit={(pmPromptPrefix) => updateDraft({ ...draft, pmPromptPrefix })}
             />
           </div>
         </SettingsRow>

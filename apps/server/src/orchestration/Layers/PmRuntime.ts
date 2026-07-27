@@ -395,12 +395,18 @@ export const buildPmSystemPrompt = (
     readonly workspaceRoot: string;
   },
   driverKind: ProviderDriverKind = CLAUDE_PM_DRIVER,
-): string =>
-  [
+  promptPrefix?: string,
+): string => {
+  const basePrompt = [
     `You are scoped to project "${project.title}" (project id: ${project.id}), workspace root ${project.workspaceRoot}.`,
     `Operate on THIS project only — never ask the human for a project id or repo id; when a tool needs a projectId, use ${project.id}. Create tasks and hand off stages for this project directly.`,
     pmSystemPrompt(driverKind),
   ].join("\n");
+  const trimmedPrefix = promptPrefix?.trim() ?? "";
+  return trimmedPrefix.length === 0
+    ? basePrompt
+    : `${basePrompt}\n\nAdditional PM instructions:\n${trimmedPrefix}`;
+};
 
 const isApprovalRequestEvent = (
   event: OrchestrationEvent,
@@ -596,6 +602,7 @@ type ResolvedPmHarnessConfig = {
   readonly selection: ModelSelection;
   readonly providerInstanceId: ProviderInstanceId;
   readonly provider: ProviderDriverKind;
+  readonly promptPrefix: string;
 };
 
 const resetDriverPmSession = (input: {
@@ -742,6 +749,10 @@ const resolvePmHarnessConfig = (
       selection: pmModelSelection,
       providerInstanceId: pmModelSelection.instanceId,
       provider: providerInfo.driverKind,
+      promptPrefix:
+        config.pmPromptPrefix === undefined
+          ? settings.orchestratorDefaults.pmPromptPrefix
+          : config.pmPromptPrefix,
     };
   });
 
@@ -2067,13 +2078,15 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
                   DEFAULT_PM_HANDOFF_TRANSCRIPT_BUDGET_CHARS,
                 )
             : null;
+        const baseSystemPrompt = buildPmSystemPrompt(
+          project,
+          harnessConfig.provider,
+          harnessConfig.promptPrefix,
+        );
         const systemPrompt =
           handoffContext === null
-            ? buildPmSystemPrompt(project, harnessConfig.provider)
-            : appendPmHandoffContext(
-                buildPmSystemPrompt(project, harnessConfig.provider),
-                handoffContext,
-              );
+            ? baseSystemPrompt
+            : appendPmHandoffContext(baseSystemPrompt, handoffContext);
         const driverPmAdapterOptions = {
           project,
           driverKind: harnessConfig.provider,
@@ -2200,6 +2213,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             }),
         });
         const currentHarnessConfig = yield* Ref.make(harnessConfig);
+        const currentProject = yield* Ref.make(project);
         const runtimeActive = yield* Ref.make(true);
 
         const interruptActive = Effect.gen(function* () {
@@ -2289,8 +2303,13 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             if (nextHarnessConfig === null) {
               return;
             }
+            yield* Ref.set(currentProject, updatedProject);
 
             const current = yield* Ref.get(currentHarnessConfig);
+            if (current.promptPrefix !== nextHarnessConfig.promptPrefix) {
+              yield* invalidateRuntime("PM prompt prefix changed");
+              return;
+            }
             if (
               samePmModelSelection(current.selection, nextHarnessConfig.selection) &&
               canApplyPmModelInPlace(current, nextHarnessConfig)
@@ -2363,6 +2382,33 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
           Effect.forkIn(projectRuntimeScope),
         );
         yield* watchPmConfigChanges;
+        const watchPmGlobalDefaults = serverSettings.streamChanges.pipe(
+          Stream.runForEach(() =>
+            Ref.get(currentProject).pipe(
+              Effect.flatMap(applyUpdatedPmHarnessConfig),
+              Effect.catchCause((cause) => {
+                if (Cause.hasInterruptsOnly(cause)) {
+                  return Effect.failCause(cause);
+                }
+                return Effect.logWarning("PM global-default watcher update failed", {
+                  projectId: String(project.id),
+                  cause: Cause.pretty(cause),
+                });
+              }),
+            ),
+          ),
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.void;
+            }
+            return Effect.logWarning("PM global-default watcher failed", {
+              projectId: String(project.id),
+              cause: Cause.pretty(cause),
+            });
+          }),
+          Effect.forkIn(projectRuntimeScope),
+        );
+        yield* watchPmGlobalDefaults;
         const watchProjectContextSettlement = orchestrationEngine.streamDomainEvents.pipe(
           Stream.runForEach((event) => {
             if (

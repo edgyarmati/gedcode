@@ -171,6 +171,9 @@ export const OrchestratorProjectConfig = Schema.Struct({
   // credentials/auth; this schema-only project config stores only the routing
   // selection the server resolves at runtime.
   pmModelSelection: NullablePmModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  // Omitted projects inherit the global prefix. An explicit empty string
+  // suppresses a configured global prefix for this project.
+  pmPromptPrefix: Schema.optionalKey(Schema.String),
   capabilityPresets: OrchestratorCapabilityPresetOverrides,
   taskTypes: Schema.Array(OrchestratorTaskType).pipe(
     Schema.withDecodingDefault(
@@ -239,6 +242,7 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // global floor before falling back to `false`.
   openPrAsDraft: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   pmModelSelection: NullablePmModelSelection.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  pmPromptPrefix: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Null is the persisted pre-migration state. Once configured, the map must
   // contain Cheap, Smart, and Genius as complete model selections.
   capabilityPresets: Schema.NullOr(OrchestratorCapabilityPresets).pipe(

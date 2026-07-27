@@ -1391,6 +1391,76 @@ describe("PmRuntime", () => {
     ),
   );
 
+  it.effect(
+    "resolves project PM instructions over the global prefix and allows an explicit blank",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const inheritedCapture: DriverPmAdapterOptions[] = [];
+          const inheritedFactory = yield* makePmProjectRuntimeFactoryWithOptions({
+            makeDriverPmAdapterOverride: makeCapturingAdapter(inheritedCapture),
+          });
+          yield* inheritedFactory.getOrCreate({
+            ...project,
+            orchestratorConfig: {
+              pmModelSelection: null,
+            },
+          });
+
+          const projectCapture: DriverPmAdapterOptions[] = [];
+          const projectFactory = yield* makePmProjectRuntimeFactoryWithOptions({
+            makeDriverPmAdapterOverride: makeCapturingAdapter(projectCapture),
+          });
+          yield* projectFactory.getOrCreate({
+            ...project,
+            id: ProjectId.make("project-pm-prefix-override"),
+            orchestratorConfig: {
+              pmModelSelection: null,
+              pmPromptPrefix: "  Prefer concise task titles.  ",
+            },
+          });
+
+          const blankCapture: DriverPmAdapterOptions[] = [];
+          const blankFactory = yield* makePmProjectRuntimeFactoryWithOptions({
+            makeDriverPmAdapterOverride: makeCapturingAdapter(blankCapture),
+          });
+          yield* blankFactory.getOrCreate({
+            ...project,
+            id: ProjectId.make("project-pm-prefix-blank"),
+            orchestratorConfig: {
+              pmModelSelection: null,
+              pmPromptPrefix: "",
+            },
+          });
+
+          assert.include(
+            inheritedCapture[0]?.systemPrompt ?? "",
+            "Additional PM instructions:\nFollow the global PM guidance.",
+          );
+          assert.include(
+            projectCapture[0]?.systemPrompt ?? "",
+            "Additional PM instructions:\nPrefer concise task titles.",
+          );
+          assert.notInclude(
+            projectCapture[0]?.systemPrompt ?? "",
+            "Follow the global PM guidance.",
+          );
+          assert.notInclude(blankCapture[0]?.systemPrompt ?? "", "Additional PM instructions:");
+        }).pipe(
+          Effect.provide(
+            makeFactoryCaptureLayer({
+              serverSettingsOverrides: {
+                orchestratorDefaults: {
+                  pmModelSelection: pmSelection(claudeInstanceId, "claude-sonnet-4-6"),
+                  pmPromptPrefix: "Follow the global PM guidance.",
+                },
+              },
+            }),
+          ),
+        ),
+      ),
+  );
+
   it.effect("constructs the PM adapter for a Codex PM instance", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -268,6 +268,12 @@ export function ProjectOrchestrationSettingsDialog({
       orchestratorConfig: { ...current.orchestratorConfig, pmModelSelection: next },
     }));
   }, []);
+  const handlePmPromptPrefixChange = useCallback((pmPromptPrefix: string | null) => {
+    setDraft((current) => ({
+      ...current,
+      orchestratorConfig: { ...current.orchestratorConfig, pmPromptPrefix },
+    }));
+  }, []);
   const handleOpenPrAsDraftChange = useCallback((openPrAsDraft: boolean | null) => {
     setDraft((current) => ({
       ...current,
@@ -354,6 +360,38 @@ export function ProjectOrchestrationSettingsDialog({
             defaultSelection={inheritedDefaults.pmModelSelection}
             onSelectionChange={handlePmModelSelectionChange}
           />
+          <SettingsSection
+            title="PM prompt prefix"
+            description="Optional instructions appended to the built-in PM system prompt."
+          >
+            <Textarea
+              aria-label="Project PM prompt prefix"
+              placeholder={
+                draft.orchestratorConfig.pmPromptPrefix === null
+                  ? inheritedDefaults.pmPromptPrefix || "No global PM instructions configured"
+                  : "Leave blank to disable the global PM instructions for this project"
+              }
+              value={draft.orchestratorConfig.pmPromptPrefix ?? ""}
+              rows={3}
+              onChange={(event) => handlePmPromptPrefixChange(event.target.value)}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {draft.orchestratorConfig.pmPromptPrefix === null
+                  ? "Using the global default."
+                  : "Using a project override."}
+              </p>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={draft.orchestratorConfig.pmPromptPrefix === null}
+                onClick={() => handlePmPromptPrefixChange(null)}
+              >
+                Use global default
+              </Button>
+            </div>
+          </SettingsSection>
           <LandingPrSection
             openPrAsDraft={draft.orchestratorConfig.openPrAsDraft}
             inheritedOpenPrAsDraft={inheritedDefaults.openPrAsDraft}

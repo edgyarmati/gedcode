@@ -69,6 +69,7 @@ describe("seedOrchestratorConfigDraft", () => {
   it("keeps an absent project config sparse and inherited", () => {
     expect(seedOrchestratorConfigDraft(undefined)).toEqual({
       pmModelSelection: null,
+      pmPromptPrefix: null,
       openPrAsDraft: null,
       capabilityPresets: { cheap: null, smart: null, genius: null },
       optionalStages: null,
@@ -87,6 +88,7 @@ describe("seedOrchestratorConfigDraft", () => {
         ...selection("claudeAgent", "claude-sonnet-4-6"),
         options: [{ id: "effort", value: "high" }],
       },
+      pmPromptPrefix: null,
       openPrAsDraft: true,
       capabilityPresets: {
         smart: selection("codex_smart", "gpt-5-smart"),
@@ -110,6 +112,7 @@ describe("seedOrchestratorConfigDraft", () => {
         ...selection("claudeAgent", "claude-sonnet-4-6"),
         options: [{ id: "effort", value: "high" }],
       },
+      pmPromptPrefix: null,
       openPrAsDraft: true,
       capabilityPresets: {
         cheap: null,
@@ -138,6 +141,7 @@ describe("buildOrchestratorProjectConfig", () => {
   it("writes retained stages, a plan gate override, PM selection, and limits", () => {
     const draft: OrchestratorConfigDraft = {
       pmModelSelection: selection("openai", "gpt-5-pm"),
+      pmPromptPrefix: "  Keep task descriptions concrete.  ",
       openPrAsDraft: true,
       capabilityPresets: {
         cheap: null,
@@ -155,6 +159,7 @@ describe("buildOrchestratorProjectConfig", () => {
 
     expect(buildOrchestratorProjectConfig(draft)).toEqual({
       pmModelSelection: selection("openai", "gpt-5-pm"),
+      pmPromptPrefix: "Keep task descriptions concrete.",
       capabilityPresets: {
         smart: selection("codex_smart", "gpt-5-smart"),
       },
@@ -187,6 +192,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
         pmReconciliationIntervalMs: 120_000,
         worktreeReaperIntervalMinutes: 10,
         pmModelSelection: selection("openai", "gpt-5-pm"),
+        pmPromptPrefix: "Global PM guidance",
         defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
         capabilityPresets: null,
         projectContextDefaultTier: "smart",
@@ -194,6 +200,7 @@ describe("seedOrchestratorInheritedDefaultsDraft", () => {
       }),
     ).toEqual({
       pmModelSelection: selection("openai", "gpt-5-pm"),
+      pmPromptPrefix: "Global PM guidance",
       defaultWorkerModelSelection: selection("codex_global", "gpt-5-global"),
       capabilityPresets: null,
       optionalStages: {},

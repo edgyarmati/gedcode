@@ -105,6 +105,7 @@ export function buildProviderInstanceUpdatePatch(input: {
 
 export interface OrchestratorGlobalDefaultsDraft {
   readonly pmModelSelection: ModelSelection | null;
+  readonly pmPromptPrefix: string;
   readonly defaultWorkerModelSelection: ModelSelection | null;
   readonly capabilityPresets: OrchestratorCapabilityPresets | null;
   readonly projectContextDefaultTier: OrchestrationCapabilityTier;
@@ -131,6 +132,7 @@ export function seedOrchestratorGlobalDefaultsDraft(
 ): OrchestratorGlobalDefaultsDraft {
   return {
     pmModelSelection: defaults.pmModelSelection ?? null,
+    pmPromptPrefix: defaults.pmPromptPrefix ?? "",
     defaultWorkerModelSelection: defaults.defaultWorkerModelSelection ?? null,
     capabilityPresets: defaults.capabilityPresets,
     projectContextDefaultTier:
@@ -181,6 +183,7 @@ export function buildOrchestratorGlobalDefaultsPatch(
       worktreeReaperIntervalMinutes: draft.resourceDefaults.worktreeReaperIntervalMinutes,
       openPrAsDraft: draft.openPrAsDraft,
       pmModelSelection: draft.pmModelSelection,
+      pmPromptPrefix: draft.pmPromptPrefix.trim(),
       defaultWorkerModelSelection: draft.defaultWorkerModelSelection,
       capabilityPresets: draft.capabilityPresets,
       projectContextDefaultTier: draft.projectContextDefaultTier,

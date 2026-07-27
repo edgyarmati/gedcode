@@ -144,11 +144,13 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 90_000,
       worktreeReaperIntervalMinutes: 7,
       pmModelSelection,
+      pmPromptPrefix: "Global PM guidance",
       defaultWorkerModelSelection: workerModelSelection,
       openPrAsDraft: true,
     });
 
     expect(draft.pmModelSelection).toEqual(pmModelSelection);
+    expect(draft.pmPromptPrefix).toBe("Global PM guidance");
     expect(draft.defaultWorkerModelSelection).toEqual(workerModelSelection);
     expect(draft.capabilityPresets).toBeNull();
     expect(draft.optionalStages).toEqual({});
@@ -169,6 +171,7 @@ describe("Orchestrator global defaults settings logic", () => {
   it("builds a server settings patch with canonical stage order and pinned land gate", () => {
     const patch = buildOrchestratorGlobalDefaultsPatch({
       pmModelSelection,
+      pmPromptPrefix: "  Global PM guidance  ",
       defaultWorkerModelSelection: workerModelSelection,
       capabilityPresets,
       projectContextDefaultTier: "smart",
@@ -198,6 +201,7 @@ describe("Orchestrator global defaults settings logic", () => {
       pmReconciliationIntervalMs: 180_000,
       worktreeReaperIntervalMinutes: 9,
       pmModelSelection,
+      pmPromptPrefix: "Global PM guidance",
       defaultWorkerModelSelection: workerModelSelection,
       capabilityPresets,
       projectContextDefaultTier: "smart",

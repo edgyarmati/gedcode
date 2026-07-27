@@ -123,6 +123,7 @@ describe("OrchestratorProjectConfig — safe-by-default shape", () => {
   it("defaults to a require-approval feature task type", () => {
     const decoded = decodeProjectConfig({});
     expect(decoded.pmModelSelection).toBe(null);
+    expect(decoded.pmPromptPrefix).toBeUndefined();
     expect(decoded.capabilityPresets).toEqual({});
     expect(decoded.taskTypes).toHaveLength(1);
     const feature = decoded.taskTypes[0];
@@ -173,6 +174,17 @@ describe("OrchestratorGlobalDefaults — capability presets", () => {
 
   it("uses null as the explicit pre-migration state", () => {
     expect(decodeGlobalDefaults({}).capabilityPresets).toBeNull();
+    expect(decodeGlobalDefaults({}).pmPromptPrefix).toBe("");
+  });
+
+  it("preserves project and global PM prompt prefixes, including an explicit project blank", () => {
+    expect(
+      decodeProjectConfig({ pmPromptPrefix: "Project-specific guidance" }).pmPromptPrefix,
+    ).toBe("Project-specific guidance");
+    expect(decodeProjectConfig({ pmPromptPrefix: "" }).pmPromptPrefix).toBe("");
+    expect(decodeGlobalDefaults({ pmPromptPrefix: "Global guidance" }).pmPromptPrefix).toBe(
+      "Global guidance",
+    );
   });
 
   it("round-trips a complete Cheap/Smart/Genius map", () => {

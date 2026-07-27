@@ -115,6 +115,7 @@ it("renders global Cheap, Smart, and Genius cards with their configured harness 
   );
 
   await expect.element(page.getByLabelText("Default PM harness")).toHaveTextContent("Claude");
+  await expect.element(page.getByLabelText("Default PM prompt prefix")).toBeInTheDocument();
   await expect
     .element(page.getByRole("img", { name: "Cheap preset uses Codex" }))
     .toBeInTheDocument();
