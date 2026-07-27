@@ -104,11 +104,14 @@ it.layer(TestLayer)("GedManifestManagerLive", (it) => {
         generatedBy: "gedcode@0.3.0",
       });
 
-      expect(result).toMatchObject({ status: "current", sourceSchemaVersion: 3 });
+      expect(result).toMatchObject({
+        status: "current",
+        sourceSchemaVersion: CURRENT_GED_SCHEMA_VERSION,
+      });
       expect(
         decodeGedManifest(yield* fs.readFileString(path.join(cwd, ".ged/MANIFEST.json"))),
       ).toEqual({
-        schemaVersion: 3,
+        schemaVersion: CURRENT_GED_SCHEMA_VERSION,
         updatedAt: "2026-07-21T13:00:00.000Z",
         lastReviewedAt: "2026-07-21T13:00:00.000Z",
         generatedBy: "gedcode@0.3.0",
