@@ -5,6 +5,49 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+_No unreleased changes._
+
+## 0.4.0 - 2026-07-27
+
+GedCode 0.4.0 is a major Orchestrator and reliability release. It makes multi-stage work more
+durable and reviewable, adds safer full-access worker operation, improves project-context ownership,
+adds capability presets and read-only helpers, expands provider support, and hardens desktop startup
+and release behavior. The release includes a large set of lifecycle, persistence, recovery, and UI
+improvements intended to keep tasks predictable across restarts, reconnects, provider failures, and
+human review.
+
+Behavioral note: Orchestrator workers now inherit the host environment and run with full backend
+access. Worktree ownership, protected-ref hooks, admission limits, and the Codex accident tripwire
+remain in place; the tripwire is best-effort accident prevention, not a security boundary.
+
+### Highlights
+
+- Fixed one-click OpenCode updates for Homebrew installations. The updater now targets the installed
+  `opencode` formula name, supporting both Homebrew core and `anomalyco/tap` installations without
+  requiring the OpenCode tap to be configured.
+- Orchestrator PMs now continue a viable Plan or Work thread for the first bounded correction instead
+  of automatically creating another worker attempt. Fresh attempts remain explicit for independent
+  judgment, materially different approaches, capability/model changes, terminal session or context
+  recovery, failed continuation, and post-fix independent verification.
+- Orchestrator PMs now support custom prompt-prefix instructions through global defaults and
+  per-project overrides. Built-in PM safety and workflow guidance remains mandatory, projects can
+  inherit, replace, or explicitly disable the global instructions, and active project runtimes
+  restart when their prefix changes.
+- Fixed republishing an orchestrated task after its pull request was already opened. A newer verified
+  HEAD now invalidates completed landing state, produces an actionable replacement approval, and,
+  after approval, updates the existing PR branch with force-with-lease plus the newly approved title
+  and body instead of treating the task as permanently landed.
+
+- Added Claude Opus 5 and Claude Sonnet 5 to the built-in Claude model catalog, including their
+  native effort controls, Opus Fast Mode, Claude Code version gating, and generation-5 defaults and
+  aliases. Existing explicit Claude 4.x model selections remain supported.
+
+- Fixed Clear PM chat hanging forever when the in-memory PM runtime retained stale active-turn state.
+  Clearing now immediately aborts any active PM turn before resetting the visible conversation,
+  persisted session memory, and runtime state.
+
+### Orchestrator workflow, safety, and reliability
+
 - Fixed Orchestrator task verification never recording, which left every task stuck at the landing gate
   in worktrees whose repository does not ignore the managed `.gedcode-hooks` directory. Worker safety
   now registers the hooks directory in the worktree's git `info/exclude` on every handoff, and change
@@ -161,6 +204,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   maintenance run, and clean scoped results are audited and applied uncommitted without a modal.
   Automatic settlements and their PM hold state now survive database replay and restart.
 
+### Project context, launch, and collaboration
+
 - Project-context maintenance reports structured conflict evidence instead of only a generic failure
   string. The focused attention surface distinguishes provider scope violations, context/workspace
   drift, checked-out HEAD drift, and protected Git metadata changes; lists implicated paths; and offers
@@ -206,6 +251,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   and never accepts a caller-provided path. Environment capabilities are queryable for disabled UI,
   with unsupported launchers and process failures reported distinctly. Existing general Chat editor
   actions keep their current behavior.
+
+### Capability presets and read-only helpers
 
 - Replaced the basic GED `grill-me` clarification prompt with pinned, vendored `grill-with-docs`,
   `grilling`, and `domain-modeling` skills for both Codex and Claude. Non-trivial work now resolves one
@@ -256,6 +303,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   later settings changes. Global and project settings now present these as branded preset cards with
   harness, model, and thinking controls, visible inheritance, and independent project reset; semantic
   Plan, Work, and Verify settings remain available separately for prompt prefixes only.
+
+### Change review, verification, and landing
 
 - Project managers can now complete genuinely trivial, bounded, low-risk edits directly in the
   primary checkout without creating task or PR clutter. Direct commits require an exact reviewed
