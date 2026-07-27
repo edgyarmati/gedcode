@@ -260,15 +260,17 @@ function requestGate(input: {
   return Effect.gen(function* () {
     const requestGateId = gateId(`${input.suffix}-${input.gate}`);
     const gateCommandId = commandId(`${input.suffix}-gate-request-${input.gate}`);
-    const worktreeCompletion =
+    const landTask =
       input.gate === "land"
         ? yield* waitForTask(
             input.harness,
             input.taskId,
             (task) => task.status === "review" && task.verification !== null,
             `verified task for ${input.suffix} land gate`,
-          ).pipe(Effect.map((task) => ({ head: task.verification!.head, dirty: false })))
-        : undefined;
+          )
+        : null;
+    const worktreeCompletion =
+      landTask === null ? undefined : { head: landTask.verification!.head, dirty: false };
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -279,6 +281,14 @@ function requestGate(input: {
         contentHash: input.contentHash,
         stageThreadId: ThreadId.make(`thread-live-global-${input.suffix}-${input.gate}`),
         ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
+        ...(landTask === null
+          ? {}
+          : {
+              pullRequest: {
+                title: landTask.title,
+                body: `## Summary\n\n- Land the verified ${input.suffix} task.\n\n## Testing\n\n- Live global integration coverage passed.`,
+              },
+            }),
         createdAt: input.createdAt,
       })
       .pipe(Effect.orDie);

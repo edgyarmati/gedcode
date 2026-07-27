@@ -502,6 +502,10 @@ function requestHumanLandGateAndLand(input: {
         contentHash: "sha256:phase4-land",
         stageThreadId: input.stageThreadId,
         worktreeCompletion,
+        pullRequest: {
+          title: verifiedTask.title,
+          body: "## Summary\n\n- Land the verified Phase 4 pipeline task.\n\n## Testing\n\n- Phase 4 integration coverage passed.",
+        },
         createdAt: input.requestedAt,
       })
       .pipe(Effect.orDie);
@@ -565,7 +569,11 @@ function requestHumanLandGateAndLand(input: {
         createdAt: input.landedAt,
       })
       .pipe(Effect.orDie);
-    yield* waitForTask(input.harness, (task) => task.status === "landed", "landed task");
+    yield* waitForTask(
+      input.harness,
+      (task) => task.landing?.status === "opening-pr",
+      "landing PR opening",
+    );
   });
 }
 

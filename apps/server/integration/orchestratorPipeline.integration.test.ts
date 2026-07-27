@@ -419,6 +419,14 @@ function requestAndApproveGate(input: {
         contentHash: input.contentHash,
         stageThreadId: input.stageThreadId,
         ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
+        ...(input.gate === "land"
+          ? {
+              pullRequest: {
+                title: task.title,
+                body: `## Summary\n\n- Land the verified ${input.suffix} task.\n\n## Testing\n\n- Pipeline integration coverage passed.`,
+              },
+            }
+          : {}),
         createdAt: input.requestedAt,
       })
       .pipe(Effect.orDie);
@@ -655,8 +663,8 @@ it.live(
 
         const landedTask = yield* waitForTask(
           harness,
-          (task) => task.status === "landed",
-          "landed",
+          (task) => task.landing?.status === "opening-pr",
+          "landing PR opening",
         );
         assert.deepEqual(landedTask.stageThreadIds, [
           planStage.stageStarted.payload.stageThreadId,
