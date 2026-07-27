@@ -1954,10 +1954,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               });
 
               yield* pmProjectRuntimeFactory
-                .waitForIdle(project.id)
+                .interruptActive(project.id)
                 .pipe(
                   Effect.mapError((cause) =>
-                    toDispatchCommandError(cause, "Failed to wait for PM runtime to become idle."),
+                    toDispatchCommandError(cause, "Failed to interrupt active PM runtime."),
                   ),
                 );
               const result = yield* dispatchNormalizedCommand({

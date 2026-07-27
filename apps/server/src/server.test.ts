@@ -4023,10 +4023,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   drain: Deferred.succeed(drainStarted, undefined).pipe(Effect.asVoid),
                 };
               }),
-            waitForIdle: (loadedProjectId) =>
+            waitForIdle: () => Effect.never,
+            interruptActive: (loadedProjectId) =>
               Effect.sync(() => {
                 assert.equal(loadedProjectId, projectId);
-                runtimeCalls.push("waitForIdle");
+                runtimeCalls.push("interruptActive");
               }),
             clearSessionStorage: (loadedProject) =>
               Effect.sync(() => {
@@ -4290,7 +4291,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(handoffCommand.brief, "Current PM brief");
       }
       assert.deepEqual(runtimeCalls.slice(-4), [
-        "waitForIdle",
+        "interruptActive",
         "dispatch:thread.clear",
         "clearSessionStorage",
         "invalidateRuntime",
