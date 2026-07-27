@@ -325,14 +325,28 @@ const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
       subscribe: () => Effect.succeed(() => undefined),
     } satisfies TerminalManagerShape),
     Layer.succeed(VcsProcess, {
-      run: (input) =>
-        Effect.succeed({
+      run: (input) => {
+        const stdout =
+          input.operation === "TaskRepositoryPreparation.branch"
+            ? "main\n"
+            : input.operation === "TaskRepositoryPreparation.upstream"
+              ? "origin/main\n"
+              : input.operation === "TaskRepositoryPreparation.remote"
+                ? "https://github.com/acme/project.git\n"
+                : input.operation === "TaskRepositoryPreparation.aheadBehind"
+                  ? "0\t0\n"
+                  : input.operation === "TaskRepositoryPreparation.head" ||
+                      input.operation === "TaskBranchReservation.resolveHead"
+                    ? `${"a".repeat(40)}\n`
+                    : "";
+        return Effect.succeed({
           exitCode: ChildProcessSpawner.ExitCode(0),
-          stdout: input.operation === "TaskBranchReservation.resolveHead" ? "a".repeat(40) : "",
+          stdout,
           stderr: "",
           stdoutTruncated: false,
           stderrTruncated: false,
-        }),
+        });
+      },
     } satisfies VcsProcessShape),
   );
 };
