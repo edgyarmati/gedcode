@@ -49,6 +49,41 @@ export function extractReleaseNotes(changelog: string, tag: string): string {
   return notes;
 }
 
+export function collapseReleaseNoteSections(notes: string): string {
+  const lines = notes.split(/\r?\n/);
+  const sectionStarts = lines.flatMap((line, index) => (/^###[\t ]+/.test(line) ? [index] : []));
+  if (sectionStarts.length === 0) return notes;
+
+  const output = lines.slice(0, sectionStarts[0]);
+  for (const [sectionIndex, start] of sectionStarts.entries()) {
+    const end = sectionStarts[sectionIndex + 1] ?? lines.length;
+    const heading = lines[start] ?? "";
+    const title = heading.replace(/^###[\t ]+/, "").trim();
+    const section = lines
+      .slice(start + 1, end)
+      .join("\n")
+      .trim();
+    if (title.toLowerCase() === "highlights") {
+      output.push(heading, "", section);
+      continue;
+    }
+
+    const escapedTitle = title
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+    output.push(
+      "<details>",
+      `<summary><strong>${escapedTitle}</strong></summary>`,
+      "",
+      section,
+      "",
+      "</details>",
+    );
+  }
+  return output.join("\n").trim();
+}
+
 function listReleaseAssets(releaseAssetsDir: string): ReadonlyArray<string> {
   if (!statSync(releaseAssetsDir, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(`Release assets directory does not exist: ${releaseAssetsDir}`);
@@ -176,7 +211,9 @@ if (import.meta.main) {
       prerelease: prerelease === "true",
       makeLatest: makeLatest === "true",
       releaseAssetsDir,
-      notes: extractReleaseNotes(readFileSync("CHANGELOG.md", "utf8"), tag),
+      notes: collapseReleaseNoteSections(
+        extractReleaseNotes(readFileSync("CHANGELOG.md", "utf8"), tag),
+      ),
     },
     runGh,
   );

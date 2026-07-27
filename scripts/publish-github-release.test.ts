@@ -7,6 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  collapseReleaseNoteSections,
   extractReleaseNotes,
   publishGithubRelease,
   type CommandResult,
@@ -153,6 +154,48 @@ describe("publish-github-release", () => {
     );
     expect(() => extractReleaseNotes("## 0.4.0\n\n## 0.3.0\nOld notes", "v0.4.0")).toThrow(
       "release section for v0.4.0 is empty",
+    );
+  });
+
+  it("keeps highlights visible and collapses each detailed section", () => {
+    expect(
+      collapseReleaseNoteSections(
+        [
+          "Executive summary.",
+          "",
+          "### Highlights",
+          "",
+          "- Visible highlight",
+          "",
+          "### Reliability & recovery",
+          "",
+          "- Detailed fix",
+          "",
+          "### Provider support",
+          "",
+          "- New model",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "Executive summary.",
+        "",
+        "### Highlights",
+        "",
+        "- Visible highlight",
+        "<details>",
+        "<summary><strong>Reliability &amp; recovery</strong></summary>",
+        "",
+        "- Detailed fix",
+        "",
+        "</details>",
+        "<details>",
+        "<summary><strong>Provider support</strong></summary>",
+        "",
+        "- New model",
+        "",
+        "</details>",
+      ].join("\n"),
     );
   });
 });

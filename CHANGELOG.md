@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve: Keep each GitHub release's executive summary and Highlights visible while rendering every
+  subsequent changelog subsection as an individually expandable detail. Long curated notes remain
+  complete and searchable without overwhelming the release page.
 - Fix: Publish GitHub release descriptions from the matching version section in `CHANGELOG.md`
   instead of ignoring the curated notes and asking GitHub to generate a comparison-only body.
   Re-running publication now also restores the changelog notes on an existing release while
