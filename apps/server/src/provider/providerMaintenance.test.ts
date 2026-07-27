@@ -16,6 +16,7 @@ import {
   normalizeCommandPath,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "./providerMaintenance.ts";
+import { openCodeMaintenanceCapabilitiesResolver } from "./Drivers/OpenCodeDriver.ts";
 
 const driver = (value: string) => ProviderDriverKind.make(value);
 const makeTempDir = (name: string) =>
@@ -374,6 +375,27 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
 
         args: ["upgrade", "example/tap/scoped-package-tool"],
 
+        lockKey: "homebrew",
+      },
+    });
+  });
+
+  it("updates Homebrew OpenCode through the installed formula name", () => {
+    expect(
+      openCodeMaintenanceCapabilitiesResolver.resolve({
+        binaryPath: "/opt/homebrew/bin/opencode",
+        platform: "darwin",
+        env: {
+          PATH: "",
+        },
+      }),
+    ).toEqual({
+      provider: driver("opencode"),
+      packageName: "opencode-ai",
+      update: {
+        command: "brew upgrade opencode",
+        executable: "brew",
+        args: ["upgrade", "opencode"],
         lockKey: "homebrew",
       },
     });

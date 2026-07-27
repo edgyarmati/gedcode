@@ -60,17 +60,20 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
-const UPDATE = makePackageManagedProviderMaintenanceResolver({
-  provider: DRIVER_KIND,
-  npmPackageName: "opencode-ai",
-  homebrewFormula: "anomalyco/tap/opencode",
-  nativeUpdate: {
-    executable: "opencode",
-    args: ["upgrade"],
-    lockKey: "opencode-native",
-    isCommandPath: isOpenCodeNativeCommandPath,
-  },
-});
+export const openCodeMaintenanceCapabilitiesResolver =
+  makePackageManagedProviderMaintenanceResolver({
+    provider: DRIVER_KIND,
+    npmPackageName: "opencode-ai",
+    // Use the unqualified formula name so Homebrew upgrades whichever OpenCode
+    // formula is installed: Homebrew core or anomalyco/tap.
+    homebrewFormula: "opencode",
+    nativeUpdate: {
+      executable: "opencode",
+      args: ["upgrade"],
+      lockKey: "opencode-native",
+      isCommandPath: isOpenCodeNativeCommandPath,
+    },
+  });
 
 export type OpenCodeDriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -124,10 +127,13 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies OpenCodeSettings;
-      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
-        binaryPath: effectiveConfig.binaryPath,
-        env: processEnv,
-      });
+      const maintenanceCapabilities = yield* resolveProviderMaintenanceCapabilitiesEffect(
+        openCodeMaintenanceCapabilitiesResolver,
+        {
+          binaryPath: effectiveConfig.binaryPath,
+          env: processEnv,
+        },
+      );
 
       const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
         instanceId,
