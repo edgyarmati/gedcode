@@ -117,3 +117,23 @@ best-effort Codex tripwire probing, and no-change baseline inspection. These are
 not failed assertions. The release candidate keeps the documented compatibility boundary: workers
 retain full host/backend access, while worktree ownership, protected-ref hooks, admission limits,
 and the best-effort Codex tripwire remain active safeguards rather than a security sandbox.
+
+## Cross-platform Test Stabilization Evidence
+
+The release preflight exposed macOS-specific temporary-directory fixtures and a reactor assertion
+that observed session startup before the asynchronous turn send completed. The fixtures now derive
+their roots from the runtime, and prompt assertions wait on a dedicated turn-sent signal with a
+bounded diagnostic timeout.
+
+| Check | Result |
+| --- | --- |
+| Focused project-context and helper reactor tests | Passed; 2 files, 25 tests |
+| Full workspace `bun run test` | Passed; 231 files, 1,884 passed, 1 skipped |
+| `bun run fmt:check` | Passed; 1,426 files |
+| `bun run lint` | Exit 0; existing repository warnings only |
+| `apps/server`: `bun run typecheck` | Passed |
+| `git diff --check` | Passed |
+
+The full workspace run completed in 10m8.49s on macOS. Ordinary hosted CI and release preflight now
+retain a 30-minute finite timeout so serialized server Git/SQLite integration tests have sufficient
+Linux-runner headroom.

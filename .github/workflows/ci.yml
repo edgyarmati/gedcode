@@ -9,7 +9,10 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The server package intentionally runs its git/sqlite integration files serially.
+    # Hosted runners are substantially slower than developer machines, so leave enough
+    # headroom for a clean full-suite run while retaining a finite runaway guard.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

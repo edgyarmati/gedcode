@@ -5,7 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
-_No unreleased changes._
+- Test: Make Orchestrator reactor fixtures portable across macOS and Linux by deriving temporary
+  and workspace roots from the runtime instead of hardcoding `/private/tmp` and `/tmp`. Pending
+  project-context session waits now fail within their bounded diagnostic window instead of consuming
+  the server suite's global two-minute timeout when an expected session-start signal never arrives.
+- CI: Give the ordinary hosted verification job the same 30-minute safety window as release
+  preflight. The server's real Git and SQLite integration coverage is intentionally serialized and
+  can exceed the former 10-minute job cap on Linux even when every test passes.
 
 ## 0.4.0 - 2026-07-27
 

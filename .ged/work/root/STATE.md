@@ -6,6 +6,8 @@
 - **Clarified**: 2026-07-27
 - **Completed**: 2026-07-27 — focused verification evidence is recorded in `TESTS.md`
 - **Release candidate**: 0.4.0 — full tests, formatting, lint, typecheck, and release smoke passed
+- **Test stabilization**: Cross-platform reactor fixtures and turn-send synchronization verified;
+  full workspace suite passed on 2026-07-27
 
 ## Worker Thread Continuation Completion
 
