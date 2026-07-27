@@ -15,6 +15,7 @@ import {
   type ProviderSession,
   type ProviderSessionStartInput,
 } from "@t3tools/contracts";
+import { tmpdir } from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -43,6 +44,8 @@ const now = "2026-07-18T03:00:00.000Z";
 const projectId = ProjectId.make("project-helper-runtime");
 const taskId = TaskId.make("task-helper-runtime");
 const instanceId = ProviderInstanceId.make("codex-helper");
+const projectWorkspaceRoot = process.cwd();
+const taskWorktreePath = tmpdir();
 
 const makeRun = (
   id: string,
@@ -73,14 +76,14 @@ const readModel = {
   projects: [
     {
       id: projectId,
-      workspaceRoot: "/private/tmp",
+      workspaceRoot: projectWorkspaceRoot,
     } as OrchestrationReadModel["projects"][number],
   ],
   tasks: [
     {
       id: taskId,
       projectId,
-      worktreePath: "/tmp",
+      worktreePath: taskWorktreePath,
     } as OrchestrationReadModel["tasks"][number],
   ],
 } satisfies OrchestrationReadModel;
@@ -331,7 +334,7 @@ it.effect("creates a persistently owned helper thread before launching its provi
             runtimeMode: "approval-required",
             interactionMode: "default",
             branch: null,
-            worktreePath: "/tmp",
+            worktreePath: taskWorktreePath,
             createdAt: "created-now",
           },
         );
@@ -381,7 +384,7 @@ it.effect("uses project and task roots, enforces read-only, and retains bounded 
         yield* reactor.start();
         assert.deepStrictEqual(
           harness.sessionStarts.map((input) => input.cwd),
-          ["/private/tmp", "/tmp"],
+          [projectWorkspaceRoot, taskWorktreePath],
         );
         assert.ok(harness.sessionStarts.every((input) => input.readOnly === true));
         assert.ok(harness.sessionStarts.every((input) => input.enableOrchestrationTools === false));

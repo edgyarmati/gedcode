@@ -17,6 +17,7 @@ import {
   type ProviderSessionStartInput,
 } from "@t3tools/contracts";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -59,7 +60,7 @@ import {
 const now = "2026-07-20T11:00:00.000Z";
 const projectId = ProjectId.make("project-context-reactor");
 const instanceId = ProviderInstanceId.make("context-smart-instance");
-const primaryCheckoutPath = "/private/tmp";
+const primaryCheckoutPath = tmpdir();
 const digest = (content: string) =>
   `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}` as const;
 
@@ -179,6 +180,7 @@ const makeHarness = (driver = "codex") =>
     const stopped: ThreadId[] = [];
     const interruptedTurns: ThreadId[] = [];
     const sessionStarted = yield* Deferred.make<void>();
+    const turnSent = yield* Deferred.make<void>();
     const pendingReview = yield* Deferred.make<void>();
     const applied = yield* Deferred.make<void>();
     const interrupted = yield* Deferred.make<void>();
@@ -312,8 +314,9 @@ const makeHarness = (driver = "codex") =>
           } as ProviderSession;
         }),
       sendTurn: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           turnInputs.push(input.input ?? "");
+          yield* Deferred.succeed(turnSent, undefined);
           return { threadId: input.threadId, turnId: TurnId.make(`turn:${input.threadId}`) };
         }),
       interruptTurn: ({ threadId }) => Effect.sync(() => void interruptedTurns.push(threadId)),
@@ -527,6 +530,7 @@ const makeHarness = (driver = "codex") =>
       interruptedTurns,
       providerEvents,
       sessionStarted,
+      turnSent,
       pendingReview,
       applied,
       interrupted,
@@ -600,7 +604,7 @@ it.effect("holds a pending context run until PM settlement and refreshes its bas
         assert.strictEqual(harness.sessionStarts.length, 0);
 
         yield* reactor.reconcile;
-        yield* Deferred.await(harness.sessionStarted);
+        yield* Deferred.await(harness.turnSent).pipe(Effect.timeout("2 seconds"));
         assert.deepStrictEqual(
           harness.commands.map((command) => command.type),
           ["project.context.run.refresh-baseline", "project.context.run.start"],
@@ -625,7 +629,7 @@ it.effect("interrupts the PM before refreshing and starting when the user choose
         assert.strictEqual(harness.sessionStarts.length, 0);
 
         yield* reactor.reconcile;
-        yield* Deferred.await(harness.sessionStarted);
+        yield* Deferred.await(harness.turnSent).pipe(Effect.timeout("2 seconds"));
         assert.deepStrictEqual(harness.turnInputs, [run.prompt]);
       }).pipe(Effect.provide(harness.layer));
     }),
@@ -910,7 +914,7 @@ it.effect("holds a pending run while quota-blocked and launches it after recover
           type: "account.rate-limits.updated",
           payload: { status: "ok", windows: [] },
         });
-        yield* Deferred.await(harness.sessionStarted).pipe(Effect.timeout("2 seconds"));
+        yield* Deferred.await(harness.turnSent).pipe(Effect.timeout("2 seconds"));
         yield* reactor.drain;
         assert.strictEqual(harness.sessionStarts.length, 1);
         assert.strictEqual(harness.runs.get(String(run.id))?.status, "running");
@@ -934,7 +938,7 @@ it.effect("resumes a pending run after a known quota reset without provider tele
         yield* reactor.start();
         assert.strictEqual(harness.sessionStarts.length, 0);
         yield* TestClock.adjust(Duration.millis(30));
-        yield* Deferred.await(harness.sessionStarted).pipe(Effect.timeout("2 seconds"));
+        yield* Deferred.await(harness.turnSent).pipe(Effect.timeout("2 seconds"));
         yield* reactor.drain;
 
         assert.strictEqual(harness.sessionStarts.length, 1);
