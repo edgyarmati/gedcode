@@ -178,14 +178,6 @@ function readAllEvents(
   );
 }
 
-function waitForWorktreeRemoved(path: string): Effect.Effect<void, never> {
-  return waitForProjection(
-    Effect.sync(() => existsSync(path)),
-    (exists): exists is false => !exists,
-    `worktree '${path}' to be removed`,
-  ).pipe(Effect.asVoid);
-}
-
 function makeCreatedChangeRequest(request: {
   readonly title: string;
   readonly baseRefName: string;
@@ -544,6 +536,10 @@ function approveLandAndDispatch(input: {
         gateId: id,
         gate: "land",
         contentHash: `sha256:${input.suffix}-land`,
+        pullRequest: {
+          title: task.title,
+          body: `## Summary\n\n- Land the verified ${input.suffix} task.\n\n## Testing\n\n- Integration coverage passed.`,
+        },
         stageThreadId: input.stageThreadId,
         worktreeCompletion,
         createdAt: iso(7),
@@ -575,7 +571,7 @@ function approveLandAndDispatch(input: {
   });
 }
 
-it.live("opens a ready PR after the human-approved land gate and cleans the worktree", () => {
+it.live("opens a ready PR after the human-approved land gate and retains the worktree", () => {
   const { registry, createChangeRequestCalls } = makeSourceControlRegistry();
   const id = taskId("happy");
   return withHarness(registry, (harness) =>
@@ -598,12 +594,11 @@ it.live("opens a ready PR after the human-approved land gate and cleans the work
       const landed = yield* waitForTask(
         harness,
         id,
-        (entry) => entry.status === "landed" && entry.prUrl === fakePrUrl,
+        (entry) => entry.status === "pr-open" && entry.prUrl === fakePrUrl,
         "landed task with PR URL",
       );
-      yield* waitForWorktreeRemoved(task.worktreePath);
-
       assert.equal(landed.prUrl, fakePrUrl);
+      assert.equal(existsSync(task.worktreePath), true);
       assert.deepEqual(harness.landingMocks?.pushCurrentBranchCalls, [
         {
           cwd: task.worktreePath,
@@ -617,13 +612,7 @@ it.live("opens a ready PR after the human-approved land gate and cleans the work
       assert.equal(createChangeRequestCalls[0]?.headSelector, "orchestrator/landing-happy");
       assert.equal(createChangeRequestCalls[0]?.title, "Landing happy path");
       assert.equal(createChangeRequestCalls[0]?.draft, false);
-      assert.deepEqual(harness.landingMocks?.removeWorktreeCalls, [
-        {
-          cwd: harness.workspaceDir,
-          path: task.worktreePath,
-          force: true,
-        },
-      ]);
+      assert.deepEqual(harness.landingMocks?.removeWorktreeCalls, []);
     }),
   );
 });
@@ -744,8 +733,8 @@ it.live("processes once when landing races with the startup scan-to-subscribe wi
           yield* waitForTask(
             harness,
             targetId,
-            (task) => task.status === "landed",
-            "landed startup race target",
+            (task) => task.landing?.status === "opening-pr" || task.status === "pr-open",
+            "startup race target ready for PR opening",
           );
 
           yield* Deferred.succeed(releaseCleanup, undefined);
@@ -753,7 +742,6 @@ it.live("processes once when landing races with the startup scan-to-subscribe wi
           yield* harness.waitForDomainEvent(
             (event) => event.type === "task.pr-opened" && event.payload.taskId === targetId,
           );
-          yield* waitForWorktreeRemoved(target.worktreePath);
           yield* harness.drainReactors;
 
           const events = yield* readAllEvents(harness);
@@ -766,7 +754,7 @@ it.live("processes once when landing races with the startup scan-to-subscribe wi
           );
           assert.equal(
             removedPaths.filter((removedPath) => removedPath === target.worktreePath).length,
-            1,
+            0,
           );
           assert.equal(
             harness.landingMocks?.pushCurrentBranchCalls.filter(
@@ -838,8 +826,8 @@ it.live("fails loud without a supported provider and leaves the worktree recover
       const afterFailure = yield* waitForTask(
         harness,
         id,
-        (entry) => entry.status === "landed",
-        "landed task after PR failure",
+        (entry) => entry.status === "review",
+        "review task after PR failure",
       );
       const events = yield* readAllEvents(harness);
 
@@ -910,8 +898,6 @@ it.live("retries an exhausted landing once through the shared actuator", () => {
       yield* harness.waitForDomainEvent(
         (event) => event.type === "task.pr-opened" && event.payload.taskId === id,
       );
-      yield* waitForWorktreeRemoved(worktreePath);
-
       const afterRetry = yield* waitForTask(
         harness,
         id,
@@ -948,8 +934,8 @@ it.live("does not open a second PR for a landed task that already has prUrl", ()
       yield* waitForTask(
         setupHarness,
         id,
-        (entry) => entry.status === "landed",
-        "initial landed task",
+        (entry) => entry.landing?.status === "opening-pr",
+        "initial landing task before PR opening",
       );
       yield* setupHarness.engine
         .dispatch({
@@ -980,20 +966,12 @@ it.live("does not open a second PR for a landed task that already has prUrl", ()
               restarted,
               id,
               (entry) =>
-                entry.status === "landed" && entry.prUrl === "https://github.com/acme/repo/pull/7",
-              "restarted landed task with existing PR URL",
+                entry.status === "pr-open" && entry.prUrl === "https://github.com/acme/repo/pull/7",
+              "restarted PR-open task with existing PR URL",
             );
-            yield* waitForWorktreeRemoved(worktreePath);
-
             assert.equal(createChangeRequestCalls.length, 0);
             assert.deepEqual(restarted.landingMocks?.pushCurrentBranchCalls, []);
-            assert.deepEqual(restarted.landingMocks?.removeWorktreeCalls, [
-              {
-                cwd: restarted.workspaceDir,
-                path: worktreePath,
-                force: true,
-              },
-            ]);
+            assert.deepEqual(restarted.landingMocks?.removeWorktreeCalls, []);
           }),
         rootDir,
       );
