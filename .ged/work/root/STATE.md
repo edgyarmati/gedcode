@@ -1,28 +1,35 @@
 # STATE
 
-- **Phase**: verify
-- **Active task**: none — 0.4.0 release candidate verification is complete
-- **Roadmap**: Worker Thread Continuation Policy
+- **Phase**: implement
+- **Active roadmap**: Reliable Replay, Then Task-Oriented Inbox
+- **Active PR**: PR 1 — Durable Subscription Bootstrap
+- **Active task**: WS-10 — commit, push, and open detailed PR 1
 - **Clarified**: 2026-07-27
-- **Completed**: 2026-07-27 — focused verification evidence is recorded in `TESTS.md`
-- **Release candidate**: 0.4.0 — full tests, formatting, lint, typecheck, and release smoke passed
-- **Test stabilization**: Cross-platform reactor fixtures and turn-send synchronization verified;
-  full workspace suite passed on 2026-07-27
-- **Release notes publication**: v0.4.0 body restored from `CHANGELOG.md`; publisher regression
-  coverage passed on 2026-07-27
+- **PR 2 status**: blocked on human review and merge of PR 1
 
-## Worker Thread Continuation Completion
+## Locked Decisions
 
-Completed 2026-07-27. The PM now prefers one bounded same-thread correction for a viable current
-Plan/Work attempt, with explicit fresh-attempt boundaries and independent post-fix verification.
+- Two sequential, non-stacked PRs; do not merge without explicit authorization.
+- PR 1 covers durable sequence-backed state after persistence, not raw provider/token streams.
+- Server guarantees snapshot → replay → buffered live → live ordering and deduplication through one
+  shared abstraction; the client retains defensive gap recovery.
+- Domain history remains lossless. Coalescing and payload trimming happen only at the WebSocket
+  boundary with explicit sequence/truncation metadata.
+- No compatibility shims are required because there are no production clients.
+- Inbox has a sliding `Threads | Orchestrator` pill and separate Active/Snoozed/Settled filtering,
+  with no project grouping.
+- Orchestrator rows open the owning project-level Orchestrator view.
+- Lifecycle is durable and replayable; snooze survives ordinary background work but raised-hand
+  conditions surface immediately.
+- Production-code delegation is Sol-low only. Terra-low is limited to scouting, testing, and
+  independent verification. Luna is unavailable.
 
-## PM Prompt Prefix Completion
+## Upstream Reference Facts
 
-Completed 2026-07-27. Global and project-scoped PM instructions now resolve into the immutable PM
-system prompt, with explicit project blank values suppressing inheritance.
-
-## Locked Decision
-
-After explicit human approval, replacement landing updates the existing PR branch using
-force-with-lease and replaces the PR title/body with the newly approved proposal. There is no
-fallback that treats old completed landing state as permanently terminal.
+- Reliability concepts: `c14a5ca4`, `db4b2d8a`, `d60f6e97`, `765e1b5f`.
+- Sidebar lifecycle: `32c6012d`, `202e5609`, with later polish used selectively.
+- Upstream normal-thread auto-settle defaults to three days; nullable disables it; valid range is
+  1–90 days.
+- Snooze presets are one hour, this evening when more than one hour away, tomorrow 09:00, and next
+  Monday 09:00 using local-calendar arithmetic.
+- Do not import upstream's Sidebar/client-runtime stack or project grouping.

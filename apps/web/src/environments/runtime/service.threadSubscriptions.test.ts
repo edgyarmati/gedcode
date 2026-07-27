@@ -441,6 +441,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         2,
       ),
+      coveredSequenceStart: 2,
+      coveredSequenceEnd: 2,
     });
     onThreadItem({
       kind: "snapshot",
@@ -470,6 +472,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         3,
       ),
+      coveredSequenceStart: 3,
+      coveredSequenceEnd: 3,
     });
 
     const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
@@ -529,6 +533,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         2,
       ),
+      coveredSequenceStart: 2,
+      coveredSequenceEnd: 2,
     });
     onThreadItem({
       kind: "event",
@@ -547,6 +553,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         3,
       ),
+      coveredSequenceStart: 3,
+      coveredSequenceEnd: 3,
     });
 
     const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
@@ -600,6 +608,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         4,
       ),
+      coveredSequenceStart: 4,
+      coveredSequenceEnd: 4,
     });
     onThreadItem({
       kind: "event",
@@ -618,6 +628,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         6,
       ),
+      coveredSequenceStart: 6,
+      coveredSequenceEnd: 6,
     });
 
     const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
@@ -683,6 +695,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         8,
       ),
+      coveredSequenceStart: 8,
+      coveredSequenceEnd: 8,
     });
     onThreadItem({
       kind: "event",
@@ -700,6 +714,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         7,
       ),
+      coveredSequenceStart: 7,
+      coveredSequenceEnd: 7,
     });
     onThreadItem({
       kind: "event",
@@ -717,6 +733,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         11,
       ),
+      coveredSequenceStart: 11,
+      coveredSequenceEnd: 11,
     });
 
     const thread = selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId));
@@ -771,6 +789,8 @@ describe("retainThreadDetailSubscription", () => {
         },
         2,
       ),
+      coveredSequenceStart: 2,
+      coveredSequenceEnd: 2,
     });
     onThreadItem({
       kind: "snapshot",
@@ -892,6 +912,58 @@ describe("retainThreadDetailSubscription", () => {
 
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
     expect(mockThreadUnsubscribe).toHaveBeenCalledTimes(1);
+
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("applies a covered shell sequence range once without reconnect recovery", async () => {
+    const { selectThreadByRef, useStore } = await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+    const { resetEnvironmentServiceForTests, startEnvironmentConnectionService } =
+      await import("./service");
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const threadId = ThreadId.make("thread-shell-covered-range");
+    const connectionInput = mockCreateEnvironmentConnection.mock.calls[0]?.[0];
+    expect(connectionInput).toBeDefined();
+
+    const cursorZeroSnapshot = {
+      ...makeThreadShellSnapshot({ threadId }),
+      snapshotSequence: 0,
+      threads: [],
+    };
+    connectionInput.syncShellSnapshot(cursorZeroSnapshot, environmentId);
+
+    const shellUpdate = {
+      kind: "thread-upserted" as const,
+      sequence: 3,
+      coveredSequenceStart: 1,
+      coveredSequenceEnd: 3,
+      thread: makeThreadShellSnapshot({ threadId }).threads[0]!,
+    };
+    connectionInput.applyShellEvent(shellUpdate, environmentId);
+    connectionInput.applyShellEvent(shellUpdate, environmentId);
+
+    // A cursor-2 snapshot is stale after the covered range advanced the
+    // projection to sequence 3, so it must not erase the applied thread.
+    connectionInput.syncShellSnapshot(
+      {
+        ...cursorZeroSnapshot,
+        snapshotSequence: 2,
+        updatedAt: "2026-04-13T00:00:01.000Z",
+      },
+      environmentId,
+    );
+
+    expect(selectThreadByRef(useStore.getState(), scopeThreadRef(environmentId, threadId))).toEqual(
+      expect.objectContaining({
+        id: shellUpdate.thread.id,
+        title: shellUpdate.thread.title,
+        updatedAt: shellUpdate.thread.updatedAt,
+      }),
+    );
+    expect(mockConnectionReconnects[0]).not.toHaveBeenCalled();
 
     stop();
     await resetEnvironmentServiceForTests();

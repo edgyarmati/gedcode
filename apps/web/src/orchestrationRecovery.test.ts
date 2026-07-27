@@ -52,6 +52,27 @@ describe("createOrchestrationRecoveryCoordinator", () => {
     });
   });
 
+  it("accepts a coalesced transport range once and continues with the next range", () => {
+    const coordinator = createOrchestrationRecoveryCoordinator();
+
+    coordinator.beginSnapshotRecovery("bootstrap");
+    coordinator.completeSnapshotRecovery(0);
+
+    expect(coordinator.classifyDomainEventRange(1, 2)).toBe("apply");
+    expect(coordinator.markEventBatchApplied([{ sequence: 2 }])).toEqual([{ sequence: 2 }]);
+    expect(coordinator.getState().latestSequence).toBe(2);
+
+    expect(coordinator.classifyDomainEventRange(1, 2)).toBe("ignore");
+    expect(coordinator.classifyDomainEventRange(3, 3)).toBe("apply");
+    expect(coordinator.markEventBatchApplied([{ sequence: 3 }])).toEqual([{ sequence: 3 }]);
+    expect(coordinator.getState()).toMatchObject({
+      latestSequence: 3,
+      highestObservedSequence: 3,
+      pendingReplay: false,
+      inFlight: null,
+    });
+  });
+
   it("requests another replay when deferred events arrive during replay recovery", () => {
     const coordinator = createOrchestrationRecoveryCoordinator();
 

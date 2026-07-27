@@ -35,6 +35,7 @@ export interface ReplayRetryDecision {
 }
 
 type SequencedEvent = Readonly<{ sequence: number }>;
+type DomainEventDecision = "ignore" | "defer" | "recover" | "apply";
 
 export function deriveReplayRetryDecision(input: {
   previousTracker: ReplayRetryTracker | null;
@@ -116,25 +117,57 @@ export function createOrchestrationRecoveryCoordinator() {
     };
   };
 
+  const classifyDomainEventRange = (
+    coveredSequenceStart: number,
+    coveredSequenceEnd: number,
+    overlappingPrefixIsSafe = false,
+  ): DomainEventDecision => {
+    if (
+      !Number.isFinite(coveredSequenceStart) ||
+      !Number.isInteger(coveredSequenceStart) ||
+      coveredSequenceStart < 0 ||
+      !Number.isFinite(coveredSequenceEnd) ||
+      !Number.isInteger(coveredSequenceEnd) ||
+      coveredSequenceEnd < 0 ||
+      coveredSequenceStart > coveredSequenceEnd
+    ) {
+      state.pendingReplay = true;
+      return "recover";
+    }
+
+    observeSequence(coveredSequenceEnd);
+    if (coveredSequenceEnd <= state.latestSequence) {
+      return "ignore";
+    }
+    if (!state.bootstrapped || state.inFlight) {
+      state.pendingReplay = true;
+      return "defer";
+    }
+    if (coveredSequenceStart > state.latestSequence + 1) {
+      state.pendingReplay = true;
+      return "recover";
+    }
+    if (coveredSequenceStart <= state.latestSequence && !overlappingPrefixIsSafe) {
+      state.pendingReplay = true;
+      return "recover";
+    }
+    return "apply";
+  };
+
   return {
     getState(): OrchestrationRecoveryState {
       return snapshotState();
     },
 
-    classifyDomainEvent(sequence: number): "ignore" | "defer" | "recover" | "apply" {
-      observeSequence(sequence);
-      if (sequence <= state.latestSequence) {
-        return "ignore";
-      }
-      if (!state.bootstrapped || state.inFlight) {
-        state.pendingReplay = true;
-        return "defer";
-      }
-      if (sequence !== state.latestSequence + 1) {
-        state.pendingReplay = true;
-        return "recover";
-      }
-      return "apply";
+    classifyDomainEventRange,
+
+    classifyDomainEvent(sequence: number): DomainEventDecision {
+      return classifyDomainEventRange(sequence, sequence);
+    },
+
+    markDomainEventRangeApplied(coveredSequenceEnd: number): void {
+      state.latestSequence = Math.max(state.latestSequence, coveredSequenceEnd);
+      state.highestObservedSequence = Math.max(state.highestObservedSequence, state.latestSequence);
     },
 
     markEventBatchApplied<T extends SequencedEvent>(events: ReadonlyArray<T>): ReadonlyArray<T> {

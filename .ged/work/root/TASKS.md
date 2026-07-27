@@ -1,18 +1,37 @@
-# TASKS — Replacement Landing for Existing Pull Requests
+# TASKS — Reliable Replay, Then Task-Oriented Inbox
 
 Status values: `NEXT`, `TODO`, `DONE`, `BLOCKED`.
 
-| ID | Status | Slice | Verification |
+## PR 1 — Durable Subscription Bootstrap
+
+| ID | Status | Bounded slice | Verification |
 | --- | --- | --- | --- |
-| RELAND-01 | DONE | Extend durable landing state/events with backward-compatible approved/published hash metadata and invalidate completed landing when later Work/Verify begins. | Focused contracts and projector tests prove legacy decode plus stale transition. |
-| RELAND-02 | DONE | Make landing service and decider idempotency hash-aware so a matching replacement gate is actionable while same-hash repeats no-op. | Focused decider and `taskLanding` tests cover replacement and idempotency. |
-| RELAND-03 | DONE | Add safe force-with-lease branch publication and source-control PR proposal updates. | Focused Git driver/workflow and GitHub provider tests pin command/API behavior. |
-| RELAND-04 | DONE | Teach the landing reactor to update an existing PR and record the replacement published hash. | Focused reactor and landing integration tests prove same-PR replacement publication. |
-| RELAND-05 | DONE | Align web projection/presentation with stale replacement landing and add regression coverage. | Focused store/route logic/browser tests show the new gate is actionable. |
-| RELAND-06 | DONE | Document the fix and run final focused quality gates. | Changelog, formatting, lint, relevant package typechecks, and focused tests pass; evidence is recorded in `TESTS.md`. |
-| PM-PREFIX-01 | DONE | Add the inheritable PM prompt-prefix contract and runtime resolution with focused tests. | Legacy decode defaults safely; project override/global fallback and exact prompt append are covered. |
-| PM-PREFIX-02 | DONE | Add global and per-project PM prompt-prefix settings UI with focused logic/component coverage. | Draft/patch inheritance semantics and rendered controls are covered. |
-| PM-PREFIX-03 | DONE | Document and verify the completed feature. | Changelog and required quality gates pass with evidence in `TESTS.md`. |
-| THREAD-CONTINUE-01 | DONE | Refine PM prompt, tool descriptions, and feature playbook to prefer one bounded same-thread correction while retaining explicit fresh-attempt cases. | Focused PM prompt and tool metadata tests pin the decision rule. |
-| THREAD-CONTINUE-02 | DONE | Align architectural decisions and unreleased notes with the refined continuation policy. | Documentation clearly distinguishes a turn from an attempt and preserves independent verification. |
-| THREAD-CONTINUE-03 | DONE | Run final focused verification and record evidence. | Formatting, lint, relevant server typecheck, focused tests, and diff review pass. |
+| WS-01 | DONE | Map the existing shell/thread/project/task snapshot and live interfaces; define the smallest shared ordered-bootstrap public contract and central replay bound. | Design notes identify all four callers and the observable stream contract without changing raw provider streams. |
+| WS-02 | DONE | Add one failing integration-style test that interleaves a durable event with snapshot loading. | Test fails because the current snapshot-then-subscribe path loses the event. |
+| WS-03 | DONE | Implement the minimal shared subscribe-before-snapshot buffer/replay/drain primitive and adopt it for the tracer path. | The interleaving test passes and emits the event exactly once in sequence. |
+| WS-04 | DONE | Add ordered/deduplicated replay-buffer-live and reconnect tests, one behavior at a time, extending the primitive minimally after each RED. | Focused tests cover duplicates, replay overlap, live overlap, and reconnect. |
+| WS-05 | DONE | Add a replay-bound test and fresh-snapshot recovery behavior. | A `limit + 1` backlog selects a newer snapshot and does not emit an unbounded replay. |
+| WS-06 | DONE | Add transport coalescing with explicit covered-sequence semantics for replaceable same-thread/task projection updates only. | Focused tests prove replaceable updates coalesce while lifecycle/domain transitions remain lossless and do not trigger false gaps. |
+| WS-07 | DONE | Add one shared WebSocket payload projector with explicit truncation metadata, then apply it to replay and live delivery. | Persistence/detail reads retain full payloads; replay/live transport previews share the same limit and metadata. |
+| WS-08 | DONE | Migrate all shell, thread, project, and task subscriptions to the shared bootstrap primitive and align defensive client recovery. | Focused server/web tests prove identical bootstrap behavior across all four surfaces. |
+| WS-09 | DONE | Document PR 1 and run required quality gates. | `CHANGELOG.md`, `docs/upstream-decisions.md`, focused tests, `bun fmt`, `bun lint`, narrow typechecks, and `git diff --check` pass. |
+| WS-10 | NEXT | Commit, push, and open a detailed PR 1. | Remote branch and PR exist; PR describes architecture, behavior, compatibility boundary, and verification. |
+
+## Merge Checkpoint
+
+| ID | Status | Bounded slice | Verification |
+| --- | --- | --- | --- |
+| MERGE-01 | TODO | Wait for human review and merge of PR 1; do not self-merge without explicit approval. | PR 1 is merged and the local PR 2 base is updated to that merge. |
+
+## PR 2 — Task-Oriented Inbox
+
+| ID | Status | Bounded slice | Verification |
+| --- | --- | --- | --- |
+| INBOX-01 | TODO | Add lifecycle command/event/schema tests and minimal durable thread/task lifecycle fields. | Legacy/current persisted state decodes under the chosen no-shim schema; transitions replay deterministically. |
+| INBOX-02 | TODO | Add settle blockers, idempotence, auto-settle, snooze, and reopen tests one behavior at a time; minimally extend decider/projector per RED. | Focused server tests cover every documented lifecycle invariant. |
+| INBOX-03 | TODO | Add pure web partition/classification tests for Threads/Orchestrator and Active/Snoozed/Settled. | Raised-hand precedence, pins, bad dates, snooze expiry, and ordering are deterministic. |
+| INBOX-04 | TODO | Add DST-safe snooze preset tests and implement upstream-aligned presets. | One-hour, evening, tomorrow, and next-Monday results pass across DST boundaries. |
+| INBOX-05 | TODO | Build the Inbox view, sliding type pill, lifecycle filter, distinct rows, and status treatment without project grouping. | Focused component tests prove selection, filtering, row treatment, and accessibility. |
+| INBOX-06 | TODO | Wire Orchestrator row navigation to the project-level route and normal thread navigation to chat. | Focused navigation tests prove no task-detail navigation. |
+| INBOX-07 | TODO | Document PR 2 and run required quality gates. | Changelog, upstream decision removal/update, focused tests, format, lint, narrow typechecks, and diff check pass. |
+| INBOX-08 | TODO | Commit, push, and open a detailed PR 2. | Remote branch and PR exist with full behavior and verification notes. |
