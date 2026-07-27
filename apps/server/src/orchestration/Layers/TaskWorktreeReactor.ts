@@ -135,10 +135,9 @@ function listPendingLandedTaskContexts(
   const projectById = new Map(readModel.projects.map((project) => [String(project.id), project]));
   return readModel.tasks.flatMap((task) => {
     if (
-      task.prUrl !== null ||
       task.worktreePath === null ||
       task.landing?.status === "failed" ||
-      (task.landing?.status !== "opening-pr" && task.status !== "landed")
+      (task.landing?.status !== "opening-pr" && (task.status !== "landed" || task.prUrl !== null))
     ) {
       return [];
     }
@@ -180,8 +179,12 @@ function listLegacyLandedTaskContexts(
   });
 }
 
-function taskPrOpenedCommandId(taskId: string): CommandId {
-  return CommandId.make(`task-pr-opened:${taskId}`);
+function taskPrOpenedCommandId(taskId: string, publishedHash: string | undefined): CommandId {
+  return CommandId.make(
+    publishedHash === undefined
+      ? `task-pr-opened:${taskId}`
+      : `task-pr-opened:${taskId}:${publishedHash}`,
+  );
 }
 
 function taskPrOpenFailedCommandId(taskId: string): CommandId {
@@ -581,42 +584,64 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
         cwd: context.worktreePath,
         fallbackBranch: branch,
         remoteName: handle.context?.remoteName ?? null,
+        ...(context.task.prUrl === null ? {} : { forceWithLease: true }),
       });
       yield* input.onBranchPushed;
 
-      const existing = yield* handle.provider.listChangeRequests({
-        cwd: context.worktreePath,
-        headSelector: branch,
-        state: "open",
-        limit: 1,
-      });
       const changeRequest: ChangeRequest =
-        existing[0] ??
-        (yield* Effect.scoped(
-          Effect.gen(function* () {
-            const bodyFile = yield* fileSystem.makeTempFileScoped({
-              prefix: "gedcode-task-pr-",
-              suffix: ".md",
-            });
-            yield* fileSystem.writeFileString(bodyFile, `${context.pullRequest.body.trim()}\n`);
-            return yield* handle.provider.createChangeRequest({
+        context.task.prUrl === null
+          ? ((yield* handle.provider.listChangeRequests({
               cwd: context.worktreePath,
-              baseRefName,
               headSelector: branch,
-              title: context.pullRequest.title,
-              bodyFile,
-              draft: openPrAsDraft,
-            });
-          }),
-        ));
+              state: "open",
+              limit: 1,
+            }))[0] ??
+            (yield* Effect.scoped(
+              Effect.gen(function* () {
+                const bodyFile = yield* fileSystem.makeTempFileScoped({
+                  prefix: "gedcode-task-pr-",
+                  suffix: ".md",
+                });
+                yield* fileSystem.writeFileString(bodyFile, `${context.pullRequest.body.trim()}\n`);
+                return yield* handle.provider.createChangeRequest({
+                  cwd: context.worktreePath,
+                  baseRefName,
+                  headSelector: branch,
+                  title: context.pullRequest.title,
+                  bodyFile,
+                  draft: openPrAsDraft,
+                });
+              }),
+            )))
+          : yield* Effect.scoped(
+              Effect.gen(function* () {
+                const bodyFile = yield* fileSystem.makeTempFileScoped({
+                  prefix: "gedcode-task-pr-",
+                  suffix: ".md",
+                });
+                yield* fileSystem.writeFileString(bodyFile, `${context.pullRequest.body.trim()}\n`);
+                yield* handle.provider.updateChangeRequest({
+                  cwd: context.worktreePath,
+                  reference: context.task.prUrl!,
+                  title: context.pullRequest.title,
+                  bodyFile,
+                });
+                return yield* handle.provider.getChangeRequest({
+                  cwd: context.worktreePath,
+                  reference: context.task.prUrl!,
+                });
+              }),
+            );
 
       const createdAt = yield* DateTime.now.pipe(Effect.map(DateTime.formatIso));
+      const publishedHash = context.task.landing?.approvedHash;
       yield* orchestrationEngine.dispatch({
         type: "task.pr.opened",
-        commandId: taskPrOpenedCommandId(taskId),
+        commandId: taskPrOpenedCommandId(taskId, publishedHash),
         taskId: context.task.id,
         prUrl: changeRequest.url,
         prNumber: changeRequest.number,
+        ...(publishedHash === undefined ? {} : { publishedHash }),
         createdAt,
       });
     });
@@ -624,10 +649,6 @@ export const makeTaskWorktreeReactor = (options?: TaskWorktreeReactorLiveOptions
     const processLandedTaskContext = Effect.fn("processLandedTaskContext")(function* (
       context: ProposedLandedTaskContext,
     ) {
-      if (context.task.prUrl !== null) {
-        return;
-      }
-
       if (yield* repairLandedTaskWithoutChanges(context)) {
         return;
       }

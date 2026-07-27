@@ -1564,6 +1564,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote", cwd, [
         "push",
+        ...(options?.forceWithLease === true ? ["--force-with-lease"] : []),
         "-u",
         requestedRemoteName,
         `HEAD:refs/heads/${publishBranch}`,
@@ -1624,7 +1625,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       const pushArgs = (remoteName: string) =>
-        ["push", "-u", remoteName, `HEAD:refs/heads/${publishBranch}`] as const;
+        [
+          "push",
+          ...(options?.forceWithLease === true ? ["--force-with-lease"] : []),
+          "-u",
+          remoteName,
+          `HEAD:refs/heads/${publishBranch}`,
+        ] as const;
       const pushedRemoteName = yield* runGit(
         "GitVcsDriver.pushCurrentBranch.pushWithUpstream",
         cwd,
@@ -1664,6 +1671,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const pushArgs = (remoteName: string, setUpstream: boolean) =>
         [
           "push",
+          ...(options?.forceWithLease === true ? ["--force-with-lease"] : []),
           ...(setUpstream ? ["-u"] : []),
           remoteName,
           `HEAD:refs/heads/${currentUpstream.branchName}`,
@@ -1708,7 +1716,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push"]);
+    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, [
+      "push",
+      ...(options?.forceWithLease === true ? ["--force-with-lease"] : []),
+    ]);
     return {
       status: "pushed" as const,
       branch,

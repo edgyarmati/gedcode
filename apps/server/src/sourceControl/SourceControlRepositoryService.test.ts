@@ -33,6 +33,7 @@ function makeProvider(
     listChangeRequests: () => unsupported("listChangeRequests"),
     getChangeRequest: () => unsupported("getChangeRequest"),
     createChangeRequest: () => unsupported("createChangeRequest"),
+    updateChangeRequest: () => unsupported("updateChangeRequest"),
     getRepositoryCloneUrls: () => Effect.succeed(CLONE_URLS),
     createRepository: () => Effect.succeed(CLONE_URLS),
     getDefaultBranch: () => Effect.succeed(null),

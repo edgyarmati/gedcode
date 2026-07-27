@@ -2362,7 +2362,20 @@ function applyEnvironmentOrchestrationEvent(
             ? task.stageThreadIds
             : [...task.stageThreadIds, event.payload.stageThreadId],
           currentStageThreadId: event.payload.stageThreadId,
-          ...(event.payload.role === "work" ? { verification: null } : {}),
+          ...(event.payload.role === "work" || event.payload.role === "verify"
+            ? { verification: null }
+            : {}),
+          ...(event.payload.role === "work" || event.payload.role === "verify"
+            ? task.landing?.status === "completed"
+              ? {
+                  landing: {
+                    ...task.landing,
+                    status: "stale" as const,
+                    updatedAt: event.payload.updatedAt,
+                  },
+                }
+              : {}
+            : {}),
           updatedAt: event.payload.updatedAt,
         };
       });
@@ -2580,6 +2593,12 @@ function applyEnvironmentOrchestrationEvent(
           status: "opening-pr",
           failureMessage: null,
           branchPushed: false,
+          ...(event.payload.approvedHash === undefined
+            ? {}
+            : { approvedHash: event.payload.approvedHash }),
+          ...(task.landing?.publishedHash === undefined
+            ? {}
+            : { publishedHash: task.landing.publishedHash }),
           updatedAt: event.payload.updatedAt,
         },
         updatedAt: event.payload.updatedAt,
@@ -2653,6 +2672,12 @@ function applyEnvironmentOrchestrationEvent(
           status: "completed",
           failureMessage: null,
           branchPushed: true,
+          ...(task.landing?.approvedHash === undefined
+            ? {}
+            : { approvedHash: task.landing.approvedHash }),
+          ...(event.payload.publishedHash === undefined
+            ? {}
+            : { publishedHash: event.payload.publishedHash }),
           updatedAt: event.payload.updatedAt,
         },
         updatedAt: event.payload.updatedAt,

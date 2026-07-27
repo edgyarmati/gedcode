@@ -227,6 +227,7 @@ function makeSourceControlRegistry(input?: {
         createChangeRequestCalls.push(request);
         return Effect.succeed(makeCreatedChangeRequest(request));
       }),
+    updateChangeRequest: () => Effect.void,
     getRepositoryCloneUrls: () =>
       Effect.fail(
         new SourceControlProviderError({
@@ -294,6 +295,7 @@ function makeUnsupportedSourceControlRegistry() {
           detail: "unsupported",
         }),
       ),
+    updateChangeRequest: () => Effect.void,
     getRepositoryCloneUrls: () =>
       Effect.fail(
         new SourceControlProviderError({

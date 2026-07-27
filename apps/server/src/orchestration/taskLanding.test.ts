@@ -205,6 +205,48 @@ it.effect("approves a land gate and starts landing with one guarded command", ()
   }),
 );
 
+it.effect("approves replacement landing when an existing PR published a different hash", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const readModel: OrchestrationReadModel = {
+      ...makeReadModel("review"),
+      tasks: [
+        {
+          ...makeTask("review", {
+            status: "stale",
+            failureMessage: null,
+            branchPushed: true,
+            publishedHash: "old-head",
+            updatedAt: now,
+          }),
+          prUrl: "https://github.com/acme/repo/pull/42",
+        },
+      ],
+    };
+    const result = yield* approveOrchestrationLandTaskWithServices(
+      {
+        snapshotQuery: { getCommandReadModel: () => Effect.succeed(readModel) },
+        vcsProcess,
+      },
+      {
+        taskId,
+        gateId: GateId.make("gate-replacement"),
+        approvedHash: "verified-head",
+        commandId: Effect.succeed(CommandId.make("cmd-replacement")),
+        createdAt: Effect.succeed(now),
+        dispatch: (command) =>
+          Effect.sync(() => {
+            commands.push(command);
+            return { sequence: 12 };
+          }),
+      },
+    );
+
+    assert.strictEqual(result.alreadyLanded, false);
+    assert.strictEqual(commands[0]?.type, "task.land.approve");
+  }),
+);
+
 it.effect("retries one exhausted landing attempt and coalesces repeated requests", () =>
   Effect.gen(function* () {
     let readModel: OrchestrationReadModel = makeReadModel("landed", 20, {

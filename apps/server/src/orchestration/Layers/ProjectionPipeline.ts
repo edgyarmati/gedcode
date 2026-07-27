@@ -1907,6 +1907,17 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ...(event.payload.role === "work" || event.payload.role === "verify"
                 ? { verification: null }
                 : {}),
+              ...(event.payload.role === "work" || event.payload.role === "verify"
+                ? existingRow.value.landing?.status === "completed"
+                  ? {
+                      landing: {
+                        ...existingRow.value.landing,
+                        status: "stale" as const,
+                        updatedAt: event.payload.updatedAt,
+                      },
+                    }
+                  : {}
+                : {}),
               updatedAt: event.payload.updatedAt,
             });
             return;
@@ -2129,6 +2140,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 status: "opening-pr",
                 failureMessage: null,
                 branchPushed: false,
+                ...(event.payload.approvedHash === undefined
+                  ? {}
+                  : { approvedHash: event.payload.approvedHash }),
+                ...(existingRow.value.landing?.publishedHash === undefined
+                  ? {}
+                  : { publishedHash: existingRow.value.landing.publishedHash }),
                 updatedAt: event.payload.updatedAt,
               },
               updatedAt: event.payload.updatedAt,
@@ -2279,6 +2296,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 status: "completed",
                 failureMessage: null,
                 branchPushed: true,
+                ...(existingRow.value.landing?.approvedHash === undefined
+                  ? {}
+                  : { approvedHash: existingRow.value.landing.approvedHash }),
+                ...(event.payload.publishedHash === undefined
+                  ? {}
+                  : { publishedHash: event.payload.publishedHash }),
                 updatedAt: event.payload.updatedAt,
               },
               updatedAt: event.payload.updatedAt,

@@ -3275,7 +3275,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             commandId: command.commandId,
           })),
           type: "task.landed" as const,
-          payload: { taskId: command.taskId, updatedAt: command.createdAt },
+          payload: {
+            taskId: command.taskId,
+            approvedHash: command.approvedHash,
+            updatedAt: command.createdAt,
+          },
         },
       ] satisfies ReadonlyArray<PlannedOrchestrationEvent>;
     }
@@ -3428,6 +3432,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "task.landed",
         payload: {
           taskId: command.taskId,
+          approvedHash: latestLandGate.approvedHash,
           updatedAt: command.createdAt,
         },
       };
@@ -3587,12 +3592,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       yield* requireTaskNotCancelling({ command, task });
       if (
         (task.status !== "review" && task.status !== "landed") ||
-        task.prUrl !== null ||
         task.landing?.status !== "opening-pr"
       ) {
         return yield* invariantError(
           command.type,
-          `Task '${command.taskId}' must be opening an approved landing without an existing PR before PR success can be recorded.`,
+          `Task '${command.taskId}' must be opening an approved landing before PR success can be recorded.`,
+        );
+      }
+      if (task.prUrl !== null && task.prUrl !== command.prUrl) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' replacement landing must retain its existing pull request URL.`,
         );
       }
       const project = yield* requireProject({
@@ -3614,6 +3624,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           taskId: command.taskId,
           prUrl: command.prUrl,
           ...(command.prNumber !== undefined ? { prNumber: command.prNumber } : {}),
+          ...(command.publishedHash === undefined ? {} : { publishedHash: command.publishedHash }),
           updatedAt: command.createdAt,
         },
       } satisfies PlannedOrchestrationEvent;

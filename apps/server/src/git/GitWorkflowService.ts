@@ -50,6 +50,7 @@ export interface GitWorkflowServiceShape {
     readonly cwd: string;
     readonly fallbackBranch: string | null;
     readonly remoteName?: string | null;
+    readonly forceWithLease?: boolean;
   }) => Effect.Effect<
     {
       readonly status: "pushed" | "skipped_up_to_date";
@@ -294,6 +295,7 @@ export const make = Effect.fn("makeGitWorkflowService")(function* () {
         Effect.andThen(
           git.pushCurrentBranch(input.cwd, input.fallbackBranch, {
             remoteName: input.remoteName ?? null,
+            forceWithLease: input.forceWithLease ?? false,
           }),
         ),
       ),

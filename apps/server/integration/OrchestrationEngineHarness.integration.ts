@@ -134,6 +134,7 @@ function makeUnsupportedSourceControlRegistry(): SourceControlProviderRegistrySh
     listChangeRequests: () => unsupportedSourceControlProvider("listChangeRequests"),
     getChangeRequest: () => unsupportedSourceControlProvider("getChangeRequest"),
     createChangeRequest: () => unsupportedSourceControlProvider("createChangeRequest"),
+    updateChangeRequest: () => unsupportedSourceControlProvider("updateChangeRequest"),
     getRepositoryCloneUrls: () => unsupportedSourceControlProvider("getRepositoryCloneUrls"),
     createRepository: () => unsupportedSourceControlProvider("createRepository"),
     getDefaultBranch: () => unsupportedSourceControlProvider("getDefaultBranch"),

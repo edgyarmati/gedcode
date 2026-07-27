@@ -142,7 +142,7 @@ function makeReadModel(input: {
       },
     ],
     pendingGates:
-      input.taskStatus === "landed"
+      input.taskStatus === "landed" || input.landing?.approvedHash !== undefined
         ? [
             {
               gateId: GateId.make("gate-land"),
@@ -361,6 +361,7 @@ async function createHarness(input: {
       listChangeRequests: () => Effect.succeed([]),
       getChangeRequest: () => Effect.succeed(createdChangeRequest),
       createChangeRequest,
+      updateChangeRequest: () => Effect.void,
       getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
       createRepository: () => unsupportedProjectionQuery(),
       getDefaultBranch: () => Effect.succeed("main"),
@@ -888,6 +889,70 @@ describe("TaskWorktreeReactor", () => {
     await harness.runtime.dispose();
   });
 
+  it("force-updates the existing PR branch and approved proposal for replacement landing", async () => {
+    const { workspaceRoot, worktreePath } = makeWorkspace();
+    const updateChangeRequest = vi.fn<
+      SourceControlProvider.SourceControlProviderShape["updateChangeRequest"]
+    >(() => Effect.void);
+    const sourceControlProvider = SourceControlProvider.SourceControlProvider.of({
+      kind: "github",
+      listChangeRequests: () => Effect.succeed([]),
+      getChangeRequest: () =>
+        Effect.succeed({
+          ...createdChangeRequest,
+          url: "https://github.com/acme/repo/pull/42",
+        }),
+      createChangeRequest: () => Effect.die("must not create a replacement PR"),
+      updateChangeRequest,
+      getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
+      createRepository: () => unsupportedProjectionQuery(),
+      getDefaultBranch: () => Effect.succeed("main"),
+      checkoutChangeRequest: () => Effect.void,
+    });
+    const harness = await createHarness({
+      sourceControlProvider,
+      readModel: makeReadModel({
+        workspaceRoot,
+        worktreePath,
+        taskStatus: "review",
+        prUrl: "https://github.com/acme/repo/pull/42",
+        landing: {
+          status: "opening-pr",
+          failureMessage: null,
+          branchPushed: false,
+          approvedHash: "abc123",
+          publishedHash: "old123",
+          updatedAt: now,
+        },
+      }),
+    });
+
+    await harness.runtime.runPromise(harness.reactor.start().pipe(Scope.provide(harness.scope)));
+    await waitFor(() => updateChangeRequest.mock.calls.length === 1);
+    await harness.runtime.runPromise(harness.reactor.drain);
+
+    expect(harness.pushCurrentBranch).toHaveBeenCalledWith(
+      expect.objectContaining({ forceWithLease: true }),
+    );
+    expect(updateChangeRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reference: "https://github.com/acme/repo/pull/42",
+        title: "fix: describe the task outcome",
+      }),
+    );
+    expect(harness.createChangeRequest).not.toHaveBeenCalled();
+    expect(harness.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "task.pr.opened",
+        prUrl: "https://github.com/acme/repo/pull/42",
+        publishedHash: "abc123",
+      }),
+    );
+
+    await Effect.runPromise(Scope.close(harness.scope, Exit.void));
+    await harness.runtime.dispose();
+  });
+
   it("does not automatically retry an exhausted landing failure during startup", async () => {
     const { workspaceRoot, worktreePath } = makeWorkspace();
     const harness = await createHarness({
@@ -997,6 +1062,7 @@ describe("TaskWorktreeReactor", () => {
             detail: "unsupported",
           }),
         ),
+      updateChangeRequest: () => Effect.void,
       getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
       createRepository: () => unsupportedProjectionQuery(),
       getDefaultBranch: () => Effect.succeed(null),
@@ -1106,6 +1172,7 @@ describe("TaskWorktreeReactor", () => {
             detail: "network down",
           }),
         ),
+      updateChangeRequest: () => Effect.void,
       getRepositoryCloneUrls: () => unsupportedProjectionQuery(),
       createRepository: () => unsupportedProjectionQuery(),
       getDefaultBranch: () => Effect.succeed("main"),

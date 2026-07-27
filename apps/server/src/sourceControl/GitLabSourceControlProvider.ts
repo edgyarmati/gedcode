@@ -152,6 +152,14 @@ export const make = Effect.fn("makeGitLabSourceControlProvider")(function* () {
           Effect.mapError((error) => providerError("createChangeRequest", error)),
         );
     },
+    updateChangeRequest: () =>
+      Effect.fail(
+        new SourceControlProviderError({
+          provider: "gitlab",
+          operation: "updateChangeRequest",
+          detail: "Updating an existing GitLab merge request is not supported.",
+        }),
+      ),
     getRepositoryCloneUrls: (input) =>
       gitlab
         .getRepositoryCloneUrls(input)

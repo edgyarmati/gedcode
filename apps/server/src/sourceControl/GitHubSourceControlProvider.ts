@@ -197,6 +197,10 @@ export const make = Effect.fn("makeGitHubSourceControlProvider")(function* () {
           Effect.map(toChangeRequest),
           Effect.mapError((error) => providerError("createChangeRequest", error)),
         ),
+    updateChangeRequest: (input) =>
+      github
+        .updatePullRequest(input)
+        .pipe(Effect.mapError((error) => providerError("updateChangeRequest", error))),
     getRepositoryCloneUrls: (input) =>
       github
         .getRepositoryCloneUrls(input)

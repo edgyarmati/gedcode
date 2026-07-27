@@ -707,6 +707,7 @@ export const OrchestrationTaskLandingStatus = Schema.Literals([
   "opening-pr",
   "failed",
   "completed",
+  "stale",
 ]);
 export type OrchestrationTaskLandingStatus = typeof OrchestrationTaskLandingStatus.Type;
 
@@ -714,6 +715,8 @@ export const OrchestrationTaskLanding = Schema.Struct({
   status: OrchestrationTaskLandingStatus,
   failureMessage: Schema.NullOr(TrimmedNonEmptyString),
   branchPushed: Schema.Boolean,
+  approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
+  publishedHash: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
@@ -1818,6 +1821,7 @@ const TaskPrOpenedCommand = Schema.Struct({
   taskId: TaskId,
   prUrl: TrimmedNonEmptyString,
   prNumber: Schema.optional(PositiveInt),
+  publishedHash: Schema.optionalKey(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
 });
 
@@ -2729,6 +2733,7 @@ export const TaskGateResolvedPayload = Schema.Struct({
 
 export const TaskLandedPayload = Schema.Struct({
   taskId: TaskId,
+  approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
 
@@ -2756,6 +2761,7 @@ export const TaskPrOpenedPayload = Schema.Struct({
   taskId: TaskId,
   prUrl: TrimmedNonEmptyString,
   prNumber: Schema.optional(PositiveInt),
+  publishedHash: Schema.optionalKey(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
 

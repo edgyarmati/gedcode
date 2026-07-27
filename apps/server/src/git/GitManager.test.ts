@@ -583,6 +583,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             state: "open" as const,
           })),
         ),
+      updatePullRequest: () => Effect.void,
       getDefaultBranch: (input) =>
         execute({
           cwd: input.cwd,

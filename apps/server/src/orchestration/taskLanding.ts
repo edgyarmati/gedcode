@@ -83,7 +83,13 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
             detail: `Task '${input.taskId}' does not have an owned worktree to inspect before landing.`,
           });
         }
-        if (task.prUrl !== null || task.landing?.status === "completed") {
+        const verifiedHash = task.verification?.head;
+        if (
+          (verifiedHash !== undefined && task.landing?.publishedHash === verifiedHash) ||
+          (task.landing?.status === "completed" &&
+            task.landing.publishedHash === undefined &&
+            task.status !== "review")
+        ) {
           return {
             sequence: readModel.snapshotSequence,
             alreadyLanded: true,
@@ -157,7 +163,12 @@ export const approveOrchestrationLandTaskWithServices = Effect.fn(
           detail: `Task '${input.taskId}' does not have an owned worktree to inspect before landing approval.`,
         });
       }
-      if (task.prUrl !== null || task.landing?.status === "completed") {
+      if (
+        task.landing?.publishedHash === input.approvedHash ||
+        (task.landing?.status === "completed" &&
+          task.landing.publishedHash === undefined &&
+          task.status !== "review")
+      ) {
         return {
           sequence: readModel.snapshotSequence,
           alreadyLanded: true,

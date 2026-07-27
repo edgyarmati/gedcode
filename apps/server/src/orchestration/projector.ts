@@ -1358,6 +1358,17 @@ export function projectEvent(
               ...(payload.role === "work" || payload.role === "verify"
                 ? { verification: null }
                 : {}),
+              ...(payload.role === "work" || payload.role === "verify"
+                ? task.landing?.status === "completed"
+                  ? {
+                      landing: {
+                        ...task.landing,
+                        status: "stale" as const,
+                        updatedAt: payload.updatedAt,
+                      },
+                    }
+                  : {}
+                : {}),
               updatedAt: payload.updatedAt,
             }),
             quotaBlockedStages:
@@ -1731,6 +1742,14 @@ export function projectEvent(
               status: "opening-pr",
               failureMessage: null,
               branchPushed: false,
+              ...(payload.approvedHash === undefined ? {} : { approvedHash: payload.approvedHash }),
+              ...(nextBase.tasks.find((task) => task.id === payload.taskId)?.landing
+                ?.publishedHash === undefined
+                ? {}
+                : {
+                    publishedHash: nextBase.tasks.find((task) => task.id === payload.taskId)!
+                      .landing!.publishedHash,
+                  }),
               updatedAt: payload.updatedAt,
             },
             updatedAt: payload.updatedAt,
@@ -1919,6 +1938,16 @@ export function projectEvent(
               status: "completed",
               failureMessage: null,
               branchPushed: true,
+              ...(nextBase.tasks.find((task) => task.id === payload.taskId)?.landing
+                ?.approvedHash === undefined
+                ? {}
+                : {
+                    approvedHash: nextBase.tasks.find((task) => task.id === payload.taskId)!
+                      .landing!.approvedHash,
+                  }),
+              ...(payload.publishedHash === undefined
+                ? {}
+                : { publishedHash: payload.publishedHash }),
               updatedAt: payload.updatedAt,
             },
             updatedAt: payload.updatedAt,
