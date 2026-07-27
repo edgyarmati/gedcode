@@ -36,8 +36,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   run. Ordinary in-worktree work and writes to cache, config, and temporary locations proceed untouched,
   including output discarded to `/dev/null`. The hook reads a command the way a shell does — every line,
   each `;`/`&&`/`|` segment, `cd` scoped to the subshell or pipeline stage that ran it, `~` and `$VAR`
-  expanded, nested `bash -lc` and `xargs`/`env` wrappers followed, and the tool's own working directory
-  respected. A refusal is a single concise denial with no approval prompt or retry loop. This is accident
+  expanded, nested `bash -lc` and `xargs`/`env` wrappers followed, redirections told apart from the
+  command's own operands so a quieted `cp … >/dev/null` is still judged on the path it overwrites, and
+  the tool's own working directory respected. A refusal is a single concise denial with no approval
+  prompt or retry loop. This is accident
   prevention, not a sandbox or a security boundary: scripts, opaque subprocesses, targets a command reads
   from stdin or a file, and tools that do not report through the hook stay outside it, and a worker whose
   tripwire cannot be installed starts without one rather than not starting at all. A transient failure

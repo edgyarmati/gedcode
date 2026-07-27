@@ -211,10 +211,17 @@ const tokenize = (input) => {
       continue;
     }
     // Redirects become their own word so \`> file\`, \`>file\`, and \`1> file\` all
-    // expose the same overwrite target.
+    // expose the same overwrite target. A file descriptor written against the
+    // redirect (\`2>\`) belongs to it rather than to the command, so it is folded
+    // into the operator instead of being flushed as an operand.
     if (char === ">" || char === "<") {
-      flush();
-      let operator = char;
+      const descriptor = hasWord && /^\\d+$/.test(current) ? current : "";
+      if (descriptor === "") flush();
+      else {
+        current = "";
+        hasWord = false;
+      }
+      let operator = descriptor + char;
       while (input[index + 1] === char) {
         operator += char;
         index += 1;
@@ -227,6 +234,25 @@ const tokenize = (input) => {
   }
   flush();
   return items;
+};
+
+// A redirection and its target are the shell's plumbing, not operands the command
+// acts on. Left among the operands, a trailing \`>/dev/null\` became the last one —
+// and the destination of a copy or sync is exactly that, so the path it really
+// overwrote went unjudged.
+const REDIRECTION = /^\\d*(?:>+|<+)$/;
+
+// Exactly one \`>\` truncates its target before the command runs, whatever the
+// command is; \`>>\` appends to a file instead of destroying it.
+const TRUNCATING_REDIRECT = /^\\d*>$/;
+
+const withoutRedirections = (words) => {
+  const operands = [];
+  for (let index = 0; index < words.length; index += 1) {
+    if (REDIRECTION.test(words[index])) index += 1;
+    else operands.push(words[index]);
+  }
+  return operands;
 };
 
 const VARIABLE_REFERENCE = /\\$(?:\\{([A-Za-z_][A-Za-z0-9_]*)\\}|([A-Za-z_][A-Za-z0-9_]*))/g;
@@ -521,15 +547,15 @@ const inspectCommand = (input, startDir, depth) => {
     // so it is gone by the time the next segment runs.
     const transient = separator === "|";
 
-    // A lone \`>\` truncates its target before the command even runs, whatever the
-    // command is. \`>>\` appends, which adds to a file instead of destroying it.
+    // The truncating redirects are judged first, on the words as written, because
+    // they destroy their target before the command even runs.
     for (let index = 0; index + 1 < segmentWords.length; index += 1) {
-      if (segmentWords[index] !== ">") continue;
+      if (!TRUNCATING_REDIRECT.test(segmentWords[index])) continue;
       const target = externalTarget(resolve(current, expandPath(segmentWords[index + 1])));
       if (target !== null) return describe(">", target);
     }
 
-    const words = dropWrappers(segmentWords);
+    const words = dropWrappers(withoutRedirections(segmentWords));
     const verb = words.length === 0 ? "" : basename(words[0]);
     const operands = words.slice(1);
 

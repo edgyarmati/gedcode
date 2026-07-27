@@ -95,7 +95,7 @@ If the trust proof fails:
 Trust proof and runtime mechanics are in `NOTES.md`; this section records what the implementation
 verifies and what it deliberately does not.
 
-- **Rule coverage** — `apps/server/src/orchestration/workerTripwire.test.ts` (133 tests) executes the
+- **Rule coverage** — `apps/server/src/orchestration/workerTripwire.test.ts` (144 tests) executes the
   exact materialized script (`WORKER_TRIPWIRE_HOOK_SCRIPT`) as a child process. It denies out-of-worktree
   `rm`/`rm -rf`, `mv` destinations and sources, `> file` truncation and `tee`, `chown`/`chmod`,
   `cp`/`install`/`ln`/`rsync`/`scp` destinations, `sed -i`, `find -delete` and `find -exec rm`,
@@ -107,7 +107,10 @@ verifies and what it deliberately does not.
   `>/dev/null` and the rest of the `/dev` discard family, every line of a multi-line command, the tool's
   own `workdir`, `cd` scoped to the subshell or pipeline stage that ran it, clustered and separate
   `bash -lc`/`sh -c` recursion, `xargs`/`env`/`nohup`/`time`/`sudo` wrappers, `~` and `$VAR`/`${VAR}`
-  expansion, flag values that look like paths, and the credential/CLI-state roots (`~/.ssh`, `~/.aws`,
+  expansion, flag values that look like paths, redirections and their file descriptors kept out of the
+  command's own operands (a quieted `cp … >/dev/null` or `… 2>&1` is judged on its real destination,
+  while the redirect target itself is still judged as a truncation), and the credential/CLI-state roots
+  (`~/.ssh`, `~/.aws`,
   `~/.gnupg`, `~/.config/gh`, `~/.codex`, `~/.claude`, …) which are denied wherever the command runs and
   whose refusal names the path and says "credential".
 - **Deny protocol / no approval loop** — the script emits one

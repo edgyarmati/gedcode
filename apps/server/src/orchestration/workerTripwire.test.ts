@@ -345,9 +345,39 @@ describe("worker destructive-target tripwire", () => {
     expect(decision.denied).toBe(true);
   });
 
+  // A redirection is not an operand. Agents silence commands constantly, and the
+  // destination of a copy or sync is its last operand, so a trailing `>/dev/null`
+  // was being read as the destination and the real one went unjudged.
+  it.each([
+    ["a quieted copy", `cp -r dist ${outside}/dist > /dev/null`],
+    ["a copy with only stderr quieted", `cp -r dist ${outside}/dist 2>/dev/null`],
+    ["a copy folding stderr into stdout", `cp -r dist ${outside}/dist 2>&1`],
+    ["a fully quieted sync", `rsync -a dist/ ${outside}/site/ >/dev/null 2>&1`],
+    ["a quieted install", `install -m 644 build/app ${outside}/app >/dev/null`],
+    ["a quieted link", `ln -sf ${worktree}/dist ${outside}/dist 2>/dev/null`],
+    ["a copy logging to the worktree", `cp -r dist ${outside}/dist >> copy.log`],
+  ])("denies %s onto an external destination", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
+  // The redirect target is still judged in its own right, and a descriptor bound
+  // to it does not hide it.
+  it.each([
+    ["a stderr redirect onto an external file", `some-tool 2> ${outside}/errors.log`],
+    ["an attached stderr redirect", `some-tool 2>${outside}/errors.log`],
+  ])("denies %s", (_label, command) => {
+    const decision = evaluatePayload(shellCall(command));
+
+    expect(decision.denied).toBe(true);
+  });
+
   // Reading the host is fine; only the written side is judged. Denying sources
   // would refuse ordinary vendoring and inspection.
   it.each([
+    ["a quieted copy inside the worktree", "cp -r src build >/dev/null 2>&1"],
+    ["a quieted sync inside the worktree", "rsync -a src/ build/ > /dev/null"],
     ["a copy out of external space into the worktree", `cp -R ${outside}/tree src/vendor`],
     ["a copy of many files into a worktree directory", "cp a.ts b.ts src/"],
     ["a sync out of external space", `rsync -a ${outside}/assets/ public/`],
