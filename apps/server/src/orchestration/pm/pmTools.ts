@@ -889,7 +889,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "handoffWorker",
     label: "Handoff worker",
     description:
-      "Start a detached worker stage for a task. Use plan for bounded technical exploration, implementation planning, or a second plan critique; work for implementation; and verify for independent post-work validation before landing. Task typing is owned by classifyRequest, not a worker.",
+      "Start a new detached worker attempt with its own thread and auditable outcome. Use this for the first role attempt, independent judgment, a materially different approach, a capability/model change, terminal session recovery, or after one bounded same-thread correction failed. Do not use it merely to correct a viable current Plan or Work result; use steerStage instead. Use plan for bounded technical exploration, implementation planning, or a second plan critique; work for implementation; and verify for independent post-work validation before landing. Task typing is owned by classifyRequest, not a worker.",
     execute: (_toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -960,7 +960,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "steerStage",
     label: "Steer stage",
     description:
-      "Send a user message into a running or idle worker stage thread to correct course, add context, or answer the worker without cancelling and re-handing off.",
+      "Continue the same worker attempt by sending a user message into its running or idle thread. Prefer this for the first bounded correction when the current Plan or Work result is incomplete, misunderstood, or missing context but its objective and approach remain viable. Do not use it when independent judgment, a materially different approach, a capability/model change, terminal session recovery, or a fresh post-fix Verify is required.",
     execute: (toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {

@@ -3632,6 +3632,16 @@ describe("buildPmSystemPrompt", () => {
     assert.notInclude(prompt, "Do not invoke shell or mutation tools");
     assert.include(prompt, "handoffWorker");
     assert.include(prompt, "steerStage");
+    assert.include(prompt, "Treat another turn and another attempt differently");
+    assert.include(prompt, "use steerStage on that thread first");
+    assert.include(prompt, "including when the worker is idle");
+    assert.include(prompt, "Use handoffWorker for a fresh attempt only");
+    assert.include(prompt, "when one bounded correction already failed");
+    assert.include(prompt, "then start a fresh Verify after the fix settles");
+    assert.include(
+      prompt,
+      "Do not continue an old Work thread after a newer stage has taken ownership",
+    );
     assert.include(prompt, "Never poll inspectStage");
     assert.include(prompt, "A Verify handoff refreshes the clean primary GitHub upstream");
     assert.include(prompt, "Never verify or land against the pre-movement HEAD");

@@ -11,6 +11,17 @@ The Orchestrator deliberately uses two thread lifetimes:
 
 Steering is not a new attempt. It appends a turn request to the selected existing stage thread (the
 current/latest attempt by default), preserving that attempt's provider conversation and runtime mode.
+When the current viable Plan or Work result is incomplete, misunderstood, or misses one bounded
+requirement, the PM should steer that thread once before creating another attempt. An idle worker is
+still eligible for this continuation.
+
+A fresh attempt is appropriate when the PM needs independent judgment, a materially different
+approach, a different capability tier or model, recovery from exhausted/corrupted context or a
+terminal provider/session failure, or when the bounded continuation already failed. Verification is
+always independent. A verifier never repairs implementation; findings return to Work and the
+resulting fix is followed by a fresh Verify. Once a newer stage owns the task, correcting an older
+Work result is also a new Work attempt rather than steering the inactive historical thread.
+
 Quota recovery is a retry: it copies the original bounded instructions into a new stage attempt and
 marks the blocked attempt resumed in the task projection.
 

@@ -472,6 +472,21 @@ const changeReviewTask = () =>
     },
   });
 
+it.effect("describes steering as continuation and handoff as a fresh attempt", () =>
+  Effect.gen(function* () {
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer([])));
+    const handoff = findTool(tools, "handoffWorker");
+    const steer = findTool(tools, "steerStage");
+
+    assert.include(handoff.description, "new detached worker attempt");
+    assert.include(handoff.description, "one bounded same-thread correction failed");
+    assert.include(handoff.description, "use steerStage instead");
+    assert.include(steer.description, "Continue the same worker attempt");
+    assert.include(steer.description, "first bounded correction");
+    assert.include(steer.description, "fresh post-fix Verify");
+  }),
+);
+
 it.effect("createTask derives stable task and command identities from its idempotency key", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

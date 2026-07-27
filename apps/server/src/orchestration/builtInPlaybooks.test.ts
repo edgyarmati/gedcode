@@ -14,4 +14,16 @@ describe("built-in feature playbook", () => {
     expect(BUILT_IN_FEATURE_PLAYBOOK_TEXT).toContain("one idempotent split operation");
     expect(BUILT_IN_FEATURE_PLAYBOOK_TEXT).toContain("schedule only unblocked children");
   });
+
+  it("continues one bounded work correction while keeping verification independent", () => {
+    expect(BUILT_IN_FEATURE_PLAYBOOK_TEXT).toMatch(
+      /continue that same\s+thread once with precise correction instructions/,
+    );
+    expect(BUILT_IN_FEATURE_PLAYBOOK_TEXT).toMatch(
+      /Start a fresh Work attempt only for a materially\s+different approach/,
+    );
+    expect(BUILT_IN_FEATURE_PLAYBOOK_TEXT).toMatch(
+      /then run a fresh\s+independent Verify after the fix settles/,
+    );
+  });
 });

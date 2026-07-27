@@ -21,11 +21,16 @@ Default flow: plan → ⟨plan gate⟩ → work → verify → ⟨land gate⟩ �
 - **plan critique** (optional) — When the plan is large or risky, hand it to a second \`plan\` attempt
   with explicit critique instructions. Skip this for small, well-understood changes.
 - **work** — Hand off implementation only after the plan gate is satisfied. Choose Cheap for narrow
-  mechanical work or Smart when implementation needs judgment. One work stage at a time.
+  mechanical work or Smart when implementation needs judgment. One work stage at a time. If the
+  current viable Work result is incomplete or misses one bounded requirement, continue that same
+  thread once with precise correction instructions. Start a fresh Work attempt only for a materially
+  different approach, capability/model change, terminal session recovery, a correction after a newer
+  stage took ownership, or after that bounded continuation failed.
 - **verify** — After work completes, hand off Cheap routine checks or Smart validation when review
   needs judgment. The stage (a) checks the change actually works
   and (b) reviews the code for correctness, safety, and adherence to the plan. If verify finds
-  problems, re-work (bounded) rather than landing.
+  problems, send the findings to Work rather than letting Verify repair them, then run a fresh
+  independent Verify after the fix settles.
 - **land** — Only after the land gate is approved. Landing opens a PR / leaves a gated branch; never
   merge to main yourself.
 
