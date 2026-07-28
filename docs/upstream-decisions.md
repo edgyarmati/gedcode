@@ -3,8 +3,61 @@
 This document tracks decisions about upstream-only work from `pingdotgg/t3code`.
 Use it before categorizing, cherry-picking, or reimplementing upstream commits.
 
-Last reviewed against `upstream/main` at `32e78448` on 2026-07-06 (422 commits
-behind merge base `e3accd6e957` on `feat/orchestrator-mode`).
+Last reviewed against the live `upstream/main` snapshot at `200fa82` on
+2026-07-27 (649 upstream-only commits after merge base `e3accd6e957` on
+`feat/orchestrator-mode`). The previous local review covered 422 commits at
+`32e78448`; upstream added 227 more commits afterward, including the Sidebar V2
+task-oriented chat lifecycle.
+
+## Initial divergence review (2026-07-27)
+
+Comparison basis:
+
+- Fork merge base: `e3accd6e957` (`Ensure Electron runtime is installed in
+release workflow (#2861)`), 2026-05-29.
+- Current fork: `4dada3ad` on `main`.
+- Current upstream: `200fa82` on `upstream/main`, 2026-07-27.
+- Upstream-only range: 649 commits. The comparison is dominated by mobile code,
+  vendored reference repositories, cloud infrastructure, and the tooling
+  migration; the task-oriented chat lifecycle is a separate web/server feature
+  within that range.
+
+Verdict: **do not adopt upstream wholesale**. GedCode has a different product
+direction and a substantially different orchestration/runtime surface. Keep
+Bun, the current client connection and replay design, and the fork-original
+orchestrator. Port isolated reliability or UX improvements only when they fit
+the current modules and have a clear verification story.
+
+The table groups the upstream range into cohesive differences rather than
+listing every small fix. Effort is deliberately qualitative and describes an
+adapted implementation in GedCode, not a raw cherry-pick.
+
+| Upstream difference since fork                                                                                       | Relevance to GedCode                                                                                                      | Initial decision                                                                                                                | Effort                                          |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Mobile app and native mobile runtime (`apps/mobile`, mobile CI and native patches)                                   | Low for the current web/desktop product                                                                                   | Do not implement unless mobile becomes an explicit product goal                                                                 | High                                            |
+| Relay, cloud, APNs, Clerk, and T3 Connect infrastructure                                                             | Low; changes the deployment and security model                                                                            | Do not implement for now                                                                                                        | High                                            |
+| pnpm/Vite Plus workspace and test-tool migration (`b440dd18` and follow-ups)                                         | Low; GedCode is intentionally Bun-based                                                                                   | Do not migrate. Port compatible release/CI fixes individually                                                                   | High for migration; Low–Medium per isolated fix |
+| Client-runtime connection rewrite (`e95b57dc`)                                                                       | Low relative to GedCode’s hardened subscriptions, replay, and orchestration recovery                                      | Do not implement wholesale; use as reference only                                                                               | High                                            |
+| Broad Effect error-structuring and service refactor campaign                                                         | Medium reliability value, low parity value, and high collision risk with GedCode’s conventions                            | Do not port as a campaign. Select individual error-context or safety fixes only                                                 | High wholesale; Low–Medium selectively          |
+| In-app browser preview, automation, annotations, and HTTP MCP support (`52c77c1e` plus follow-ups)                   | Potentially useful for agent-driven UI work, but outside the current orchestrator/MCP boundary                            | Defer as a separate future project; keep `orchestration/mcp` separate                                                           | High                                            |
+| Workspace file browser, file preview, and composer file integration (`de8bdc10`, `0936fd27`, `8ca4eec9`, `4cfec8c1`) | Medium. Basic filesystem browsing already exists; the preview-panel and explorer-to-composer portions are missing         | Implement selectively if workspace inspection becomes a priority                                                                | Medium–High                                     |
+| Task-oriented chat lifecycle / Sidebar V2 (`32c6012d` and follow-ups)                                                | High. It turns thread history into an active/snoozed/settled work inbox and aligns with GedCode’s task-oriented direction | Adopt the interaction model selectively, but do not cherry-pick the upstream client-runtime/sidebar stack                       | High                                            |
+| Provider-native `Auto` runtime mode (`fbd77420`)                                                                     | High safety relevance, but GedCode already has a different per-gate autonomy model                                        | Do not adopt as-is. Revisit only if provider-level AI-reviewed approvals are wanted in normal chats                             | Medium                                          |
+| Websocket/activity payload and offline catch-up optimizations (`d60f6e97`, `db4b2d8a`, `c14a5ca4`, `765e1b5f`)       | High for reliability and performance under active orchestration streams                                                   | Adapted locally with ordered buffered bootstrap, bounded replay, transport-only delta compaction, and activity payload previews | Complete                                        |
+| Prompt stash and per-provider composer queue (`200fa82`)                                                             | Medium. GedCode already has queued active-turn messages; cross-thread prompt parking is the missing part                  | Defer the stash UX until normal-chat workflows need it; keep the existing queue design                                          | Low–Medium                                      |
+| Checked-in project actions via shared `t3.json` (`1c9a6de2`)                                                         | Medium for portable project setup, but separate from GedCode’s event-sourced project/orchestrator config                  | Defer. Revisit if project actions should be shareable with upstream/T3 projects                                                 | Medium                                          |
+| Chat timeline scroll anchoring and minimap (`fda64862`)                                                              | High usability value in long sessions                                                                                     | Adopted in adapted form as local commit `7f4265738`; no further upstream sync needed                                            | Complete                                        |
+| Persistent word wrapping for chat code blocks/tables (`fb103454`)                                                    | Medium usability value. GedCode already has persistent diff wrapping, but not the full chat setting                       | Consider a small adapted follow-up; not urgent                                                                                  | Low–Medium                                      |
+| Model picker virtualization and message metadata/work-log polish (`31533466`, `1916ac6d`)                            | High usability/performance value                                                                                          | Adopted in adapted form as local commits `b07b81c37` and `8a19d2a1b`                                                            | Complete                                        |
+| Remaining chat markdown, composer, changed-files, header, and sidebar polish                                         | Medium–High day-to-day value, but much of the surface was already reshaped locally                                        | Adopt selectively when touching the affected component; do not chase visual parity                                              | Low–Medium per item                             |
+| Snapshot-over-HTTP and replay-before-live-subscription (`482d5623`)                                                  | Relevant reliability pattern, but GedCode has a separate orchestration snapshot/recovery protocol                         | Review the transaction and subscribe-before-replay ideas; do not port the client architecture                                   | Medium                                          |
+| Codex app-server protocol and provider updates (`ae7e88b0`, later model and Claude skill updates)                    | High when required by installed provider versions                                                                         | Follow `@openai/codex`/provider releases and capability needs, using upstream as reference                                      | Low–Medium per release                          |
+| Desktop, process, SSH, WSL, VCS, and release hardening                                                               | Medium–High where GedCode shares the execution boundary                                                                   | Port concrete fixes when the local path has the same failure mode; several early fixes are already recorded as completed below  | Low–Medium per fix                              |
+| Grok provider, Cursor provider work, marketing, and vendored/reference-repo changes                                  | Low or explicitly removed from GedCode                                                                                    | Do not implement; preserve the existing exclusions                                                                              | Medium–High                                     |
+
+This review creates no implementation backlog beyond the classifications above.
+When an item moves into active implementation, add a bounded task and update
+the relevant category below in the same change.
 
 ## Policy change (2026-07-06) — leaving the fork network
 
@@ -29,10 +82,19 @@ Port shortlist (opportunistic, each as its own adapted port, not a raw
 cherry-pick):
 
 - Individual web/chat polish items: virtualized model picker (`31533466` —
-  already ported per Completed section), timeline scroll/minimap (`fda64862`),
-  word-wrap (`fb103454`), message metadata/work-log rows (`1916ac6d` — already
-  ported), workspace file browser (`de8bdc10`), inline tool timeline
-  (`649f4328`).
+  already ported per Completed section), timeline scroll/minimap (`fda64862` —
+  already ported per Completed section), word-wrap (`fb103454` — partial local
+  coverage), message metadata/work-log rows (`1916ac6d` — already ported), and
+  the missing workspace file-preview/composer integration (`de8bdc10`,
+  `0936fd27`, `8ca4eec9`, `4cfec8c1`).
+- Task-oriented chat lifecycle / Sidebar V2 (`32c6012d`) — relevant and likely
+  worth adapting after a short design pass. The nightly implementation remains
+  thread-backed: it adds server-backed `settled`/snoozed lifecycle and an
+  active-work inbox, rather than replacing threads with a new task aggregate.
+  GedCode should map this onto its existing normal-chat and Orchestrator task
+  surfaces instead of importing the upstream client-runtime rewrite.
+- The inline tool timeline (`649f4328`) is reference-only for now because
+  GedCode’s timeline and orchestrator activity model are different.
 - In-app browser preview subsystem (~48 commits incl. its `apps/server/src/mcp`
   HTTP MCP server dependency) — future project when wanted; our
   `orchestration/mcp` endpoint stays separate regardless.
@@ -231,33 +293,79 @@ woven into core provider/orchestration logic.
 - Completed in this fork: 2026-06-12
 - Notes: The provider model picker now uses a virtualized model list, keeps provider rails visible in locked mode with disabled incompatible providers, blocks incompatible model selections in started threads, and has focused browser-test coverage for locked-mode filtering and disabled model behavior.
 
+### Chat timeline scroll anchoring and minimap
+
+- Upstream commit: `fda64862` (`Restore chat scroll affordances and add timeline minimap (#3587)`)
+- Completed in this fork: 2026-06-29, adapted as local commit `7f4265738`.
+- Notes: The local implementation preserves GedCode’s timeline and orchestrator activity model while carrying over the useful scroll anchoring, jump-to-latest, and minimap affordances. Do not re-port the upstream version.
+
 ### Message metadata and work-log row polish
 
 - Upstream commit: `1916ac6d` (`Rework message metadata, timestamps, and tool work log rows (#3022)`)
 - Completed in this fork: 2026-06-12
 - Notes: Chat timelines now use the upstream metadata and timestamp presentation, tool/work-log rows have clearer success/failure/neutral affordances, review-comment contexts render as structured cards, and focused timeline/session coverage was adapted for this fork's Vitest setup.
 
-## Want To Implement
+### Orchestration subscription replay and transport hardening
+
+- Upstream references: `c14a5ca4`, `db4b2d8a`, `d60f6e97`, and `765e1b5f`.
+- Completed in this fork: 2026-07-27.
+- Notes: GedCode now uses one local ordered-subscription primitive for shell, normal-thread,
+  Orchestrator project, and Orchestrator task streams. Live delivery attaches before snapshot I/O;
+  replay is bounded to 1,000 global events with a `limit + 1` fresh-snapshot decision; replay,
+  buffered, and live envelopes are ordered and deduplicated; sparse shell projection gaps carry
+  explicit covered ranges; consecutive same-message assistant deltas coalesce only after durable
+  ordering; and oversized activity payloads are reduced to semantic 32 KiB WebSocket previews with
+  explicit byte metadata. Persistence, owner-only HTTP snapshots, and raw provider streams retain
+  their existing full-fidelity behavior. The upstream client-runtime/WebSocket architecture was not
+  imported.
+
+## Selective Follow-ups
+
+### Task-oriented chat lifecycle / Sidebar V2
+
+- Representative commits: `32c6012d` (`Sidebar v2 beta: flat thread list with a server-backed settled lifecycle (#4026)`), `202e5609` (`feat(sidebar-v2): thread snoozing (#4311)`), and the follow-up settled-thread, project-grouping, and sidebar-polish commits through 2026-07-24.
+- Decision: Relevant and likely worth implementing conceptually; do not cherry-pick the upstream stack.
+- What it contains: A beta-gated Sidebar V2, server-persisted thread settlement, active/snoozed/settled shelves, reopening behavior when sending to a settled thread, status-oriented rows, and associated persistence/projector/decider changes. The current nightly still models these records as threads; “task-oriented” describes the workflow and inbox semantics, not a replacement task entity.
+- Why it matters: This is the clearest upstream match to GedCode’s desired work-oriented chat UX and complements the fork’s Orchestrator task aggregate. It could reduce the pressure to keep every completed conversation in the active chat list.
+- Implementation guidance: First decide whether normal chats, Orchestrator tasks, or both participate in the work inbox. Reuse GedCode’s event-sourced task and thread projections, define the lifecycle and reopen semantics explicitly, and keep the upstream client-runtime rewrite out of scope. Qualitative effort: High.
+
+### Provider-native `Auto` runtime mode
+
+- Representative commit: `fbd77420` (`feat: add "Auto" runtime mode — AI-reviewed approvals for Codex and Claude (#4272)`).
+- Decision: Relevant as a safety/product reference, but do not adopt the upstream mode as-is.
+- What it contains: A normal-chat runtime mode that gives Codex and Claude a provider-native AI approval reviewer for routine actions while retaining human prompts for riskier actions.
+- Why it is not a direct port: GedCode already has fork-original per-gate autonomy in Orchestrator Phase 4, with durable gate events, a system-origin auto-resolution path, and `land` pinned to human approval. Upstream `Auto` is provider-level permission behavior for ordinary chats, so conflating the two would weaken the boundary between task policy and provider policy.
+- Implementation guidance: If normal chats later need AI-reviewed approvals, add it as an explicit provider capability with a clear fallback for providers that do not support it. Do not silently map unsupported providers to another permission mode. Qualitative effort: Medium.
+
+### Prompt stash and checked-in project actions
+
+- Representative commits: `200fa82` (per-provider `cmd+S` prompt stash) and `1c9a6de2` (shared `t3.json` project configuration and action import).
+- Decision: Useful but not part of the immediate adoption set; defer both.
+- What is already covered locally: GedCode has persisted normal-chat queued messages for active turns and its own event-sourced project/orchestrator configuration. The upstream features address different convenience layers: parking unsent prompts across threads/providers, and importing portable project actions from a checked-in file.
+- Implementation guidance: Consider prompt stash when cross-thread handoff becomes a recurring workflow. Consider a checked-in project-action format only after deciding whether interoperability with T3’s schema is a product requirement; otherwise keep project configuration native to GedCode. Qualitative effort: Low–Medium for stash, Medium for project actions.
 
 ### Web UI, UX, and performance polish
 
-- Representative commits: `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish: focus ring, send/stop buttons, command menu, context meter, answer panel (#3018)`), `0b40ea62` (`Extract changed files card with compact aligned diff stats (#3023)`), `343061a0` (`Misc chrome polish: header badges, plan sidebar, diff panel, empty state (#3027)`)
-- Decision: Want to implement.
-- What it contains: Model picker virtualization, chat timeline metadata, markdown rendering improvements, composer controls, changed-file display, header/sidebar/diff polish, and visual consistency work.
-- Why it matters: These changes improve day-to-day usability and perceived quality. Some, like model picker virtualization, are also performance fixes when provider catalogs grow. Others make long sessions easier to scan by improving timestamps, tool rows, markdown rendering, and changed-file summaries.
-- Implementation guidance: Prefer extracting the underlying usability/performance improvements over copying every visual detail. Keep local UX consistency in mind, and verify dense chat timelines, long model lists, markdown-heavy messages, and small viewports.
+- Representative commits: `fb103454` (`add persistent word-wrap setting for chat code blocks and tables`), `7f741a56` (`Misc markdown styling improvements (#3017)`), `a4757c26` (`Composer polish (#3018)`), `0b40ea62` (`Extract changed files card (#3023)`), and `343061a0` (`Misc chrome polish (#3027)`).
+- Decision: Selective follow-ups only. Model picker virtualization, message metadata/work-log polish, and timeline scroll/minimap are already covered by local adaptations; the rest is optional polish.
+- Why it matters: The remaining items can improve long-session scanning and dense markdown/composer usability, but visual parity would compete with GedCode’s orchestrator UX and local component changes.
+- Implementation guidance: Prefer small, isolated improvements when touching an affected component. Keep local UX consistency in mind, and verify dense chat timelines, long model lists, markdown-heavy messages, and small viewports.
 
-### Tooling, CI, and release pipeline migration
+### Compatible tooling, CI, and release fixes
 
 - Representative commits: `b440dd18` (`Migrate workspace to Vite+ and pnpm (#2899)`), `f60def20` (`Migrate tests to vite-plus test APIs (#2964)`), `4c262c4b` (`[codex] split ci workflow jobs (#2940)`), `6a1c4da5` (`fix(release): use workspace electron-builder for desktop packaging (#2938)`), `e4643ecc` (`fix: build web before desktop release packaging (#2934)`), `52ae8e88` (`fix(release): preserve desktop artifact arch (#2943)`)
-- Decision: Want to implement.
-- What it contains: Package manager/build-system migration, CI restructuring, release packaging fixes, desktop artifact corrections, dependency closure handling, and workflow scripts.
-- Why it matters: Build and release reliability determine whether fixes actually reach users. Upstream likely fixed real packaging and CI problems here, especially around desktop artifacts and dependency closures. The package-manager/build-system migration is larger than a normal backport, but the release hardening value is high enough to keep this group on the implementation list.
-- Implementation guidance: Do not change package manager or test runner semantics inside unrelated tasks. Handle this as an explicit tooling/release project. Decide within that project whether GedCode follows upstream to pnpm/Vite+ or ports only the release/CI fixes that are compatible with the current Bun workflow. Until that task starts, repo instructions still require `bun fmt`, `bun lint`, and `bun typecheck`.
+- Decision: Selective fixes only; do not migrate the workspace.
+- What it contains: Release packaging fixes, desktop artifact corrections, dependency-closure handling, CI job restructuring, and the pnpm/Vite Plus migration.
+- Why it matters: Build and release reliability matter, but GedCode’s Bun workflow and release scripts have already diverged substantially. The migration would create more risk than value.
+- Implementation guidance: Port only a concrete fix that reproduces in GedCode, preserving Bun and the current test runner. Until then, repo instructions still require `bun fmt`, `bun lint`, and `bun typecheck`.
 
 ## Deferred Indefinitely
 
-No upstream groups are categorized here yet.
+### In-app browser preview subsystem
+
+- Representative commits: `52c77c1e` (`feat(preview): in-app browser preview panel`), `f4c39432` (background preview capture and picture-in-picture), and the follow-up preview automation, annotation, session, and HTTP MCP work.
+- Decision: Deferred indefinitely as a standalone project.
+- Rationale: This is a substantial desktop/server/web subsystem with browser lifecycle, port scanning, automation, annotations, session ownership, and an HTTP MCP server. It may become valuable for orchestrator-driven UI work, but it must be designed around GedCode’s separate `orchestration/mcp` boundary rather than merged from upstream.
 
 ## Not Doing For Now
 

@@ -399,6 +399,8 @@ describe("wsApi", () => {
     const shellEvent = {
       kind: "project-upserted" as const,
       sequence: 1,
+      coveredSequenceStart: 1,
+      coveredSequenceEnd: 1,
       project: {
         id: ProjectId.make("project-1"),
         title: "Project",

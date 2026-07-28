@@ -894,7 +894,7 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
         }
         return;
       }
-      applyEnvironmentThreadDetailEvent(item.event, entry.environmentId);
+      applyEnvironmentThreadDetailEvent(item.event, entry.environmentId, item.coveredSequenceEnd);
     },
   );
   return true;
@@ -1643,8 +1643,15 @@ function applyRecoveredEventBatch(
 export function applyEnvironmentThreadDetailEvent(
   event: OrchestrationEvent,
   environmentId: EnvironmentId,
+  coveredSequenceEnd = event.sequence,
 ) {
   applyRecoveredEventBatch([event], environmentId);
+  markAggregateAppliedSequence(
+    environmentId,
+    event.aggregateKind,
+    String(event.aggregateId),
+    coveredSequenceEnd,
+  );
 }
 
 function applyShellEvent(event: OrchestrationShellStreamEvent, environmentId: EnvironmentId) {

@@ -21,6 +21,23 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Improve: Keep each GitHub release's executive summary and Highlights visible while rendering every
   subsequent changelog subsection as an individually expandable detail. Long curated notes remain
   complete and searchable without overwhelming the release page.
+- Docs: Refresh the upstream divergence review against live `upstream/main`
+  through `200fa82` on 2026-07-27, grouping the 649-commit post-fork range by
+  relevance and qualitative adaptation effort, including the Sidebar V2
+  task-oriented chat lifecycle.
+- Fix: Make durable shell, thread, project, and Orchestrator task WebSocket subscriptions attach
+  live buffering before snapshot reads, then perform bounded ordered replay without duplicates.
+  Excessive catch-up refreshes the snapshot, streaming assistant deltas coalesce only on transport,
+  and oversized activity payloads become explicit bounded wire previews while persistence retains
+  the full data.
+- Fix: Deliver streaming assistant deltas as soon as the provider produces them. Transport
+  coalescing now merges only the deltas already available together, so a live turn no longer holds
+  the newest delta back waiting for a successor token that has not been generated yet.
+- Fix: Keep durable subscriptions alive across permanent gaps in the global event sequence. Event
+  compaction migrations delete rows without renumbering sequences, and ordered delivery previously
+  waited forever on a hole that no read could fill. Bootstrap now releases anything still blocked
+  once its bounded replay and live buffer are complete, live ordering releases a blocked run after a
+  bounded wait instead of growing without limit, and every released gap is logged.
 - Fix: Publish GitHub release descriptions from the matching version section in `CHANGELOG.md`
   instead of ignoring the curated notes and asking GitHub to generate a comparison-only body.
   Re-running publication now also restores the changelog notes on an existing release while

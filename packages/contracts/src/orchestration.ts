@@ -504,6 +504,13 @@ export const OrchestrationThreadActivityTone = Schema.Literals([
 ]);
 export type OrchestrationThreadActivityTone = typeof OrchestrationThreadActivityTone.Type;
 
+export const ActivityTransportTruncation = Schema.Struct({
+  truncated: Schema.Literal(true),
+  originalBytes: NonNegativeInt,
+  retainedBytes: NonNegativeInt,
+});
+export type ActivityTransportTruncation = typeof ActivityTransportTruncation.Type;
+
 export const OrchestrationThreadActivity = Schema.Struct({
   id: EventId,
   tone: OrchestrationThreadActivityTone,
@@ -513,6 +520,7 @@ export const OrchestrationThreadActivity = Schema.Struct({
   turnId: Schema.NullOr(TurnId),
   sequence: Schema.optional(NonNegativeInt),
   createdAt: IsoDateTime,
+  transportTruncation: Schema.optionalKey(ActivityTransportTruncation),
 });
 export type OrchestrationThreadActivity = typeof OrchestrationThreadActivity.Type;
 
@@ -1266,12 +1274,45 @@ export const OrchestrationShellStreamEvent = Schema.Union([
 ]);
 export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
 
+const ShellTransportCoverageFields = {
+  coveredSequenceStart: NonNegativeInt,
+  coveredSequenceEnd: NonNegativeInt,
+} as const;
+
+export const OrchestrationShellTransportEvent = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("project-upserted"),
+    sequence: NonNegativeInt,
+    project: OrchestrationProjectShell,
+    ...ShellTransportCoverageFields,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("project-removed"),
+    sequence: NonNegativeInt,
+    projectId: ProjectId,
+    ...ShellTransportCoverageFields,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("thread-upserted"),
+    sequence: NonNegativeInt,
+    thread: OrchestrationThreadShell,
+    ...ShellTransportCoverageFields,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("thread-removed"),
+    sequence: NonNegativeInt,
+    threadId: ThreadId,
+    ...ShellTransportCoverageFields,
+  }),
+]);
+export type OrchestrationShellTransportEvent = typeof OrchestrationShellTransportEvent.Type;
+
 export const OrchestrationShellStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("snapshot"),
     snapshot: OrchestrationShellSnapshot,
   }),
-  OrchestrationShellStreamEvent,
+  OrchestrationShellTransportEvent,
 ]);
 export type OrchestrationShellStreamItem = typeof OrchestrationShellStreamItem.Type;
 
@@ -3216,6 +3257,8 @@ export const OrchestrationThreadStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("event"),
     event: OrchestrationEvent,
+    coveredSequenceStart: NonNegativeInt,
+    coveredSequenceEnd: NonNegativeInt,
   }),
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;
