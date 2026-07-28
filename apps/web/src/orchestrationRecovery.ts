@@ -120,7 +120,6 @@ export function createOrchestrationRecoveryCoordinator() {
   const classifyDomainEventRange = (
     coveredSequenceStart: number,
     coveredSequenceEnd: number,
-    overlappingPrefixIsSafe = false,
   ): DomainEventDecision => {
     if (
       !Number.isFinite(coveredSequenceStart) ||
@@ -147,7 +146,7 @@ export function createOrchestrationRecoveryCoordinator() {
       state.pendingReplay = true;
       return "recover";
     }
-    if (coveredSequenceStart <= state.latestSequence && !overlappingPrefixIsSafe) {
+    if (coveredSequenceStart <= state.latestSequence) {
       state.pendingReplay = true;
       return "recover";
     }
@@ -163,11 +162,6 @@ export function createOrchestrationRecoveryCoordinator() {
 
     classifyDomainEvent(sequence: number): DomainEventDecision {
       return classifyDomainEventRange(sequence, sequence);
-    },
-
-    markDomainEventRangeApplied(coveredSequenceEnd: number): void {
-      state.latestSequence = Math.max(state.latestSequence, coveredSequenceEnd);
-      state.highestObservedSequence = Math.max(state.highestObservedSequence, state.latestSequence);
     },
 
     markEventBatchApplied<T extends SequencedEvent>(events: ReadonlyArray<T>): ReadonlyArray<T> {
