@@ -5278,6 +5278,139 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   );
 
   it.effect(
+    "subscribeThread delivers streaming message deltas while the live source stays open",
+    () =>
+      Effect.gen(function* () {
+        const now = "2026-01-01T00:00:00.000Z";
+        const threadId = ThreadId.make("thread-live-delta-delivery");
+        const messageId = MessageId.make("message-live-delta-delivery");
+        const liveSubscriberAttached = yield* Deferred.make<void>();
+        const liveEvents = yield* Queue.unbounded<OrchestrationEvent>();
+        const thread = {
+          ...makeDefaultOrchestrationReadModel().threads[0]!,
+          id: threadId,
+        };
+        const deltaEvent = (
+          sequence: number,
+          text: string,
+        ): Extract<OrchestrationEvent, { type: "thread.message-sent" }> => ({
+          sequence,
+          eventId: EventId.make(`event-live-delta-delivery-${sequence}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-live-delta-delivery-${sequence}`),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "thread.message-sent",
+          payload: {
+            threadId,
+            messageId,
+            role: "assistant",
+            text,
+            turnId: null,
+            streaming: true,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+
+        yield* buildAppUnderTest({
+          layers: {
+            projectionSnapshotQuery: {
+              getThreadDetailById: () => Effect.succeed(Option.some(thread)),
+              getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+            },
+            orchestrationEngine: {
+              readEvents: () => Stream.empty,
+              // The live source never halts, which is what a live turn looks
+              // like. Transport compaction must not hold a mergeable delta back
+              // waiting for a successor that only arrives on the next token.
+              streamDomainEvents: Stream.unwrap(
+                Deferred.succeed(liveSubscriberAttached, undefined).pipe(
+                  Effect.as(Stream.fromQueue(liveEvents)),
+                ),
+              ),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            Effect.gen(function* () {
+              const snapshotDelivered = yield* Deferred.make<void>();
+              const deltasDelivered = yield* Deferred.make<void>();
+              const deliveredSequences: Array<number> = [];
+              const deliveredRanges: Array<readonly [number | undefined, number | undefined]> = [];
+              let deliveredText = "";
+
+              const subscription = yield* Effect.forkScoped(
+                client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(
+                  Stream.runForEach((item) =>
+                    Effect.gen(function* () {
+                      if (item.kind === "snapshot") {
+                        yield* Deferred.succeed(snapshotDelivered, undefined);
+                        return;
+                      }
+                      if (item.event.type !== "thread.message-sent") {
+                        return;
+                      }
+                      const transportItem = item as typeof item & {
+                        readonly coveredSequenceStart?: number;
+                        readonly coveredSequenceEnd?: number;
+                      };
+                      deliveredText += item.event.payload.text;
+                      deliveredSequences.push(item.event.sequence);
+                      deliveredRanges.push([
+                        transportItem.coveredSequenceStart,
+                        transportItem.coveredSequenceEnd,
+                      ]);
+                      if (deliveredText === "Hello, world") {
+                        yield* Deferred.succeed(deltasDelivered, undefined);
+                      }
+                    }),
+                  ),
+                ),
+              );
+
+              // These awaits are deliberately unguarded: the suite runs on the
+              // TestClock, so `Effect.timeout` would never fire. The per-test
+              // timeout below is what turns withheld deltas into a failure.
+              yield* Deferred.await(liveSubscriberAttached);
+              // Waiting for the snapshot guarantees the deltas below travel the
+              // post-bootstrap live path rather than the drained live buffer.
+              yield* Deferred.await(snapshotDelivered);
+              yield* Queue.offerAll(liveEvents, [deltaEvent(1, "Hello, "), deltaEvent(2, "world")]);
+
+              yield* Deferred.await(deltasDelivered);
+              // The live source never halts, so the subscription only ends here.
+              yield* Fiber.interrupt(subscription);
+
+              assert.equal(
+                deliveredText,
+                "Hello, world",
+                "every streaming delta must reach the client while the live source stays open",
+              );
+              assert.equal(
+                deliveredSequences.at(-1),
+                2,
+                "the last delivered delta must advance the cursor to the newest sequence",
+              );
+              assert.deepEqual(
+                deliveredRanges.map(([, coveredSequenceEnd]) => coveredSequenceEnd),
+                deliveredSequences,
+                "an emitted item's coveredSequenceEnd must match its own sequence",
+              );
+            }),
+          ),
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    15_000,
+  );
+
+  it.effect(
     "subscribeThread projects oversized snapshot activity only at the WebSocket boundary",
     () =>
       Effect.gen(function* () {

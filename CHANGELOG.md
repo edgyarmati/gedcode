@@ -17,6 +17,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   Excessive catch-up refreshes the snapshot, streaming assistant deltas coalesce only on transport,
   and oversized activity payloads become explicit bounded wire previews while persistence retains
   the full data.
+- Fix: Deliver streaming assistant deltas as soon as the provider produces them. Transport
+  coalescing now merges only the deltas already available together, so a live turn no longer holds
+  the newest delta back waiting for a successor token that has not been generated yet.
 - Fix: Publish GitHub release descriptions from the matching version section in `CHANGELOG.md`
   instead of ignoring the curated notes and asking GitHub to generate a comparison-only body.
   Re-running publication now also restores the changelog notes on an existing release while

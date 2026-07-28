@@ -94,6 +94,11 @@ export const compactThreadStreamTransport = compactConsecutiveTransportItems<
     item.event.payload.role === "assistant" &&
     item.event.payload.streaming,
   compact: compactThreadStreamItems,
+  // `compactThreadStreamItems` keeps the newest event of a merged run, so an
+  // emitted item's own `sequence` always equals its `coveredSequenceEnd` while
+  // `coveredSequenceStart` carries the compacted span. Consumers advancing an
+  // applied-sequence marker must read `coveredSequenceEnd` rather than assume
+  // the two stay interchangeable if that choice ever changes.
   withCoveredSequence: (item, coveredSequenceStart, coveredSequenceEnd) =>
     item.kind === "snapshot"
       ? item
