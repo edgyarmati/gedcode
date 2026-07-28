@@ -5410,6 +5410,73 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     15_000,
   );
 
+  it.effect("subscribeThread releases a durable sequence gap inside the replay window", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("thread-durable-sequence-gap");
+      const thread = {
+        ...makeDefaultOrchestrationReadModel().threads[0]!,
+        id: threadId,
+      };
+      const messageEvent = (
+        sequence: number,
+      ): Extract<OrchestrationEvent, { type: "thread.message-sent" }> => ({
+        sequence,
+        eventId: EventId.make(`event-durable-sequence-gap-${sequence}`),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make(`cmd-durable-sequence-gap-${sequence}`),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId,
+          messageId: MessageId.make(`message-durable-sequence-gap-${sequence}`),
+          role: "assistant",
+          text: `message ${sequence}`,
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.some(thread)),
+            getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
+          },
+          orchestrationEngine: {
+            // Sequence 3 is permanently absent, which is what an event
+            // compaction migration leaves behind once it deletes rows without
+            // renumbering the global sequence.
+            readEvents: () => Stream.make(messageEvent(1), messageEvent(2), messageEvent(4)),
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({ threadId }).pipe(
+            Stream.runCollect,
+            Effect.timeout("5 seconds"),
+          ),
+        ),
+      );
+
+      assert.deepEqual(
+        Array.from(items).map((item) => (item.kind === "event" ? item.event.sequence : "snapshot")),
+        ["snapshot", 1, 2, 4],
+        "a hole in a complete bounded replay must not withhold the events after it",
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect(
     "subscribeThread projects oversized snapshot activity only at the WebSocket boundary",
     () =>

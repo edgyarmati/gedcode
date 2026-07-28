@@ -1298,10 +1298,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                       ),
                     ),
                   ),
-                snapshotRefreshDidNotAdvance: (previousSequence, refreshedSequence) =>
+                snapshotRefreshExhausted: (previousSequence, refreshedSequence) =>
                   new OrchestrationGetSnapshotError({
                     message:
-                      "Failed to refresh orchestration shell snapshot after excessive replay",
+                      "Failed to settle the orchestration shell snapshot after excessive replay",
                     cause: {
                       previousSequence,
                       refreshedSequence,
@@ -1391,9 +1391,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                         }),
                     ),
                   ),
-                snapshotRefreshDidNotAdvance: (previousSequence, refreshedSequence) =>
+                snapshotRefreshExhausted: (previousSequence, refreshedSequence) =>
                   new OrchestrationGetSnapshotError({
-                    message: `Failed to refresh thread ${input.threadId} snapshot after excessive replay`,
+                    message: `Failed to settle thread ${input.threadId} snapshot after excessive replay`,
                     cause: {
                       previousSequence,
                       refreshedSequence,
@@ -1655,9 +1655,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                       ),
                     ),
                   ),
-                snapshotRefreshDidNotAdvance: (previousSequence, refreshedSequence) =>
+                snapshotRefreshExhausted: (previousSequence, refreshedSequence) =>
                   new OrchestrationGetSnapshotError({
-                    message: `Failed to refresh project ${input.projectId} snapshot after excessive replay`,
+                    message: `Failed to settle project ${input.projectId} snapshot after excessive replay`,
                     cause: {
                       previousSequence,
                       refreshedSequence,
@@ -1731,9 +1731,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                       ),
                     ),
                   ),
-                snapshotRefreshDidNotAdvance: (previousSequence, refreshedSequence) =>
+                snapshotRefreshExhausted: (previousSequence, refreshedSequence) =>
                   new OrchestrationGetSnapshotError({
-                    message: `Failed to refresh task ${input.taskId} snapshot after excessive replay`,
+                    message: `Failed to settle task ${input.taskId} snapshot after excessive replay`,
                     cause: {
                       previousSequence,
                       refreshedSequence,

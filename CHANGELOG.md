@@ -20,6 +20,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Fix: Deliver streaming assistant deltas as soon as the provider produces them. Transport
   coalescing now merges only the deltas already available together, so a live turn no longer holds
   the newest delta back waiting for a successor token that has not been generated yet.
+- Fix: Keep durable subscriptions alive across permanent gaps in the global event sequence. Event
+  compaction migrations delete rows without renumbering sequences, and ordered delivery previously
+  waited forever on a hole that no read could fill. Bootstrap now releases anything still blocked
+  once its bounded replay and live buffer are complete, live ordering releases a blocked run after a
+  bounded wait instead of growing without limit, and every released gap is logged.
 - Fix: Publish GitHub release descriptions from the matching version section in `CHANGELOG.md`
   instead of ignoring the curated notes and asking GitHub to generate a comparison-only body.
   Re-running publication now also restores the changelog notes on an existing release while

@@ -14,6 +14,25 @@ interface SnapshotAtSequence {
 
 export const ORCHESTRATION_SUBSCRIPTION_REPLAY_LIMIT = 1_000;
 
+/**
+ * How many out-of-order events may wait on one missing global sequence before
+ * the gap is released.
+ *
+ * The durable global sequence is not dense: event-compaction migrations delete
+ * rows and leave permanent holes. Waiting forever for a hole to be filled would
+ * stall the subscription and grow the pending map without bound, so ordering is
+ * bounded work rather than an unbounded promise.
+ */
+export const ORCHESTRATION_SUBSCRIPTION_MAX_PENDING_GAP_EVENTS = 64;
+
+/** How many times bootstrap may re-snapshot before giving up on catching up. */
+export const ORCHESTRATION_SUBSCRIPTION_MAX_SNAPSHOT_REFRESH_ATTEMPTS = 4;
+
+interface ReleasedSequenceGap {
+  readonly afterSequence: number;
+  readonly resumedAtSequence: number;
+}
+
 interface OrderedDurableSubscriptionOptions<
   Event extends Sequenced,
   Snapshot extends SnapshotAtSequence,
@@ -38,7 +57,7 @@ interface OrderedDurableSubscriptionOptions<
     sequence: number,
     limit: number,
   ) => Stream.Stream<Event, ReplayError, ReplayRequirements>;
-  readonly snapshotRefreshDidNotAdvance: (
+  readonly snapshotRefreshExhausted: (
     previousSequence: number,
     refreshedSequence: number,
   ) => SnapshotError;
@@ -94,7 +113,7 @@ export const orderedDurableSubscription = <
       );
       let snapshot = yield* options.loadSnapshot;
       let replayed: Array<Event>;
-      while (true) {
+      for (let attempt = 0; ; attempt += 1) {
         replayed = Array.from(
           yield* options
             .replayAfter(snapshot.snapshotSequence, ORCHESTRATION_SUBSCRIPTION_REPLAY_LIMIT + 1)
@@ -106,12 +125,12 @@ export const orderedDurableSubscription = <
 
         const previousSequence = snapshot.snapshotSequence;
         const refreshedSnapshot = yield* options.loadSnapshot;
-        if (refreshedSnapshot.snapshotSequence <= previousSequence) {
+        if (
+          refreshedSnapshot.snapshotSequence <= previousSequence ||
+          attempt + 1 >= ORCHESTRATION_SUBSCRIPTION_MAX_SNAPSHOT_REFRESH_ATTEMPTS
+        ) {
           return yield* Effect.fail(
-            options.snapshotRefreshDidNotAdvance(
-              previousSequence,
-              refreshedSnapshot.snapshotSequence,
-            ),
+            options.snapshotRefreshExhausted(previousSequence, refreshedSnapshot.snapshotSequence),
           );
         }
         snapshot = refreshedSnapshot;
@@ -134,6 +153,52 @@ export const orderedDurableSubscription = <
           readonly project: (event: Event, snapshot: Snapshot) => EventItem | undefined;
         }
       >();
+      const releasedGaps: Array<ReleasedSequenceGap> = [];
+
+      const takeEntry = (
+        entry: { readonly event: Event; readonly project: typeof options.projectLive },
+        into: Array<EventItem>,
+      ): void => {
+        pendingBySequence.delete(entry.event.sequence);
+        lastSeenSequence = entry.event.sequence;
+        const item = entry.project(entry.event, snapshot);
+        if (item !== undefined) {
+          into.push(item);
+        }
+      };
+
+      /** Drains every contiguous successor of the current cursor. */
+      const drainContiguous = (into: Array<EventItem>): void => {
+        let next = pendingBySequence.get(lastSeenSequence + 1);
+        while (next !== undefined) {
+          takeEntry(next, into);
+          next = pendingBySequence.get(lastSeenSequence + 1);
+        }
+      };
+
+      /**
+       * Releases the lowest pending entry across a missing sequence, recording
+       * the hole so it is never a silent skip.
+       */
+      const releaseLowestPending = (into: Array<EventItem>): void => {
+        const lowest = Math.min(...pendingBySequence.keys());
+        const entry = pendingBySequence.get(lowest);
+        if (entry === undefined) {
+          return;
+        }
+        releasedGaps.push({ afterSequence: lastSeenSequence, resumedAtSequence: lowest });
+        takeEntry(entry, into);
+        drainContiguous(into);
+      };
+
+      const releaseAllPending = (): Array<EventItem> => {
+        const released: Array<EventItem> = [];
+        while (pendingBySequence.size > 0) {
+          releaseLowestPending(released);
+        }
+        return released;
+      };
+
       const orderAndProject = (
         event: Event,
         project: (event: Event, snapshot: Snapshot) => EventItem | undefined,
@@ -149,23 +214,36 @@ export const orderedDurableSubscription = <
         pendingBySequence.set(event.sequence, { event, project });
 
         const projected: Array<EventItem> = [];
-        let next = pendingBySequence.get(lastSeenSequence + 1);
-        while (next !== undefined) {
-          pendingBySequence.delete(next.event.sequence);
-          lastSeenSequence = next.event.sequence;
-          const item = next.project(next.event, snapshot);
-          if (item !== undefined) {
-            projected.push(item);
-          }
-          next = pendingBySequence.get(lastSeenSequence + 1);
+        drainContiguous(projected);
+        while (pendingBySequence.size > ORCHESTRATION_SUBSCRIPTION_MAX_PENDING_GAP_EVENTS) {
+          releaseLowestPending(projected);
         }
         return projected;
       };
+      const logReleasedGaps = Effect.suspend(() => {
+        if (releasedGaps.length === 0) {
+          return Effect.void;
+        }
+        const gaps = releasedGaps.splice(0, releasedGaps.length);
+        return Effect.forEach(
+          gaps,
+          (gap) =>
+            Effect.logWarning("orchestration subscription released a durable sequence gap", gap),
+          { discard: true },
+        );
+      });
+
       const projectStream = (stream: Stream.Stream<Event, LiveError>) =>
         stream.pipe(
-          Stream.flatMap((event) =>
-            Stream.fromIterable(orderAndProject(event, options.projectLive)),
-          ),
+          Stream.flatMap((event) => {
+            const items = orderAndProject(event, options.projectLive);
+            return releasedGaps.length === 0
+              ? Stream.fromIterable(items)
+              : Stream.concat(
+                  Stream.drain(Stream.fromEffect(logReleasedGaps)),
+                  Stream.fromIterable(items),
+                );
+          }),
         );
 
       const replayItems = replayed.flatMap((event) =>
@@ -174,11 +252,19 @@ export const orderedDurableSubscription = <
       const bufferedItems = buffered.flatMap((event) =>
         orderAndProject(event, options.projectLive),
       );
+      // A bounded replay that stayed under the limit is a complete view of the
+      // durable range, and the drained buffer is everything published so far.
+      // Anything still waiting is therefore blocked on a hole that no later read
+      // can fill, so release it instead of stalling bootstrap forever. Released
+      // sequences are all above every item emitted above, so order still holds.
+      const releasedItems = releaseAllPending();
+      yield* logReleasedGaps;
 
       const bootstrapItems: Array<SnapshotItem | EventItem> = [
         options.toSnapshotItem(snapshot),
         ...replayItems,
         ...bufferedItems,
+        ...releasedItems,
       ];
 
       return Stream.concat(
