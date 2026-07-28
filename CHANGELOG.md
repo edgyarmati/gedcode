@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.4.1 - 2026-07-28
+
 - Add: Let a human force-land a review-ready Orchestrator task through a distinct audited action
   when fresh Verify evidence is unavailable or stale. Force landing requires an explicit reason and
   bypasses only fresh Verify: the current content-matched land gate, exact approved pull-request
