@@ -409,6 +409,7 @@ function requestAndApproveGate(input: {
       input.gate === "land" && task.verification !== null
         ? { head: task.verification.head, dirty: false }
         : undefined;
+    const contentHash = worktreeCompletion?.head ?? input.contentHash;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -416,7 +417,7 @@ function requestAndApproveGate(input: {
         taskId: TASK_ID,
         gateId: input.gateId,
         gate: input.gate,
-        contentHash: input.contentHash,
+        contentHash,
         stageThreadId: input.stageThreadId,
         ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
         ...(input.gate === "land"
@@ -437,7 +438,7 @@ function requestAndApproveGate(input: {
         taskId: TASK_ID,
         gateId: input.gateId,
         gate: input.gate,
-        approvedHash: input.contentHash,
+        approvedHash: contentHash,
         decision: "approved",
         origin: "human",
         ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),

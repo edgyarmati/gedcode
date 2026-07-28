@@ -44,9 +44,14 @@ import { defaultPlaybookLoader } from "../PlaybookLoader.ts";
 import { createEmptyReadModel } from "../projector.ts";
 import { makePmTools, type PmToolExecutor } from "./pmTools.ts";
 import { VcsProcess, type VcsProcessOutput, type VcsProcessShape } from "../../vcs/VcsProcess.ts";
+import {
+  DirectPublicationPort,
+  type DirectPublicationPortShape,
+} from "../directPublication/DirectPublicationPort.ts";
 
 const now = "2026-06-14T00:00:00.000Z";
 const projectId = ProjectId.make("project-1");
+const secondProjectId = ProjectId.make("project-2");
 const taskId = TaskId.make("task-1");
 const stageThreadId = ThreadId.make("stage-thread-1");
 const laterStageThreadId = ThreadId.make("stage-thread-2");
@@ -201,6 +206,7 @@ const makeLayer = (
     readonly failDispatchFor?: ReadonlySet<OrchestrationCommand["type"]>;
     readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
     readonly vcsProcess?: Partial<VcsProcessShape>;
+    readonly directPublication?: DirectPublicationPortShape;
   } = {},
 ) => {
   let currentReadModel = readModel;
@@ -440,6 +446,10 @@ const makeLayer = (
       run: defaultVcsRun,
       ...overrides.vcsProcess,
     }),
+    Layer.succeed(DirectPublicationPort, {
+      publish: () => Effect.die("DirectPublicationPort.publish should not be called"),
+      ...overrides.directPublication,
+    }),
     NodeServices.layer,
   );
 };
@@ -471,6 +481,126 @@ const changeReviewTask = () =>
       resolvedAt: null,
     },
   });
+
+it.effect("publishes one direct commit without creating an orchestration task", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const calls: Array<Parameters<DirectPublicationPortShape["publish"]>[0]> = [];
+    const result = {
+      pullRequestUrl: "https://github.com/acme/project/pull/42",
+      sourceCommit: "a".repeat(40),
+      destinationBranch: "ged/direct/one-commit",
+    };
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, makeReadModel([]), null, {
+          directPublication: {
+            publish: (input) =>
+              Effect.sync(() => {
+                calls.push(input);
+                return result;
+              }),
+          },
+        }),
+      ),
+    );
+    const publishDirectCommit = findTool(tools, "publishDirectCommit");
+
+    const publication = yield* Effect.promise(() =>
+      publishDirectCommit.execute("tool-direct-publish", {
+        projectId,
+        sourceCommit: result.sourceCommit,
+        destinationBranch: result.destinationBranch,
+        baseBranch: "main",
+        pullRequest: {
+          title: "Publish one reviewed commit",
+          body: "This publishes the bounded, already-reviewed change.",
+        },
+        existingPullRequestUrl: "https://github.com/acme/project/pull/17",
+      }),
+    );
+
+    assert.deepEqual(calls, [
+      {
+        projectId,
+        sourceCommit: result.sourceCommit,
+        destinationBranch: result.destinationBranch,
+        baseBranch: "main",
+        pullRequest: {
+          title: "Publish one reviewed commit",
+          body: "This publishes the bounded, already-reviewed change.",
+        },
+        existingPullRequestUrl: "https://github.com/acme/project/pull/17",
+      },
+    ]);
+    assert.include(publication.content[0]?.text ?? "", result.pullRequestUrl);
+    assert.deepEqual(publication.details, result);
+    assert.deepEqual(dispatched, []);
+  }),
+);
+
+it.effect(
+  "publishes a direct commit for its explicit project without global project inference",
+  () =>
+    Effect.gen(function* () {
+      const dispatched: OrchestrationCommand[] = [];
+      const calls: Array<Parameters<DirectPublicationPortShape["publish"]>[0]> = [];
+      const readModel = makeReadModel([]);
+      const firstProject = readModel.projects[0]!;
+      const twoProjectReadModel: OrchestrationReadModel = {
+        ...readModel,
+        projects: [
+          firstProject,
+          {
+            ...firstProject,
+            id: secondProjectId,
+            title: "Second project",
+            workspaceRoot: "/repo-second",
+          },
+        ],
+      };
+      const tools = yield* makePmTools.pipe(
+        Effect.provide(
+          makeLayer(dispatched, twoProjectReadModel, null, {
+            directPublication: {
+              publish: (input) =>
+                Effect.sync(() => {
+                  calls.push(input);
+                  return {
+                    pullRequestUrl: "https://github.com/acme/project/pull/42",
+                    sourceCommit: input.sourceCommit,
+                    destinationBranch: input.destinationBranch,
+                  };
+                }),
+            },
+          }),
+        ),
+      );
+
+      const publication = yield* Effect.promise(() =>
+        findTool(tools, "publishDirectCommit").execute("tool-direct-publish-project-1", {
+          projectId,
+          sourceCommit: "a".repeat(40),
+          destinationBranch: "ged/direct/project-1",
+          baseBranch: "main",
+          pullRequest: { title: "Publish project one", body: "Route exactly one reviewed commit." },
+        }),
+      );
+
+      assert.deepEqual(calls, [
+        {
+          projectId,
+          sourceCommit: "a".repeat(40),
+          destinationBranch: "ged/direct/project-1",
+          baseBranch: "main",
+          pullRequest: { title: "Publish project one", body: "Route exactly one reviewed commit." },
+          existingPullRequestUrl: null,
+        },
+      ]);
+      assert.equal(publication.details.destinationBranch, "ged/direct/project-1");
+      assert.deepEqual(dispatched, []);
+    }),
+);
 
 it.effect("describes steering as continuation and handoff as a fresh attempt", () =>
   Effect.gen(function* () {

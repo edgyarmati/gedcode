@@ -80,6 +80,8 @@ import type {
   OrchestratorCompleteTaskWithoutChangesResult,
   OrchestratorLandTaskInput,
   OrchestratorLandTaskResult,
+  OrchestratorForceLandTaskInput,
+  OrchestratorForceLandTaskResult,
   OrchestratorListArchivedTasksInput,
   OrchestratorTaskRetentionInput,
   OrchestrationTask,
@@ -668,6 +670,9 @@ export interface EnvironmentApi {
       input: OrchestratorCompleteTaskWithoutChangesInput,
     ) => Promise<OrchestratorCompleteTaskWithoutChangesResult>;
     landTask: (input: OrchestratorLandTaskInput) => Promise<OrchestratorLandTaskResult>;
+    forceLandTask: (
+      input: OrchestratorForceLandTaskInput,
+    ) => Promise<OrchestratorForceLandTaskResult>;
     listArchivedTasks: (
       input: OrchestratorListArchivedTasksInput,
     ) => Promise<ReadonlyArray<OrchestrationTask>>;

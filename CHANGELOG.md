@@ -5,6 +5,19 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Add: Let a human force-land a review-ready Orchestrator task through a distinct audited action
+  when fresh Verify evidence is unavailable or stale. Force landing requires an explicit reason and
+  bypasses only fresh Verify: the current content-matched land gate, exact approved pull-request
+  proposal, lifecycle lock, inspected clean task worktree, matching HEAD, and normal non-force PR
+  publication remain mandatory. Normal Approve continues to require fresh Verify.
+- Add: Let the project PM publish exactly one already-reviewed existing commit without creating an
+  Orchestrator task. The taskless workflow requires an explicit current project, source commit,
+  destination and base branches, and exact pull-request title/body; validates the repository and
+  clean primary checkout; applies the commit in an isolated temporary worktree; pushes normally;
+  and records the tool result on the PM thread. Identical retries require the exact existing PR URL
+  and matching cherry-pick provenance, update only that PR, and never overwrite or force-push a
+  destination branch. Implementation, uncertain, or multi-commit work still requires a task and
+  independent Verify.
 - Improve: Keep each GitHub release's executive summary and Highlights visible while rendering every
   subsequent changelog subsection as an individually expandable detail. Long curated notes remain
   complete and searchable without overwhelming the release page.

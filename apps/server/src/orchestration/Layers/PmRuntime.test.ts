@@ -97,6 +97,7 @@ import type {
 import { fauxAssistantMessage } from "../claude/pmHarness.ts";
 import { pmThreadIdForProject } from "../pm/PmEventProjection.ts";
 import { quotaStageResumeCommandId } from "../stageResolution.ts";
+import { DirectPublicationPort } from "../directPublication/DirectPublicationPort.ts";
 import {
   buildPmSystemPrompt,
   makePmProjectRuntimeFactoryWithOptions,
@@ -642,6 +643,11 @@ const makeLayer = (input: {
   };
 
   return makePmRuntimeLive({ reconciliationIntervalMsOverride: 60_000 }).pipe(
+    Layer.provide(
+      Layer.succeed(DirectPublicationPort, {
+        publish: () => Effect.die("direct publication is outside PmRuntime lifecycle tests"),
+      }),
+    ),
     Layer.provide(
       Layer.mock(ProjectContextRunCoordinator)({
         ensureBeforePmTurn: () => Effect.succeed({ status: "ready" as const }),
@@ -3771,5 +3777,14 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, String(project.id));
     assert.include(prompt, "For decisions, ask in plain text and end your turn.");
     assert.notInclude(prompt, "Use the interactive question tool");
+  });
+
+  it("limits direct publication to one already-reviewed commit and routes uncertain work through Verify", () => {
+    const prompt = buildPmSystemPrompt(project, codexDriver);
+    assert.include(prompt, "exactly one already-reviewed commit");
+    assert.include(
+      prompt,
+      "implementation, uncertainty, or multiple commits require a task and Verify",
+    );
   });
 });

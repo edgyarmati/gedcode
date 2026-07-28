@@ -44,6 +44,7 @@ import {
   ORCHESTRATION_MCP_SERVER_NAME,
   orchestrationMcpToolId,
 } from "../../orchestration/claude/pmMcpServer.ts";
+import { DirectPublicationPort } from "../../orchestration/directPublication/DirectPublicationPort.ts";
 import { createEmptyReadModel } from "../../orchestration/projector.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -255,6 +256,9 @@ const makeOrchestrationLayer = (dispatched: OrchestrationCommand[]) => {
     ],
   };
   return Layer.mergeAll(
+    Layer.succeed(DirectPublicationPort, {
+      publish: () => Effect.die("DirectPublicationPort.publish should not be called"),
+    }),
     Layer.succeed(ProjectionPendingApprovalRepository, {
       upsert: () => Effect.void,
       listByThreadId: () => Effect.succeed([]),

@@ -528,6 +528,7 @@ function approveLandAndDispatch(input: {
       head: runGit(task.worktreePath, ["rev-parse", "--verify", "HEAD"]).trim(),
       dirty: false,
     };
+    const contentHash = worktreeCompletion.head;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -535,7 +536,7 @@ function approveLandAndDispatch(input: {
         taskId: input.taskId,
         gateId: id,
         gate: "land",
-        contentHash: `sha256:${input.suffix}-land`,
+        contentHash,
         pullRequest: {
           title: task.title,
           body: `## Summary\n\n- Land the verified ${input.suffix} task.\n\n## Testing\n\n- Integration coverage passed.`,
@@ -552,7 +553,7 @@ function approveLandAndDispatch(input: {
         taskId: input.taskId,
         gateId: id,
         gate: "land",
-        approvedHash: `sha256:${input.suffix}-land`,
+        approvedHash: contentHash,
         decision: "approved",
         origin: "human",
         worktreeCompletion,

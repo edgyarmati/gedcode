@@ -280,12 +280,59 @@ function requireTaskNotCancelling(input: {
       );
 }
 
-function requireFreshVerification(input: {
+function requireInspectedLandingWorktree(input: {
+  readonly command: OrchestrationCommand;
+  readonly task: OrchestrationReadModel["tasks"][number];
+  readonly worktreeCompletion: { readonly head: string; readonly dirty: boolean } | undefined;
+  readonly expectedHead: string;
+  readonly expectedHeadLabel: "approved" | "proposed" | "verified";
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.worktreeCompletion === undefined) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        `Task '${input.task.id}' must have its worktree inspected before land approval or landing.`,
+      ),
+    );
+  }
+  if (input.worktreeCompletion.dirty) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        `Task '${input.task.id}' cannot be approved or landed while its worktree has uncommitted changes.`,
+      ),
+    );
+  }
+  if (input.worktreeCompletion.head !== input.expectedHead) {
+    return Effect.fail(
+      invariantError(
+        input.command.type,
+        `Task '${input.task.id}' cannot be approved or landed because HEAD '${input.worktreeCompletion.head}' differs from ${input.expectedHeadLabel} HEAD '${input.expectedHead}'.`,
+      ),
+    );
+  }
+  return Effect.void;
+}
+
+function requireLandingVerification(input: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
   readonly task: OrchestrationReadModel["tasks"][number];
   readonly worktreeCompletion: { readonly head: string; readonly dirty: boolean } | undefined;
+  readonly policy:
+    | { readonly kind: "fresh-verification" }
+    | { readonly kind: "human-override"; readonly approvedHash: string };
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.policy.kind === "human-override") {
+    return requireInspectedLandingWorktree({
+      command: input.command,
+      task: input.task,
+      worktreeCompletion: input.worktreeCompletion,
+      expectedHead: input.policy.approvedHash,
+      expectedHeadLabel: "approved",
+    });
+  }
+
   const completedStages = Object.values(input.readModel.stageHistory).filter(
     (stage) =>
       stage.taskId === input.task.id && stage.status === "completed" && stage.endedAt !== null,
@@ -304,31 +351,13 @@ function requireFreshVerification(input: {
     verification.stageThreadId === latestVerify.stageThreadId &&
     (latestWork === undefined || latestVerify.endedAt! > latestWork.endedAt!)
   ) {
-    if (input.worktreeCompletion === undefined) {
-      return Effect.fail(
-        invariantError(
-          input.command.type,
-          `Task '${input.task.id}' must have its worktree inspected before land approval or landing.`,
-        ),
-      );
-    }
-    if (input.worktreeCompletion.dirty) {
-      return Effect.fail(
-        invariantError(
-          input.command.type,
-          `Task '${input.task.id}' cannot be approved or landed while its worktree has uncommitted changes.`,
-        ),
-      );
-    }
-    if (input.worktreeCompletion.head !== verification.head) {
-      return Effect.fail(
-        invariantError(
-          input.command.type,
-          `Task '${input.task.id}' cannot be approved or landed because HEAD '${input.worktreeCompletion.head}' differs from verified HEAD '${verification.head}'.`,
-        ),
-      );
-    }
-    return Effect.void;
+    return requireInspectedLandingWorktree({
+      command: input.command,
+      task: input.task,
+      worktreeCompletion: input.worktreeCompletion,
+      expectedHead: verification.head,
+      expectedHeadLabel: "verified",
+    });
   }
 
   return Effect.fail(
@@ -339,6 +368,15 @@ function requireFreshVerification(input: {
         : `Task '${input.task.id}' cannot be approved or landed because its recorded verification is stale.`,
     ),
   );
+}
+
+function requireFreshVerification(
+  input: Omit<Parameters<typeof requireLandingVerification>[0], "policy">,
+): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  return requireLandingVerification({
+    ...input,
+    policy: { kind: "fresh-verification" },
+  });
 }
 
 function countActiveTaskWorktrees(input: {
@@ -3131,11 +3169,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             `Land approval requires task '${command.taskId}' to have settled work in review.`,
           );
         }
-        yield* requireFreshVerification({
+        yield* requireInspectedLandingWorktree({
           command,
-          readModel,
           task,
           worktreeCompletion: command.worktreeCompletion,
+          expectedHead: command.contentHash,
+          expectedHeadLabel: "proposed",
         });
       } else if (command.pullRequest !== undefined) {
         return yield* invariantError(
@@ -3210,7 +3249,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return [gateRequestedEvent, gateResolvedEvent];
     }
 
-    case "task.land.approve": {
+    case "task.land.approve":
+    case "task.land.force": {
       const task = yield* requireTask({ readModel, command, taskId: command.taskId });
       yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
@@ -3240,12 +3280,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Land gate '${command.gateId}' is not a current, content-matched pending gate for task '${command.taskId}'.`,
         );
       }
-      yield* requireFreshVerification({
-        command,
-        readModel,
-        task,
-        worktreeCompletion: command.worktreeCompletion,
-      });
+      if (command.type === "task.land.force") {
+        const latestLandGate = (readModel.pendingGates ?? []).findLast(
+          (gate) => gate.taskId === command.taskId && gate.gate === "land",
+        );
+        if (latestLandGate !== pendingGate || pendingGate.pullRequest == null) {
+          return yield* invariantError(
+            command.type,
+            `Force landing requires gate '${command.gateId}' to be the latest pending land gate with an exact pull-request proposal for task '${command.taskId}'.`,
+          );
+        }
+        yield* requireLandingVerification({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+          policy: {
+            kind: "human-override",
+            approvedHash: command.approvedHash,
+          },
+        });
+      } else {
+        yield* requireFreshVerification({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+        });
+      }
 
       const resolvedBase = yield* withEventBase({
         aggregateKind: "task",
@@ -3278,6 +3340,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           payload: {
             taskId: command.taskId,
             approvedHash: command.approvedHash,
+            ...(command.type === "task.land.force"
+              ? {
+                  verificationOverride: {
+                    kind: "force-land" as const,
+                    reason: command.reason,
+                    origin: "human" as const,
+                  },
+                }
+              : {}),
             updatedAt: command.createdAt,
           },
         },

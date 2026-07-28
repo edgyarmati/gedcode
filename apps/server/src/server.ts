@@ -90,6 +90,7 @@ import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { OrchestrationMcpServerProviderLive } from "./orchestration/claude/OrchestrationMcpServerProvider.ts";
 import { OrchestrationMcpHttpServerLive } from "./orchestration/mcp/OrchestrationMcpHttpServer.ts";
+import { DirectPublicationPortLive } from "./orchestration/directPublication/DirectPublicationLive.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -267,11 +268,27 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 
 const ProviderInstanceRegistryHydrationWithOrchestrationMcpLive =
   ProviderInstanceRegistryHydrationLive.pipe(
-    Layer.provideMerge(OrchestrationMcpHttpServerLive.pipe(Layer.provide(OrchestrationLayerLive))),
+    Layer.provideMerge(
+      OrchestrationMcpHttpServerLive.pipe(
+        Layer.provide(
+          DirectPublicationPortLive.pipe(
+            Layer.provide(OrchestrationLayerLive),
+            Layer.provide(SourceControlProviderRegistryLayerLive),
+          ),
+        ),
+        Layer.provide(OrchestrationLayerLive),
+      ),
+    ),
   );
 
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
+  Layer.provideMerge(
+    DirectPublicationPortLive.pipe(
+      Layer.provide(OrchestrationLayerLive),
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+    ),
+  ),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),

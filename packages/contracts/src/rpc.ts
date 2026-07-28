@@ -587,6 +587,12 @@ export const WsOrchestratorLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.landTa
   error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationLandTaskError]),
 });
 
+export const WsOrchestratorForceLandTaskRpc = Rpc.make(ORCHESTRATOR_WS_METHODS.forceLandTask, {
+  payload: OrchestratorRpcSchemas.forceLandTask.input,
+  success: OrchestratorRpcSchemas.forceLandTask.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, OrchestrationLandTaskError]),
+});
+
 export const WsOrchestratorListArchivedTasksRpc = Rpc.make(
   ORCHESTRATOR_WS_METHODS.listArchivedTasks,
   {
@@ -788,6 +794,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestratorReturnTaskChangesRpc,
   WsOrchestratorCompleteTaskWithoutChangesRpc,
   WsOrchestratorLandTaskRpc,
+  WsOrchestratorForceLandTaskRpc,
   WsOrchestratorListArchivedTasksRpc,
   WsOrchestratorArchiveTaskRpc,
   WsOrchestratorRestoreTaskRpc,
