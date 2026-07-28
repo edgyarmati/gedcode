@@ -29,6 +29,12 @@ import {
 export const makeOrchestrationMcpToolDefinitions = Effect.gen(function* () {
   const executors = yield* makeOrchestrationMcpExecutors;
 
+  return makeOrchestrationMcpToolDefinitionsFromExecutors(executors);
+});
+
+export function makeOrchestrationMcpToolDefinitionsFromExecutors(
+  executors: ReadonlyArray<PmToolExecutor<any, unknown>>,
+) {
   return ORCHESTRATION_MCP_TOOL_NAMES.map((name, index) => {
     const executor = executors[index]!;
     return makeMcpToolDefinition(
@@ -37,20 +43,24 @@ export const makeOrchestrationMcpToolDefinitions = Effect.gen(function* () {
       mcpInputSchemas[name],
     );
   });
-});
+}
 
-export const makeOrchestrationMcpServer = makeOrchestrationMcpToolDefinitions.pipe(
-  Effect.map(
-    (tools): McpServerConfig =>
-      createSdkMcpServer({
-        name: ORCHESTRATION_MCP_SERVER_NAME,
-        version: "1.0.0",
-        instructions: ORCHESTRATION_MCP_INSTRUCTIONS,
-        tools: tools as Array<SdkMcpToolDefinition<any>>,
-        alwaysLoad: true,
-      }),
-  ),
+export const makeOrchestrationMcpServer = makeOrchestrationMcpExecutors.pipe(
+  Effect.map(makeOrchestrationMcpServerFromExecutors),
 );
+
+export function makeOrchestrationMcpServerFromExecutors(
+  executors: ReadonlyArray<PmToolExecutor<any, unknown>>,
+): McpServerConfig {
+  const tools = makeOrchestrationMcpToolDefinitionsFromExecutors(executors);
+  return createSdkMcpServer({
+    name: ORCHESTRATION_MCP_SERVER_NAME,
+    version: "1.0.0",
+    instructions: ORCHESTRATION_MCP_INSTRUCTIONS,
+    tools: tools as Array<SdkMcpToolDefinition<any>>,
+    alwaysLoad: true,
+  });
+}
 
 function makeMcpToolDefinition(
   name: OrchestrationMcpToolName,

@@ -27,7 +27,7 @@ type LandOrchestrationTaskError =
 type DispatchLandCommand = (
   command: Extract<
     OrchestrationCommand,
-    { type: "task.land" | "task.landing.retry" | "task.land.approve" }
+    { type: "task.land" | "task.landing.retry" | "task.land.approve" | "task.land.force" }
   >,
 ) => Effect.Effect<DispatchResult, OrchestrationDispatchError | OrchestrationDispatchCommandError>;
 
@@ -60,6 +60,10 @@ export interface ApproveOrchestrationLandTaskInput {
   readonly commandId: Effect.Effect<CommandId, LandOrchestrationTaskError>;
   readonly createdAt: Effect.Effect<string, LandOrchestrationTaskError>;
   readonly dispatch: DispatchLandCommand;
+}
+
+export interface ForceLandOrchestrationTaskInput extends ApproveOrchestrationLandTaskInput {
+  readonly reason: string;
 }
 
 export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTaskWithServices")(
@@ -141,9 +145,12 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
  * this service supplies the server-observed worktree state needed to preserve
  * exact-HEAD verification.
  */
-export const approveOrchestrationLandTaskWithServices = Effect.fn(
-  "approveOrchestrationLandTaskWithServices",
-)(function* (services: LandOrchestrationTaskServices, input: ApproveOrchestrationLandTaskInput) {
+const resolveLandGateWithServices = Effect.fn("resolveLandGateWithServices")(function* (
+  services: LandOrchestrationTaskServices,
+  input:
+    | ({ readonly kind: "approve" } & ApproveOrchestrationLandTaskInput)
+    | ({ readonly kind: "force"; readonly reason: string } & ApproveOrchestrationLandTaskInput),
+) {
   return yield* withTaskLifecycleLock(
     input.taskId,
     Effect.gen(function* () {
@@ -183,20 +190,49 @@ export const approveOrchestrationLandTaskWithServices = Effect.fn(
         };
       }
 
+      const gate = (readModel.pendingGates ?? []).find(
+        (entry) =>
+          entry.gateId === input.gateId &&
+          entry.taskId === input.taskId &&
+          entry.gate === "land" &&
+          entry.contentHash === input.approvedHash,
+      );
       const worktreeCompletion = yield* inspectTaskWorktreeCompletion({
         worktreePath: task.worktreePath,
         process: services.vcsProcess,
       });
-      const result = yield* input.dispatch({
-        type: "task.land.approve",
+      const commandBase = {
         commandId: yield* input.commandId,
         taskId: input.taskId,
-        gateId: input.gateId,
+        gateId: gate?.gateId ?? input.gateId,
         approvedHash: input.approvedHash,
         worktreeCompletion,
         createdAt: yield* input.createdAt,
-      });
+      };
+      const result =
+        input.kind === "force"
+          ? yield* input.dispatch({
+              type: "task.land.force",
+              ...commandBase,
+              reason: input.reason.trim(),
+            })
+          : yield* input.dispatch({
+              type: "task.land.approve",
+              ...commandBase,
+            });
       return { ...result, alreadyLanded: false, alreadyInProgress: false };
     }),
   );
+});
+
+export const approveOrchestrationLandTaskWithServices = Effect.fn(
+  "approveOrchestrationLandTaskWithServices",
+)(function* (services: LandOrchestrationTaskServices, input: ApproveOrchestrationLandTaskInput) {
+  return yield* resolveLandGateWithServices(services, { kind: "approve", ...input });
+});
+
+export const forceLandOrchestrationTaskWithServices = Effect.fn(
+  "forceLandOrchestrationTaskWithServices",
+)(function* (services: LandOrchestrationTaskServices, input: ForceLandOrchestrationTaskInput) {
+  return yield* resolveLandGateWithServices(services, { kind: "force", ...input });
 });

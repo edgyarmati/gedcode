@@ -79,6 +79,7 @@ import {
 import { forkOrchestrationThreadWithServices } from "./orchestration/threadFork.ts";
 import {
   approveOrchestrationLandTaskWithServices,
+  forceLandOrchestrationTaskWithServices,
   landOrchestrationTaskWithServices,
   OrchestrationLandTaskError as TaskLandingError,
 } from "./orchestration/taskLanding.ts";
@@ -1982,6 +1983,33 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                       message: cause.detail,
                     })
                   : toDispatchCommandError(cause, "Failed to land orchestration task"),
+              ),
+            ),
+            { "rpc.aggregate": "orchestrator" },
+          ),
+        [ORCHESTRATOR_WS_METHODS.forceLandTask]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATOR_WS_METHODS.forceLandTask,
+            forceLandOrchestrationTaskWithServices(
+              { snapshotQuery: projectionSnapshotQuery, vcsProcess },
+              {
+                taskId: input.taskId,
+                gateId: input.gateId,
+                approvedHash: input.approvedHash,
+                reason: input.reason,
+                commandId: serverCommandId("orchestrator-force-land-task"),
+                createdAt: nowIso,
+                dispatch: dispatchNormalizedCommand,
+              },
+            ).pipe(
+              Effect.mapError((cause) =>
+                isTaskLandingError(cause)
+                  ? new OrchestrationLandTaskError({
+                      taskId: cause.taskId,
+                      reason: cause.reason,
+                      message: cause.detail,
+                    })
+                  : toDispatchCommandError(cause, "Failed to force-land orchestration task"),
               ),
             ),
             { "rpc.aggregate": "orchestrator" },

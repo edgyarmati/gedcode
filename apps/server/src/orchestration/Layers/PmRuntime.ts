@@ -102,8 +102,13 @@ import {
   type DriverPmProviderAdapter,
 } from "../claude/DriverPmAdapter.ts";
 import { CLAUDE_PM_DRIVER, CODEX_PM_DRIVER } from "../claude/constants.ts";
-import { makeOrchestrationMcpServer } from "../claude/pmMcpServer.ts";
+import { makeOrchestrationMcpServerFromExecutors } from "../claude/pmMcpServer.ts";
 import { OrchestrationMcpServerProvider } from "../claude/OrchestrationMcpServerProvider.ts";
+import { makeOrchestrationMcpExecutors } from "../mcp/orchestrationMcpTools.ts";
+import {
+  DirectPublicationPort,
+  type DirectPublicationPortShape,
+} from "../directPublication/DirectPublicationPort.ts";
 import type {
   AgentHarnessResources,
   AssistantMessage,
@@ -180,6 +185,7 @@ const pmSystemPrompt = (driverKind: ProviderDriverKind): string =>
     "Before task creation, the task tooling requires a clean primary checkout with a configured GitHub upstream, fetches that upstream, and fast-forwards a safely behind branch. Never bypass dirty, ahead, diverged, detached, non-Git, or non-GitHub preparation failures; explain the required setup to the human.",
     "Classify work as a direct PM change only when it is one bounded, low-risk edit with no design decision, migration, public contract change, security-sensitive logic, broad verification, or uncertain scope. State the concrete reason it qualifies. Anything outside those limits becomes a task.",
     "For direct work, inspect the primary checkout first, preserve existing user changes, make the smallest edit, and run proportional checks. Then call inspectDirectChanges and review the combined diff. Commit only an exact intended patch with commitDirectChanges, including a descriptive message, the low-risk rationale, and the commands plus observed outcomes. Never use path-wide staging for direct work: other user hunks may exist in the same file. Report the returned commit and any remaining dirty paths. Direct work creates no task, gate, worktree, PR, or landing action.",
+    "Use publishDirectCommit only to route exactly one already-reviewed commit for the explicit current PM project to an explicit branch and pull request; implementation, uncertainty, or multiple commits require a task and Verify instead.",
     "You and your workers all run with full project access on the human's host. Treat meaningful external, destructive, or publishing actions as human-gated wherever they would happen; never delegate or perform them merely to escape that approval boundary.",
     "Keep simple, well-understood planning in your own PM turn and give the resulting bounded plan directly to the worker. Delegate planning only when complexity, risk, or uncertainty merits a separate attempt; delegated plans default to the Genius tier. When a plan is doubtful, dispatch another Genius `plan` attempt with explicit critique instructions.",
     "Operate by driving the stage roles through your tools: classify assigns type/playbook, plan designs or critiques complex implementation, work implements, and verify validates completed work before landing.",
@@ -788,6 +794,13 @@ const resolveDriverPmAdapter = (
     return adapter;
   });
 
+export const makePmRuntimeMcpToolExecutors = (input: {
+  readonly directPublication: DirectPublicationPortShape;
+}) =>
+  makeOrchestrationMcpExecutors.pipe(
+    Effect.provideService(DirectPublicationPort, input.directPublication),
+  );
+
 export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
   Effect.gen(function* () {
     const orchestrationEngine = yield* OrchestrationEngineService;
@@ -810,7 +823,12 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         settings.orchestratorDefaults.pmReconciliationIntervalMs,
     );
     const reconciliationSemaphore = yield* Semaphore.make(1);
-    const orchestrationMcpServer = yield* makeOrchestrationMcpServer;
+    const directPublication = yield* DirectPublicationPort;
+    const orchestrationMcpExecutors = yield* makePmRuntimeMcpToolExecutors({
+      directPublication,
+    });
+    const orchestrationMcpServer =
+      makeOrchestrationMcpServerFromExecutors(orchestrationMcpExecutors);
     yield* orchestrationMcpServerProvider.register(() => Promise.resolve(orchestrationMcpServer));
 
     const resolveTaskProject = Effect.fn("PmRuntime.resolveTaskProject")(function* (

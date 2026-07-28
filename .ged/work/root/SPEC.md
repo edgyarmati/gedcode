@@ -1,125 +1,102 @@
-# SPEC — Reliable Replay, Then Task-Oriented Inbox
+# SPEC — Forced Landing and Direct PM Publication
 
 ## Goal
 
-Deliver two sequential, independently reviewable changes:
+Add two separate operator workflows:
 
-1. Harden GedCode's durable orchestration subscriptions so snapshot, replay, buffered-live, and live
-   delivery form one ordered, deduplicated server contract.
-2. After PR 1 is merged, add a durable task-oriented Inbox for normal chat threads and Orchestrator
-   tasks without replacing GedCode's existing task aggregate or client runtime.
+1. Let a human force-land a review-ready task by bypassing only the fresh Verify requirement.
+2. Let the project PM publish one existing commit to an explicit branch/PR without creating an
+   Orchestrator task.
 
-PR 2 must start from the merged PR 1 base; it is not a stacked PR.
+This work is an independent PR based on `main`; it must not depend on replay-hardening PR #67.
 
-## Agent and Delivery Workflow
+## Shared Constraints
 
-- Only GPT-5.6 Sol at low reasoning may be delegated production-code implementation.
-- GPT-5.6 Terra at low reasoning may scout, run tests, and independently verify; it must not edit
-  production code.
-- Luna is unavailable in this environment; Terra is the approved test/verification substitute.
-- Work test-first in vertical slices: one observable failing test, minimal implementation, then the
-  next behavior. Do not write the whole test suite before implementation.
-- Run focused tests only during ordinary work. Never run `bun test`; use `bun run test`.
-- Before each PR: run `bun fmt`, `bun lint`, the narrowest relevant package typechecks, focused
-  tests, and `git diff --check`; update `CHANGELOG.md` and `docs/upstream-decisions.md`.
-- Commit intentionally, push, and open a detailed PR. Do not merge without explicit authorization.
-- Preserve pre-existing user edits in `CHANGELOG.md` and `docs/upstream-decisions.md`.
+- Use test-driven vertical slices: one public behavior test, minimal implementation, then repeat.
+- Only Sol-low implementation agents may edit production code.
+- Terra-low agents own test authoring, test execution, and independent verification.
+- Preserve normal task Verify behavior and the existing default task pipeline.
+- Do not add compatibility fallbacks; there are no production clients requiring old wire behavior.
+- Run focused tests only, then `bun fmt`, `bun lint`, narrow typechecks, and `git diff --check`.
+- Update `CHANGELOG.md` and durable handoff documentation before publication.
 
-## PR 1 — Durable Subscription Bootstrap
+## Forced Landing
 
 ### Contract
 
-- Scope is sequence-backed durable UI state only: shell, normal thread, Orchestrator project, and
-  Orchestrator task subscriptions.
-- Raw provider/token streaming is out of scope. PR 1 guarantees reconstruction after an event has
-  entered the durable orchestration log.
-- The server owns bootstrap correctness through one shared abstraction:
-  1. attach/buffer live delivery before snapshot loading;
-  2. load a snapshot and its sequence cursor;
-  3. replay durable events strictly after that cursor;
-  4. drain buffered events;
-  5. continue live delivery without changing ordering rules.
-- Every event is applied at most once and sequence order is preserved across replay, buffer drain,
-  reconnect, and the transition to live delivery.
-- Client recovery remains a defensive gap detector, not the normal mechanism for closing bootstrap
-  races.
-- When replay distance exceeds one central bounded limit, use a fresh snapshot rather than loading
-  an unbounded history. Do not add a degraded fallback path.
-- Persisted domain events and lifecycle transitions are lossless and are never coalesced.
-- Only replaceable transport-level projection/activity updates for the same thread/task may be
-  coalesced. The transport message must communicate its covered sequence range so intentional
-  compaction is not treated as data loss.
-- Oversized activity/tool fields are trimmed only by one shared WebSocket transport projector used
-  for replay and live delivery. Persistence and detail-query data remain complete.
-- Truncated transport values retain identity/status metadata and expose explicit truncation metadata,
-  including the original size, so the UI cannot silently present a preview as complete.
-- Protocol/schema cleanup may be breaking: there are no production clients requiring compatibility.
-  Do not retain obsolete paths or add compatibility shims.
+- Forced landing is a distinct audited command/RPC, not an overload of normal gate approval.
+- It targets one current pending `land` gate and requires a non-empty human-provided reason.
+- It may bypass only the requirement for a fresh successful Verify after the latest Work.
+- It preserves all other normal landing invariants:
+  - task and project exist and are enabled;
+  - task is idle in Review with no active/cancelling stage;
+  - the targeted gate is the latest pending content-matched land gate;
+  - gate proposal has exact PR title/body;
+  - task-owned worktree has been inspected;
+  - worktree is clean;
+  - inspected HEAD matches the gate content hash;
+  - lifecycle serialization, landing idempotency, branch ownership, and normal PR actuator apply.
+- Forced landing atomically resolves the land gate as human-approved and starts the existing landing
+  workflow.
+- The durable event/audit projection records that verification was overridden and the exact reason.
+- UI presents a secondary destructive/exception action with explicit confirmation and required
+  reason. Normal Approve remains the primary action when all normal invariants pass.
+- Force landing never means force-pushing, publishing arbitrary refs, bypassing content identity, or
+  landing a dirty/uninspected worktree.
 
-### PR 1 Acceptance Criteria
+### Acceptance
 
-- A deterministic interleaving test proves an event emitted after snapshot loading begins but before
-  it completes is delivered exactly once.
-- Snapshot, replay, buffered, and live events remain strictly ordered and deduplicated.
-- Reconnect/re-subscribe preserves the same contract.
-- A replay beyond the central bound recovers through a fresh snapshot.
-- Same-thread/task high-frequency replaceable updates are coalesced without hiding domain
-  transitions or causing false gap recovery.
-- Large activity/tool payloads are complete in persistence and reduced only on WebSocket delivery,
-  with visible truncation metadata.
-- Shell, thread, project, and task subscription paths use the shared bootstrap contract.
+- Normal approval still rejects missing/stale Verify.
+- Force-land succeeds with missing/stale Verify when every preserved invariant holds.
+- Force-land rejects dirty, uninspected, wrong-HEAD, wrong-gate, non-review, or active-stage tasks.
+- Repeated force-land is idempotent and never starts two landing attempts.
+- Durable replay/restart preserves override origin and reason.
+- UI requires confirmation/reason and sends the dedicated command.
 
-## PR 2 — Task-Oriented Inbox
+## Direct Publication
 
-### Product Structure
+### Contract
 
-- GedCode retains two top-level views: Inbox and Orchestrator.
-- Inbox contains a polished long sliding-pill switch between:
-  - `Threads`: normal chat threads;
-  - `Orchestrator`: Orchestrator task rows.
-- These sources remain visually and semantically distinct. Do not merge them into one flat model.
-- Do not group Inbox rows by project.
-- PM threads and internal worker-stage threads remain hidden implementation details.
-- Clicking an Orchestrator task row navigates to that task's project-level Orchestrator view, not a
-  task-detail route.
-- Each pill side defaults to Active and has a compact lifecycle filter for Active, Snoozed, Settled.
-- Native execution/session status remains distinct from inbox lifecycle status.
+- Add a dedicated server-owned PM tool/service; do not expand `commitDirectChanges` or expose raw Git.
+- Inputs are explicit: required project ID, immutable source commit, destination branch, base branch, exact PR
+  title/body, and optional existing PR URL.
+- The shared PM MCP transport is trusted and global, so the explicit project ID is the authoritative
+  target selected by the PM rather than inferring a project from a global read model. The server
+  validates that project before resolving its workspace/provider; this deliberately avoids a
+  per-project MCP endpoint redesign.
+- The workflow publishes exactly one existing commit without creating an Orchestrator task,
+  work-stage thread, Verify stage, or task land gate.
+- Validate:
+  - project repository identity and primary checkout;
+  - clean primary checkout;
+  - source commit resolves and belongs to the repository;
+  - destination/base branch names are explicit and allowed by protected-ref policy;
+  - existing PR, if supplied, belongs to the same repository and destination head.
+- Perform work in an isolated temporary worktree.
+- Apply exactly one source commit to the destination using a non-interactive cherry-pick/commit
+  workflow; no commit ranges, merges, rebases, force pushes, or arbitrary ref updates.
+- Push normally and create or update the PR through the existing source-control provider.
+- Cleanup the temporary worktree on success and failure.
+- Return and project a durable PM activity/audit result; repeated identical publication is
+  idempotent.
+- PM instructions prefer direct publication for trivial commit-routing/PR operations and retain
+  tasks for implementation, uncertain work, multi-commit work, or anything needing independent
+  Verify.
 
-### Durable Lifecycle
+### Acceptance
 
-- Lifecycle state and transitions are server-backed, persisted, and replayable; no UI-only state.
-- Shared lifecycle vocabulary is `active`, `snoozed`, and `settled`, while native thread/task state
-  remains intact.
-- A settled normal thread reopens on a new sent or queued user message.
-- A settled Orchestrator task reopens only when its durable execution resumes. Project-level PM
-  messages do not reopen every task.
-- Viewing or navigating never reopens an item.
-- Ordinary background activity does not cancel an explicit snooze.
-- Direct user activity and manual unsnooze clear snooze immediately.
-- Approval required, input required, or a new failure requiring intervention raises a snoozed item
-  into Active.
-- Manual settle is blocked for pending approval/input and fresh unadopted user work.
-- Completed Orchestrator tasks settle automatically.
-- Normal threads auto-settle conservatively after upstream's default three inactive days; the
-  setting is nullable (disabled) and accepts 1–90 days.
-- Explicit `active` pins a thread against automatic settlement until new user activity resets it.
-- Follow upstream's coherent snooze presets and local-calendar behavior: one hour, this evening when
-  meaningful, tomorrow 09:00, and next Monday 09:00, with DST-safe calendar arithmetic.
+- PM can publish one existing commit to a new explicit branch/PR without dispatching `task.create`.
+- Existing matching branch/PR publication updates idempotently without force push.
+- Invalid commit, dirty checkout, protected destination, mismatched PR, cherry-pick conflict, push
+  failure, and provider failure return typed failures and clean up.
+- PM tool schema and prompt make the taskless boundary explicit.
+- Activity projection records source commit, destination/base, PR result, and outcome without
+  leaking secrets.
 
-### Adaptation Boundary
+## Out of Scope
 
-- Adapt the behavioral invariants from upstream commits `32c6012d`, `202e5609`, and relevant polish.
-- Do not copy upstream's Sidebar/client-runtime stack, project grouping, Sidebar v1/v2 compatibility,
-  beta flags, mobile work, PR auto-settlement, bulk selection, drag ordering, or unrelated task tabs.
-- Reuse GedCode's event-sourced projections, normal-chat thread model, Orchestrator task aggregate,
-  current routing, and existing internal-thread filtering.
-
-### PR 2 Acceptance Criteria
-
-- Thread/task lifecycle survives restart, snapshot, and replay.
-- Settle and snooze commands are idempotent and enforce blockers.
-- Normal user activity reopens settled threads; durable task progress reopens only the affected task.
-- Snooze expiry and raised-hand behavior return items to Active correctly.
-- The type pill and lifecycle filter partition rows correctly with no project grouping.
-- Orchestrator rows navigate to the project Orchestrator view.
-- Auto-settlement and snooze presets match the documented timing rules, including DST behavior.
+- Skipping Verify inside ordinary task pipelines.
+- PM implementation work without a task.
+- Generic PM branch management, arbitrary shell Git, multi-commit publication, merge/rebase, or
+  force push.
+- Automatically inferring a destination branch, base branch, PR title, or PR body.

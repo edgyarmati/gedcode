@@ -67,6 +67,10 @@ import {
 } from "../taskBranchReservation.ts";
 import { prepareTaskForVerification, prepareTaskRepository } from "../taskRepositoryPreparation.ts";
 import { pmThreadIdForProject } from "./PmEventProjection.ts";
+import {
+  DirectPublicationPort,
+  type DirectPublicationResult,
+} from "../directPublication/DirectPublicationPort.ts";
 
 interface CreateTaskParameters {
   readonly projectId: string;
@@ -75,6 +79,18 @@ interface CreateTaskParameters {
   readonly taskType?: string;
   readonly supersedesTaskId?: string;
   readonly releaseSourceTaskId?: string;
+}
+
+interface PublishDirectCommitParameters {
+  readonly projectId: string;
+  readonly sourceCommit: string;
+  readonly destinationBranch: string;
+  readonly baseBranch: string;
+  readonly pullRequest: {
+    readonly title: string;
+    readonly body: string;
+  };
+  readonly existingPullRequestUrl?: string;
 }
 
 interface SplitTaskChildParameters {
@@ -575,6 +591,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
   const snapshotQuery = yield* ProjectionSnapshotQuery;
   const pendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+  const directPublication = yield* DirectPublicationPort;
   const crypto = yield* Crypto.Crypto;
   const runtimeContext = yield* Effect.context<never>();
   const vcsProcess = Context.getOption(runtimeContext, VcsProcess);
@@ -1865,6 +1882,37 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const publishDirectCommit: PmToolExecutor<
+    PublishDirectCommitParameters,
+    DirectPublicationResult
+  > = {
+    name: "publishDirectCommit",
+    label: "Publish one existing commit",
+    description:
+      "Publish exactly one existing commit for the explicit current PM project to a destination branch and pull request without creating an Orchestrator task, work thread, Verify stage, or land gate. Use only for already-reviewed, bounded commit routing; this is not an implementation tool and does not accept commit ranges.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const project = yield* resolveDirectProject(params.projectId);
+          const result = yield* directPublication.publish({
+            projectId: project.id,
+            sourceCommit: params.sourceCommit.trim(),
+            destinationBranch: params.destinationBranch.trim(),
+            baseBranch: params.baseBranch.trim(),
+            pullRequest: {
+              title: params.pullRequest.title.trim(),
+              body: params.pullRequest.body.trim(),
+            },
+            existingPullRequestUrl: params.existingPullRequestUrl?.trim() || null,
+          });
+          return textResult(
+            `Published existing commit ${result.sourceCommit} tasklessly to ${result.destinationBranch}: ${result.pullRequestUrl}`,
+            result,
+          );
+        }),
+      ),
+  };
+
   return [
     classifyRequest,
     createTask,
@@ -1895,6 +1943,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     restoreTask,
     deleteTask,
     getTaskLedger,
+    publishDirectCommit,
   ] as const;
 });
 

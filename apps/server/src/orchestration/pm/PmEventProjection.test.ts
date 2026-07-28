@@ -948,4 +948,60 @@ describe("PmEventProjection", () => {
       });
     }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
   });
+
+  it.effect("projects taskless direct publication onto its PM thread without task events", () => {
+    const commands: OrchestrationCommand[] = [];
+    return Effect.gen(function* () {
+      const runtime = yield* makePmEventProjectionRuntime({
+        project,
+        providerName: provider,
+        pmModelSelection,
+        events: Stream.empty,
+        incarnationNonce: "test-nonce",
+      });
+      const input = {
+        projectId: String(project.id),
+        sourceCommit: "a".repeat(40),
+        destinationBranch: "ged/direct/project",
+        baseBranch: "main",
+        pullRequest: { title: "Publish", body: "Exact commit" },
+      };
+      const details = {
+        projectId: String(project.id),
+        sourceCommit: input.sourceCommit,
+        destinationBranch: input.destinationBranch,
+        pullRequestUrl: "https://github.com/acme/project/pull/42",
+      };
+      yield* runtime.project({
+        type: "tool_call",
+        toolCallId: "direct-publish-1",
+        toolName: "publishDirectCommit",
+        input,
+      } satisfies AgentHarnessEvent);
+      yield* runtime.project({
+        type: "tool_result",
+        toolCallId: "direct-publish-1",
+        toolName: "publishDirectCommit",
+        input,
+        content: [{ type: "text", text: details.pullRequestUrl }],
+        details,
+        isError: false,
+      } satisfies AgentHarnessEvent);
+      const activities = commands.filter(
+        (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
+          command.type === "thread.activity.append",
+      );
+      assert.strictEqual(activities[1]?.threadId, runtime.pmThreadId);
+      assert.deepStrictEqual(activities[1]?.activity.payload, {
+        itemType: "dynamic_tool_call",
+        toolCallId: "direct-publish-1",
+        toolName: "publishDirectCommit",
+        title: "publishDirectCommit",
+        status: "completed",
+        input,
+        details,
+      });
+      assert.ok(!commands.some((command) => command.type.startsWith("task.")));
+    }).pipe(Effect.provide(makeLayer(commands)), Effect.scoped);
+  });
 });

@@ -175,6 +175,7 @@ export interface WsRpcClient {
       typeof ORCHESTRATOR_WS_METHODS.setTaskCapabilityTiers
     >;
     readonly landTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.landTask>;
+    readonly forceLandTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.forceLandTask>;
     readonly cancelTask: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.cancelTask>;
     readonly interruptStage: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.interruptStage>;
     readonly inspectTaskChanges: RpcUnaryMethod<typeof ORCHESTRATOR_WS_METHODS.inspectTaskChanges>;
@@ -415,6 +416,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         ),
       landTask: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.landTask](input)),
+      forceLandTask: (input) =>
+        transport.request((client) => client[ORCHESTRATOR_WS_METHODS.forceLandTask](input)),
       cancelTask: (input) =>
         transport.request((client) => client[ORCHESTRATOR_WS_METHODS.cancelTask](input)),
       interruptStage: (input) =>

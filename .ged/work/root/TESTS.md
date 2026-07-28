@@ -1,525 +1,408 @@
-# TESTS — Reliable Replay, Then Task-Oriented Inbox
+# TESTS — Forced Landing and Direct PM Publication
 
-## TDD Rules
+## Method
 
-- Work in vertical slices: one observable failing test, minimal code to pass, then repeat.
-- Exercise public subscription, command, projection, store, and UI interfaces. Avoid private-method
-  tests and internal collaborator mocks.
-- Run only the narrowest relevant Vitest files with `bun run test`.
-- Terra agents run and independently verify tests; production code edits are restricted to Sol-low
-  implementation agents.
-- Record exact commands and results in the Evidence sections before each PR.
+- Vertical TDD only: add one observable failing behavior, implement minimally, rerun, then continue.
+- Prefer public command/RPC/PM-tool/service interfaces over private helpers.
+- Test agents are Terra-low; production implementation agents are Sol-low.
+- Use `bun run test`, never `bun test`.
 
-## PR 1 Planned Behavior Coverage
+## Forced Landing
 
-1. Event emitted while snapshot I/O is in flight appears exactly once after the snapshot.
-2. Replay events after the snapshot cursor are ordered before buffered/live events.
-3. Replay/live overlap is deduplicated by sequence.
-4. Buffered events arriving out of callback order are emitted in durable sequence order.
-5. Re-subscription/reconnect reconstructs the same result without duplicate application.
-6. Replay distance at or below the central bound uses replay.
-7. Replay distance above the bound obtains a fresh snapshot instead of unbounded catch-up.
-8. Replaceable same-thread/task transport updates coalesce with an explicit covered sequence range.
-9. Lifecycle/domain transitions never coalesce.
-10. Intentional coalescing does not cause client gap recovery.
-11. Oversized activity/tool values remain full in persistence/detail reads.
-12. Replay and live WebSocket delivery apply the same trimming limit and expose original-size
-    truncation metadata.
-13. Shell, normal thread, project, and task subscriptions all obey the shared contract.
+- Normal land approval rejects absent or stale Verify.
+- Dedicated force-land requires a non-empty reason.
+- Force-land accepts absent/stale Verify only when the current land gate, content hash, proposal,
+  inspected HEAD, clean worktree, task status, and lifecycle lock are valid.
+- Each preserved invariant has focused rejection coverage.
+- Forced resolution and landing start append atomically and replay with override reason/origin.
+- Concurrent/repeated force requests start one landing attempt.
+- Web UI requires explicit confirmation and reason, then sends the dedicated RPC.
 
-### WS-07 transport metadata contract
+## Direct Publication
 
-Activity truncation metadata belongs on the transport activity object as
-`activity.transportTruncation`, not inside `activity.payload`. Provider/tool payloads are opaque
-durable data, so reserving a field within them risks collision and would blur persisted content with
-the WebSocket-only projection. The metadata is `{ truncated: true, originalBytes, retainedBytes }`,
-where both byte counts are UTF-8 JSON byte lengths of the corresponding payload.
+- PM tool requires an explicit project ID, source commit, destination/base branches, exact PR proposal, and optional
+  existing PR URL.
+- Successful publication resolves one commit, creates an isolated worktree, applies it, pushes
+  without force, creates/updates the PR, records activity, cleans up, and dispatches no task command.
+- Identical retry is idempotent.
+- Invalid commit, dirty checkout, protected ref, PR mismatch, conflict, push/provider failure all
+  return typed failures and clean up.
+- Prompt/tool descriptions direct trivial commit-routing work here and retain tasks for real work.
 
-## PR 1 Required Quality Gates
+## Required Gates
 
-- Focused server subscription/bootstrap tests.
-- Focused contracts tests for protocol changes.
-- Focused web recovery/runtime tests.
+- Focused contracts, decider/projector, landing, PM tool/service, source-control, and UI tests.
 - `bun fmt`
 - `bun lint`
-- Narrowest relevant typechecks for changed packages/apps.
+- Narrow contracts/server/web typechecks.
 - `git diff --check`
 
-## PR 1 Evidence
+## Evidence
 
-### WS-02 RED — snapshot/live handoff race (2026-07-27)
+### FL-01 RED — dedicated force-land command (2026-07-28)
 
-Command run from `apps/server`:
+Command run from the dedicated force-land worktree:
 
 ```text
-bun run test -- --testNamePattern='subscribeThread loses a durable event emitted while its snapshot is loading' server.test.ts
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='force-lands one current reviewed gate with a human verification override reason'
 ```
 
-Result: failed as intended. The tracer pauses `getThreadDetailById` at snapshot cursor 0, commits a
-matching durable thread event at sequence 1 while the snapshot is in flight, deliberately returns an
-empty replay, then releases snapshot loading and sends a later live sentinel. The original
-snapshot → replay → subscribe architecture produces only the snapshot and sentinel:
+Result: failed as intended (1 failed, 80 skipped). The public decider tracer builds a Review/idle
+task with a current pending, content-matched land gate containing an exact PR proposal and a clean
+inspected matching HEAD, but no successful Verify after Work. It first proves normal
+`task.land.approve` remains rejected, then requires the distinct `task.land.force` command with a
+non-empty human reason to atomically emit `task.gate-resolved` and `task.landed`, with the latter
+carrying `verificationOverride: { kind: "force-land", reason }`.
+
+The current decider rejects the dedicated command before any fixture or invariant ambiguity:
 
 ```text
-expected [ 'snapshot', 2 ] to deeply equal [ 'snapshot', 1 ]
+Orchestration command invariant failed (task.land.force): Unknown command type: task.land.force
 ```
 
-This is the intended lost-event assertion, not a setup, type, or timeout failure. The original tracer
-cursor of 1 was corrected during WS-03 verification because it contradicted the global sequence
-contract: an event at the snapshot cursor is correctly deduplicated. The corrected cursor-0 tracer
-remains a deterministic proof of the original snapshot/live attachment race.
+This was the intended missing-contract RED. FL-01 is complete; production code, status, and
+protocol implementation had not changed at that point.
 
-### WS-03 GREEN — subscribe-before-snapshot tracer (2026-07-27)
+### FL-02 GREEN — force-land atomic transition and preserved dirty-worktree guard (2026-07-28)
 
-Commands run from `apps/server` (each bounded by `gtimeout 45`):
+Commands run from the dedicated force-land worktree:
 
 ```text
-bun run test -- --reporter=verbose --testNamePattern='subscribeThread loses a durable event emitted while its snapshot is loading' server.test.ts
-bun run test -- --reporter=verbose --testNamePattern='subscribeThread' server.test.ts
-bun run typecheck
-```
-
-Results:
-
-- The corrected tracer passed: 1 passed, 81 skipped, in 2.27 s. It received the snapshot followed
-  by durable sequence 1 exactly once.
-- The narrow thread-subscription suite passed: 3 passed, 79 skipped, in 2.30 s. This also covers the
-  existing missing-PM snapshot and cleared-thread replay behavior.
-- `apps/server` typecheck passed with no diagnostics.
-- Repository-root `git diff --check` passed with no output.
-
-The fix starts the durable live stream into a scoped queue immediately before snapshot I/O, then
-reuses that queue through replay/buffer drain/live delivery. WS-04 owns further ordering,
-deduplication, and reconnect coverage.
-
-### WS-04 GREEN — ordered overlap and reconnect coverage (2026-07-27)
-
-Commands run from `apps/server`, each bounded with `timeout`:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread deduplicates a replay/live overlap during bootstrap'
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread orders buffered live events by sequence instead of callback arrival order'
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread reconnects from its newer snapshot without replaying applied events'
-timeout 60s bun run test -- server.test.ts -t 'subscribeThread'
-timeout 90s bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The replay/live overlap tracer passed (1 passed, 82 skipped, 2.21 s): replay sequences 1–2 plus
-  buffered live duplicate 2 and live 3 were delivered as `snapshot, 1, 2, 3` exactly once.
-- The callback-order tracer passed (1 passed, 83 skipped, 2.20 s): buffered sequence 2 arriving
-  before sequence 1 was delivered as `snapshot, 1, 2`.
-- The reconnect tracer passed (1 passed, 84 skipped, 2.23 s): the first connection received
-  `snapshot, 1, 2`; a second public subscription at snapshot cursor 2 received only its newer
-  snapshot, which contained both messages, with no duplicate replay.
-- The narrow `subscribeThread` suite passed: 6 passed, 79 skipped, in 2.40 s.
-- `apps/server` typecheck passed with no diagnostics, and repository-root `git diff --check`
-  passed with no output.
-
-WS-04 is complete. WS-05 is next and owns the replay-distance threshold and fresh-snapshot path.
-
-### WS-05 RED — excessive replay refreshes the snapshot (2026-07-27)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread refreshes an excessive replay backlog from a fresh snapshot'
-```
-
-Result: failed as intended (1 failed, 85 skipped, 2.42 s), with the explicit behavioral
-assertion—not a fixture, type, or timeout failure:
-
-```text
-an excessive replay must load a fresh thread snapshot: expected 1 to equal 2
-```
-
-The public WebSocket tracer gives its first snapshot global cursor 0 and its bounded replay source
-1,001 durable events (one matching subscribed thread event plus 1,000 unrelated thread events), so
-the threshold is measured before surface filtering. A single original live source supplies matching
-sequence 1,002. The intended implementation must request each replay with `limit + 1` (1,001),
-discard the stale replay, load a second snapshot at cursor 1,001 without reattaching the live
-source, then emit that fresh snapshot followed by live sequence 1,002. The current implementation
-loads only one snapshot and therefore demonstrates the missing fresh-snapshot recovery path.
-
-### WS-05 GREEN — bounded replay refreshes from a progressing snapshot (2026-07-27)
-
-Commands run from `apps/server`, each with a finite timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread refreshes an excessive replay backlog from a fresh snapshot'
-timeout 60s bun run test -- server.test.ts -t 'subscribeThread'
-timeout 90s bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The replay-bound tracer passed (1 passed, 85 skipped, 2.26 s). It verifies the 1,001-event probe
-  happens before surface filtering, loads a fresh cursor-1,001 snapshot, retains a single original
-  live attachment, emits no stale replay, then emits live sequence 1,002.
-- The narrow `subscribeThread` suite passed: 7 passed, 79 skipped, in 2.41 s.
-- `apps/server` typecheck and repository-root `git diff --check` passed with no diagnostics.
-
-Implementation inspection confirms the shared primitive requests `limit + 1` explicitly, bounds
-collection with the same limit, keeps its already-attached queue through snapshot refresh, refuses a
-non-progressing refreshed cursor with a typed snapshot error, and only projects events after the
-final fresh cursor. The engine now forwards the explicit replay limit to persistence; no unbounded
-fallback was introduced.
-
-### WS-06 RED — thread streaming transport coalescing (2026-07-27)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread coalesces consecutive streaming message deltas without coalescing completion'
-```
-
-Result: failed as intended (1 failed, 86 skipped, 2.23 s). The public `subscribeThread` tracer
-replays two consecutive assistant streaming deltas for the same message at sequences 1 and 2, then
-a non-streaming completion at sequence 3. Current transport delivers all three individual durable
-events and exposes no covered sequence range:
-
-```text
-received sequence 1 text "Hello, ", sequence 2 text "world", sequence 3 completion
-expected sequence 2 text "Hello, world" covering 1–2, then separate sequence 3 covering 3–3
-```
-
-The deterministic replay path exercises coalescing after durable ordering. The RED assertion is
-strictly at the public WebSocket item boundary; persistence is intentionally not inspected or
-changed. WS-06 remains `NEXT` until the minimal transport-only implementation and follow-up
-non-coalescing coverage are complete.
-
-### WS-06 GREEN — thread streaming transport coalescing (2026-07-28)
-
-Commands run with finite process timeouts:
-
-```text
-cd apps/server && timeout 45s bun run test -- server.test.ts -t 'subscribeThread coalesces consecutive streaming message deltas without coalescing completion'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'subscribeThread'
-cd apps/web && bun run test -- orchestrationRecovery.test.ts
-cd apps/web && bun run test -- service.threadSubscriptions.test.ts
-cd packages/contracts && timeout 90s bun run typecheck
-cd apps/server && timeout 90s bun run typecheck
-cd apps/web && bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The public coalescing tracer passed (1 passed, 86 skipped, 2.33 s): the two replayed streaming
-  deltas become one sequence-2 transport event with `"Hello, world"` and covered range 1–2; the
-  sequence-3 non-streaming completion remains a separate range 3–3 event.
-- The narrow `subscribeThread` suite passed: 8 passed, 79 skipped, in 2.44 s.
-- The range-aware recovery coordinator passed: 13 passed. It applies range `1..2` once, advances to
-  the covered end, ignores the duplicate, and accepts `3..3` without gap recovery.
-- The thread runtime subscription suite passed: 14 passed. Its sparse-stream cases confirm that the
-  thread aggregate marker advances from `coveredSequenceEnd` without treating a globally newer
-  snapshot as proof its aggregate detail is fresh.
-- `packages/contracts`, `apps/server`, and `apps/web` typechecks all passed with no diagnostics;
-  root `git diff --check` passed with no output.
-
-Inspection confirms compaction is applied after ordered durable delivery and only merges adjacent
-assistant `thread.message-sent` items when both are streaming and have the same thread/message.
-Any interleaving item or non-streaming completion flushes the pending delta; every emitted event,
-including a non-compacted event, carries an explicit single- or multi-sequence range. The compact
-operator has no persistence dependency or write path. WS-06 is complete; WS-07 is next.
-
-### WS-07 RED — snapshot activity transport projection (2026-07-28)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread projects oversized snapshot activity only at the WebSocket boundary'
-```
-
-Result: failed as intended (1 failed, 84 skipped, 2.23 s). The public `subscribeThread` snapshot
-contains a tool activity whose UTF-8 JSON payload is 40,271 bytes (an emoji-heavy tool output plus
-semantic fields). Current delivery sends it unchanged:
-
-```text
-the WebSocket snapshot payload must stay within the shared 32 KiB activity limit:
-expected 40271 to be at most 32768
-```
-
-The tracer also specifies that the wire copy retains `toolCallId`, `kind`, `status`, `command`,
-`path`, and `taskId`, exposes top-level activity `transportTruncation`, and does not mutate the
-source projection. It exercises only the snapshot public WebSocket boundary; live/replay parity is a
-separate subsequent tracer. WS-07 remains `NEXT`.
-
-### WS-07 GREEN (snapshot only) — activity transport projection (2026-07-28)
-
-Commands run with finite process timeouts:
-
-```text
-cd apps/server && timeout 45s bun run test -- server.test.ts -t 'subscribeThread projects oversized snapshot activity only at the WebSocket boundary'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'subscribeThread'
-cd apps/server && timeout 90s bun run typecheck
-cd packages/contracts && timeout 90s bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The snapshot projection tracer passed (1 passed, 87 skipped, 2.21 s). Its emoji-heavy source
-  payload is 40,271 UTF-8 JSON bytes; the public WebSocket snapshot carries a payload at or below
-  the 32 KiB limit, preserves the required tool identifiers/status/command/path/task fields, and
-  reports matching top-level transport truncation byte metadata.
-- The narrow `subscribeThread` suite passed: 9 passed, 79 skipped, in 2.46 s.
-- `apps/server` and `packages/contracts` typechecks passed with no diagnostics; root
-  `git diff --check` passed with no output.
-
-Read-only implementation review confirms the shared projector computes the original byte size before
-creating a new activity object with a preview payload; it does not assign into the input activity or
-payload. The retained preview explicitly copies the asserted semantic fields. WS-07 remains `NEXT`:
-the required replay/live event projection tracer has not been added or verified yet.
-
-### WS-07 RED — replay activity transport projection (2026-07-28)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeThread projects oversized replay activity only at the WebSocket boundary'
-```
-
-Result: failed as intended (1 failed, 85 skipped, 2.27 s). The public replay tracer starts from a
-normal thread snapshot then replays one `thread.activity-appended` event containing an emoji-heavy
-tool payload. Current delivery sends its 40,265-byte UTF-8 JSON payload unchanged:
-
-```text
-the WebSocket replay payload must stay within the shared 32 KiB activity limit:
-expected 40265 to be at most 32768
-```
-
-The tracer additionally specifies preserved semantic tool fields, top-level activity truncation
-metadata, retained covered range `1..1`, and an unchanged source replay event/activity after wire
-delivery. It is intentionally replay-only; live delivery remains out of scope for this cycle.
-WS-07 remains `NEXT`.
-
-### WS-07 GREEN (thread snapshot/replay/live) — activity transport projection (2026-07-28)
-
-Commands run with finite process timeouts:
-
-```text
-cd apps/server && timeout 45s bun run test -- server.test.ts -t 'subscribeThread projects oversized replay activity only at the WebSocket boundary'
-cd apps/server && timeout 45s bun run test -- server.test.ts -t 'subscribeThread projects oversized live activity only at the WebSocket boundary'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'subscribeThread projects oversized (snapshot|replay|live) activity only at the WebSocket boundary'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'subscribeThread'
-cd apps/server && timeout 90s bun run typecheck
-cd packages/contracts && timeout 90s bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The existing replay tracer passed (1 passed, 88 skipped, 2.20 s). The newly added live tracer
-  passed (1 passed, 89 skipped, 2.24 s).
-- The combined snapshot/replay/live activity projection suite passed: 3 passed, 87 skipped, in
-  2.31 s. Each path trims the oversized activity payload to the common 32 KiB limit, retains the
-  semantic tool fields, emits top-level truncation metadata, retains its `1..1` covered range where
-  applicable, and leaves the source snapshot/event untouched.
-- The narrow `subscribeThread` suite passed: 11 passed, 79 skipped, in 2.51 s.
-- `apps/server` and `packages/contracts` typechecks passed with no diagnostics; root
-  `git diff --check` passed with no output.
-
-WS-07 remains `NEXT`. These tests establish the thread stream's three public delivery paths; the
-remaining review must confirm equivalent activity-bearing event projection for `replayEvents` and
-the other durable subscription surfaces before marking the slice complete.
-
-### WS-07 RED — `replayEvents` activity transport projection (2026-07-28)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'replayEvents projects oversized thread activity only at the WebSocket boundary'
-```
-
-Result: failed as intended (1 failed, 87 skipped, 2.21 s). The public `orchestration.replayEvents`
-RPC receives one durable `thread.activity-appended` event from the engine and returns its
-40,286-byte UTF-8 JSON payload unchanged:
-
-```text
-the replayEvents WebSocket payload must stay within the shared 32 KiB activity limit:
-expected 40286 to be at most 32768
-```
-
-The tracer specifies the same semantic tool-field retention and top-level activity truncation
-metadata as thread subscriptions, while asserting the source engine event remains full and
-unmodified. It leaves project/task subscription coverage out of scope. WS-07 remains `NEXT`.
-
-### WS-07 GREEN — `replayEvents` activity transport projection (2026-07-28)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'replayEvents projects oversized thread activity only at the WebSocket boundary'
-```
-
-Result: passed (1 passed, 90 skipped, 2.20 s). The `replayEvents` result now applies the same
-activity transport projection as thread subscriptions while retaining the engine-owned event object
-unchanged. WS-07 remains `NEXT` pending the project/task subscription surfaces.
-
-### WS-07 RED — project PM activity transport projection (2026-07-28)
-
-Command run from `apps/server` with a finite process timeout:
-
-```text
-timeout 45s bun run test -- server.test.ts -t 'subscribeProject projects oversized PM snapshot and replay activity only at the WebSocket boundary'
-```
-
-Result: failed as intended (1 failed, 88 skipped, 2.20 s). One public project subscription tracer
-contains both an oversized PM-thread snapshot activity and a subsequent PM
-`thread.activity-appended` replay event. The first unchecked outgoing activity is 40,295 UTF-8 JSON
-bytes, above the shared 32 KiB boundary:
-
-```text
-expected 40295 to be at most 32768
-```
-
-The deterministic tracer specifies both paths' semantic tool-field retention and top-level
-truncation metadata, and verifies that neither the source PM snapshot activity nor the source
-replay event may be mutated. It remains red-only; no project transport implementation was added.
-WS-07 remains `NEXT`.
-
-### WS-07 GREEN — complete activity transport projection verification (2026-07-28)
-
-Commands run with finite process timeouts:
-
-```text
-cd apps/server && timeout 45s bun run test -- server.test.ts -t 'subscribeProject projects oversized PM snapshot and replay activity only at the WebSocket boundary'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'projects oversized (snapshot|replay|live|thread activity|PM snapshot)'
-cd apps/server && timeout 60s bun run test -- server.test.ts -t 'subscribe(Thread|Project)'
-cd apps/server && timeout 90s bun run typecheck
-cd packages/contracts && timeout 90s bun run typecheck
-git diff --check
-```
-
-Results:
-
-- The PM project snapshot/replay tracer passed: 1 passed, 91 skipped, in 2.18 s.
-- All five public activity paths passed: normal-thread snapshot, replay, and live; global
-  `replayEvents`; and PM-thread project snapshot plus replay (5 passed, 87 skipped, 2.32 s).
-- The relevant public subscription suite passed: 12 passed, 80 skipped, in 2.57 s.
-- `apps/server` and `packages/contracts` typechecks passed with no diagnostics; root
-  `git diff --check` passed with no output.
-
-Route audit confirms projection is applied at the WebSocket boundary for `replayEvents`,
-`subscribeThread`, and `subscribeProject`. `subscribeShell` and `subscribeTask` contain no activity
-payload surface, so no projector is required there. Persistence and HTTP/detail reads are untouched.
-The shared projector uses UTF-8 byte accounting, preserves declared semantic fields, emits top-level
-`activity.transportTruncation`, and returns copies; the public tests prove snapshot/event sources
-remain unmodified. WS-07 is complete; WS-08 is next.
-
-### WS-08 GREEN — all durable subscription surfaces use ordered bootstrap (2026-07-28)
-
-Commands run from the repository root:
-
-```text
-bun run test --filter=gedcode -- src/server.test.ts --testNamePattern='subscribe(Thread loses|Project delivers|Task loses|Shell loses)'
-bun run test --filter=gedcode -- src/server.test.ts --testNamePattern='subscribe(Thread|Project|Task|Shell)'
-bun run test --filter=@t3tools/web -- src/environments/runtime/service.threadSubscriptions.test.ts
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='force-lands one current reviewed gate with a human verification override reason'
+bun run test --filter=@t3tools/contracts -- src/orchestration.test.ts
 bun run typecheck --filter=@t3tools/contracts
-bun run typecheck --filter=gedcode
-bun run typecheck --filter=@t3tools/web
-git diff --check
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='rejects force-land when the inspected task worktree is dirty'
 ```
 
 Results:
 
-- The four public snapshot-loading race tracers passed (4 passed, 89 skipped): normal thread,
-  project PM thread, task, and shell each deliver sequence 1 after a cursor-0 snapshot instead of
-  losing it to the later sentinel.
-- The narrow server durable-subscription suite passed (17 passed, 76 skipped). It includes shell
-  covered-range delivery for sparse shell projections, bounded replay refresh, ordered buffering,
-  deduplication, compaction, and transport-only activity projection.
-- The web runtime suite passed (15 passed), including the cursor-0 shell range `1..3` regression:
-  it applies once, advances projection state through sequence 3, ignores the duplicate and stale
-  cursor-2 snapshot, and does not reconnect.
-- Contracts, server (including dependencies), and web typechecks all passed. `git diff --check`
-  passed with no output.
+- The original force-land tracer passed (1 passed, 80 skipped). It preserves normal missing-Verify
+  rejection and requires the dedicated command to atomically resolve the gate and start landing
+  with the reason-bearing override audit payload.
+- Contracts orchestration tests passed (70), contracts typecheck passed, and the complete task
+  decider suite passed (81).
+- The next preserved-invariant tracer also passed (1 passed, 81 skipped): a dirty inspected
+  worktree remains ineligible for force-land.
 
-Implementation inspection confirms all four WebSocket routes call `orderedDurableSubscription`:
-shell consumes sparse engine shell projections and adds covered sequence ranges at transport; thread,
-project, and task consume contiguous durable domain events. The shared primitive still enforces the
-central `limit + 1` replay bound and fresh-snapshot retry, while the existing thread/project WebSocket
-transport projectors remain at the outbound boundary. Persistence and raw provider streams are not
-part of this slice. WS-08 is complete; WS-09 is next.
+`bun run typecheck --filter=gedcode` could not complete because the temporary worktree dependency
+links do not include `packages/tailscale/node_modules`; it fails before server typechecking on
+unresolved `effect` and `@effect/vitest` imports in that unrelated package. The contracts and server
+focused test evidence above is clean. Further durable audit/projection and idempotency coverage was
+recorded in the next verification slice.
 
-### WS-09 GREEN — PR 1 final verification (2026-07-28)
-
-Commands run from their relevant workspace directories:
+### FL-02 GREEN — override audit survives contract roundtrip and replay (2026-07-28)
 
 ```text
-bun fmt
-bun lint
-cd packages/contracts && bun run typecheck
-cd apps/server && bun run typecheck
-cd apps/web && bun run typecheck
-cd apps/server && bun run test src/server.test.ts src/orchestration/Layers/OrchestrationEngine.test.ts
-cd apps/web && bun run test src/orchestrationRecovery.test.ts src/environments/runtime/service.threadSubscriptions.test.ts src/localApi.test.ts
-cd packages/contracts && bun run test src/orchestration.test.ts
+bun run test --filter=gedcode -- src/orchestration/projector.test.ts --testNamePattern='round-trips and replays a force-land verification override into the task landing snapshot'
+```
+
+Result: passed (1 passed, 24 skipped). A public `task.landed` event containing the force-land
+verification override is decoded, encoded, decoded again, then replayed through the projector. The
+resulting task snapshot retains the exact override kind, human origin, and reason at
+`task.landing.verificationOverride`. FL-02 is complete; FL-03 is next.
+
+### FL-02A RED — request a pending land gate before Verify (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='requests a pending land gate before Verify while keeping normal approval separate'
+```
+
+Result: failed as intended (1 failed, 82 skipped). The public tracer starts with a Review/idle task
+that has completed Work but no Verify, an exact PR proposal, and clean inspected HEAD equal to the
+requested content hash. It proves ordinary `task.land.approve` remains rejected, then requires
+`task.gate.request` for `land` to emit only a pending gate. The current request path incorrectly
+applies `requireFreshVerification` and rejects before the gate is created:
+
+```text
+Task 'task-1' cannot be approved or landed without verification recorded against its worktree HEAD.
+```
+
+This is the intended FL-02A RED. The request must be decoupled from approval/landing while retaining
+the clean matching-HEAD and exact-proposal checks; normal approval and dedicated force-land stay
+separate.
+
+### FL-02A GREEN — pending gate creation is independent of Verify (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='requests a pending land gate before Verify while keeping normal approval separate'
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts --testNamePattern='force-lands one current reviewed gate with a human verification override reason|normal approval'
+bun run test --filter=gedcode -- src/orchestration/decider.task.test.ts
+bun run typecheck --filter=@t3tools/contracts
+```
+
+Results: the new tracer passed (1 passed, 82 skipped); the force/normal-approval regression pair
+passed (2 passed, 81 skipped); the focused decider suite passed (83 passed); and contracts typecheck
+passed. The legacy `never auto-approves a land gate` fixture now uses `verified-head` as its request
+content hash, which matches the deliberately retained invariant that the clean inspected HEAD must
+equal the requested content. `bun run typecheck --filter=gedcode` remains blocked before server
+typechecking by the force-land worktree's unrelated `@t3tools/tailscale` dependency links: its
+`node_modules` lacks `effect` and `@effect/vitest`, yielding unresolved-import errors. FL-02A is
+complete; FL-03 is next.
+
+### FL-03 RED — dedicated force-land WebSocket action (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/server.test.ts --testNamePattern='force-lands a current reviewed gate through the dedicated orchestrator websocket action'
+```
+
+Result: failed as intended (1 failed, 78 skipped) with `TypeError: forceLandTask is not a
+function`. The public server seam fixes the requested RPC name as `orchestrator.forceLandTask` and
+requires `taskId`, `gateId`, `approvedHash`, and a non-empty human reason. Its fixture deliberately
+has no Verify record, but owns a real clean Git worktree whose inspected HEAD equals the pending
+land gate and supplied hash. When implemented, the server must locate that task, serialize through
+the normal lifecycle coordinator, inspect the worktree, dispatch exactly one `task.land.force` with
+the server-observed completion and reason, and return `{ sequence, alreadyLanded }`. The missing
+RPC group/schema method is the intended first RED; FL-03 remains next.
+
+### FL-03 GREEN — force-land RPC delegates through the guarded landing service (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/server.test.ts --testNamePattern='force-lands a current reviewed gate through the dedicated orchestrator websocket action'
+bun run test --filter=gedcode -- src/orchestration/taskLanding.test.ts
+bun run test --filter=@t3tools/contracts -- src/orchestration.test.ts
+bun run typecheck --filter=@t3tools/contracts
+```
+
+Results: the public server tracer passed (1 passed, 78 skipped), all six focused task-landing
+service tests passed, all 70 contracts orchestration tests passed, and contracts typecheck passed.
+The new RPC locates the task, serializes its lifecycle, observes the clean matching HEAD on the
+owned worktree, and dispatches the reason-bearing `task.land.force` command. `bun run typecheck
+--filter=gedcode` is still blocked before server typechecking by the temporary worktree's unrelated
+`@t3tools/tailscale` dependency links, which lack `effect` and `@effect/vitest`. The next FL-03
+slice is the browser confirmation UX.
+
+### FL-03 RED — explicit force-land confirmation and reason (2026-07-28)
+
+```text
+cd apps/web && gtimeout 25s bun run test:browser src/components/orchestrator/OrchestratorRoutes.browser.tsx --testNamePattern='requires an explicit reason before force landing a pending land gate' --reporter=verbose --testTimeout=8000
+```
+
+Result: failed as intended (1 failed, 23 skipped). The pending land gate still renders the primary
+normal `Approve` action, but the required separate `Force land` action does not exist:
+
+```text
+locator.click: Timeout 7844ms exceeded
+waiting for ... getByRole('button', { name: 'Force land' })
+```
+
+The browser tracer then specifies the rest of the protected flow: an explicitly named confirmation
+dialog, a labelled reason field, a disabled confirmation until the reason is non-empty, and a single
+`api.orchestrator.forceLandTask({ taskId, gateId, approvedHash, reason })` call. It also proves that
+the normal approval API is untouched by force landing. This is the intended UI RED; no production
+code was changed and FL-03 remains next.
+
+### FL-03 GREEN — explicit force-land confirmation is bounded and auditable (2026-07-28)
+
+```text
+cd apps/web && gtimeout 30s bun run test:browser src/components/orchestrator/OrchestratorRoutes.browser.tsx --testNamePattern='uses land-gate approval as the only normal landing action|requires an explicit reason before force landing a pending land gate|does not offer force land for non-land or resolved gates' --reporter=verbose --testTimeout=12000
+bun run test --filter=gedcode -- src/server.test.ts --testNamePattern='force-lands a current reviewed gate through the dedicated orchestrator websocket action'
+bun run test --filter=gedcode -- src/orchestration/taskLanding.test.ts
+bun run test --filter=@t3tools/contracts -- src/orchestration.test.ts
+bun run typecheck --filter=@t3tools/contracts
 git diff --check
 ```
 
-Results:
+Results: all three focused browser tests passed (3 passed, 22 skipped); the browser flow retains
+normal approval, requires a visible confirmation dialog and non-empty reason before submitting the
+exact force-land RPC payload, and suppresses Force land for non-land and resolved gates. The final
+submit activation uses direct DOM `click()` only in this isolated CSS-less component harness because
+Base UI's inert presentation wrapper otherwise covers the rendered dialog; the browser test still
+performs real visibility, enabled-state, and input assertions beforehand. The public server RPC test
+passed (1 passed, 78 skipped), task-landing tests passed (6), contracts tests passed (70), contracts
+typecheck passed, and `git diff --check` passed. Server and web typechecks are blocked before their
+targets by unrelated temporary-worktree dependency links: `@t3tools/tailscale` and `@t3tools/shared`
+respectively lack the required Effect packages. FL-03 is complete; DP-01 is next.
 
-- `bun fmt` completed across 1,432 files. `bun lint` completed successfully with existing warnings
-  only; it reported no errors.
-- All narrow typechecks passed: contracts (0.69 s), server (5.20 s), and web (3.96 s).
-- Focused server tests passed: 2 files, 111 tests, 6.00 s. This includes the shared engine replay
-  limit path and the public shell/thread/project/task subscription tracers.
-- Focused web tests passed: 3 files, 46 tests, 1.23 s. They cover range-aware recovery, thread
-  subscription application, and local API schema handling. Contract orchestration tests also
-  passed: 1 file, 70 tests, 0.30 s.
-- `git diff --check` completed with no output.
+### DP-01 RED — PM direct publication is taskless and explicit (2026-07-28)
 
-Final read-only review maps the implementation to every PR 1 acceptance criterion: all four durable
-surfaces use the same subscribe-before-snapshot ordered bootstrap; replay, buffered, and live items
-deduplicate by sequence; the central `1,000 + 1` replay query refreshes the snapshot rather than
-delivering an excessive history; only adjacent same-message streaming assistant deltas compact at
-transport with covered ranges; activity previews are projected only while serializing WebSocket
-snapshots/events and retain explicit byte metadata; persistence, HTTP/detail reads, and raw provider
-streams retain their full or existing semantics. The source diff contains no protocol-compatibility
-shim. WS-09 is complete; WS-10 is next.
+```text
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts --testNamePattern='publishes one direct commit without creating an orchestration task'
+```
 
-### WS-10 publication (2026-07-28)
+Result: failed as intended (1 failed, 57 skipped): `findTool` cannot find
+`publishDirectCommit`. The public PM-tool tracer supplies the narrow direct-publication port and
+requires only the source commit, destination branch, base branch, exact PR title/body, and optional
+existing PR URL; the project ID comes from PM project context and is asserted at the port boundary.
+It pins the successful PR URL/details response and proves that no orchestration command—especially
+`task.create`—is dispatched. The missing tool/port is the intended DP-01 RED; DP-01 remains next.
 
-- Branch: `agent/harden-orchestration-replay`
-- Implementation commit: `5170f0b20`
-- Draft pull request: <https://github.com/edgyarmati/gedcode/pull/67>
-- Target: `edgyarmati/gedcode:main`
-- Status: awaiting human review and merge; PR 2 must start from the merged PR 1 base.
+### DP-01 GREEN — PM direct publication stays taskless (2026-07-28)
 
-## PR 2 Planned Behavior Coverage
+```text
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts --testNamePattern='publishes one direct commit without creating an orchestration task'
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts
+git diff --check
+```
 
-1. Settle/snooze/activate lifecycle events survive persistence, restart, snapshot, and replay.
-2. Commands are idempotent and reject pending approval/input or fresh unadopted user work.
-3. New user activity clears settled/snoozed state for only the target normal thread.
-4. Durable resumed execution reopens only the affected Orchestrator task.
-5. Viewing/navigation and unrelated project PM messages do not reopen work.
-6. Completed Orchestrator tasks auto-settle.
-7. Normal thread inactivity auto-settles at the configured 1–90 day threshold; null disables it.
-8. Explicit active override suppresses automatic settlement until new user activity.
-9. Running background work does not cancel snooze.
-10. Approval/input/new failure after snooze raises the item into Active.
-11. Snooze expiry uses a precise timer and returns the item without a synthetic unsnooze event.
-12. Presets produce one hour, eligible evening, tomorrow 09:00, and next Monday 09:00 using local
-    calendar arithmetic across DST.
-13. The sliding pill partitions Threads and Orchestrator tasks; lifecycle filter partitions Active,
-    Snoozed, and Settled; no project grouping appears.
-14. Internal PM/worker threads remain excluded.
-15. Orchestrator rows navigate to the owning project's Orchestrator view; thread rows navigate to chat.
+Results: the public tracer passed (1 passed, 57 skipped) and the narrow PM-tool suite passed (58).
+The test now injects the production direct-publication port and verifies the exact project-context
+input, PR result, and absence of every orchestration dispatch. `bun run typecheck --filter=gedcode`
+is blocked before server typechecking by the same temporary-worktree `@t3tools/tailscale` dependency
+links lacking Effect packages. DP-01 is complete; DP-02 is next.
 
-## PR 2 Required Quality Gates
+### DP-02 RED — isolated one-commit publication service (2026-07-28)
 
-- Focused contracts, decider, projector, persistence, and replay tests.
-- Focused web classification/store/component/navigation tests.
-- `bun fmt`
-- `bun lint`
-- Narrowest relevant typechecks for changed packages/apps.
-- `git diff --check`
+```text
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationService.test.ts --testNamePattern='publishes one existing commit from an isolated worktree without changing the primary checkout'
+```
 
-## PR 2 Evidence
+Result: failed as intended before execution because the public
+`./DirectPublicationService.ts` module is absent (0 tests). The single success tracer creates a
+real temporary primary repository plus bare `origin`, commits one source change, and injects a fake
+source-control provider. It specifies an isolated-worktree publication API that preserves the clean
+primary checkout, pushes the explicit destination branch normally, creates the exact proposed PR,
+returns its URL, and removes the temporary repository state. DP-02 remains next.
 
-Blocked until PR 1 is merged.
+### DP-02 RED — idempotent direct-publication retry (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationService.test.ts --testNamePattern='retries an identical direct publication'
+```
+
+Result: failed as intended (1 failed, 2 skipped). The first real-repository publication succeeds;
+the identical retry with its existing PR URL attempts to create the destination branch again and
+fails with `fatal: a branch named 'ged/direct/retry' already exists`. The tracer requires unchanged
+remote head, no repeat cherry-pick/push, and one exact existing-PR update rather than a second PR.
+DP-02 remains next.
+
+### DP-02 GREEN — validation boundaries have no publication side effects (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationService.test.ts --testNamePattern='rejects direct-publication validation boundaries before provider calls or repository mutation'
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationService.test.ts
+git diff --check
+```
+
+Results: the new table-driven public service tracer passed (1 passed, 4 skipped), then the full
+DirectPublicationService suite passed (5 passed). Its reusable real-repository fixture covers a
+dirty primary checkout (`checkout-dirty`), invalid source (`source-commit-invalid`), protected
+`main` destination (`destination-protected`), and a pre-existing destination lacking exact `-x`
+provenance (`destination-mismatch`). Every case asserts neither PR provider method is called and no
+temporary worktree is retained; the first three also prove no remote ref changes beyond the fixture,
+while the mismatch case verifies only its deliberately pre-created fixture branch exists. `git diff
+--check` passed. Server typechecking remains blocked before its target by this temporary worktree's
+unrelated `@t3tools/tailscale` dependency links, which lack `effect` and `@effect/vitest`; that
+environment issue is unchanged and is not expanded in this slice. DP-02 is complete; DP-03 is next.
+
+### DP-03 RED — direct publication requires an explicit PM project target (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts --testNamePattern='publishes a direct commit for its explicit project without global project inference'
+```
+
+Result: failed as intended (1 failed, 58 skipped). The public PM-tool tracer supplies two enabled
+projects and explicitly selects the first project while publishing one commit. It requires the port
+to receive that exact project ID, no task command to dispatch, and no global project inference.
+The current tool ignores the explicit input and calls `resolvePmProjectId`, which rejects because
+the shared read model has two enabled projects:
+
+```text
+Direct publication requires one PM project context; found 2.
+```
+
+The contract is now explicit: the global trusted PM MCP transport accepts a required `projectId`,
+then server-side resolution validates that selected project before resolving its workspace and
+source-control provider. This preserves the existing shared MCP transport and intentionally avoids
+a per-project endpoint redesign. DP-03 remains next.
+
+### DP-03 GREEN — explicit PM project tool target (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts --testNamePattern='publishes a direct commit for its explicit project without global project inference'
+bun run test --filter=gedcode -- src/orchestration/pm/pmTools.test.ts
+```
+
+Results: the explicit-project tracer passed (1 passed, 58 skipped), and the complete PM-tool suite
+passed (59). The existing direct-publication tracer now supplies the required project ID too. With
+two enabled projects, the tool forwards only the selected ID to its port and dispatches no task
+command.
+
+### DP-03 RED — live direct-publication adapter binds project services (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationLive.test.ts --testNamePattern='binds direct publication to the explicitly selected project workspace and source-control provider'
+```
+
+Result: failed as intended before execution because `./DirectPublicationLive.ts` does not exist
+(0 tests). The next public adapter tracer supplies two projects, explicit VCS and source-control
+registry services, and an injected publication function. It requires the selected project only to
+resolve its workspace and source-control provider, then passes the exact workspace, project ID,
+publication parameters, provider, and VCS process to the underlying service. The production factory
+should default that injection to the existing direct-publication service. DP-03 remains next.
+
+### DP-03 GREEN — live adapter resolves only the selected project (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/directPublication/DirectPublicationLive.test.ts --testNamePattern='binds direct publication to the explicitly selected project workspace and source-control provider'
+bun run typecheck --filter=gedcode
+```
+
+Results: the live adapter tracer passed (1 passed). It binds project one—not the second enabled
+project—to `/projects/one`, resolves the source-control provider only at that workspace, and passes
+the injected provider, VCS process, exact project ID, and request parameters to the publication
+function. The server typecheck remains blocked before the server target by the known unrelated
+temporary-worktree `@t3tools/tailscale` dependency links missing Effect packages (`effect` and
+`@effect/vitest`). DP-03 remains next.
+
+### DP-03 RED — PM runtime MCP construction receives direct publication (2026-07-28)
+
+```text
+bun run test --filter=gedcode -- src/orchestration/Layers/PmRuntime.directPublication.test.ts --testNamePattern='constructs PM MCP executors with the live direct-publication port'
+```
+
+Result: failed as intended (1 failed). The bounded runtime-construction tracer specifies a public
+`makePmRuntimeMcpToolExecutors({ directPublication })` seam in `PmRuntime`: it must construct the
+normal PM MCP executor list with the supplied `DirectPublicationPort`, expose `publishDirectCommit`,
+and route an explicit project request to that adapter without a service-unavailable error. The
+existing runtime owns a globally registered MCP server directly and exports no such construction
+seam, so the imported symbol is undefined at runtime. The implementation should introduce this
+small public builder around the existing `makeOrchestrationMcpExecutors` composition and have
+`makePmRuntime` use it; it should not redesign the global trusted MCP transport. The live adapter
+test remains green. DP-03 remains next.
+
+### DP-03 GREEN — PM runtime uses the configured publication port (2026-07-28)
+
+```text
+bun run test -- src/orchestration/Layers/PmRuntime.test.ts src/orchestration/Layers/PmRuntime.directPublication.test.ts
+bun run test -- src/orchestration/directPublication/DirectPublicationService.test.ts src/orchestration/directPublication/DirectPublicationLive.test.ts
+bun run test:browser -- src/components/orchestrator/OrchestratorRoutes.browser.tsx
+bun run typecheck # packages/contracts
+git diff --check
+```
+
+Implementation checkpoint results: the PM runtime suites passed (54 tests), direct-publication
+service/live suites passed (6 tests), the focused Orchestrator browser suite passed (25 tests), the
+contracts typecheck passed, and `git diff --check` passed. Runtime construction now receives one
+configured `DirectPublicationPort` rather than eagerly constructing VCS/provider infrastructure,
+and both PM backends use the normal MCP executor list with that port. The PM guidance reserves
+taskless publication for exactly one already-reviewed commit and directs implementation,
+uncertainty, and multi-commit work through a task and Verify.
+
+These are implementation-agent checkpoint results, not the final independent verification record.
+PUB-01 remains in progress while Terra runs format, lint, narrow cross-package typechecks, and final
+focused verification. The temporary worktree's server/web dependency links currently resolve
+`@t3tools/contracts` to the original checkout, so missing force-land API symbols from those two
+cross-package typechecks must be rechecked in a correctly linked worktree rather than recorded as
+product failures.
+
+### PUB-01 FINAL — independent Terra verification (2026-07-28)
+
+Terra completed the final verification checkpoint with the worktree dependencies resolving against
+this branch:
+
+- Server typecheck: passed.
+- Workspace typecheck: passed, 12/12 workspace targets.
+- Focused forced-landing, direct-publication, PM runtime/projection, RPC, and browser verification:
+  passed, 120/120 tests.
+- Landing integration verification: passed, 13/13 tests.
+- Final full `bun run test`: passed. The retained output is
+  `/tmp/gedcode-force-land-full-test-final.log`.
+- Lint: passed with pre-existing warnings only and no new errors.
+- `bun fmt --check`: passed.
+- `git diff --check`: passed.
+
+A transient `tsgo` runtime crash occurred during verification; clean reruns completed successfully,
+including the final server and 12-target workspace typechecks above. It did not reproduce as a
+product type error. PUB-01 is complete and PUB-02 is ready for commit, push, and the independent
+draft pull request.

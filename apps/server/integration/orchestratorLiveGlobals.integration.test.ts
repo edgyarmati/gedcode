@@ -271,6 +271,7 @@ function requestGate(input: {
         : null;
     const worktreeCompletion =
       landTask === null ? undefined : { head: landTask.verification!.head, dirty: false };
+    const contentHash = worktreeCompletion?.head ?? input.contentHash;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -278,7 +279,7 @@ function requestGate(input: {
         taskId: input.taskId,
         gateId: requestGateId,
         gate: input.gate,
-        contentHash: input.contentHash,
+        contentHash,
         stageThreadId: ThreadId.make(`thread-live-global-${input.suffix}-${input.gate}`),
         ...(worktreeCompletion === undefined ? {} : { worktreeCompletion }),
         ...(landTask === null
@@ -316,7 +317,7 @@ function requestGate(input: {
         taskId: input.taskId,
         gateId: requestGateId,
         gate: input.gate,
-        approvedHash: input.contentHash,
+        approvedHash: contentHash,
         decision: "approved",
         origin: "system",
         updatedAt: input.createdAt,

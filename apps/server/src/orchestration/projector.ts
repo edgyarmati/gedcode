@@ -1743,6 +1743,9 @@ export function projectEvent(
               failureMessage: null,
               branchPushed: false,
               ...(payload.approvedHash === undefined ? {} : { approvedHash: payload.approvedHash }),
+              ...(payload.verificationOverride === undefined
+                ? {}
+                : { verificationOverride: payload.verificationOverride }),
               ...(nextBase.tasks.find((task) => task.id === payload.taskId)?.landing
                 ?.publishedHash === undefined
                 ? {}

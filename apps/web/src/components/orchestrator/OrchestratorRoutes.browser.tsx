@@ -904,6 +904,71 @@ it("uses land-gate approval as the only normal landing action", async () => {
   });
 });
 
+it("requires an explicit reason before force landing a pending land gate", async () => {
+  const resolveGate = vi.fn(async () => ({ sequence: 2 }));
+  const forceLandTask = vi.fn(async () => ({ sequence: 3, alreadyLanded: false }));
+  __setEnvironmentApiOverrideForTests(environmentId, {
+    orchestrator: { resolveGate, forceLandTask },
+  } as unknown as EnvironmentApi);
+  const pendingLandGate = {
+    ...approvedLandGate,
+    status: "pending" as const,
+    approvedHash: null,
+    decision: null,
+    origin: null,
+    resolvedAt: null,
+  };
+
+  render(<GatePanel environmentId={environmentId} gates={[pendingLandGate]} taskId={taskId} />);
+
+  await expect.element(page.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+  await page.getByRole("button", { name: "Force land" }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm force land" });
+  await expect.element(dialog).toBeInTheDocument();
+  const reason = dialog.getByRole("textbox", { name: "Reason" });
+  const confirm = dialog.getByRole("button", { name: "Confirm force land" });
+  await expect.element(confirm).toBeDisabled();
+  await reason.fill("Human reviewed the clean worktree and accepts the verification override.");
+  await expect.element(confirm).toBeEnabled();
+  // This isolated component harness does not load app CSS, so Base UI's inert presentation layer
+  // incorrectly covers the dialog in Playwright. The preceding browser assertions still verify the
+  // visible enabled control; activate its submit handler directly here.
+  (confirm.element() as HTMLElement).click();
+  await expect.poll(() => forceLandTask.mock.calls.length).toBe(1);
+  expect(forceLandTask).toHaveBeenCalledWith({
+    taskId,
+    gateId: pendingLandGate.gateId,
+    approvedHash: pendingLandGate.contentHash,
+    reason: "Human reviewed the clean worktree and accepts the verification override.",
+  });
+  expect(resolveGate).not.toHaveBeenCalled();
+});
+
+it("does not offer force land for non-land or resolved gates", async () => {
+  render(
+    <GatePanel
+      environmentId={environmentId}
+      gates={[
+        {
+          ...approvedLandGate,
+          gateId: GateId.make("gate-plan-browser"),
+          gate: "plan",
+          status: "pending",
+          approvedHash: null,
+          decision: null,
+          origin: null,
+          resolvedAt: null,
+        },
+        approvedLandGate,
+      ]}
+      taskId={taskId}
+    />,
+  );
+
+  await expect.element(page.getByRole("button", { name: "Approve" }).first()).toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Force land" })).not.toBeInTheDocument();
+});
+
 it("retries a durable exhausted landing failure", async () => {
   const landTask = vi.fn(async () => ({ sequence: 4, alreadyLanded: false }));
   __setEnvironmentApiOverrideForTests(environmentId, {
