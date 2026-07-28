@@ -1,10 +1,13 @@
 # STATE
 
-- **Phase**: publish
+- **Phase**: complete
 - **Roadmap**: Forced Landing and Direct PM Publication
 - **Branch**: `agent/force-land-direct-publish`
 - **Base**: `main` at `854a14139`
-- **Active task**: PUB-02 — commit, push, and open the independent draft pull request
+- **Active task**: none — published
+- **Published commit**: `640a37118`
+- **Published branch**: `agent/force-land-direct-publish`
+- **Draft PR**: https://github.com/edgyarmati/gedcode/pull/68
 - **Clarified**: 2026-07-28
 
 ## Locked Decisions

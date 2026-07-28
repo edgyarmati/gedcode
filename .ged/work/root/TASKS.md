@@ -12,4 +12,4 @@ Status values: `NEXT`, `TODO`, `DONE`, `BLOCKED`.
 | DP-02 | DONE | Implement bounded direct-publication service with isolated worktree, validation, push, PR create/update, cleanup, and idempotency. | Focused VCS/provider/service tests cover success and typed failure cleanup. |
 | DP-03 | DONE | Wire PM tool, activity projection, and PM guidance for taskless trivial commit routing. | PM tests prove direct publish emits audit activity and never creates a task. |
 | PUB-01 | DONE | Update glossary/changelog/docs and run final verification. | Focused tests, format, lint, contracts/server/web typechecks, and diff check pass. |
-| PUB-02 | NEXT | Commit, push, and open a detailed independent draft PR. | Branch and PR target `main` and do not depend on PR #67. |
+| PUB-02 | DONE | Commit, push, and open a detailed independent draft PR. | Branch and PR target `main` and do not depend on PR #67. |
