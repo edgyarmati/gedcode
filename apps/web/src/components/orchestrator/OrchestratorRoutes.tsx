@@ -38,6 +38,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -53,6 +54,16 @@ import { MessagesTimeline, type PmTaskChipContext } from "../chat/MessagesTimeli
 import { ProposedPlanCard } from "../chat/ProposedPlanCard";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
+import { Textarea } from "../ui/textarea";
 import {
   sidebarTitlebarLeftInsetClass,
   SidebarInset,
@@ -1431,6 +1442,12 @@ export function GateCard({
 }) {
   const [submitting, setSubmitting] = useState<OrchestrationGateDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [forceDialogOpen, setForceDialogOpen] = useState(false);
+  const [forceReason, setForceReason] = useState("");
+  const [forceSubmitting, setForceSubmitting] = useState(false);
+  const [forceError, setForceError] = useState<string | null>(null);
+  const forceReasonId = useId();
+  const forceFormId = useId();
   const resolved = gate.status === "resolved";
   const resolve = async (decision: OrchestrationGateDecision) => {
     const api = readEnvironmentApi(environmentId);
@@ -1451,6 +1468,31 @@ export function GateCard({
       setError(resolveError instanceof Error ? resolveError.message : String(resolveError));
     } finally {
       setSubmitting(null);
+    }
+  };
+  const forceLand = async () => {
+    const reason = forceReason.trim();
+    const api = readEnvironmentApi(environmentId);
+    if (!api || forceSubmitting || resolved || gate.gate !== "land" || reason.length === 0) {
+      return;
+    }
+    setForceSubmitting(true);
+    setForceError(null);
+    try {
+      await api.orchestrator.forceLandTask({
+        taskId,
+        gateId: GateId.make(gate.gateId),
+        approvedHash: gate.contentHash,
+        reason,
+      });
+      setForceDialogOpen(false);
+      setForceReason("");
+    } catch (forceLandError) {
+      setForceError(
+        forceLandError instanceof Error ? forceLandError.message : String(forceLandError),
+      );
+    } finally {
+      setForceSubmitting(false);
     }
   };
 
@@ -1496,21 +1538,112 @@ export function GateCard({
       ) : null}
       {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
       {!resolved ? (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button
-            disabled={submitting !== null}
-            onClick={() => void resolve("rejected")}
-            size="sm"
-            variant="outline"
-          >
-            <XIcon className="size-4" />
-            Reject
-          </Button>
-          <Button disabled={submitting !== null} onClick={() => void resolve("approved")} size="sm">
-            <CheckIcon className="size-4" />
-            Approve
-          </Button>
+        <div className="mt-4 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              disabled={submitting !== null}
+              onClick={() => void resolve("rejected")}
+              size="sm"
+              variant="outline"
+            >
+              <XIcon className="size-4" />
+              Reject
+            </Button>
+            <Button
+              disabled={submitting !== null}
+              onClick={() => void resolve("approved")}
+              size="sm"
+            >
+              <CheckIcon className="size-4" />
+              Approve
+            </Button>
+          </div>
+          {gate.gate === "land" ? (
+            <Button
+              className="w-full text-destructive hover:text-destructive"
+              disabled={submitting !== null}
+              onClick={() => {
+                setForceError(null);
+                setForceDialogOpen(true);
+              }}
+              size="sm"
+              variant="outline"
+            >
+              <CircleAlertIcon className="size-4" />
+              Force land
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+      {gate.gate === "land" && !resolved ? (
+        <Dialog
+          open={forceDialogOpen}
+          onOpenChange={(open) => {
+            if (!forceSubmitting) {
+              setForceDialogOpen(open);
+              if (!open) {
+                setForceError(null);
+              }
+            }
+          }}
+        >
+          <DialogPopup className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Confirm force land</DialogTitle>
+              <DialogDescription>
+                Force landing bypasses the fresh Verify requirement only. The clean worktree,
+                proposed commit, gate identity, and pull-request proposal are still checked.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogPanel className="space-y-3">
+              <form
+                className="space-y-3"
+                id={forceFormId}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void forceLand();
+                }}
+              >
+                <label className="block text-sm font-medium" htmlFor={forceReasonId}>
+                  Reason
+                </label>
+                <Textarea
+                  id={forceReasonId}
+                  aria-label="Reason"
+                  disabled={forceSubmitting}
+                  onChange={(event) => setForceReason(event.target.value)}
+                  placeholder="Explain why bypassing fresh verification is acceptable."
+                  required
+                  value={forceReason}
+                />
+                {forceError ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {forceError}
+                  </p>
+                ) : null}
+              </form>
+            </DialogPanel>
+            <DialogFooter>
+              <Button
+                disabled={forceSubmitting}
+                onClick={() => setForceDialogOpen(false)}
+                type="button"
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={forceSubmitting || forceReason.trim().length === 0}
+                form={forceFormId}
+                type="submit"
+                variant="destructive"
+              >
+                {forceSubmitting ? <LoaderCircleIcon className="size-4 animate-spin" /> : null}
+                Confirm force land
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
       ) : null}
     </article>
   );

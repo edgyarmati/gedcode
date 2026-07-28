@@ -1,28 +1,19 @@
 # STATE
 
-- **Phase**: verify
-- **Active task**: none — 0.4.0 release candidate verification is complete
-- **Roadmap**: Worker Thread Continuation Policy
-- **Clarified**: 2026-07-27
-- **Completed**: 2026-07-27 — focused verification evidence is recorded in `TESTS.md`
-- **Release candidate**: 0.4.0 — full tests, formatting, lint, typecheck, and release smoke passed
-- **Test stabilization**: Cross-platform reactor fixtures and turn-send synchronization verified;
-  full workspace suite passed on 2026-07-27
-- **Release notes publication**: v0.4.0 body restored from `CHANGELOG.md`; publisher regression
-  coverage passed on 2026-07-27
+- **Phase**: publish
+- **Roadmap**: Forced Landing and Direct PM Publication
+- **Branch**: `agent/force-land-direct-publish`
+- **Base**: `main` at `854a14139`
+- **Active task**: PUB-02 — commit, push, and open the independent draft pull request
+- **Clarified**: 2026-07-28
 
-## Worker Thread Continuation Completion
+## Locked Decisions
 
-Completed 2026-07-27. The PM now prefers one bounded same-thread correction for a viable current
-Plan/Work attempt, with explicit fresh-attempt boundaries and independent post-fix verification.
-
-## PM Prompt Prefix Completion
-
-Completed 2026-07-27. Global and project-scoped PM instructions now resolve into the immutable PM
-system prompt, with explicit project blank values suppressing inheritance.
-
-## Locked Decision
-
-After explicit human approval, replacement landing updates the existing PR branch using
-force-with-lease and replaces the PR title/body with the newly approved proposal. There is no
-fallback that treats old completed landing state as permanently terminal.
+- Forced landing bypasses only fresh Verify and requires a human reason.
+- Gate identity/content, exact PR proposal, inspected clean worktree, matching HEAD, review/idle
+  status, lifecycle lock, landing idempotency, and normal PR publication remain mandatory.
+- Forced landing never means force push.
+- Direct publication is a separate PM-owned, taskless, one-existing-commit workflow.
+- Direct publication uses explicit branches/proposal, isolated worktree, normal push, and existing
+  source-control providers; no generic Git or multi-commit support.
+- This PR is independent of replay-hardening PR #67.

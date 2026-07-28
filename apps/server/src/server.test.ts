@@ -4319,6 +4319,132 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect(
+    "force-lands a current reviewed gate through the dedicated orchestrator websocket action",
+    () =>
+      Effect.gen(function* () {
+        const now = "2026-07-28T00:00:00.000Z";
+        const taskId = TaskId.make("task-force-land-rpc");
+        const gateId = GateId.make("gate-force-land-rpc");
+        const projectId = ProjectId.make("project-force-land-rpc");
+        const fileSystem = yield* FileSystem.FileSystem;
+        const workspaceRoot = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-force-land-rpc-test-",
+        });
+        const worktreePath = `${workspaceRoot}/.gedcode/orchestrator/tasks/${taskId}`;
+        yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
+        const head = yield* Effect.sync(() => {
+          execFileSync("git", ["init", "-q"], { cwd: worktreePath });
+          execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: worktreePath });
+          execFileSync("git", ["config", "user.name", "T3 Test"], { cwd: worktreePath });
+          execFileSync("git", ["commit", "--allow-empty", "-qm", "initial"], { cwd: worktreePath });
+          return execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktreePath })
+            .toString()
+            .trim();
+        });
+        const dispatched: OrchestrationCommand[] = [];
+        const readModel: OrchestrationReadModel = {
+          snapshotSequence: 91,
+          updatedAt: now,
+          projects: [],
+          threads: [],
+          tasks: [
+            {
+              id: taskId,
+              projectId,
+              type: TaskTypeId.make("feature"),
+              title: "Force land safely",
+              status: "review",
+              branch: "orchestrator/task-force-land-rpc",
+              worktreePath,
+              prUrl: null,
+              pmMessageId: null,
+              stageThreadIds: [],
+              currentStageThreadId: null,
+              cancellation: null,
+              changeReview: null,
+              verification: null,
+              noChangesNeeded: null,
+              landing: null,
+              roleCapabilityTiers: {},
+              playbookVersion: null,
+              createdAt: now,
+              updatedAt: now,
+              archivedAt: null,
+              deletedAt: null,
+            },
+          ],
+          projectContextRuns: [],
+          pendingGates: [
+            {
+              gateId,
+              taskId,
+              gate: "land",
+              contentHash: head,
+              stageThreadId: null,
+              status: "pending",
+              approvedHash: null,
+              decision: null,
+              origin: null,
+              requestedAt: now,
+              resolvedAt: null,
+            },
+          ],
+          quotaBlockedStages: [],
+          stageHistory: {},
+        };
+        yield* buildAppUnderTest({
+          layers: {
+            projectionSnapshotQuery: { getCommandReadModel: () => Effect.succeed(readModel) },
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  dispatched.push(command);
+                  return { sequence: 92 };
+                }),
+            },
+          },
+        });
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) => {
+            const forceLandTask = (
+              client as unknown as Record<
+                string,
+                (input: {
+                  readonly taskId: TaskId;
+                  readonly gateId: GateId;
+                  readonly approvedHash: string;
+                  readonly reason: string;
+                }) => Effect.Effect<{ readonly sequence: number; readonly alreadyLanded: boolean }>
+              >
+            )["orchestrator.forceLandTask"];
+            return forceLandTask!({
+              taskId,
+              gateId,
+              approvedHash: head,
+              reason: "Human verified the current clean change outside the automated verifier.",
+            });
+          }),
+        );
+
+        assert.deepEqual(result, { sequence: 92, alreadyLanded: false });
+        assert.equal(dispatched.length, 1);
+        const command = dispatched[0];
+        assert.equal(command?.type, "task.land.force");
+        if (command?.type !== "task.land.force") return;
+        assert.equal(command.taskId, taskId);
+        assert.equal(command.gateId, gateId);
+        assert.equal(command.approvedHash, head);
+        assert.equal(
+          command.reason,
+          "Human verified the current clean change outside the automated verifier.",
+        );
+        assert.deepEqual(command.worktreeCompletion, { head, dirty: false });
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("falls back to transcript PM handoff when summary brief creation fails", () =>
     Effect.gen(function* () {
       const dispatched: OrchestrationCommand[] = [];

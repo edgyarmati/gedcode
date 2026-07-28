@@ -60,6 +60,7 @@ export const ORCHESTRATOR_WS_METHODS = {
   returnTaskChanges: "orchestrator.returnTaskChanges",
   completeTaskWithoutChanges: "orchestrator.completeTaskWithoutChanges",
   landTask: "orchestrator.landTask",
+  forceLandTask: "orchestrator.forceLandTask",
   listArchivedTasks: "orchestrator.listArchivedTasks",
   archiveTask: "orchestrator.archiveTask",
   restoreTask: "orchestrator.restoreTask",
@@ -711,12 +712,20 @@ export const OrchestrationTaskLandingStatus = Schema.Literals([
 ]);
 export type OrchestrationTaskLandingStatus = typeof OrchestrationTaskLandingStatus.Type;
 
+export const TaskLandingVerificationOverride = Schema.Struct({
+  kind: Schema.Literal("force-land"),
+  reason: TrimmedNonEmptyString,
+  origin: Schema.Literal("human"),
+});
+export type TaskLandingVerificationOverride = typeof TaskLandingVerificationOverride.Type;
+
 export const OrchestrationTaskLanding = Schema.Struct({
   status: OrchestrationTaskLandingStatus,
   failureMessage: Schema.NullOr(TrimmedNonEmptyString),
   branchPushed: Schema.Boolean,
   approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
   publishedHash: Schema.optionalKey(TrimmedNonEmptyString),
+  verificationOverride: Schema.optionalKey(TaskLandingVerificationOverride),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
@@ -1807,6 +1816,17 @@ const TaskLandApproveCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskLandForceCommand = Schema.Struct({
+  type: Schema.Literal("task.land.force"),
+  commandId: CommandId,
+  taskId: TaskId,
+  gateId: GateId,
+  approvedHash: TrimmedNonEmptyString,
+  reason: TrimmedNonEmptyString,
+  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
+  createdAt: IsoDateTime,
+});
+
 const TaskLandCommand = Schema.Struct({
   type: Schema.Literal("task.land"),
   commandId: CommandId,
@@ -1943,6 +1963,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskGateRequestCommand,
   TaskGateResolveCommand,
   TaskLandApproveCommand,
+  TaskLandForceCommand,
   TaskLandCommand,
   HelperRunRequestCommand,
 ]);
@@ -2734,6 +2755,7 @@ export const TaskGateResolvedPayload = Schema.Struct({
 export const TaskLandedPayload = Schema.Struct({
   taskId: TaskId,
   approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
+  verificationOverride: Schema.optionalKey(TaskLandingVerificationOverride),
   updatedAt: IsoDateTime,
 });
 
@@ -3438,6 +3460,17 @@ export const OrchestratorLandTaskResult = Schema.Struct({
 });
 export type OrchestratorLandTaskResult = typeof OrchestratorLandTaskResult.Type;
 
+export const OrchestratorForceLandTaskInput = Schema.Struct({
+  taskId: TaskId,
+  gateId: GateId,
+  approvedHash: TrimmedNonEmptyString,
+  reason: TrimmedNonEmptyString,
+});
+export type OrchestratorForceLandTaskInput = typeof OrchestratorForceLandTaskInput.Type;
+
+export const OrchestratorForceLandTaskResult = OrchestratorLandTaskResult;
+export type OrchestratorForceLandTaskResult = typeof OrchestratorForceLandTaskResult.Type;
+
 export const OrchestratorListArchivedTasksInput = Schema.Struct({
   projectId: ProjectId,
 });
@@ -3862,6 +3895,10 @@ export const OrchestratorRpcSchemas = {
   landTask: {
     input: OrchestratorLandTaskInput,
     output: OrchestratorLandTaskResult,
+  },
+  forceLandTask: {
+    input: OrchestratorForceLandTaskInput,
+    output: OrchestratorForceLandTaskResult,
   },
   listArchivedTasks: {
     input: OrchestratorListArchivedTasksInput,

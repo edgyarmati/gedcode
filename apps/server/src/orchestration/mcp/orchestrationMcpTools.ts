@@ -35,6 +35,7 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "restoreTask",
   "deleteTask",
   "getTaskLedger",
+  "publishDirectCommit",
 ] as const;
 
 export type OrchestrationMcpToolName = (typeof ORCHESTRATION_MCP_TOOL_NAMES)[number];
@@ -203,6 +204,21 @@ export const mcpInputSchemas = {
   },
   getTaskLedger: {
     projectId: z.string(),
+  },
+  publishDirectCommit: {
+    projectId: z.string().trim().min(1),
+    sourceCommit: z.string().trim().min(1),
+    destinationBranch: z.string().trim().min(1),
+    baseBranch: z.string().trim().min(1),
+    pullRequest: z.object({
+      title: z.string().trim().min(1).max(256),
+      body: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
+    }),
+    existingPullRequestUrl: z.url().optional(),
   },
 } as const;
 

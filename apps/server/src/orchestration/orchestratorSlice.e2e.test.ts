@@ -37,6 +37,7 @@ import { ProjectContextRunCoordinator } from "./Services/ProjectContextRunCoordi
 import { PmProjectRuntimeFactory, PmRuntime, type PmProjectRuntime } from "./Services/PmRuntime.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { OrchestrationMcpServerProviderLive } from "./claude/OrchestrationMcpServerProvider.ts";
+import { DirectPublicationPort } from "./directPublication/DirectPublicationPort.ts";
 import { PmRuntimeLive } from "./Layers/PmRuntime.ts";
 import { decideOrchestrationCommand } from "./decider.ts";
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
@@ -53,7 +54,7 @@ const planGateId = GateId.make("gate-plan-e2e");
 const landGateId = GateId.make("gate-land-e2e");
 const awaitedTurnId = TurnId.make("turn-worker-e2e");
 const verifyTurnId = TurnId.make("turn-verify-e2e");
-const cleanWorktreeCompletion = { head: "abc123", dirty: false } as const;
+const cleanWorktreeCompletion = { head: "sha256:land-e2e", dirty: false } as const;
 const pullRequestUrl = "https://github.com/acme/orchestrator-e2e/pull/42";
 
 type PmRuntimeReplayState = {
@@ -335,6 +336,11 @@ function makePmRuntimeLayer(input: {
     Layer.provide(
       Layer.mock(ProjectContextRunCoordinator)({
         ensureBeforePmTurn: () => Effect.succeed({ status: "ready" as const }),
+      }),
+    ),
+    Layer.provide(
+      Layer.succeed(DirectPublicationPort, {
+        publish: () => Effect.die("direct publication is outside this orchestration lifecycle e2e"),
       }),
     ),
     Layer.provide(ServerSettingsService.layerTest()),

@@ -492,6 +492,7 @@ function requestHumanLandGateAndLand(input: {
       head: verifiedTask.verification!.head,
       dirty: false,
     };
+    const contentHash = worktreeCompletion.head;
     yield* input.harness.engine
       .dispatch({
         type: "task.gate.request",
@@ -499,7 +500,7 @@ function requestHumanLandGateAndLand(input: {
         taskId: TASK_ID,
         gateId: landGateId,
         gate: "land",
-        contentHash: "sha256:phase4-land",
+        contentHash,
         stageThreadId: input.stageThreadId,
         worktreeCompletion,
         pullRequest: {
@@ -544,7 +545,7 @@ function requestHumanLandGateAndLand(input: {
         taskId: TASK_ID,
         gateId: landGateId,
         gate: "land",
-        approvedHash: "sha256:phase4-land",
+        approvedHash: contentHash,
         decision: "approved",
         origin: "human",
         worktreeCompletion,

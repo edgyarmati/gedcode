@@ -11,6 +11,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationCommand,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -2453,7 +2454,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           taskId: asTaskId("task-1"),
           gateId: asGateId("gate-land"),
           gate: "land",
-          contentHash: "sha256:land",
+          contentHash: "verified-head",
           pullRequest: {
             title: "fix: explain the reviewed change",
             body: "## Summary\n\n- Explain the behavior.\n\n## Testing\n\n- Focused tests passed.",
@@ -2731,6 +2732,219 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         landing: { status: "opening-pr" },
       });
     }),
+  );
+
+  it.effect("force-lands one current reviewed gate with a human verification override reason", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-work-completed",
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+        ]),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-force-land"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "verified-head",
+            pullRequest: {
+              title: "Force-land reviewed task",
+              body: "## Why\n\nAn operator accepts the missing independent verification.",
+            },
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const normalApproval = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land.approve",
+            commandId: asCommandId("cmd-normal-land-approve-without-verify"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-force-land"),
+            approvedHash: "verified-head",
+            worktreeCompletion: { head: "verified-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+      expect(normalApproval._tag).toBe("Failure");
+
+      const planned = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.land.force",
+          commandId: asCommandId("cmd-force-land"),
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-force-land"),
+          approvedHash: "verified-head",
+          reason: "The release train is blocked; an operator accepts this reviewed commit.",
+          worktreeCompletion: { head: "verified-head", dirty: false },
+          createdAt: now,
+        } as unknown as OrchestrationCommand,
+      });
+      const events = toEvents(planned);
+      expect(events.map((event) => event.type)).toEqual(["task.gate-resolved", "task.landed"]);
+      expect(events[0]?.payload).toMatchObject({
+        gateId: asGateId("gate-force-land"),
+        decision: "approved",
+        origin: "human",
+      });
+      expect(events[1]?.payload).toMatchObject({
+        taskId: asTaskId("task-1"),
+        approvedHash: "verified-head",
+        verificationOverride: {
+          kind: "force-land",
+          reason: "The release train is blocked; an operator accepts this reviewed commit.",
+        },
+      });
+    }),
+  );
+
+  it.effect("rejects force-land when the inspected task worktree is dirty", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-work-completed",
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+        ]),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-force-land-dirty"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "verified-head",
+            pullRequest: {
+              title: "Force-land reviewed task",
+              body: "## Why\n\nAn operator accepts the missing independent verification.",
+            },
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const exit = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land.force",
+            commandId: asCommandId("cmd-force-land-dirty"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-force-land-dirty"),
+            approvedHash: "verified-head",
+            reason: "The release train is blocked; an operator accepts this reviewed commit.",
+            worktreeCompletion: { head: "verified-head", dirty: true },
+            createdAt: now,
+          },
+        }),
+      );
+      expect(exit._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect(
+    "requests a pending land gate before Verify while keeping normal approval separate",
+    () =>
+      Effect.gen(function* () {
+        const base = withStageHistory(yield* taskReadModel({ status: "review" }), [
+          {
+            threadId: "thread-stage-work-completed",
+            role: "work",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:10:00.000Z",
+          },
+        ]);
+        const normalApproval = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel: {
+              ...base,
+              pendingGates: [
+                {
+                  gateId: asGateId("gate-land-before-verify"),
+                  taskId: asTaskId("task-1"),
+                  gate: "land" as const,
+                  contentHash: "verified-head",
+                  pullRequest: {
+                    title: "Land after verification",
+                    body: "## Why\n\nThe proposal is ready for later human approval.",
+                  },
+                  stageThreadId: null,
+                  status: "pending" as const,
+                  approvedHash: null,
+                  decision: null,
+                  origin: null,
+                  requestedAt: now,
+                  resolvedAt: null,
+                },
+              ],
+            },
+            command: {
+              type: "task.land.approve",
+              commandId: asCommandId("cmd-normal-land-before-verify"),
+              taskId: asTaskId("task-1"),
+              gateId: asGateId("gate-land-before-verify"),
+              approvedHash: "verified-head",
+              worktreeCompletion: { head: "verified-head", dirty: false },
+              createdAt: now,
+            },
+          }),
+        );
+        expect(normalApproval._tag).toBe("Failure");
+
+        const planned = yield* decideOrchestrationCommand({
+          readModel: base,
+          command: {
+            type: "task.gate.request",
+            commandId: asCommandId("cmd-request-land-before-verify"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-land-before-verify"),
+            gate: "land",
+            contentHash: "verified-head",
+            pullRequest: {
+              title: "Land after verification",
+              body: "## Why\n\nThe proposal is ready for later human approval.",
+            },
+            stageThreadId: null,
+            worktreeCompletion: { head: "verified-head", dirty: false },
+            createdAt: now,
+          },
+        });
+        const events = toEvents(planned);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          type: "task.gate-requested",
+          payload: {
+            gate: "land",
+            contentHash: "verified-head",
+            pullRequest: {
+              title: "Land after verification",
+              body: "## Why\n\nThe proposal is ready for later human approval.",
+            },
+          },
+        });
+      }),
   );
 
   it.effect("rejects one-click landing approval when the verified head changed", () =>

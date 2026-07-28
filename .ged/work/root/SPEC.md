@@ -1,87 +1,102 @@
-# SPEC — Replacement Landing for Existing Pull Requests
+# SPEC — Forced Landing and Direct PM Publication
 
 ## Goal
 
-Make landing idempotent by approved repository content rather than by task or pull-request existence.
-A task whose existing PR published verified HEAD A may return through Work and Verify at HEAD B,
-request a replacement land gate, and publish exactly approved HEAD B to that same PR.
+Add two separate operator workflows:
 
-## Constraints
+1. Let a human force-land a review-ready task by bypassing only the fresh Verify requirement.
+2. Let the project PM publish one existing commit to an explicit branch/PR without creating an
+   Orchestrator task.
 
-- Human approval remains mandatory for every land gate.
-- The replacement gate must match the current clean, freshly verified HEAD.
-- Existing event history and persisted landing JSON must continue decoding without data migration.
-- A normal first landing must retain its current create-PR behavior.
-- Replacement publication must update the existing remote branch safely with force-with-lease, never
-  an unconditional force push.
-- The existing PR title and body must be updated to the newly approved proposal.
-- Landing retries must retain the worktree and exact approved proposal.
-- Do not add a compatibility path that preserves stale completed landing behavior.
-- Preserve unrelated worktree changes.
-- Run focused tests only, followed by `bun fmt`, `bun lint`, the narrowest relevant package
-  typechecks, and an unreleased changelog entry.
+This work is an independent PR based on `main`; it must not depend on replay-hardening PR #67.
 
-## Acceptance Criteria
+## Shared Constraints
 
-- Durable landing state records the approved/published content hash and decodes legacy rows where it
-  is absent.
-- Starting new Work or Verify after completed publication invalidates the completed landing state
-  without deleting the existing PR identity.
-- A pending replacement land gate for the current verified HEAD is visible and can be approved.
-- Gate approval dispatches a new landing attempt when the existing PR's published hash differs.
-- Repeated landing at the same published hash remains idempotent.
-- The landing actuator force-with-lease pushes the approved exact HEAD to the existing PR branch.
-- The actuator updates the existing PR title and body from the approved replacement proposal.
-- Successful replacement publication records the new published hash and leaves the task associated
-  with the same PR.
-- Focused server, contract, projection, reactor, and web tests cover stale invalidation,
-  actionability, exact-head publication, PR update, and same-hash idempotency.
+- Use test-driven vertical slices: one public behavior test, minimal implementation, then repeat.
+- Only Sol-low implementation agents may edit production code.
+- Terra-low agents own test authoring, test execution, and independent verification.
+- Preserve normal task Verify behavior and the existing default task pipeline.
+- Do not add compatibility fallbacks; there are no production clients requiring old wire behavior.
+- Run focused tests only, then `bun fmt`, `bun lint`, narrow typechecks, and `git diff --check`.
+- Update `CHANGELOG.md` and durable handoff documentation before publication.
 
-## Follow-up: PM Prompt Prefix
+## Forced Landing
 
-### Goal
+### Contract
 
-Allow users to append custom instructions to the Orchestrator PM's built-in system prompt through
-an inheritable global default and a per-project override.
+- Forced landing is a distinct audited command/RPC, not an overload of normal gate approval.
+- It targets one current pending `land` gate and requires a non-empty human-provided reason.
+- It may bypass only the requirement for a fresh successful Verify after the latest Work.
+- It preserves all other normal landing invariants:
+  - task and project exist and are enabled;
+  - task is idle in Review with no active/cancelling stage;
+  - the targeted gate is the latest pending content-matched land gate;
+  - gate proposal has exact PR title/body;
+  - task-owned worktree has been inspected;
+  - worktree is clean;
+  - inspected HEAD matches the gate content hash;
+  - lifecycle serialization, landing idempotency, branch ownership, and normal PR actuator apply.
+- Forced landing atomically resolves the land gate as human-approved and starts the existing landing
+  workflow.
+- The durable event/audit projection records that verification was overridden and the exact reason.
+- UI presents a secondary destructive/exception action with explicit confirmation and required
+  reason. Normal Approve remains the primary action when all normal invariants pass.
+- Force landing never means force-pushing, publishing arbitrary refs, bypassing content identity, or
+  landing a dirty/uninspected worktree.
 
-### Constraints
+### Acceptance
 
-- Preserve the mandatory built-in PM prompt; custom text is appended, not substituted.
-- An omitted project value inherits the global default.
-- An explicitly empty project value disables a non-empty global prefix for that project.
-- Existing persisted settings and project metadata continue decoding without migration.
-- Worker prompt prefixes and the current `plan`, `work`, and `verify` role contract are unchanged.
+- Normal approval still rejects missing/stale Verify.
+- Force-land succeeds with missing/stale Verify when every preserved invariant holds.
+- Force-land rejects dirty, uninspected, wrong-HEAD, wrong-gate, non-review, or active-stage tasks.
+- Repeated force-land is idempotent and never starts two landing attempts.
+- Durable replay/restart preserves override origin and reason.
+- UI requires confirmation/reason and sends the dedicated command.
 
-### Acceptance Criteria
+## Direct Publication
 
-- Global Orchestrator settings expose a PM prompt prefix field.
-- Project Orchestration settings expose an inheritable PM prompt prefix field.
-- Runtime PM sessions receive the resolved prefix exactly once after the built-in prompt.
-- Schema, settings logic, runtime prompt resolution, and UI behavior have focused coverage.
-- The unreleased change is documented.
+### Contract
 
-## Follow-up: Worker Thread Continuation Policy
+- Add a dedicated server-owned PM tool/service; do not expand `commitDirectChanges` or expose raw Git.
+- Inputs are explicit: required project ID, immutable source commit, destination branch, base branch, exact PR
+  title/body, and optional existing PR URL.
+- The shared PM MCP transport is trusted and global, so the explicit project ID is the authoritative
+  target selected by the PM rather than inferring a project from a global read model. The server
+  validates that project before resolving its workspace/provider; this deliberately avoids a
+  per-project MCP endpoint redesign.
+- The workflow publishes exactly one existing commit without creating an Orchestrator task,
+  work-stage thread, Verify stage, or task land gate.
+- Validate:
+  - project repository identity and primary checkout;
+  - clean primary checkout;
+  - source commit resolves and belongs to the repository;
+  - destination/base branch names are explicit and allowed by protected-ref policy;
+  - existing PR, if supplied, belongs to the same repository and destination head.
+- Perform work in an isolated temporary worktree.
+- Apply exactly one source commit to the destination using a non-interactive cherry-pick/commit
+  workflow; no commit ranges, merges, rebases, force pushes, or arbitrary ref updates.
+- Push normally and create or update the PR through the existing source-control provider.
+- Cleanup the temporary worktree on success and failure.
+- Return and project a durable PM activity/audit result; repeated identical publication is
+  idempotent.
+- PM instructions prefer direct publication for trivial commit-routing/PR operations and retain
+  tasks for implementation, uncertain work, multi-commit work, or anything needing independent
+  Verify.
 
-### Goal
+### Acceptance
 
-Make the Orchestrator PM continue a viable worker stage thread for the first bounded correction instead
-of treating every unsatisfactory result as a new attempt.
+- PM can publish one existing commit to a new explicit branch/PR without dispatching `task.create`.
+- Existing matching branch/PR publication updates idempotently without force push.
+- Invalid commit, dirty checkout, protected destination, mismatched PR, cherry-pick conflict, push
+  failure, and provider failure return typed failures and clean up.
+- PM tool schema and prompt make the taskless boundary explicit.
+- Activity projection records source commit, destination/base, PR result, and outcome without
+  leaking secrets.
 
-### Constraints
+## Out of Scope
 
-- Preserve fresh attempts for independent verification, materially different approaches, capability
-  changes, exhausted or corrupted context, and terminal provider/session failures.
-- Verifiers remain independent and must not repair implementation defects.
-- Preserve the existing durable distinction between another turn in one attempt (`steerStage`) and a
-  new attempt (`handoffWorker`).
-- Do not add a compatibility fallback for the former eager-fresh-attempt PM policy.
-
-### Acceptance Criteria
-
-- The PM prompt explicitly prefers same-thread continuation for a bounded correction to the current
-  viable stage.
-- Tool descriptions make the cost/audit distinction between continuation and a new attempt clear.
-- The feature playbook uses the same decision rule for unsatisfactory Work results.
-- Verify findings still go to Work and are followed by fresh independent Verify.
-- The thread-reuse and worker-role decisions document the refined policy.
-- Focused prompt/tool tests and required quality gates pass.
+- Skipping Verify inside ordinary task pipelines.
+- PM implementation work without a task.
+- Generic PM branch management, arbitrary shell Git, multi-commit publication, merge/rebase, or
+  force push.
+- Automatically inferring a destination branch, base branch, PR title, or PR body.
