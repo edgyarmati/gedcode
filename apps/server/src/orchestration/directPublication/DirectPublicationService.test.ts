@@ -313,7 +313,7 @@ it.effect("returns a typed cherry-pick conflict without push, PR, or retained wo
       const remote = join(root, "remote.git");
       const updater = join(root, "updater");
       try {
-        runGit(root, ["init", "--bare", remote]);
+        runGit(root, ["init", "--bare", "--initial-branch=main", remote]);
         runGit(root, ["init", "--initial-branch=main", primary]);
         runGit(primary, ["config", "user.email", "test@example.com"]);
         runGit(primary, ["config", "user.name", "GedCode Test"]);
