@@ -1338,7 +1338,7 @@ it.effect(
     }),
 );
 
-it.effect("steerStage dispatches thread.turn.start to an explicit stage thread", () =>
+it.effect("steerStage dispatches thread.turn.start to the explicit active stage thread", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(
@@ -1371,7 +1371,7 @@ it.effect("steerStage dispatches thread.turn.start to an explicit stage thread",
     const result = yield* Effect.promise(() =>
       steerStage.execute("tool-steer-explicit", {
         taskId,
-        stageThreadId,
+        stageThreadId: laterStageThreadId,
         message: "Please keep the change scoped.",
       }),
     );
@@ -1379,7 +1379,7 @@ it.effect("steerStage dispatches thread.turn.start to an explicit stage thread",
     assert.strictEqual(dispatched.length, 1);
     assert.strictEqual(dispatched[0]?.type, "thread.turn.start");
     if (dispatched[0]?.type === "thread.turn.start") {
-      assert.strictEqual(dispatched[0].threadId, stageThreadId);
+      assert.strictEqual(dispatched[0].threadId, laterStageThreadId);
       assert.deepStrictEqual(dispatched[0].message, {
         messageId: MessageId.make("pm-tool:tool-steer-explicit"),
         role: "user",
@@ -1387,12 +1387,12 @@ it.effect("steerStage dispatches thread.turn.start to an explicit stage thread",
         attachments: [],
       });
       assert.ok(!("modelSelection" in dispatched[0]));
-      assert.strictEqual(dispatched[0].runtimeMode, "approval-required");
-      assert.strictEqual(dispatched[0].interactionMode, "default");
+      assert.strictEqual(dispatched[0].runtimeMode, "full-access");
+      assert.strictEqual(dispatched[0].interactionMode, "plan");
     }
     assert.deepStrictEqual(result.details, {
       taskId,
-      stageThreadId,
+      stageThreadId: laterStageThreadId,
       sequence: 1,
     });
     const firstContent = result.content[0];
@@ -1400,6 +1400,79 @@ it.effect("steerStage dispatches thread.turn.start to an explicit stage thread",
     if (firstContent?.type === "text") {
       assert.match(firstContent.text, /activity records whether the provider/);
     }
+  }),
+);
+
+it.effect("steerStage rejects a completed stage before dispatching a provider turn", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([makeTask({ status: "review", currentStageThreadId: null })]),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-completed", {
+          taskId,
+          stageThreadId,
+          message: "Continue after the completed stage.",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /not the active stage/);
+    assert.match(error.message, /next completion is not tracked/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage rejects a superseded task-owned stage", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel(
+            [
+              makeTask({
+                stageThreadIds: [stageThreadId, laterStageThreadId],
+                currentStageThreadId: laterStageThreadId,
+              }),
+            ],
+            [makeThread(stageThreadId), makeThread(laterStageThreadId)],
+          ),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-superseded", {
+          taskId,
+          stageThreadId,
+          message: "Continue the older attempt.",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /not the active stage/);
+    assert.strictEqual(dispatched.length, 0);
   }),
 );
 
@@ -1595,7 +1668,7 @@ it.effect("steerStage rejects a stage thread outside the task", () =>
   }),
 );
 
-it.effect("steerStage rejects a task with no stage thread yet", () =>
+it.effect("steerStage rejects a task with no active stage", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(
@@ -1621,7 +1694,45 @@ it.effect("steerStage rejects a task with no stage thread yet", () =>
     );
 
     assert.instanceOf(error, Error);
-    assert.match(error.message, /has no stage thread to steer yet/);
+    assert.match(error.message, /has no active stage to steer/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage never defaults to the latest completed worker thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([
+            makeTask({
+              status: "review",
+              stageThreadIds: [stageThreadId],
+              currentStageThreadId: null,
+            }),
+          ]),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-default-completed", {
+          taskId,
+          message: "Apply the reviewed correction.",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /has no active stage to steer/);
+    assert.match(error.message, /fresh worker attempt/);
     assert.strictEqual(dispatched.length, 0);
   }),
 );

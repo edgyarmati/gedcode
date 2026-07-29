@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Prevent the project manager from steering completed or superseded worker stages whose subsequent
+  completion would not be tracked, requiring a fresh worker attempt instead.
+
 - Docs: Replace inherited contribution and project metadata copy with GedCode-specific guidance,
   attribution, licensing, and maintainer instructions.
 

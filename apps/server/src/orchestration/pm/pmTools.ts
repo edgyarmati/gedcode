@@ -977,7 +977,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "steerStage",
     label: "Steer stage",
     description:
-      "Continue the same worker attempt by sending a user message into its running or idle thread. Prefer this for the first bounded correction when the current Plan or Work result is incomplete, misunderstood, or missing context but its objective and approach remain viable. Do not use it when independent judgment, a materially different approach, a capability/model change, terminal session recovery, or a fresh post-fix Verify is required.",
+      "Continue the same worker attempt while it is the currently active stage by sending a user message into its running or idle thread. Prefer this for the first bounded correction while the current Plan or Work stage is still active and its objective and approach remain viable. A completed or superseded stage cannot be steered because its next completion is not tracked; start a fresh worker attempt instead. Do not use steering when independent judgment, a materially different approach, a capability/model change, terminal session recovery, or a fresh post-fix Verify is required.",
     execute: (toolCallId, params) =>
       runPromise(
         Effect.gen(function* () {
@@ -992,16 +992,25 @@ export const makePmToolExecutors = Effect.gen(function* () {
 
           const selectedStageThreadId =
             params.stageThreadId === undefined
-              ? latestStageThreadId(task)
+              ? task.currentStageThreadId
               : ThreadId.make(params.stageThreadId);
           if (selectedStageThreadId === null) {
             return yield* new PmToolExecutionError({
-              detail: `Task '${taskId}' has no stage thread to steer yet.`,
+              detail:
+                `Task '${taskId}' has no active stage to steer. ` +
+                "Completed stages cannot accept tracked corrections; start a fresh worker attempt instead.",
             });
           }
           if (!task.stageThreadIds.includes(selectedStageThreadId)) {
             return yield* new PmToolExecutionError({
               detail: `Stage thread '${selectedStageThreadId}' does not belong to task '${taskId}'.`,
+            });
+          }
+          if (task.currentStageThreadId !== selectedStageThreadId) {
+            return yield* new PmToolExecutionError({
+              detail:
+                `Stage thread '${selectedStageThreadId}' is not the active stage for task '${taskId}'. ` +
+                "Completed or superseded stages cannot be steered because their next completion is not tracked; start a fresh worker attempt instead.",
             });
           }
           const thread = readModel.threads.find((entry) => entry.id === selectedStageThreadId);
