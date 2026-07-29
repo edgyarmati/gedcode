@@ -24,6 +24,7 @@ export interface PersistedUiState {
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   orchestratorMode?: boolean;
   orchestratorBoardCollapsed?: boolean;
+  orchestratorExpandedTaskGroupKeys?: string[];
   lastOrchestratorProject?: { environmentId: string; projectId: string } | null;
 }
 
@@ -50,6 +51,7 @@ export interface UiEndpointState {
 export interface UiModeState {
   orchestratorMode: boolean;
   orchestratorBoardCollapsed: boolean;
+  orchestratorExpandedTaskGroupKeys: Record<string, true>;
   lastOrchestratorProject: LastOrchestratorProject | null;
 }
 
@@ -76,6 +78,7 @@ const initialState: UiState = {
   defaultAdvertisedEndpointKey: null,
   orchestratorMode: false,
   orchestratorBoardCollapsed: false,
+  orchestratorExpandedTaskGroupKeys: {},
   lastOrchestratorProject: null,
 };
 
@@ -124,11 +127,27 @@ function readPersistedState(): UiState {
       ),
       orchestratorMode: parsed.orchestratorMode === true,
       orchestratorBoardCollapsed: parsed.orchestratorBoardCollapsed === true,
+      orchestratorExpandedTaskGroupKeys: sanitizeExpandedTaskGroupKeys(
+        parsed.orchestratorExpandedTaskGroupKeys,
+      ),
       lastOrchestratorProject: sanitizeLastOrchestratorProject(parsed.lastOrchestratorProject),
     };
   } catch {
     return initialState;
   }
+}
+
+function sanitizeExpandedTaskGroupKeys(
+  value: PersistedUiState["orchestratorExpandedTaskGroupKeys"],
+): Record<string, true> {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    value.flatMap((key) =>
+      typeof key === "string" && key.length > 0 ? ([[key, true]] as const) : [],
+    ),
+  );
 }
 
 function sanitizeLastOrchestratorProject(
@@ -240,6 +259,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpandedById,
         orchestratorMode: state.orchestratorMode,
         orchestratorBoardCollapsed: state.orchestratorBoardCollapsed,
+        orchestratorExpandedTaskGroupKeys: Object.keys(state.orchestratorExpandedTaskGroupKeys),
         lastOrchestratorProject: state.lastOrchestratorProject,
       } satisfies PersistedUiState),
     );
@@ -678,6 +698,29 @@ export function setProjectExpanded(state: UiState, projectId: string, expanded: 
   };
 }
 
+export function setOrchestratorTaskGroupExpanded(
+  state: UiState,
+  groupKey: string,
+  expanded: boolean,
+): UiState {
+  const isExpanded = state.orchestratorExpandedTaskGroupKeys[groupKey] === true;
+  if (isExpanded === expanded) {
+    return state;
+  }
+  if (expanded) {
+    return {
+      ...state,
+      orchestratorExpandedTaskGroupKeys: {
+        ...state.orchestratorExpandedTaskGroupKeys,
+        [groupKey]: true,
+      },
+    };
+  }
+  const { [groupKey]: _removed, ...orchestratorExpandedTaskGroupKeys } =
+    state.orchestratorExpandedTaskGroupKeys;
+  return { ...state, orchestratorExpandedTaskGroupKeys };
+}
+
 export function reorderProjects(
   state: UiState,
   draggedProjectIds: readonly string[],
@@ -731,6 +774,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setOrchestratorMode: (enabled: boolean) => void;
   setOrchestratorBoardCollapsed: (collapsed: boolean) => void;
+  setOrchestratorTaskGroupExpanded: (groupKey: string, expanded: boolean) => void;
   setLastOrchestratorProject: (ref: LastOrchestratorProject | null) => void;
   toggleProject: (projectId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
@@ -756,6 +800,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setOrchestratorMode: (enabled) => set((state) => setOrchestratorMode(state, enabled)),
   setOrchestratorBoardCollapsed: (collapsed) =>
     set((state) => setOrchestratorBoardCollapsed(state, collapsed)),
+  setOrchestratorTaskGroupExpanded: (groupKey, expanded) =>
+    set((state) => setOrchestratorTaskGroupExpanded(state, groupKey, expanded)),
   setLastOrchestratorProject: (ref) => set((state) => setLastOrchestratorProject(state, ref)),
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),
   setProjectExpanded: (projectId, expanded) =>
