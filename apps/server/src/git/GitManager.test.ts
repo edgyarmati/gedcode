@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
@@ -9,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Result from "effect/Result";
 import * as Scope from "effect/Scope";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { expect } from "vitest";
@@ -202,7 +204,48 @@ function makeTempDir(
 ): Effect.Effect<string, PlatformError.PlatformError, FileSystem.FileSystem | Scope.Scope> {
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
-    return yield* fileSystem.makeTempDirectoryScoped({ prefix });
+    const directory = yield* fileSystem.makeTempDirectory({ prefix });
+    yield* Effect.addFinalizer(() =>
+      removeGitFixtureDirectory(() =>
+        fileSystem.remove(directory, { recursive: true, force: true }),
+      ).pipe(Effect.orDie),
+    );
+    return directory;
+  });
+}
+
+function isTransientDirectoryRemovalError(error: PlatformError.PlatformError): boolean {
+  if (error.reason._tag !== "Unknown" || typeof error.reason.cause !== "object") {
+    return false;
+  }
+
+  return (
+    error.reason.cause !== null &&
+    "code" in error.reason.cause &&
+    error.reason.cause.code === "ENOTEMPTY"
+  );
+}
+
+function removeGitFixtureDirectory(
+  remove: () => Effect.Effect<void, PlatformError.PlatformError>,
+  retriesRemaining = 5,
+): Effect.Effect<void, PlatformError.PlatformError> {
+  return Effect.gen(function* () {
+    let retries = retriesRemaining;
+
+    while (true) {
+      const result = yield* Effect.result(remove());
+      if (Result.isSuccess(result)) {
+        return;
+      }
+
+      if (retries <= 0 || !isTransientDirectoryRemovalError(result.failure)) {
+        return yield* result.failure;
+      }
+
+      retries -= 1;
+      yield* Effect.promise(() => delay(20));
+    }
   });
 }
 
@@ -719,6 +762,29 @@ const GitManagerTestLayer = GitVcsDriver.layer.pipe(
 );
 
 it.layer(GitManagerTestLayer)("GitManager", (it) => {
+  it.effect("retries transient non-empty directory failures during fixture cleanup", () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const transientError = PlatformError.systemError({
+        _tag: "Unknown",
+        module: "FileSystem",
+        method: "remove",
+        cause: Object.assign(new Error("directory not empty"), { code: "ENOTEMPTY" }),
+      });
+
+      yield* removeGitFixtureDirectory(() =>
+        Effect.sync(() => {
+          attempts += 1;
+          return attempts;
+        }).pipe(
+          Effect.flatMap((attempt) => (attempt < 3 ? Effect.fail(transientError) : Effect.void)),
+        ),
+      );
+
+      expect(attempts).toBe(3);
+    }),
+  );
+
   it.effect("status includes PR metadata when branch already has an open PR", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

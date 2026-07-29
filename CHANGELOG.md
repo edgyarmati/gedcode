@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Test: Retry transient Linux `ENOTEMPTY` races while removing temporary Git repositories so CI
+  does not fail after otherwise successful GitManager integration tests.
+
 - Prevent the project manager from steering completed or superseded worker stages whose subsequent
   completion would not be tracked, requiring a fresh worker attempt instead.
 
