@@ -1,29 +1,22 @@
-# Concurrent Task Admission
+# Active Stage Steering
 
 ## Goal
 
-Make `maxParallelTasks` limit tasks that are actually executing worker stages instead of limiting
-the number of non-terminal task records or approved split children.
+Prevent the PM from steering a completed or superseded worker stage whose later turn completion is
+no longer tracked by orchestration.
 
 ## Constraints
 
-- Keep the persisted `maxParallelTasks` configuration key; no migration or compatibility fallback.
-- Preserve the existing single-active-stage-per-task invariant.
-- Enforce the project-resolved limit in the pure decider so concurrent command handling cannot bypass
-  it.
-- Continue enforcing dependency readiness before a child stage can start.
-- Do not add a separate task-inventory or materialized-worktree limit in this change.
-- Run focused tests, `bun fmt`, `bun lint`, and the narrowest relevant package typecheck.
-- Document the user-visible behavior change under `CHANGELOG.md` `## Unreleased`.
+- Keep same-thread steering for the task's currently active stage.
+- Reject completed and superseded stage threads before dispatching a provider turn.
+- Direct the PM toward a fresh tracked worker attempt after stage settlement.
+- Do not add stage-reopening or compatibility behavior.
+- Add focused regression coverage and an Unreleased changelog entry.
 
 ## Acceptance Criteria
 
-1. A task can be created when other non-terminal tasks exist, regardless of `maxParallelTasks`.
-2. An inactive parent can be split into all eight approved children when `maxParallelTasks` is lower
-   than eight.
-3. Starting a worker stage is rejected when the project already has `maxParallelTasks` tasks with
-   active stages.
-4. Starting a stage remains allowed below the configured limit.
-5. Terminal tasks and inactive tasks do not consume concurrent-task capacity.
-6. Contracts, comments, and settings labels describe runtime task concurrency accurately.
-7. Focused decider and configuration/UI logic tests pass.
+1. `steerStage` continues to dispatch a turn for the exact active stage thread.
+2. `steerStage` rejects a completed task stage when `currentStageThreadId` is null.
+3. `steerStage` rejects an older task-owned stage after a newer stage takes ownership.
+4. Rejection dispatches no provider turn and explains that a fresh tracked attempt is required.
+5. Focused tests, formatting, lint, and server typecheck pass.
