@@ -3690,6 +3690,88 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("archives a split parent after every child completes successfully", () =>
+    Effect.gen(function* () {
+      const parentId = asTaskId("task-1");
+      const parentModel = yield* taskReadModel({ currentStageThreadId: null });
+      const parent = parentModel.tasks[0]!;
+      const readModel: OrchestrationReadModel = {
+        ...parentModel,
+        tasks: [
+          parent,
+          {
+            ...parent,
+            id: asTaskId("task-child-landed"),
+            parentTaskId: parentId,
+            childOrder: 0,
+            status: "landed",
+            prUrl: "https://github.com/acme/repo/pull/42",
+          },
+          {
+            ...parent,
+            id: asTaskId("task-child-no-change"),
+            parentTaskId: parentId,
+            childOrder: 1,
+            status: "no-changes-needed",
+          },
+        ],
+      };
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.archive",
+          commandId: asCommandId("cmd-archive-successful-split-parent"),
+          taskId: parentId,
+        },
+      });
+
+      expect(toEvents(result)[0]?.type).toBe("task.archived");
+    }),
+  );
+
+  it.effect("keeps a split parent open when any child was abandoned", () =>
+    Effect.gen(function* () {
+      const parentId = asTaskId("task-1");
+      const parentModel = yield* taskReadModel({ currentStageThreadId: null });
+      const parent = parentModel.tasks[0]!;
+      const readModel: OrchestrationReadModel = {
+        ...parentModel,
+        tasks: [
+          parent,
+          {
+            ...parent,
+            id: asTaskId("task-child-landed"),
+            parentTaskId: parentId,
+            childOrder: 0,
+            status: "landed",
+            prUrl: "https://github.com/acme/repo/pull/42",
+          },
+          {
+            ...parent,
+            id: asTaskId("task-child-abandoned"),
+            parentTaskId: parentId,
+            childOrder: 1,
+            status: "abandoned",
+          },
+        ],
+      };
+
+      const result = yield* Effect.exit(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.archive",
+            commandId: asCommandId("cmd-reject-partial-split-parent"),
+            taskId: parentId,
+          },
+        }),
+      );
+
+      expect(result._tag).toBe("Failure");
+    }),
+  );
+
   it.effect("rejects retention changes until the task is fully settled", () =>
     Effect.gen(function* () {
       for (const readModel of [

@@ -1834,7 +1834,7 @@ export const makePmToolExecutors = Effect.gen(function* () {
     name: "archiveTask",
     label: "Archive task",
     description:
-      "Archive a settled abandoned or fully landed task so it no longer appears in the active task ledger. The task can be restored later.",
+      "Archive a settled abandoned or fully landed task, or a split parent whose children all completed successfully, so it no longer appears in the active task ledger. The task can be restored later.",
     commandType: "task.archive",
     completedVerb: "Archived",
   });

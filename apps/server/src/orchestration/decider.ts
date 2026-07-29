@@ -247,21 +247,30 @@ function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["s
 }
 
 function requireSettledTerminalTask(input: {
+  readonly readModel: OrchestrationReadModel;
   readonly command: OrchestrationCommand;
   readonly task: OrchestrationReadModel["tasks"][number];
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (
+  const children = input.readModel.tasks.filter(
+    (candidate) => candidate.parentTaskId === input.task.id,
+  );
+  const isSettledSuccessfulSplitParent =
     input.task.currentStageThreadId === null &&
-    (input.task.status === "abandoned" ||
-      input.task.status === "no-changes-needed" ||
-      (input.task.status === "landed" && input.task.prUrl !== null))
+    children.length > 0 &&
+    children.every((child) => child.status === "landed" || child.status === "no-changes-needed");
+  if (
+    isSettledSuccessfulSplitParent ||
+    (input.task.currentStageThreadId === null &&
+      (input.task.status === "abandoned" ||
+        input.task.status === "no-changes-needed" ||
+        (input.task.status === "landed" && input.task.prUrl !== null)))
   ) {
     return Effect.void;
   }
   return Effect.fail(
     invariantError(
       input.command.type,
-      `Task '${input.task.id}' must be abandoned or fully landed with a pull request before '${input.command.type}'.`,
+      `Task '${input.task.id}' must be abandoned, fully landed with a pull request, or a split parent whose children all completed successfully before '${input.command.type}'.`,
     ),
   );
 }
@@ -1987,7 +1996,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             `Task '${command.supersedesTaskId}' must be visible before it can be superseded.`,
           );
         }
-        yield* requireSettledTerminalTask({ command, task: supersededTask });
+        yield* requireSettledTerminalTask({ readModel, command, task: supersededTask });
         if (
           supersededTask.supersededByTaskId !== undefined &&
           supersededTask.supersededByTaskId !== null
@@ -2339,7 +2348,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (task.archivedAt !== null) {
         return yield* invariantError(command.type, `Task '${command.taskId}' is already archived.`);
       }
-      yield* requireSettledTerminalTask({ command, task });
+      yield* requireSettledTerminalTask({ readModel, command, task });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -2372,7 +2381,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (task.archivedAt === null) {
         return yield* invariantError(command.type, `Task '${command.taskId}' is not archived.`);
       }
-      yield* requireSettledTerminalTask({ command, task });
+      yield* requireSettledTerminalTask({ readModel, command, task });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -2402,7 +2411,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' is already permanently deleted.`,
         );
       }
-      yield* requireSettledTerminalTask({ command, task });
+      yield* requireSettledTerminalTask({ readModel, command, task });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({

@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Let the project PM archive split parent tasks once every child has landed or completed
+  without changes, without requiring the aggregate parent to own a pull request or work stage.
+
 ## 0.4.1 - 2026-07-28
 
 - Add: Let a human force-land a review-ready Orchestrator task through a distinct audited action
