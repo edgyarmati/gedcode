@@ -1,36 +1,30 @@
-# TESTS — Codex PM Lifecycle Accountability
+# Verification Plan
 
-## Planned
+## Automated
 
-- `apps/server/src/orchestration/pm/PmReEntryQueue.test.ts`
-  - appends the lifecycle action contract;
-  - accepts orchestration-tool evidence;
-  - accepts a non-empty `[PM_WAITING: ...]` marker;
-  - sends exactly one corrective turn after a passive acknowledgement;
-  - never applies accountability to a user-message batch or when policy is disabled.
-- `apps/server/src/orchestration/claude/DriverPmAdapter.test.ts`
-  - resets action evidence at turn start;
-  - records trusted orchestration MCP tool calls;
-  - ignores unrelated MCP/provider tools.
-- `apps/server/src/orchestration/Layers/PmRuntime.test.ts`
-  - enables lifecycle accountability only for Codex PM runtimes.
-
-## Required Checks
-
-- Focused Vitest files via `bun run test`.
+- Decider task tests:
+  - task creation is independent of the concurrency limit;
+  - an eight-child split is accepted under a lower concurrency limit;
+  - stage startup succeeds below the limit;
+  - stage startup fails at the limit.
+- Existing shared/contracts/settings logic tests affected by copy or resolution changes.
 - `bun fmt`
 - `bun lint`
-- Narrowest relevant server typecheck.
-- `git diff --check`
+- Narrow server, contracts, shared, and web typechecks as required by the changed files.
+
+## Expected Outcome
+
+Every command exits successfully. Focused tests demonstrate that task inventory is unbounded by
+`maxParallelTasks`, while active worker-stage admission remains fail-closed at the configured limit.
 
 ## Evidence
 
-- `bun run test src/orchestration/pm/PmReEntryQueue.test.ts
-  src/orchestration/claude/DriverPmAdapter.test.ts
-  src/orchestration/Layers/PmRuntime.test.ts` from `apps/server`: 3 files, 75 tests passed.
+- `bun run test src/orchestration/decider.task.test.ts
+  src/orchestration/Layers/OrchestrationEngine.test.ts` from `apps/server`: 2 files, 105 tests
+  passed.
 - `bun fmt`: passed.
 - `bun lint`: passed with existing repository warnings and no errors.
-- `bun run typecheck` from `apps/server`: passed.
-- `git diff --check`: passed.
-- Manual diff review confirmed the accountability option is enabled only when the PM driver is
-  Codex and settlement durability ordering is unchanged.
+- `bunx turbo run typecheck --filter=gedcode --filter=@t3tools/contracts
+  --filter=@t3tools/web`: 8 dependency-aware package checks passed.
+- Manual diff review confirmed task creation and splitting no longer consume concurrent-task
+  capacity, while the pure decider rejects stage starts at the configured project limit.

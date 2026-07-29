@@ -647,6 +647,86 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
+  it.effect("allows an eight-child split below the project task concurrency limit", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel(
+        { currentStageThreadId: null },
+        { orchestratorConfig: { resourceLimits: { maxParallelTasks: 1 } } },
+      );
+      const children = Array.from({ length: 8 }, (_, index) => ({
+        taskId: asTaskId(`task-child-${index + 1}`),
+        taskType: asTaskTypeId("feature"),
+        title: `Child ${index + 1}`,
+        acceptanceCriteria: [`Child ${index + 1} is complete`],
+        dependsOnTaskIds: index === 0 ? [] : [asTaskId(`task-child-${index}`)],
+      }));
+
+      const result = yield* decideOrchestrationCommand({
+        readModel,
+        command: {
+          type: "task.split",
+          commandId: asCommandId("cmd-split-task-eight-children"),
+          taskId: asTaskId("task-1"),
+          children,
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(result).map((event) => event.type)).toEqual([
+        "task.split",
+        ...Array.from({ length: 8 }, () => "task.created" as const),
+      ]);
+    }),
+  );
+
+  it.effect("enforces maxParallelTasks when starting a worker stage", () =>
+    Effect.gen(function* () {
+      const base = yield* taskReadModel(
+        { currentStageThreadId: null, status: "draft" },
+        { orchestratorConfig: { resourceLimits: { maxParallelTasks: 1 } } },
+      );
+      const target = base.tasks[0]!;
+      const activeTask = {
+        ...target,
+        id: asTaskId("task-active"),
+        currentStageThreadId: asThreadId("thread-active"),
+        stageThreadIds: [asThreadId("thread-active")],
+        status: "working" as const,
+      };
+      const command = {
+        type: "task.stage.start" as const,
+        commandId: asCommandId("cmd-start-at-task-limit"),
+        taskId: target.id,
+        role: "plan" as const,
+        instructions: "Plan the task.",
+        createdAt: now,
+      };
+
+      const rejected = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel: { ...base, tasks: [target, activeTask] },
+          command,
+        }),
+      );
+      expect(rejected._tag).toBe("OrchestrationCommandInvariantError");
+      if (rejected._tag === "OrchestrationCommandInvariantError") {
+        expect(rejected.detail).toContain("task(s) with active stages");
+        expect(rejected.detail).toContain("maxParallelTasks limit (1)");
+      }
+
+      const accepted = yield* decideOrchestrationCommand({
+        readModel: base,
+        command: { ...command, commandId: asCommandId("cmd-start-below-task-limit") },
+      });
+      expect(toEvents(accepted).map((event) => event.type)).toEqual([
+        "task.stage-started",
+        "thread.created",
+        "thread.message-sent",
+        "thread.turn-start-requested",
+      ]);
+    }),
+  );
+
   it.effect("blocks child stage startup until every dependency has landed", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel({
@@ -763,46 +843,22 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("rejects task creation when active task worktrees meet the project cap", () =>
+  it.effect("allows task creation when active stages meet the project concurrency cap", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(
-        { status: "working" },
+        {
+          status: "working",
+          currentStageThreadId: asThreadId("thread-active"),
+          stageThreadIds: [asThreadId("thread-active")],
+        },
         { orchestratorConfig: { resourceLimits: { maxParallelTasks: 1 } } },
       );
 
-      const result = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.create",
-            commandId: asCommandId("cmd-create-task-2"),
-            taskId: asTaskId("task-2"),
-            projectId: asProjectId("project-1"),
-            taskType: asTaskTypeId("feature"),
-            title: "Task 2",
-            pmMessageId: null,
-            branch: null,
-            createdAt: now,
-          },
-        }),
-      );
-
-      expect(result._tag).toBe("Failure");
-    }),
-  );
-
-  it.effect("inherits global maxParallelTasks when the project limit is omitted", () =>
-    Effect.gen(function* () {
-      const readModel = yield* taskReadModel({ status: "working" });
-
       const result = yield* decideOrchestrationCommand({
         readModel,
-        orchestratorDefaults: {
-          maxParallelTasks: 2,
-        },
         command: {
           type: "task.create",
-          commandId: asCommandId("cmd-create-task-global-cap"),
+          commandId: asCommandId("cmd-create-task-2"),
           taskId: asTaskId("task-2"),
           projectId: asProjectId("project-1"),
           taskType: asTaskTypeId("feature"),
@@ -813,15 +869,44 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         },
       });
 
-      const singleEvent = Array.isArray(result) ? result[0] : result;
-      expect(singleEvent?.type).toBe("task.created");
+      expect(toEvents(result).map((event) => event.type)).toEqual(["task.created"]);
+    }),
+  );
+
+  it.effect("inherits global maxParallelTasks when the project limit is omitted", () =>
+    Effect.gen(function* () {
+      const readModel = yield* taskReadModel({ status: "draft", currentStageThreadId: null });
+      const activeTask = {
+        ...readModel.tasks[0]!,
+        id: asTaskId("task-active"),
+        status: "working" as const,
+        currentStageThreadId: asThreadId("thread-active"),
+        stageThreadIds: [asThreadId("thread-active")],
+      };
+
+      const result = yield* decideOrchestrationCommand({
+        readModel: { ...readModel, tasks: [readModel.tasks[0]!, activeTask] },
+        orchestratorDefaults: {
+          maxParallelTasks: 2,
+        },
+        command: {
+          type: "task.stage.start",
+          commandId: asCommandId("cmd-stage-start-global-cap"),
+          taskId: asTaskId("task-1"),
+          role: "plan",
+          instructions: "Plan the task.",
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(result)[0]?.type).toBe("task.stage-started");
     }),
   );
 
   it.effect("uses explicitly-set project maxParallelTasks over global maxParallelTasks", () =>
     Effect.gen(function* () {
       const readModel = yield* taskReadModel(
-        { status: "working" },
+        { status: "draft", currentStageThreadId: null },
         {
           orchestratorConfig: {
             resourceLimits: {
@@ -830,22 +915,26 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           },
         },
       );
+      const activeTask = {
+        ...readModel.tasks[0]!,
+        id: asTaskId("task-active"),
+        status: "working" as const,
+        currentStageThreadId: asThreadId("thread-active"),
+        stageThreadIds: [asThreadId("thread-active")],
+      };
 
       const result = yield* Effect.exit(
         decideOrchestrationCommand({
-          readModel,
+          readModel: { ...readModel, tasks: [readModel.tasks[0]!, activeTask] },
           orchestratorDefaults: {
             maxParallelTasks: 2,
           },
           command: {
-            type: "task.create",
-            commandId: asCommandId("cmd-create-task-project-cap"),
-            taskId: asTaskId("task-2"),
-            projectId: asProjectId("project-1"),
-            taskType: asTaskTypeId("feature"),
-            title: "Task 2",
-            pmMessageId: null,
-            branch: null,
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-stage-start-project-cap"),
+            taskId: asTaskId("task-1"),
+            role: "plan",
+            instructions: "Plan the task.",
             createdAt: now,
           },
         }),
@@ -855,7 +944,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("does not count landed tasks against the task worktree cap", () =>
+  it.effect("creates a task with a deterministic branch and worktree path", () =>
     Effect.gen(function* () {
       const base = yield* taskReadModel({ status: "review" });
       const readModel = {
@@ -2377,7 +2466,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           },
         }),
       );
-      expect(taskCreate._tag).toBe("Failure");
+      expect(taskCreate._tag).toBe("Success");
 
       const stageStart = yield* Effect.exit(
         decideOrchestrationCommand({

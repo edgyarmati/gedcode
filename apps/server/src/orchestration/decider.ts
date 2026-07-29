@@ -388,14 +388,14 @@ function requireFreshVerification(
   });
 }
 
-function countActiveTaskWorktrees(input: {
+function countTasksWithActiveStages(input: {
   readonly readModel: OrchestrationReadModel;
   readonly projectId: OrchestrationProject["id"];
 }): number {
   return input.readModel.tasks.filter(
     (task) =>
       task.projectId === input.projectId &&
-      task.worktreePath !== null &&
+      task.currentStageThreadId !== null &&
       !isTerminalTaskStatus(task.status),
   ).length;
 }
@@ -2053,23 +2053,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           );
         }
       }
-      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
-      const maxParallelTasks = resolveResourceLimit({
-        config: projectConfig,
-        defaults: orchestratorDefaults,
-        key: "maxParallelTasks",
-      });
-      const activeTaskWorktrees = countActiveTaskWorktrees({
-        readModel,
-        projectId: command.projectId,
-      });
-      if (activeTaskWorktrees >= maxParallelTasks) {
-        return yield* invariantError(
-          command.type,
-          `Project '${command.projectId}' already has ${activeTaskWorktrees} active task worktree(s), which meets the maxParallelTasks limit (${maxParallelTasks}).`,
-        );
-      }
-
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -2186,23 +2169,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             );
           }
         }
-      }
-
-      const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
-      const maxParallelTasks = resolveResourceLimit({
-        config: projectConfig,
-        defaults: orchestratorDefaults,
-        key: "maxParallelTasks",
-      });
-      const activeTaskWorktrees = countActiveTaskWorktrees({
-        readModel,
-        projectId: project.id,
-      });
-      if (Math.max(0, activeTaskWorktrees - 1) + command.children.length > maxParallelTasks) {
-        return yield* invariantError(
-          command.type,
-          `Splitting into ${command.children.length} children would exceed the maxParallelTasks limit (${maxParallelTasks}).`,
-        );
       }
 
       const splitEvent = {
@@ -2480,6 +2446,21 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(
           command.type,
           `Task '${command.taskId}' already has an active stage '${task.currentStageThreadId}'.`,
+        );
+      }
+      const maxParallelTasks = resolveResourceLimit({
+        config: projectConfig,
+        defaults: orchestratorDefaults,
+        key: "maxParallelTasks",
+      });
+      const tasksWithActiveStages = countTasksWithActiveStages({
+        readModel,
+        projectId: task.projectId,
+      });
+      if (tasksWithActiveStages >= maxParallelTasks) {
+        return yield* invariantError(
+          command.type,
+          `Project '${task.projectId}' already has ${tasksWithActiveStages} task(s) with active stages, which meets the maxParallelTasks limit (${maxParallelTasks}).`,
         );
       }
       if (

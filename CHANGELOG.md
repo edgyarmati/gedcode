@@ -8,6 +8,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Docs: Replace inherited contribution and project metadata copy with GedCode-specific guidance,
   attribution, licensing, and maintainer instructions.
 
+- Fix: Let Orchestrator PMs record approved task graphs independently of worker concurrency. The
+  `maxParallelTasks` guard now limits tasks with active worker stages, so dependency-blocked children
+  do not prevent an atomic split while concurrent stage starts remain fail-closed at the configured
+  project limit.
+
 ## 0.4.2 - 2026-07-29
 
 - Fix: Keep Codex Orchestrator PMs moving after lifecycle re-entry. Lifecycle-only turns must now
