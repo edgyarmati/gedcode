@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep Codex Orchestrator PMs moving after lifecycle re-entry. Lifecycle-only turns must now
+  take a trusted orchestration action or report a concrete `[PM_WAITING: ...]` condition; a passive
+  acknowledgement receives one bounded corrective turn. Human messages and Claude PM behavior are
+  unchanged.
 - Fix: Let the project PM archive split parent tasks once every child has landed or completed
   without changes, without requiring the aggregate parent to own a pull request or work stage.
 - Improve: Remember which Orchestrator parent task groups are expanded when navigating into and

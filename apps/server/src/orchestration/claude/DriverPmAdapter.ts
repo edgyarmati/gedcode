@@ -239,6 +239,7 @@ export const makeDriverPmAdapter = (
     const eventQueue = yield* Queue.unbounded<AgentHarnessEvent>();
     const idle = yield* Ref.make(true);
     const latestUsage = yield* Ref.make<Usage | undefined>(undefined);
+    const lastTurnUsedOrchestrationTool = yield* Ref.make(false);
     const currentModelSelection = yield* Ref.make(options.modelSelection);
     const resources = yield* Ref.make<AgentHarnessResources>({});
     const bridgeClosing = yield* Ref.make(false);
@@ -348,6 +349,7 @@ export const makeDriverPmAdapter = (
         switch (event.type) {
           case "turn.started": {
             yield* Ref.set(idle, false);
+            yield* Ref.set(lastTurnUsedOrchestrationTool, false);
             yield* offer({ type: "agent_start" } satisfies AgentHarnessEvent);
             yield* offer({ type: "turn_start" } satisfies AgentHarnessEvent);
             return;
@@ -389,6 +391,9 @@ export const makeDriverPmAdapter = (
               return;
             }
             const strippedToolName = orchestrationToolName(data.toolName);
+            if (strippedToolName !== undefined || data.includeResultDetails === true) {
+              yield* Ref.set(lastTurnUsedOrchestrationTool, true);
+            }
             const tool: ActiveTool = {
               toolCallId: String(event.itemId),
               toolName: strippedToolName ?? data.toolName,
@@ -734,6 +739,7 @@ export const makeDriverPmAdapter = (
           yield* Deferred.await(promptState.deferred).pipe(Effect.asVoid);
         }
       }),
+      lastTurnUsedOrchestrationTool: Ref.get(lastTurnUsedOrchestrationTool),
       prompt: runTurn,
       followUp: (text, promptOptions) =>
         Effect.gen(function* () {

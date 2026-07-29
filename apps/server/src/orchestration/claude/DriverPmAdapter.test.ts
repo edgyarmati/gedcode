@@ -193,6 +193,120 @@ const collectBridgedEvents = (
   });
 
 describe("DriverPmAdapter", () => {
+  it.effect("tracks trusted orchestration tool use per turn and resets on the next turn", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const threadId = pmThreadIdForProject(project);
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider: codexProvider,
+        startSession: () =>
+          Effect.succeed(
+            providerSession(threadId, undefined, {
+              provider: codexProvider,
+              providerInstanceId: codexInstanceId,
+              model: "gpt-5.4",
+            }),
+          ),
+        sendTurn: () => Effect.succeed({ threadId, turnId: TurnId.make("turn-action") }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: codexProvider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection: {
+          instanceId: codexInstanceId,
+          model: "gpt-5.4",
+        },
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const firstEvents = yield* Stream.runCollect(Stream.take(adapter.events, 3)).pipe(
+        Effect.forkChild,
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.started",
+          threadId,
+          turnId: TurnId.make("turn-action"),
+          payload: {},
+        }),
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "item.started",
+          threadId,
+          turnId: TurnId.make("turn-action"),
+          itemId: RuntimeItemId.make("tool-unrelated"),
+          payload: {
+            itemType: "mcp_tool_call",
+            data: {
+              item: {
+                type: "mcpToolCall",
+                id: "tool-unrelated",
+                server: "other-server",
+                tool: "lookup",
+                arguments: {},
+                status: "inProgress",
+              },
+            },
+          },
+        }),
+      );
+      yield* Fiber.join(firstEvents);
+      assert.isFalse(yield* adapter.lastTurnUsedOrchestrationTool!);
+
+      const trustedToolEvent = yield* Stream.runCollect(Stream.take(adapter.events, 1)).pipe(
+        Effect.forkChild,
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "item.started",
+          threadId,
+          turnId: TurnId.make("turn-action"),
+          itemId: RuntimeItemId.make("tool-action"),
+          payload: {
+            itemType: "mcp_tool_call",
+            data: {
+              item: {
+                type: "mcpToolCall",
+                id: "tool-action",
+                server: ORCHESTRATION_MCP_SERVER_NAME,
+                tool: "inspectTask",
+                arguments: {},
+                status: "inProgress",
+              },
+            },
+          },
+        }),
+      );
+      yield* Fiber.join(trustedToolEvent);
+      assert.isTrue(yield* adapter.lastTurnUsedOrchestrationTool!);
+
+      const resetEvents = yield* Stream.runCollect(Stream.take(adapter.events, 2)).pipe(
+        Effect.forkChild,
+      );
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.started",
+          threadId,
+          turnId: TurnId.make("turn-next"),
+          payload: {},
+        }),
+      );
+      yield* Fiber.join(resetEvents);
+      assert.isFalse(yield* adapter.lastTurnUsedOrchestrationTool!);
+      yield* adapter.abort;
+    }),
+  );
+
   it.effect("bridges Claude PM events into the PI PM adapter shape", () =>
     Effect.gen(function* () {
       const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();

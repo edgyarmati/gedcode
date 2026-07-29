@@ -2,8 +2,20 @@ import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 
-import type { PmAdapterShape } from "../claude/pmHarness.ts";
+import type { AssistantMessage, PmAdapterShape } from "../claude/pmHarness.ts";
 import type { PmRuntimeError } from "./Errors.ts";
+
+export const PM_LIFECYCLE_ACTION_INSTRUCTION = [
+  "Continue the workflow now.",
+  "Take the next concrete orchestration action in this turn.",
+  "If progress genuinely requires a human decision or an external condition, end with",
+  "`[PM_WAITING: <specific reason>]`.",
+  "A passive acknowledgement is not a valid disposition.",
+].join(" ");
+export const PM_LIFECYCLE_CORRECTIVE_PROMPT = [
+  "No orchestration action or explicit waiting condition was recorded for the lifecycle update.",
+  PM_LIFECYCLE_ACTION_INSTRUCTION,
+].join(" ");
 
 export type PmReEntryQueueShape = {
   readonly enqueue: (message: string, kind?: PmReEntryQueueEntryKind) => Effect.Effect<void>;
@@ -52,10 +64,26 @@ export type PmReEntryQueueOptions = {
   // failure) and mark the instance blocked so subsequent re-entry is held rather
   // than hammered. Runs as a `tapError`, so it never swallows the original error.
   readonly onTurnError?: (error: PmRuntimeError) => Effect.Effect<void>;
+  /**
+   * Require lifecycle-only turns to produce trusted orchestration-tool evidence
+   * or an explicit waiting marker. Intended for providers that otherwise tend
+   * to passively acknowledge lifecycle notifications.
+   */
+  readonly enforceLifecycleDisposition?: boolean;
 };
 
+const assistantText = (message: AssistantMessage): string =>
+  message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+    .trim();
+
+const hasWaitingDisposition = (message: AssistantMessage): boolean =>
+  /\[PM_WAITING:\s*[^\]\s][^\]]*\]/.test(assistantText(message));
+
 export const makePmReEntryQueue = (
-  adapter: Pick<PmAdapterShape, "isIdle" | "prompt" | "followUp">,
+  adapter: Pick<PmAdapterShape, "isIdle" | "prompt" | "followUp" | "lastTurnUsedOrchestrationTool">,
   options?: PmReEntryQueueOptions,
 ): Effect.Effect<PmReEntryQueueShape> =>
   Effect.gen(function* () {
@@ -79,10 +107,29 @@ export const makePmReEntryQueue = (
         const entries = yield* Queue.takeAll(queue);
         if (entries.length === 0) return;
 
-        const payload = serializeEntries(entries);
+        const lifecycleOnly = entries.every((entry) => entry.kind === "lifecycle");
+        const enforceDisposition = options?.enforceLifecycleDisposition === true && lifecycleOnly;
+        const serialized = serializeEntries(entries);
+        const payload = enforceDisposition
+          ? `${serialized}\n\n${PM_LIFECYCLE_ACTION_INSTRUCTION}`
+          : serialized;
         const idle = yield* adapter.isIdle;
         const turn = idle ? adapter.prompt(payload) : adapter.followUp(payload);
-        yield* onTurnError === undefined ? turn : turn.pipe(Effect.tapError(onTurnError));
+        const result = yield* onTurnError === undefined
+          ? turn
+          : turn.pipe(Effect.tapError(onTurnError));
+        if (!enforceDisposition || !idle || result === undefined) return;
+        if (
+          (adapter.lastTurnUsedOrchestrationTool !== undefined &&
+            (yield* adapter.lastTurnUsedOrchestrationTool)) ||
+          hasWaitingDisposition(result)
+        ) {
+          return;
+        }
+        const correctiveTurn = adapter.prompt(PM_LIFECYCLE_CORRECTIVE_PROMPT);
+        yield* onTurnError === undefined
+          ? correctiveTurn
+          : correctiveTurn.pipe(Effect.tapError(onTurnError));
       }),
     );
 

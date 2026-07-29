@@ -267,6 +267,8 @@ export type PmAdapterShape = {
   readonly latestAssistantUsage: Effect.Effect<Usage | undefined>;
   readonly start: Effect.Effect<void, PmRuntimeError>;
   readonly waitForIdle: Effect.Effect<void, PmRuntimeError>;
+  /** Whether the most recently started turn invoked the trusted orchestration MCP server. */
+  readonly lastTurnUsedOrchestrationTool?: Effect.Effect<boolean>;
   readonly prompt: (
     text: string,
     options?: { readonly images?: ReadonlyArray<ImageContent> },
