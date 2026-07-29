@@ -3462,6 +3462,13 @@ export function selectPendingGatesForTaskRef(
     : [];
 }
 
+export function selectUnresolvedGatesForTaskRef(
+  state: AppState,
+  ref: ScopedTaskRef | null | undefined,
+): OrchestratorPendingGate[] {
+  return selectPendingGatesForTaskRef(state, ref).filter((gate) => gate.status === "pending");
+}
+
 export function selectPendingGateById(
   state: AppState,
   environmentId: EnvironmentId | null | undefined,

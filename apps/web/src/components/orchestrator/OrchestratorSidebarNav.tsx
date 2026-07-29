@@ -29,11 +29,11 @@ import {
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
-  selectPendingGatesForTaskRef,
   selectProjectsAcrossEnvironments,
   selectSidebarThreadsAcrossEnvironments,
   selectSidebarThreadSummaryByRef,
   selectTasksForProjectRef,
+  selectUnresolvedGatesForTaskRef,
   useStore,
 } from "../../store";
 import { useCommandPaletteStore } from "../../commandPaletteStore";
@@ -404,7 +404,7 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
     useShallow((state) => {
       const result: Record<string, string> = {};
       for (const task of tasks) {
-        const gates = selectPendingGatesForTaskRef(state, { environmentId, taskId: task.id });
+        const gates = selectUnresolvedGatesForTaskRef(state, { environmentId, taskId: task.id });
         if (gates.length > 0) {
           result[String(task.id)] = gates.map((gate) => gate.gate).join(",");
         }
