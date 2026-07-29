@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve: Remember which Orchestrator parent task groups are expanded when navigating into and
+  back out of child tasks, including across app restarts.
+
 ## 0.4.1 - 2026-07-28
 
 - Add: Let a human force-land a review-ready Orchestrator task through a distinct audited action
