@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Let the project PM archive split parent tasks once every child has landed or completed
+  without changes, without requiring the aggregate parent to own a pull request or work stage.
 - Improve: Remember which Orchestrator parent task groups are expanded when navigating into and
   back out of child tasks, including across app restarts.
 - Fix: Stop resolved Orchestrator approval gates from leaving parent task groups and sidebar counts
