@@ -1668,7 +1668,7 @@ it.effect("steerStage rejects a stage thread outside the task", () =>
   }),
 );
 
-it.effect("steerStage rejects a task with no stage thread yet", () =>
+it.effect("steerStage rejects a task with no active stage", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(
@@ -1694,7 +1694,45 @@ it.effect("steerStage rejects a task with no stage thread yet", () =>
     );
 
     assert.instanceOf(error, Error);
-    assert.match(error.message, /has no stage thread to steer yet/);
+    assert.match(error.message, /has no active stage to steer/);
+    assert.strictEqual(dispatched.length, 0);
+  }),
+);
+
+it.effect("steerStage never defaults to the latest completed worker thread", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(
+          dispatched,
+          makeReadModel([
+            makeTask({
+              status: "review",
+              stageThreadIds: [stageThreadId],
+              currentStageThreadId: null,
+            }),
+          ]),
+        ),
+      ),
+    );
+    const steerStage = findTool(tools, "steerStage");
+
+    const error = yield* Effect.promise(() =>
+      steerStage
+        .execute("tool-steer-default-completed", {
+          taskId,
+          message: "Apply the reviewed correction.",
+        })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.instanceOf(error, Error);
+    assert.match(error.message, /has no active stage to steer/);
+    assert.match(error.message, /fresh worker attempt/);
     assert.strictEqual(dispatched.length, 0);
   }),
 );

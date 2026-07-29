@@ -3,8 +3,9 @@
 ## S1 — Guard stage steering
 
 - Require the selected thread to equal the task's active stage thread.
+- Default selection to the active stage rather than the latest historical stage.
 - Update tool guidance to explain the tracked-attempt requirement.
-- Add focused active, completed, and superseded-stage tests.
+- Add focused active, completed, default-completed, and superseded-stage tests.
 - Verification: focused `pmTools` tests pass.
 
 ## S2 — Release notes and verification

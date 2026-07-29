@@ -992,11 +992,13 @@ export const makePmToolExecutors = Effect.gen(function* () {
 
           const selectedStageThreadId =
             params.stageThreadId === undefined
-              ? latestStageThreadId(task)
+              ? task.currentStageThreadId
               : ThreadId.make(params.stageThreadId);
           if (selectedStageThreadId === null) {
             return yield* new PmToolExecutionError({
-              detail: `Task '${taskId}' has no stage thread to steer yet.`,
+              detail:
+                `Task '${taskId}' has no active stage to steer. ` +
+                "Completed stages cannot accept tracked corrections; start a fresh worker attempt instead.",
             });
           }
           if (!task.stageThreadIds.includes(selectedStageThreadId)) {
