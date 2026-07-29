@@ -2140,6 +2140,7 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
         );
         const pmProviderInstanceId = harnessConfig.providerInstanceId;
         const queue = yield* makePmReEntryQueue(adapter, {
+          enforceLifecycleDisposition: harnessConfig.provider === CODEX_PM_DRIVER,
           canDrain: projectionSnapshotQuery.getCommandReadModel().pipe(
             Effect.map(
               (readModel) =>

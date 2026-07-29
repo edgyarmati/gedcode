@@ -1109,6 +1109,7 @@ const makeTestPmAdapter = (input?: {
   readonly prompt?: PmAdapterShape["prompt"];
   readonly waitForIdle?: PmAdapterShape["waitForIdle"];
   readonly setModel?: PmAdapterShape["setModel"];
+  readonly lastTurnUsedOrchestrationTool?: PmAdapterShape["lastTurnUsedOrchestrationTool"];
 }) =>
   ({
     events: Stream.empty,
@@ -1122,6 +1123,9 @@ const makeTestPmAdapter = (input?: {
       Effect.sync(() => {
         input?.calls?.push("waitForIdle");
       }),
+    ...(input?.lastTurnUsedOrchestrationTool !== undefined
+      ? { lastTurnUsedOrchestrationTool: input.lastTurnUsedOrchestrationTool }
+      : {}),
     prompt:
       input?.prompt ??
       (() => {
@@ -1489,6 +1493,48 @@ describe("PmRuntime", () => {
           "For decisions, ask in plain text and end your turn.",
         );
         assert.notInclude(captured[0]?.systemPrompt ?? "", "interactive question tool");
+      }).pipe(Effect.provide(makeFactoryCaptureLayer())),
+    ),
+  );
+
+  it.effect("enforces lifecycle disposition for Codex PMs but not Claude PMs", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const codexPrompts: string[] = [];
+        const claudePrompts: string[] = [];
+        const factory = yield* makePmProjectRuntimeFactoryWithOptions({
+          makeDriverPmAdapterOverride: ((options: DriverPmAdapterOptions) =>
+            Effect.succeed(
+              makeTestPmAdapter({
+                lastTurnUsedOrchestrationTool: Effect.succeed(false),
+                prompt: (message) =>
+                  Effect.sync(() => {
+                    const prompts =
+                      options.driverKind === codexDriver ? codexPrompts : claudePrompts;
+                    prompts.push(message);
+                    return fauxAssistantMessage("Noted.");
+                  }),
+              }),
+            )) satisfies NonNullable<
+            Parameters<typeof makePmProjectRuntimeFactoryWithOptions>[0]
+          >["makeDriverPmAdapterOverride"],
+        });
+
+        const codexRuntime = yield* factory.getOrCreate(projectWithPmModel("codex", "gpt-5-codex"));
+        yield* codexRuntime.enqueue("Codex work completed.");
+        yield* codexRuntime.drain;
+
+        const claudeRuntime = yield* factory.getOrCreate({
+          ...projectWithPmModel("claudeAgent", "claude-sonnet-4-6"),
+          id: ProjectId.make("project-claude-accountability"),
+        });
+        yield* claudeRuntime.enqueue("Claude work completed.");
+        yield* claudeRuntime.drain;
+
+        assert.strictEqual(codexPrompts.length, 2);
+        assert.include(codexPrompts[0] ?? "", "Continue the workflow now.");
+        assert.strictEqual(claudePrompts.length, 1);
+        assert.strictEqual(claudePrompts[0], "Claude work completed.");
       }).pipe(Effect.provide(makeFactoryCaptureLayer())),
     ),
   );

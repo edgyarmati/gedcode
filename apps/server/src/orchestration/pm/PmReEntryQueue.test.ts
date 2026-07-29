@@ -5,10 +5,109 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 
+import { fauxAssistantMessage } from "../claude/pmHarness.ts";
 import { PmRuntimeError } from "./Errors.ts";
-import { makePmReEntryQueue } from "./PmReEntryQueue.ts";
+import {
+  makePmReEntryQueue,
+  PM_LIFECYCLE_ACTION_INSTRUCTION,
+  PM_LIFECYCLE_CORRECTIVE_PROMPT,
+} from "./PmReEntryQueue.ts";
 
 describe("PmReEntryQueue", () => {
+  it.effect("corrects one passive lifecycle acknowledgement and then stops", () =>
+    Effect.gen(function* () {
+      const prompts: string[] = [];
+      const queue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          lastTurnUsedOrchestrationTool: Effect.succeed(false),
+          prompt: (message) =>
+            Effect.sync(() => {
+              prompts.push(message);
+              return fauxAssistantMessage("Noted.");
+            }),
+          followUp: () => Effect.void,
+        },
+        { enforceLifecycleDisposition: true },
+      );
+
+      yield* queue.enqueue("Work completed.");
+      yield* queue.drain;
+
+      assert.deepStrictEqual(prompts, [
+        `Work completed.\n\n${PM_LIFECYCLE_ACTION_INSTRUCTION}`,
+        PM_LIFECYCLE_CORRECTIVE_PROMPT,
+      ]);
+    }),
+  );
+
+  it.effect("accepts trusted tool evidence or an explicit waiting marker", () =>
+    Effect.gen(function* () {
+      const toolPrompts: string[] = [];
+      const toolQueue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          lastTurnUsedOrchestrationTool: Effect.succeed(true),
+          prompt: (message) =>
+            Effect.sync(() => {
+              toolPrompts.push(message);
+              return fauxAssistantMessage("Started Verify.");
+            }),
+          followUp: () => Effect.void,
+        },
+        { enforceLifecycleDisposition: true },
+      );
+      yield* toolQueue.enqueue("Work completed.");
+      yield* toolQueue.drain;
+      assert.strictEqual(toolPrompts.length, 1);
+
+      const waitingPrompts: string[] = [];
+      const waitingQueue = yield* makePmReEntryQueue(
+        {
+          isIdle: Effect.succeed(true),
+          lastTurnUsedOrchestrationTool: Effect.succeed(false),
+          prompt: (message) =>
+            Effect.sync(() => {
+              waitingPrompts.push(message);
+              return fauxAssistantMessage("[PM_WAITING: Human must approve the land gate.]");
+            }),
+          followUp: () => Effect.void,
+        },
+        { enforceLifecycleDisposition: true },
+      );
+      yield* waitingQueue.enqueue("Verify completed.");
+      yield* waitingQueue.drain;
+      assert.strictEqual(waitingPrompts.length, 1);
+    }),
+  );
+
+  it.effect("does not enforce lifecycle disposition for user turns or disabled providers", () =>
+    Effect.gen(function* () {
+      const prompts: string[] = [];
+      const adapter = {
+        isIdle: Effect.succeed(true),
+        lastTurnUsedOrchestrationTool: Effect.succeed(false),
+        prompt: (message: string) =>
+          Effect.sync(() => {
+            prompts.push(message);
+            return fauxAssistantMessage("Sure.");
+          }),
+        followUp: () => Effect.void,
+      };
+      const codexQueue = yield* makePmReEntryQueue(adapter, {
+        enforceLifecycleDisposition: true,
+      });
+      yield* codexQueue.enqueue("What should happen next?", "user");
+      yield* codexQueue.drain;
+
+      const claudeQueue = yield* makePmReEntryQueue(adapter);
+      yield* claudeQueue.enqueue("Work completed.");
+      yield* claudeQueue.drain;
+
+      assert.deepStrictEqual(prompts, ["What should happen next?", "Work completed."]);
+    }),
+  );
+
   it.effect("prompts when idle and buffers into follow-up when busy", () =>
     Effect.gen(function* () {
       const idle = yield* Ref.make(true);
