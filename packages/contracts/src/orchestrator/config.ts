@@ -222,9 +222,9 @@ export const OrchestratorGlobalDefaults = Schema.Struct({
   // thundering herd — and is NOT a cap on workers *running* concurrently (the
   // permit is released the moment a session has started, while the worker keeps
   // executing its turn). The running-worker ceiling is the pure decider, which a
-  // prompt-injected PM cannot exceed: `maxParallelTasks` (active task worktrees)
-  // plus the single-active-stage-per-task invariant, both enforced on every
-  // command in `apps/server/src/orchestration/decider.ts`.
+  // prompt-injected PM cannot exceed: `maxParallelTasks` (tasks with active
+  // stages) plus the single-active-stage-per-task invariant, both enforced on
+  // every stage-start command in `apps/server/src/orchestration/decider.ts`.
   maxParallelWorkers: PositiveInt.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_MAX_PARALLEL_WORKERS)),
   ),

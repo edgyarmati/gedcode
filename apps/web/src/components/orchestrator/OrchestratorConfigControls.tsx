@@ -31,7 +31,7 @@ const PR_OPEN_MODE_LABELS: Record<"ready" | "draft", string> = {
 };
 
 const PROJECT_RESOURCE_LIMIT_LABELS: Record<ProjectResourceLimitNumberKey, string> = {
-  maxParallelTasks: "Max parallel tasks",
+  maxParallelTasks: "Max concurrent tasks",
   maxParallelWorkers: "Max parallel workers",
   maxRetriesPerStage: "Max retries per stage",
 };
