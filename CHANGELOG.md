@@ -7,6 +7,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 - Improve: Remember which Orchestrator parent task groups are expanded when navigating into and
   back out of child tasks, including across app restarts.
+- Fix: Stop resolved Orchestrator approval gates from leaving parent task groups and sidebar counts
+  stuck in **Needs you** after a decomposed plan has already been approved.
 
 ## 0.4.1 - 2026-07-28
 

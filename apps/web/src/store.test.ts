@@ -26,6 +26,7 @@ import {
   selectEnvironmentState,
   selectPendingGateById,
   selectPendingGatesForTaskRef,
+  selectUnresolvedGatesForTaskRef,
   selectHelperRunsForProjectRef,
   selectHelperRunsForTaskRef,
   selectProjectPmQuotaBlockByRef,
@@ -826,6 +827,7 @@ describe("incremental orchestration updates", () => {
     );
     const task = selectTaskByRef(next, taskRef);
     const gates = selectPendingGatesForTaskRef(next, taskRef);
+    const unresolvedGates = selectUnresolvedGatesForTaskRef(next, taskRef);
 
     expect(projectTasks.map((entry) => entry.id)).toEqual([taskId]);
     expect(task?.status).toBe("planning");
@@ -836,6 +838,7 @@ describe("incremental orchestration updates", () => {
     expect(gates[0]?.decision).toBe("approved");
     expect(gates[0]?.origin).toBe("human");
     expect(gates[0]?.resolvedAt).toBe("2026-02-27T00:00:04.000Z");
+    expect(unresolvedGates).toEqual([]);
   });
 
   it("removes archived and deleted tasks from active client state", () => {
