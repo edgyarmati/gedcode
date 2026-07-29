@@ -103,7 +103,7 @@ const GED_ARTIFACT_GUIDE_URL =
   "https://github.com/edgyarmati/gedcode/blob/main/docs/artifact-lifecycle.md";
 
 const GLOBAL_ORCHESTRATOR_NUMBER_DEFAULT_LABELS = {
-  maxParallelTasks: "Max parallel tasks",
+  maxParallelTasks: "Max concurrent tasks",
   maxParallelWorkers: "Max parallel workers",
   maxRetriesPerStage: "Max retries per stage",
   pmReconciliationIntervalMs: "PM reconciliation interval",

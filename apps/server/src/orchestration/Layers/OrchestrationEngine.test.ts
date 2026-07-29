@@ -352,26 +352,7 @@ describe("OrchestrationEngine", () => {
           createdAt,
         }),
       );
-
-      await expect(
-        system.run(
-          engine.dispatch({
-            type: "task.create",
-            commandId: CommandId.make("cmd-task-live-defaults-rejected"),
-            taskId: TaskId.make("task-live-defaults-rejected"),
-            projectId: asProjectId("project-live-defaults"),
-            taskType: TaskTypeId.make("feature"),
-            title: "Rejected under initial cap",
-            pmMessageId: null,
-            branch: null,
-            createdAt,
-          }),
-        ),
-      ).rejects.toThrow("maxParallelTasks limit (1)");
-
-      await system.setMaxParallelTasksDefault(2);
-
-      const accepted = await system.run(
+      await system.run(
         engine.dispatch({
           type: "task.create",
           commandId: CommandId.make("cmd-task-live-defaults-2"),
@@ -381,6 +362,42 @@ describe("OrchestrationEngine", () => {
           title: "Task 2",
           pmMessageId: null,
           branch: null,
+          createdAt,
+        }),
+      );
+      await system.run(
+        engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-stage-live-defaults-1"),
+          taskId: TaskId.make("task-live-defaults-1"),
+          role: "plan",
+          instructions: "Plan task 1.",
+          createdAt,
+        }),
+      );
+
+      await expect(
+        system.run(
+          engine.dispatch({
+            type: "task.stage.start",
+            commandId: CommandId.make("cmd-stage-live-defaults-rejected"),
+            taskId: TaskId.make("task-live-defaults-2"),
+            role: "plan",
+            instructions: "Plan task 2.",
+            createdAt,
+          }),
+        ),
+      ).rejects.toThrow("maxParallelTasks limit (1)");
+
+      await system.setMaxParallelTasksDefault(2);
+
+      const accepted = await system.run(
+        engine.dispatch({
+          type: "task.stage.start",
+          commandId: CommandId.make("cmd-stage-live-defaults-2"),
+          taskId: TaskId.make("task-live-defaults-2"),
+          role: "plan",
+          instructions: "Plan task 2.",
           createdAt,
         }),
       );

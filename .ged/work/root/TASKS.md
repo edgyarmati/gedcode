@@ -1,11 +1,20 @@
-# TASKS — Codex PM Lifecycle Accountability
+# Tasks
 
-Status values: `NEXT`, `TODO`, `DONE`, `BLOCKED`.
+## S1 — Move admission to stage startup
 
-| ID | Status | Bounded slice | Verification |
-| --- | --- | --- | --- |
-| PM-01 | DONE | Add focused queue tests for lifecycle action instructions, waiting markers, one corrective retry, and user/Claude exclusions. | Focused `PmReEntryQueue` tests pin all retry boundaries. |
-| PM-02 | DONE | Expose per-turn trusted orchestration-tool evidence from the driver PM adapter. | Adapter tests prove reset and trusted-server filtering. |
-| PM-03 | DONE | Wire Codex-only lifecycle accountability into the PM runtime and strengthen its prompt contract. | Focused runtime tests prove Codex policy selection and no Claude behavior change. |
-| PM-04 | DONE | Update changelog and run repository-required verification. | Format, lint, server typecheck, focused tests, and diff check pass. |
-| PM-05 | NEXT | Commit, push, and open a detailed draft PR. | Draft PR targets the default branch with validation evidence. |
+- Replace active-worktree counting with active-stage counting.
+- Remove `maxParallelTasks` admission from `task.create` and `task.split`.
+- Enforce the resolved project limit in `task.stage.start`.
+- Verification: focused decider tests cover create, split, below-limit start, and at-limit rejection.
+
+## S2 — Align public descriptions and release notes
+
+- Update contract comments and user-facing labels to say "concurrent tasks".
+- Add an Unreleased changelog entry.
+- Verification: focused contract and web logic tests, formatting, lint, and relevant typechecks.
+
+## S3 — Final verification
+
+- Run the focused test set.
+- Run `bun fmt`, `bun lint`, and the narrowest relevant package typechecks.
+- Record results in `TESTS.md` and transition `STATE.md` to complete.
