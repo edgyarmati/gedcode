@@ -13,7 +13,9 @@
 
 ## Project Snapshot
 
-T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
+GedCode is a desktop and web workspace for running Codex, Claude, and OpenCode. Its primary
+workflow is the Orchestrator: a per-project manager agent plans work, delegates to isolated worker
+agents, and keeps task progress, verification, and human approval gates durable and visible.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 
@@ -31,14 +33,16 @@ Long term maintainability is a core priority. If you add new functionality, firs
 
 ## Package Roles
 
-- `apps/server`: Node.js WebSocket server. Wraps Codex app-server (JSON-RPC over stdio), serves the React web app, and manages provider sessions.
+- `apps/server`: Node.js WebSocket server. Manages provider sessions, serves the React web app, and
+  integrates Codex app-server, Claude, and OpenCode runtimes.
 - `apps/web`: React/Vite UI. Owns session UX, conversation/event rendering, and client-side state. Connects to the server via WebSocket.
 - `packages/contracts`: Shared effect/Schema schemas and TypeScript contracts for provider events, WebSocket protocol, and model/session types. Keep this package schema-only — no runtime logic.
 - `packages/shared`: Shared runtime utilities consumed by both server and web. Uses explicit subpath exports (e.g. `@t3tools/shared/git`) — no barrel index.
 
-## Codex App Server (Important)
+## Provider Runtime (Important)
 
-T3 Code is currently Codex-first. The server starts `codex app-server` (JSON-RPC over stdio) per provider session, then streams structured events to the browser through WebSocket push messages.
+GedCode supports Codex, Claude, and OpenCode provider sessions. Codex sessions use `codex app-server`
+(JSON-RPC over stdio); all provider runtimes are projected into the shared WebSocket event model.
 
 How we use it in this codebase:
 

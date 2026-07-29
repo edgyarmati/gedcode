@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Docs: Replace inherited contribution and project metadata copy with GedCode-specific guidance,
+  attribution, licensing, and maintainer instructions.
+
 ## 0.4.2 - 2026-07-29
 
 - Fix: Keep Codex Orchestrator PMs moving after lifecycle re-entry. Lifecycle-only turns must now

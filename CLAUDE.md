@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-GedCode is a fork of [t3code](https://github.com/pingdotgg/t3code) being rebranded. The goal is to make a custom workflow (from [ged-mono](https://github.com/edgyarmati/ged-mono)) work out of the box through GedCode's supported harnesses without modifying them.
+GedCode is an independently maintained fork of [T3 Code](https://github.com/pingdotgg/t3code). Its
+focus is a structured Orchestrator workflow that lets a project manager agent plan and delegate work
+to isolated worker agents through Codex, Claude, or OpenCode without requiring changes to those
+harnesses. The repository is branded and released as GedCode under `edgyarmati/gedcode`.
 
 **Branch strategy:** `main` is the working branch. Upstream (t3code) is tracked via the `upstream` remote — sync with `git fetch upstream`.
 
@@ -26,13 +29,12 @@ Bun workspace monorepo. Requires Bun 1.3.11 and Node.js 24.13.1 (`mise install`)
 - `apps/server` — Node.js WebSocket server, wraps Codex app-server (JSON-RPC over stdio), manages provider sessions
 - `apps/web` — React 19 / Vite UI, connects to server via WebSocket
 - `apps/desktop` — Electron wrapper around server
-- `apps/marketing` — Marketing site
 - `packages/contracts` — Effect/Schema contracts. **Schema-only — no runtime logic.**
 - `packages/shared` — Runtime utilities. **Explicit subpath exports only** (e.g. `@t3tools/shared/git`) — no barrel index
 
 ## Code Conventions
 
-- **Effect ecosystem** (4.0.0-beta.59) is used pervasively — follow Effect patterns for error handling, dependency injection (Layers), and composable runtimes
+- **Effect ecosystem** (4.0.0-beta.73) is used pervasively — follow Effect patterns for error handling, dependency injection (Layers), and composable runtimes
 - **TypeScript strict mode** with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, Effect Language Service diagnostics enabled
 - **Immutability preferred** — create new objects rather than mutating
 - **No duplicate logic** — extract shared code to `packages/shared` or `packages/contracts`
@@ -40,7 +42,8 @@ Bun workspace monorepo. Requires Bun 1.3.11 and Node.js 24.13.1 (`mise install`)
 
 ## Architecture
 
-Codex-first: the server starts `codex app-server` per provider session, streams structured events to the browser via WebSocket push on channel `orchestration.domainEvent`.
+The server starts the configured provider runtime per session and streams structured events to the
+browser via WebSocket push on channel `orchestration.domainEvent`.
 
 Key files: `apps/server/src/codexAppServerManager.ts` (session lifecycle), `apps/server/src/providerManager.ts` (provider dispatch), `apps/server/src/wsServer.ts` (WebSocket routes).
 

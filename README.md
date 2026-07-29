@@ -49,3 +49,9 @@ bun install .
 ```
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+
+## License
+
+GedCode is available under the [MIT License](./LICENSE). The project began as a fork of [T3 Code](https://github.com/pingdotgg/t3code)
+and retains the applicable upstream attribution. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
+for notices covering bundled third-party material.
