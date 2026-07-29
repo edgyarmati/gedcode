@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Stop resolved Orchestrator approval gates from leaving parent task groups and sidebar counts
+  stuck in **Needs you** after a decomposed plan has already been approved.
+
 ## 0.4.1 - 2026-07-28
 
 - Add: Let a human force-land a review-ready Orchestrator task through a distinct audited action

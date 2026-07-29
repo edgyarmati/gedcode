@@ -23,9 +23,9 @@ import { cn } from "~/lib/utils";
 import { readEnvironmentApi } from "../../environmentApi";
 import { readLocalApi } from "../../localApi";
 import {
-  selectPendingGatesForTaskRef,
   selectSidebarThreadSummaryByRef,
   selectThreadShellByRef,
+  selectUnresolvedGatesForTaskRef,
   useStore,
 } from "../../store";
 import type { OrchestratorTask, SidebarThreadSummary } from "../../types";
@@ -446,7 +446,7 @@ export function TaskBoard({
     useShallow((state) => {
       const result: Record<string, string> = {};
       for (const task of tasks) {
-        const gates = selectPendingGatesForTaskRef(state, { environmentId, taskId: task.id });
+        const gates = selectUnresolvedGatesForTaskRef(state, { environmentId, taskId: task.id });
         if (gates.length > 0) {
           result[String(task.id)] = gates.map((gate) => gate.gate).join(",");
         }
