@@ -22,10 +22,11 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { cn } from "~/lib/utils";
 import { readEnvironmentApi } from "../../environmentApi";
 import { readLocalApi } from "../../localApi";
+import { useUiStateStore } from "../../uiStateStore";
 import {
-  selectPendingGatesForTaskRef,
   selectSidebarThreadSummaryByRef,
   selectThreadShellByRef,
+  selectUnresolvedGatesForTaskRef,
   useStore,
 } from "../../store";
 import type { OrchestratorTask, SidebarThreadSummary } from "../../types";
@@ -446,7 +447,7 @@ export function TaskBoard({
     useShallow((state) => {
       const result: Record<string, string> = {};
       for (const task of tasks) {
-        const gates = selectPendingGatesForTaskRef(state, { environmentId, taskId: task.id });
+        const gates = selectUnresolvedGatesForTaskRef(state, { environmentId, taskId: task.id });
         if (gates.length > 0) {
           result[String(task.id)] = gates.map((gate) => gate.gate).join(",");
         }
@@ -780,8 +781,12 @@ function TaskGroupCard({
   reason?: NeedsYouReason;
   tone: "attention" | "active" | "terminal";
 }) {
-  const [expanded, setExpanded] = useState(false);
   const parent = group.parent.task;
+  const expansionKey = `${environmentId}:${projectId}:${parent.id}`;
+  const expanded = useUiStateStore(
+    (state) => state.orchestratorExpandedTaskGroupKeys[expansionKey] === true,
+  );
+  const setTaskGroupExpanded = useUiStateStore((state) => state.setOrchestratorTaskGroupExpanded);
 
   if (group.children.length === 0) {
     if (tone === "attention" && reason) {
@@ -831,7 +836,7 @@ function TaskGroupCard({
           aria-expanded={expanded}
           aria-label={toggleLabel}
           className="h-auto shrink-0 rounded-none px-2 text-muted-foreground"
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => setTaskGroupExpanded(expansionKey, !expanded)}
           size="icon-sm"
           title={toggleLabel}
           variant="ghost"

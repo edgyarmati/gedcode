@@ -13,6 +13,7 @@ import {
   setDefaultAdvertisedEndpointKey,
   setLastOrchestratorProject,
   setOrchestratorBoardCollapsed,
+  setOrchestratorTaskGroupExpanded,
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   syncProjects,
@@ -29,6 +30,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     defaultAdvertisedEndpointKey: null,
     orchestratorMode: false,
     orchestratorBoardCollapsed: false,
+    orchestratorExpandedTaskGroupKeys: {},
     lastOrchestratorProject: null,
     ...overrides,
   };
@@ -152,6 +154,19 @@ describe("uiStateStore pure functions", () => {
     expect(setOrchestratorBoardCollapsed(next, false)).toMatchObject({
       orchestratorBoardCollapsed: false,
     });
+  });
+
+  it("setOrchestratorTaskGroupExpanded remembers only expanded parent groups", () => {
+    const initialState = makeUiState();
+    const groupKey = "env-1:project-1:task-parent";
+
+    const expanded = setOrchestratorTaskGroupExpanded(initialState, groupKey, true);
+
+    expect(expanded.orchestratorExpandedTaskGroupKeys).toEqual({ [groupKey]: true });
+    expect(setOrchestratorTaskGroupExpanded(expanded, groupKey, true)).toBe(expanded);
+    expect(
+      setOrchestratorTaskGroupExpanded(expanded, groupKey, false).orchestratorExpandedTaskGroupKeys,
+    ).toEqual({});
   });
 
   it("reorderProjects moves all member keys of a multi-member group together", () => {
@@ -626,6 +641,21 @@ describe("uiStateStore persistence round-trip", () => {
       localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
     ) as PersistedUiState;
     expect(persisted.orchestratorBoardCollapsed).toBe(true);
+  });
+
+  it("persists expanded orchestrator parent task groups", () => {
+    const state = setOrchestratorTaskGroupExpanded(
+      makeUiState(),
+      "env-1:project-1:task-parent",
+      true,
+    );
+
+    persistState(state);
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(persisted.orchestratorExpandedTaskGroupKeys).toEqual(["env-1:project-1:task-parent"]);
   });
 
   it("persists the last-visited orchestrator project", () => {
