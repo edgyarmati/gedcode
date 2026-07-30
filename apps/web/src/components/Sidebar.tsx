@@ -1,16 +1,20 @@
-import { SettingsIcon, SquarePenIcon, WorkflowIcon } from "lucide-react";
+import { SettingsIcon } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { scopeProjectRef } from "@t3tools/client-runtime";
 
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
-import { useComposerDraftStore } from "../composerDraftStore";
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { isElectron } from "../env";
-import { selectProjectByRef, selectSidebarThreadsAcrossEnvironments, useStore } from "../store";
+import {
+  selectProjectByRef,
+  selectSidebarThreadsAcrossEnvironments,
+  selectTasksAcrossEnvironments,
+  useStore,
+} from "../store";
 import { useUiStateStore } from "../uiStateStore";
-import { buildDraftThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
+import { resolveThreadRouteRef } from "../threadRoutes";
 import { selectInboxEntries } from "../inboxSelectors";
 import { InboxSidebar } from "./InboxSidebar";
 import { OrchestratorSidebarNav } from "./orchestrator/OrchestratorSidebarNav";
@@ -87,66 +91,7 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
-  const pathname = useLocation({ select: (location) => location.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
-  const orchestratorMode = useUiStateStore((state) => state.orchestratorMode);
-  const setOrchestratorMode = useUiStateStore((state) => state.setOrchestratorMode);
-  const lastOrchestratorProject = useUiStateStore((state) => state.lastOrchestratorProject);
-  const isOrchestratorRoute = pathname.startsWith("/orch");
-  const showOrchestratorMode = orchestratorMode || isOrchestratorRoute;
-  const handleModeClick = useCallback(() => {
-    const nextMode = !showOrchestratorMode;
-    setOrchestratorMode(nextMode);
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    if (!nextMode) {
-      if (lastOrchestratorProject) {
-        const projectDraft = useComposerDraftStore
-          .getState()
-          .getDraftThreadByProjectRef(
-            scopeProjectRef(
-              lastOrchestratorProject.environmentId,
-              lastOrchestratorProject.projectId,
-            ),
-          );
-        if (projectDraft) {
-          void navigate({
-            to: "/draft/$draftId",
-            params: buildDraftThreadRouteParams(projectDraft.draftId),
-          });
-          return;
-        }
-      }
-      void navigate({ to: "/" });
-      return;
-    }
-    // Return to the last-visited orchestrator workspace when it still exists;
-    // otherwise land on the project grid.
-    const target = resolveOrchestratorLandingTarget({
-      lastProject: lastOrchestratorProject,
-      projectExists: (ref) =>
-        selectProjectByRef(
-          useStore.getState(),
-          scopeProjectRef(ref.environmentId, ref.projectId),
-        ) !== undefined,
-    });
-    if (target) {
-      void navigate({
-        to: "/orch/$environmentId/$projectId",
-        params: { environmentId: target.environmentId, projectId: target.projectId },
-      });
-      return;
-    }
-    void navigate({ to: "/orch" });
-  }, [
-    isMobile,
-    lastOrchestratorProject,
-    navigate,
-    setOpenMobile,
-    setOrchestratorMode,
-    showOrchestratorMode,
-  ]);
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -159,20 +104,6 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            size="sm"
-            className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
-            onClick={handleModeClick}
-          >
-            {showOrchestratorMode ? (
-              <SquarePenIcon className="size-3.5" />
-            ) : (
-              <WorkflowIcon className="size-3.5" />
-            )}
-            <span className="text-xs">{showOrchestratorMode ? "Chat" : "Orchestrator"}</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"
@@ -190,16 +121,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
 export default function Sidebar() {
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
-  const inboxTasks = useStore(
-    useShallow((state) =>
-      Object.entries(state.environmentStateById).flatMap(([environmentId, environment]) =>
-        environment.taskIds.flatMap((taskId) => {
-          const task = environment.taskById[taskId];
-          return task ? [Object.assign({}, task, { environmentId })] : [];
-        }),
-      ),
-    ),
-  );
+  const inboxTasks = useStore(useShallow(selectTasksAcrossEnvironments));
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const routeThreadRef = useParams({

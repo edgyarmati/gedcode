@@ -39,22 +39,36 @@ export function InboxSidebar({
 }) {
   const [localPrimaryView, setLocalPrimaryView] = useState<"inbox" | "orchestrator">("inbox");
   const [category, setCategory] = useState<"normal" | "orchestrator">("normal");
-  const [openShelves, setOpenShelves] = useState<ReadonlySet<string>>(() => new Set());
+  const [openShelves, setOpenShelves] = useState<ReadonlySet<string>>(() => new Set(["settled"]));
   const primaryView = controlledPrimaryView ?? localPrimaryView;
   const setPrimaryView = (view: "inbox" | "orchestrator") => {
     setLocalPrimaryView(view);
     onPrimaryViewChange?.(view);
   };
-  const renderEntry = (entry: ShelfEntry) => {
+  const renderEntry = (entry: ShelfEntry, compact = false) => {
     const item = typeof entry === "string" ? { id: entry } : entry;
+    const selected = entries.normal.selected?.id === item.id;
     return (
       <li key={item.id}>
         <button
-          className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+          aria-current={selected ? "page" : undefined}
+          className={`flex w-full min-w-0 items-center gap-2 rounded-lg text-left transition-colors hover:bg-accent ${
+            compact
+              ? "px-2.5 py-1.5 text-xs text-muted-foreground"
+              : "border border-transparent px-2.5 py-2 text-sm aria-[current=page]:border-border aria-[current=page]:bg-accent/70"
+          }`}
           type="button"
           onClick={() => item.route && onNavigate(item.route)}
         >
-          {item.title ?? item.id}
+          {item.status ? (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-emerald-500/80" />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate">{item.title ?? item.id}</span>
+          {item.status && !compact ? (
+            <span className="shrink-0 text-[10px] capitalize text-muted-foreground">
+              {item.status.replaceAll("-", " ")}
+            </span>
+          ) : null}
         </button>
       </li>
     );
@@ -62,7 +76,7 @@ export function InboxSidebar({
 
   return (
     <div
-      className={`flex min-h-0 flex-col gap-3 px-2 py-2 ${
+      className={`flex min-h-0 flex-col px-2 py-2 ${
         primaryView === "inbox" ? "flex-1" : "shrink-0"
       }`}
     >
@@ -90,10 +104,10 @@ export function InboxSidebar({
       </div>
 
       {primaryView === "orchestrator" ? null : (
-        <>
-          <div className="grid grid-cols-2 rounded-lg bg-muted/60 p-1">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-4 border-b border-sidebar-border/70 px-2">
             <button
-              className="rounded-md px-2 py-1 text-xs aria-pressed:bg-background"
+              className="-mb-px border-b-2 border-transparent px-0.5 py-2 text-xs font-medium text-muted-foreground aria-pressed:border-foreground aria-pressed:text-foreground"
               type="button"
               aria-pressed={category === "normal"}
               onClick={() => setCategory("normal")}
@@ -101,7 +115,7 @@ export function InboxSidebar({
               Normal tasks
             </button>
             <button
-              className="rounded-md px-2 py-1 text-xs aria-pressed:bg-background"
+              className="-mb-px border-b-2 border-transparent px-0.5 py-2 text-xs font-medium text-muted-foreground aria-pressed:border-foreground aria-pressed:text-foreground"
               type="button"
               aria-pressed={category === "orchestrator"}
               onClick={() => setCategory("orchestrator")}
@@ -109,24 +123,40 @@ export function InboxSidebar({
               Orchestrator tasks
             </button>
           </div>
-          <div className="min-h-0 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto pt-2">
             {category === "orchestrator" ? (
-              <ul className="space-y-0.5">{entries.orchestrator.map(renderEntry)}</ul>
+              entries.orchestrator.length === 0 ? (
+                <p className="px-2.5 py-3 text-xs text-muted-foreground">
+                  No active Orchestrator tasks
+                </p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {entries.orchestrator.map((entry) => renderEntry(entry))}
+                </ul>
+              )
             ) : (
-              <div className="space-y-2">
-                <ul className="space-y-0.5">{entries.normal.shelves.active.map(renderEntry)}</ul>
+              <div>
+                {entries.normal.shelves.active.length === 0 ? (
+                  <p className="px-2.5 py-3 text-xs text-muted-foreground">No active tasks</p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {entries.normal.shelves.active.map((entry) => renderEntry(entry))}
+                  </ul>
+                )}
                 {entries.normal.selected?.shelf !== undefined &&
                 entries.normal.selected.shelf !== "active" ? (
-                  <ul aria-label="Selected normal task" className="rounded-md bg-accent/50 p-0.5">
+                  <ul aria-label="Selected normal task" className="mt-1 rounded-md bg-accent/40">
                     {renderEntry(entries.normal.selected)}
                   </ul>
                 ) : null}
                 {(["snoozed", "settled"] as const).map((shelf) => {
+                  const shelfEntries = entries.normal.shelves[shelf];
+                  if (shelfEntries.length === 0) return null;
                   const open = openShelves.has(shelf);
                   return (
-                    <section key={shelf}>
+                    <section className="mt-3" key={shelf}>
                       <button
-                        className="flex w-full items-center gap-1 rounded px-1 py-1 text-xs font-medium text-muted-foreground"
+                        className="flex w-full items-center gap-2 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
                         type="button"
                         aria-expanded={open}
                         onClick={() =>
@@ -141,11 +171,20 @@ export function InboxSidebar({
                         <ChevronDownIcon
                           className={`size-3 transition-transform ${open ? "" : "-rotate-90"}`}
                         />
-                        {shelf === "snoozed" ? "Snoozed" : "Settled"}
+                        <span>{shelf === "snoozed" ? "Snoozed" : "Settled"}</span>
+                        <span className="tabular-nums text-muted-foreground/60">
+                          {shelfEntries.length}
+                        </span>
+                        <span
+                          aria-hidden
+                          className={`h-px flex-1 ${
+                            shelf === "snoozed" ? "bg-blue-500/35" : "bg-sidebar-border"
+                          }`}
+                        />
                       </button>
                       {open ? (
                         <ul className="space-y-0.5">
-                          {entries.normal.shelves[shelf].map(renderEntry)}
+                          {shelfEntries.map((entry) => renderEntry(entry, true))}
                         </ul>
                       ) : null}
                     </section>
@@ -154,7 +193,7 @@ export function InboxSidebar({
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
