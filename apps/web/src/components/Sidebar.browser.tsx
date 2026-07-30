@@ -1,4 +1,11 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  TaskId,
+  TaskTypeId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   RouterProvider,
   createMemoryHistory,
@@ -12,7 +19,7 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { initialEnvironmentState, useStore } from "../store";
-import type { SidebarThreadSummary } from "../types";
+import type { OrchestratorTask, SidebarThreadSummary } from "../types";
 import { useUiStateStore } from "../uiStateStore";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import Sidebar from "./Sidebar";
@@ -21,6 +28,7 @@ import { SidebarProvider } from "./ui/sidebar";
 const environmentId = EnvironmentId.make("env-inbox-sidebar");
 const projectId = ProjectId.make("project-inbox-sidebar");
 const threadId = ThreadId.make("thread-inbox-sidebar");
+const taskId = TaskId.make("task-inbox-sidebar");
 
 function seedStore(): void {
   const thread: SidebarThreadSummary = {
@@ -41,6 +49,31 @@ function seedStore(): void {
     hasActionableProposedPlan: false,
     inboxLifecycle: "active",
   } as SidebarThreadSummary;
+  const task: OrchestratorTask = {
+    id: taskId,
+    environmentId,
+    projectId,
+    type: TaskTypeId.make("feature"),
+    title: "Running orchestrator task",
+    status: "working",
+    branch: null,
+    worktreePath: null,
+    prUrl: null,
+    pmMessageId: null,
+    stageThreadIds: [],
+    currentStageThreadId: null,
+    cancellation: null,
+    changeReview: null,
+    verification: null,
+    noChangesNeeded: null,
+    landing: null,
+    archivedAt: null,
+    deletedAt: null,
+    roleCapabilityTiers: {},
+    playbookVersion: null,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+  };
 
   useStore.setState({
     activeEnvironmentId: environmentId,
@@ -65,6 +98,9 @@ function seedStore(): void {
         },
         threadIds: [threadId],
         sidebarThreadSummaryById: { [threadId]: thread },
+        taskIds: [taskId],
+        taskIdsByProjectId: { [projectId]: [taskId] },
+        taskById: { [taskId]: task },
         bootstrapComplete: true,
       },
     },
@@ -80,7 +116,7 @@ afterEach(() => {
   });
 });
 
-it("switches the actual sidebar from Inbox to the Orchestrator project navigator", async () => {
+it("renders inbox entries with an active orchestrator task without a render loop", async () => {
   seedStore();
   const rootRoute = createRootRoute({
     component: () => (
@@ -121,6 +157,8 @@ it("switches the actual sidebar from Inbox to the Orchestrator project navigator
     .element(page.getByTestId("inbox-primary-switch"))
     .toHaveAttribute("data-animated-long-pill", "true");
   await expect.element(page.getByText("Active normal task")).toBeInTheDocument();
+  await page.getByRole("button", { name: "Orchestrator tasks" }).click();
+  await expect.element(page.getByText("Running orchestrator task")).toBeInTheDocument();
 
   await page
     .getByTestId("inbox-primary-switch")
