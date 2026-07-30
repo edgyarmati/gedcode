@@ -345,6 +345,8 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    ...(thread.inboxLifecycle !== undefined ? { inboxLifecycle: thread.inboxLifecycle } : {}),
+    ...(thread.inboxWakeAt !== undefined ? { inboxWakeAt: thread.inboxWakeAt } : {}),
     updatedAt: thread.updatedAt,
     ...(thread.lastClearedSequence !== undefined
       ? { lastClearedSequence: thread.lastClearedSequence }
@@ -383,6 +385,8 @@ function mapThreadShell(
     error: sanitizeThreadErrorMessage(thread.session?.lastError),
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    ...(thread.inboxLifecycle !== undefined ? { inboxLifecycle: thread.inboxLifecycle } : {}),
+    ...(thread.inboxWakeAt !== undefined ? { inboxWakeAt: thread.inboxWakeAt } : {}),
     updatedAt: thread.updatedAt,
     ...(thread.lastClearedSequence !== undefined
       ? { lastClearedSequence: thread.lastClearedSequence }
@@ -407,6 +411,8 @@ function mapThreadShell(
     session,
     createdAt: thread.createdAt,
     archivedAt: thread.archivedAt,
+    ...(thread.inboxLifecycle !== undefined ? { inboxLifecycle: thread.inboxLifecycle } : {}),
+    ...(thread.inboxWakeAt !== undefined ? { inboxWakeAt: thread.inboxWakeAt } : {}),
     updatedAt: thread.updatedAt,
     ...(thread.lastClearedSequence !== undefined
       ? { lastClearedSequence: thread.lastClearedSequence }

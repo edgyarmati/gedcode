@@ -5,11 +5,9 @@ import {
   ProviderDriverKind,
   TaskId,
   ThreadId,
-  OrchestrationEvent as OrchestrationEventSchema,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
@@ -44,79 +42,6 @@ function makeEvent(input: {
 }
 
 describe("orchestration projector", () => {
-  it("round-trips and replays a force-land verification override into the task landing snapshot", async () => {
-    const createdAt = "2026-07-28T13:00:00.000Z";
-    const landedAt = "2026-07-28T13:01:00.000Z";
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        createEmptyReadModel(createdAt),
-        makeEvent({
-          sequence: 1,
-          type: "task.created",
-          aggregateKind: "task",
-          aggregateId: "task-force-land",
-          occurredAt: createdAt,
-          commandId: "cmd-task-force-land-created",
-          payload: {
-            taskId: "task-force-land",
-            projectId: "project-1",
-            taskType: "feature",
-            title: "Force-land task",
-            branch: "orchestrator/task-force-land",
-            worktreePath: "/tmp/task-force-land",
-            pmMessageId: null,
-            playbookVersion: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
-    const landed = makeEvent({
-      sequence: 2,
-      type: "task.landed",
-      aggregateKind: "task",
-      aggregateId: "task-force-land",
-      occurredAt: landedAt,
-      commandId: "cmd-task-force-land",
-      payload: {
-        taskId: "task-force-land",
-        approvedHash: "verified-head",
-        verificationOverride: {
-          kind: "force-land",
-          reason: "The release train is blocked; an operator accepts this reviewed commit.",
-          origin: "human",
-        },
-        updatedAt: landedAt,
-      },
-    });
-    const roundTripped = await Effect.runPromise(
-      Effect.gen(function* () {
-        const decodeEvent = Schema.decodeUnknownEffect(OrchestrationEventSchema);
-        const encodeEvent = Schema.encodeEffect(OrchestrationEventSchema);
-        const decoded = yield* decodeEvent(landed);
-        return yield* decodeEvent(yield* encodeEvent(decoded));
-      }),
-    );
-
-    expect(roundTripped).toMatchObject({
-      type: "task.landed",
-      payload: {
-        verificationOverride: {
-          kind: "force-land",
-          reason: "The release train is blocked; an operator accepts this reviewed commit.",
-          origin: "human",
-        },
-      },
-    });
-    const replayed = await Effect.runPromise(projectEvent(afterCreate, roundTripped));
-    expect(replayed.tasks[0]?.landing?.verificationOverride).toEqual({
-      kind: "force-land",
-      reason: "The release train is blocked; an operator accepts this reviewed commit.",
-      origin: "human",
-    });
-  });
-
   it("applies thread.created events", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const model = createEmptyReadModel(now);
@@ -162,6 +87,8 @@ describe("orchestration projector", () => {
         gedWorkflowEnabled: true,
         runtimeMode: "full-access",
         interactionMode: "default",
+        inboxLifecycle: "active",
+        inboxWakeAt: null,
         branch: null,
         worktreePath: null,
         latestTurn: null,

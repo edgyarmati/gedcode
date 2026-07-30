@@ -606,6 +606,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             archivedAt: null,
+            inboxLifecycle: "active",
+            inboxWakeAt: null,
             latestUserMessageAt: null,
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
@@ -641,6 +643,29 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             archivedAt: null,
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "thread.inbox-settled":
+        case "thread.inbox-snoozed":
+        case "thread.inbox-reopened": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            inboxLifecycle:
+              event.type === "thread.inbox-settled"
+                ? "settled"
+                : event.type === "thread.inbox-snoozed"
+                  ? "snoozed"
+                  : "active",
+            inboxWakeAt: event.type === "thread.inbox-snoozed" ? event.payload.wakeAt : null,
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -1773,6 +1798,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               verification: null,
               noChangesNeeded: null,
               landing: null,
+              forceLandRequest: null,
               releaseDispatch: null,
               roleCapabilityTiers: {},
               playbookVersion: event.payload.playbookVersion,
@@ -2121,6 +2147,25 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTaskRepository.upsert({
               ...existingRow.value,
               ...(nextStatus !== null ? { status: nextStatus } : {}),
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
+          case "task.force-land-requested": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              forceLandRequest: {
+                status: "pending",
+                ...(event.payload.reason === undefined ? {} : { reason: event.payload.reason }),
+                requestedAt: event.payload.requestedAt,
+              },
               updatedAt: event.payload.updatedAt,
             });
             return;

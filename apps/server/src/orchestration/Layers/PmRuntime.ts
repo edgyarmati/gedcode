@@ -134,6 +134,7 @@ type SettlementEvent = Extract<
       | "task.stage-blocked"
       | "task.stage-interrupted"
       | "task.gate-resolved"
+      | "task.force-land-requested"
       | "task.pr-merged"
       | "thread.activity-appended"
       | "helper.run-completed"
@@ -429,6 +430,7 @@ const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent 
   (event.type === "task.stage-blocked" && event.payload.reason === "quota") ||
   event.type === "task.stage-interrupted" ||
   event.type === "task.gate-resolved" ||
+  event.type === "task.force-land-requested" ||
   event.type === "task.pr-merged" ||
   event.type === "helper.run-completed" ||
   event.type === "helper.run-failed" ||
@@ -438,7 +440,7 @@ const isSettlementEvent = (event: OrchestrationEvent): event is SettlementEvent 
 const settlementEventKind = (event: SettlementEvent): PmConsumedSettlementKind =>
   event.type === "task.gate-resolved"
     ? "gate"
-    : event.type === "task.pr-merged"
+    : event.type === "task.pr-merged" || event.type === "task.force-land-requested"
       ? "task"
       : event.type === "thread.activity-appended"
         ? "approval"
@@ -458,6 +460,9 @@ const helperSettlementKey = (helperRunId: string): string => `helper:${helperRun
 const mergedPullRequestSettlementKey = (taskId: OrchestrationTask["id"], prUrl: string): string =>
   `pull-request-merged:${taskId}:${prUrl}`;
 
+const forceLandRequestSettlementKey = (taskId: OrchestrationTask["id"]): string =>
+  `force-land-request:${taskId}`;
+
 const settlementEventKey = (event: SettlementEvent): string =>
   event.type === "task.stage-completed"
     ? makeStageSettlementKey({
@@ -476,9 +481,11 @@ const settlementEventKey = (event: SettlementEvent): string =>
             ? helperSettlementKey(event.payload.helperRunId)
             : event.type === "task.gate-resolved"
               ? makeGateSettlementKey(event.payload.gateId)
-              : event.type === "task.pr-merged"
-                ? mergedPullRequestSettlementKey(event.payload.taskId, event.payload.prUrl)
-                : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
+              : event.type === "task.force-land-requested"
+                ? forceLandRequestSettlementKey(event.payload.taskId)
+                : event.type === "task.pr-merged"
+                  ? mergedPullRequestSettlementKey(event.payload.taskId, event.payload.prUrl)
+                  : (approvalRequestIdFromEvent(event) ?? String(event.payload.activity.id));
 
 const approvalRequestIdFromEvent = (
   event: Extract<SettlementEvent, { type: "thread.activity-appended" }>,
@@ -1140,6 +1147,32 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         } satisfies SettlementEnvelope;
       }
 
+      if (event.type === "task.force-land-requested") {
+        const reason =
+          event.payload.reason === undefined
+            ? "No human reason was supplied."
+            : `Human reason: ${boundUntrustedContent(scrubSecrets(event.payload.reason))}`;
+        return {
+          event,
+          ...resolved,
+          task: resolved.task,
+          kind: "task" as const,
+          settlementKey: forceLandRequestSettlementKey(event.payload.taskId),
+          message: withLastActionCursor(
+            [
+              `A force-land request is pending for task "${resolved.task.title}" (${resolved.task.id}).`,
+              reason,
+              "Skip the remaining Review and Verify work, but preserve the normal landing approval and publication boundary.",
+              "If an active stage is still running, interrupt the active stage and wait for its durable settlement before finalizing.",
+              "Inspect the task worktree changes and commit only intended task changes through the scoped change-review tools. Do not stage or commit unrelated work.",
+              "If changes have ambiguous scope, conflict, or staged residue that cannot be attributed safely, stop and ask the human.",
+              "Prepare the exact PR title and body, request the normal land gate with a clean final HEAD, and after approval use the normal push workflow.",
+            ].join("\n"),
+            event,
+          ),
+        } satisfies SettlementEnvelope;
+      }
+
       return {
         event,
         ...resolved,
@@ -1537,6 +1570,9 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         const mergedPullRequestKeys = tasks
           .filter((task) => task.status === "landed" && task.prUrl !== null)
           .map((task) => mergedPullRequestSettlementKey(task.id, task.prUrl!));
+        const forceLandRequestKeys = tasks
+          .filter((task) => task.forceLandRequest?.status === "pending")
+          .map((task) => forceLandRequestSettlementKey(task.id));
         const approvalRows = yield* Effect.forEach(
           tasks.flatMap((task) => task.stageThreadIds),
           (threadId) => projectionPendingApprovalRepository.listByThreadId({ threadId }),
@@ -1555,7 +1591,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
             ...helperRunKeys,
           ],
           gateKeys,
-          taskKeys: mergedPullRequestKeys,
+          taskKeys: [...mergedPullRequestKeys, ...forceLandRequestKeys],
           approvalKeys,
         };
       },

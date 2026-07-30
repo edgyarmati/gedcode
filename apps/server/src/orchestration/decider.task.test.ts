@@ -10,12 +10,13 @@ import {
   TaskTypeId,
   ThreadId,
   TurnId,
+  OrchestrationCommand,
   type OrchestrationEvent,
-  type OrchestrationCommand,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import { decideOrchestrationCommand } from "./decider.ts";
@@ -2823,134 +2824,182 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("force-lands one current reviewed gate with a human verification override reason", () =>
-    Effect.gen(function* () {
-      const readModel = {
-        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
-          {
-            threadId: "thread-stage-work-completed",
-            role: "work",
-            startedAt: "2026-06-14T09:00:00.000Z",
-            endedAt: "2026-06-14T09:10:00.000Z",
-          },
-        ]),
-        pendingGates: [
-          {
-            gateId: asGateId("gate-force-land"),
-            taskId: asTaskId("task-1"),
-            gate: "land" as const,
-            contentHash: "verified-head",
-            pullRequest: {
-              title: "Force-land reviewed task",
-              body: "## Why\n\nAn operator accepts the missing independent verification.",
-            },
-            stageThreadId: null,
-            status: "pending" as const,
-            approvedHash: null,
-            decision: null,
-            origin: null,
-            requestedAt: now,
-            resolvedAt: null,
-          },
-        ],
-      };
-
-      const normalApproval = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.land.approve",
-            commandId: asCommandId("cmd-normal-land-approve-without-verify"),
-            taskId: asTaskId("task-1"),
-            gateId: asGateId("gate-force-land"),
-            approvedHash: "verified-head",
-            worktreeCompletion: { head: "verified-head", dirty: false },
-            createdAt: now,
-          },
-        }),
-      );
-      expect(normalApproval._tag).toBe("Failure");
-
-      const planned = yield* decideOrchestrationCommand({
-        readModel,
-        command: {
-          type: "task.land.force",
-          commandId: asCommandId("cmd-force-land"),
-          taskId: asTaskId("task-1"),
-          gateId: asGateId("gate-force-land"),
-          approvedHash: "verified-head",
-          reason: "The release train is blocked; an operator accepts this reviewed commit.",
-          worktreeCompletion: { head: "verified-head", dirty: false },
+  it.effect(
+    "records a durable optional-reason force-land request before finalization from Review or Verify",
+    () =>
+      Effect.gen(function* () {
+        const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
+        const reviewedRequest = yield* decodeCommand({
+          type: "task.force-land.request",
+          commandId: "cmd-force-land-request-review",
+          taskId: "task-1",
+          reason: "  Release train is blocked  ",
           createdAt: now,
-        } as unknown as OrchestrationCommand,
-      });
-      const events = toEvents(planned);
-      expect(events.map((event) => event.type)).toEqual(["task.gate-resolved", "task.landed"]);
-      expect(events[0]?.payload).toMatchObject({
-        gateId: asGateId("gate-force-land"),
-        decision: "approved",
-        origin: "human",
-      });
-      expect(events[1]?.payload).toMatchObject({
-        taskId: asTaskId("task-1"),
-        approvedHash: "verified-head",
-        verificationOverride: {
-          kind: "force-land",
-          reason: "The release train is blocked; an operator accepts this reviewed commit.",
-        },
-      });
-    }),
+        });
+        const verifyingRequest = yield* decodeCommand({
+          type: "task.force-land.request",
+          commandId: "cmd-force-land-request-verifying",
+          taskId: "task-1",
+          createdAt: now,
+        });
+
+        expect(reviewedRequest).toMatchObject({
+          type: "task.force-land.request",
+          reason: "Release train is blocked",
+        });
+        expect(verifyingRequest).toMatchObject({ type: "task.force-land.request" });
+        expect(verifyingRequest).not.toHaveProperty("reason");
+
+        const activeStageThreadId = asThreadId("thread-stage-review-active");
+        const reviewReadModel = withStageHistory(
+          yield* taskReadModel({
+            status: "review",
+            currentStageThreadId: activeStageThreadId,
+            stageThreadIds: [activeStageThreadId],
+          }),
+          [
+            {
+              threadId: String(activeStageThreadId),
+              role: "work",
+              status: "running",
+              startedAt: "2026-06-14T09:30:00.000Z",
+              endedAt: null,
+            },
+          ],
+        );
+        const planned = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel: reviewReadModel,
+            command: reviewedRequest,
+          }),
+        );
+        expect(planned).toMatchObject([
+          {
+            type: "task.force-land-requested",
+            payload: {
+              taskId: asTaskId("task-1"),
+              reason: "Release train is blocked",
+            },
+          },
+        ]);
+        const projected = yield* applyEvents(reviewReadModel, planned);
+        expect(
+          (projected.tasks[0] as unknown as Record<string, unknown>).forceLandRequest,
+        ).toMatchObject({
+          status: "pending",
+          reason: "Release train is blocked",
+        });
+
+        const verifyingStageThreadId = asThreadId("thread-stage-verify-active");
+        const verifyingReadModel = withStageHistory(
+          yield* taskReadModel({
+            status: "verifying",
+            currentStageThreadId: verifyingStageThreadId,
+            stageThreadIds: [verifyingStageThreadId],
+          }),
+          [
+            {
+              threadId: String(verifyingStageThreadId),
+              role: "verify",
+              status: "running",
+              startedAt: "2026-06-14T09:30:00.000Z",
+              endedAt: null,
+            },
+          ],
+        );
+        expect(
+          toEvents(
+            yield* decideOrchestrationCommand({
+              readModel: verifyingReadModel,
+              command: verifyingRequest,
+            }),
+          )[0]?.type,
+        ).toBe("task.force-land-requested");
+
+        for (const readModel of [
+          projected,
+          yield* taskReadModel({ status: "landed" }),
+          yield* taskReadModel({
+            status: "review",
+            cancellation: {
+              requestedAt: now,
+              completedPhases: [],
+              failurePhase: null,
+              failureMessage: null,
+              failedAt: null,
+            },
+          }),
+          yield* taskReadModel({ status: "working" }),
+        ]) {
+          const result = yield* Effect.exit(
+            decideOrchestrationCommand({ readModel, command: verifyingRequest }),
+          );
+          expect(result._tag).toBe("Failure");
+        }
+      }),
   );
 
-  it.effect("rejects force-land when the inspected task worktree is dirty", () =>
-    Effect.gen(function* () {
-      const readModel = {
-        ...withStageHistory(yield* taskReadModel({ status: "review" }), [
-          {
-            threadId: "thread-stage-work-completed",
-            role: "work",
-            startedAt: "2026-06-14T09:00:00.000Z",
-            endedAt: "2026-06-14T09:10:00.000Z",
-          },
-        ]),
-        pendingGates: [
-          {
-            gateId: asGateId("gate-force-land-dirty"),
-            taskId: asTaskId("task-1"),
-            gate: "land" as const,
-            contentHash: "verified-head",
-            pullRequest: {
-              title: "Force-land reviewed task",
-              body: "## Why\n\nAn operator accepts the missing independent verification.",
+  it.effect(
+    "allows a pending force-land request to finish through the exact clean normal land gate without fresh verification",
+    () =>
+      Effect.gen(function* () {
+        const readModel = yield* taskReadModel({
+          status: "review",
+          forceLandRequest: { status: "pending", requestedAt: now },
+        });
+        const gateRequested = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.gate.request",
+              commandId: asCommandId("cmd-force-land-gate"),
+              taskId: asTaskId("task-1"),
+              gateId: asGateId("gate-force-land-final"),
+              gate: "land",
+              contentHash: "final-clean-head",
+              pullRequest: { title: "Finalize force land", body: "Prepared after scoped review." },
+              stageThreadId: null,
+              worktreeCompletion: { head: "final-clean-head", dirty: false },
+              createdAt: now,
             },
-            stageThreadId: null,
-            status: "pending" as const,
-            approvedHash: null,
-            decision: null,
-            origin: null,
-            requestedAt: now,
-            resolvedAt: null,
-          },
-        ],
-      };
+          }),
+        );
+        const withGate = yield* applyEvents(readModel, gateRequested);
+        const landed = toEvents(
+          yield* decideOrchestrationCommand({
+            readModel: withGate,
+            command: {
+              type: "task.land.approve",
+              commandId: asCommandId("cmd-force-land-approve"),
+              taskId: asTaskId("task-1"),
+              gateId: asGateId("gate-force-land-final"),
+              approvedHash: "final-clean-head",
+              worktreeCompletion: { head: "final-clean-head", dirty: false },
+              createdAt: now,
+            },
+          }),
+        );
+        expect(landed.map((event) => event.type)).toEqual(["task.gate-resolved", "task.landed"]);
 
-      const exit = yield* Effect.exit(
-        decideOrchestrationCommand({
-          readModel,
-          command: {
-            type: "task.land.force",
-            commandId: asCommandId("cmd-force-land-dirty"),
-            taskId: asTaskId("task-1"),
-            gateId: asGateId("gate-force-land-dirty"),
-            approvedHash: "verified-head",
-            reason: "The release train is blocked; an operator accepts this reviewed commit.",
-            worktreeCompletion: { head: "verified-head", dirty: true },
-            createdAt: now,
-          },
-        }),
-      );
-      expect(exit._tag).toBe("Failure");
-    }),
+        const dirty = yield* Effect.exit(
+          decideOrchestrationCommand({
+            readModel,
+            command: {
+              type: "task.gate.request",
+              commandId: asCommandId("cmd-force-land-dirty"),
+              taskId: asTaskId("task-1"),
+              gateId: asGateId("gate-force-land-dirty"),
+              gate: "land",
+              contentHash: "final-clean-head",
+              pullRequest: { title: "Finalize force land", body: "Prepared after scoped review." },
+              stageThreadId: null,
+              worktreeCompletion: { head: "final-clean-head", dirty: true },
+              createdAt: now,
+            },
+          }),
+        );
+        expect(dirty._tag).toBe("Failure");
+      }),
   );
 
   it.effect(

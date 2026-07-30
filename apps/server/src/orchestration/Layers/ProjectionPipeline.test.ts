@@ -47,6 +47,7 @@ import {
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
@@ -3709,6 +3710,101 @@ it.effect("restores pending turn-start metadata across projection pipeline resta
       ),
     ),
   ),
+);
+
+it.effect(
+  "keeps a settled normal task in the ordinary shell snapshot after projection restart",
+  () =>
+    Effect.gen(function* () {
+      const { dbPath } = yield* ServerConfig;
+      const persistenceLayer = makeSqlitePersistenceLive(dbPath);
+      const firstProjectionLayer = OrchestrationProjectionPipelineLive.pipe(
+        Layer.provideMerge(OrchestrationEventStoreLive),
+        Layer.provideMerge(persistenceLayer),
+      );
+      const restartedProjectionLayer = OrchestrationProjectionPipelineLive.pipe(
+        Layer.provideMerge(OrchestrationEventStoreLive),
+        Layer.provideMerge(persistenceLayer),
+      );
+      const snapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
+        Layer.provideMerge(RepositoryIdentityResolverLive),
+        Layer.provideMerge(persistenceLayer),
+      );
+      const createdAt = "2026-07-30T11:00:00.000Z";
+      const settledAt = "2026-07-30T11:01:00.000Z";
+      const threadId = ThreadId.make("thread-settled-restart");
+
+      yield* Effect.gen(function* () {
+        const eventStore = yield* OrchestrationEventStore;
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make("evt-settled-restart-created"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-settled-restart-created"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-settled-restart"),
+            title: "Settled normal task",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+        yield* eventStore.append({
+          type: "thread.inbox-settled",
+          eventId: EventId.make("evt-settled-restart-settled"),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: settledAt,
+          commandId: CommandId.make("cmd-settled-restart-settled"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId,
+            settledAt,
+            updatedAt: settledAt,
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+      }).pipe(Effect.provide(firstProjectionLayer));
+
+      yield* Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        yield* projectionPipeline.bootstrap;
+      }).pipe(Effect.provide(restartedProjectionLayer));
+
+      const shellSnapshot = yield* Effect.gen(function* () {
+        const snapshotQuery = yield* ProjectionSnapshotQuery;
+        return yield* snapshotQuery.getShellSnapshot();
+      }).pipe(Effect.provide(snapshotLayer));
+      const thread = shellSnapshot.threads.find((candidate) => candidate.id === threadId);
+      assert.equal((thread as { inboxLifecycle?: string } | undefined)?.inboxLifecycle, "settled");
+      assert.equal(thread?.archivedAt, null);
+    }).pipe(
+      Effect.provide(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), {
+            prefix: "t3-projection-pipeline-inbox-lifecycle-restart-",
+          }),
+          NodeServices.layer,
+        ),
+      ),
+    ),
 );
 
 const engineLayer = it.layer(

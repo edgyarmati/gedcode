@@ -28,6 +28,7 @@ import {
   TaskDeletedPayload,
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
+  TaskForceLandRequestedPayload,
   TaskLandedPayload,
   TaskNoChangesNeededPayload,
   TaskPrClosedPayload,
@@ -69,6 +70,9 @@ import {
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
   ThreadUnarchivedPayload,
+  ThreadInboxSettledPayload,
+  ThreadInboxSnoozedPayload,
+  ThreadInboxReopenedPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
@@ -691,6 +695,8 @@ export function projectEvent(
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             archivedAt: null,
+            inboxLifecycle: "active",
+            inboxWakeAt: null,
             deletedAt: null,
             pendingPmHandoff: null,
             messages: [],
@@ -746,6 +752,42 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             archivedAt: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.inbox-settled":
+      return decodeForEvent(ThreadInboxSettledPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            inboxLifecycle: "settled",
+            inboxWakeAt: null,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.inbox-snoozed":
+      return decodeForEvent(ThreadInboxSnoozedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            inboxLifecycle: "snoozed",
+            inboxWakeAt: payload.wakeAt,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.inbox-reopened":
+      return decodeForEvent(ThreadInboxReopenedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            inboxLifecycle: "active",
+            inboxWakeAt: null,
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -1199,6 +1241,7 @@ export function projectEvent(
             verification: null,
             noChangesNeeded: null,
             landing: null,
+            forceLandRequest: null,
             releaseDispatch: null,
             roleCapabilityTiers: {},
             playbookVersion: payload.playbookVersion,
@@ -1731,6 +1774,26 @@ export function projectEvent(
         }),
       );
 
+    case "task.force-land-requested":
+      return decodeForEvent(
+        TaskForceLandRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          tasks: updateTask(nextBase.tasks, payload.taskId, {
+            forceLandRequest: {
+              status: "pending",
+              ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+              requestedAt: payload.requestedAt,
+            },
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "task.landed":
       // Landing is not terminal until the PR actuator records a real URL.
       return decodeForEvent(TaskLandedPayload, event.payload, event.type, "payload").pipe(
@@ -1743,9 +1806,6 @@ export function projectEvent(
               failureMessage: null,
               branchPushed: false,
               ...(payload.approvedHash === undefined ? {} : { approvedHash: payload.approvedHash }),
-              ...(payload.verificationOverride === undefined
-                ? {}
-                : { verificationOverride: payload.verificationOverride }),
               ...(nextBase.tasks.find((task) => task.id === payload.taskId)?.landing
                 ?.publishedHash === undefined
                 ? {}

@@ -17,6 +17,8 @@ import { HelperRunReactor } from "../Services/HelperRunReactor.ts";
 import { ProjectContextRunReactor } from "../Services/ProjectContextRunReactor.ts";
 import { PullRequestSyncReactor } from "../Services/PullRequestSyncReactor.ts";
 import { CapabilityPauseReactor } from "../Services/CapabilityPauseReactor.ts";
+import { InboxLifecycleReconcilerLive } from "./InboxLifecycleReconciler.ts";
+import { InboxLifecycleReconciler } from "../Services/InboxLifecycleReconciler.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const taskCancellationReconciler = yield* TaskCancellationReconciler;
@@ -55,7 +57,19 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   } satisfies OrchestrationReactorShape;
 });
 
+const makeLiveOrchestrationReactor = Effect.gen(function* () {
+  const reactor = yield* makeOrchestrationReactor;
+  const inboxLifecycleReconciler = yield* InboxLifecycleReconciler;
+  return {
+    start: () =>
+      Effect.gen(function* () {
+        yield* reactor.start();
+        yield* inboxLifecycleReconciler.start();
+      }),
+  } satisfies OrchestrationReactorShape;
+});
+
 export const OrchestrationReactorLive = Layer.effect(
   OrchestrationReactor,
-  makeOrchestrationReactor,
-);
+  makeLiveOrchestrationReactor,
+).pipe(Layer.provide(InboxLifecycleReconcilerLive));

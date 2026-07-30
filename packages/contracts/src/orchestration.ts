@@ -575,6 +575,9 @@ export const OrchestrationLatestTurn = Schema.Struct({
 });
 export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 
+export const ThreadInboxLifecycle = Schema.Literals(["active", "snoozed", "settled"]);
+export type ThreadInboxLifecycle = typeof ThreadInboxLifecycle.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -592,6 +595,8 @@ export const OrchestrationThread = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  inboxLifecycle: Schema.optionalKey(ThreadInboxLifecycle),
+  inboxWakeAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   deletedAt: Schema.NullOr(IsoDateTime),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
@@ -720,23 +725,22 @@ export const OrchestrationTaskLandingStatus = Schema.Literals([
 ]);
 export type OrchestrationTaskLandingStatus = typeof OrchestrationTaskLandingStatus.Type;
 
-export const TaskLandingVerificationOverride = Schema.Struct({
-  kind: Schema.Literal("force-land"),
-  reason: TrimmedNonEmptyString,
-  origin: Schema.Literal("human"),
-});
-export type TaskLandingVerificationOverride = typeof TaskLandingVerificationOverride.Type;
-
 export const OrchestrationTaskLanding = Schema.Struct({
   status: OrchestrationTaskLandingStatus,
   failureMessage: Schema.NullOr(TrimmedNonEmptyString),
   branchPushed: Schema.Boolean,
   approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
   publishedHash: Schema.optionalKey(TrimmedNonEmptyString),
-  verificationOverride: Schema.optionalKey(TaskLandingVerificationOverride),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationTaskLanding = typeof OrchestrationTaskLanding.Type;
+
+export const OrchestrationTaskForceLandRequest = Schema.Struct({
+  status: Schema.Literal("pending"),
+  reason: Schema.optionalKey(TrimmedNonEmptyString),
+  requestedAt: IsoDateTime,
+});
+export type OrchestrationTaskForceLandRequest = typeof OrchestrationTaskForceLandRequest.Type;
 
 export const OrchestrationReleaseDispatchStatus = Schema.Literals([
   "dispatching",
@@ -806,6 +810,7 @@ export const OrchestrationTask = Schema.Struct({
   landing: Schema.NullOr(OrchestrationTaskLanding).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  forceLandRequest: Schema.optionalKey(Schema.NullOr(OrchestrationTaskForceLandRequest)),
   releaseDispatch: Schema.optionalKey(Schema.NullOr(OrchestrationReleaseDispatch)),
   roleCapabilityTiers: Schema.optionalKey(GedRoleCapabilityTiers),
   playbookVersion: Schema.NullOr(TrimmedNonEmptyString),
@@ -1230,6 +1235,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  inboxLifecycle: Schema.optionalKey(ThreadInboxLifecycle),
+  inboxWakeAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1395,6 +1402,32 @@ const ThreadUnarchiveCommand = Schema.Struct({
   type: Schema.Literal("thread.unarchive"),
   commandId: CommandId,
   threadId: ThreadId,
+});
+
+const ThreadInboxSettleCommand = Schema.Struct({
+  type: Schema.Literal("thread.inbox.settle"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
+const ThreadInboxSnoozeCommand = Schema.Struct({
+  type: Schema.Literal("thread.inbox.snooze"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  wakeAt: IsoDateTime,
+});
+
+const ThreadInboxReopenCommand = Schema.Struct({
+  type: Schema.Literal("thread.inbox.reopen"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
+const ThreadInboxWakeDueCommand = Schema.Struct({
+  type: Schema.Literal("thread.inbox.wake-due"),
+  commandId: CommandId,
+  threadId: Schema.optionalKey(ThreadId),
 });
 
 const ThreadMetaUpdateCommand = Schema.Struct({
@@ -1857,14 +1890,11 @@ const TaskLandApproveCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-const TaskLandForceCommand = Schema.Struct({
-  type: Schema.Literal("task.land.force"),
+const TaskForceLandRequestCommand = Schema.Struct({
+  type: Schema.Literal("task.force-land.request"),
   commandId: CommandId,
   taskId: TaskId,
-  gateId: GateId,
-  approvedHash: TrimmedNonEmptyString,
-  reason: TrimmedNonEmptyString,
-  worktreeCompletion: Schema.optional(OrchestrationTaskWorktreeCompletion),
+  reason: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
 });
 
@@ -1985,6 +2015,9 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
+  ThreadInboxSettleCommand,
+  ThreadInboxSnoozeCommand,
+  ThreadInboxReopenCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -2004,7 +2037,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   TaskGateRequestCommand,
   TaskGateResolveCommand,
   TaskLandApproveCommand,
-  TaskLandForceCommand,
+  TaskForceLandRequestCommand,
   TaskLandCommand,
   HelperRunRequestCommand,
 ]);
@@ -2019,6 +2052,9 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
+  ThreadInboxSettleCommand,
+  ThreadInboxSnoozeCommand,
+  ThreadInboxReopenCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -2211,6 +2247,7 @@ const InternalOrchestrationCommand = Schema.Union([
     helperRunId: HelperRunId,
     createdAt: IsoDateTime,
   }),
+  ThreadInboxWakeDueCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -2228,6 +2265,9 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
+  "thread.inbox-settled",
+  "thread.inbox-snoozed",
+  "thread.inbox-reopened",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -2267,6 +2307,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.cancellation-requested",
   "task.cancellation-failed",
   "task.cancellation-phase-completed",
+  "task.force-land-requested",
   "task.landed",
   "task.landing-retry-requested",
   "task.release-dispatch-requested",
@@ -2365,6 +2406,24 @@ export const ThreadArchivedPayload = Schema.Struct({
 
 export const ThreadUnarchivedPayload = Schema.Struct({
   threadId: ThreadId,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadInboxSettledPayload = Schema.Struct({
+  threadId: ThreadId,
+  settledAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadInboxSnoozedPayload = Schema.Struct({
+  threadId: ThreadId,
+  wakeAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadInboxReopenedPayload = Schema.Struct({
+  threadId: ThreadId,
+  reopenedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -2796,7 +2855,13 @@ export const TaskGateResolvedPayload = Schema.Struct({
 export const TaskLandedPayload = Schema.Struct({
   taskId: TaskId,
   approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
-  verificationOverride: Schema.optionalKey(TaskLandingVerificationOverride),
+  updatedAt: IsoDateTime,
+});
+
+export const TaskForceLandRequestedPayload = Schema.Struct({
+  taskId: TaskId,
+  reason: Schema.optional(TrimmedNonEmptyString),
+  requestedAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 
@@ -2908,6 +2973,12 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    type: Schema.Literal("thread.inbox-snoozed"),
+    payload: ThreadInboxSnoozedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("project.meta-updated"),
     payload: ProjectMetaUpdatedPayload,
   }),
@@ -2935,6 +3006,18 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.unarchived"),
     payload: ThreadUnarchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    type: Schema.Literal("thread.inbox-settled"),
+    payload: ThreadInboxSettledPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    type: Schema.Literal("thread.inbox-reopened"),
+    payload: ThreadInboxReopenedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3130,6 +3213,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.cancellation-phase-completed"),
     payload: TaskCancellationPhaseCompletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.force-land-requested"),
+    payload: TaskForceLandRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3505,9 +3593,7 @@ export type OrchestratorLandTaskResult = typeof OrchestratorLandTaskResult.Type;
 
 export const OrchestratorForceLandTaskInput = Schema.Struct({
   taskId: TaskId,
-  gateId: GateId,
-  approvedHash: TrimmedNonEmptyString,
-  reason: TrimmedNonEmptyString,
+  reason: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type OrchestratorForceLandTaskInput = typeof OrchestratorForceLandTaskInput.Type;
 

@@ -271,6 +271,25 @@ const dirtyStageCompletedEvent: OrchestrationEvent = {
   },
 };
 
+const forceLandRequestEvent: OrchestrationEvent = {
+  sequence: 12,
+  eventId: EventId.make("evt-force-land-request"),
+  aggregateKind: "task",
+  aggregateId: taskId,
+  type: "task.force-land-requested",
+  occurredAt: now,
+  commandId: CommandId.make("cmd-force-land-request"),
+  causationEventId: null,
+  correlationId: CommandId.make("cmd-force-land-request"),
+  metadata: {},
+  payload: {
+    taskId,
+    reason: "Release train is blocked",
+    requestedAt: now,
+    updatedAt: now,
+  },
+};
+
 const pullRequestUrl = "https://github.com/acme/repo/pull/42";
 const pullRequestMergedEvent: OrchestrationEvent = {
   sequence: 14,
@@ -2495,6 +2514,57 @@ describe("PmRuntime", () => {
       );
       assert.strictEqual(consumeCalls.length, 1);
     }),
+  );
+
+  it.effect(
+    "delivers one pending force-land request across live delivery and restart replay with safe finalization guidance",
+    () =>
+      Effect.gen(function* () {
+        const consumed = new Set<string>();
+        const messages: string[] = [];
+        const consumeCalls: ConsumePmSettlementInput[] = [];
+        const layer = makeLayer({
+          liveEvents: [forceLandRequestEvent],
+          historicalEvents: [forceLandRequestEvent],
+          consumed,
+          messages,
+          consumeCalls,
+          commandReadModel: {
+            ...readModel,
+            tasks: [
+              {
+                ...task,
+                forceLandRequest: {
+                  status: "pending",
+                  reason: "Release train is blocked",
+                  requestedAt: now,
+                },
+              },
+            ],
+          },
+        });
+
+        yield* Effect.gen(function* () {
+          const runtime = yield* PmRuntime;
+          yield* runtime.start();
+          yield* runtime.drain;
+        }).pipe(Effect.scoped, Effect.provide(layer));
+
+        assert.strictEqual(messages.length, 1);
+        const message = messages[0] ?? "";
+        assert.match(message, /force-land request/i);
+        assert.match(message, /interrupt.*active.*stage.*wait.*durable.*settlement/i);
+        assert.match(message, /inspect.*changes.*commit only intended task changes.*scoped/i);
+        assert.match(message, /ambiguous.*scope.*stop.*human/i);
+        assert.match(
+          message,
+          /exact PR title.*body.*normal land gate.*clean final HEAD.*normal push/i,
+        );
+        assert.deepStrictEqual(
+          consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
+          [{ kind: "task", settlementKey: `force-land-request:${taskId}` }],
+        );
+      }),
   );
 
   it.effect("wakes the PM exactly once when a tracked pull request merges remotely", () =>

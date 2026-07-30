@@ -83,6 +83,9 @@ import Migration0070 from "./Migrations/070_ProjectionStageHistoryNetworkAccess.
 import Migration0071 from "./Migrations/071_PmLifecycleDeliveryRecovery.ts";
 import Migration0072 from "./Migrations/072_ProjectionStageCapabilityPauseDeadline.ts";
 import Migration0073 from "./Migrations/073_PmLifecycleDeliveryEpisodes.ts";
+import Migration0074 from "./Migrations/074_ProjectionThreadInboxLifecycle.ts";
+import Migration0075 from "./Migrations/075_ProjectionThreadInboxWakeAt.ts";
+import Migration0076 from "./Migrations/076_ProjectionTaskForceLandRequest.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
 import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
 import Migration0045 from "./Migrations/045_BackfillProjectionProjectOrchestratorConfig.ts";
@@ -171,6 +174,9 @@ export const migrationEntries = [
   [71, "PmLifecycleDeliveryRecovery", Migration0071],
   [72, "ProjectionStageCapabilityPauseDeadline", Migration0072],
   [73, "PmLifecycleDeliveryEpisodes", Migration0073],
+  [74, "ProjectionThreadInboxLifecycle", Migration0074],
+  [75, "ProjectionThreadInboxWakeAt", Migration0075],
+  [76, "ProjectionTaskForceLandRequest", Migration0076],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

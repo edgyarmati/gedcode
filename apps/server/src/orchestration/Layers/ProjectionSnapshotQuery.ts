@@ -26,6 +26,7 @@ import {
   OrchestrationTaskCancellation,
   OrchestrationTaskChangeReview,
   OrchestrationTaskLanding,
+  OrchestrationTaskForceLandRequest,
   OrchestrationTaskNoChangesNeeded,
   OrchestrationTaskVerification,
   OrchestrationReleaseDispatch,
@@ -152,6 +153,7 @@ const ProjectionTaskDbRowSchema = ProjectionTask.mapFields(
     verification: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskVerification)),
     noChangesNeeded: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskNoChangesNeeded)),
     landing: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskLanding)),
+    forceLandRequest: Schema.NullOr(Schema.fromJsonString(OrchestrationTaskForceLandRequest)),
     releaseDispatch: Schema.NullOr(Schema.fromJsonString(OrchestrationReleaseDispatch)),
   }),
 );
@@ -349,6 +351,7 @@ function mapTaskRow(row: Schema.Schema.Type<typeof ProjectionTaskDbRowSchema>): 
     verification: row.verification,
     noChangesNeeded: row.noChangesNeeded,
     landing: row.landing,
+    forceLandRequest: row.forceLandRequest,
     releaseDispatch: row.releaseDispatch,
     roleCapabilityTiers: row.roleCapabilityTiers,
     playbookVersion: row.playbookVersion,
@@ -475,6 +478,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
+          inbox_lifecycle AS "inboxLifecycle",
+          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
@@ -507,6 +512,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
+          inbox_lifecycle AS "inboxLifecycle",
+          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
@@ -541,6 +548,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
+          inbox_lifecycle AS "inboxLifecycle",
+          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
@@ -762,6 +771,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           verification_json AS "verification",
           no_changes_needed_json AS "noChangesNeeded",
           landing_json AS "landing",
+          force_land_request_json AS "forceLandRequest",
           release_dispatch_json AS "releaseDispatch",
           role_model_selections_json AS "roleCapabilityTiers",
           playbook_version AS "playbookVersion",
@@ -1068,6 +1078,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
+          inbox_lifecycle AS "inboxLifecycle",
+          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
@@ -1581,6 +1593,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 archivedAt: row.archivedAt,
+                inboxLifecycle: row.inboxLifecycle ?? "active",
+                inboxWakeAt: row.inboxWakeAt ?? null,
                 deletedAt: row.deletedAt,
                 ...(row.lastClearedSequence !== null
                   ? { lastClearedSequence: row.lastClearedSequence }
@@ -1910,6 +1924,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
+                  inboxLifecycle: row.inboxLifecycle ?? "active",
+                  inboxWakeAt: row.inboxWakeAt ?? null,
                   deletedAt: row.deletedAt,
                   ...(row.lastClearedSequence !== null
                     ? { lastClearedSequence: row.lastClearedSequence }
@@ -2053,6 +2069,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
                       archivedAt: row.archivedAt,
+                      inboxLifecycle: row.inboxLifecycle ?? "active",
+                      inboxWakeAt: row.inboxWakeAt ?? null,
                       ...(row.lastClearedSequence !== null
                         ? { lastClearedSequence: row.lastClearedSequence }
                         : {}),
@@ -2195,6 +2213,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
+                  inboxLifecycle: row.inboxLifecycle ?? "active",
+                  inboxWakeAt: row.inboxWakeAt ?? null,
                   ...(row.lastClearedSequence !== null
                     ? { lastClearedSequence: row.lastClearedSequence }
                     : {}),
@@ -2445,6 +2465,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
+        inboxLifecycle: threadRow.value.inboxLifecycle ?? "active",
+        inboxWakeAt: threadRow.value.inboxWakeAt ?? null,
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }
           : {}),
@@ -2547,6 +2569,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
+        inboxLifecycle: threadRow.value.inboxLifecycle ?? "active",
+        inboxWakeAt: threadRow.value.inboxWakeAt ?? null,
         deletedAt: null,
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }

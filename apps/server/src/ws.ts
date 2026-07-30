@@ -1994,9 +1994,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               { snapshotQuery: projectionSnapshotQuery, vcsProcess },
               {
                 taskId: input.taskId,
-                gateId: input.gateId,
-                approvedHash: input.approvedHash,
-                reason: input.reason,
+                ...(input.reason === undefined ? {} : { reason: input.reason }),
                 commandId: serverCommandId("orchestrator-force-land-task"),
                 createdAt: nowIso,
                 dispatch: dispatchNormalizedCommand,
