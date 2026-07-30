@@ -5,6 +5,17 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Add: Introduce a durable work Inbox with an animated Inbox/Orchestrator view switch. Normal chat
+  threads now have persisted Active, Snoozed, and Settled lifecycle states, automatically reopen
+  when messaged, and wake from snooze through server-owned reconciliation. Active Orchestrator tasks
+  appear as a separate flat category and open their project workspace.
+
+- Change: Replace gate-bound force landing with a durable PM finalization request available during
+  Review or Verify. The optional-reason action can begin with an active stage or dirty worktree; the
+  PM must settle the stage, scope and commit intended changes, stop on ambiguity, prepare the exact
+  pull-request proposal, and finish on a clean exact HEAD before the ordinary human land gate and
+  normal publication path can proceed.
+
 - Test: Retry transient Linux `ENOTEMPTY` races while removing temporary Git repositories so CI
   does not fail after otherwise successful GitManager integration tests.
 

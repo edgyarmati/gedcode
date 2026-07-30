@@ -15,6 +15,7 @@ import {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
+  ThreadInboxLifecycle,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -40,6 +41,8 @@ export const ProjectionThread = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime),
+  inboxLifecycle: Schema.optionalKey(ThreadInboxLifecycle),
+  inboxWakeAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,

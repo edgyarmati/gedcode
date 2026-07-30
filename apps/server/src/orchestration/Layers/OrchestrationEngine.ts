@@ -130,7 +130,7 @@ export function classifyOrchestrationCommand(
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land.approve":
-    case "task.land.force":
+    case "task.force-land.request":
     case "task.land":
     case "task.landing.retry":
     case "task.release.dispatch.request":
@@ -172,6 +172,10 @@ export function classifyOrchestrationCommand(
     case "thread.delete":
     case "thread.archive":
     case "thread.unarchive":
+    case "thread.inbox.settle":
+    case "thread.inbox.snooze":
+    case "thread.inbox.reopen":
+    case "thread.inbox.wake-due":
     case "thread.meta.update":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
@@ -198,6 +202,11 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
+      };
+    case "thread.inbox.wake-due":
+      return {
+        aggregateKind: "thread",
+        aggregateId: command.threadId ?? ThreadId.make("inbox:wake-due"),
       };
     case "project.context.run.request":
     case "project.context.run.prepare-start":
@@ -230,7 +239,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.gate.request":
     case "task.gate.resolve":
     case "task.land.approve":
-    case "task.land.force":
+    case "task.force-land.request":
     case "task.land":
     case "task.landing.retry":
     case "task.release.dispatch.request":

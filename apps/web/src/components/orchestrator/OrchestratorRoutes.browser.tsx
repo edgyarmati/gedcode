@@ -904,44 +904,49 @@ it("uses land-gate approval as the only normal landing action", async () => {
   });
 });
 
-it("requires an explicit reason before force landing a pending land gate", async () => {
-  const resolveGate = vi.fn(async () => ({ sequence: 2 }));
+it("requests force land from Review or Verify without a gate and shows durable pending progress", async () => {
   const forceLandTask = vi.fn(async () => ({ sequence: 3, alreadyLanded: false }));
   __setEnvironmentApiOverrideForTests(environmentId, {
-    orchestrator: { resolveGate, forceLandTask },
+    orchestrator: { forceLandTask },
   } as unknown as EnvironmentApi);
-  const pendingLandGate = {
-    ...approvedLandGate,
-    status: "pending" as const,
-    approvedHash: null,
-    decision: null,
-    origin: null,
-    resolvedAt: null,
-  };
 
-  render(<GatePanel environmentId={environmentId} gates={[pendingLandGate]} taskId={taskId} />);
+  const screen = await render(
+    <>
+      <TaskHeader gates={[]} task={makeTask("review")} />
+      <GatePanel environmentId={environmentId} gates={[]} taskId={taskId} />
+    </>,
+  );
 
-  await expect.element(page.getByRole("button", { name: "Approve" })).toBeInTheDocument();
-  await page.getByRole("button", { name: "Force land" }).click();
+  const trigger = page.getByRole("button", { name: "Force land now" });
+  await expect.element(trigger).toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Force land" })).not.toBeInTheDocument();
+  await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Confirm force land" });
   await expect.element(dialog).toBeInTheDocument();
-  const reason = dialog.getByRole("textbox", { name: "Reason" });
+  await expect.element(dialog.getByRole("textbox", { name: "Reason" })).toBeInTheDocument();
   const confirm = dialog.getByRole("button", { name: "Confirm force land" });
-  await expect.element(confirm).toBeDisabled();
-  await reason.fill("Human reviewed the clean worktree and accepts the verification override.");
   await expect.element(confirm).toBeEnabled();
-  // This isolated component harness does not load app CSS, so Base UI's inert presentation layer
-  // incorrectly covers the dialog in Playwright. The preceding browser assertions still verify the
-  // visible enabled control; activate its submit handler directly here.
   (confirm.element() as HTMLElement).click();
   await expect.poll(() => forceLandTask.mock.calls.length).toBe(1);
-  expect(forceLandTask).toHaveBeenCalledWith({
-    taskId,
-    gateId: pendingLandGate.gateId,
-    approvedHash: pendingLandGate.contentHash,
-    reason: "Human reviewed the clean worktree and accepts the verification override.",
-  });
-  expect(resolveGate).not.toHaveBeenCalled();
+  expect(forceLandTask).toHaveBeenCalledWith({ taskId });
+
+  await screen.rerender(<TaskHeader gates={[]} task={makeTask("verifying")} />);
+  await expect.element(page.getByRole("button", { name: "Force land now" })).toBeInTheDocument();
+
+  await screen.rerender(
+    <TaskHeader
+      gates={[]}
+      task={{
+        ...makeTask("review"),
+        forceLandRequest: {
+          status: "pending",
+          requestedAt: "2026-06-14T00:03:00.000Z",
+        },
+      }}
+    />,
+  );
+  await expect.element(page.getByRole("button", { name: "Force land requested" })).toBeDisabled();
+  await expect.element(page.getByText("PM finalization in progress")).toBeInTheDocument();
 });
 
 it("does not offer force land for non-land or resolved gates", async () => {

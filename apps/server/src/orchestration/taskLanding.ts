@@ -27,7 +27,9 @@ type LandOrchestrationTaskError =
 type DispatchLandCommand = (
   command: Extract<
     OrchestrationCommand,
-    { type: "task.land" | "task.landing.retry" | "task.land.approve" | "task.land.force" }
+    {
+      type: "task.land" | "task.landing.retry" | "task.land.approve" | "task.force-land.request";
+    }
   >,
 ) => Effect.Effect<DispatchResult, OrchestrationDispatchError | OrchestrationDispatchCommandError>;
 
@@ -62,8 +64,12 @@ export interface ApproveOrchestrationLandTaskInput {
   readonly dispatch: DispatchLandCommand;
 }
 
-export interface ForceLandOrchestrationTaskInput extends ApproveOrchestrationLandTaskInput {
-  readonly reason: string;
+export interface ForceLandOrchestrationTaskInput {
+  readonly taskId: TaskId;
+  readonly reason?: string;
+  readonly commandId: Effect.Effect<CommandId, LandOrchestrationTaskError>;
+  readonly createdAt: Effect.Effect<string, LandOrchestrationTaskError>;
+  readonly dispatch: DispatchLandCommand;
 }
 
 export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTaskWithServices")(
@@ -147,9 +153,7 @@ export const landOrchestrationTaskWithServices = Effect.fn("landOrchestrationTas
  */
 const resolveLandGateWithServices = Effect.fn("resolveLandGateWithServices")(function* (
   services: LandOrchestrationTaskServices,
-  input:
-    | ({ readonly kind: "approve" } & ApproveOrchestrationLandTaskInput)
-    | ({ readonly kind: "force"; readonly reason: string } & ApproveOrchestrationLandTaskInput),
+  input: { readonly kind: "approve" } & ApproveOrchestrationLandTaskInput,
 ) {
   return yield* withTaskLifecycleLock(
     input.taskId,
@@ -209,17 +213,10 @@ const resolveLandGateWithServices = Effect.fn("resolveLandGateWithServices")(fun
         worktreeCompletion,
         createdAt: yield* input.createdAt,
       };
-      const result =
-        input.kind === "force"
-          ? yield* input.dispatch({
-              type: "task.land.force",
-              ...commandBase,
-              reason: input.reason.trim(),
-            })
-          : yield* input.dispatch({
-              type: "task.land.approve",
-              ...commandBase,
-            });
+      const result = yield* input.dispatch({
+        type: "task.land.approve",
+        ...commandBase,
+      });
       return { ...result, alreadyLanded: false, alreadyInProgress: false };
     }),
   );
@@ -234,5 +231,28 @@ export const approveOrchestrationLandTaskWithServices = Effect.fn(
 export const forceLandOrchestrationTaskWithServices = Effect.fn(
   "forceLandOrchestrationTaskWithServices",
 )(function* (services: LandOrchestrationTaskServices, input: ForceLandOrchestrationTaskInput) {
-  return yield* resolveLandGateWithServices(services, { kind: "force", ...input });
+  return yield* withTaskLifecycleLock(
+    input.taskId,
+    Effect.gen(function* () {
+      const readModel = yield* services.snapshotQuery.getCommandReadModel();
+      const task = readModel.tasks.find((entry) => entry.id === input.taskId);
+      if (task === undefined) {
+        return yield* new OrchestrationLandTaskError({
+          taskId: input.taskId,
+          reason: "task-not-found",
+          detail: `Task '${input.taskId}' was not found and cannot be force-landed.`,
+        });
+      }
+      const result = yield* input.dispatch({
+        type: "task.force-land.request",
+        commandId: yield* input.commandId,
+        taskId: input.taskId,
+        ...(input.reason === undefined || input.reason.trim().length === 0
+          ? {}
+          : { reason: input.reason }),
+        createdAt: yield* input.createdAt,
+      });
+      return { ...result, alreadyLanded: false, alreadyInProgress: false };
+    }),
+  );
 });

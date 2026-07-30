@@ -41,7 +41,7 @@ adapted implementation in GedCode, not a raw cherry-pick.
 | Broad Effect error-structuring and service refactor campaign                                                         | Medium reliability value, low parity value, and high collision risk with GedCode’s conventions                            | Do not port as a campaign. Select individual error-context or safety fixes only                                                 | High wholesale; Low–Medium selectively          |
 | In-app browser preview, automation, annotations, and HTTP MCP support (`52c77c1e` plus follow-ups)                   | Potentially useful for agent-driven UI work, but outside the current orchestrator/MCP boundary                            | Defer as a separate future project; keep `orchestration/mcp` separate                                                           | High                                            |
 | Workspace file browser, file preview, and composer file integration (`de8bdc10`, `0936fd27`, `8ca4eec9`, `4cfec8c1`) | Medium. Basic filesystem browsing already exists; the preview-panel and explorer-to-composer portions are missing         | Implement selectively if workspace inspection becomes a priority                                                                | Medium–High                                     |
-| Task-oriented chat lifecycle / Sidebar V2 (`32c6012d` and follow-ups)                                                | High. It turns thread history into an active/snoozed/settled work inbox and aligns with GedCode’s task-oriented direction | Adopt the interaction model selectively, but do not cherry-pick the upstream client-runtime/sidebar stack                       | High                                            |
+| Task-oriented chat lifecycle / Sidebar V2 (`32c6012d` and follow-ups)                                                | High. It turns thread history into an active/snoozed/settled work inbox and aligns with GedCode’s task-oriented direction | Adapted locally with GedCode thread projections, Orchestrator shortcuts, and a flat two-category Inbox                          | Complete                                        |
 | Provider-native `Auto` runtime mode (`fbd77420`)                                                                     | High safety relevance, but GedCode already has a different per-gate autonomy model                                        | Do not adopt as-is. Revisit only if provider-level AI-reviewed approvals are wanted in normal chats                             | Medium                                          |
 | Websocket/activity payload and offline catch-up optimizations (`d60f6e97`, `db4b2d8a`, `c14a5ca4`, `765e1b5f`)       | High for reliability and performance under active orchestration streams                                                   | Adapted locally with ordered buffered bootstrap, bounded replay, transport-only delta compaction, and activity payload previews | Complete                                        |
 | Prompt stash and per-provider composer queue (`200fa82`)                                                             | Medium. GedCode already has queued active-turn messages; cross-thread prompt parking is the missing part                  | Defer the stash UX until normal-chat workflows need it; keep the existing queue design                                          | Low–Medium                                      |
@@ -87,12 +87,6 @@ cherry-pick):
   coverage), message metadata/work-log rows (`1916ac6d` — already ported), and
   the missing workspace file-preview/composer integration (`de8bdc10`,
   `0936fd27`, `8ca4eec9`, `4cfec8c1`).
-- Task-oriented chat lifecycle / Sidebar V2 (`32c6012d`) — relevant and likely
-  worth adapting after a short design pass. The nightly implementation remains
-  thread-backed: it adds server-backed `settled`/snoozed lifecycle and an
-  active-work inbox, rather than replacing threads with a new task aggregate.
-  GedCode should map this onto its existing normal-chat and Orchestrator task
-  surfaces instead of importing the upstream client-runtime rewrite.
 - The inline tool timeline (`649f4328`) is reference-only for now because
   GedCode’s timeline and orchestrator activity model are different.
 - In-app browser preview subsystem (~48 commits incl. its `apps/server/src/mcp`
@@ -319,15 +313,18 @@ woven into core provider/orchestration logic.
   their existing full-fidelity behavior. The upstream client-runtime/WebSocket architecture was not
   imported.
 
-## Selective Follow-ups
-
 ### Task-oriented chat lifecycle / Sidebar V2
 
 - Representative commits: `32c6012d` (`Sidebar v2 beta: flat thread list with a server-backed settled lifecycle (#4026)`), `202e5609` (`feat(sidebar-v2): thread snoozing (#4311)`), and the follow-up settled-thread, project-grouping, and sidebar-polish commits through 2026-07-24.
-- Decision: Relevant and likely worth implementing conceptually; do not cherry-pick the upstream stack.
-- What it contains: A beta-gated Sidebar V2, server-persisted thread settlement, active/snoozed/settled shelves, reopening behavior when sending to a settled thread, status-oriented rows, and associated persistence/projector/decider changes. The current nightly still models these records as threads; “task-oriented” describes the workflow and inbox semantics, not a replacement task entity.
-- Why it matters: This is the clearest upstream match to GedCode’s desired work-oriented chat UX and complements the fork’s Orchestrator task aggregate. It could reduce the pressure to keep every completed conversation in the active chat list.
-- Implementation guidance: First decide whether normal chats, Orchestrator tasks, or both participate in the work inbox. Reuse GedCode’s event-sourced task and thread projections, define the lifecycle and reopen semantics explicitly, and keep the upstream client-runtime rewrite out of scope. Qualitative effort: High.
+- Completed in this fork: 2026-07-30.
+- Notes: GedCode adapted the interaction model without importing the upstream sidebar or
+  client-runtime stack. Normal tasks remain event-sourced threads with durable Active, Snoozed, and
+  Settled transitions, restart-safe snooze wake-up, and automatic reopen on a new human message.
+  The Inbox has flat Normal tasks and Orchestrator categories with no project grouping;
+  Orchestrator entries retain their existing task aggregate and navigate to the project workspace.
+  The animated Inbox/Orchestrator switch preserves the fork's separate primary surfaces.
+
+## Selective Follow-ups
 
 ### Provider-native `Auto` runtime mode
 

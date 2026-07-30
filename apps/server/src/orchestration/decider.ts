@@ -388,6 +388,20 @@ function requireFreshVerification(
   });
 }
 
+function requireLandingAuthorization(
+  input: Omit<Parameters<typeof requireLandingVerification>[0], "policy"> & {
+    readonly approvedHash: string;
+  },
+): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  return requireLandingVerification({
+    ...input,
+    policy:
+      input.task.forceLandRequest?.status === "pending"
+        ? { kind: "human-override", approvedHash: input.approvedHash }
+        : { kind: "fresh-verification" },
+  });
+}
+
 function countTasksWithActiveStages(input: {
   readonly readModel: OrchestrationReadModel;
   readonly projectId: OrchestrationProject["id"];
@@ -1312,6 +1326,140 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.inbox.settle": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (thread.orchestrationOwnership != null) {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
+        );
+      }
+      if (thread.inboxLifecycle === "settled") {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' is already settled.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.inbox-settled",
+        payload: {
+          threadId: command.threadId,
+          settledAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.inbox.snooze": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (thread.orchestrationOwnership != null) {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
+        );
+      }
+      const occurredAt = yield* nowIso;
+      if (Date.parse(command.wakeAt) <= Date.parse(occurredAt)) {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' must be snoozed until a future deadline.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.inbox-snoozed",
+        payload: {
+          threadId: command.threadId,
+          wakeAt: command.wakeAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.inbox.reopen": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (thread.orchestrationOwnership != null) {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
+        );
+      }
+      if ((thread.inboxLifecycle ?? "active") === "active") {
+        return yield* invariantError(
+          command.type,
+          `Thread '${command.threadId}' is already active.`,
+        );
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.inbox-reopened",
+        payload: {
+          threadId: command.threadId,
+          reopenedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.inbox.wake-due": {
+      const occurredAt = yield* nowIso;
+      const dueThreads = readModel.threads.filter(
+        (thread) =>
+          (command.threadId === undefined || thread.id === command.threadId) &&
+          thread.orchestrationOwnership == null &&
+          thread.inboxLifecycle === "snoozed" &&
+          thread.inboxWakeAt != null &&
+          Date.parse(thread.inboxWakeAt) <= Date.parse(occurredAt),
+      );
+      return yield* Effect.forEach(dueThreads, (thread) =>
+        Effect.gen(function* () {
+          return {
+            ...(yield* withEventBase({
+              aggregateKind: "thread",
+              aggregateId: thread.id,
+              occurredAt,
+              commandId: command.commandId,
+            })),
+            type: "thread.inbox-reopened" as const,
+            payload: {
+              threadId: thread.id,
+              reopenedAt: occurredAt,
+              updatedAt: occurredAt,
+            },
+          };
+        }),
+      );
+    }
+
     case "thread.turn.start": {
       const targetThread = yield* requireThread({
         readModel,
@@ -1362,6 +1510,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+      const reopenEvent: Omit<OrchestrationEvent, "sequence"> | null =
+        (targetThread.inboxLifecycle ?? "active") !== "active" &&
+        targetThread.orchestrationOwnership == null
+          ? {
+              ...(yield* withEventBase({
+                aggregateKind: "thread",
+                aggregateId: command.threadId,
+                occurredAt: command.createdAt,
+                commandId: command.commandId,
+              })),
+              type: "thread.inbox-reopened",
+              payload: {
+                threadId: command.threadId,
+                reopenedAt: command.createdAt,
+                updatedAt: command.createdAt,
+              },
+            }
+          : null;
       const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1385,7 +1551,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      return [userMessageEvent, turnStartRequestedEvent];
+      return reopenEvent === null
+        ? [userMessageEvent, turnStartRequestedEvent]
+        : [reopenEvent, userMessageEvent, turnStartRequestedEvent];
     }
 
     case "thread.turn.interrupt": {
@@ -3239,8 +3407,41 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       return [gateRequestedEvent, gateResolvedEvent];
     }
 
-    case "task.land.approve":
-    case "task.land.force": {
+    case "task.force-land.request": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "review" && task.status !== "verifying") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be in review or verifying before force landing can be requested.`,
+        );
+      }
+      if (task.forceLandRequest != null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' already has a pending force-land request.`,
+        );
+      }
+      return [
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "task",
+            aggregateId: command.taskId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "task.force-land-requested" as const,
+          payload: {
+            taskId: command.taskId,
+            ...(command.reason === undefined ? {} : { reason: command.reason }),
+            requestedAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+      ];
+    }
+
+    case "task.land.approve": {
       const task = yield* requireTask({ readModel, command, taskId: command.taskId });
       yield* requireTaskNotCancelling({ command, task });
       const project = yield* requireProject({
@@ -3270,34 +3471,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Land gate '${command.gateId}' is not a current, content-matched pending gate for task '${command.taskId}'.`,
         );
       }
-      if (command.type === "task.land.force") {
-        const latestLandGate = (readModel.pendingGates ?? []).findLast(
-          (gate) => gate.taskId === command.taskId && gate.gate === "land",
-        );
-        if (latestLandGate !== pendingGate || pendingGate.pullRequest == null) {
-          return yield* invariantError(
-            command.type,
-            `Force landing requires gate '${command.gateId}' to be the latest pending land gate with an exact pull-request proposal for task '${command.taskId}'.`,
-          );
-        }
-        yield* requireLandingVerification({
-          command,
-          readModel,
-          task,
-          worktreeCompletion: command.worktreeCompletion,
-          policy: {
-            kind: "human-override",
-            approvedHash: command.approvedHash,
-          },
-        });
-      } else {
-        yield* requireFreshVerification({
-          command,
-          readModel,
-          task,
-          worktreeCompletion: command.worktreeCompletion,
-        });
-      }
+      yield* requireLandingAuthorization({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: command.worktreeCompletion,
+        approvedHash: command.approvedHash,
+      });
 
       const resolvedBase = yield* withEventBase({
         aggregateKind: "task",
@@ -3330,15 +3510,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           payload: {
             taskId: command.taskId,
             approvedHash: command.approvedHash,
-            ...(command.type === "task.land.force"
-              ? {
-                  verificationOverride: {
-                    kind: "force-land" as const,
-                    reason: command.reason,
-                    origin: "human" as const,
-                  },
-                }
-              : {}),
             updatedAt: command.createdAt,
           },
         },
@@ -3402,11 +3573,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       if (command.gate === "land" && command.decision === "approved") {
-        yield* requireFreshVerification({
+        yield* requireLandingAuthorization({
           command,
           readModel,
           task,
           worktreeCompletion: command.worktreeCompletion,
+          approvedHash: command.approvedHash,
         });
       }
       if (
@@ -3463,12 +3635,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' cannot land while stage '${task.currentStageThreadId}' is active.`,
         );
       }
-      yield* requireFreshVerification({
-        command,
-        readModel,
-        task,
-        worktreeCompletion: command.worktreeCompletion,
-      });
       const latestLandGate = (readModel.pendingGates ?? []).findLast(
         (gate) => gate.taskId === command.taskId && gate.gate === "land",
       );
@@ -3483,6 +3649,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' cannot land without a current, content-matched approved land gate.`,
         );
       }
+      yield* requireLandingAuthorization({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: command.worktreeCompletion,
+        approvedHash: latestLandGate.approvedHash,
+      });
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -3517,12 +3690,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Task '${command.taskId}' must have an exhausted landing failure and a retained worktree before landing can be retried.`,
         );
       }
-      yield* requireFreshVerification({
-        command,
-        readModel,
-        task,
-        worktreeCompletion: command.worktreeCompletion,
-      });
+      if (task.forceLandRequest?.status === "pending") {
+        const approvedHash = task.landing.approvedHash;
+        if (approvedHash === undefined) {
+          return yield* invariantError(
+            command.type,
+            `Task '${command.taskId}' cannot retry force landing without its approved HEAD.`,
+          );
+        }
+        yield* requireLandingAuthorization({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+          approvedHash,
+        });
+      } else {
+        yield* requireFreshVerification({
+          command,
+          readModel,
+          task,
+          worktreeCompletion: command.worktreeCompletion,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "task",
