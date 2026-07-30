@@ -517,12 +517,16 @@ function sidebarThreadSummariesEqual(
   return (
     left !== undefined &&
     left.id === right.id &&
+    left.environmentId === right.environmentId &&
     left.projectId === right.projectId &&
+    left.orchestrationOwnership === right.orchestrationOwnership &&
     left.title === right.title &&
     left.interactionMode === right.interactionMode &&
     threadSessionsEqual(left.session, right.session) &&
     left.createdAt === right.createdAt &&
     left.archivedAt === right.archivedAt &&
+    left.inboxLifecycle === right.inboxLifecycle &&
+    left.inboxWakeAt === right.inboxWakeAt &&
     left.updatedAt === right.updatedAt &&
     left.lastClearedSequence === right.lastClearedSequence &&
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&

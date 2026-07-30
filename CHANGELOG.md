@@ -8,7 +8,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Fix: Prevent the new Inbox sidebar from entering a React maximum-update-depth loop when
   Orchestrator tasks are present. The sidebar now subscribes to stable stored task projections and
   uses a denser upstream-inspired work-list treatment with compact category tabs, conditional
-  count-bearing Snoozed/Settled shelves, and a single primary Inbox/Orchestrator switch.
+  count-bearing Snoozed/Settled shelves, and a single primary Inbox/Orchestrator switch. Inbox rows
+  retain their project identity, activity status, update time, branch, provider, and model context
+  without restoring project grouping; environment-scoped joins also prevent same-ID cross-runtime
+  collisions, and lifecycle-only projection updates can no longer be discarded as unchanged.
 
 - Add: Introduce a durable work Inbox with an animated Inbox/Orchestrator view switch. Normal chat
   threads now have persisted Active, Snoozed, and Settled lifecycle states, automatically reopen

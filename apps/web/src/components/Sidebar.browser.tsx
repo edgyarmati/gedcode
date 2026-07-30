@@ -37,7 +37,13 @@ function seedStore(): void {
     projectId,
     title: "Active normal task",
     interactionMode: "default",
-    session: null,
+    session: {
+      provider: "codex",
+      status: "running",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      orchestrationStatus: "idle",
+    },
     createdAt: "2026-07-01T00:00:00.000Z",
     archivedAt: null,
     latestTurn: null,
@@ -172,4 +178,37 @@ it("renders inbox entries with an active orchestrator task without a render loop
   await expect
     .poll(() => router.state.location.pathname)
     .toBe(`/orch/${environmentId}/${projectId}`);
+});
+
+it("keeps a normal Inbox row flat while retaining its project and active status context", async () => {
+  seedStore();
+  const rootRoute = createRootRoute({
+    component: () => (
+      <SidebarProvider>
+        <Sidebar />
+      </SidebarProvider>
+    ),
+  });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/",
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+
+  await render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AppAtomRegistryProvider>
+        <RouterProvider router={router} />
+      </AppAtomRegistryProvider>
+    </QueryClientProvider>,
+  );
+
+  await expect.element(page.getByText("Active normal task")).toBeInTheDocument();
+  await expect.element(page.getByText("Inbox project")).toBeInTheDocument();
+  await expect.element(page.getByText("Working")).toBeInTheDocument();
+  await expect.element(page.getByText("Project: Inbox project")).not.toBeInTheDocument();
 });

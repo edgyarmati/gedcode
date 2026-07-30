@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { useState } from "react";
 
 type Route = {
@@ -10,7 +10,12 @@ type Entry = {
   readonly id: string;
   readonly title?: string;
   readonly projectId?: string;
-  readonly status?: string;
+  readonly projectName?: string | undefined;
+  readonly status?: string | undefined;
+  readonly timestamp?: string | undefined;
+  readonly branch?: string | undefined;
+  readonly model?: string | undefined;
+  readonly provider?: string | undefined;
   readonly route?: Route;
 };
 
@@ -51,22 +56,49 @@ export function InboxSidebar({
     return (
       <li key={item.id}>
         <button
+          aria-label={`${item.title ?? item.id}${item.projectName ? `, ${item.projectName}` : ""}`}
           aria-current={selected ? "page" : undefined}
-          className={`flex w-full min-w-0 items-center gap-2 rounded-lg text-left transition-colors hover:bg-accent ${
+          className={`group flex w-full min-w-0 flex-col rounded-lg text-left transition-colors hover:bg-accent ${
             compact
-              ? "px-2.5 py-1.5 text-xs text-muted-foreground"
-              : "border border-transparent px-2.5 py-2 text-sm aria-[current=page]:border-border aria-[current=page]:bg-accent/70"
+              ? "gap-0.5 px-2.5 py-1.5 text-xs text-muted-foreground"
+              : "gap-1 border border-transparent px-2.5 py-2 text-sm aria-[current=page]:border-border aria-[current=page]:bg-accent/70"
           }`}
           type="button"
           onClick={() => item.route && onNavigate(item.route)}
         >
-          {item.status ? (
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-emerald-500/80" />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate">{item.title ?? item.id}</span>
-          {item.status && !compact ? (
-            <span className="shrink-0 text-[10px] capitalize text-muted-foreground">
-              {item.status.replaceAll("-", " ")}
+          <span className="flex w-full min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+            <FolderIcon className="size-3 shrink-0 opacity-60" />
+            <span className="min-w-0 flex-1 truncate">{item.projectName ?? "Unknown project"}</span>
+            {item.status ? (
+              <span
+                className={`shrink-0 font-medium ${
+                  item.status === "Working" ||
+                  item.status === "Connecting" ||
+                  item.status === "working"
+                    ? "text-sky-600 dark:text-sky-300"
+                    : item.status === "Approval"
+                      ? "text-amber-600 dark:text-amber-300"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {item.status.replaceAll("-", " ")}
+              </span>
+            ) : item.timestamp ? (
+              <span className="shrink-0 tabular-nums">{item.timestamp}</span>
+            ) : null}
+          </span>
+          <span className="w-full truncate text-xs font-medium text-foreground">
+            {item.title ?? item.id}
+          </span>
+          {!compact && (item.branch || item.model || item.provider) ? (
+            <span className="flex w-full min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground/70">
+              {item.branch ? <GitBranchIcon className="size-3 shrink-0" /> : null}
+              {item.branch ? <span className="min-w-0 truncate">{item.branch}</span> : null}
+              {item.branch && (item.model || item.provider) ? <span>·</span> : null}
+              <span className="shrink-0">{item.model ?? item.provider}</span>
+              {item.status && item.timestamp ? (
+                <span className="ml-auto shrink-0 tabular-nums">{item.timestamp}</span>
+              ) : null}
             </span>
           ) : null}
         </button>

@@ -9,12 +9,15 @@ import { usePrimaryEnvironmentId } from "../environments/primary";
 import { isElectron } from "../env";
 import {
   selectProjectByRef,
+  selectProjectsAcrossEnvironments,
   selectSidebarThreadsAcrossEnvironments,
   selectTasksAcrossEnvironments,
+  selectThreadShellsAcrossEnvironments,
   useStore,
 } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { formatRelativeTimeLabel } from "../timestampFormat";
 import { selectInboxEntries } from "../inboxSelectors";
 import { InboxSidebar } from "./InboxSidebar";
 import { OrchestratorSidebarNav } from "./orchestrator/OrchestratorSidebarNav";
@@ -121,6 +124,8 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
 export default function Sidebar() {
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
+  const threadShells = useStore(useShallow(selectThreadShellsAcrossEnvironments));
+  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const inboxTasks = useStore(useShallow(selectTasksAcrossEnvironments));
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -143,37 +148,97 @@ export default function Sidebar() {
       threads: sidebarThreads,
       tasks: inboxTasks,
     });
-    const threadById = new Map(sidebarThreads.map((thread) => [String(thread.id), thread]));
-    const taskTitleById = new Map(inboxTasks.map((task) => [String(task.id), task.title]));
-    const shelfEntries = (ids: ReadonlyArray<string>) =>
-      ids.map((id) => {
-        const thread = threadById.get(id);
-        return {
-          id,
-          title: thread?.title ?? id,
-          route: {
-            to: "/chat/$environmentId/$threadId",
-            params: {
-              environmentId: String(thread?.environmentId ?? primaryEnvironmentId),
-              threadId: id,
-            },
-          },
+    const scopedKey = (environmentId: unknown, id: unknown) =>
+      `${String(environmentId)}:${String(id)}`;
+    const threadByKey = new Map(
+      sidebarThreads.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
+    );
+    const shellByKey = new Map(
+      threadShells.map((thread) => [scopedKey(thread.environmentId, thread.id), thread]),
+    );
+    const projectByKey = new Map(
+      projects.map((project) => [scopedKey(project.environmentId, project.id), project]),
+    );
+    const taskByKey = new Map(
+      inboxTasks.map((task) => [scopedKey(task.environmentId, task.id), task]),
+    );
+    const decorateThread = (entry: {
+      readonly id: string;
+      readonly title: string;
+      readonly route: {
+        readonly params: { readonly environmentId: string; readonly threadId: string };
+        readonly to: string;
+      };
+    }) => {
+      const key = scopedKey(entry.route.params.environmentId, entry.id);
+      const thread = threadByKey.get(key);
+      const shell = shellByKey.get(key);
+      const project = thread
+        ? projectByKey.get(scopedKey(thread.environmentId, thread.projectId))
+        : undefined;
+      const status = thread?.hasPendingApprovals
+        ? "Approval"
+        : thread?.hasPendingUserInput
+          ? "Input needed"
+          : thread?.session?.status === "running"
+            ? "Working"
+            : thread?.session?.status === "connecting"
+              ? "Connecting"
+              : undefined;
+      return {
+        ...entry,
+        projectName: project?.name ?? "Unknown project",
+        branch: thread?.branch ?? undefined,
+        model: shell?.modelSelection.model,
+        provider: thread?.session?.provider,
+        timestamp: thread
+          ? formatRelativeTimeLabel(
+              thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+            )
+          : undefined,
+        status,
+      };
+    };
+    const decorateThreads = (
+      entries: ReadonlyArray<{
+        readonly id: string;
+        readonly title: string;
+        readonly route: {
+          readonly params: { readonly environmentId: string; readonly threadId: string };
+          readonly to: string;
         };
-      });
+      }>,
+    ) => entries.map(decorateThread);
+    const decorateTask = (entry: (typeof selected.orchestrator)[number]) => {
+      const task = taskByKey.get(scopedKey(entry.route.params.environmentId, entry.id));
+      const project = projectByKey.get(
+        scopedKey(entry.route.params.environmentId, entry.projectId),
+      );
+      return {
+        ...entry,
+        title: task?.title ?? entry.id,
+        projectName: project?.name ?? "Unknown project",
+        branch: task?.branch ?? undefined,
+        timestamp: task ? formatRelativeTimeLabel(task.updatedAt ?? task.createdAt) : undefined,
+      };
+    };
     return {
       normal: {
-        ...selected.normal,
+        selected: selected.normal.selected
+          ? {
+              ...decorateThread(selected.normal.selected),
+              shelf: selected.normal.selected.shelf,
+            }
+          : null,
         shelves: {
-          active: selected.normal.shelves.active,
-          snoozed: shelfEntries(selected.normal.shelves.snoozed),
-          settled: shelfEntries(selected.normal.shelves.settled),
+          active: decorateThreads(selected.normal.shelves.active),
+          snoozed: decorateThreads(selected.normal.shelves.snoozed),
+          settled: decorateThreads(selected.normal.shelves.settled),
         },
       },
-      orchestrator: selected.orchestrator.map((entry) =>
-        Object.assign({}, entry, { title: taskTitleById.get(entry.id) ?? entry.id }),
-      ),
+      orchestrator: selected.orchestrator.map(decorateTask),
     };
-  }, [inboxTasks, primaryEnvironmentId, routeThreadRef, sidebarThreads]);
+  }, [inboxTasks, primaryEnvironmentId, projects, routeThreadRef, sidebarThreads, threadShells]);
 
   const handleNavigate = useCallback(
     (route: { readonly to: string; readonly params: Readonly<Record<string, string>> }) => {

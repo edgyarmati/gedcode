@@ -81,17 +81,17 @@ export function selectInboxEntries(input: {
       thread.deletedAt == null,
   );
   const active: NormalInboxEntry[] = [];
-  const snoozed: string[] = [];
-  const settled: string[] = [];
+  const snoozed: NormalInboxEntry[] = [];
+  const settled: NormalInboxEntry[] = [];
 
   for (const thread of normalThreads) {
     const lifecycle = thread.inboxLifecycle ?? "active";
     if (lifecycle === "active") {
       active.push(normalEntry(thread, input.environmentId));
     } else if (lifecycle === "snoozed") {
-      snoozed.push(thread.id);
+      snoozed.push(normalEntry(thread, input.environmentId));
     } else {
-      settled.push(thread.id);
+      settled.push(normalEntry(thread, input.environmentId));
     }
   }
 

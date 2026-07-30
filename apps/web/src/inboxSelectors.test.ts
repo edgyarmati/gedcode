@@ -48,8 +48,26 @@ describe("Inbox selectors", () => {
           },
         },
       ],
-      snoozed: ["normal-snoozed"],
-      settled: ["normal-settled"],
+      snoozed: [
+        {
+          id: "normal-snoozed",
+          title: "Snoozed",
+          route: {
+            to: "/chat/$environmentId/$threadId",
+            params: { environmentId: "environment-1", threadId: "normal-snoozed" },
+          },
+        },
+      ],
+      settled: [
+        {
+          id: "normal-settled",
+          title: "Settled but selected",
+          route: {
+            to: "/chat/$environmentId/$threadId",
+            params: { environmentId: "environment-1", threadId: "normal-settled" },
+          },
+        },
+      ],
     });
     expect(inbox.normal.selected).toMatchObject({ id: "normal-settled", shelf: "settled" });
     expect(inbox.orchestrator).toEqual([
