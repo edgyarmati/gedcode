@@ -3497,11 +3497,6 @@ export function selectThreadsAcrossEnvironments(state: AppState): Thread[] {
   );
 }
 
-/** Returns the stable task projections already stored per environment. */
-export function selectTasksAcrossEnvironments(state: AppState): OrchestratorTask[] {
-  return getEnvironmentEntries(state).flatMap(([, environmentState]) => getTasks(environmentState));
-}
-
 /** Like `selectThreadsAcrossEnvironments` but returns stable `ThreadShell` references from the store (no derived data). */
 export function selectThreadShellsAcrossEnvironments(state: AppState): ThreadShell[] {
   return getEnvironmentEntries(state).flatMap(([, environmentState]) =>

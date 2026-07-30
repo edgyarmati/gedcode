@@ -1,13 +1,18 @@
-# GedCode Work Inbox and Orchestration
+# GedCode Chat Navigation and Orchestration
 
-GedCode presents normal conversations and orchestrated work through one durable work inbox while
-keeping their lifecycle models distinct.
+GedCode currently presents normal conversations through the established project-grouped Chat
+sidebar and Orchestrated work through its project workspace. An animated Chat/Orchestrator pill
+switches between the two surfaces.
+
+The flat work-Inbox UI was evaluated and withdrawn. Its durable normal-thread lifecycle foundation
+remains available for a future redesign, and the experiment is preserved on
+`archive/inbox-ui-experiment`.
 
 ## Language
 
 **Inbox**:
-The workspace view that presents normal chat threads and active Orchestrator tasks as separate work
-categories.
+Reserved name for the withdrawn experimental view that presented normal threads and active
+Orchestrator tasks as separate flat categories. Do not treat it as the current navigation model.
 _Avoid_: Sidebar V2, task board
 
 **Normal task**:
@@ -19,10 +24,10 @@ _Avoid_: Orchestrator task, chat history item
 The Active, Snoozed, or Settled work state of a normal task, independent of archival.
 _Avoid_: Archive status, task status
 
-**Orchestrator entry**:
-An active or attention-requiring Orchestrator task surfaced in the Inbox as a shortcut to its
-project workspace.
-_Avoid_: Normal task, project group
+**Chat sidebar**:
+The current project-grouped navigation for normal threads, including project identity and rich
+thread status/context.
+_Avoid_: Inbox, task board
 
 **Force-land request**:
 A human request for the PM to finalize the intended task changes and prepare immediate normal
