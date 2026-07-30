@@ -14,4 +14,4 @@ Status values: `NEXT`, `TODO`, `DONE`, `BLOCKED`.
 | FL-03 | DONE | Add Review/Verify Force land now UI and remove gate-card direct force action. | Browser confirmation, optional reason, duplicate/pending state tests. |
 | FL-04 | DONE | Prove finalization reaches unchanged normal landing safeguards. | Focused integration test through scoped commit, proposal, approval, landing. |
 | PUB-01 | DONE | Update changelog/upstream decision docs and run final verification. | Format, lint, contracts/server/web typechecks, focused tests, diff check. |
-| PUB-02 | TODO | Commit, push, and open the final detailed draft PR. | Independent branch targets current main; CI is monitored by Terra. |
+| PUB-02 | DONE | Commit, push, and open the final detailed draft PR. | Published as draft PR #76 from the independent feature branch. |
