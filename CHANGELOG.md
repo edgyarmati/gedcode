@@ -5,15 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
-- Fix: Prevent the new Inbox sidebar from entering a React maximum-update-depth loop when
-  Orchestrator tasks are present. The sidebar now subscribes to stable stored task projections and
-  uses a denser upstream-inspired work-list treatment with compact category tabs, conditional
-  count-bearing Snoozed/Settled shelves, and a single primary Inbox/Orchestrator switch.
-
-- Add: Introduce a durable work Inbox with an animated Inbox/Orchestrator view switch. Normal chat
-  threads now have persisted Active, Snoozed, and Settled lifecycle states, automatically reopen
-  when messaged, and wake from snooze through server-owned reconciliation. Active Orchestrator tasks
-  appear as a separate flat category and open their project workspace.
+- Change: Restore the established project-grouped Chat sidebar and its rich thread rows after
+  withdrawing the experimental flat work Inbox. Keep the animated Chat/Orchestrator pill as the
+  single top-level surface switch; durable lifecycle data remains available for a future Inbox
+  design without changing the current navigation.
 
 - Change: Replace gate-bound force landing with a durable PM finalization request available during
   Review or Verify. The optional-reason action can begin with an active stage or dirty worktree; the
