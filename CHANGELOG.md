@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Restore the durable Ged skill inventory to the vendored docs-aware clarification workflow so
+  project guidance remains consistent with the shipped Codex and Claude skill resources.
+
 - Change: Restore the established project-grouped Chat sidebar and its rich thread rows after
   withdrawing the experimental flat work Inbox. Keep the animated Chat/Orchestrator pill as the
   single top-level surface switch; durable lifecycle data remains available for a future Inbox
