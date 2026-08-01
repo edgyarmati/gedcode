@@ -9,14 +9,20 @@ These standards were imported from other harness-specific instruction files and 
 
 ## Task Completion Requirements
 
-- All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
+- Run only focused tests for the changed behavior during ordinary implementation. Do not run the full
+  workspace test suite unless the user explicitly requests it or a release is being prepared.
+- `bun fmt`, `bun lint`, and the narrowest relevant package typecheck must pass before considering
+  tasks completed. If an unrelated pre-existing typecheck failure blocks the package check, document
+  it and do not expand scope without user approval.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 - Document relevant unreleased changes in `CHANGELOG.md` before considering a task complete. If the change should matter to users, operators, or release notes, update the `## Unreleased` section as part of the task.
 - Do not implement fallback behavior or alternate degraded paths without asking the user first when a requested approach is blocked.
 
 ## Project Snapshot
 
-T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
+GedCode is a desktop and web workspace for running Codex, Claude, and OpenCode. Its primary
+workflow is the Orchestrator: a per-project manager agent plans work, delegates to isolated worker
+agents, and keeps task progress, verification, and human approval gates durable and visible.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 
@@ -34,14 +40,16 @@ Long term maintainability is a core priority. If you add new functionality, firs
 
 ## Package Roles
 
-- `apps/server`: Node.js WebSocket server. Wraps Codex app-server (JSON-RPC over stdio), serves the React web app, and manages provider sessions.
+- `apps/server`: Node.js WebSocket server. Manages provider sessions, serves the React web app, and
+  integrates Codex app-server, Claude, and OpenCode runtimes.
 - `apps/web`: React/Vite UI. Owns session UX, conversation/event rendering, and client-side state. Connects to the server via WebSocket.
 - `packages/contracts`: Shared effect/Schema schemas and TypeScript contracts for provider events, WebSocket protocol, and model/session types. Keep this package schema-only — no runtime logic.
 - `packages/shared`: Shared runtime utilities consumed by both server and web. Uses explicit subpath exports (e.g. `@t3tools/shared/git`) — no barrel index.
 
-## Codex App Server (Important)
+## Provider Runtime (Important)
 
-T3 Code is currently Codex-first. The server starts `codex app-server` (JSON-RPC over stdio) per provider session, then streams structured events to the browser through WebSocket push messages.
+GedCode supports Codex, Claude, and OpenCode provider sessions. Codex sessions use `codex app-server`
+(JSON-RPC over stdio); all provider runtimes are projected into the shared WebSocket event model.
 
 How we use it in this codebase:
 
@@ -75,7 +83,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-GedCode is a fork of [t3code](https://github.com/pingdotgg/t3code) being rebranded. The goal is to make a custom workflow (from [ged-mono](https://github.com/edgyarmati/ged-mono)) work out of the box through GedCode's supported harnesses without modifying them.
+GedCode is an independently maintained fork of [T3 Code](https://github.com/pingdotgg/t3code). Its
+focus is a structured Orchestrator workflow that lets a project manager agent plan and delegate work
+to isolated worker agents through Codex, Claude, or OpenCode without requiring changes to those
+harnesses. The repository is branded and released as GedCode under `edgyarmati/gedcode`.
 
 **Branch strategy:** `main` is the working branch. Upstream (t3code) is tracked via the `upstream` remote — sync with `git fetch upstream`.
 
@@ -97,13 +108,12 @@ Bun workspace monorepo. Requires Bun 1.3.11 and Node.js 24.13.1 (`mise install`)
 - `apps/server` — Node.js WebSocket server, wraps Codex app-server (JSON-RPC over stdio), manages provider sessions
 - `apps/web` — React 19 / Vite UI, connects to server via WebSocket
 - `apps/desktop` — Electron wrapper around server
-- `apps/marketing` — Marketing site
 - `packages/contracts` — Effect/Schema contracts. **Schema-only — no runtime logic.**
 - `packages/shared` — Runtime utilities. **Explicit subpath exports only** (e.g. `@t3tools/shared/git`) — no barrel index
 
 ## Code Conventions
 
-- **Effect ecosystem** (4.0.0-beta.59) is used pervasively — follow Effect patterns for error handling, dependency injection (Layers), and composable runtimes
+- **Effect ecosystem** (4.0.0-beta.73) is used pervasively — follow Effect patterns for error handling, dependency injection (Layers), and composable runtimes
 - **TypeScript strict mode** with `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, Effect Language Service diagnostics enabled
 - **Immutability preferred** — create new objects rather than mutating
 - **No duplicate logic** — extract shared code to `packages/shared` or `packages/contracts`
@@ -111,7 +121,8 @@ Bun workspace monorepo. Requires Bun 1.3.11 and Node.js 24.13.1 (`mise install`)
 
 ## Architecture
 
-Codex-first: the server starts `codex app-server` per provider session, streams structured events to the browser via WebSocket push on channel `orchestration.domainEvent`.
+The server starts the configured provider runtime per session and streams structured events to the
+browser via WebSocket push on channel `orchestration.domainEvent`.
 
 Key files: `apps/server/src/codexAppServerManager.ts` (session lifecycle), `apps/server/src/providerManager.ts` (provider dispatch), `apps/server/src/wsServer.ts` (WebSocket routes).
 
