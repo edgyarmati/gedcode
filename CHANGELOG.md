@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep Orchestrator worker stages active while their provider turn is still running. Mid-turn
+  diff checkpoints no longer re-enter the project manager early; stage completion waits for the
+  terminal provider event so the worker can finish and commit all intended changes first.
+
 - Fix: Restore the durable Ged skill inventory to the vendored docs-aware clarification workflow so
   project guidance remains consistent with the shipped Codex and Claude skill resources.
 

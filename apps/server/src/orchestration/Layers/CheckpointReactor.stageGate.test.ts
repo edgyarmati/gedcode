@@ -4,8 +4,9 @@
 //
 // These tests exercise the new stage-completion gate that lives across two
 // reactors:
-//   - CheckpointReactor settles the active orchestrator stage AFTER a real git
-//     diff is captured (status !== "missing"), using a deterministic commandId.
+//   - CheckpointReactor settles the active orchestrator stage AFTER both a real
+//     git diff is captured (status !== "missing") and the provider turn emits
+//     terminal completion, using a deterministic commandId.
 //   - ProviderRuntimeIngestion forks a fail-loud diff-wait timeout that settles
 //     the SAME deterministic commandId with diffComplete: false (covered in
 //     ProviderRuntimeIngestion.test.ts).
@@ -47,6 +48,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { CheckpointStoreLive } from "../../checkpointing/Layers/CheckpointStore.ts";
 import { CheckpointStore } from "../../checkpointing/Services/CheckpointStore.ts";
+import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
@@ -436,6 +438,85 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     expect(snapshot.tasks.find((task) => task.id === "task-stage-gate")?.status).toBe(
       "change-review",
     );
+  });
+
+  it("keeps a stage active when a placeholder captures a real diff before turn completion", async () => {
+    const harness = await createHarness();
+    const stageThreadId = await startWorkingStage(harness);
+    const turnId = asTurnId("turn-stage-gate-placeholder");
+    const createdAt = "2026-01-01T00:00:00.000Z";
+
+    harness.provider.emit({
+      type: "turn.started",
+      eventId: EventId.make("evt-stage-gate-placeholder-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt,
+      threadId: stageThreadId,
+      turnId,
+    });
+    await harness.drain();
+
+    fs.writeFileSync(path.join(harness.worktreePath, "MID_TURN.md"), "still working\n", "utf8");
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.make("cmd-stage-gate-placeholder-diff"),
+        threadId: stageThreadId,
+        turnId,
+        completedAt: createdAt,
+        checkpointRef: checkpointRefForThreadTurn(stageThreadId, 1),
+        status: "missing",
+        files: [],
+        checkpointTurnCount: 1,
+        createdAt,
+      }),
+    );
+
+    let events = await waitForEvent(
+      harness.engine,
+      (event) =>
+        event.type === "thread.turn-diff-completed" &&
+        event.payload.turnId === turnId &&
+        event.payload.status === "ready",
+    );
+    await harness.drain();
+
+    expect(events.filter((event) => event.type === "task.stage-completed")).toHaveLength(0);
+    expect(
+      (await harness.readModel()).tasks.find((task) => task.id === TaskId.make("task-stage-gate")),
+    ).toMatchObject({ status: "working", currentStageThreadId: stageThreadId });
+
+    fs.writeFileSync(
+      path.join(harness.worktreePath, "AFTER_PLACEHOLDER.md"),
+      "finished later\n",
+      "utf8",
+    );
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.make("evt-stage-gate-placeholder-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt,
+      threadId: stageThreadId,
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    events = await waitForEvent(harness.engine, (event) => event.type === "task.stage-completed");
+    const stageCompletedEvents = events.filter((event) => event.type === "task.stage-completed");
+    expect(stageCompletedEvents).toHaveLength(1);
+    expect(stageCompletedEvents[0]?.commandId).toBe(stageCompleteCommandId(stageThreadId, turnId));
+    const finalCheckpoint = events.findLast(
+      (event) =>
+        event.type === "thread.turn-diff-completed" &&
+        event.payload.turnId === turnId &&
+        event.payload.status === "ready",
+    );
+    expect(finalCheckpoint?.type).toBe("thread.turn-diff-completed");
+    if (finalCheckpoint?.type === "thread.turn-diff-completed") {
+      expect(finalCheckpoint.payload.files).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: "AFTER_PLACEHOLDER.md" })]),
+      );
+    }
   });
 
   it("server-finalizes dirty verifier documentation before recording the clean exact HEAD", async () => {

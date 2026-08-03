@@ -296,6 +296,7 @@ const make = Effect.gen(function* () {
     readonly status: "ready" | "missing" | "error";
     readonly assistantMessageId: MessageId | undefined;
     readonly createdAt: string;
+    readonly settleStage: boolean;
   }) {
     const fromTurnCount = Math.max(0, input.turnCount - 1);
     const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
@@ -414,11 +415,12 @@ const make = Effect.gen(function* () {
     });
 
     // A REAL diff was captured for this turn (an empty-but-captured diff with
-    // files: [] still counts; only "missing" no-op turns are excluded). Settle
-    // the active orchestrator stage so the PM re-enters — gating
-    // task.stage-completed on a confirmed diff. Wrapped in catch(log) so a
-    // duplicate/rejected dispatch never fails checkpoint capture.
-    if (input.status !== "missing") {
+    // files: [] still counts; only "missing" no-op turns are excluded). A
+    // placeholder diff can be captured while the worker is still running, so
+    // only the terminal turn.completed path may settle the active stage and
+    // re-enter the PM. Wrapped in catch(log) so a duplicate/rejected dispatch
+    // never fails checkpoint capture.
+    if (input.settleStage && input.status !== "missing") {
       yield* settleStageOnCapturedDiff({
         threadId: input.threadId,
         turnId: input.turnId,
@@ -453,17 +455,6 @@ const make = Effect.gen(function* () {
         return;
       }
 
-      // Only skip if a real (non-placeholder) checkpoint already exists for this turn.
-      // ProviderRuntimeIngestion may insert placeholder entries with status "missing"
-      // before this reactor runs; those must not prevent real git capture.
-      if (
-        thread.checkpoints.some(
-          (checkpoint) => checkpoint.turnId === turnId && checkpoint.status !== "missing",
-        )
-      ) {
-        return;
-      }
-
       const projects = yield* resolveThreadProjects(thread.projectId);
       const checkpointCwd = yield* resolveCheckpointCwd({
         threadId: thread.id,
@@ -475,17 +466,19 @@ const make = Effect.gen(function* () {
         return;
       }
 
-      // If a placeholder checkpoint exists for this turn, reuse its turn count
-      // instead of incrementing past it.
-      const existingPlaceholder = thread.checkpoints.find(
-        (checkpoint) => checkpoint.turnId === turnId && checkpoint.status === "missing",
+      // A diff placeholder may already have caused a real checkpoint capture
+      // while the turn was running. Reuse that turn count and overwrite its Git
+      // ref with the terminal filesystem state so later worker edits are not
+      // omitted from the recorded diff.
+      const existingCheckpoint = thread.checkpoints.find(
+        (checkpoint) => checkpoint.turnId === turnId,
       );
       const currentTurnCount = thread.checkpoints.reduce(
         (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
         0,
       );
-      const nextTurnCount = existingPlaceholder
-        ? existingPlaceholder.checkpointTurnCount
+      const nextTurnCount = existingCheckpoint
+        ? existingCheckpoint.checkpointTurnCount
         : currentTurnCount + 1;
 
       yield* captureAndDispatchCheckpoint({
@@ -495,8 +488,9 @@ const make = Effect.gen(function* () {
         cwd: checkpointCwd,
         turnCount: nextTurnCount,
         status: checkpointStatusFromRuntime(event.payload.state),
-        assistantMessageId: undefined,
+        assistantMessageId: existingCheckpoint?.assistantMessageId ?? undefined,
         createdAt: event.createdAt,
+        settleStage: true,
       });
     },
   );
@@ -560,6 +554,7 @@ const make = Effect.gen(function* () {
       status: "ready",
       assistantMessageId: event.payload.assistantMessageId ?? undefined,
       createdAt: event.payload.completedAt,
+      settleStage: false,
     });
   });
 
