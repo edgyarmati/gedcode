@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.4.3 - 2026-08-03
+
 - Fix: Keep Orchestrator worker stages active while their provider turn is still running. Mid-turn
   diff checkpoints no longer re-enter the project manager early; stage completion waits for the
   terminal provider event so the worker can finish and commit all intended changes first.
