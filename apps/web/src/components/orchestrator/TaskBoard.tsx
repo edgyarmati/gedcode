@@ -45,6 +45,7 @@ const ACTIVE_STATUSES: ReadonlySet<OrchestratorTask["status"]> = new Set([
   "working",
   "review",
   "verifying",
+  "pr-open",
 ]);
 
 // Status → stage-role label shown on an active card. `draft`/`classified` have
@@ -58,6 +59,7 @@ const ACTIVE_STAGE_LABELS: Record<string, string> = {
   working: "Working",
   review: "Review",
   verifying: "Verifying",
+  "pr-open": "PR open",
 };
 
 export function activeStageLabel(status: OrchestratorTask["status"]): string {

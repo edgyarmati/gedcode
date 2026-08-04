@@ -276,6 +276,21 @@ describe("TaskBoard", () => {
     expect(markup).toContain("Fresh draft task");
   });
 
+  it("renders a task with an open PR as active instead of abandoned", () => {
+    const markup = renderToStaticMarkup(
+      <TaskBoard
+        environmentId={boardEnvironmentId}
+        projectId={boardProjectId}
+        tasks={[makeBoardTask("task-pr-open", "pr-open", "PR awaiting merge")]}
+      />,
+    );
+
+    expect(markup).toContain("PR awaiting merge");
+    expect(markup).toContain("PR open");
+    expect(markup).not.toContain("Abandoned");
+    expect(markup).toContain('aria-label="Board task count">1</span>');
+  });
+
   it("renders landed tasks collapsed with a count and excludes them from the header badge", () => {
     const markup = renderToStaticMarkup(
       <TaskBoard

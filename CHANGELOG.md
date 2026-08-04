@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: Keep tasks with an open pull request in the active Orchestrator board and label them "PR open" instead of falling through to an "Abandoned" task card while awaiting merge.
+
 ## 0.4.3 - 2026-08-03
 
 - Fix: Keep Orchestrator worker stages active while their provider turn is still running. Mid-turn
