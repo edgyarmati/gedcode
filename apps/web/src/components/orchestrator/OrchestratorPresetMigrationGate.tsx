@@ -13,6 +13,7 @@ import { readEnvironmentApi } from "../../environmentApi";
 import { useEnvironmentApiAvailable } from "../../hooks/useEnvironmentApiAvailable";
 import {
   deriveProviderInstanceEntries,
+  isSelectableProviderInstanceEntry,
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
@@ -155,7 +156,7 @@ export function PresetMigrationWizard({
   const entries = useMemo(
     () =>
       sortProviderInstanceEntries(deriveProviderInstanceEntries(config.providers)).filter(
-        (entry) => entry.enabled && entry.installed && entry.isAvailable && entry.models.length > 0,
+        (entry) => isSelectableProviderInstanceEntry(entry) && entry.models.length > 0,
       ),
     [config.providers],
   );

@@ -2,6 +2,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vitest";
 import {
   deriveProviderInstanceEntries,
+  isSelectableProviderInstanceEntry,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
 } from "./providerInstances";
@@ -10,6 +11,7 @@ function provider(input: {
   provider: ProviderDriverKind;
   instanceId: string;
   enabled?: boolean;
+  installed?: boolean;
   availability?: ServerProvider["availability"];
   displayName?: string;
 }): ServerProvider {
@@ -18,7 +20,7 @@ function provider(input: {
     driver: input.provider,
     ...(input.displayName ? { displayName: input.displayName } : {}),
     enabled: input.enabled ?? true,
-    installed: true,
+    installed: input.installed ?? true,
     version: null,
     status: "ready",
     ...(input.availability ? { availability: input.availability } : {}),
@@ -41,6 +43,38 @@ describe("deriveProviderInstanceEntries", () => {
     expect(entry?.instanceId).toBe("codex_personal");
     expect(entry?.driverKind).toBe("codex");
     expect(entry?.isDefault).toBe(false);
+  });
+});
+
+describe("isSelectableProviderInstanceEntry", () => {
+  it("accepts an enabled, installed, available instance even without probed models", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("opencode"), instanceId: "opencode" }),
+    ]);
+
+    expect(entries.map(isSelectableProviderInstanceEntry)).toEqual([true]);
+  });
+
+  it("rejects disabled, not-installed, and unavailable instances", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("opencode"),
+        instanceId: "opencode",
+        enabled: false,
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_remote",
+        installed: false,
+      }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent_fork",
+        availability: "unavailable",
+      }),
+    ]);
+
+    expect(entries.map(isSelectableProviderInstanceEntry)).toEqual([false, false, false]);
   });
 });
 

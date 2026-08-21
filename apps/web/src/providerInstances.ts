@@ -187,6 +187,18 @@ export function sortProviderInstanceEntries(
 }
 
 /**
+ * True when an instance can back a backend (instance + model) selection:
+ * enabled, installed, and available. Snapshot models are deliberately not
+ * part of this check — settings-authored custom models can back a selection
+ * even while the probed model list is still empty (e.g. before the first
+ * probe completes). Callers that require models should layer that check on
+ * top of this predicate.
+ */
+export function isSelectableProviderInstanceEntry(entry: ProviderInstanceEntry): boolean {
+  return entry.enabled && entry.installed && entry.isAvailable;
+}
+
+/**
  * Look up a single instance entry by exact `instanceId`. Missing snapshots
  * are not inferred from driver kind in UI routing code.
  */
