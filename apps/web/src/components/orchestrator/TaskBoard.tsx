@@ -5,6 +5,7 @@ import {
   type OrchestrationGateKind,
   type ProjectId,
 } from "@t3tools/contracts";
+import { appendModelOptionsSuffix } from "@t3tools/shared/model";
 import { Link } from "@tanstack/react-router";
 import {
   BanIcon,
@@ -1044,6 +1045,8 @@ function ActiveTaskCard({
   const runningStartedAt =
     running && summary?.latestTurn?.state === "running" ? summary.latestTurn.startedAt : null;
   const model = shell?.modelSelection.model ?? null;
+  const modelLabel =
+    model === null ? null : appendModelOptionsSuffix(model, shell?.modelSelection.options);
 
   return (
     <TaskCardLink
@@ -1066,9 +1069,9 @@ function ActiveTaskCard({
           </Badge>
         ) : null}
         {runningStartedAt ? <RunningElapsed startedAt={runningStartedAt} /> : null}
-        {model ? (
+        {modelLabel ? (
           <Badge size="sm" variant="secondary">
-            {model}
+            {modelLabel}
           </Badge>
         ) : null}
       </div>

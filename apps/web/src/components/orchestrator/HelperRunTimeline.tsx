@@ -5,6 +5,7 @@ import {
   type ProjectId,
   type TaskId,
 } from "@t3tools/contracts";
+import { appendModelOptionsSuffix } from "@t3tools/shared/model";
 import { XIcon } from "lucide-react";
 import { useCallback, useId, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -53,7 +54,10 @@ function buildHelperRunTimelineRow(run: OrchestrationHelperRun): HelperRunTimeli
     id: String(run.id),
     prompt: run.prompt,
     tierLabel: `${run.tier[0]?.toUpperCase() ?? ""}${run.tier.slice(1)}`,
-    backendLabel: `${String(run.providerInstanceId)} · ${run.model}`,
+    backendLabel: appendModelOptionsSuffix(
+      `${String(run.providerInstanceId)} · ${run.model}`,
+      run.modelOptions,
+    ),
     statusLabel: STATUS_DISPLAY[run.status].label,
     statusVariant: STATUS_DISPLAY[run.status].variant,
     result: run.result,

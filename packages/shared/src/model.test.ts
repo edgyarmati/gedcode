@@ -7,10 +7,12 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  appendModelOptionsSuffix,
   applyClaudePromptEffortPrefix,
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
+  formatModelOptionsSuffix,
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
   getProviderOptionDescriptors,
@@ -230,5 +232,62 @@ describe("descriptor helpers", () => {
     ).toBeUndefined();
     expect(getModelSelectionStringOptionValue(selection, "reasoningEffort")).toBe("high");
     expect(getModelSelectionBooleanOptionValue(selection, "fastMode")).toBe(true);
+  });
+});
+
+describe("formatModelOptionsSuffix", () => {
+  it("labels the reasoning effort under every driver-specific option id", () => {
+    expect(formatModelOptionsSuffix([{ id: "reasoningEffort", value: "high" }])).toBe(
+      "Reasoning High",
+    );
+    expect(formatModelOptionsSuffix([{ id: "effort", value: "max" }])).toBe("Reasoning Max");
+  });
+
+  it("labels the thinking toggle on and off", () => {
+    expect(formatModelOptionsSuffix([{ id: "thinking", value: true }])).toBe("Thinking On");
+    expect(formatModelOptionsSuffix([{ id: "thinking", value: false }])).toBe("Thinking Off");
+  });
+
+  it("joins reasoning and thinking in a fixed order regardless of selection order", () => {
+    expect(
+      formatModelOptionsSuffix([
+        { id: "thinking", value: true },
+        { id: "reasoningEffort", value: "xhigh" },
+      ]),
+    ).toBe("Reasoning Xhigh · Thinking On");
+  });
+
+  it("shows a single reasoning label when several driver aliases are set", () => {
+    expect(
+      formatModelOptionsSuffix([
+        { id: "reasoningEffort", value: "high" },
+        { id: "effort", value: "max" },
+      ]),
+    ).toBe("Reasoning High");
+  });
+
+  it("ignores options without a static reasoning label", () => {
+    expect(formatModelOptionsSuffix([{ id: "fastMode", value: true }])).toBeNull();
+    expect(
+      formatModelOptionsSuffix([
+        { id: "fastMode", value: true },
+        { id: "contextWindow", value: "1m" },
+      ]),
+    ).toBeNull();
+  });
+
+  it("returns null without selections or reasoning-focused values", () => {
+    expect(formatModelOptionsSuffix(null)).toBeNull();
+    expect(formatModelOptionsSuffix(undefined)).toBeNull();
+    expect(formatModelOptionsSuffix([])).toBeNull();
+    expect(formatModelOptionsSuffix([{ id: "reasoningEffort", value: true }])).toBeNull();
+    expect(formatModelOptionsSuffix([{ id: "thinking", value: "high" }])).toBeNull();
+  });
+
+  it("appends the suffix to a base model label only when one exists", () => {
+    expect(appendModelOptionsSuffix("codex · gpt-5.6-sol", [{ id: "thinking", value: true }])).toBe(
+      "codex · gpt-5.6-sol · Thinking On",
+    );
+    expect(appendModelOptionsSuffix("codex · gpt-5.6-sol", null)).toBe("codex · gpt-5.6-sol");
   });
 });
