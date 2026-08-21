@@ -46,3 +46,11 @@ _Avoid_: Force landing, direct task, arbitrary Git operation
 Task landing authorized by a current content-matched land gate after the configured pipeline,
 including fresh Verify when Verify is enabled.
 _Avoid_: Regular push
+
+**PM-owned rebase**:
+A PM-initiated, server-executed rebase of a task branch onto base-branch movement. A conflict-free
+rebase that preserves verified content proceeds without re-verification. Conflicts confined to
+non-substantive files (project memory and markdown documentation) are resolved by the PM and also
+proceed without re-verification. Any other conflict returns the task to a Work stage followed by
+fresh verification.
+_Avoid_: Worker rebase, merge task, PM git free-styling
