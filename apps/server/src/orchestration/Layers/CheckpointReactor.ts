@@ -306,6 +306,14 @@ const make = Effect.gen(function* () {
       cwd: input.cwd,
       checkpointRef: fromCheckpointRef,
     });
+    // Without the pre-turn baseline the adjacent-pair diff cannot describe what
+    // this turn changed (missed turn-start capture, restart, or recreated
+    // workspace). Recording "ready" with whatever survives the broken diff
+    // would present wrong turn summaries, so the summary degrades to "error"
+    // instead. The checkpoint ref itself is still captured: later turns diff
+    // correctly against it.
+    const summaryStatus: "ready" | "missing" | "error" =
+      !fromCheckpointExists && input.status === "ready" ? "error" : input.status;
     if (!fromCheckpointExists) {
       yield* Effect.logWarning("checkpoint capture missing pre-turn baseline", {
         threadId: input.threadId,
@@ -372,7 +380,7 @@ const make = Effect.gen(function* () {
       turnId: input.turnId,
       completedAt: input.createdAt,
       checkpointRef: targetCheckpointRef,
-      status: input.status,
+      status: summaryStatus,
       files,
       assistantMessageId,
       checkpointTurnCount: input.turnCount,
@@ -384,7 +392,7 @@ const make = Effect.gen(function* () {
       turnId: input.turnId,
       checkpointTurnCount: input.turnCount,
       checkpointRef: targetCheckpointRef,
-      status: input.status,
+      status: summaryStatus,
       createdAt: input.createdAt,
     });
     yield* receiptBus.publish({
@@ -406,7 +414,7 @@ const make = Effect.gen(function* () {
         summary: "Checkpoint captured",
         payload: {
           turnCount: input.turnCount,
-          status: input.status,
+          status: summaryStatus,
         },
         turnId: input.turnId,
         createdAt: input.createdAt,

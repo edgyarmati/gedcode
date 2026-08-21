@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Stop rendering broken turn diffs as wrong file sets. Checkpoint pairs are now prefetched
+  against the workspace before diffing, so dangling refs (pruned checkpoints, recreated worktrees,
+  never-captured turn-0 baselines) fail loudly instead of presenting a single file, only state
+  files, or the whole repository as a turn's changes. Turn summaries whose pre-turn baseline is
+  missing degrade to an explicit error state instead of describing unrelated content.
+
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
   such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.
