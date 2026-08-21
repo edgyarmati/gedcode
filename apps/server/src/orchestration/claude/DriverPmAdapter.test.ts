@@ -24,6 +24,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   ProviderSessionDirectory,
@@ -33,7 +34,11 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import type { PmRuntimeError } from "../pm/Errors.ts";
 import { makePmEventProjectionRuntime, pmThreadIdForProject } from "../pm/PmEventProjection.ts";
-import { makeDriverPmAdapter, type DriverPmProviderAdapter } from "./DriverPmAdapter.ts";
+import {
+  makeDriverPmAdapter,
+  DRIVER_PM_TURN_TIMEOUT,
+  type DriverPmProviderAdapter,
+} from "./DriverPmAdapter.ts";
 import { ORCHESTRATION_MCP_SERVER_NAME, orchestrationMcpToolId } from "./pmMcpServer.ts";
 import type { AgentHarnessEvent } from "./pmHarness.ts";
 
@@ -857,6 +862,195 @@ describe("DriverPmAdapter", () => {
           "Driver PM event stream ended before the active turn completed.",
         );
       }
+      assert.strictEqual(yield* adapter.isIdle, true);
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails a PM turn that never completes after the watchdog timeout", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-hung");
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, 3)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+      const promptFiber = yield* adapter
+        .prompt("Plan the task.")
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Effect.yieldNow;
+
+      yield* TestClock.adjust(DRIVER_PM_TURN_TIMEOUT);
+
+      const error = yield* Fiber.join(promptFiber);
+      assert.strictEqual(error.operation, "DriverPmAdapter.prompt");
+      assert.match(error.detail, /did not complete within/);
+
+      const events = yield* Fiber.join(eventsFiber);
+      assert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["before_agent_start", "provider_runtime_turn_abnormal_end", "settled"],
+      );
+      assert.strictEqual(yield* adapter.isIdle, true);
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails the active PM prompt when the session exits", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-session-exited");
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, 3)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+      const promptFiber = yield* adapter
+        .prompt("Plan the task.")
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Effect.yieldNow;
+
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "session.exited",
+          payload: { reason: "provider process crashed", exitKind: "error" },
+        }),
+      );
+
+      const error = yield* Fiber.join(promptFiber);
+      assert.strictEqual(error.operation, "DriverPmAdapter.prompt");
+      assert.strictEqual(error.detail, "provider process crashed");
+
+      const events = yield* Fiber.join(eventsFiber);
+      assert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["before_agent_start", "provider_runtime_turn_abnormal_end", "settled"],
+      );
+      assert.strictEqual(yield* adapter.isIdle, true);
+
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails the active PM prompt when the session enters an error state", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-session-error-state");
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.events, 3)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+        Effect.forkChild,
+      );
+      const promptFiber = yield* adapter
+        .prompt("Plan the task.")
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Effect.yieldNow;
+
+      // Non-error state transitions must not tear down the active turn.
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "session.state.changed",
+          payload: { state: "running" },
+        }),
+      );
+      yield* Effect.yieldNow;
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "session.state.changed",
+          payload: { state: "error", reason: "provider runtime exploded" },
+        }),
+      );
+
+      const error = yield* Fiber.join(promptFiber);
+      assert.strictEqual(error.operation, "DriverPmAdapter.prompt");
+      assert.strictEqual(error.detail, "provider runtime exploded");
+
+      const events = yield* Fiber.join(eventsFiber);
+      assert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["before_agent_start", "provider_runtime_turn_abnormal_end", "settled"],
+      );
       assert.strictEqual(yield* adapter.isIdle, true);
 
       yield* adapter.abort;

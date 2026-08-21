@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep the Orchestrator PM wake chain from wedging permanently. A PM turn that never receives a
+  terminal provider event now fails after a 10-minute watchdog instead of holding the re-entry queue
+  forever, a PM session exit or error state promptly fails any in-flight prompt, and all long-lived
+  orchestration stream consumers (runtime ingestion, checkpoint/command reactors, PM runtime
+  subscriptions, per-instance provider bridges) restart with logged backoff after a failure or
+  defect instead of dying silently.
+
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
   such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.

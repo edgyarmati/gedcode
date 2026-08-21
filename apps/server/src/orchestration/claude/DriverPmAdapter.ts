@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
@@ -47,6 +48,13 @@ const zeroUsage = (): Usage => ({
     total: 0,
   },
 });
+
+/**
+ * Watchdog for `runTurn`. A PM turn that never receives a terminal runtime
+ * event would otherwise hold the PM re-entry semaphore (and every settlement
+ * queued behind it) until the app restarts.
+ */
+export const DRIVER_PM_TURN_TIMEOUT = Duration.minutes(10);
 
 const assistantMessageProviderFields = (
   driverKind: ProviderDriverKind,
@@ -229,6 +237,11 @@ export interface DriverPmAdapterOptions {
   readonly runtimeEvents: Stream.Stream<ProviderRuntimeEvent>;
   readonly modelSelection: ModelSelection;
   readonly systemPrompt?: string;
+  /**
+   * How long `prompt` waits for a terminal turn event before failing the turn.
+   * Defaults to {@link DRIVER_PM_TURN_TIMEOUT}.
+   */
+  readonly turnTimeout?: Duration.Input;
 }
 
 export const makeDriverPmAdapter = (
@@ -578,6 +591,23 @@ export const makeDriverPmAdapter = (
             return;
           }
 
+          case "session.state.changed": {
+            if (event.payload.state !== "error") {
+              return;
+            }
+            yield* failActivePrompt(
+              event.payload.reason ?? "Driver PM session entered an error state.",
+            );
+            return;
+          }
+
+          case "session.exited": {
+            yield* failActivePrompt(
+              event.payload.reason ?? "Driver PM session exited before the active turn completed.",
+            );
+            return;
+          }
+
           default:
             return;
         }
@@ -591,33 +621,43 @@ export const makeDriverPmAdapter = (
         ),
       );
 
+    // Fails the in-flight prompt (if any) and settles the projected turn, so a
+    // dead session cannot hold the PM re-entry semaphore forever. When
+    // `expectedTurnId` is given, only that turn's prompt is torn down.
+    const failActivePrompt = (reason: string, expectedTurnId?: TurnId) =>
+      Effect.gen(function* () {
+        const promptState = yield* Ref.get(activePrompt);
+        if (
+          promptState === undefined ||
+          (expectedTurnId !== undefined && promptState.turnId !== expectedTurnId)
+        ) {
+          return;
+        }
+        yield* Ref.set(activePrompt, undefined);
+        yield* Ref.set(idle, true);
+        yield* offer({
+          type: "provider_runtime_turn_abnormal_end",
+          createdAt: DateTime.formatIso(yield* DateTime.now),
+          reason,
+        });
+        yield* offer({
+          type: "settled",
+          nextTurnCount: 0,
+        } satisfies AgentHarnessEvent);
+        yield* Deferred.fail(
+          promptState.deferred,
+          new PmRuntimeError({
+            operation: "DriverPmAdapter.prompt",
+            detail: reason,
+          }),
+        );
+      });
+
     const failActivePromptOnBridgeEnd = Effect.gen(function* () {
       if (yield* Ref.get(bridgeClosing)) {
         return;
       }
-      const promptState = yield* Ref.get(activePrompt);
-      if (promptState === undefined) {
-        return;
-      }
-      const reason = "Driver PM event stream ended before the active turn completed.";
-      yield* Ref.set(activePrompt, undefined);
-      yield* Ref.set(idle, true);
-      yield* offer({
-        type: "provider_runtime_turn_abnormal_end",
-        createdAt: DateTime.formatIso(yield* DateTime.now),
-        reason,
-      });
-      yield* offer({
-        type: "settled",
-        nextTurnCount: 0,
-      } satisfies AgentHarnessEvent);
-      yield* Deferred.fail(
-        promptState.deferred,
-        new PmRuntimeError({
-          operation: "DriverPmAdapter.prompt",
-          detail: reason,
-        }),
-      );
+      yield* failActivePrompt("Driver PM event stream ended before the active turn completed.");
     });
 
     const runtimeContext = yield* Effect.context<never>();
@@ -725,7 +765,27 @@ export const makeDriverPmAdapter = (
             ),
           );
         yield* Ref.set(activePrompt, { turnId: turn.turnId, deferred });
-        return yield* Deferred.await(deferred).pipe(Effect.ensuring(Ref.set(idle, true)));
+        const turnTimeout = options.turnTimeout ?? DRIVER_PM_TURN_TIMEOUT;
+        const timeoutDetail = `Driver PM turn did not complete within ${Duration.format(
+          Duration.fromInputUnsafe(turnTimeout),
+        )}.`;
+        return yield* Deferred.await(deferred).pipe(
+          Effect.timeoutOrElse({
+            duration: turnTimeout,
+            orElse: () =>
+              failActivePrompt(timeoutDetail, turn.turnId).pipe(
+                Effect.flatMap(() =>
+                  Effect.fail(
+                    new PmRuntimeError({
+                      operation: "DriverPmAdapter.prompt",
+                      detail: timeoutDetail,
+                    }),
+                  ),
+                ),
+              ),
+          }),
+          Effect.ensuring(Ref.set(idle, true)),
+        );
       });
 
     return {
