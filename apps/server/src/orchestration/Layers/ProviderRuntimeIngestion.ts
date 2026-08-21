@@ -28,6 +28,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { superviseForever } from "@t3tools/shared/StreamSupervision";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
@@ -2036,17 +2037,23 @@ const make = Effect.gen(function* () {
   const start: ProviderRuntimeIngestionShape["start"] = () =>
     Effect.gen(function* () {
       yield* Effect.forkScoped(
-        Stream.runForEach(providerService.streamEvents, (event) =>
-          worker.enqueue({ source: "runtime", event }),
+        superviseForever(
+          { site: "ProviderRuntimeIngestion.runtimeEvents", restartOnSuccess: true },
+          Stream.runForEach(providerService.streamEvents, (event) =>
+            worker.enqueue({ source: "runtime", event }),
+          ),
         ),
       );
       yield* Effect.forkScoped(
-        Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-          if (event.type !== "thread.turn-start-requested") {
-            return Effect.void;
-          }
-          return worker.enqueue({ source: "domain", event });
-        }),
+        superviseForever(
+          { site: "ProviderRuntimeIngestion.domainEvents", restartOnSuccess: true },
+          Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+            if (event.type !== "thread.turn-start-requested") {
+              return Effect.void;
+            }
+            return worker.enqueue({ source: "domain", event });
+          }),
+        ),
       );
     });
 
