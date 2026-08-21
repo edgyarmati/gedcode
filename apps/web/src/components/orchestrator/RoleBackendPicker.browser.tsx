@@ -12,18 +12,36 @@ import { BackendModelPicker } from "./RoleBackendPicker";
 
 const claudeInstanceId = ProviderInstanceId.make("claudeAgent");
 const codexInstanceId = ProviderInstanceId.make("codex");
+const disabledOpencodeInstanceId = ProviderInstanceId.make("opencode");
+const customOnlyInstanceId = ProviderInstanceId.make("opencode_custom");
 
-const instanceEntries: ReadonlyArray<ProviderInstanceEntry> = [
-  {
-    instanceId: codexInstanceId,
-    driverKind: ProviderDriverKind.make("codex"),
-    displayName: "Codex",
-    enabled: true,
-    installed: true,
+function makeEntry(input: {
+  instanceId: ReturnType<typeof ProviderInstanceId.make>;
+  driverKind: string;
+  displayName: string;
+  enabled?: boolean;
+  installed?: boolean;
+  models?: ReadonlyArray<ProviderInstanceEntry["models"][number]>;
+}): ProviderInstanceEntry {
+  return {
+    instanceId: input.instanceId,
+    driverKind: ProviderDriverKind.make(input.driverKind),
+    displayName: input.displayName,
+    enabled: input.enabled ?? true,
+    installed: input.installed ?? true,
     status: "ready",
     isDefault: true,
     isAvailable: true,
     snapshot: {} as ProviderInstanceEntry["snapshot"],
+    models: input.models ?? [],
+  };
+}
+
+const instanceEntries: ReadonlyArray<ProviderInstanceEntry> = [
+  makeEntry({
+    instanceId: codexInstanceId,
+    driverKind: "codex",
+    displayName: "Codex",
     models: [
       {
         slug: "gpt-5",
@@ -32,17 +50,11 @@ const instanceEntries: ReadonlyArray<ProviderInstanceEntry> = [
         capabilities: createModelCapabilities({ optionDescriptors: [] }),
       },
     ],
-  },
-  {
+  }),
+  makeEntry({
     instanceId: claudeInstanceId,
-    driverKind: ProviderDriverKind.make("claudeAgent"),
+    driverKind: "claudeAgent",
     displayName: "Claude",
-    enabled: true,
-    installed: true,
-    status: "ready",
-    isDefault: true,
-    isAvailable: true,
-    snapshot: {} as ProviderInstanceEntry["snapshot"],
     models: [
       {
         slug: "claude-sonnet-4-6",
@@ -72,7 +84,21 @@ const instanceEntries: ReadonlyArray<ProviderInstanceEntry> = [
         capabilities: createModelCapabilities({ optionDescriptors: [] }),
       },
     ],
-  },
+  }),
+  // Disabled in settings — must never be offered as a backend.
+  makeEntry({
+    instanceId: disabledOpencodeInstanceId,
+    driverKind: "opencode",
+    displayName: "OpenCode",
+    enabled: false,
+  }),
+  // Enabled but with an empty probed model list; only settings-authored
+  // custom model options can back a selection for it.
+  makeEntry({
+    instanceId: customOnlyInstanceId,
+    driverKind: "opencode",
+    displayName: "OpenCode Custom",
+  }),
 ];
 
 async function clickSelectItem(text: string) {
@@ -114,6 +140,53 @@ describe("BackendModelPicker", () => {
         options: [{ id: "effort", value: "high" }],
       },
     ]);
+  });
+
+  it("hides disabled and model-less instances from the backend options", async () => {
+    await render(
+      <BackendModelPicker
+        selection={null}
+        instanceEntries={instanceEntries}
+        unsetLabel="Use global default"
+        unsetOptionLabel="Use global default"
+        backendAriaLabel="PM backend"
+        modelAriaLabel="PM model"
+        onSelectionChange={() => {}}
+      />,
+    );
+
+    await userEvent.click(page.getByLabelText("PM backend"));
+
+    const itemTexts = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="select-item"]'),
+    ).map((item) => item.textContent ?? "");
+    // Unset + Codex + Claude; the disabled OpenCode instance and the enabled
+    // but model-less OpenCode Custom instance (no custom options passed) are
+    // both withheld.
+    expect(itemTexts).toEqual(["Use global default", "Codex", "Claude"]);
+  });
+
+  it("emits a selection for an instance backed only by custom model options", async () => {
+    const changes: Array<ModelSelection | null> = [];
+    await render(
+      <BackendModelPicker
+        selection={null}
+        instanceEntries={instanceEntries}
+        modelOptionsByInstance={
+          new Map([[customOnlyInstanceId, [{ slug: "ox-alpha", name: "Ox Alpha" }]]])
+        }
+        unsetLabel="Use global default"
+        unsetOptionLabel="Use global default"
+        backendAriaLabel="PM backend"
+        modelAriaLabel="PM model"
+        onSelectionChange={(next) => changes.push(next)}
+      />,
+    );
+
+    await userEvent.click(page.getByLabelText("PM backend"));
+    await clickSelectItem("OpenCode Custom");
+
+    expect(changes).toEqual([{ instanceId: customOnlyInstanceId, model: "ox-alpha" }]);
   });
 
   it("emits model updates for the selected backend", async () => {

@@ -6,9 +6,12 @@ import {
 } from "@t3tools/contracts";
 import { getComposerProviderState } from "../chat/composerProviderState";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
-import { type ProviderInstanceEntry } from "../../providerInstances";
+import {
+  isSelectableProviderInstanceEntry,
+  type ProviderInstanceEntry,
+} from "../../providerInstances";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { STAGE_ROLE_LABELS } from "./stageRoles";
 
@@ -87,6 +90,21 @@ export function BackendModelPicker({
     ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
     : undefined;
 
+  // Only offer instances that can form a valid selection: enabled, installed,
+  // available, and carrying at least one model (probed or settings-authored).
+  // Offering unusable instances makes picking them a silent no-op — the
+  // controlled Select snaps back and the change is lost without any feedback.
+  const selectableEntries = useMemo(
+    () =>
+      instanceEntries.filter(
+        (entry) =>
+          isSelectableProviderInstanceEntry(entry) &&
+          (entry.models.length > 0 ||
+            (modelOptionsByInstance?.get(entry.instanceId)?.length ?? 0) > 0),
+      ),
+    [instanceEntries, modelOptionsByInstance],
+  );
+
   const handleInstanceChange = useCallback(
     (value: string | null) => {
       if (value === null) {
@@ -97,14 +115,18 @@ export function BackendModelPicker({
         return;
       }
       const instanceId = ProviderInstanceId.make(value);
-      const entry = instanceEntries.find((candidate) => candidate.instanceId === instanceId);
+      const entry = selectableEntries.find((candidate) => candidate.instanceId === instanceId);
       if (!entry) {
         return;
       }
-      // Preserve the model when re-selecting the same instance; otherwise adopt
-      // the instance's first model. Instances without models can't form a valid
-      // selection, so leave the role on its current value.
-      const model = selection?.instanceId === instanceId ? selection.model : entry.models[0]?.slug;
+      // Preserve the model when re-selecting the same instance; otherwise
+      // adopt the first probed model, falling back to the first merged model
+      // option for instances whose snapshot list is empty but which have
+      // settings-authored custom models.
+      const model =
+        selection?.instanceId === instanceId
+          ? selection.model
+          : (entry.models[0]?.slug ?? modelOptionsByInstance?.get(instanceId)?.[0]?.slug);
       if (model === undefined) {
         return;
       }
@@ -116,7 +138,7 @@ export function BackendModelPicker({
         }),
       );
     },
-    [instanceEntries, onSelectionChange, selection],
+    [modelOptionsByInstance, onSelectionChange, selectableEntries, selection],
   );
 
   const handleModelChange = useCallback(
@@ -174,7 +196,7 @@ export function BackendModelPicker({
               {unsetOptionLabel}
             </SelectItem>
           ) : null}
-          {instanceEntries.map((entry) => (
+          {selectableEntries.map((entry) => (
             <SelectItem
               key={String(entry.instanceId)}
               hideIndicator

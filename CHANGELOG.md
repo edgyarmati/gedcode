@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
+  Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
+  such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.
+  Instances whose probed model list is empty but which have settings-authored custom models remain
+  selectable.
+
 - Fix/UI: Keep tasks with an open pull request in the active Orchestrator board and label them "PR open" instead of falling through to an "Abandoned" task card while awaiting merge.
 
 ## 0.4.3 - 2026-08-03
