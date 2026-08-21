@@ -1208,6 +1208,124 @@ describe("DriverPmAdapter", () => {
     }),
   );
 
+  it.effect(
+    "bridges Codex MCP tool lifecycle items that carry successful payloads despite failed status as successes",
+    () =>
+      Effect.gen(function* () {
+        const turnId = TurnId.make("turn-codex-failed-with-result");
+        const toolItemId = RuntimeItemId.make("codex-tool-call-failed-with-result");
+        const result = {
+          content: [{ type: "text", text: "Task changes inspected." }],
+          structuredContent: { changedFiles: [] },
+        };
+
+        const bridgedEvents = yield* collectBridgedEvents(
+          [
+            makeEvent({
+              type: "item.started",
+              turnId,
+              itemId: toolItemId,
+              payload: {
+                itemType: "mcp_tool_call",
+                status: "inProgress",
+                title: "MCP tool call",
+                data: codexStartedNotification({
+                  arguments: { taskId: "task-1" },
+                  id: String(toolItemId),
+                  server: ORCHESTRATION_MCP_SERVER_NAME,
+                  status: "inProgress",
+                  tool: "inspectTaskChanges",
+                  type: "mcpToolCall",
+                }),
+              },
+            }),
+            makeEvent({
+              type: "item.completed",
+              turnId,
+              itemId: toolItemId,
+              payload: {
+                itemType: "mcp_tool_call",
+                status: "failed",
+                title: "MCP tool call",
+                data: codexCompletedNotification({
+                  arguments: { taskId: "task-1" },
+                  id: String(toolItemId),
+                  result,
+                  server: ORCHESTRATION_MCP_SERVER_NAME,
+                  status: "failed",
+                  tool: "inspectTaskChanges",
+                  type: "mcpToolCall",
+                }),
+              },
+            }),
+          ],
+          2,
+        );
+
+        const toolResult = bridgedEvents[1];
+        assert.strictEqual(toolResult?.type, "tool_result");
+        if (toolResult?.type === "tool_result") {
+          assert.strictEqual(toolResult.isError, false);
+          assert.deepStrictEqual(toolResult.content, [
+            { type: "text", text: "Task changes inspected." },
+          ]);
+          assert.deepStrictEqual(toolResult.details, result);
+        }
+      }),
+  );
+
+  it.effect("propagates explicit Claude tool-result errors regardless of the item status", () =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make("turn-claude-explicit-error");
+      const toolItemId = RuntimeItemId.make("claude-tool-call-explicit-error");
+
+      const bridgedEvents = yield* collectBridgedEvents(
+        [
+          makeEvent({
+            type: "item.started",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "dynamic_tool_call",
+              status: "inProgress",
+              title: "InspectTaskChanges",
+              data: {
+                toolName: orchestrationMcpToolId("inspectTaskChanges"),
+                input: { taskId: "task-1" },
+              },
+            },
+          }),
+          makeEvent({
+            type: "item.completed",
+            turnId,
+            itemId: toolItemId,
+            payload: {
+              itemType: "dynamic_tool_call",
+              status: "completed",
+              title: "InspectTaskChanges",
+              data: {
+                toolName: orchestrationMcpToolId("inspectTaskChanges"),
+                input: { taskId: "task-1" },
+                result: {
+                  type: "tool_result",
+                  is_error: true,
+                  content: [{ type: "text", text: "Task task-1 not found." }],
+                },
+              },
+            },
+          }),
+        ],
+        2,
+      );
+
+      const toolResult = bridgedEvents[1];
+      assert.strictEqual(toolResult?.type, "tool_result");
+      if (toolResult?.type === "tool_result") {
+        assert.strictEqual(toolResult.isError, true);
+      }
+    }),
+  );
+
   it.effect("does not treat Codex assistant-message items as tool lifecycle items", () =>
     Effect.gen(function* () {
       const turnId = TurnId.make("turn-codex-assistant-message");
