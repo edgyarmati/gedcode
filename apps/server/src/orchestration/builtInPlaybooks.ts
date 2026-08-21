@@ -28,9 +28,11 @@ Default flow: plan → ⟨plan gate⟩ → work → verify → ⟨land gate⟩ �
   stage took ownership, or after that bounded continuation failed.
 - **verify** — After work completes, hand off Cheap routine checks or Smart validation when review
   needs judgment. The stage (a) checks the change actually works
-  and (b) reviews the code for correctness, safety, and adherence to the plan. If verify finds
-  problems, send the findings to Work rather than letting Verify repair them, then run a fresh
-  independent Verify after the fix settles.
+  and (b) reviews the code for correctness, safety, and adherence to the plan. Verifiers define
+  their full planned check set up front and run every check before ending the turn — never stop
+  at the first problem — reporting all findings together as one enumerated list with severity and
+  file references. Send the findings to Work rather than letting Verify repair them, then run a
+  fresh independent Verify after the fix settles.
 - **land** — Only after the land gate is approved. Landing opens a PR / leaves a gated branch; never
   merge to main yourself.
 
