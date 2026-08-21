@@ -62,7 +62,13 @@ const ACTIVE_STAGE_LABELS: Record<string, string> = {
   "pr-open": "PR open",
 };
 
-export function activeStageLabel(status: OrchestratorTask["status"]): string {
+export function activeStageLabel(
+  status: OrchestratorTask["status"],
+  landingStatus?: NonNullable<OrchestratorTask["landing"]>["status"] | null,
+): string {
+  if (landingStatus === "stale") {
+    return "Reworking";
+  }
   return ACTIVE_STAGE_LABELS[status] ?? "Active";
 }
 
@@ -1058,7 +1064,7 @@ function ActiveTaskCard({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Badge size="sm" variant="outline">
-          {activeStageLabel(task.status)}
+          {activeStageLabel(task.status, task.landing?.status)}
         </Badge>
         {task.supersedesTaskId ? (
           <Badge size="sm" variant="secondary">

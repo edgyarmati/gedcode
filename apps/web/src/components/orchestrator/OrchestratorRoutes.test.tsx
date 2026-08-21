@@ -508,6 +508,14 @@ describe("TaskBoard bucketing helpers", () => {
     expect(activeStageLabel("verifying")).toBe("Verifying");
   });
 
+  it("labels post-land follow-up stages as Reworking on the active card", () => {
+    expect(activeStageLabel("working", "stale")).toBe("Reworking");
+    expect(activeStageLabel("verifying", "stale")).toBe("Reworking");
+    expect(activeStageLabel("working", "completed")).toBe("Working");
+    expect(activeStageLabel("working", null)).toBe("Working");
+    expect(activeStageLabel("working", undefined)).toBe("Working");
+  });
+
   it("formats elapsed time coarsely", () => {
     const start = "2026-06-14T00:00:00.000Z";
     expect(formatElapsed(start, Date.parse("2026-06-14T00:00:42.000Z"))).toBe("42s");
@@ -639,6 +647,26 @@ describe("TaskPrLink", () => {
 
     expect(confirm).toHaveBeenCalledOnce();
     expect(cancelTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("post-land rework presentation", () => {
+  it("shows Reworking in the task header while follow-up work diverges from the landed PR", () => {
+    const task = {
+      ...makeBoardTask("task-rework", "working", "Follow-up work"),
+      prUrl: "https://github.com/acme/project/pull/42",
+      landing: {
+        status: "stale" as const,
+        failureMessage: null,
+        branchPushed: true,
+        updatedAt: "2026-06-14T00:05:00.000Z",
+      },
+    };
+    const markup = renderToStaticMarkup(<TaskHeader task={task} />);
+
+    expect(markup).toContain(">Reworking</");
+    expect(markup).toContain("PR merged — follow-up changes since landed");
+    expect(markup).toContain('href="https://github.com/acme/project/pull/42"');
   });
 });
 
