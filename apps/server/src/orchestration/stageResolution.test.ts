@@ -58,6 +58,26 @@ describe("prepareStageInstructions prompt-prefix", () => {
     expect(prepared).not.toContain("authenticated host");
   });
 
+  // #7780: a verifier that ends its turn at the first problem costs a full
+  // work+verify round trip per issue, so the ownership prefix must demand the
+  // whole planned check set plus one enumerated findings report — while keeping
+  // the report-don't-repair boundary intact.
+  it("requires verifiers to complete their full check plan and enumerate all findings", () => {
+    const prepared = prepareStageInstructions({
+      instructions: rawInstructions,
+      role: "verify",
+      rolePromptPrefixes: undefined,
+    });
+
+    expect(prepared).toMatch(/full planned check set/i);
+    expect(prepared).toContain("before ending your turn");
+    expect(prepared).toContain("never stop at the first problem");
+    expect(prepared).toContain("one enumerated list");
+    expect(prepared).toContain("severity and file references");
+    expect(prepared).toContain("Do not modify substantive implementation code");
+    expect(prepared).not.toContain("report the exact failure");
+  });
+
   it.each([
     ["plan", "Do not implement substantive product code"],
     ["work", "You own the substantive implementation"],

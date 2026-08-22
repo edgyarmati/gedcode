@@ -98,8 +98,9 @@ const STAGE_OWNERSHIP_REQUIREMENTS: Record<OrchestrationStageRole, string> = {
     "Complete the implementation with descriptive Git commits and leave the task worktree clean. Before finishing, inspect tracked and untracked changes and commit all intended task changes; explicitly report anything you cannot safely resolve.",
   ].join(" "),
   verify: [
-    "You own documentation and verification evidence only. Do not modify substantive implementation code; if code needs repair, report the exact failure so the PM can return it to a work stage.",
-    "Run proportional focused checks and update the GED context and verification evidence when the implementation changes them. Do not stage or commit those documentation changes: leave them for GedCode to audit and commit through its trusted server finalizer.",
+    "You own documentation and verification evidence only. Do not modify substantive implementation code; if code needs repair, report it so the PM can return it to a work stage.",
+    "Define your full planned check set up front — proportional, focused checks — and run every check in it before ending your turn; never stop at the first problem. Report all findings together as one enumerated list with severity and file references.",
+    "Update the GED context and verification evidence when the implementation changes them. Do not stage or commit those documentation changes: leave them for GedCode to audit and commit through its trusted server finalizer.",
   ].join(" "),
 };
 
