@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import { randomUUID } from "node:crypto";
+
 import * as Effect from "effect/Effect";
 import { z } from "zod/v4";
 
@@ -251,3 +254,29 @@ export const makeOrchestrationMcpExecutors = Effect.gen(function* () {
   const executors = yield* makePmToolExecutors;
   return orderOrchestrationMcpExecutors(executors);
 });
+
+export interface OrchestrationMcpToolCallResult {
+  [key: string]: unknown;
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent: Record<string, unknown>;
+}
+
+export const executeOrchestrationMcpTool = async (
+  executor: PmToolExecutor<any, unknown>,
+  args: Record<string, unknown>,
+): Promise<OrchestrationMcpToolCallResult> => {
+  try {
+    const result = await executor.execute(`mcp:${executor.name}:${randomUUID()}`, args);
+    return {
+      content: [...result.content],
+      structuredContent:
+        typeof result.details === "object" && result.details !== null
+          ? (result.details as Record<string, unknown>)
+          : { value: result.details },
+    };
+  } catch (cause) {
+    // @effect-diagnostics-next-line globalConsole:off
+    console.error(`Orchestration MCP tool '${executor.name}' rejected execution`, cause);
+    throw cause;
+  }
+};

@@ -128,10 +128,14 @@ const claudeLifecycleToolData = (
     return undefined;
   }
   const input = inputRecord(payload.data.input);
+  const result = "result" in payload.data ? payload.data.result : undefined;
+  const explicitlyErrored =
+    payload.data.isError === true || (isRecord(result) && result.is_error === true);
   return {
     toolName,
     input,
     ...("result" in payload.data ? { result: payload.data.result } : {}),
+    ...(explicitlyErrored ? { isError: true } : {}),
   };
 };
 
@@ -154,7 +158,8 @@ const codexLifecycleToolData = (
     return undefined;
   }
   const result = "result" in item && item.result != null ? item.result : item.error;
-  const isError = item.status === "failed" || item.error != null;
+  const succeededWithPayload = item.result != null && item.error == null;
+  const isError = !succeededWithPayload && (item.status === "failed" || item.error != null);
   return {
     toolName,
     input: inputRecord(item.arguments),

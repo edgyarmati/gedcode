@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -14,6 +14,7 @@ import type { PmToolExecutor } from "../pm/pmTools.ts";
 import {
   ORCHESTRATION_MCP_INSTRUCTIONS,
   ORCHESTRATION_MCP_SERVER_NAME,
+  executeOrchestrationMcpTool,
   mcpInputSchemas,
   orderOrchestrationMcpExecutors,
   makeOrchestrationMcpExecutors,
@@ -80,17 +81,8 @@ export function makeOrchestrationMcpServerFromExecutors(
         description: executor.description,
         inputSchema: mcpInputSchemas[name],
       },
-      async (args: Record<string, unknown>): Promise<CallToolResult> => {
-        const result = await executor.execute(`mcp:${name}:${randomUUID()}`, args);
-        const structuredContent =
-          typeof result.details === "object" && result.details !== null
-            ? (result.details as Record<string, unknown>)
-            : { value: result.details };
-        return {
-          content: [...result.content],
-          structuredContent,
-        };
-      },
+      async (args: Record<string, unknown>): Promise<CallToolResult> =>
+        executeOrchestrationMcpTool(executor, args),
     );
   }
 

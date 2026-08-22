@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import {
   createSdkMcpServer,
   tool,
@@ -21,6 +19,7 @@ import {
   ORCHESTRATION_MCP_INSTRUCTIONS,
   ORCHESTRATION_MCP_SERVER_NAME,
   ORCHESTRATION_MCP_TOOL_NAMES,
+  executeOrchestrationMcpTool,
   mcpInputSchemas,
   makeOrchestrationMcpExecutors,
   type OrchestrationMcpToolName,
@@ -71,17 +70,7 @@ function makeMcpToolDefinition(
     name,
     executor.description,
     inputSchema,
-    async (args) => {
-      const result = await executor.execute(`mcp:${name}:${randomUUID()}`, args);
-      const structuredContent =
-        typeof result.details === "object" && result.details !== null
-          ? (result.details as Record<string, unknown>)
-          : { value: result.details };
-      return {
-        content: [...result.content],
-        structuredContent,
-      };
-    },
+    async (args) => executeOrchestrationMcpTool(executor, args),
     {
       alwaysLoad: true,
     },

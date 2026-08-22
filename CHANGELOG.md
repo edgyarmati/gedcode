@@ -10,6 +10,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   the first problem. Verifiers still never repair substantive code; the PM returns complete findings
   to a work stage.
 
+- Fix: PM tool calls such as InspectTaskChanges no longer show as failed in the Orchestrator activity
+  timeline when they actually succeeded. Tool results that carry a successful payload are now
+  classified as successes even when the provider runtime flags the call as failed (Codex attaches
+  successful MCP results to error-flagged items), and explicit per-item tool errors from Claude are
+  propagated directly instead of being inferred from the item status string.
+
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
   such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.
