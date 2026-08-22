@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { superviseForever } from "@t3tools/shared/StreamSupervision";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -2004,34 +2005,25 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const start: PmRuntimeShape["start"] = Effect.fn("start")(function* () {
       const liveSettlementQueue = yield* Queue.unbounded<SettlementEvent>();
       if (Option.isSome(providerService)) {
-        yield* Stream.runForEach(
-          providerService.value.streamEvents,
-          releaseDeliveriesForProviderRecovery,
-        ).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.void
-              : Effect.logWarning("PM lifecycle provider recovery subscription failed", {
-                  cause: Cause.pretty(cause),
-                }),
+        yield* Effect.forkScoped(
+          superviseForever(
+            { site: "PmRuntime.providerRecovery", restartOnSuccess: true },
+            Stream.runForEach(
+              providerService.value.streamEvents,
+              releaseDeliveriesForProviderRecovery,
+            ),
           ),
-          Effect.forkScoped,
         );
       }
-      yield* Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
-        isSettlementEvent(event)
-          ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
-          : Effect.void,
-      ).pipe(
-        Effect.catchCause((cause) => {
-          if (Cause.hasInterruptsOnly(cause)) {
-            return Effect.void;
-          }
-          return Effect.logWarning("PM runtime live subscription failed", {
-            cause: Cause.pretty(cause),
-          });
-        }),
-        Effect.forkScoped,
+      yield* Effect.forkScoped(
+        superviseForever(
+          { site: "PmRuntime.liveSettlements", restartOnSuccess: true },
+          Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) =>
+            isSettlementEvent(event)
+              ? Queue.offer(liveSettlementQueue, event).pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+        ),
       );
 
       yield* replayHistoricalSettlements;
@@ -2059,10 +2051,11 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
           Effect.repeat(Schedule.spaced(Duration.millis(reconciliationIntervalMs))),
         ),
       );
-      yield* Queue.take(liveSettlementQueue).pipe(
-        Effect.flatMap(worker.enqueue),
-        Effect.forever,
-        Effect.forkScoped,
+      yield* Effect.forkScoped(
+        superviseForever(
+          { site: "PmRuntime.settlementDispatcher" },
+          Queue.take(liveSettlementQueue).pipe(Effect.flatMap(worker.enqueue), Effect.forever),
+        ),
       );
     });
 

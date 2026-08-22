@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { superviseForever } from "@t3tools/shared/StreamSupervision";
 
 import { parseTurnDiffFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts";
 import {
@@ -916,26 +917,32 @@ const make = Effect.gen(function* () {
 
   const start: CheckpointReactorShape["start"] = Effect.fn("start")(function* () {
     yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
-        if (
-          event.type !== "thread.turn-start-requested" &&
-          event.type !== "thread.message-sent" &&
-          event.type !== "thread.checkpoint-revert-requested" &&
-          event.type !== "thread.turn-diff-completed"
-        ) {
-          return Effect.void;
-        }
-        return worker.enqueue({ source: "domain", event });
-      }),
+      superviseForever(
+        { site: "CheckpointReactor.domainEvents", restartOnSuccess: true },
+        Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
+          if (
+            event.type !== "thread.turn-start-requested" &&
+            event.type !== "thread.message-sent" &&
+            event.type !== "thread.checkpoint-revert-requested" &&
+            event.type !== "thread.turn-diff-completed"
+          ) {
+            return Effect.void;
+          }
+          return worker.enqueue({ source: "domain", event });
+        }),
+      ),
     );
 
     yield* Effect.forkScoped(
-      Stream.runForEach(providerService.streamEvents, (event) => {
-        if (event.type !== "turn.started" && event.type !== "turn.completed") {
-          return Effect.void;
-        }
-        return worker.enqueue({ source: "runtime", event });
-      }),
+      superviseForever(
+        { site: "CheckpointReactor.runtimeEvents", restartOnSuccess: true },
+        Stream.runForEach(providerService.streamEvents, (event) => {
+          if (event.type !== "turn.started" && event.type !== "turn.completed") {
+            return Effect.void;
+          }
+          return worker.enqueue({ source: "runtime", event });
+        }),
+      ),
     );
   });
 

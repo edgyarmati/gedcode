@@ -24,6 +24,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
 } from "@t3tools/contracts";
+import { superviseForever } from "@t3tools/shared/StreamSupervision";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -333,15 +334,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const adapter = adapterOption.value;
       next.set(id, adapter);
       if (previous.get(id) !== adapter) {
-        yield* Stream.runForEach(adapter.streamEvents, (event) =>
-          processRuntimeEvent(
-            {
-              instanceId: id,
-              provider: adapter.provider,
-            },
-            event,
+        yield* Effect.forkScoped(
+          superviseForever(
+            { site: `ProviderService.instanceEvents:${id}` },
+            Stream.runForEach(adapter.streamEvents, (event) =>
+              processRuntimeEvent(
+                {
+                  instanceId: id,
+                  provider: adapter.provider,
+                },
+                event,
+              ),
+            ),
           ),
-        ).pipe(Effect.forkScoped);
+        );
       }
     }
     yield* Ref.set(subscribedAdapters, next);

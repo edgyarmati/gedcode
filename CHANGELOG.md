@@ -5,6 +5,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Keep the Orchestrator PM wake chain from wedging permanently. A PM turn that never receives a
+  terminal provider event now fails after a 10-minute watchdog instead of holding the re-entry queue
+  forever, a PM session exit or error state promptly fails any in-flight prompt, and all long-lived
+  orchestration stream consumers (runtime ingestion, checkpoint/command reactors, PM runtime
+  subscriptions, per-instance provider bridges) restart with logged backoff after a failure or
+  defect instead of dying silently.
+
 - Fix: Require Orchestrator verify stages to run their full planned check set and report all findings
   as one enumerated list (severity + file references) before ending the turn, instead of stopping at
   the first problem. Verifiers still never repair substantive code; the PM returns complete findings

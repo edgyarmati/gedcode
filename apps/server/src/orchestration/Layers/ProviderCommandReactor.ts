@@ -26,6 +26,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { superviseForever } from "@t3tools/shared/StreamSupervision";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
@@ -1211,7 +1212,10 @@ const make = Effect.gen(function* () {
     });
 
     yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent),
+      superviseForever(
+        { site: "ProviderCommandReactor.domainEvents", restartOnSuccess: true },
+        Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent),
+      ),
     );
   });
 
