@@ -10,6 +10,8 @@ import {
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import { appendModelOptionsSuffix } from "@t3tools/shared/model";
+
 import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
 import {
@@ -95,7 +97,10 @@ export function buildStageTimelineRows(
       status: entry.status,
       statusLabel: statusDisplay.label,
       statusVariant: statusDisplay.variant,
-      backendLabel: `${String(entry.providerInstanceId)} · ${entry.model}`,
+      backendLabel: appendModelOptionsSuffix(
+        `${String(entry.providerInstanceId)} · ${entry.model}`,
+        entry.modelOptions,
+      ),
       permissionLabel:
         entry.runtimeMode === "full-access"
           ? "Full access"
@@ -125,7 +130,10 @@ export function buildTaskHistoryRows(
     kind: "helper",
     key: String(run.id),
     prompt: run.prompt,
-    backendLabel: `${String(run.providerInstanceId)} · ${run.model}`,
+    backendLabel: appendModelOptionsSuffix(
+      `${String(run.providerInstanceId)} · ${run.model}`,
+      run.modelOptions,
+    ),
     statusLabel: HELPER_STATUS_DISPLAY[run.status].label,
     statusVariant: HELPER_STATUS_DISPLAY[run.status].variant,
     startedAt: run.startedAt ?? run.createdAt,

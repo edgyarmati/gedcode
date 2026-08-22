@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: Show the reasoning level next to the model in Orchestrator task views (stage and helper
+  timelines, active task cards), e.g. "gpt-5.6-sol · Reasoning High · Thinking On", using a static
+  label map over the already-projected model options.
+
 - Fix/UI: Surface post-land follow-up work as "Reworking" instead of a generic "Working" label on
   the Orchestrator task board and task header, and mark the landing area with "PR merged —
   follow-up changes since landed" so a stale landing is distinguishable from first-round work.

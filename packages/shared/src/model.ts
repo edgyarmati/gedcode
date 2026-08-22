@@ -193,6 +193,49 @@ export function getProviderOptionCurrentLabel(
   return descriptor.options.find((option) => option.id === currentValue)?.label;
 }
 
+// Static display labels for the reasoning-related provider options shown next to
+// the model in Orchestrator task views. Deliberately capability-free: task views
+// project durable history without resolving live provider descriptors.
+const REASONING_EFFORT_OPTION_IDS: ReadonlyArray<string> = ["reasoningEffort", "effort"];
+const THINKING_OPTION_ID = "thinking";
+
+function capitalizeFirst(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+/**
+ * Renders a compact display suffix such as `"Reasoning High · Thinking On"` for
+ * the reasoning-related provider options, or null when none of them are set.
+ * Driver-specific reasoning effort ids (`reasoningEffort`, `effort`) collapse
+ * into a single label; every other option id is ignored.
+ */
+export function formatModelOptionsSuffix(
+  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+): string | null {
+  const parts: Array<string> = [];
+  for (const id of REASONING_EFFORT_OPTION_IDS) {
+    const value = trimOrNull(getProviderOptionStringSelectionValue(selections, id));
+    if (value !== null) {
+      parts.push(`Reasoning ${capitalizeFirst(value)}`);
+      break;
+    }
+  }
+  const thinking = getProviderOptionBooleanSelectionValue(selections, THINKING_OPTION_ID);
+  if (typeof thinking === "boolean") {
+    parts.push(thinking ? "Thinking On" : "Thinking Off");
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Appends {@link formatModelOptionsSuffix}'s output to a base model label. */
+export function appendModelOptionsSuffix(
+  label: string,
+  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+): string {
+  const suffix = formatModelOptionsSuffix(selections);
+  return suffix === null ? label : `${label} · ${suffix}`;
+}
+
 export function buildProviderOptionSelectionsFromDescriptors(
   descriptors: ReadonlyArray<ProviderOptionDescriptor> | null | undefined,
 ): Array<ProviderOptionSelection> | undefined {

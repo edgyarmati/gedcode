@@ -63,6 +63,23 @@ describe("buildHelperRunTimelineRows", () => {
       ["Interrupted", "destructive"],
     ]);
   });
+
+  it("appends reasoning labels from the run's model options to the backend label", () => {
+    expect(
+      buildHelperRunTimelineRows([
+        makeRun({ modelOptions: [{ id: "effort", value: "high" }] }),
+        makeRun({
+          id: HelperRunId.make("helper-thinking"),
+          modelOptions: [{ id: "thinking", value: false }],
+        }),
+        makeRun({ id: HelperRunId.make("helper-unlabeled"), modelOptions: null }),
+      ]).map((row) => row.backendLabel),
+    ).toEqual([
+      "codex · gpt-5.6-sol · Reasoning High",
+      "codex · gpt-5.6-sol · Thinking Off",
+      "codex · gpt-5.6-sol",
+    ]);
+  });
 });
 
 describe("buildPmHelperHistoryRows", () => {

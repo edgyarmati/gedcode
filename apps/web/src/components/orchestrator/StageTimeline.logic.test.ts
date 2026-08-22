@@ -1,4 +1,5 @@
 import {
+  HelperRunId,
   ProjectId,
   ProviderInstanceId,
   TaskId,
@@ -27,7 +28,53 @@ const makeEntry = (
   ...overrides,
 });
 
+const makeHelperRun = (
+  overrides: Partial<OrchestrationHelperRun> = {},
+): OrchestrationHelperRun => ({
+  id: HelperRunId.make("helper-1"),
+  projectId: ProjectId.make("project-1"),
+  attachment: { kind: "task", taskId: TaskId.make("task-1") },
+  accessMode: "read-only",
+  tier: "cheap",
+  providerInstanceId: ProviderInstanceId.make("codex_helper"),
+  model: "gpt-5-mini",
+  modelOptions: null,
+  prompt: "Find the affected module.",
+  status: "completed",
+  transientRetryCount: 0,
+  providerThreadId: ThreadId.make("helper:helper-1"),
+  result: "src/feature.ts",
+  failureMessage: null,
+  createdAt: "2026-06-01T00:01:00.000Z",
+  startedAt: null,
+  completedAt: null,
+  updatedAt: "2026-06-01T00:01:00.000Z",
+  ...overrides,
+});
+
 describe("buildStageTimelineRows", () => {
+  it("appends reasoning labels from model options to the backend label", () => {
+    const [row] = buildStageTimelineRows([
+      makeEntry({
+        stageThreadId: ThreadId.make("stage-reasoned"),
+        model: "gpt-5.6-sol",
+        modelOptions: [
+          { id: "fastMode", value: true },
+          { id: "reasoningEffort", value: "high" },
+          { id: "thinking", value: true },
+        ],
+      }),
+    ]);
+    expect(row?.backendLabel).toBe("codex_work · gpt-5.6-sol · Reasoning High · Thinking On");
+  });
+
+  it("leaves the backend label unchanged without reasoning-focused options", () => {
+    const [row] = buildStageTimelineRows([
+      makeEntry({ modelOptions: [{ id: "fastMode", value: true }] }),
+    ]);
+    expect(row?.backendLabel).toBe("codex_work · gpt-5-codex");
+  });
+
   it("labels the role, formats the backend, and maps status to a badge variant", () => {
     const [row] = buildStageTimelineRows([makeEntry({ role: "verify", status: "completed" })]);
     expect(row).toMatchObject({
@@ -120,17 +167,12 @@ describe("buildStageTimelineRows", () => {
 
 describe("buildTaskHistoryRows", () => {
   it("interleaves helpers and stage attempts chronologically without changing attempt selection keys", () => {
-    const helper = {
-      id: "helper-1",
-      providerInstanceId: ProviderInstanceId.make("codex_helper"),
-      model: "gpt-5-mini",
-      prompt: "Find the affected module.",
-      status: "completed",
-      result: "src/feature.ts",
-      failureMessage: null,
-      createdAt: "2026-06-01T00:01:00.000Z",
-      startedAt: null,
-    } as OrchestrationHelperRun;
+    const helper = makeHelperRun({
+      modelOptions: [
+        { id: "effort", value: "max" },
+        { id: "thinking", value: false },
+      ],
+    });
     const rows = buildTaskHistoryRows(
       [
         makeEntry({
@@ -166,6 +208,7 @@ describe("buildTaskHistoryRows", () => {
       kind: "helper",
       statusLabel: "Completed",
       result: "src/feature.ts",
+      backendLabel: "codex_helper · gpt-5-mini · Reasoning Max · Thinking Off",
     });
   });
 });
