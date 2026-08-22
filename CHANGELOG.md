@@ -5,6 +5,7 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+<<<<<<< HEAD
 - Fix/UI: Show the reasoning level next to the model in Orchestrator task views (stage and helper
   timelines, active task cards), e.g. "gpt-5.6-sol · Reasoning High · Thinking On", using a static
   label map over the already-projected model options.
@@ -30,6 +31,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   classified as successes even when the provider runtime flags the call as failed (Codex attaches
   successful MCP results to error-flagged items), and explicit per-item tool errors from Claude are
   propagated directly instead of being inferred from the item status string.
+
+- Fix: Stop rendering broken turn diffs as wrong file sets. Checkpoint pairs are now prefetched
+  against the workspace before diffing, so dangling refs (pruned checkpoints, recreated worktrees,
+  never-captured turn-0 baselines) fail loudly instead of presenting a single file, only state
+  files, or the whole repository as a turn's changes. Turn summaries whose pre-turn baseline is
+  missing degrade to an explicit error state instead of describing unrelated content.
 
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting

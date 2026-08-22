@@ -98,6 +98,11 @@ const make = Effect.gen(function* () {
         });
       }
 
+      // Preflight both refs against the workspace before invoking git: a
+      // read-model row can outlive its git ref (revert pruning, recreated
+      // worktrees) and the synthetic turn-0 baseline may never have been
+      // captured. Dangling refs must fail loudly here instead of delegating a
+      // broken pair to `git diff`.
       const fromCheckpointRef =
         input.fromTurnCount === 0
           ? checkpointRefForThreadTurn(input.threadId, 0)
@@ -120,6 +125,29 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           turnCount: input.toTurnCount,
           detail: `Checkpoint ref is unavailable for turn ${input.toTurnCount}.`,
+        });
+      }
+
+      const fromRefExists = yield* checkpointStore.hasCheckpointRef({
+        cwd: workspaceCwd,
+        checkpointRef: fromCheckpointRef,
+      });
+      if (!fromRefExists) {
+        return yield* new CheckpointUnavailableError({
+          threadId: input.threadId,
+          turnCount: input.fromTurnCount,
+          detail: `Filesystem checkpoint is unavailable for turn ${input.fromTurnCount}.`,
+        });
+      }
+      const toRefExists = yield* checkpointStore.hasCheckpointRef({
+        cwd: workspaceCwd,
+        checkpointRef: toCheckpointRef,
+      });
+      if (!toRefExists) {
+        return yield* new CheckpointUnavailableError({
+          threadId: input.threadId,
+          turnCount: input.toTurnCount,
+          detail: `Filesystem checkpoint is unavailable for turn ${input.toTurnCount}.`,
         });
       }
 
@@ -211,10 +239,39 @@ const make = Effect.gen(function* () {
       });
     }
 
+    // Same preflight as getTurnDiff: a read-model row can outlive its git ref
+    // (revert pruning, recreated worktrees) and the synthetic turn-0 baseline
+    // may never have been captured. Dangling refs must fail loudly instead of
+    // delegating a broken pair to `git diff`, which would render the whole
+    // workspace as changed.
+    const fullThreadFromRef = checkpointRefForThreadTurn(input.threadId, 0);
+    const fullThreadFromRefExists = yield* checkpointStore.hasCheckpointRef({
+      cwd: workspaceCwd,
+      checkpointRef: fullThreadFromRef,
+    });
+    if (!fullThreadFromRefExists) {
+      return yield* new CheckpointUnavailableError({
+        threadId: input.threadId,
+        turnCount: 0,
+        detail: `Filesystem checkpoint is unavailable for turn 0.`,
+      });
+    }
+    const fullThreadToRefExists = yield* checkpointStore.hasCheckpointRef({
+      cwd: workspaceCwd,
+      checkpointRef: threadContext.value.toCheckpointRef as CheckpointRef,
+    });
+    if (!fullThreadToRefExists) {
+      return yield* new CheckpointUnavailableError({
+        threadId: input.threadId,
+        turnCount: input.toTurnCount,
+        detail: `Filesystem checkpoint is unavailable for turn ${input.toTurnCount}.`,
+      });
+    }
+
     const diff = yield* checkpointStore
       .diffCheckpoints({
         cwd: workspaceCwd,
-        fromCheckpointRef: checkpointRefForThreadTurn(input.threadId, 0),
+        fromCheckpointRef: fullThreadFromRef,
         toCheckpointRef: threadContext.value.toCheckpointRef as CheckpointRef,
         fallbackFromToHead: false,
         ignoreWhitespace,
