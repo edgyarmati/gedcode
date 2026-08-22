@@ -24,6 +24,7 @@ import {
   ClockIcon,
   FolderPlusIcon,
   GitBranchIcon,
+  GitMergeIcon,
   GitPullRequestIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
@@ -1115,7 +1116,9 @@ export function TaskHeader({
         ? "Landing request failed"
         : landing.kind === "failed"
           ? "Landing failed"
-          : TASK_STATUS_LABELS[task.status];
+          : landing.kind === "stale"
+            ? "Reworking"
+            : TASK_STATUS_LABELS[task.status];
   const cancelTask = useCallback(async () => {
     const api = readEnvironmentApi(task.environmentId);
     if (!api || isCancelling || landingPending || !canCancel) {
@@ -1268,6 +1271,14 @@ export function TaskHeader({
                 Pull request closed
               </Badge>
               <TaskPrLink prUrl={landing.prUrl} />
+            </>
+          ) : landing.kind === "stale" ? (
+            <>
+              <Badge size="lg" title={landing.message} variant="warning">
+                <GitMergeIcon className="size-4" />
+                PR merged — follow-up changes since landed
+              </Badge>
+              {landing.prUrl ? <TaskPrLink prUrl={landing.prUrl} /> : null}
             </>
           ) : landing.kind === "landed" ? (
             <TaskPrLink prUrl={landing.prUrl} />

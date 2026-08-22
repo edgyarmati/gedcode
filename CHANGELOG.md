@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/UI: Surface post-land follow-up work as "Reworking" instead of a generic "Working" label on
+  the Orchestrator task board and task header, and mark the landing area with "PR merged —
+  follow-up changes since landed" so a stale landing is distinguishable from first-round work.
+
 - Fix: Keep the Orchestrator PM wake chain from wedging permanently. A PM turn that never receives a
   terminal provider event now fails after a 10-minute watchdog instead of holding the re-entry queue
   forever, a PM session exit or error state promptly fails any in-flight prompt, and all long-lived

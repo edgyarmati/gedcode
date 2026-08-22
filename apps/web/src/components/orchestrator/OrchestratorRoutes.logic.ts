@@ -20,6 +20,7 @@ export type TaskLandingPresentation =
   | { readonly kind: "opening-pr" }
   | { readonly kind: "request-failed"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "stale"; readonly message: string; readonly prUrl: string | null }
   | { readonly kind: "pr-open"; readonly prUrl: string }
   | { readonly kind: "pr-closed"; readonly prUrl: string }
   | { readonly kind: "landed"; readonly prUrl: string };
@@ -103,6 +104,13 @@ export function deriveTaskLandingPresentation(input: {
   readonly requestError?: string | null;
 }): TaskLandingPresentation {
   const { task } = input;
+  if (task.landing?.status === "stale") {
+    return {
+      kind: "stale",
+      message: "PR merged — follow-up changes since landed.",
+      prUrl: task.prUrl,
+    };
+  }
   if (task.prUrl !== null) {
     return task.status === "pr-open"
       ? { kind: "pr-open", prUrl: task.prUrl }

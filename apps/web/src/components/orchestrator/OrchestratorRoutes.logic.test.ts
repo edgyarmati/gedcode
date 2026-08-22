@@ -270,4 +270,46 @@ describe("deriveTaskLandingPresentation", () => {
       }),
     ).toEqual({ kind: "pr-open", prUrl: "https://example.com/pull/42" });
   });
+
+  it("reports stale landings as rework once follow-up stages restart", () => {
+    expect(
+      deriveTaskLandingPresentation({
+        task: makeTask({
+          status: "working",
+          prUrl: "https://example.com/pull/42",
+          landing: {
+            status: "stale",
+            failureMessage: null,
+            branchPushed: true,
+            updatedAt: "2026-07-11T00:05:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+      }),
+    ).toEqual({
+      kind: "stale",
+      message: "PR merged — follow-up changes since landed.",
+      prUrl: "https://example.com/pull/42",
+    });
+    expect(
+      deriveTaskLandingPresentation({
+        task: makeTask({
+          status: "verifying",
+          landing: {
+            status: "stale",
+            failureMessage: null,
+            branchPushed: true,
+            updatedAt: "2026-07-11T00:05:00.000Z",
+          },
+        }),
+        gates: [],
+        activities: [],
+      }),
+    ).toEqual({
+      kind: "stale",
+      message: "PR merged — follow-up changes since landed.",
+      prUrl: null,
+    });
+  });
 });
