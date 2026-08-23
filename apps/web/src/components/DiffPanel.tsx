@@ -224,6 +224,15 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
+  // Embedded hosts (e.g. the orchestrator task rail) pass an explicit
+  // threadRef; turn selection there is component-local because the route-based
+  // selection would navigate the user out of the task into the stage thread's
+  // chat view.
+  const isEmbedded = threadRef !== null;
+  const [embeddedSelectedTurnId, setEmbeddedSelectedTurnId] = useState<TurnId | null>(null);
+  useEffect(() => {
+    setEmbeddedSelectedTurnId(null);
+  }, [activeThreadId]);
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {
@@ -239,7 +248,7 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
     [inferredCheckpointTurnCountByTurnId, turnDiffSummaries],
   );
 
-  const selectedTurnId = diffSearch.diffTurnId ?? null;
+  const selectedTurnId = isEmbedded ? embeddedSelectedTurnId : (diffSearch.diffTurnId ?? null);
   const selectedFilePath = selectedTurnId !== null ? (diffSearch.diffFilePath ?? null) : null;
   const selectedTurn =
     selectedTurnId === null
@@ -393,6 +402,10 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
 
   const selectTurn = (turnId: TurnId) => {
     if (!activeThread) return;
+    if (isEmbedded) {
+      setEmbeddedSelectedTurnId(turnId);
+      return;
+    }
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
@@ -404,6 +417,10 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
   };
   const selectWholeConversation = () => {
     if (!activeThread) return;
+    if (isEmbedded) {
+      setEmbeddedSelectedTurnId(null);
+      return;
+    }
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
