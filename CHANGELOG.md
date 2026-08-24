@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Recover orchestration from provider deaths and long-uptime drift. A provider process dying
+  mid-stage now interrupts and settles the stuck stage immediately (plus a periodic orphan-stage
+  sweep as the backstop) instead of waiting for an app restart; the PM reconciliation sweep reads
+  only new events each tick instead of replaying the entire event log every minute; and changing a
+  project's PM model/config no longer leaks a background event-bridge fiber per change.
+
 - Fix: Clicking turn chips in an Orchestrator task's diff panel no longer escapes into the worker
   subagent's chat view. Embedded diff panels now filter turns locally in place; the chat route's
   URL-driven turn selection is unchanged.
@@ -40,7 +46,6 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   never-captured turn-0 baselines) fail loudly instead of presenting a single file, only state
   files, or the whole repository as a turn's changes. Turn summaries whose pre-turn baseline is
   missing degrade to an explicit error state instead of describing unrelated content.
-
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
   such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.

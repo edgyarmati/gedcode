@@ -27,6 +27,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import { NodeServices } from "@effect/platform-node";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -35,6 +36,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import { CheckpointUnavailableError } from "../../checkpointing/Errors.ts";
 import { CheckpointDiffQuery } from "../../checkpointing/Services/CheckpointDiffQuery.ts";
@@ -2453,6 +2455,46 @@ describe("PmRuntime", () => {
         ),
       ),
     ),
+  );
+
+  it.effect("reconciliation sweep reads events incrementally across ticks", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const readEventCursors: number[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        readEventCursors,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        // Let the forked first sweep (immediate) seed the settlement index.
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        // Release the spaced repeat so a second sweep runs.
+        yield* TestClock.adjust(Duration.seconds(61));
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      // Startup replay and the first sweep both read from 0; the second sweep
+      // must resume from the first sweep's last-seen sequence instead of
+      // rescanning history.
+      assert.strictEqual(readEventCursors[0], 0);
+      assert.strictEqual(readEventCursors[1], 0);
+      assert.ok(
+        readEventCursors.includes(stageCompletedEvent.sequence),
+        `expected an incremental sweep cursor at ${stageCompletedEvent.sequence}, got cursors [${readEventCursors.join(", ")}]`,
+      );
+    }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())),
   );
 
   it.effect("records reconciliation sweep and PM re-entry durability metrics", () =>

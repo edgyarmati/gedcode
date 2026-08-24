@@ -619,6 +619,7 @@ export const makeOrchestrationIntegrationHarness = (
           )
         : Layer.succeed(OrphanTurnReconciler, {
             reconcile: () => Effect.succeed(0),
+            start: () => Effect.void,
           });
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(taskCancellationReconcilerLayer),

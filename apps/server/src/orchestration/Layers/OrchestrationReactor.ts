@@ -48,8 +48,10 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     // PM startup can replay a settlement and immediately hand off a retry, so
     // provider consumers must already be subscribed before the PM starts.
     yield* pmRuntime.start();
-    // Emit orphan-stage settlements only after the PM subscription is live.
-    yield* orphanTurnReconciler.reconcile();
+    // Emit orphan-stage settlements only after the PM subscription is live,
+    // then keep reconciling on an interval so mid-run provider deaths repair
+    // without waiting for a restart.
+    yield* orphanTurnReconciler.start();
   });
 
   return {

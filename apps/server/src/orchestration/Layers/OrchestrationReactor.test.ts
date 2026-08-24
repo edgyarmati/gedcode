@@ -49,6 +49,10 @@ describe("OrchestrationReactor", () => {
               started.push("orphan-turn-reconciler");
               return Effect.succeed(0);
             },
+            start: () => {
+              started.push("orphan-turn-reconciler");
+              return Effect.void;
+            },
           }),
         ),
         Layer.provideMerge(

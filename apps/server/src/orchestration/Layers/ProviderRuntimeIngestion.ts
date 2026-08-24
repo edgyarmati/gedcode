@@ -1848,6 +1848,37 @@ const make = Effect.gen(function* () {
 
       if (event.type === "session.exited") {
         yield* clearTurnStateForSession(thread.id);
+
+        // A provider death mid-turn would otherwise leave the awaited stage
+        // stuck until the next startup reconciliation: settle it immediately by
+        // interrupting the stage that owns this thread. The pre-event
+        // activeTurnId gates this to genuine mid-turn deaths — an exit between
+        // turns must not race a normal stage settlement. Anything this misses
+        // (crash before turn.started, restarts) is repaired by the periodic
+        // OrphanTurnReconciler sweep.
+        const taskForStageThread = yield* resolveTaskForStageThread(thread.id);
+        const activeStageRole =
+          taskForStageThread === undefined
+            ? null
+            : activeStageRoleForTaskStatus(taskForStageThread.status);
+        if (
+          activeTurnId !== null &&
+          taskForStageThread !== undefined &&
+          activeStageRole !== null &&
+          sameId(taskForStageThread.currentStageThreadId, thread.id)
+        ) {
+          yield* orchestrationEngine.dispatch({
+            type: "task.stage.interrupt",
+            commandId: CommandId.make(
+              `server:task-stage-provider-exit:${event.eventId}:${String(thread.id)}`,
+            ),
+            taskId: taskForStageThread.id,
+            role: activeStageRole,
+            stageThreadId: thread.id,
+            reason: "orphaned",
+            createdAt: now,
+          });
+        }
       }
 
       if (event.type === "runtime.error") {
