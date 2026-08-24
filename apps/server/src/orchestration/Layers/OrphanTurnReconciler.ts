@@ -13,6 +13,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -26,6 +27,7 @@ import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const RECONCILE_LAST_ERROR = "Provider session was not live during server startup reconciliation.";
+const DEFAULT_RECONCILIATION_INTERVAL = Duration.minutes(1);
 
 export interface OrphanedActiveStage {
   readonly taskId: TaskId;
@@ -86,6 +88,7 @@ function interruptedSession(
 interface OrphanTurnReconcilerOptions {
   readonly maxAttempts?: number;
   readonly retryDelayMs?: number;
+  readonly reconciliationIntervalMs?: number;
 }
 
 const make = (options?: OrphanTurnReconcilerOptions) =>
@@ -209,7 +212,35 @@ const make = (options?: OrphanTurnReconcilerOptions) =>
         return totalReconciled;
       });
 
-    return { reconcile } satisfies OrphanTurnReconcilerShape;
+    // Mirror CapabilityPauseReactor: one immediate pass (startup repair), then
+    // an interval fiber so provider deaths at any time settle their stuck
+    // stages within one tick instead of only at the next server start.
+    const start: OrphanTurnReconcilerShape["start"] = () =>
+      Effect.gen(function* () {
+        yield* reconcile();
+        yield* Effect.forkScoped(
+          reconcile().pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("orphan turn scheduled reconciliation failed", {
+                cause: Cause.pretty(cause),
+              }),
+            ),
+            Effect.repeat(
+              Schedule.spaced(
+                Duration.millis(
+                  Math.max(
+                    1,
+                    options?.reconciliationIntervalMs ??
+                      Duration.toMillis(DEFAULT_RECONCILIATION_INTERVAL),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      });
+
+    return { reconcile, start } satisfies OrphanTurnReconcilerShape;
   });
 
 export const makeOrphanTurnReconcilerLive = (options?: OrphanTurnReconcilerOptions) =>

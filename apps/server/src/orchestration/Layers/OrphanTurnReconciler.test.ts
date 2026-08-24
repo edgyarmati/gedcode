@@ -16,9 +16,11 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -507,5 +509,66 @@ describe("OrphanTurnReconciler", () => {
     await reconciliation;
     expect(listSessionCalls).toBeGreaterThanOrEqual(2);
     expect(dispatched).toEqual([]);
+  });
+
+  it("reconciles periodically after startup so a mid-run provider death repairs", async () => {
+    // #7779: repair must not depend on the next server start. After start(),
+    // killing the provider session must settle the stuck stage within one
+    // interval tick.
+    const threadId = asThreadId("stage-periodic");
+    const readModel = makeReadModel({
+      tasks: [makeTask({ taskId: "task-periodic", currentStageThreadId: threadId })],
+      threads: [makeThread({ threadId, activeTurnId: asTurnId("turn-periodic") })],
+    });
+    const dispatched: OrchestrationCommand[] = [];
+    let liveSessions: ReadonlyArray<ProviderSession> = [makeProviderSession(threadId)];
+
+    runtime = ManagedRuntime.make(
+      makeOrphanTurnReconcilerLive({
+        maxAttempts: 1,
+        retryDelayMs: 0,
+        reconciliationIntervalMs: 20,
+      }).pipe(
+        Layer.provide(makeProjectionSnapshotQueryLayer(() => readModel)),
+        Layer.provide(makeProviderServiceLayer(() => liveSessions)),
+        Layer.provide(
+          Layer.succeed(OrchestrationEngineService, {
+            readEvents: () => Stream.empty,
+            dispatch: (command) => {
+              dispatched.push(command);
+              return Effect.succeed({ sequence: dispatched.length });
+            },
+            streamDomainEvents: Stream.empty,
+            streamShellEvents: Stream.empty,
+          }),
+        ),
+      ),
+    );
+    const reconciler = await runtime.runPromise(Effect.service(OrphanTurnReconciler));
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    try {
+      await runtime.runPromise(reconciler.start().pipe(Scope.provide(scope)));
+
+      // The startup pass saw a live session: nothing to repair yet.
+      expect(dispatched).toEqual([]);
+
+      // Provider dies mid-run.
+      liveSessions = [];
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const deadline = (yield* Effect.clockWith((clock) => clock.currentTimeMillis)) + 2_000;
+          while ((yield* Effect.clockWith((clock) => clock.currentTimeMillis)) < deadline) {
+            if (dispatched.length > 0) {
+              break;
+            }
+            yield* Effect.sleep("10 millis");
+          }
+        }),
+      );
+
+      expect(dispatched.map((command) => command.type)).toContain("task.stage.interrupt");
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+    }
   });
 });
