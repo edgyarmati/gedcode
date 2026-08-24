@@ -2312,6 +2312,11 @@ export const makePmProjectRuntimeFactoryWithOptions = (options?: PmProjectRuntim
             Effect.gen(function* () {
               if (!(yield* Ref.get(runtimeActive))) return;
               yield* adapter.waitForIdle;
+              // Abort before closing the scope: the adapter's runtime-event
+              // bridge fiber was forked unmanaged (it survives scope close) and
+              // would otherwise keep consuming the global event stream into an
+              // orphaned queue for every invalidated model/config selection.
+              yield* adapter.abort;
               yield* Ref.set(runtimeActive, false);
               yield* Scope.close(projectRuntimeScope, Exit.void);
               runtimes.delete(key);
