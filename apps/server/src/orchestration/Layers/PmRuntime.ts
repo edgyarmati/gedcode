@@ -499,15 +499,10 @@ const approvalRequestIdFromEvent = (
     : null;
 };
 
-const findSettlementEvent = (
-  events: ReadonlyArray<SettlementEvent>,
-  input: { readonly kind: PmConsumedSettlementKind; readonly settlementKey: string },
-): SettlementEvent | undefined =>
-  events.find(
-    (event) =>
-      settlementEventKind(event) === input.kind &&
-      settlementEventKey(event) === input.settlementKey,
-  );
+const findSettlementEventInIndex =
+  (byKey: ReadonlyMap<string, SettlementEvent>) =>
+  (input: { readonly kind: PmConsumedSettlementKind; readonly settlementKey: string }) =>
+    byKey.get(`${input.kind}::${input.settlementKey}`);
 
 const resolveProjectConfig = (project: OrchestrationProject) =>
   Option.getOrElse(
@@ -1183,16 +1178,39 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       } satisfies SettlementEnvelope;
     });
 
-    const readSettlementEvents = Effect.fn("PmRuntime.readSettlementEvents")(function* () {
-      const events: SettlementEvent[] = [];
-      yield* Stream.runForEach(orchestrationEngine.readEvents(0), (event) =>
+    // Reconciliation settlement index. The first sweep after boot replays the
+    // event log once to seed it; every later sweep merges only events past the
+    // last-seen sequence, so per-tick sweep work is proportional to new events
+    // instead of total history. Keyed by (kind, settlementKey) — the same
+    // identity findSettlementEvent matches on.
+    const settlementIndexRef = yield* Ref.make<{
+      readonly byKey: Map<string, SettlementEvent>;
+      readonly lastSequence: number;
+    }>({ byKey: new Map(), lastSequence: 0 });
+
+    const settlementIndexKey = (event: SettlementEvent): string =>
+      `${settlementEventKind(event)}::${settlementEventKey(event)}`;
+
+    const readSettlementIndex = Effect.fn("PmRuntime.readSettlementIndex")(function* () {
+      const index = yield* Ref.get(settlementIndexRef);
+      let lastSequence = index.lastSequence;
+      const batch: SettlementEvent[] = [];
+      yield* Stream.runForEach(orchestrationEngine.readEvents(index.lastSequence), (event) =>
         Effect.sync(() => {
+          lastSequence = Math.max(lastSequence, event.sequence);
           if (isSettlementEvent(event)) {
-            events.push(event);
+            batch.push(event);
           }
         }),
       );
-      return events;
+      const byKey = index.byKey;
+      if (batch.length > 0 || lastSequence !== index.lastSequence) {
+        for (const event of batch) {
+          byKey.set(settlementIndexKey(event), event);
+        }
+        yield* Ref.set(settlementIndexRef, { byKey, lastSequence });
+      }
+      return byKey;
     });
 
     // Stop hammering a quota-blocked PM. When the project's PM provider instance
@@ -1602,7 +1620,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     )(function* (input: {
       readonly readModel: OrchestrationReadModel;
       readonly project: OrchestrationProject;
-      readonly events: ReadonlyArray<SettlementEvent>;
+      readonly findEvent: (input: {
+        readonly kind: PmConsumedSettlementKind;
+        readonly settlementKey: string;
+      }) => SettlementEvent | undefined;
     }) {
       const keys = yield* collectUnsettledSettlementKeys({
         readModel: input.readModel,
@@ -1647,7 +1668,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         if (consumedKeys.has(settlementKey)) {
           return Effect.void;
         }
-        const event = findSettlementEvent(input.events, { kind, settlementKey });
+        const event = input.findEvent({ kind, settlementKey });
         if (event === undefined) {
           return Effect.logWarning("PM runtime reconciliation missing backing settlement event", {
             projectId: String(input.project.id),
@@ -1684,7 +1705,10 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const reconcilePendingSettlements = Effect.fn("PmRuntime.reconcilePendingSettlements")(
       function* (input: {
         readonly project: OrchestrationProject;
-        readonly events: ReadonlyArray<SettlementEvent>;
+        readonly findEvent: (input: {
+          readonly kind: PmConsumedSettlementKind;
+          readonly settlementKey: string;
+        }) => SettlementEvent | undefined;
       }) {
         const pending = yield* pmRuntimeStateRepository.listPending({
           projectId: input.project.id,
@@ -1693,7 +1717,7 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
         yield* Effect.forEach(
           pending,
           (marker) => {
-            const event = findSettlementEvent(input.events, {
+            const event = input.findEvent({
               kind: marker.kind,
               settlementKey: marker.settlementKey,
             });
@@ -1822,7 +1846,8 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
     const runReconciliationSweep = reconciliationSemaphore.withPermits(1)(
       Effect.gen(function* () {
         const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-        const events = yield* readSettlementEvents();
+        const settlementIndex = yield* readSettlementIndex();
+        const findEvent = findSettlementEventInIndex(settlementIndex);
         let neverConsumedCount = 0;
         let pendingActedCount = 0;
         let quotaResumedCount = 0;
@@ -1835,11 +1860,11 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
               neverConsumedCount += yield* reconcileNeverConsumedSettlements({
                 readModel,
                 project,
-                events,
+                findEvent,
               });
               pendingActedCount += yield* reconcilePendingSettlements({
                 project,
-                events,
+                findEvent,
               });
             }),
           { concurrency: 1, discard: true },
