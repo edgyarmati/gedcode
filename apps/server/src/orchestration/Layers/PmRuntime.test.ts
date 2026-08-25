@@ -3871,7 +3871,7 @@ describe("buildPmSystemPrompt", () => {
     assert.include(prompt, "including when the worker is idle");
     assert.include(prompt, "Use handoffWorker for a fresh attempt only");
     assert.include(prompt, "when one bounded correction already failed");
-    assert.include(prompt, "then start a fresh Verify after the fix settles");
+    assert.include(prompt, "then start a fresh Verify after the fixes settle");
     assert.include(
       prompt,
       "Do not continue an old Work thread after a newer stage has taken ownership",
