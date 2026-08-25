@@ -2767,6 +2767,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "task.gate-superseded": {
+          const existingRow = yield* projectionPendingGateRepository.getByGateId({
+            gateId: event.payload.gateId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionPendingGateRepository.upsert({
+            ...existingRow.value,
+            status: "superseded",
+            resolvedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
         default:
           return;
       }

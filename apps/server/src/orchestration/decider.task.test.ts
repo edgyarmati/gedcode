@@ -2783,7 +2783,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
             gateId: asGateId("gate-land"),
             taskId: asTaskId("task-1"),
             gate: "land" as const,
-            contentHash: "sha256:land",
+            contentHash: "verified-head",
             stageThreadId: null,
             status: "pending" as const,
             approvedHash: null,
@@ -2802,7 +2802,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           commandId: asCommandId("cmd-land-approve"),
           taskId: asTaskId("task-1"),
           gateId: asGateId("gate-land"),
-          approvedHash: "sha256:land",
+          approvedHash: "verified-head",
           worktreeCompletion: { head: "verified-head", dirty: false },
           createdAt: now,
         },
@@ -2815,7 +2815,7 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       expect(projected.pendingGates?.[0]).toMatchObject({
         status: "resolved",
         decision: "approved",
-        approvedHash: "sha256:land",
+        approvedHash: "verified-head",
       });
       expect(projected.tasks[0]).toMatchObject({
         status: "review",
@@ -3121,6 +3121,272 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         }),
       );
       expect(exit._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("rejects a land gate whose content the current verification does not cover", () =>
+    Effect.gen(function* () {
+      // The gate's hash matches the inspected worktree (the old checks all
+      // pass) but the verified head moved on: exactly the stale-gate hole.
+      const readModel = {
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land-stale"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "stale-gate-head",
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.land.approve",
+            commandId: asCommandId("cmd-land-approve-uncovered"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-land-stale"),
+            approvedHash: "stale-gate-head",
+            worktreeCompletion: { head: "stale-gate-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("does not cover");
+      }
+    }),
+  );
+
+  it.effect("rejects resolving a plan gate from an older planning attempt", () =>
+    Effect.gen(function* () {
+      const olderPlanThread = asThreadId("thread-plan-older");
+      const newerPlanThread = asThreadId("thread-plan-newer");
+      const readModel = {
+        ...withStageHistory(yield* taskReadModel({ status: "plan-review" }), [
+          {
+            threadId: String(olderPlanThread),
+            role: "plan",
+            startedAt: "2026-06-14T09:00:00.000Z",
+            endedAt: "2026-06-14T09:05:00.000Z",
+          },
+          {
+            threadId: String(newerPlanThread),
+            role: "plan",
+            startedAt: "2026-06-14T09:10:00.000Z",
+            endedAt: "2026-06-14T09:15:00.000Z",
+          },
+        ]),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-plan-old"),
+            taskId: asTaskId("task-1"),
+            gate: "plan" as const,
+            contentHash: "sha256:old-plan",
+            stageThreadId: olderPlanThread,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const error = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.gate.resolve",
+            commandId: asCommandId("cmd-resolve-old-plan-gate"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-plan-old"),
+            gate: "plan",
+            approvedHash: "sha256:old-plan",
+            decision: "approved",
+            origin: "human",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      if (error._tag === "OrchestrationCommandInvariantError") {
+        expect(error.detail).toContain("older planning attempt");
+      }
+    }),
+  );
+
+  it.effect("supersedes a pending land gate when a newer work stage starts", () =>
+    Effect.gen(function* () {
+      const readModel = {
+        ...withFreshVerification(yield* taskReadModel({ status: "review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land-stale"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "verified-head",
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const planned = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-rework-start"),
+            taskId: asTaskId("task-1"),
+            role: "work",
+            instructions: "Follow-up work after the landed PR.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(planned[0]).toMatchObject({
+        type: "task.gate-superseded",
+        payload: {
+          taskId: asTaskId("task-1"),
+          gateId: asGateId("gate-land-stale"),
+          gate: "land",
+        },
+      });
+      expect(planned[1]?.type).toBe("task.stage-started");
+
+      const projected = yield* applyEvents(readModel, planned);
+      expect(projected.pendingGates?.[0]).toMatchObject({
+        status: "superseded",
+        gateId: asGateId("gate-land-stale"),
+      });
+    }),
+  );
+
+  it.effect("supersedes a pending plan gate when a newer plan stage starts", () =>
+    Effect.gen(function* () {
+      const planGateReadModel = {
+        ...(yield* taskReadModel({ status: "plan-review" })),
+        pendingGates: [
+          {
+            gateId: asGateId("gate-plan-open"),
+            taskId: asTaskId("task-1"),
+            gate: "plan" as const,
+            contentHash: "sha256:old-plan",
+            stageThreadId: asThreadId("thread-plan-attempt"),
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const planned = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: planGateReadModel,
+          command: {
+            type: "task.stage.start",
+            commandId: asCommandId("cmd-replan-start"),
+            taskId: asTaskId("task-1"),
+            role: "plan",
+            instructions: "Replan with fresh critique.",
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(planned[0]).toMatchObject({
+        type: "task.gate-superseded",
+        payload: { gateId: asGateId("gate-plan-open"), gate: "plan" },
+      });
+
+      const projected = yield* applyEvents(planGateReadModel, planned);
+      expect(projected.pendingGates?.[0]?.status).toBe("superseded");
+    }),
+  );
+
+  it.effect("supersedes a pending same-kind gate when a newer gate is requested", () =>
+    Effect.gen(function* () {
+      const base = withFreshVerification(yield* taskReadModel({ status: "review" }));
+      const withPendingGate = {
+        ...base,
+        pendingGates: [
+          {
+            gateId: asGateId("gate-land-old"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "old-head",
+            pullRequest: {
+              title: "Old proposal",
+              body: "Superseded by a newer proposal.",
+            },
+            stageThreadId: null,
+            status: "pending" as const,
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+        ],
+      };
+
+      const planned = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel: withPendingGate,
+          command: {
+            type: "task.gate.request",
+            commandId: asCommandId("cmd-request-newer-land-gate"),
+            taskId: asTaskId("task-1"),
+            gateId: asGateId("gate-land-new"),
+            gate: "land",
+            contentHash: "verified-head",
+            pullRequest: { title: "Newer proposal", body: "Current proposal body." },
+            stageThreadId: null,
+            worktreeCompletion: { head: "verified-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(planned[0]).toMatchObject({
+        type: "task.gate-superseded",
+        payload: { gateId: asGateId("gate-land-old") },
+      });
+      expect(planned[1]).toMatchObject({
+        type: "task.gate-requested",
+        payload: { gateId: asGateId("gate-land-new") },
+      });
+
+      const projected = yield* applyEvents(withPendingGate, planned);
+      expect(
+        projected.pendingGates?.find((gate) => gate.gateId === asGateId("gate-land-old"))?.status,
+      ).toBe("superseded");
+      expect(
+        projected.pendingGates?.find((gate) => gate.gateId === asGateId("gate-land-new"))?.status,
+      ).toBe("pending");
     }),
   );
 

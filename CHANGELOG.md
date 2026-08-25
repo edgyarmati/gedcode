@@ -5,6 +5,15 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Stale Orchestrator approval gates can no longer be approved. A land gate is rejected unless
+  its pinned content hash is the current verified head (the previously-tautological check allowed a
+  gate opened before newer work to approve content it never covered), a plan gate is only
+  resolvable against the newest planning attempt, and starting a new plan/work/verify stage or
+  re-requesting a gate now supersedes the corresponding pending gates with a durable
+  task.gate-superseded event. Superseded gates leave the pending set in both projections, are
+  shown with a "Superseded" badge instead of Approve/Reject buttons, and stop counting toward PM
+  settlement accounting.
+
 - Fix: Recover a missed stage-completed settlement on the next reconciliation sweep without an app
   restart. Stage completions flip their projection row before the event is published, so a lost
   live delivery was previously invisible to the redrive sweep forever; the sweep now replays
