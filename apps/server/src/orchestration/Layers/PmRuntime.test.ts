@@ -2527,6 +2527,46 @@ describe("PmRuntime", () => {
     }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())),
   );
 
+  it.effect("recovers a missed stage-completed settlement on the next sweep", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      // The stage completes AFTER boot and its live delivery is lost (the
+      // event never reaches the live stream): only the persisted event log
+      // knows about it.
+      const historicalEvents: Array<OrchestrationEvent> = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents,
+        consumed,
+        messages,
+        consumeCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.drain;
+        assert.deepStrictEqual(messages, []);
+
+        // The event lands in the log (projection flips the stage to completed
+        // pre-publish) but no live delivery follows.
+        historicalEvents.push(stageCompletedEvent);
+
+        // The next sweep redrives it without a restart…
+        yield* runtime.retryProject(projectId);
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(consumeCalls.length, 1);
+
+        // …exactly once: the durable marker suppresses later sweeps.
+        yield* runtime.retryProject(projectId);
+        assert.strictEqual(messages.length, 1);
+        assert.strictEqual(consumeCalls.length, 1);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }),
+  );
+
   it.effect("replays duplicate settled worker stages exactly once", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();

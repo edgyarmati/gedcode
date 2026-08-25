@@ -1703,6 +1703,44 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
       return reprocessedCount;
     });
 
+    // Stage completions flip their projection row to "completed" inside the
+    // engine transaction — before the event is ever published — so the
+    // unsettled-key sweep above can never see a missed one. Redrive instead
+    // comes from the settlement index: an indexed stage-completed above the
+    // project cursor with no consumption marker was never delivered to the PM
+    // (lost live event) and is replayed exactly once via the durable marker.
+    const reconcileMissedStageSettlements = Effect.fn("PmRuntime.reconcileMissedStageSettlements")(
+      function* (input: {
+        readonly project: OrchestrationProject;
+        readonly readModel: OrchestrationReadModel;
+        readonly settlementEvents: Iterable<SettlementEvent>;
+      }) {
+        const cursor = yield* pmRuntimeStateRepository.getCursor({
+          projectId: input.project.id,
+        });
+        const lastConsumedSequence = Option.isSome(cursor) ? cursor.value.lastConsumedSequence : 0;
+        const consumed = yield* pmRuntimeStateRepository.listConsumedSettlements({
+          projectId: input.project.id,
+          kind: "stage",
+        });
+        const consumedKeys = new Set(consumed.map((settlement) => settlement.settlementKey));
+        const tasksById = new Map(
+          input.readModel.tasks.map((task) => [String(task.id), task] as const),
+        );
+        let reprocessedCount = 0;
+        for (const event of input.settlementEvents) {
+          if (event.type !== "task.stage-completed") continue;
+          if (event.sequence <= lastConsumedSequence) continue;
+          if (consumedKeys.has(settlementEventKey(event))) continue;
+          const task = tasksById.get(String(event.payload.taskId));
+          if (task === undefined || task.projectId !== input.project.id) continue;
+          reprocessedCount += 1;
+          yield* processSettlementEventSafely(event);
+        }
+        return reprocessedCount;
+      },
+    );
+
     const reconcilePendingSettlements = Effect.fn("PmRuntime.reconcilePendingSettlements")(
       function* (input: {
         readonly project: OrchestrationProject;
@@ -1862,6 +1900,11 @@ export const makePmRuntime = (options?: PmRuntimeLiveOptions) =>
                 readModel,
                 project,
                 findEvent,
+              });
+              neverConsumedCount += yield* reconcileMissedStageSettlements({
+                project,
+                readModel,
+                settlementEvents: settlementIndex.values(),
               });
               pendingActedCount += yield* reconcilePendingSettlements({
                 project,

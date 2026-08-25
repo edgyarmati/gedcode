@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Recover a missed stage-completed settlement on the next reconciliation sweep without an app
+  restart. Stage completions flip their projection row before the event is published, so a lost
+  live delivery was previously invisible to the redrive sweep forever; the sweep now replays
+  indexed stage completions that have no durable consumption marker, exactly once.
+
 - Fix: Recover orchestration from provider deaths and long-uptime drift. A provider process dying
   mid-stage now interrupts and settles the stuck stage immediately (plus a periodic orphan-stage
   sweep as the backstop) instead of waiting for an app restart; the PM reconciliation sweep reads
