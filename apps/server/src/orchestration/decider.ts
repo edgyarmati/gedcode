@@ -2712,6 +2712,44 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       const workerRuntimeMode = resolveWorkerStageRuntimeMode();
 
+      // A new stage attempt invalidates the corresponding pending gates: a
+      // fresh plan supersedes an unaccepted plan gate, and new work/verify
+      // movement invalidates a land gate pinned to older content.
+      const supersededGateKind: "plan" | "land" | null =
+        command.role === "plan"
+          ? "plan"
+          : command.role === "work" || command.role === "verify"
+            ? "land"
+            : null;
+      const supersededGateEvents: PlannedOrchestrationEvent[] = [];
+      if (supersededGateKind !== null) {
+        for (const gate of readModel.pendingGates ?? []) {
+          if (
+            gate.taskId !== command.taskId ||
+            gate.gate !== supersededGateKind ||
+            gate.status !== "pending"
+          ) {
+            continue;
+          }
+          supersededGateEvents.push({
+            ...(yield* withEventBase({
+              aggregateKind: "task",
+              aggregateId: command.taskId,
+              occurredAt: command.createdAt,
+              commandId: command.commandId,
+            })),
+            type: "task.gate-superseded",
+            payload: {
+              taskId: command.taskId,
+              gateId: gate.gateId,
+              gate: gate.gate,
+              reason: `A newer ${command.role} stage started on this task.`,
+              updatedAt: command.createdAt,
+            },
+          });
+        }
+      }
+
       const stageStartedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -2800,7 +2838,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
 
-      return [stageStartedEvent, threadCreatedEvent, userMessageEvent, turnStartRequestedEvent];
+      return [
+        ...supersededGateEvents,
+        stageStartedEvent,
+        threadCreatedEvent,
+        userMessageEvent,
+        turnStartRequestedEvent,
+      ];
     }
 
     case "task.stage.complete": {
@@ -3362,6 +3406,37 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         taskTypeId: task.type,
         gate: command.gate,
       });
+      // A same-kind re-request supersedes any still-pending predecessor: its
+      // content hash and pull-request proposal describe an older proposal that
+      // must no longer be approvable.
+      const supersededGateEvents: PlannedOrchestrationEvent[] = [];
+      for (const gate of readModel.pendingGates ?? []) {
+        if (
+          gate.taskId !== command.taskId ||
+          gate.gate !== command.gate ||
+          gate.status !== "pending" ||
+          gate.gateId === command.gateId
+        ) {
+          continue;
+        }
+        supersededGateEvents.push({
+          ...(yield* withEventBase({
+            aggregateKind: "task",
+            aggregateId: command.taskId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "task.gate-superseded",
+          payload: {
+            taskId: command.taskId,
+            gateId: gate.gateId,
+            gate: gate.gate,
+            reason: `A newer ${command.gate} gate was requested for this task.`,
+            updatedAt: command.createdAt,
+          },
+        });
+      }
+
       const gateRequestedEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "task",
@@ -3382,7 +3457,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
 
       if (gatePolicy !== "auto" || command.gate === "land" || command.gate === "release") {
-        return [gateRequestedEvent];
+        return [...supersededGateEvents, gateRequestedEvent];
       }
 
       const gateResolvedEvent: PlannedOrchestrationEvent = {
@@ -3404,7 +3479,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
 
-      return [gateRequestedEvent, gateResolvedEvent];
+      return [...supersededGateEvents, gateRequestedEvent, gateResolvedEvent];
     }
 
     case "task.force-land.request": {
@@ -3469,6 +3544,20 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* invariantError(
           command.type,
           `Land gate '${command.gateId}' is not a current, content-matched pending gate for task '${command.taskId}'.`,
+        );
+      }
+      // The client echoes the gate's own hash, so the content match above is
+      // tautological on its own — pin the gate to the verified head so a gate
+      // opened before newer work cannot approve content it never covered. A
+      // pending force-land request is the deliberate override: it still pins
+      // the gate to the observed clean HEAD via requireLandingAuthorization.
+      if (
+        task.forceLandRequest?.status !== "pending" &&
+        (task.verification === null || pendingGate.contentHash !== task.verification.head)
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Land gate '${command.gateId}' pins content the current verification does not cover; newer work invalidated this gate.`,
         );
       }
       yield* requireLandingAuthorization({
@@ -3566,6 +3655,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           `Plan gate '${command.gateId}' is not pending for task '${command.taskId}'.`,
         );
       }
+      // A plan gate is only resolvable against the newest planning attempt —
+      // an open gate from a superseded plan attempt must not accept the
+      // current plan.
+      if (command.gate === "plan" && pendingGate.stageThreadId !== null) {
+        const latestPlanStage = Object.values(readModel.stageHistory ?? {})
+          .filter((stage) => stage.taskId === command.taskId && stage.role === "plan")
+          .toSorted((left, right) => left.startedAt.localeCompare(right.startedAt))
+          .at(-1);
+        if (
+          latestPlanStage !== undefined &&
+          latestPlanStage.stageThreadId !== pendingGate.stageThreadId
+        ) {
+          return yield* invariantError(
+            command.type,
+            `Plan gate '${command.gateId}' belongs to an older planning attempt and is no longer resolvable.`,
+          );
+        }
+      }
       if (command.gate === "land" && task.status !== "review") {
         return yield* invariantError(
           command.type,
@@ -3573,6 +3680,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         );
       }
       if (command.gate === "land" && command.decision === "approved") {
+        // Same tautology guard as task.land.approve: the gate's hash must be
+        // the verified head, not merely its own requested hash. A pending
+        // force-land request is the deliberate override.
+        if (
+          task.forceLandRequest?.status !== "pending" &&
+          (task.verification === null || pendingGate.contentHash !== task.verification.head)
+        ) {
+          return yield* invariantError(
+            command.type,
+            `Land gate '${command.gateId}' pins content the current verification does not cover; newer work invalidated this gate.`,
+          );
+        }
         yield* requireLandingAuthorization({
           command,
           readModel,

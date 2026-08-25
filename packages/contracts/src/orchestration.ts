@@ -860,7 +860,11 @@ export type OrchestrationTaskTierSelectionOrigin = typeof OrchestrationTaskTierS
 export const OrchestrationGateDecision = Schema.Literals(["approved", "rejected"]);
 export type OrchestrationGateDecision = typeof OrchestrationGateDecision.Type;
 
-export const OrchestrationPendingGateStatus = Schema.Literals(["pending", "resolved"]);
+export const OrchestrationPendingGateStatus = Schema.Literals([
+  "pending",
+  "resolved",
+  "superseded",
+]);
 export type OrchestrationPendingGateStatus = typeof OrchestrationPendingGateStatus.Type;
 
 export const OrchestrationPullRequestProposal = Schema.Struct({
@@ -2304,6 +2308,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.stage-interrupted",
   "task.gate-requested",
   "task.gate-resolved",
+  "task.gate-superseded",
   "task.cancellation-requested",
   "task.cancellation-failed",
   "task.cancellation-phase-completed",
@@ -2852,6 +2857,14 @@ export const TaskGateResolvedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskGateSupersededPayload = Schema.Struct({
+  taskId: TaskId,
+  gateId: GateId,
+  gate: OrchestrationGateKind,
+  reason: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskLandedPayload = Schema.Struct({
   taskId: TaskId,
   approvedHash: Schema.optionalKey(TrimmedNonEmptyString),
@@ -3198,6 +3211,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.gate-resolved"),
     payload: TaskGateResolvedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.gate-superseded"),
+    payload: TaskGateSupersededPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

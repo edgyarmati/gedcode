@@ -28,6 +28,7 @@ import {
   TaskDeletedPayload,
   TaskGateRequestedPayload,
   TaskGateResolvedPayload,
+  TaskGateSupersededPayload,
   TaskForceLandRequestedPayload,
   TaskLandedPayload,
   TaskNoChangesNeededPayload,
@@ -1772,6 +1773,20 @@ export function projectEvent(
             }),
           };
         }),
+      );
+
+    case "task.gate-superseded":
+      // A superseded gate leaves the pending set (it must never be approvable
+      // or count toward PM settlement accounting) but stays in the read model
+      // for audit, distinct from a human resolution.
+      return decodeForEvent(TaskGateSupersededPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          pendingGates: updatePendingGate(nextBase.pendingGates ?? [], payload.gateId, {
+            status: "superseded",
+            resolvedAt: payload.updatedAt,
+          }),
+        })),
       );
 
     case "task.force-land-requested":

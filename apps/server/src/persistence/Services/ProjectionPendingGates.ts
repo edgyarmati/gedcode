@@ -34,7 +34,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
  * Lifecycle of a pending-gate row. `pending` until a human/client resolution
  * lands; `resolved` thereafter.
  */
-export const ProjectionPendingGateStatus = Schema.Literals(["pending", "resolved"]);
+export const ProjectionPendingGateStatus = Schema.Literals(["pending", "resolved", "superseded"]);
 export type ProjectionPendingGateStatus = typeof ProjectionPendingGateStatus.Type;
 
 export const ProjectionPendingGate = Schema.Struct({

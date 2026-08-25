@@ -1581,7 +1581,8 @@ export function GateCard({
 }) {
   const [submitting, setSubmitting] = useState<OrchestrationGateDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const resolved = gate.status === "resolved";
+  const resolved = gate.status !== "pending";
+  const superseded = gate.status === "superseded";
   const resolve = async (decision: OrchestrationGateDecision) => {
     const api = readEnvironmentApi(environmentId);
     if (!api || submitting !== null || resolved) {
@@ -1613,8 +1614,11 @@ export function GateCard({
             {gate.contentHash}
           </p>
         </div>
-        <Badge className="shrink-0" variant={resolved ? "success" : "warning"}>
-          {resolved ? "Resolved" : "Pending"}
+        <Badge
+          className="shrink-0"
+          variant={resolved ? (superseded ? "outline" : "success") : "warning"}
+        >
+          {superseded ? "Superseded" : resolved ? "Resolved" : "Pending"}
         </Badge>
       </div>
       {gate.pullRequest ? (
