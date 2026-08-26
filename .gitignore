@@ -38,6 +38,7 @@ dist-electron/
 !.claude/skills/domain-modeling/
 !.claude/skills/domain-modeling/**
 .pi/
+.pi-subagents/
 .playwright-mcp/
 .agents/
 !.agents/
