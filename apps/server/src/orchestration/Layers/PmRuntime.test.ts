@@ -3917,8 +3917,18 @@ describe("buildPmSystemPrompt", () => {
       "Do not continue an old Work thread after a newer stage has taken ownership",
     );
     assert.include(prompt, "Never poll inspectStage");
-    assert.include(prompt, "A Verify handoff refreshes the clean primary GitHub upstream");
-    assert.include(prompt, "Never verify or land against the pre-movement HEAD");
+    assert.include(prompt, "After verification, call rebaseTaskBranch for clean target movement");
+    assert.include(prompt, "An identical or docs-only proof may preserve verification");
+    assert.include(
+      prompt,
+      "edit only the returned `.ged/**`/`*.md` conflict paths, then call continueTaskRebase; the server stages those paths",
+    );
+    assert.include(prompt, "Any substantive, code, or mixed conflict, or content proof");
+    assert.include(prompt, "goes to Work and then a fresh Verify");
+    assert.include(
+      prompt,
+      "Never free-hand Git or a substantive conflict, and never land old HEAD",
+    );
     assert.include(prompt, "re-enter you automatically");
     assert.include(prompt, "explicit operator status request");
     assert.include(prompt, "last-action cursors");

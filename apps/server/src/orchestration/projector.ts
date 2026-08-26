@@ -39,6 +39,7 @@ import {
   TaskReleaseDispatchFailedPayload,
   TaskReleaseDispatchRequestedPayload,
   TaskReleaseDispatchedPayload,
+  TaskRebasedPayload,
   TaskCapabilityTiersUpdatedPayload,
   TaskRestoredPayload,
   TaskStageBlockedPayload,
@@ -1563,6 +1564,24 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
           }),
         })),
+      );
+
+    case "task.rebased":
+      return decodeForEvent(TaskRebasedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const task = nextBase.tasks.find((entry) => entry.id === payload.taskId);
+          if (task === undefined) return nextBase;
+          return {
+            ...nextBase,
+            tasks: updateTask(nextBase.tasks, payload.taskId, {
+              verification:
+                payload.proofKind === "content" || task.verification === null
+                  ? task.verification
+                  : { ...task.verification, head: payload.toHead },
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
       );
 
     case "task.no-changes-needed":

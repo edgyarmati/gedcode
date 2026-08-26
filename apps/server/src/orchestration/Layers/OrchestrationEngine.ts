@@ -123,6 +123,7 @@ export function classifyOrchestrationCommand(
     case "task.change-review.request":
     case "task.change-review.resolve":
     case "task.verification.record":
+    case "task.rebase":
     case "task.no-changes-needed":
     case "task.stage.block":
     case "task.stage.resume":
@@ -232,6 +233,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
     case "task.change-review.request":
     case "task.change-review.resolve":
     case "task.verification.record":
+    case "task.rebase":
     case "task.no-changes-needed":
     case "task.stage.block":
     case "task.stage.resume":

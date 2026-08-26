@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import { defaultTaskTypeRegistry } from "./TaskTypeRegistry.ts";
+import { classifyTaskRebasePaths } from "./taskRebasePolicy.ts";
 import {
   listThreadsByProjectId,
   requireProject,
@@ -3123,6 +3124,115 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+    }
+
+    case "task.rebase": {
+      const task = yield* requireTask({ readModel, command, taskId: command.taskId });
+      yield* requireTaskNotCancelling({ command, task });
+      if (task.status !== "review" || task.currentStageThreadId !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must be idle and in review before its branch can be rebased.`,
+        );
+      }
+      if (task.landing !== null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot be rebased after landing has started.`,
+        );
+      }
+      if (task.branch === null || task.worktreePath === null) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' must have an owned branch and worktree before it can be rebased.`,
+        );
+      }
+      if (task.changeReview?.status === "pending") {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' cannot be rebased while worktree changes await PM review.`,
+        );
+      }
+      if (task.verification?.head !== command.fromHead) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' rebase must start at its recorded verified HEAD.`,
+        );
+      }
+      yield* requireFreshVerification({
+        command,
+        readModel,
+        task,
+        worktreeCompletion: { head: command.fromHead, dirty: false },
+      });
+      if (command.worktreeCompletion.dirty || command.worktreeCompletion.head !== command.toHead) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' rebase must record the exact inspected clean worktree HEAD.`,
+        );
+      }
+      if (command.fromHead === command.toHead) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' rebase must move HEAD.`,
+        );
+      }
+
+      const proofIsConsistent = command.proofKind === classifyTaskRebasePaths(command.paths);
+      if (!proofIsConsistent) {
+        return yield* invariantError(
+          command.type,
+          `Task '${command.taskId}' rebase proof '${command.proofKind}' is inconsistent with its changed paths.`,
+        );
+      }
+
+      const events: PlannedOrchestrationEvent[] = [];
+      for (const gate of readModel.pendingGates ?? []) {
+        const invalidatesLandAuthorization =
+          gate.status === "pending" || (gate.status === "resolved" && gate.decision === "approved");
+        if (
+          gate.taskId !== command.taskId ||
+          gate.gate !== "land" ||
+          !invalidatesLandAuthorization
+        ) {
+          continue;
+        }
+        events.push({
+          ...(yield* withEventBase({
+            aggregateKind: "task",
+            aggregateId: command.taskId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "task.gate-superseded",
+          payload: {
+            taskId: command.taskId,
+            gateId: gate.gateId,
+            gate: "land",
+            reason: "The task branch was rebased onto a newer base HEAD.",
+            updatedAt: command.createdAt,
+          },
+        });
+      }
+      events.push({
+        ...(yield* withEventBase({
+          aggregateKind: "task",
+          aggregateId: command.taskId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "task.rebased",
+        payload: {
+          taskId: command.taskId,
+          baseHead: command.baseHead,
+          fromHead: command.fromHead,
+          toHead: command.toHead,
+          proofKind: command.proofKind,
+          paths: command.paths,
+          updatedAt: command.createdAt,
+        },
+      });
+      return events;
     }
 
     case "task.no-changes-needed": {

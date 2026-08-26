@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import type { RpcGroup } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
 import {
@@ -58,7 +59,9 @@ export interface WsProtocolLifecycleHandlers {
   ) => void;
 }
 
-export const makeWsRpcProtocolClient = RpcClient.make(WsRpcGroup);
+type WsRpcDefinitions = RpcGroup.Rpcs<typeof WsRpcGroup>;
+export const makeWsRpcProtocolClient: ReturnType<typeof RpcClient.make<WsRpcDefinitions>> =
+  RpcClient.make(WsRpcGroup);
 type RpcClientFactory = typeof makeWsRpcProtocolClient;
 export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;

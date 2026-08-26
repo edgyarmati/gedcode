@@ -53,6 +53,7 @@ const run = Effect.fn("TaskRepositoryPreparation.run")(function* (
 export const prepareTaskRepository = Effect.fn("prepareTaskRepository")(function* (input: {
   readonly cwd: string;
   readonly process: Pick<VcsProcessShape, "run">;
+  readonly disableHooks?: boolean;
 }) {
   const status = yield* run(input.process, input.cwd, "status", [
     "status",
@@ -125,7 +126,12 @@ export const prepareTaskRepository = Effect.fn("prepareTaskRepository")(function
     });
   }
   if (behind > 0) {
-    yield* run(input.process, input.cwd, "fastForward", ["merge", "--ff-only", upstream]);
+    yield* run(input.process, input.cwd, "fastForward", [
+      ...(input.disableHooks ? ["-c", "core.hooksPath=/dev/null"] : []),
+      "merge",
+      "--ff-only",
+      upstream,
+    ]);
   }
 
   const head = (yield* run(input.process, input.cwd, "head", [

@@ -66,6 +66,12 @@ import {
   type TaskBranchReservation,
 } from "../taskBranchReservation.ts";
 import { prepareTaskForVerification, prepareTaskRepository } from "../taskRepositoryPreparation.ts";
+import {
+  continueTaskRebaseInWorktree,
+  rebaseTaskBranchOntoPrimary,
+  type TaskRebaseOutcome,
+} from "../taskRebase.ts";
+import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 import { pmThreadIdForProject } from "./PmEventProjection.ts";
 import {
   DirectPublicationPort,
@@ -234,6 +240,19 @@ interface LandTaskParameters {
   readonly taskId: string;
 }
 
+interface RebaseTaskBranchParameters {
+  readonly taskId: string;
+}
+
+interface ContinueTaskRebaseParameters {
+  readonly taskId: string;
+}
+
+type TaskRebaseToolDetails = TaskRebaseOutcome & {
+  readonly taskId: string;
+  readonly sequence: number | null;
+};
+
 interface ReleaseParameters {
   readonly taskId: string;
   readonly workflow: string;
@@ -303,6 +322,9 @@ const textResult = <TDetails>(summary: string, details: TDetails): PmToolResult<
   content: [{ type: "text", text: summary }],
   details,
 });
+
+const describeRebasePaths = (paths: ReadonlyArray<string>): string =>
+  paths.length === 0 ? "an unclassified repository conflict" : paths.join(", ");
 
 const latestStageThreadId = (task: OrchestrationTask | undefined): ThreadId | null =>
   task?.stageThreadIds.at(-1) ?? null;
@@ -628,6 +650,113 @@ export const makePmToolExecutors = Effect.gen(function* () {
       });
     }
     return { vcsProcess: process.value };
+  });
+
+  const runTaskRebase = Effect.fn("PmTools.runTaskRebase")(function* (
+    taskId: TaskId,
+    mode: "start" | "continue",
+  ) {
+    if (Option.isNone(vcsProcess)) {
+      return yield* new PmToolExecutionError({
+        detail: "Task rebase git services are unavailable.",
+      });
+    }
+    if (mode === "continue" && Option.isNone(fileSystem)) {
+      return yield* new PmToolExecutionError({
+        detail: "Task rebase filesystem services are unavailable.",
+      });
+    }
+
+    return yield* withTaskLifecycleLock(
+      taskId,
+      Effect.gen(function* () {
+        const readModel = yield* snapshotQuery.getCommandReadModel();
+        const task = readModel.tasks.find(
+          (candidate) =>
+            candidate.id === taskId &&
+            candidate.archivedAt === null &&
+            candidate.deletedAt === null,
+        );
+        if (task === undefined) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' was not found.`,
+          });
+        }
+        if (task.status !== "review" || task.currentStageThreadId !== null) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' must be idle and in review before its branch can be rebased.`,
+          });
+        }
+        if (task.landing !== null) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' cannot be rebased after landing has started.`,
+          });
+        }
+        if (task.branch === null || task.worktreePath === null) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' does not own a branch and worktree.`,
+          });
+        }
+        if (task.changeReview?.status === "pending") {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' cannot be rebased while changes await PM review.`,
+          });
+        }
+        if (task.verification === null) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' has no verification to preserve across a rebase.`,
+          });
+        }
+        const project = readModel.projects.find(
+          (candidate) => candidate.id === task.projectId && candidate.deletedAt === null,
+        );
+        if (project === undefined) {
+          return yield* new PmToolExecutionError({
+            detail: `Task '${taskId}' does not belong to an active project.`,
+          });
+        }
+
+        const outcome = yield* (
+          mode === "start"
+            ? rebaseTaskBranchOntoPrimary({
+                primaryCheckoutPath: project.workspaceRoot,
+                worktreePath: task.worktreePath,
+                verifiedHead: task.verification.head,
+                process: vcsProcess.value,
+              })
+            : continueTaskRebaseInWorktree({
+                primaryCheckoutPath: project.workspaceRoot,
+                worktreePath: task.worktreePath,
+                verifiedHead: task.verification.head,
+                process: vcsProcess.value,
+                fileSystem: Option.getOrThrow(fileSystem),
+              })
+        ).pipe(Effect.mapError((cause) => new PmToolExecutionError({ detail: cause.detail })));
+        if (outcome.status !== "rebased") {
+          return { taskId, sequence: null, ...outcome } satisfies TaskRebaseToolDetails;
+        }
+
+        const worktreeCompletion = yield* inspectTaskWorktreeCompletion({
+          worktreePath: task.worktreePath,
+          process: vcsProcess.value,
+        });
+        const sequence = yield* dispatch({
+          type: "task.rebase",
+          commandId: yield* commandId(
+            mode === "start" ? "rebase-task-branch" : "continue-task-rebase",
+          ),
+          taskId,
+          baseHead: outcome.baseHead,
+          fromHead: outcome.fromHead,
+          toHead: outcome.toHead,
+          proofKind: outcome.proofKind,
+          paths: outcome.paths,
+          worktreeCompletion,
+          createdAt: yield* nowIso,
+        });
+        return { taskId, sequence, ...outcome } satisfies TaskRebaseToolDetails;
+      }),
+    );
   });
 
   const resolveDirectProject = Effect.fn("PmTools.resolveDirectProject")(function* (
@@ -1690,6 +1819,87 @@ export const makePmToolExecutors = Effect.gen(function* () {
       ),
   };
 
+  const rebaseTaskBranch: PmToolExecutor<RebaseTaskBranchParameters, TaskRebaseToolDetails> = {
+    name: "rebaseTaskBranch",
+    label: "Rebase verified task branch",
+    description:
+      "Rebase one clean, idle reviewed task onto refreshed primary. The server preserves verification only for byte-identical or documentation-only proof, leaves documentation conflicts for PM resolution, and aborts substantive conflicts.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const result = yield* runTaskRebase(TaskId.make(params.taskId.trim()), "start");
+          switch (result.status) {
+            case "already-current":
+              return textResult(
+                `Task ${result.taskId} already contains refreshed primary HEAD ${result.baseHead}; no rebase was needed.`,
+                result,
+              );
+            case "doc-conflicts":
+              return textResult(
+                `Task ${result.taskId} has documentation-only rebase conflicts in ${describeRebasePaths(result.paths)}. Resolve only those paths, then call continueTaskRebase.`,
+                result,
+              );
+            case "code-conflicts":
+              return textResult(
+                `Task ${result.taskId} had substantive rebase conflicts in ${describeRebasePaths(result.paths)}; the rebase was not applied. Return it to Work, then run a fresh Verify.`,
+                result,
+              );
+            case "proof-limit":
+              return textResult(
+                `Task ${result.taskId} would require proof for ${result.pathCount} changed paths, beyond the safe event limit; no rebase was applied. Return it to Work, then run a fresh Verify.`,
+                result,
+              );
+            case "rebased":
+              return textResult(
+                result.proofKind === "content"
+                  ? `Rebased task ${result.taskId}, but its content differs from verified HEAD outside the documentation allowlist. Return it to Work, then run a fresh Verify before landing.`
+                  : `Rebased task ${result.taskId} with ${result.proofKind} proof and preserved verification at ${result.toHead}.`,
+                result,
+              );
+          }
+        }),
+      ),
+  };
+
+  const continueTaskRebase: PmToolExecutor<ContinueTaskRebaseParameters, TaskRebaseToolDetails> = {
+    name: "continueTaskRebase",
+    label: "Continue task rebase",
+    description:
+      "Continue the server-owned rebase for a reviewed task after resolving its reported documentation-only conflicts. New substantive conflicts abort the rebase; substantive final drift requires Work and fresh Verify.",
+    execute: (_toolCallId, params) =>
+      runPromise(
+        Effect.gen(function* () {
+          const result = yield* runTaskRebase(TaskId.make(params.taskId.trim()), "continue");
+          switch (result.status) {
+            case "already-current":
+              return textResult(`Task ${result.taskId} needs no rebase continuation.`, result);
+            case "doc-conflicts":
+              return textResult(
+                `Task ${result.taskId} reached another documentation-only conflict in ${describeRebasePaths(result.paths)}. Resolve only those paths, then call continueTaskRebase again.`,
+                result,
+              );
+            case "code-conflicts":
+              return textResult(
+                `Task ${result.taskId} reached a substantive conflict in ${describeRebasePaths(result.paths)}; the entire rebase was aborted. Return it to Work, then run a fresh Verify.`,
+                result,
+              );
+            case "proof-limit":
+              return textResult(
+                `Task ${result.taskId} exceeded the safe rebase proof limit and was restored to verified HEAD. Return it to Work, then run a fresh Verify.`,
+                result,
+              );
+            case "rebased":
+              return textResult(
+                result.proofKind === "content"
+                  ? `Completed the rebase for task ${result.taskId}, but substantive content differs from verified HEAD. Return it to Work, then run a fresh Verify before landing.`
+                  : `Completed the rebase for task ${result.taskId} with ${result.proofKind} proof and preserved verification at ${result.toHead}.`,
+                result,
+              );
+          }
+        }),
+      ),
+  };
+
   const landTask: PmToolExecutor<
     LandTaskParameters,
     { taskId: string; sequence: number; alreadyLanded: boolean; alreadyInProgress: boolean }
@@ -1945,6 +2155,8 @@ export const makePmToolExecutors = Effect.gen(function* () {
     listPendingStageApprovals,
     respondToStageApproval,
     cancelTask,
+    rebaseTaskBranch,
+    continueTaskRebase,
     landTask,
     requestReleaseApproval,
     dispatchRelease,

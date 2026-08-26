@@ -31,6 +31,8 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "listPendingStageApprovals",
   "respondToStageApproval",
   "cancelTask",
+  "rebaseTaskBranch",
+  "continueTaskRebase",
   "landTask",
   "requestReleaseApproval",
   "dispatchRelease",
@@ -180,6 +182,12 @@ export const mcpInputSchemas = {
   },
   cancelTask: {
     taskId: z.string(),
+  },
+  rebaseTaskBranch: {
+    taskId: z.string().trim().min(1),
+  },
+  continueTaskRebase: {
+    taskId: z.string().trim().min(1),
   },
   landTask: {
     taskId: z.string(),

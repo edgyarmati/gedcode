@@ -1502,6 +1502,28 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-completion-records-test-"))
             }),
           );
           yield* append(
+            event("completion-rebase-docs", "task.rebased", {
+              taskId,
+              baseHead: "base-head",
+              fromHead: "abc123",
+              toHead: "def456",
+              proofKind: "docs-only",
+              paths: ["README.md"],
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
+            event("completion-rebase-content", "task.rebased", {
+              taskId,
+              baseHead: "newer-base",
+              fromHead: "def456",
+              toHead: "ghi789",
+              proofKind: "content",
+              paths: ["src/index.ts"],
+              updatedAt: occurredAt,
+            }),
+          );
+          yield* append(
             event("completion-no-change", "task.no-changes-needed", {
               taskId,
               baseHead: "abc123",
@@ -1538,7 +1560,7 @@ it.layer(makeProjectionPipelinePrefixedTestLayer("t3-completion-records-test-"))
           });
           assert.deepEqual(decodeTaskVerificationJson(rows[0]?.verification), {
             stageThreadId: verifyStageThreadId,
-            head: "abc123",
+            head: "def456",
             verifiedAt: occurredAt,
           });
           assert.deepEqual(decodeTaskNoChangesNeededJson(rows[0]?.noChangesNeeded), {

@@ -78,6 +78,7 @@ describe("classifyOrchestrationCommand", () => {
     ["task.delete", "task"],
     ["task.stage.start", "task"],
     ["task.stage.complete", "task"],
+    ["task.rebase", "task"],
     ["task.gate.request", "task"],
     ["task.gate.resolve", "task"],
     ["task.land", "task"],

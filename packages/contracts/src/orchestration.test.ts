@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  ClientOrchestrationCommand,
   ModelSelection,
   GedRoleModelSelections,
   GedRolePromptPrefixes,
@@ -25,6 +26,8 @@ import {
   OrchestrationReadModel,
   OrchestrationSession,
   OrchestrationTask,
+  OrchestrationTaskRebasePaths,
+  OrchestrationTaskRebaseProofKind,
   ProjectCreateCommand,
   ProjectContextRunContentDigest,
   PROJECT_CONTEXT_RUN_FAILURE_MAX_CHARS,
@@ -69,6 +72,9 @@ function getOptionValue(
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
+const decodeTaskRebasePaths = Schema.decodeUnknownEffect(OrchestrationTaskRebasePaths);
+const decodeTaskRebaseProofKind = Schema.decodeUnknownEffect(OrchestrationTaskRebaseProofKind);
 const encodeOrchestrationCommand = Schema.encodeEffect(OrchestrationCommand);
 const encodeOrchestrationEvent = Schema.encodeEffect(OrchestrationEvent);
 const decodeOrchestrationTask = Schema.decodeUnknownEffect(OrchestrationTask);
@@ -1795,5 +1801,56 @@ it.effect("thread fork RPC result rejects implicit filesystem rollback semantics
       }),
     );
     assert.strictEqual(exit._tag, "Failure");
+  }),
+);
+
+it.effect("task rebase command and event contracts remain bounded and internal", () =>
+  Effect.gen(function* () {
+    const command = {
+      type: "task.rebase",
+      commandId: "cmd-rebase",
+      taskId: "task-rebase",
+      baseHead: "base-head",
+      fromHead: "verified-head",
+      toHead: "rebased-head",
+      proofKind: "docs-only",
+      paths: [".ged/PROJECT.md", "docs/guide.md"],
+      worktreeCompletion: { head: "rebased-head", dirty: false },
+      createdAt: "2026-08-26T12:00:00.000Z",
+    };
+    const decodedCommand = yield* decodeOrchestrationCommand(command);
+    assert.strictEqual(decodedCommand.type, "task.rebase");
+    assert.strictEqual(
+      (yield* Effect.exit(decodeClientOrchestrationCommand(command)))._tag,
+      "Failure",
+    );
+    assert.strictEqual(yield* decodeTaskRebaseProofKind("identical"), "identical");
+    assert.strictEqual(
+      (yield* Effect.exit(decodeTaskRebasePaths(Array.from({ length: 257 }, () => "a.md"))))._tag,
+      "Failure",
+    );
+
+    const decodedEvent = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-rebase",
+      aggregateKind: "task",
+      aggregateId: "task-rebase",
+      type: "task.rebased",
+      occurredAt: command.createdAt,
+      commandId: command.commandId,
+      causationEventId: null,
+      correlationId: command.commandId,
+      metadata: {},
+      payload: {
+        taskId: command.taskId,
+        baseHead: command.baseHead,
+        fromHead: command.fromHead,
+        toHead: command.toHead,
+        proofKind: command.proofKind,
+        paths: command.paths,
+        updatedAt: command.createdAt,
+      },
+    });
+    assert.strictEqual(decodedEvent.type, "task.rebased");
   }),
 );
