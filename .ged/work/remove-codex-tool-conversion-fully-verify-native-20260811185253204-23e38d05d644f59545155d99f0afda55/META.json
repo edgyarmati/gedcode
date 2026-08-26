@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "workId": "remove-codex-tool-conversion-fully-verify-native-20260811185253204-23e38d05d644f59545155d99f0afda55",
+  "summary": "Remove Codex tool conversion fully, verify native governance and Plannotator planning, then release GedPi 0.20.0 if all gates pass.",
+  "createdAt": "2026-08-11T18:52:53.204Z",
+  "branch": "main",
+  "baseHead": "a7244168f5eb77a6da135634266ae72d82e6406c"
+}
