@@ -2040,6 +2040,22 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             return;
           }
 
+          case "task.rebased": {
+            const existingRow = yield* projectionTaskRepository.getById({
+              taskId: event.payload.taskId,
+            });
+            if (Option.isNone(existingRow)) return;
+            yield* projectionTaskRepository.upsert({
+              ...existingRow.value,
+              verification:
+                event.payload.proofKind === "content" || existingRow.value.verification === null
+                  ? existingRow.value.verification
+                  : { ...existingRow.value.verification, head: event.payload.toHead },
+              updatedAt: event.payload.updatedAt,
+            });
+            return;
+          }
+
           case "task.no-changes-needed": {
             const existingRow = yield* projectionTaskRepository.getById({
               taskId: event.payload.taskId,

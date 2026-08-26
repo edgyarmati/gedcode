@@ -688,6 +688,18 @@ export const OrchestrationTaskWorktreeCompletion = Schema.Struct({
 });
 export type OrchestrationTaskWorktreeCompletion = typeof OrchestrationTaskWorktreeCompletion.Type;
 
+export const OrchestrationTaskRebaseProofKind = Schema.Literals([
+  "identical",
+  "docs-only",
+  "content",
+]);
+export type OrchestrationTaskRebaseProofKind = typeof OrchestrationTaskRebaseProofKind.Type;
+
+export const OrchestrationTaskRebasePaths = Schema.Array(
+  TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+).check(Schema.isMaxLength(256));
+export type OrchestrationTaskRebasePaths = typeof OrchestrationTaskRebasePaths.Type;
+
 export const OrchestrationStageOwnershipViolationPaths = Schema.Array(
   TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
 ).check(Schema.isMaxLength(256));
@@ -1806,6 +1818,19 @@ const TaskVerificationRecordCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const TaskRebaseCommand = Schema.Struct({
+  type: Schema.Literal("task.rebase"),
+  commandId: CommandId,
+  taskId: TaskId,
+  baseHead: TrimmedNonEmptyString,
+  fromHead: TrimmedNonEmptyString,
+  toHead: TrimmedNonEmptyString,
+  proofKind: OrchestrationTaskRebaseProofKind,
+  paths: OrchestrationTaskRebasePaths,
+  worktreeCompletion: OrchestrationTaskWorktreeCompletion,
+  createdAt: IsoDateTime,
+});
+
 const TaskNoChangesNeededCommand = Schema.Struct({
   type: Schema.Literal("task.no-changes-needed"),
   commandId: CommandId,
@@ -2205,6 +2230,7 @@ const InternalOrchestrationCommand = Schema.Union([
   TaskChangeReviewRequestCommand,
   TaskChangeReviewResolveCommand,
   TaskVerificationRecordCommand,
+  TaskRebaseCommand,
   TaskNoChangesNeededCommand,
   TaskStageBlockCommand,
   TaskStageResumeCommand,
@@ -2302,6 +2328,7 @@ export const OrchestrationEventType = Schema.Literals([
   "task.change-review-requested",
   "task.change-review-resolved",
   "task.verification-recorded",
+  "task.rebased",
   "task.no-changes-needed",
   "task.stage-blocked",
   "task.stage-resumed",
@@ -2798,6 +2825,16 @@ export const TaskVerificationRecordedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const TaskRebasedPayload = Schema.Struct({
+  taskId: TaskId,
+  baseHead: TrimmedNonEmptyString,
+  fromHead: TrimmedNonEmptyString,
+  toHead: TrimmedNonEmptyString,
+  proofKind: OrchestrationTaskRebaseProofKind,
+  paths: OrchestrationTaskRebasePaths,
+  updatedAt: IsoDateTime,
+});
+
 export const TaskNoChangesNeededPayload = Schema.Struct({
   taskId: TaskId,
   baseHead: TrimmedNonEmptyString,
@@ -3181,6 +3218,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("task.verification-recorded"),
     payload: TaskVerificationRecordedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("task.rebased"),
+    payload: TaskRebasedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

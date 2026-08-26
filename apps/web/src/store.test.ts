@@ -910,6 +910,137 @@ describe("incremental orchestration updates", () => {
     expect(tasksOf(deleted)).toHaveLength(0);
   });
 
+  it("keeps streamed rebase verification semantics aligned with server projections", () => {
+    const projectId = ProjectId.make("project-rebase-store");
+    const taskId = TaskId.make("task-rebase-store");
+    const verifyThreadId = ThreadId.make("verify-rebase-store");
+    const verifiedAt = "2026-08-26T10:00:00.000Z";
+    const docsRebasedAt = "2026-08-26T10:05:00.000Z";
+    const contentRebasedAt = "2026-08-26T10:10:00.000Z";
+    const state = applyOrchestrationEvents(
+      makeEmptyState(),
+      [
+        makeEvent(
+          "task.created",
+          {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Rebase store",
+            branch: "orchestrator/task-rebase-store",
+            worktreePath: "/tmp/task-rebase-store",
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: verifiedAt,
+            updatedAt: verifiedAt,
+          },
+          { sequence: 1, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.verification-recorded",
+          {
+            taskId,
+            stageThreadId: verifyThreadId,
+            head: "verified-head",
+            verifiedAt,
+            updatedAt: verifiedAt,
+          },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.rebased",
+          {
+            taskId,
+            baseHead: "base-head",
+            fromHead: "verified-head",
+            toHead: "docs-head",
+            proofKind: "docs-only",
+            paths: ["README.md"],
+            updatedAt: docsRebasedAt,
+          },
+          { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.rebased",
+          {
+            taskId,
+            baseHead: "newer-base",
+            fromHead: "docs-head",
+            toHead: "content-head",
+            proofKind: "content",
+            paths: ["src/index.ts"],
+            updatedAt: contentRebasedAt,
+          },
+          { sequence: 4, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+
+    expect(selectTaskByRef(state, { environmentId: localEnvironmentId, taskId })).toMatchObject({
+      verification: { stageThreadId: verifyThreadId, head: "docs-head", verifiedAt },
+      updatedAt: contentRebasedAt,
+    });
+  });
+
+  it("removes a streamed superseded gate from unresolved task gates", () => {
+    const projectId = ProjectId.make("project-rebase-gate-store");
+    const taskId = TaskId.make("task-rebase-gate-store");
+    const gateId = GateId.make("gate-rebase-store");
+    const gateCreatedAt = "2026-08-26T10:00:00.000Z";
+    const state = applyOrchestrationEvents(
+      makeEmptyState(),
+      [
+        makeEvent(
+          "task.created",
+          {
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Rebase gate store",
+            branch: "orchestrator/task-rebase-gate-store",
+            worktreePath: "/tmp/task-rebase-gate-store",
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: gateCreatedAt,
+            updatedAt: gateCreatedAt,
+          },
+          { sequence: 1, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.gate-requested",
+          {
+            taskId,
+            gateId,
+            gate: "land",
+            contentHash: "verified-head",
+            pullRequest: { title: "Old proposal", body: "Pinned to old content." },
+            stageThreadId: null,
+            updatedAt: gateCreatedAt,
+          },
+          { sequence: 2, aggregateKind: "task", aggregateId: taskId },
+        ),
+        makeEvent(
+          "task.gate-superseded",
+          {
+            taskId,
+            gateId,
+            gate: "land",
+            reason: "The task branch was rebased onto a newer base HEAD.",
+            updatedAt: "2026-08-26T10:05:00.000Z",
+          },
+          { sequence: 3, aggregateKind: "task", aggregateId: taskId },
+        ),
+      ],
+      localEnvironmentId,
+    );
+
+    expect(selectPendingGateById(state, localEnvironmentId, gateId)?.status).toBe("superseded");
+    expect(
+      selectUnresolvedGatesForTaskRef(state, { environmentId: localEnvironmentId, taskId }),
+    ).toEqual([]);
+  });
+
   it("reduces cancellation progress and ignores failures without a reservation", () => {
     const projectId = ProjectId.make("project-cancellation-store");
     const taskId = TaskId.make("task-cancellation-store");

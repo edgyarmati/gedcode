@@ -2686,6 +2686,184 @@ it.effect("requestApproval preserves the exact pull request proposed for land", 
   }),
 );
 
+it.effect("rebaseTaskBranch derives and records identical proof from trusted Git state", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const verifiedHead = "b".repeat(40);
+    const baseHead = "a".repeat(40);
+    const rebasedHead = "c".repeat(40);
+    let headReads = 0;
+    const readModel = makeReadModel([
+      makeTask({
+        status: "review",
+        currentStageThreadId: null,
+        verification: { stageThreadId, head: verifiedHead, verifiedAt: now },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          vcsProcess: {
+            run: (input) => {
+              switch (input.operation) {
+                case "TaskRepositoryPreparation.status":
+                case "TaskRepositoryPreparation.fetch":
+                case "TaskRebase.status":
+                case "TaskRebase.rebase":
+                case "TaskRebase.completedStatus":
+                case "OrchestratorTaskCompletion.status":
+                  return Effect.succeed(vcsOutput());
+                case "TaskRepositoryPreparation.branch":
+                  return Effect.succeed(vcsOutput("main"));
+                case "TaskRepositoryPreparation.upstream":
+                  return Effect.succeed(vcsOutput("origin/main"));
+                case "TaskRepositoryPreparation.remote":
+                  return Effect.succeed(vcsOutput("https://github.com/acme/project.git"));
+                case "TaskRepositoryPreparation.aheadBehind":
+                  return Effect.succeed(vcsOutput("0 0"));
+                case "TaskRepositoryPreparation.head":
+                  return Effect.succeed(vcsOutput(baseHead));
+                case "TaskRebase.head":
+                  return Effect.succeed(vcsOutput(headReads++ === 0 ? verifiedHead : rebasedHead));
+                case "TaskRebase.currentBase":
+                  return Effect.succeed(vcsOutput("", 1));
+                case "TaskRebase.probe":
+                  return Effect.succeed(vcsOutput(`${"1".repeat(40)}\0`));
+                case "TaskRebase.probeProof":
+                  return Effect.succeed(vcsOutput());
+                case "TaskRebase.fromTree":
+                case "TaskRebase.toTree":
+                  return Effect.succeed(vcsOutput("1".repeat(40)));
+                case "OrchestratorTaskCompletion.head":
+                  return Effect.succeed(vcsOutput(rebasedHead));
+                default:
+                  return Effect.die(`Unexpected VcsProcess operation '${input.operation}'.`);
+              }
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "rebaseTaskBranch").execute("tool-rebase", { taskId }),
+    );
+
+    assert.strictEqual(dispatched.length, 1);
+    const command = dispatched[0];
+    assert.strictEqual(command?.type, "task.rebase");
+    if (command?.type !== "task.rebase") return;
+    assert.strictEqual(command.baseHead, baseHead);
+    assert.strictEqual(command.fromHead, verifiedHead);
+    assert.strictEqual(command.toHead, rebasedHead);
+    assert.strictEqual(command.proofKind, "identical");
+    assert.deepStrictEqual(command.paths, []);
+    assert.deepStrictEqual(command.worktreeCompletion, { head: rebasedHead, dirty: false });
+    assert.strictEqual(result.details.status, "rebased");
+    assert.strictEqual(result.details.sequence, 1);
+    assert.match(result.content[0]?.text ?? "", /preserved verification/);
+  }),
+);
+
+it.effect("rebaseTaskBranch aborts substantive conflicts without dispatching proof", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const verifiedHead = "b".repeat(40);
+    const baseHead = "a".repeat(40);
+    let headReads = 0;
+    const readModel = makeReadModel([
+      makeTask({
+        status: "review",
+        currentStageThreadId: null,
+        verification: { stageThreadId, head: verifiedHead, verifiedAt: now },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(
+      Effect.provide(
+        makeLayer(dispatched, readModel, null, {
+          vcsProcess: {
+            run: (input) => {
+              switch (input.operation) {
+                case "TaskRepositoryPreparation.status":
+                case "TaskRepositoryPreparation.fetch":
+                case "TaskRebase.status":
+                case "TaskRebase.abort":
+                  return Effect.succeed(vcsOutput());
+                case "TaskRepositoryPreparation.branch":
+                  return Effect.succeed(vcsOutput("main"));
+                case "TaskRepositoryPreparation.upstream":
+                  return Effect.succeed(vcsOutput("origin/main"));
+                case "TaskRepositoryPreparation.remote":
+                  return Effect.succeed(vcsOutput("https://github.com/acme/project.git"));
+                case "TaskRepositoryPreparation.aheadBehind":
+                  return Effect.succeed(vcsOutput("0 0"));
+                case "TaskRepositoryPreparation.head":
+                  return Effect.succeed(vcsOutput(baseHead));
+                case "TaskRebase.head":
+                  headReads += 1;
+                  return Effect.succeed(vcsOutput(verifiedHead));
+                case "TaskRebase.currentBase":
+                  return Effect.succeed(vcsOutput("", 1));
+                case "TaskRebase.probe":
+                  return Effect.succeed(vcsOutput(`${"1".repeat(40)}\0`));
+                case "TaskRebase.probeProof":
+                  return Effect.succeed(vcsOutput());
+                case "TaskRebase.rebase":
+                  return Effect.succeed(vcsOutput("", 1));
+                case "TaskRebase.conflicts":
+                  return Effect.succeed(vcsOutput("README.md\0src/app.ts\0"));
+                default:
+                  return Effect.die(`Unexpected VcsProcess operation '${input.operation}'.`);
+              }
+            },
+          },
+        }),
+      ),
+    );
+
+    const result = yield* Effect.promise(() =>
+      findTool(tools, "rebaseTaskBranch").execute("tool-rebase-conflict", { taskId }),
+    );
+
+    assert.strictEqual(headReads, 2);
+    assert.deepStrictEqual(dispatched, []);
+    assert.strictEqual(result.details.status, "code-conflicts");
+    assert.match(result.content[0]?.text ?? "", /rebase was not applied/);
+  }),
+);
+
+it.effect("rebaseTaskBranch refuses a task after landing has started", () =>
+  Effect.gen(function* () {
+    const dispatched: OrchestrationCommand[] = [];
+    const readModel = makeReadModel([
+      makeTask({
+        status: "review",
+        currentStageThreadId: null,
+        verification: { stageThreadId, head: "b".repeat(40), verifiedAt: now },
+        landing: {
+          status: "opening-pr",
+          failureMessage: null,
+          branchPushed: false,
+          updatedAt: now,
+        },
+      }),
+    ]);
+    const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched, readModel)));
+
+    const error = yield* Effect.promise(() =>
+      findTool(tools, "rebaseTaskBranch")
+        .execute("tool-rebase-after-land", { taskId })
+        .then(
+          () => null,
+          (cause) => cause,
+        ),
+    );
+
+    assert.match(String(error), /cannot be rebased after landing has started/);
+    assert.deepStrictEqual(dispatched, []);
+  }),
+);
+
 it.effect("landTask delegates one task.land command to the guarded landing executor", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];

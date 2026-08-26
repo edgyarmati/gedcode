@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix: Give the Orchestrator PM an explicit rebase ladder for post-verification target movement:
+  identical and documentation-only outcomes may preserve verification, while substantive conflicts
+  or content drift return to Work and a fresh Verify.
+
 - Fix: Stale Orchestrator approval gates can no longer be approved. A land gate is rejected unless
   its pinned content hash is the current verified head (the previously-tautological check allowed a
   gate opened before newer work to approve content it never covered), a plan gate is only

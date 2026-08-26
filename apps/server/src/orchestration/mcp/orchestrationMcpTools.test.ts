@@ -84,3 +84,18 @@ describe("orchestration MCP capability-tier inputs", () => {
     ).toBe(false);
   });
 });
+
+describe("orchestration MCP task rebase inputs", () => {
+  it.each(["rebaseTaskBranch", "continueTaskRebase"] as const)(
+    "exposes %s with only a trimmed nonempty task id",
+    (toolName) => {
+      expect(ORCHESTRATION_MCP_TOOL_NAMES).toContain(toolName);
+      expect(Object.keys(mcpInputSchemas[toolName])).toEqual(["taskId"]);
+
+      const schema = z.object(mcpInputSchemas[toolName]);
+      expect(schema.parse({ taskId: "  task-1  " })).toEqual({ taskId: "task-1" });
+      expect(schema.safeParse({ taskId: "" }).success).toBe(false);
+      expect(schema.safeParse({ taskId: "   " }).success).toBe(false);
+    },
+  );
+});

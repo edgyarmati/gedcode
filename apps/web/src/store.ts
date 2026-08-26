@@ -2468,6 +2468,16 @@ function applyEnvironmentOrchestrationEvent(
         updatedAt: event.payload.updatedAt,
       }));
 
+    case "task.rebased":
+      return updateTaskState(state, String(event.payload.taskId), (task) => ({
+        ...task,
+        verification:
+          event.payload.proofKind === "content" || task.verification === null
+            ? task.verification
+            : { ...task.verification, head: event.payload.toHead },
+        updatedAt: event.payload.updatedAt,
+      }));
+
     case "task.no-changes-needed":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
@@ -2589,6 +2599,17 @@ function applyEnvironmentOrchestrationEvent(
         });
       }
       return nextState;
+    }
+
+    case "task.gate-superseded": {
+      const gateKey = String(event.payload.gateId);
+      const existingGate = state.pendingGateById[gateKey];
+      if (existingGate === undefined) return state;
+      return writePendingGateState(state, {
+        ...existingGate,
+        status: "superseded",
+        resolvedAt: event.payload.updatedAt,
+      });
     }
 
     case "task.landed":

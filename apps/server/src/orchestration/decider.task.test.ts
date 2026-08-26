@@ -4485,4 +4485,162 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
         ]);
       }),
   );
+
+  it.effect("records a proven rebase and atomically supersedes an old land gate", () =>
+    Effect.gen(function* () {
+      const base = withFreshVerification(
+        yield* taskReadModel({ status: "review", currentStageThreadId: null }),
+      );
+      const readModel: OrchestrationReadModel = {
+        ...base,
+        pendingGates: [
+          {
+            gateId: asGateId("gate-before-rebase"),
+            taskId: asTaskId("task-1"),
+            gate: "land",
+            contentHash: "verified-head",
+            pullRequest: { title: "Old proposal", body: "Pinned to the old commit." },
+            stageThreadId: null,
+            status: "pending",
+            approvedHash: null,
+            decision: null,
+            origin: null,
+            requestedAt: now,
+            resolvedAt: null,
+          },
+          {
+            gateId: asGateId("approved-gate-before-rebase"),
+            taskId: asTaskId("task-1"),
+            gate: "land" as const,
+            contentHash: "verified-head",
+            pullRequest: { title: "Approved proposal", body: "Pinned to the old commit." },
+            stageThreadId: null,
+            status: "resolved" as const,
+            approvedHash: "verified-head",
+            decision: "approved" as const,
+            origin: "human" as const,
+            requestedAt: now,
+            resolvedAt: now,
+          },
+        ],
+      };
+
+      const events = toEvents(
+        yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "task.rebase",
+            commandId: asCommandId("cmd-rebase-docs"),
+            taskId: asTaskId("task-1"),
+            baseHead: "new-base",
+            fromHead: "verified-head",
+            toHead: "rebased-head",
+            proofKind: "docs-only",
+            paths: [".ged/work/root/TASKS.md", "docs/guide.md"],
+            worktreeCompletion: { head: "rebased-head", dirty: false },
+            createdAt: now,
+          },
+        }),
+      );
+
+      expect(events.map((event) => event.type)).toEqual([
+        "task.gate-superseded",
+        "task.gate-superseded",
+        "task.rebased",
+      ]);
+      expect(events[2]?.payload).toMatchObject({
+        fromHead: "verified-head",
+        toHead: "rebased-head",
+        proofKind: "docs-only",
+      });
+      const projected = yield* applyEvents(readModel, events);
+      expect(projected.pendingGates?.[0]?.status).toBe("superseded");
+      expect(projected.pendingGates?.[1]?.status).toBe("superseded");
+      expect(projected.tasks[0]?.verification).toEqual({
+        stageThreadId: asThreadId("thread-stage-verify-completed"),
+        head: "rebased-head",
+        verifiedAt: "2026-06-14T09:20:00.000Z",
+      });
+    }),
+  );
+
+  it.effect("rejects stale, no-op, dirty, and inconsistent rebase proofs", () =>
+    Effect.gen(function* () {
+      const fresh = withFreshVerification(
+        yield* taskReadModel({ status: "review", currentStageThreadId: null }),
+      );
+      const validCommand = {
+        type: "task.rebase" as const,
+        commandId: asCommandId("cmd-rebase-invalid"),
+        taskId: asTaskId("task-1"),
+        baseHead: "new-base",
+        fromHead: "verified-head",
+        toHead: "rebased-head",
+        proofKind: "identical" as const,
+        paths: [],
+        worktreeCompletion: { head: "rebased-head", dirty: false },
+        createdAt: now,
+      };
+      const cases = [
+        { readModel: fresh, command: { ...validCommand, toHead: "verified-head" } },
+        {
+          readModel: fresh,
+          command: { ...validCommand, worktreeCompletion: { head: "rebased-head", dirty: true } },
+        },
+        {
+          readModel: fresh,
+          command: {
+            ...validCommand,
+            proofKind: "docs-only" as const,
+            paths: ["nested/.ged/state.json"],
+          },
+        },
+        {
+          readModel: fresh,
+          command: { ...validCommand, proofKind: "content" as const, paths: ["README.md"] },
+        },
+        {
+          readModel: {
+            ...fresh,
+            tasks: [
+              {
+                ...fresh.tasks[0]!,
+                verification:
+                  fresh.tasks[0]!.verification === null
+                    ? null
+                    : {
+                        ...fresh.tasks[0]!.verification,
+                        head: "different-verified-head",
+                      },
+              },
+              ...fresh.tasks.slice(1),
+            ],
+          },
+          command: validCommand,
+        },
+        {
+          readModel: {
+            ...fresh,
+            tasks: [
+              {
+                ...fresh.tasks[0]!,
+                landing: {
+                  status: "opening-pr" as const,
+                  failureMessage: null,
+                  branchPushed: false,
+                  updatedAt: now,
+                },
+              },
+              ...fresh.tasks.slice(1),
+            ],
+          },
+          command: validCommand,
+        },
+      ];
+
+      for (const input of cases) {
+        expect((yield* Effect.exit(decideOrchestrationCommand(input)))._tag).toBe("Failure");
+      }
+    }),
+  );
 });

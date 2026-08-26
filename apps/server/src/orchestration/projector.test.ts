@@ -2060,6 +2060,108 @@ describe("orchestration projector", () => {
     expect(afterPrOpened.tasks[0]?.updatedAt).toBe(openedAt);
   });
 
+  it("re-pins verification only for identical and docs-only rebases", async () => {
+    const verifiedAt = "2026-08-26T10:00:00.000Z";
+    const rebasedAt = "2026-08-26T10:05:00.000Z";
+    let model = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(verifiedAt),
+        makeEvent({
+          sequence: 1,
+          type: "task.created",
+          aggregateKind: "task",
+          aggregateId: "task-rebase",
+          occurredAt: verifiedAt,
+          commandId: "cmd-create-rebase",
+          payload: {
+            taskId: "task-rebase",
+            projectId: "project-1",
+            taskType: "feature",
+            title: "Rebase task",
+            branch: "orchestrator/task-rebase",
+            worktreePath: "/tmp/task-rebase",
+            pmMessageId: null,
+            playbookVersion: null,
+            createdAt: verifiedAt,
+            updatedAt: verifiedAt,
+          },
+        }),
+      ),
+    );
+    model = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 2,
+          type: "task.verification-recorded",
+          aggregateKind: "task",
+          aggregateId: "task-rebase",
+          occurredAt: verifiedAt,
+          commandId: "cmd-verify-rebase",
+          payload: {
+            taskId: "task-rebase",
+            stageThreadId: "thread-verify-rebase",
+            head: "verified-head",
+            verifiedAt,
+            updatedAt: verifiedAt,
+          },
+        }),
+      ),
+    );
+    const docsOnly = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 3,
+          type: "task.rebased",
+          aggregateKind: "task",
+          aggregateId: "task-rebase",
+          occurredAt: rebasedAt,
+          commandId: "cmd-rebase-docs",
+          payload: {
+            taskId: "task-rebase",
+            baseHead: "base-head",
+            fromHead: "verified-head",
+            toHead: "docs-head",
+            proofKind: "docs-only",
+            paths: ["README.md"],
+            updatedAt: rebasedAt,
+          },
+        }),
+      ),
+    );
+    const content = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 3,
+          type: "task.rebased",
+          aggregateKind: "task",
+          aggregateId: "task-rebase",
+          occurredAt: rebasedAt,
+          commandId: "cmd-rebase-content",
+          payload: {
+            taskId: "task-rebase",
+            baseHead: "base-head",
+            fromHead: "verified-head",
+            toHead: "content-head",
+            proofKind: "content",
+            paths: ["src/index.ts"],
+            updatedAt: rebasedAt,
+          },
+        }),
+      ),
+    );
+
+    expect(docsOnly.tasks[0]?.verification).toEqual({
+      stageThreadId: "thread-verify-rebase",
+      head: "docs-head",
+      verifiedAt,
+    });
+    expect(content.tasks[0]?.verification).toEqual(model.tasks[0]?.verification);
+    expect(content.tasks[0]?.updatedAt).toBe(rebasedAt);
+  });
+
   it("replays task archive, restore, and delete tombstones without dropping history", async () => {
     const createdAt = "2026-07-12T06:00:00.000Z";
     const archivedAt = "2026-07-12T06:01:00.000Z";

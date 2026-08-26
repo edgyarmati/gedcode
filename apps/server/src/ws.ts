@@ -212,9 +212,11 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
       | "task.stage-interrupted"
       | "task.gate-requested"
       | "task.gate-resolved"
+      | "task.gate-superseded"
       | "task.cancellation-requested"
       | "task.cancellation-failed"
       | "task.cancellation-phase-completed"
+      | "task.rebased"
       | "task.landed"
       | "task.landing-retry-requested"
       | "task.pr-opened"
@@ -236,9 +238,11 @@ function isTaskEvent(event: OrchestrationEvent): event is Extract<
     event.type === "task.stage-interrupted" ||
     event.type === "task.gate-requested" ||
     event.type === "task.gate-resolved" ||
+    event.type === "task.gate-superseded" ||
     event.type === "task.cancellation-requested" ||
     event.type === "task.cancellation-failed" ||
     event.type === "task.cancellation-phase-completed" ||
+    event.type === "task.rebased" ||
     event.type === "task.landed" ||
     event.type === "task.landing-retry-requested" ||
     event.type === "task.pr-opened" ||

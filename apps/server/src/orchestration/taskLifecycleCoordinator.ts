@@ -31,7 +31,7 @@ function releaseLockEntry(taskId: TaskId, entry: TaskLockEntry): void {
 
 /**
  * Serializes destructive edges of an orchestrator task lifecycle: starting
- * its active worker, cancelling that worker/task, and landing the task. The
+ * its active worker, cancelling that worker/task, rebasing, and landing the task. The
  * durable event log remains the cross-restart source of truth; this lock
  * closes their in-process check/action races.
  */
