@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "migrationId": "durable-memory-v3",
+  "status": "complete",
+  "completedAt": "2026-08-11T15:31:46.335Z",
+  "entries": [
+    {
+      "sourcePath": ".ged/IDEAS.md",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/project-skills/README.md",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/research/README.md",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/specs/README.md",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/tasks/README.md",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/SKILLS-STATE.json",
+      "action": "removed-placeholder"
+    },
+    {
+      "sourcePath": ".ged/GLOSSARY.md",
+      "action": "migrated-context",
+      "sha256": "e0f826e8c943e8c760d220230a7a08f15119fa83a895351b9a884830199fa135",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/GLOSSARY.md",
+      "destinationPath": "CONTEXT.md"
+    },
+    {
+      "sourcePath": ".ged/DECISIONS.md",
+      "action": "migrated-decisions",
+      "sha256": "b4ec94bd6471ae9a98dc9814e17823f7fc9565ec5d11fb09d7a0bfa245a5de83",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/DECISIONS.md",
+      "destinationPath": "docs/adr/0000-migrated-ged-decisions-b4ec94bd6471.md"
+    },
+    {
+      "sourcePath": ".ged/CONTEXT-MAP.md",
+      "action": "retained-substantive",
+      "sha256": "cc1cc47f298e03229b338f9097e4d093b290a5df1a3b2be136469d18113d3dc4",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/CONTEXT-MAP.md",
+      "reason": "No unambiguous canonical destination; preserved in place."
+    },
+    {
+      "sourcePath": ".ged/ARCHITECTURE.md",
+      "action": "retained-substantive",
+      "sha256": "1a7ff0f1ec61aa49d39679d46bf9d5f2ee19f0af664960770e2d447fcfefecca",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/ARCHITECTURE.md",
+      "reason": "No unambiguous canonical destination; preserved in place."
+    },
+    {
+      "sourcePath": ".ged/PATTERNS.md",
+      "action": "retained-substantive",
+      "sha256": "67c8121e04b8ed39f7815773925e6b57ba5a65c1e07f2654b91d39e0e023252e",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/PATTERNS.md",
+      "reason": "No unambiguous canonical destination; preserved in place."
+    },
+    {
+      "sourcePath": ".ged/PROGRESS.md",
+      "action": "retained-substantive",
+      "sha256": "29a0ba8c7eb2000708d184e4a065db372d61972dbdc7e7814a761edf5542533e",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/PROGRESS.md",
+      "reason": "No unambiguous canonical destination; preserved in place."
+    },
+    {
+      "sourcePath": ".ged/SKILLS.md",
+      "action": "retained-substantive",
+      "sha256": "0cdd393d93e1a6ad1a11d3a62bd2786bb8efa52336a16914ae11a220900eefa2",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/SKILLS.md",
+      "reason": "No unambiguous canonical destination; preserved in place."
+    },
+    {
+      "sourcePath": ".ged/plans/INDEX.md",
+      "action": "retained-substantive",
+      "sha256": "1205bdf9abc70f1b47000d70a9812dccd3f590cc8e7d1899e13012553e169969",
+      "backupPath": ".ged/runtime/migrations/durable-memory-v3/backups/.ged/plans/INDEX.md",
+      "reason": "Legacy global artifact has no unambiguous canonical work destination."
+    }
+  ]
+}
