@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "workId": "smoke-test-the-redesigned-gedpi-workflow-then-pr-20260811164411703-390fca0fb086060308e6b5ddae42158a",
+  "summary": "Smoke-test the redesigned GedPi workflow, then prepare and publish release 0.20.0 if all release gates pass.",
+  "createdAt": "2026-08-11T16:44:11.704Z",
+  "branch": "main",
+  "baseHead": "a7244168f5eb77a6da135634266ae72d82e6406c"
+}
