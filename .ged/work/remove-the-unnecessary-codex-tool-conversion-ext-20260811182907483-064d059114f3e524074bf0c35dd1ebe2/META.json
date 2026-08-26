@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "workId": "remove-the-unnecessary-codex-tool-conversion-ext-20260811182907483-064d059114f3e524074bf0c35dd1ebe2",
+  "summary": "Remove the unnecessary Codex tool-conversion extension and add focused regression coverage for GedPi's native tool contract.",
+  "createdAt": "2026-08-11T18:29:07.484Z",
+  "branch": "main",
+  "baseHead": "a7244168f5eb77a6da135634266ae72d82e6406c"
+}
