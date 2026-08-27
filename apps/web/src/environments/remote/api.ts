@@ -56,6 +56,7 @@ async function fetchRemoteJson<T>(input: {
   readonly method?: "GET" | "POST";
   readonly bearerToken?: string;
   readonly body?: unknown;
+  readonly cache?: RequestCache;
 }): Promise<T> {
   const requestUrl = remoteEndpointUrl(input.httpBaseUrl, input.pathname);
   let response: Response;
@@ -66,6 +67,7 @@ async function fetchRemoteJson<T>(input: {
         ...(input.body !== undefined ? { "content-type": "application/json" } : {}),
         ...(input.bearerToken ? { authorization: `Bearer ${input.bearerToken}` } : {}),
       },
+      ...(input.cache ? { cache: input.cache } : {}),
       ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
     });
   } catch (error) {
@@ -119,6 +121,7 @@ export async function fetchRemoteEnvironmentDescriptor(input: {
   return fetchRemoteJson<ExecutionEnvironmentDescriptor>({
     httpBaseUrl: input.httpBaseUrl,
     pathname: "/.well-known/t3/environment",
+    cache: "no-store",
   });
 }
 

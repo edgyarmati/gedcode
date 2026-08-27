@@ -1,9 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "../../branding";
 
 const mockCreateEnvironmentConnection = vi.fn();
 const mockCreateWsRpcClient = vi.fn();
+const mockFetchRemoteEnvironmentDescriptor = vi.fn();
 const mockFetchRemoteSessionState = vi.fn();
 const mockWaitForSavedEnvironmentRegistryHydration = vi.fn();
 const mockListSavedEnvironmentRecords = vi.fn();
@@ -30,7 +32,7 @@ vi.mock("../primary", () => ({
 
 vi.mock("../remote/api", () => ({
   bootstrapRemoteBearerSession: vi.fn(),
-  fetchRemoteEnvironmentDescriptor: vi.fn(),
+  fetchRemoteEnvironmentDescriptor: mockFetchRemoteEnvironmentDescriptor,
   fetchRemoteSessionState: mockFetchRemoteSessionState,
   resolveRemoteWebSocketConnectionUrl: vi.fn(() => "ws://remote.example.test"),
 }));
@@ -161,6 +163,9 @@ const configSnapshot = {
   environment: {
     environmentId: savedRecord.environmentId,
     label: "Remote environment",
+    platform: { os: "linux", arch: "x64" },
+    serverVersion: APP_VERSION,
+    capabilities: { repositoryIdentity: true },
   },
 };
 
@@ -228,6 +233,7 @@ describe("saved environment startup", () => {
       authenticated: true,
       role: "owner",
     });
+    mockFetchRemoteEnvironmentDescriptor.mockResolvedValue(configSnapshot.environment);
     mockGetSavedEnvironmentRecord.mockImplementation((environmentId: EnvironmentId) =>
       environmentId === savedRecord.environmentId ? savedRecord : null,
     );

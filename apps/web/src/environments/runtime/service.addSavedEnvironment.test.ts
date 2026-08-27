@@ -1,5 +1,6 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "../../branding";
 
 let mockSavedRecords: Array<Record<string, unknown>> = [];
 
@@ -161,6 +162,9 @@ describe("addSavedEnvironment", () => {
     mockFetchRemoteEnvironmentDescriptor.mockResolvedValue({
       environmentId: EnvironmentId.make("environment-1"),
       label: "Remote environment",
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: APP_VERSION,
+      capabilities: { repositoryIdentity: true },
     });
     mockBootstrapRemoteBearerSession.mockResolvedValue({
       sessionToken: "bearer-token",
@@ -177,6 +181,9 @@ describe("addSavedEnvironment", () => {
     mockFetchSshEnvironmentDescriptor.mockResolvedValue({
       environmentId: EnvironmentId.make("environment-1"),
       label: "Remote environment",
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: APP_VERSION,
+      capabilities: { repositoryIdentity: true },
     });
     mockBootstrapSshBearerSession.mockResolvedValue({
       sessionToken: "ssh-bearer-token",
@@ -241,6 +248,30 @@ describe("addSavedEnvironment", () => {
     expect(mockSetSavedEnvironmentRegistry).toHaveBeenCalledWith([]);
     expect(mockUpsert).not.toHaveBeenCalled();
 
+    await resetEnvironmentServiceForTests();
+  });
+
+  it("rejects a mismatched server before pairing or opening subscriptions", async () => {
+    mockFetchRemoteEnvironmentDescriptor.mockResolvedValue({
+      environmentId: EnvironmentId.make("environment-1"),
+      label: "Remote environment",
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: "9.9.9",
+      capabilities: { repositoryIdentity: true },
+    });
+    const { addSavedEnvironment, resetEnvironmentServiceForTests } = await import("./service");
+
+    await expect(
+      addSavedEnvironment({
+        label: "Remote environment",
+        host: "remote.example.com",
+        pairingCode: "123456",
+      }),
+    ).rejects.toThrow("cannot connect to server 9.9.9");
+
+    expect(mockBootstrapRemoteBearerSession).not.toHaveBeenCalled();
+    expect(mockPersistSavedEnvironmentRecord).not.toHaveBeenCalled();
+    expect(mockCreateEnvironmentConnection).not.toHaveBeenCalled();
     await resetEnvironmentServiceForTests();
   });
 
@@ -315,6 +346,9 @@ describe("addSavedEnvironment", () => {
     mockFetchSshEnvironmentDescriptor.mockResolvedValue({
       environmentId: EnvironmentId.make("environment-2"),
       label: "Remote environment",
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: APP_VERSION,
+      capabilities: { repositoryIdentity: true },
     });
     mockSavedRecords = [
       {

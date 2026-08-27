@@ -11,6 +11,7 @@
     "*.tsbuildinfo",
     "**/routeTree.gen.ts",
     "apps/web/public/mockServiceWorker.js",
+    "apps/web/src/fixtures/published-releases",
     "apps/web/src/lib/vendor/qrcodegen.ts",
     "*.icon/**",
     "docs/research"

@@ -205,6 +205,7 @@ describe("remote environment api", () => {
       {
         method: "GET",
         headers: {},
+        cache: "no-store",
       },
     );
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://remote.example.com/api/auth/session", {

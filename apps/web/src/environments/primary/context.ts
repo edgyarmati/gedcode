@@ -7,6 +7,7 @@ import type { EnvironmentId, ExecutionEnvironmentDescriptor } from "@t3tools/con
 import { create } from "zustand";
 
 import { BootstrapHttpError, retryTransientBootstrap } from "./auth";
+import { assertCompatibleEnvironmentDescriptor } from "../../versionSkew";
 
 import { readPrimaryEnvironmentTarget, resolvePrimaryEnvironmentHttpUrl } from "./target";
 
@@ -50,6 +51,7 @@ async function fetchPrimaryEnvironmentDescriptor(): Promise<ExecutionEnvironment
   return retryTransientBootstrap(async () => {
     const response = await fetch(
       resolvePrimaryEnvironmentHttpUrl(SERVER_ENVIRONMENT_DESCRIPTOR_PATH),
+      { cache: "no-store" },
     );
     if (!response.ok) {
       throw new BootstrapHttpError({
@@ -58,7 +60,9 @@ async function fetchPrimaryEnvironmentDescriptor(): Promise<ExecutionEnvironment
       });
     }
 
-    const descriptor = (await response.json()) as ExecutionEnvironmentDescriptor;
+    const descriptor = assertCompatibleEnvironmentDescriptor(
+      (await response.json()) as ExecutionEnvironmentDescriptor,
+    );
     writePrimaryEnvironmentDescriptor(descriptor);
     return descriptor;
   });
@@ -93,7 +97,7 @@ export function getPrimaryKnownEnvironment(): KnownEnvironment | null {
 export function resolveInitialPrimaryEnvironmentDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
   const descriptor = readPrimaryEnvironmentDescriptor();
   if (descriptor) {
-    return Promise.resolve(descriptor);
+    return Promise.resolve(assertCompatibleEnvironmentDescriptor(descriptor));
   }
 
   if (primaryEnvironmentDescriptorPromise) {
