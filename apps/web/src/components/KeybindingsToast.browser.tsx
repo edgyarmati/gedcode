@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
+import { APP_VERSION } from "../branding";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { __resetLocalApiForTests } from "../localApi";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
@@ -64,7 +65,7 @@ function createBaseServerConfig(): ServerConfig {
       environmentId: LOCAL_ENVIRONMENT_ID,
       label: "Local environment",
       platform: { os: "darwin" as const, arch: "arm64" as const },
-      serverVersion: "0.0.0-test",
+      serverVersion: APP_VERSION,
       capabilities: { repositoryIdentity: true },
     },
     auth: {
@@ -250,7 +251,7 @@ function buildFixture(): TestFixture {
         environmentId: LOCAL_ENVIRONMENT_ID,
         label: "Local environment",
         platform: { os: "darwin" as const, arch: "arm64" as const },
-        serverVersion: "0.0.0-test",
+        serverVersion: APP_VERSION,
         capabilities: { repositoryIdentity: true },
       },
       cwd: "/repo/project",
