@@ -62,6 +62,7 @@ import {
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
+import { GedCodeVersionMismatchError } from "../versionSkew";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -178,6 +179,7 @@ function HostedStaticEnvironmentBootstrap() {
 }
 
 function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
+  const versionMismatch = error instanceof GedCodeVersionMismatchError;
   const message = errorMessage(error);
   const details = errorDetails(error);
 
@@ -193,16 +195,31 @@ function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
           {APP_DISPLAY_NAME}
         </p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
-          Something went wrong.
+          {versionMismatch ? "Update required." : "Something went wrong."}
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => reset()}>
-            Try again
-          </Button>
+          {versionMismatch ? (
+            <Button
+              size="sm"
+              onClick={() =>
+                window.open(
+                  "https://github.com/edgyarmati/gedcode/releases/latest",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+            >
+              Download latest GedCode
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => reset()}>
+              Try again
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-            Reload app
+            {versionMismatch ? "Reload after updating" : "Reload app"}
           </Button>
         </div>
 

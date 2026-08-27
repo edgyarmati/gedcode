@@ -10,8 +10,9 @@ Run local release gates and dispatch the GitHub Release workflow.
 Requirements:
   - clean git worktree
   - CHANGELOG.md contains a section for the resolved version
-  - gh CLI is installed and authenticated
-  - bun fmt, bun lint, bun typecheck, bun run test, and bun run release:smoke pass
+  - gh CLI is installed and authenticated for a real dispatch
+  - formatting, lint, typecheck, tests, release smoke, and dependency audit pass
+  - the reviewed local HEAD is still the exact origin/main SHA before dispatch
 
 Examples:
   ./release.sh stable patch
@@ -68,7 +69,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-if ! command -v gh >/dev/null 2>&1; then
+if [[ "$dry_run" == false ]] && ! command -v gh >/dev/null 2>&1; then
   echo "GitHub CLI (gh) is required to dispatch the release workflow." >&2
   exit 1
 fi
@@ -112,16 +113,45 @@ echo "  bump:    $bump"
 echo "  version: $version"
 echo "  repo:    $release_repository"
 
-bun fmt
+reviewed_sha="$(git rev-parse HEAD)"
+
+bun run fmt:check
 bun lint
 bun typecheck
 bun run test
+bun run release:versions:check
 bun run release:smoke
+bun run release:audit
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "Release gates changed the worktree; refusing to dispatch unreviewed files." >&2
+  git status --short >&2
+  exit 1
+fi
+
+if [[ "$(git rev-parse HEAD)" != "$reviewed_sha" ]]; then
+  echo "HEAD changed while release gates were running; review the new commit and retry." >&2
+  exit 1
+fi
+
+remote_main="$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')" || {
+  echo "Could not resolve origin/main without changing local refs." >&2
+  exit 1
+}
+if [[ "$remote_main" != "$reviewed_sha" ]]; then
+  echo "Reviewed local HEAD ($reviewed_sha) does not match origin/main ($remote_main)." >&2
+  echo "Update and review main before dispatching a release." >&2
+  exit 1
+fi
 
 if [[ "$dry_run" == true ]]; then
   echo "Dry run complete. Would dispatch .github/workflows/release.yml with version=$version"
   exit 0
 fi
 
-gh workflow run release.yml -R "$release_repository" --ref main -f version="$version"
+gh workflow run release.yml \
+  -R "$release_repository" \
+  --ref main \
+  -f version="$version" \
+  -f reviewed_sha="$reviewed_sha"
 echo "Dispatched release workflow for $version."

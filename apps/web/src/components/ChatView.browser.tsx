@@ -32,12 +32,14 @@ import { page, userEvent } from "vitest/browser";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
+import { APP_VERSION } from "../branding";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import { useComposerDraftStore, DraftId } from "../composerDraftStore";
 import {
   __resetEnvironmentApiOverridesForTests,
   __setEnvironmentApiOverrideForTests,
 } from "../environmentApi";
+import { resetPrimaryEnvironmentDescriptorForTests } from "../environments/primary";
 import {
   resetSavedEnvironmentRegistryStoreForTests,
   resetSavedEnvironmentRuntimeStoreForTests,
@@ -168,7 +170,7 @@ function createBaseServerConfig(): ServerConfig {
       environmentId: EnvironmentId.make("environment-local"),
       label: "Local environment",
       platform: { os: "darwin" as const, arch: "arm64" as const },
-      serverVersion: "0.0.0-test",
+      serverVersion: APP_VERSION,
       capabilities: { repositoryIdentity: true },
     },
     auth: {
@@ -503,7 +505,7 @@ function buildFixture(snapshot: OrchestrationReadModel): TestFixture {
         environmentId: EnvironmentId.make("environment-local"),
         label: "Local environment",
         platform: { os: "darwin" as const, arch: "arm64" as const },
-        serverVersion: "0.0.0-test",
+        serverVersion: APP_VERSION,
         capabilities: { repositoryIdentity: true },
       },
       cwd: "/repo/project",
@@ -638,6 +640,8 @@ function sendShellThreadUpsert(
   rpcHarness.emitStreamValue(ORCHESTRATION_WS_METHODS.subscribeShell, {
     kind: "thread-upserted",
     sequence: fixture.snapshot.snapshotSequence,
+    coveredSequenceStart: fixture.snapshot.snapshotSequence,
+    coveredSequenceEnd: fixture.snapshot.snapshotSequence,
     thread: shellThread,
   });
 }
@@ -1818,6 +1822,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
   afterEach(() => {
     customWsRpcResolver = null;
+    resetPrimaryEnvironmentDescriptorForTests();
     document.body.innerHTML = "";
   });
 
@@ -1948,49 +1953,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       expect(findButtonByText("Local checkout")).toBeNull();
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("keeps dismiss-only composer banners aligned on mobile", async () => {
-    const mounted = await mountChatView({
-      viewport: COMPACT_FOOTER_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-mobile-version-banner" as MessageId,
-        targetText: "mobile version banner",
-      }),
-      configureFixture: (nextFixture) => {
-        nextFixture.serverConfig = {
-          ...nextFixture.serverConfig,
-          environment: {
-            ...nextFixture.serverConfig.environment,
-            serverVersion: "9.9.9",
-          },
-        };
-      },
-    });
-
-    try {
-      const banner = await waitForElement(
-        () =>
-          Array.from(document.querySelectorAll<HTMLElement>('[data-slot="alert"]')).find(
-            (element) => element.textContent?.includes("Client and server versions differ"),
-          ) ?? null,
-        "Unable to find version mismatch banner.",
-      );
-      const title = banner.querySelector<HTMLElement>('[data-slot="alert-title"]');
-      const description = banner.querySelector<HTMLElement>('[data-slot="alert-description"]');
-      const dismissButton = banner.querySelector<HTMLButtonElement>(
-        'button[aria-label="Dismiss version mismatch warning"]',
-      );
-
-      expect(title).toBeTruthy();
-      expect(description).toBeTruthy();
-      expect(dismissButton).toBeTruthy();
-      expect(dismissButton!.getBoundingClientRect().top).toBeLessThan(
-        description!.getBoundingClientRect().top,
-      );
     } finally {
       await mounted.cleanup();
     }

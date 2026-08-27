@@ -1,6 +1,27 @@
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 
+export class PersistenceMigrationError extends Error {
+  readonly dbPath: string;
+  readonly backupPath: string | null;
+  override readonly cause: unknown;
+
+  constructor(input: {
+    readonly dbPath: string;
+    readonly backupPath: string | null;
+    readonly cause: unknown;
+  }) {
+    const recovery = input.backupPath
+      ? `A pre-migration backup is preserved at ${input.backupPath}. Quit GedCode before restoring it to ${input.dbPath}, and keep the backup until recovery is verified.`
+      : `The database remains at ${input.dbPath}. Do not delete or reset it; inspect the migration error before retrying.`;
+    super(`GedCode stopped because its data migration failed. ${recovery}`);
+    this.name = "PersistenceMigrationError";
+    this.dbPath = input.dbPath;
+    this.backupPath = input.backupPath;
+    this.cause = input.cause;
+  }
+}
+
 // ===============================
 // Core Persistence Errors
 // ===============================

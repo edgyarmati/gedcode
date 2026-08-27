@@ -1,0 +1,9 @@
+{
+  "key": "t3code:helper-dismissals:v1",
+  "version": 1,
+  "state": {
+    "dismissedAtByHelperKey": {
+      "release-fixture-environment:release-fixture-project\u0000release-fixture-helper": 1767225600000
+    }
+  }
+}

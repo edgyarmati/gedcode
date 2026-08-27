@@ -7,7 +7,8 @@ import * as Scope from "effect/Scope";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { it } from "@effect/vitest";
+import { assert } from "vitest";
 
 import * as CodexClient from "./client.ts";
 

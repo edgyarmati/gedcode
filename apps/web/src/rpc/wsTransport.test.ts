@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { APP_VERSION } from "../branding";
 import {
   __resetClientTracingForTests,
   configureClientTracing,
@@ -117,6 +118,12 @@ function createTransport(...args: ConstructorParameters<typeof WsTransport>): Ws
   return transport;
 }
 
+function expectedVersionedSocketUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  url.searchParams.set("clientVersion", APP_VERSION);
+  return url.toString();
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   sockets.length = 0;
@@ -163,7 +170,9 @@ describe("WsTransport", () => {
       expect(sockets).toHaveLength(1);
     });
 
-    expect(getSocket().url).toBe("ws://localhost:3020/ws?token=secret-token");
+    expect(getSocket().url).toBe(
+      expectedVersionedSocketUrl("ws://localhost:3020/ws?token=secret-token"),
+    );
     await transport.dispose();
   });
 
@@ -174,7 +183,7 @@ describe("WsTransport", () => {
       expect(sockets).toHaveLength(1);
     });
 
-    expect(getSocket().url).toBe("wss://app.example.com/ws");
+    expect(getSocket().url).toBe(expectedVersionedSocketUrl("wss://app.example.com/ws"));
     await transport.dispose();
   });
 
@@ -185,7 +194,7 @@ describe("WsTransport", () => {
       expect(sockets).toHaveLength(1);
     });
 
-    expect(getSocket().url).toBe("ws://192.168.1.44:3773/ws");
+    expect(getSocket().url).toBe(expectedVersionedSocketUrl("ws://192.168.1.44:3773/ws"));
     await transport.dispose();
   });
 
@@ -196,7 +205,9 @@ describe("WsTransport", () => {
       expect(sockets).toHaveLength(1);
     });
 
-    expect(getSocket().url).toBe("wss://remote.example.com/ws?wsToken=dynamic");
+    expect(getSocket().url).toBe(
+      expectedVersionedSocketUrl("wss://remote.example.com/ws?wsToken=dynamic"),
+    );
     await transport.dispose();
   });
 
@@ -211,7 +222,7 @@ describe("WsTransport", () => {
     expect(getWsConnectionStatus()).toMatchObject({
       attemptCount: 1,
       phase: "connecting",
-      socketUrl: "ws://localhost:3020/ws",
+      socketUrl: expectedVersionedSocketUrl("ws://localhost:3020/ws"),
     });
 
     socket.error();

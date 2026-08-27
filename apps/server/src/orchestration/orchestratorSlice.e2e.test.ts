@@ -256,17 +256,34 @@ function makePmRuntimeLayer(input: {
               : Option.some({ projectId, lastConsumedSequence, updatedAt: now });
           }),
         listConsumedSettlements: () => Effect.succeed([]),
+        getSettlement: ({ projectId, kind, settlementKey }) =>
+          Effect.sync(() => {
+            const key = `${projectId}:${kind}:${settlementKey}`;
+            return replayState.consumed.has(key)
+              ? Option.some({
+                  projectId,
+                  kind,
+                  settlementKey,
+                  consumedAt: now,
+                  status: "acted" as const,
+                  retryAttempts: 0,
+                  holdReason: null,
+                  nextRetryAt: null,
+                  deliveryEpisode: 0,
+                })
+              : Option.none();
+          }),
         listPending: () => Effect.succeed([]),
         recordDeliveryFailure: () => Effect.succeed(0),
         releaseDeliveryHolds: () => Effect.void,
         resetDeliveryRecovery: () => Effect.void,
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
-            input.consumeCalls.push(consumeInput);
             const key = `${consumeInput.projectId}:${consumeInput.kind}:${consumeInput.settlementKey}`;
             if (replayState.consumed.has(key)) {
               return false;
             }
+            input.consumeCalls.push(consumeInput);
             replayState.consumed.add(key);
             replayState.cursorByProject.set(
               String(consumeInput.projectId),

@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -143,11 +144,14 @@ function makeTask(input: {
   };
 }
 
-function makeProviderSession(threadId: ThreadId): ProviderSession {
+function makeProviderSession(
+  threadId: ThreadId,
+  status: ProviderSession["status"] = "running",
+): ProviderSession {
   return {
     provider,
     providerInstanceId,
-    status: "running",
+    status,
     runtimeMode: "full-access",
     threadId,
     activeTurnId: asTurnId("live-turn"),
@@ -159,6 +163,7 @@ function makeProviderSession(threadId: ThreadId): ProviderSession {
 function makeReadModel(input: {
   readonly tasks: ReadonlyArray<OrchestrationTask>;
   readonly threads?: ReadonlyArray<OrchestrationThread>;
+  readonly stageHistory?: OrchestrationReadModel["stageHistory"];
 }): OrchestrationReadModel {
   return {
     snapshotSequence: 1,
@@ -168,7 +173,7 @@ function makeReadModel(input: {
     projectContextRuns: [],
     pendingGates: [],
     quotaBlockedStages: [],
-    stageHistory: {},
+    stageHistory: input.stageHistory ?? {},
     updatedAt: now,
   };
 }
@@ -298,6 +303,75 @@ describe("OrphanTurnReconciler", () => {
       threadId: orphanThreadId,
       role: "work",
     });
+  });
+
+  it.each(["error", "closed"] as const)(
+    "treats a retained %s provider session as terminal rather than live",
+    (status) => {
+      const threadId = asThreadId(`stage-${status}`);
+      const readModel = makeReadModel({
+        tasks: [makeTask({ taskId: `task-${status}`, currentStageThreadId: threadId })],
+        threads: [makeThread({ threadId, activeTurnId: asTurnId(`turn-${status}`) })],
+      });
+
+      expect(
+        findOrphanedActiveStages({
+          readModel,
+          liveProviderSessions: [makeProviderSession(threadId, status)],
+        }),
+      ).toEqual([expect.objectContaining({ taskId: asTaskId(`task-${status}`), threadId })]);
+    },
+  );
+
+  it("defers orphan repair while a newly projected stage is inside its startup grace", async () => {
+    const taskId = asTaskId("task-starting");
+    const threadId = asThreadId("stage-starting");
+    const startedAt = DateTime.formatIso(await Effect.runPromise(DateTime.now));
+    const readModel = makeReadModel({
+      tasks: [makeTask({ taskId: String(taskId), currentStageThreadId: threadId })],
+      threads: [makeThread({ threadId, withSession: false })],
+      stageHistory: {
+        [threadId]: {
+          projectId,
+          taskId,
+          stageThreadId: threadId,
+          role: "work",
+          capabilityTier: "smart",
+          providerInstanceId,
+          model: "gpt-5-codex",
+          modelOptions: null,
+          status: "running",
+          startedAt,
+          endedAt: null,
+        },
+      },
+    });
+    const dispatched: OrchestrationCommand[] = [];
+    runtime = ManagedRuntime.make(
+      makeOrphanTurnReconcilerLive({
+        maxAttempts: 1,
+        retryDelayMs: 0,
+        stageStartupGraceMs: 60_000,
+      }).pipe(
+        Layer.provide(makeProjectionSnapshotQueryLayer(() => readModel)),
+        Layer.provide(makeProviderServiceLayer(() => [])),
+        Layer.provide(
+          Layer.succeed(OrchestrationEngineService, {
+            readEvents: () => Stream.empty,
+            dispatch: (command) => {
+              dispatched.push(command);
+              return Effect.succeed({ sequence: dispatched.length });
+            },
+            streamDomainEvents: Stream.empty,
+            streamShellEvents: Stream.empty,
+          }),
+        ),
+      ),
+    );
+
+    const reconciler = await runtime.runPromise(Effect.service(OrphanTurnReconciler));
+    expect(await runtime.runPromise(reconciler.reconcile())).toBe(0);
+    expect(dispatched).toEqual([]);
   });
 
   it("interrupts the thread session before settling the task stage with deterministic ids", async () => {

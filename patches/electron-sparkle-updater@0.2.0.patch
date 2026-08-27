@@ -1,0 +1,154 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index c535f6689ee5587da0d21f5a705fb85f41982f71..a81321de75f4f6ba5be8f151beb63489e72fe02d 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -5,7 +5,9 @@ export interface SparkleInitOptions {
+ export interface SparkleBridge {
+     init(options: SparkleInitOptions): boolean;
+     checkForUpdates(): void;
++    checkForUpdatesInBackgroundAndDownload(): void;
+     installUpdateNow(): void;
++    setFeedURL(url: string): boolean;
+     setAutomaticChecks(enabled: boolean): void;
+ }
+ interface ResolveSparkleAddonPathDeps {
+diff --git a/dist/index.js b/dist/index.js
+index 5b30e45b28eeedafac966592308b9756f38c48ab..2ad4f5953ef3a3666bb47425ec750cbc247646fa 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -27,7 +27,9 @@ export function loadSparkleBridge(deps) {
+         const addon = require(addonPath);
+         if (typeof addon.init !== "function" ||
+             typeof addon.checkForUpdates !== "function" ||
++            typeof addon.checkForUpdatesInBackgroundAndDownload !== "function" ||
+             typeof addon.installUpdateNow !== "function" ||
++            typeof addon.setFeedURL !== "function" ||
+             typeof addon.setAutomaticChecks !== "function") {
+             deps.log?.("addon loaded but missing expected exports, treating as unavailable");
+             return null;
+diff --git a/native/scripts/fetch-sparkle.sh b/native/scripts/fetch-sparkle.sh
+index d09d44ee7c6990c1ad55ce2c4f7f0b11f6153b43..8b738109d14f8a8499081b8e351fe4eb3a8fd590 100644
+--- a/native/scripts/fetch-sparkle.sh
++++ b/native/scripts/fetch-sparkle.sh
+@@ -1,9 +1,9 @@
+ #!/usr/bin/env bash
+ set -euo pipefail
+ 
+-SPARKLE_VERSION="2.9.4"
++SPARKLE_VERSION="2.9.6"
+ SPARKLE_URL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+-SPARKLE_SHA256="ce89daf967db1e1893ed3ebd67575ed82d3902563e3191ca92aaec9164fbdef9"
++SPARKLE_SHA256="52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ BRIDGE_DIR="$(dirname "$SCRIPT_DIR")"
+diff --git a/native/binding.gyp b/native/binding.gyp
+index 4a3af41..1b1e98d 100644
+--- a/native/binding.gyp
++++ b/native/binding.gyp
+@@ -20,6 +20,7 @@
+           "-framework Sparkle",
+           "-Wl,-rpath,@loader_path/../../vendor",
+           "-Wl,-rpath,@loader_path/../../../../../../Frameworks",
++          "-Wl,-rpath,@loader_path/../../../../../../../Frameworks",
+           "-Wl,-rpath,@loader_path/../../../../../../../../Frameworks"
+         ]
+       }
+diff --git a/native/src/sparkle_bridge.mm b/native/src/sparkle_bridge.mm
+index d94ec22ad5886585e2391b6c43d0c4370166bc71..fe980d3072792f69ff271e1aadca8c3ed255a873 100644
+--- a/native/src/sparkle_bridge.mm
++++ b/native/src/sparkle_bridge.mm
+@@ -224,14 +224,18 @@ - (void)showUpdateInFocus {
+   return Napi::Boolean::New(env, initialized);
+ }
+ 
+-void RunUpdateCheck(BOOL autoAccept) {
++void RunUpdateCheck(BOOL autoAccept, BOOL background) {
+   void (^work)(void) = ^{
+     if (g_updater == nil || g_userDriver == nil) return;
+     @try {
+-      NSLog(@"[sparkle-bridge] checkForUpdates: autoAccept=%d canCheckForUpdates=%d sessionInProgress=%d",
+-            autoAccept, g_updater.canCheckForUpdates, g_updater.sessionInProgress);
++      NSLog(@"[sparkle-bridge] checkForUpdates: autoAccept=%d background=%d canCheckForUpdates=%d sessionInProgress=%d",
++            autoAccept, background, g_updater.canCheckForUpdates, g_updater.sessionInProgress);
+       g_userDriver.autoAcceptFoundUpdate = autoAccept;
+-      [g_updater checkForUpdates];
++      if (background) {
++        [g_updater checkForUpdatesInBackground];
++      } else {
++        [g_updater checkForUpdates];
++      }
+     } @catch (NSException *exception) {
+       NSLog(@"[sparkle-bridge] checkForUpdates threw: %@", exception.reason);
+       g_userDriver.autoAcceptFoundUpdate = NO;
+@@ -247,16 +251,57 @@ void RunUpdateCheck(BOOL autoAccept) {
+ 
+ Napi::Value CheckForUpdates(const Napi::CallbackInfo &info) {
+   Napi::Env env = info.Env();
+-  RunUpdateCheck(NO);
++  RunUpdateCheck(NO, NO);
++  return env.Undefined();
++}
++
++Napi::Value CheckForUpdatesInBackgroundAndDownload(const Napi::CallbackInfo &info) {
++  Napi::Env env = info.Env();
++  // Auto-accept only the "update found" choice. Sparkle still forwards the
++  // ready-to-install UI through SPUStandardUserDriver, so installation and
++  // relaunch always require an explicit user confirmation.
++  RunUpdateCheck(YES, YES);
+   return env.Undefined();
+ }
+ 
+ Napi::Value InstallUpdateNow(const Napi::CallbackInfo &info) {
+   Napi::Env env = info.Env();
+-  RunUpdateCheck(YES);
++  RunUpdateCheck(YES, NO);
+   return env.Undefined();
+ }
+ 
++Napi::Value SetFeedURL(const Napi::CallbackInfo &info) {
++  Napi::Env env = info.Env();
++  if (info.Length() < 1 || !info[0].IsString()) {
++    Napi::TypeError::New(env, "setFeedURL(url) requires a string").ThrowAsJavaScriptException();
++    return Napi::Boolean::New(env, false);
++  }
++
++  NSString *feedUrl = NapiStringToNSString(info[0]);
++  __block BOOL updated = NO;
++  void (^work)(void) = ^{
++    if (g_updater == nil || feedUrl == nil) return;
++    @try {
++      NSURL *url = [NSURL URLWithString:feedUrl];
++      if (url == nil) return;
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++      [g_updater setFeedURL:url];
++#pragma clang diagnostic pop
++      updated = YES;
++    } @catch (NSException *exception) {
++      NSLog(@"[sparkle-bridge] setFeedURL threw: %@", exception.reason);
++    }
++  };
++
++  if ([NSThread isMainThread]) {
++    work();
++  } else {
++    dispatch_sync(dispatch_get_main_queue(), work);
++  }
++  return Napi::Boolean::New(env, updated);
++}
++
+ Napi::Value SetAutomaticChecks(const Napi::CallbackInfo &info) {
+   Napi::Env env = info.Env();
+ 
+@@ -288,7 +333,10 @@ void RunUpdateCheck(BOOL autoAccept) {
+ Napi::Object InitModule(Napi::Env env, Napi::Object exports) {
+   exports.Set(Napi::String::New(env, "init"), Napi::Function::New(env, Init));
+   exports.Set(Napi::String::New(env, "checkForUpdates"), Napi::Function::New(env, CheckForUpdates));
++  exports.Set(Napi::String::New(env, "checkForUpdatesInBackgroundAndDownload"),
++              Napi::Function::New(env, CheckForUpdatesInBackgroundAndDownload));
+   exports.Set(Napi::String::New(env, "installUpdateNow"), Napi::Function::New(env, InstallUpdateNow));
++  exports.Set(Napi::String::New(env, "setFeedURL"), Napi::Function::New(env, SetFeedURL));
+   exports.Set(Napi::String::New(env, "setAutomaticChecks"), Napi::Function::New(env, SetAutomaticChecks));
+   return exports;
+ }

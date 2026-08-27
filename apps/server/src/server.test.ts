@@ -916,6 +916,8 @@ const parseSessionCookieFromWsUrl = (
 
 const wsRpcProtocolLayer = (wsUrl: string) => {
   const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
+  const versionedUrl = new URL(url);
+  versionedUrl.searchParams.set("clientVersion", testEnvironmentDescriptor.serverVersion);
   const webSocketConstructorLayer = Layer.succeed(
     Socket.WebSocketConstructor,
     (socketUrl, protocols) =>
@@ -927,7 +929,9 @@ const wsRpcProtocolLayer = (wsUrl: string) => {
   );
 
   return RpcClient.layerProtocolSocket().pipe(
-    Layer.provide(Socket.layerWebSocket(url).pipe(Layer.provide(webSocketConstructorLayer))),
+    Layer.provide(
+      Socket.layerWebSocket(versionedUrl.toString()).pipe(Layer.provide(webSocketConstructorLayer)),
+    ),
     Layer.provide(RpcSerialization.layerJson),
   );
 };
@@ -1183,6 +1187,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const body = (yield* response.json) as typeof testEnvironmentDescriptor;
 
       assert.equal(response.status, 200);
+      assert.equal(response.headers["cache-control"], "no-store");
       assert.deepEqual(body, testEnvironmentDescriptor);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -1724,6 +1729,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
       assert.equal(response.auth.policy, "desktop-managed-local");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects mismatched websocket clients before any RPC handler is available", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* HttpClient.get("/ws?clientVersion=9.9.9");
+      const body = yield* response.text;
+
+      assert.equal(response.status, 409);
+      assertInclude(body, "client 9.9.9 cannot connect");
+      assert.equal(
+        response.headers["x-gedcode-server-version"],
+        testEnvironmentDescriptor.serverVersion,
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -24,8 +24,8 @@
       "@typescript/native-preview": "7.0.0-dev.20260527.2",
       "tsdown": "^0.20.3",
       "typescript": "~6.0.3",
-      "vitest": "^4.0.0",
-      "@vitest/coverage-v8": "^4.0.0"
+      "vitest": "4.1.11",
+      "@vitest/coverage-v8": "4.1.11"
     }
   },
   "type": "module",
@@ -57,6 +57,8 @@
     "release:build": "./build.sh",
     "release:dispatch": "./release.sh",
     "release:smoke": "node scripts/release-smoke.ts",
+    "release:versions:check": "bun scripts/check-release-package-versions.ts",
+    "release:audit": "node scripts/audit-production-dependencies.ts",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron packages/*/dist .turbo apps/*/.turbo packages/*/.turbo",
     "sync:vscode-icons": "node scripts/sync-vscode-icons.mjs"
   },
@@ -78,7 +80,15 @@
     "@effect/platform-node-shared": "catalog:",
     "@effect/sql-sqlite-bun": "catalog:",
     "@effect/vitest": "catalog:",
+    "@hono/node-server": "^1.19.17",
+    "body-parser": "^2.3.0",
     "effect": "catalog:",
+    "fast-uri": "^3.1.6",
+    "hono": "^4.13.5",
+    "ip-address": "^10.5.0",
+    "js-yaml": "^4.3.2",
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.26",
     "vite": "^8.0.0"
   },
   "engines": {
@@ -92,7 +102,8 @@
     ]
   },
   "patchedDependencies": {
-    "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch"
+    "effect@4.0.0-beta.73": "patches/effect@4.0.0-beta.73.patch",
+    "electron-sparkle-updater@0.2.0": "patches/electron-sparkle-updater@0.2.0.patch"
   },
   "trustedDependencies": [
     "node-pty",

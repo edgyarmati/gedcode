@@ -5,6 +5,7 @@ import desktopPackageJson from "../apps/desktop/package.json" with { type: "json
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { resolveDesktopReleaseTrack } from "@t3tools/shared/desktopReleaseTrack";
+import { SPARKLE_ED_PUBLIC_KEY, resolveSparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
 
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
@@ -225,7 +226,10 @@ interface StagePackageJson {
     readonly electron: string;
   };
   readonly overrides: Record<string, unknown>;
+  readonly patchedDependencies?: Record<string, string>;
 }
+
+const SPARKLE_UPDATER_PATCH = "patches/electron-sparkle-updater@0.2.0.patch";
 
 const AzureTrustedSigningOptionsConfig = Config.all({
   publisherName: Config.string("AZURE_TRUSTED_SIGNING_PUBLISHER_NAME"),
@@ -672,9 +676,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     forceCodeSigning: signed,
   };
   const releaseTrack = resolveDesktopReleaseTrack(version);
+  const sparkleAppcastUrl = resolveSparkleAppcastUrl(version);
+  const usesSparkle = platform === "mac" && sparkleAppcastUrl !== null && !mockUpdates;
   const publishConfig =
     releaseTrack === "dev" ? undefined : resolveGitHubPublishConfig(releaseTrack);
-  if (publishConfig) {
+  if (publishConfig && !usesSparkle) {
     buildConfig.publish = [publishConfig];
   } else if (mockUpdates) {
     buildConfig.publish = [
@@ -691,6 +697,31 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
     };
+    if (sparkleAppcastUrl !== null && !mockUpdates) {
+      buildConfig.files = ["!**/node_modules/electron-sparkle-updater/native/vendor/**"];
+      buildConfig.asarUnpack = [
+        "**/node_modules/electron-sparkle-updater/native/build/Release/*.node",
+      ];
+      buildConfig.extraFiles = [
+        {
+          from: "node_modules/electron-sparkle-updater/native/vendor/Sparkle.framework",
+          to: "Frameworks/Sparkle.framework",
+        },
+      ];
+      buildConfig.afterPack = "scripts/sparkle-after-pack.cjs";
+      buildConfig.dmg = { writeUpdateInfo: false };
+      macConfig.extendInfo = {
+        SUFeedURL: sparkleAppcastUrl,
+        SUPublicEDKey: SPARKLE_ED_PUBLIC_KEY,
+        SUEnableAutomaticChecks: false,
+        SUAllowsAutomaticUpdates: false,
+        SUAutomaticallyUpdate: false,
+        SUEnableInstallerLauncherService: false,
+        SUVerifyUpdateBeforeExtraction: true,
+        SURequireSignedFeed: true,
+        SUSignedFeedFailureExpirationInterval: 0,
+      };
+    }
     if (signed) {
       macConfig.hardenedRuntime = true;
       macConfig.gatekeeperAssess = false;
@@ -879,6 +910,23 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
 
+  if (
+    options.platform === "mac" &&
+    !options.mockUpdates &&
+    resolveSparkleAppcastUrl(appVersion) !== null
+  ) {
+    yield* fs.makeDirectory(path.join(stageAppDir, "scripts"), { recursive: true });
+    yield* fs.copy(
+      path.join(repoRoot, "scripts/sparkle-after-pack.cjs"),
+      path.join(stageAppDir, "scripts/sparkle-after-pack.cjs"),
+    );
+    yield* fs.makeDirectory(path.join(stageAppDir, "patches"), { recursive: true });
+    yield* fs.copy(
+      path.join(repoRoot, SPARKLE_UPDATER_PATCH),
+      path.join(stageAppDir, SPARKLE_UPDATER_PATCH),
+    );
+  }
+
   yield* assertPlatformBuildResources(
     options.platform,
     stageResourcesDir,
@@ -918,6 +966,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       electron: electronVersion,
     },
     overrides: resolvedOverrides,
+    ...(options.platform === "mac" &&
+    !options.mockUpdates &&
+    resolveSparkleAppcastUrl(appVersion) !== null
+      ? {
+          patchedDependencies: {
+            "electron-sparkle-updater@0.2.0": SPARKLE_UPDATER_PATCH,
+          },
+        }
+      : {}),
   };
 
   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
@@ -932,6 +989,22 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       shell: process.platform === "win32",
     })`bun install --production --omit optional`,
   );
+
+  if (
+    options.platform === "mac" &&
+    !options.mockUpdates &&
+    resolveSparkleAppcastUrl(appVersion) !== null
+  ) {
+    yield* Effect.log(
+      `[desktop-artifact] Building Sparkle native bridge (arch=${options.arch}, electron=${electronVersion})...`,
+    );
+    yield* runCommand(
+      ChildProcess.make({
+        cwd: stageAppDir,
+        ...commandOutputOptions(options.verbose),
+      })`node node_modules/electron-sparkle-updater/bin/electron-sparkle-updater.js rebuild --electron-version ${electronVersion} --arch ${options.arch}`,
+    );
+  }
 
   const buildEnv: NodeJS.ProcessEnv = {
     ...process.env,

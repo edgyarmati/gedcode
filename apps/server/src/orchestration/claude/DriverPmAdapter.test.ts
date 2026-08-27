@@ -17,6 +17,7 @@ import {
 import { assert, describe, it } from "@effect/vitest";
 import type * as CodexSchema from "effect-codex-app-server/schema";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -26,6 +27,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
+import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
@@ -868,6 +870,101 @@ describe("DriverPmAdapter", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("owns the prompt before sendTurn can synchronously emit its terminal event", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const sendTurnCalled = yield* Deferred.make<void>();
+      const allowSendTurnReturn = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const turnId = TurnId.make("turn-terminal-before-send-return");
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sendTurnCalled, undefined);
+            yield* Deferred.await(allowSendTurnReturn);
+            return { threadId, turnId };
+          }),
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const promptFiber = yield* adapter.prompt("Plan the task.").pipe(Effect.forkChild);
+      yield* Deferred.await(sendTurnCalled);
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.completed",
+          turnId,
+          payload: { state: "completed", stopReason: "stop" },
+        }),
+      );
+      while (!(yield* adapter.isIdle)) {
+        yield* Effect.yieldNow;
+      }
+      yield* Deferred.succeed(allowSendTurnReturn, undefined);
+
+      const assistant = yield* Fiber.join(promptFiber);
+      assert.strictEqual(assistant.role, "assistant");
+      assert.strictEqual(yield* adapter.isIdle, true);
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("releases prompt ownership when sendTurn fails", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const threadId = pmThreadIdForProject(project);
+      let sendAttempts = 0;
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () => {
+          sendAttempts += 1;
+          return Effect.fail(
+            new ProviderAdapterRequestError({
+              provider: String(provider),
+              method: "sendTurn",
+              detail: "send failed",
+            }),
+          );
+        },
+        interruptTurn: () => Effect.void,
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const firstError = yield* adapter.prompt("First.").pipe(Effect.flip);
+      assert.strictEqual(firstError.operation, "DriverPmAdapter.prompt");
+      assert.strictEqual(yield* adapter.isIdle, true);
+      const secondError = yield* adapter.prompt("Second.").pipe(Effect.flip);
+      assert.strictEqual(secondError.operation, "DriverPmAdapter.prompt");
+      assert.strictEqual(sendAttempts, 2);
+      assert.strictEqual(yield* adapter.isIdle, true);
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("fails a PM turn that never completes after the watchdog timeout", () =>
     Effect.gen(function* () {
       const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -920,6 +1017,84 @@ describe("DriverPmAdapter", () => {
       );
       assert.strictEqual(yield* adapter.isIdle, true);
 
+      yield* adapter.abort;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("interrupts and quarantines a timed-out turn without settling its successor", () =>
+    Effect.gen(function* () {
+      const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+      const firstSendCalled = yield* Deferred.make<void>();
+      const secondSendCalled = yield* Deferred.make<void>();
+      const threadId = pmThreadIdForProject(project);
+      const firstTurnId = TurnId.make("turn-timeout-first");
+      const secondTurnId = TurnId.make("turn-timeout-second");
+      const interruptCalls: Array<TurnId | undefined> = [];
+      let sendCount = 0;
+
+      const providerAdapter: DriverPmProviderAdapter = {
+        provider,
+        startSession: () => Effect.succeed(providerSession(threadId)),
+        sendTurn: () =>
+          Effect.gen(function* () {
+            sendCount += 1;
+            if (sendCount === 1) {
+              yield* Deferred.succeed(firstSendCalled, undefined);
+              return { threadId, turnId: firstTurnId };
+            }
+            yield* Deferred.succeed(secondSendCalled, undefined);
+            return { threadId, turnId: secondTurnId };
+          }),
+        interruptTurn: (_threadId, turnId) =>
+          Effect.sync(() => {
+            interruptCalls.push(turnId);
+          }),
+        stopSession: () => Effect.void,
+        listSessions: () => Effect.succeed([]),
+        hasSession: () => Effect.succeed(true),
+      };
+      const adapter = yield* makeDriverPmAdapter({
+        project,
+        driverKind: provider,
+        providerAdapter,
+        runtimeEvents: Stream.fromQueue(runtimeEvents),
+        modelSelection,
+        turnTimeout: Duration.seconds(1),
+      }).pipe(Effect.provide(emptyDirectoryLayer));
+
+      const firstPrompt = yield* adapter.prompt("First.").pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(firstSendCalled);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(Duration.seconds(1));
+      const timeoutError = yield* Fiber.join(firstPrompt);
+      assert.match(timeoutError.detail, /did not complete within/);
+      assert.deepStrictEqual(interruptCalls, [firstTurnId]);
+
+      const secondPrompt = yield* adapter.prompt("Second.").pipe(Effect.forkChild);
+      yield* Deferred.await(secondSendCalled);
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.completed",
+          turnId: firstTurnId,
+          payload: { state: "completed", stopReason: "stop" },
+        }),
+      );
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* adapter.isIdle, false);
+      assert.strictEqual(secondPrompt.pollUnsafe(), undefined);
+
+      yield* Queue.offer(
+        runtimeEvents,
+        makeEvent({
+          type: "turn.completed",
+          turnId: secondTurnId,
+          payload: { state: "completed", stopReason: "stop" },
+        }),
+      );
+      yield* Fiber.join(secondPrompt);
+      assert.strictEqual(yield* adapter.isIdle, true);
       yield* adapter.abort;
     }).pipe(Effect.scoped),
   );

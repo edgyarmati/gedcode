@@ -50,6 +50,22 @@ layer("PmRuntimeStateRepository", (it) => {
         })),
         [{ settlementKey: "thread-1::turn-1", status: "pending" }],
       );
+      const settlement = yield* repository.getSettlement({
+        projectId,
+        kind: "stage",
+        settlementKey: "thread-1::turn-1",
+      });
+      assert.ok(Option.isSome(settlement));
+      assert.strictEqual(settlement.value.status, "pending");
+      assert.ok(
+        Option.isNone(
+          yield* repository.getSettlement({
+            projectId,
+            kind: "stage",
+            settlementKey: "missing",
+          }),
+        ),
+      );
     }),
   );
 

@@ -102,6 +102,10 @@
     "./desktopReleaseTrack": {
       "types": "./src/desktopReleaseTrack.ts",
       "import": "./src/desktopReleaseTrack.ts"
+    },
+    "./sparkleUpdate": {
+      "types": "./src/sparkleUpdate.ts",
+      "import": "./src/sparkleUpdate.ts"
     }
   },
   "scripts": {
