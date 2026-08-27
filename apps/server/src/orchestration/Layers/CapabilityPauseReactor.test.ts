@@ -165,6 +165,7 @@ describe("CapabilityPauseReactor", () => {
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery, {
             getCommandReadModel: () => Effect.succeed(model),
+            getOrchestratorProjectSnapshotBasis: () => unsupported(),
             getSnapshot: () => Effect.succeed(model),
             getShellSnapshot: () => unsupported(),
             getArchivedShellSnapshot: () => unsupported(),

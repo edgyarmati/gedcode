@@ -10,6 +10,7 @@ import type {
   CheckpointRef,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
+  OrchestratorProjectDetailSnapshot,
   OrchestrationProjectShell,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
@@ -51,6 +52,15 @@ export interface ProjectionFullThreadDiffContext {
 }
 
 /**
+ * The durable projection data needed to bootstrap one Orchestrator project.
+ * Provider quota state is intentionally decorated at the WebSocket boundary.
+ */
+export type ProjectionOrchestratorProjectSnapshotBasis = Omit<
+  OrchestratorProjectDetailSnapshot,
+  "pmQuotaBlock"
+>;
+
+/**
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
 export interface ProjectionSnapshotQueryShape {
@@ -60,6 +70,17 @@ export interface ProjectionSnapshotQueryShape {
    */
   readonly getCommandReadModel: () => Effect.Effect<
     OrchestrationReadModel,
+    ProjectionRepositoryError
+  >;
+
+  /**
+   * Read one project's lightweight orchestration state and complete PM thread
+   * body from a single coherent projection transaction.
+   */
+  readonly getOrchestratorProjectSnapshotBasis: (
+    projectId: ProjectId,
+  ) => Effect.Effect<
+    Option.Option<ProjectionOrchestratorProjectSnapshotBasis>,
     ProjectionRepositoryError
   >;
 

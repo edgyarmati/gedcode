@@ -120,6 +120,7 @@ import { PmRuntimeError } from "./orchestration/pm/Errors.ts";
 import { OrchestrationListenerCallbackError } from "./orchestration/Errors.ts";
 import {
   ProjectionSnapshotQuery,
+  type ProjectionOrchestratorProjectSnapshotBasis,
   type ProjectionSnapshotQueryShape,
 } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
@@ -238,6 +239,40 @@ const makeDefaultOrchestrationReadModel = () => {
     quotaBlockedStages: [],
     stageHistory: {},
   };
+};
+
+const makeProjectSnapshotBasis = (
+  snapshot: OrchestrationReadModel,
+  projectId: ProjectId,
+): Option.Option<ProjectionOrchestratorProjectSnapshotBasis> => {
+  const project = snapshot.projects.find((entry) => entry.id === projectId);
+  if (project === undefined) {
+    return Option.none();
+  }
+  const tasks = snapshot.tasks.filter(
+    (task) => task.projectId === projectId && task.archivedAt === null && task.deletedAt === null,
+  );
+  const taskIds = new Set(tasks.map((task) => String(task.id)));
+  const pmThreadId = ThreadId.make(`pm:${projectId}`);
+
+  return Option.some({
+    snapshotSequence: snapshot.snapshotSequence,
+    project,
+    pmThreadId,
+    pmThread: snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null,
+    tasks,
+    helperRuns: (snapshot.helperRuns ?? []).filter((run) => run.projectId === projectId),
+    projectContextRuns: snapshot.projectContextRuns.filter((run) => run.projectId === projectId),
+    pendingGates: (snapshot.pendingGates ?? []).filter((gate) => taskIds.has(String(gate.taskId))),
+    quotaBlockedStages: snapshot.quotaBlockedStages.filter((stage) =>
+      taskIds.has(String(stage.taskId)),
+    ),
+    stageHistory: Object.fromEntries(
+      Object.entries(snapshot.stageHistory).filter(([, stage]) =>
+        taskIds.has(String(stage.taskId)),
+      ),
+    ),
+  });
 };
 
 const makeDefaultOrchestrationThreadShell = (
@@ -783,6 +818,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery)({
           getCommandReadModel: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
+          getOrchestratorProjectSnapshotBasis: () => Effect.succeed(Option.none()),
           getSnapshot: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
           getShellSnapshot: () =>
             Effect.succeed({
@@ -3939,8 +3975,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           projectionSnapshotQuery: {
-            getSnapshot: () => Effect.succeed(snapshot),
+            getSnapshot: () =>
+              Effect.die("orchestrator subscriptions must not load full snapshots"),
             getCommandReadModel: () => Effect.succeed(snapshot),
+            getOrchestratorProjectSnapshotBasis: (requestedProjectId) =>
+              Effect.sync(() => makeProjectSnapshotBasis(snapshot, requestedProjectId)),
           },
           orchestrationEngine: {
             dispatch: (command) =>
@@ -4742,7 +4781,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const liveEvents = yield* Queue.unbounded<OrchestrationEvent>();
       let isLiveSubscriberAttached = false;
       const baseSnapshot = makeDefaultOrchestrationReadModel();
-      const snapshot = {
+      const snapshot: OrchestrationReadModel = {
         ...baseSnapshot,
         projects: baseSnapshot.projects.map((project) => ({ ...project, id: projectId })),
         threads: [
@@ -4779,10 +4818,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           projectionSnapshotQuery: {
-            getSnapshot: () =>
+            getSnapshot: () => Effect.die("project subscriptions must not load full snapshots"),
+            getOrchestratorProjectSnapshotBasis: (requestedProjectId) =>
               Deferred.succeed(snapshotStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseSnapshot)),
-                Effect.as(snapshot),
+                Effect.as(makeProjectSnapshotBasis(snapshot, requestedProjectId)),
               ),
           },
           orchestrationEngine: {
@@ -4843,7 +4883,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("subscribeTask loses a durable event emitted while its snapshot is loading", () =>
+  it.effect("subscribeTask delivers a durable event emitted while its snapshot is loading", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";
       const projectId = ProjectId.make("project-task-snapshot-live-race");
@@ -4906,7 +4946,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           projectionSnapshotQuery: {
-            getSnapshot: () =>
+            getSnapshot: () => Effect.die("task subscriptions must not load full snapshots"),
+            getCommandReadModel: () =>
               Deferred.succeed(snapshotStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseSnapshot)),
                 Effect.as(snapshot),
@@ -6556,7 +6597,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           payload: { threadId: pmThreadId, activity: replayActivity },
         };
         const baseSnapshot = makeDefaultOrchestrationReadModel();
-        const snapshot = {
+        const snapshot: OrchestrationReadModel = {
           ...baseSnapshot,
           projects: baseSnapshot.projects.map((project) => ({ ...project, id: projectId })),
           threads: [
@@ -6575,7 +6616,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         yield* buildAppUnderTest({
           layers: {
             projectionSnapshotQuery: {
-              getSnapshot: () => Effect.succeed(snapshot),
+              getSnapshot: () => Effect.die("project subscriptions must not load full snapshots"),
+              getOrchestratorProjectSnapshotBasis: (requestedProjectId) =>
+                Effect.succeed(makeProjectSnapshotBasis(snapshot, requestedProjectId)),
             },
             orchestrationEngine: {
               readEvents: () => Stream.make(replayEvent),
