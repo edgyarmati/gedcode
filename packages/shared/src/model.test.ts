@@ -241,6 +241,7 @@ describe("formatModelOptionsSuffix", () => {
       "Reasoning High",
     );
     expect(formatModelOptionsSuffix([{ id: "effort", value: "max" }])).toBe("Reasoning Max");
+    expect(formatModelOptionsSuffix([{ id: "variant", value: "high" }])).toBe("Reasoning High");
   });
 
   it("labels the thinking toggle on and off", () => {
@@ -254,7 +255,7 @@ describe("formatModelOptionsSuffix", () => {
         { id: "thinking", value: true },
         { id: "reasoningEffort", value: "xhigh" },
       ]),
-    ).toBe("Reasoning Xhigh · Thinking On");
+    ).toBe("Reasoning Extra High · Thinking On");
   });
 
   it("shows a single reasoning label when several driver aliases are set", () => {

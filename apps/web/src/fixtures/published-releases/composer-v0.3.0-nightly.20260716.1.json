@@ -1,0 +1,16 @@
+{
+  "key": "t3code:composer-drafts:v1",
+  "version": 7,
+  "state": {
+    "draftsByThreadKey": {
+      "release-fixture-environment:release-fixture-thread": {
+        "prompt": "published draft from v0.3.0-nightly.20260716.1",
+        "attachments": []
+      }
+    },
+    "draftThreadsByThreadKey": {},
+    "logicalProjectDraftThreadKeyByLogicalProjectKey": {},
+    "stickyModelSelectionByProvider": {},
+    "stickyActiveProvider": null
+  }
+}

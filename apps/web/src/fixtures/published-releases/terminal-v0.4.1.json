@@ -1,0 +1,26 @@
+{
+  "key": "t3code:terminal-state:v1",
+  "version": 2,
+  "state": {
+    "terminalStateByThreadKey": {
+      "release-fixture-environment:release-fixture-thread": {
+        "terminalOpen": true,
+        "terminalHeight": 321,
+        "terminalIds": [
+          "default"
+        ],
+        "runningTerminalIds": [],
+        "activeTerminalId": "default",
+        "terminalGroups": [
+          {
+            "id": "group-default",
+            "terminalIds": [
+              "default"
+            ]
+          }
+        ],
+        "activeTerminalGroupId": "group-default"
+      }
+    }
+  }
+}

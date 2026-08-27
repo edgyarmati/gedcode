@@ -20,6 +20,21 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   bridge install. Release automation verifies the embedded public key, native bridge/framework,
   complete ad-hoc signature, generated appcast, and archive signature before publication.
 
+- Change: Require an exact GedCode client/server version match before WebSocket RPC starts.
+  Mismatched clients now stop at an update-required screen with reload/download guidance instead of
+  subscribing with incompatible schemas.
+
+- Fix: Protect updates with retained pre-migration SQLite backups and immutable forward-migration
+  fixtures generated from every distinct published stable and nightly GedCode release schema and
+  per-release browser payloads. Migration failures stop startup with recovery paths and never reset
+  user data; the existing one-time `~/.t3` import remains supported.
+
+- Fix/UI: Keep provider health and durable task state consistent in Orchestrator views: warning
+  providers remain selectable with a visible warning, errored providers are blocked without silently
+  remapping an existing selection, streamed verification moves tasks to Review, embedded diff
+  selection is scoped by environment/thread/stage, and OpenCode variants plus Codex Extra High are
+  rendered in reasoning labels.
+
 - Fix: Give the Orchestrator PM an explicit rebase ladder for post-verification target movement:
   identical and documentation-only outcomes may preserve verification, while substantive conflicts
   or content drift return to Work and a fresh Verify.
@@ -33,16 +48,18 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   shown with a "Superseded" badge instead of Approve/Reject buttons, and stop counting toward PM
   settlement accounting.
 
-- Fix: Recover a missed stage-completed settlement on the next reconciliation sweep without an app
-  restart. Stage completions flip their projection row before the event is published, so a lost
-  live delivery was previously invisible to the redrive sweep forever; the sweep now replays
-  indexed stage completions that have no durable consumption marker, exactly once.
+- Fix: Recover missed Orchestrator settlements on the next reconciliation sweep even when a later
+  event already advanced the project's cursor. Per-settlement markers are now authoritative, acted
+  events are pruned from the in-memory reconciliation index, and each sweep retains only unresolved
+  work instead of scanning every project's full settlement history.
 
 - Fix: Recover orchestration from provider deaths and long-uptime drift. A provider process dying
   mid-stage now interrupts and settles the stuck stage immediately (plus a periodic orphan-stage
   sweep as the backstop) instead of waiting for an app restart; the PM reconciliation sweep reads
   only new events each tick instead of replaying the entire event log every minute; and changing a
-  project's PM model/config no longer leaks a background event-bridge fiber per change.
+  project's PM model/config no longer leaks a background event-bridge fiber per change. The orphan
+  sweep now ignores newly projected stages during their startup grace window and treats retained
+  provider sessions in error or closed state as terminal rather than live.
 
 - Fix: Clicking turn chips in an Orchestrator task's diff panel no longer escapes into the worker
   subagent's chat view. Embedded diff panels now filter turns locally in place; the chat route's
@@ -50,18 +67,20 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 - Fix/UI: Show the reasoning level next to the model in Orchestrator task views (stage and helper
   timelines, active task cards), e.g. "gpt-5.6-sol · Reasoning High · Thinking On", using a static
-  label map over the already-projected model options.
+  label map over the already-projected model options, including OpenCode variants and Codex
+  `xhigh` as "Extra High".
 
 - Fix/UI: Surface post-land follow-up work as "Reworking" instead of a generic "Working" label on
   the Orchestrator task board and task header, and mark the landing area with "PR merged —
   follow-up changes since landed" so a stale landing is distinguishable from first-round work.
 
 - Fix: Keep the Orchestrator PM wake chain from wedging permanently. A PM turn that never receives a
-  terminal provider event now fails after a 10-minute watchdog instead of holding the re-entry queue
-  forever, a PM session exit or error state promptly fails any in-flight prompt, and all long-lived
-  orchestration stream consumers (runtime ingestion, checkpoint/command reactors, PM runtime
-  subscriptions, per-instance provider bridges) restart with logged backoff after a failure or
-  defect instead of dying silently.
+  terminal provider event now interrupts the exact provider turn and fails after a 10-minute
+  watchdog instead of holding the re-entry queue forever. Prompt ownership is registered before a
+  provider can synchronously emit completion, send failures restore idle state, and late events from
+  timed-out turns are quarantined so they cannot settle a newer prompt. A PM session exit or error
+  state promptly fails any in-flight prompt, and all long-lived orchestration stream consumers
+  restart with logged backoff after a failure or defect instead of dying silently.
 
 - Fix: Require Orchestrator verify stages to run their full planned check set and report all findings
   as one enumerated list (severity + file references) before ending the turn, instead of stopping at
@@ -78,12 +97,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   against the workspace before diffing, so dangling refs (pruned checkpoints, recreated worktrees,
   never-captured turn-0 baselines) fail loudly instead of presenting a single file, only state
   files, or the whole repository as a turn's changes. Turn summaries whose pre-turn baseline is
-  missing degrade to an explicit error state instead of describing unrelated content.
-- Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
-  Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
-  such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.
-  Instances whose probed model list is empty but which have settings-authored custom models remain
-  selectable.
+  missing degrade to an explicit error state instead of describing unrelated content, and an active
+  worker stage cannot settle successfully from that untrusted error summary.
+- Fix: Stop offering disabled, errored, not-installed, unavailable, or model-less provider instances
+  in the Orchestrator backend pickers (project settings, capability presets, global defaults).
+  Warning providers remain selectable and visibly marked. Existing invalid selections remain visible
+  until the user explicitly chooses a replacement; they are never silently remapped. Instances whose
+  probed model list is empty but which have settings-authored custom models remain selectable.
 
 - Fix/UI: Keep tasks with an open pull request in the active Orchestrator board and label them "PR open" instead of falling through to an "Abandoned" task card while awaiting merge.
 

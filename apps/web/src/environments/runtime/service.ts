@@ -72,7 +72,11 @@ import type { WsProtocolCloseContext } from "../../rpc/protocol";
 import { getServerConfig } from "../../rpc/serverState";
 import { WsTransport } from "../../rpc/wsTransport";
 import { createWsRpcClient, type WsRpcClient } from "../../rpc/wsRpcClient";
-import { appendVersionMismatchHint, resolveServerConfigVersionMismatch } from "../../versionSkew";
+import {
+  appendVersionMismatchHint,
+  assertCompatibleEnvironmentDescriptor,
+  resolveServerConfigVersionMismatch,
+} from "../../versionSkew";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
@@ -1976,6 +1980,24 @@ async function ensureSavedEnvironmentConnection(
         activeRecord = prepared.record;
       }
 
+      const currentDescriptor = activeRecord.desktopSsh
+        ? await fetchDesktopSshEnvironmentDescriptor(activeRecord.httpBaseUrl)
+        : await fetchRemoteEnvironmentDescriptor({ httpBaseUrl: activeRecord.httpBaseUrl });
+      useSavedEnvironmentRuntimeStore.getState().patch(activeRecord.environmentId, {
+        descriptor: currentDescriptor,
+      });
+      try {
+        assertCompatibleEnvironmentDescriptor(currentDescriptor);
+      } catch (error) {
+        setRuntimeError(activeRecord.environmentId, error);
+        throw error;
+      }
+      if (currentDescriptor.environmentId !== activeRecord.environmentId) {
+        throw new Error(
+          `Saved environment identity changed from ${activeRecord.environmentId} to ${currentDescriptor.environmentId}. Remove it and pair again.`,
+        );
+      }
+
       const activeBearerToken = bearerToken;
       const client =
         options?.client ??
@@ -2290,11 +2312,13 @@ export async function addSavedEnvironment(input: {
     ...(input.host !== undefined ? { host: input.host } : {}),
     ...(input.pairingCode !== undefined ? { pairingCode: input.pairingCode } : {}),
   });
-  const descriptor = input.desktopSsh
-    ? await fetchDesktopSshEnvironmentDescriptor(resolvedTarget.httpBaseUrl)
-    : await fetchRemoteEnvironmentDescriptor({
-        httpBaseUrl: resolvedTarget.httpBaseUrl,
-      });
+  const descriptor = assertCompatibleEnvironmentDescriptor(
+    input.desktopSsh
+      ? await fetchDesktopSshEnvironmentDescriptor(resolvedTarget.httpBaseUrl)
+      : await fetchRemoteEnvironmentDescriptor({
+          httpBaseUrl: resolvedTarget.httpBaseUrl,
+        }),
+  );
   const environmentId = descriptor.environmentId;
   const registrySnapshot = snapshotSavedEnvironmentRegistry([environmentId]);
   const existingRecord =

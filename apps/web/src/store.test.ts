@@ -976,8 +976,8 @@ describe("incremental orchestration updates", () => {
       ],
       localEnvironmentId,
     );
-
     expect(selectTaskByRef(state, { environmentId: localEnvironmentId, taskId })).toMatchObject({
+      status: "review",
       verification: { stageThreadId: verifyThreadId, head: "docs-head", verifiedAt },
       updatedAt: contentRebasedAt,
     });

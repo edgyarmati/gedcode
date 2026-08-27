@@ -17,6 +17,7 @@ import {
   type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -177,11 +178,29 @@ function getDiffCollapseIconClassName(fileDiff: FileDiffMetadata): string {
 interface DiffPanelProps {
   mode?: DiffPanelMode;
   threadRef?: ScopedThreadRef | null;
+  /**
+   * Host-owned stage identity for embedded panels. This distinguishes two
+   * stage views that intentionally reuse the same scoped thread reference.
+   */
+  selectionScope?: string | null;
+}
+
+export function buildEmbeddedDiffSelectionIdentity(
+  threadRef: ScopedThreadRef | null,
+  selectionScope: string | null,
+): string | null {
+  return threadRef
+    ? `${String(threadRef.environmentId)}:${String(threadRef.threadId)}:${selectionScope ?? ""}`
+    : null;
 }
 
 export { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 
-export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPanelProps) {
+export default function DiffPanel({
+  mode = "inline",
+  threadRef = null,
+  selectionScope = null,
+}: DiffPanelProps) {
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   const settings = useSettings();
@@ -230,9 +249,13 @@ export default function DiffPanel({ mode = "inline", threadRef = null }: DiffPan
   // chat view.
   const isEmbedded = threadRef !== null;
   const [embeddedSelectedTurnId, setEmbeddedSelectedTurnId] = useState<TurnId | null>(null);
-  useEffect(() => {
+  const embeddedSelectionIdentity = buildEmbeddedDiffSelectionIdentity(
+    isEmbedded ? activeThreadRef : null,
+    selectionScope,
+  );
+  useLayoutEffect(() => {
     setEmbeddedSelectedTurnId(null);
-  }, [activeThreadId]);
+  }, [embeddedSelectionIdentity]);
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {

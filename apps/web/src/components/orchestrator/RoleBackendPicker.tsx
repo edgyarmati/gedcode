@@ -54,6 +54,16 @@ export function backendLabel(
   return [instanceLabel, selection.model, ...optionValues].join(" · ");
 }
 
+function providerEntryLabel(entry: ProviderInstanceEntry): string {
+  if (entry.status === "warning") {
+    return `${entry.displayName} — Warning`;
+  }
+  if (!isSelectableProviderInstanceEntry(entry)) {
+    return `${entry.displayName} — Unavailable`;
+  }
+  return entry.displayName;
+}
+
 export function formatDefaultBackendLabel(input: {
   readonly selection: ModelSelection | null;
   readonly entry: ProviderInstanceEntry | undefined;
@@ -104,6 +114,8 @@ export function BackendModelPicker({
       ),
     [instanceEntries, modelOptionsByInstance],
   );
+  const selectedEntryIsUnavailable =
+    selectedEntry !== undefined && !isSelectableProviderInstanceEntry(selectedEntry);
 
   const handleInstanceChange = useCallback(
     (value: string | null) => {
@@ -187,7 +199,11 @@ export function BackendModelPicker({
       >
         <SelectTrigger className="w-full" aria-label={backendAriaLabel}>
           <SelectValue>
-            {selection ? (selectedEntry?.displayName ?? String(selection.instanceId)) : unsetLabel}
+            {selection
+              ? selectedEntry
+                ? providerEntryLabel(selectedEntry)
+                : `${String(selection.instanceId)} — Unavailable`
+              : unsetLabel}
           </SelectValue>
         </SelectTrigger>
         <SelectPopup align="start" alignItemWithTrigger={false}>
@@ -196,13 +212,18 @@ export function BackendModelPicker({
               {unsetOptionLabel}
             </SelectItem>
           ) : null}
+          {selectedEntryIsUnavailable ? (
+            <SelectItem disabled hideIndicator value={String(selectedEntry.instanceId)}>
+              {providerEntryLabel(selectedEntry)}
+            </SelectItem>
+          ) : null}
           {selectableEntries.map((entry) => (
             <SelectItem
               key={String(entry.instanceId)}
               hideIndicator
               value={String(entry.instanceId)}
             >
-              {entry.displayName}
+              {providerEntryLabel(entry)}
             </SelectItem>
           ))}
         </SelectPopup>

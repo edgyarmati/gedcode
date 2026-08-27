@@ -48,7 +48,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { clamp } from "effect/Number";
-import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 import { CheckpointDiffQuery } from "./checkpointing/Services/CheckpointDiffQuery.ts";
@@ -121,6 +121,7 @@ import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
+import { checkWebSocketClientVersion } from "./webSocketVersion.ts";
 import * as SourceControlDiscoveryLayer from "./sourceControl/SourceControlDiscovery.ts";
 import { SourceControlRepositoryService } from "./sourceControl/SourceControlRepositoryService.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
@@ -2722,6 +2723,22 @@ export const websocketRpcRouteLayer = Layer.unwrap(
       "/ws",
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
+        const serverEnvironment = yield* ServerEnvironment;
+        const descriptor = yield* serverEnvironment.getDescriptor;
+        const requestUrl = HttpServerRequest.toURL(request);
+        const versionCheck = checkWebSocketClientVersion(
+          Option.getOrNull(requestUrl),
+          descriptor.serverVersion,
+        );
+        if (!versionCheck.compatible) {
+          return HttpServerResponse.text(versionCheck.message, {
+            status: 409,
+            headers: {
+              "Cache-Control": "no-store",
+              "X-GedCode-Server-Version": versionCheck.serverVersion,
+            },
+          });
+        }
         const serverAuth = yield* ServerAuth;
         const sessions = yield* SessionCredentialService;
         const session = yield* serverAuth.authenticateWebSocketUpgrade(request);

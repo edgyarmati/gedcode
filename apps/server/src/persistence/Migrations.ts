@@ -179,6 +179,8 @@ export const migrationEntries = [
   [76, "ProjectionTaskForceLandRequest", Migration0076],
 ] as const;
 
+export const CURRENT_SCHEMA_MIGRATION_ID = migrationEntries.at(-1)![0];
+
 export const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
