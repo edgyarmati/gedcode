@@ -11,16 +11,15 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 
-export const releasePackageFiles = [
-  "apps/server/package.json",
-  "apps/desktop/package.json",
-  "apps/web/package.json",
-  "packages/contracts/package.json",
-] as const;
+import { releasePackageFiles } from "./lib/release-package-files.ts";
+
+export { releasePackageFiles };
 
 interface UpdateReleasePackageVersionsOptions {
   readonly rootDir?: string | undefined;
+  readonly preserveNewer?: boolean | undefined;
 }
 
 const PackageJsonSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -36,10 +35,31 @@ export const updateReleasePackageVersions = Effect.fn("updateReleasePackageVersi
   const path = yield* Path.Path;
   const rootDir = path.resolve(options.rootDir ?? process.cwd());
   let changed = false;
-
-  for (const relativePath of releasePackageFiles) {
+  const manifests = yield* Effect.forEach(releasePackageFiles, (relativePath) => {
     const filePath = path.join(rootDir, relativePath);
-    const packageJson = yield* fs.readFileString(filePath).pipe(Effect.flatMap(decodePackageJson));
+    return fs.readFileString(filePath).pipe(
+      Effect.flatMap(decodePackageJson),
+      Effect.map((packageJson) => ({ filePath, packageJson })),
+    );
+  });
+
+  if (options.preserveNewer) {
+    const currentVersions = manifests.map(({ packageJson }) => String(packageJson.version));
+    const distinctVersions = new Set(currentVersions);
+    if (distinctVersions.size !== 1) {
+      return yield* Effect.die(
+        new Error(
+          `Cannot preserve a newer version while release packages disagree: ${currentVersions.join(", ")}`,
+        ),
+      );
+    }
+    const currentVersion = currentVersions[0];
+    if (currentVersion && compareSemverVersions(currentVersion, version) > 0) {
+      return { changed: false };
+    }
+  }
+
+  for (const { filePath, packageJson } of manifests) {
     if (packageJson.version === version) {
       continue;
     }
@@ -72,10 +92,15 @@ export const updateReleasePackageVersionsCommand = Command.make(
       Flag.withDescription("Append changed=<boolean> to GITHUB_OUTPUT."),
       Flag.withDefault(false),
     ),
+    preserveNewer: Flag.boolean("preserve-newer").pipe(
+      Flag.withDescription("Leave a consistent package version unchanged when it is newer."),
+      Flag.withDefault(false),
+    ),
   },
-  ({ version, root, githubOutput }) =>
+  ({ version, root, githubOutput, preserveNewer }) =>
     updateReleasePackageVersions(version, {
       rootDir: Option.getOrUndefined(root),
+      preserveNewer,
     }).pipe(
       Effect.tap(({ changed }) =>
         changed

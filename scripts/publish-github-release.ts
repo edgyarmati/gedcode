@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { spawnSync } from "node:child_process";
+
+import { validateReleaseAssets, type ReleaseChannel } from "./validate-release-assets.ts";
 
 export interface CommandResult {
   readonly status: number;
@@ -16,6 +17,8 @@ export type CommandRunner = (args: ReadonlyArray<string>) => CommandResult;
 
 export interface PublishGithubReleaseOptions {
   readonly tag: string;
+  readonly version: string;
+  readonly releaseChannel: ReleaseChannel;
   readonly target: string;
   readonly name: string;
   readonly previousTag?: string;
@@ -24,8 +27,6 @@ export interface PublishGithubReleaseOptions {
   readonly releaseAssetsDir: string;
   readonly notes: string;
 }
-
-const REQUIRED_ASSET_EXTENSIONS = [".dmg", ".zip", ".AppImage", ".exe", ".blockmap", ".yml"];
 
 export function extractReleaseNotes(changelog: string, tag: string): string {
   const version = tag.replace(/^v/, "");
@@ -84,24 +85,6 @@ export function collapseReleaseNoteSections(notes: string): string {
   return output.join("\n").trim();
 }
 
-function listReleaseAssets(releaseAssetsDir: string): ReadonlyArray<string> {
-  if (!statSync(releaseAssetsDir, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(`Release assets directory does not exist: ${releaseAssetsDir}`);
-  }
-
-  const entries = readdirSync(releaseAssetsDir).toSorted();
-  const missing = REQUIRED_ASSET_EXTENSIONS.filter(
-    (extension) => !entries.some((entry) => entry.endsWith(extension)),
-  );
-  if (missing.length > 0) {
-    throw new Error(`Missing required release assets: ${missing.join(", ")}`);
-  }
-
-  return entries
-    .filter((entry) => REQUIRED_ASSET_EXTENSIONS.some((extension) => entry.endsWith(extension)))
-    .map((entry) => join(releaseAssetsDir, entry));
-}
-
 function assertSucceeded(action: string, result: CommandResult): void {
   if (result.status === 0) return;
   throw new Error(`${action} failed: ${result.stderr.trim() || result.stdout.trim()}`);
@@ -111,7 +94,11 @@ export function publishGithubRelease(
   options: PublishGithubReleaseOptions,
   run: CommandRunner,
 ): "created" | "updated" {
-  const assets = listReleaseAssets(options.releaseAssetsDir);
+  const assets = validateReleaseAssets({
+    releaseAssetsDir: options.releaseAssetsDir,
+    version: options.version,
+    channel: options.releaseChannel,
+  });
   const existing = run(["release", "view", options.tag, "--json", "tagName"]);
 
   if (existing.status === 0) {
@@ -177,6 +164,8 @@ if (import.meta.main) {
   const parsed = parseArgs({
     options: {
       tag: { type: "string" },
+      version: { type: "string" },
+      channel: { type: "string" },
       target: { type: "string" },
       name: { type: "string" },
       "previous-tag": { type: "string" },
@@ -186,12 +175,21 @@ if (import.meta.main) {
     },
   });
   const tag = parsed.values.tag;
+  const version = parsed.values.version;
+  const releaseChannel = parsed.values.channel;
   const target = parsed.values.target;
   const name = parsed.values.name;
   const prerelease = parsed.values.prerelease;
   const makeLatest = parsed.values["make-latest"];
   const releaseAssetsDir = parsed.values["release-assets-dir"];
-  if (!tag || !target || !name || !releaseAssetsDir) {
+  if (
+    !tag ||
+    !version ||
+    (releaseChannel !== "stable" && releaseChannel !== "nightly") ||
+    !target ||
+    !name ||
+    !releaseAssetsDir
+  ) {
     throw new Error("Missing required release publication argument.");
   }
   if (!prerelease || !["true", "false"].includes(prerelease)) {
@@ -205,6 +203,8 @@ if (import.meta.main) {
   const result = publishGithubRelease(
     {
       tag,
+      version,
+      releaseChannel,
       target,
       name,
       ...(previousTag ? { previousTag } : {}),

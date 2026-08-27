@@ -18,21 +18,45 @@ function assetsDirectory(): string {
   const root = mkdtempSync(join(tmpdir(), "gedcode-release-"));
   const directory = join(root, "assets");
   mkdirSync(directory);
-  for (const name of [
-    "GedCode.dmg",
-    "GedCode.zip",
-    "GedCode.AppImage",
-    "GedCode.exe",
-    "GedCode.exe.blockmap",
-    "latest.yml",
-  ]) {
+  const assets = [
+    "GedCode-0.3.0-arm64.dmg",
+    "GedCode-0.3.0-arm64.zip",
+    "GedCode-0.3.0-x64.AppImage",
+    "GedCode-0.3.0-x64.exe",
+    "GedCode-0.3.0-x64.exe.blockmap",
+  ];
+  for (const name of assets) {
     writeFileSync(join(directory, name), name);
+  }
+  const manifests = {
+    "latest-mac.yml": assets.slice(0, 2),
+    "latest-linux.yml": assets.slice(2, 3),
+    "latest.yml": assets.slice(3),
+  };
+  for (const [name, manifestAssets] of Object.entries(manifests)) {
+    const manifest = [
+      "version: 0.3.0",
+      "files:",
+      ...manifestAssets.flatMap((asset, index) => [
+        `  - url: ${asset}`,
+        `    sha512: hash-${index}`,
+        `    size: ${100 + index}`,
+      ]),
+      `path: ${manifestAssets[0]}`,
+      "sha512: hash-0",
+      "releaseDate: '2026-08-27T00:00:00.000Z'",
+      "",
+    ].join("\n");
+    writeFileSync(join(directory, name), manifest);
+    writeFileSync(join(directory, name.replace(/^latest/, "nightly")), manifest);
   }
   return directory;
 }
 
 const options = (overrides: Partial<PublishGithubReleaseOptions> = {}) => ({
   tag: "v0.3.0",
+  version: "0.3.0",
+  releaseChannel: "stable" as const,
   target: "abc123",
   name: "GedCode v0.3.0",
   previousTag: "v0.2.1",
