@@ -83,6 +83,8 @@ vi.mock("../lib/gitStatusState", () => ({
 
 const THREAD_ID = "thread-browser-test" as ThreadId;
 const THREAD_TITLE = "Browser test thread";
+const DEFERRED_NAVIGATION_THREAD_ID = "thread-navigation-deferred" as ThreadId;
+const DEFERRED_NAVIGATION_THREAD_TITLE = "Deferred navigation thread";
 const ARCHIVED_SECONDARY_THREAD_ID = "thread-secondary-project-archived" as ThreadId;
 const PROJECT_ID = "project-1" as ProjectId;
 const SECOND_PROJECT_ID = "project-2" as ProjectId;
@@ -119,6 +121,8 @@ let fixture: TestFixture;
 const rpcHarness = new BrowserWsRpcHarness();
 const wsRequests = rpcHarness.requests;
 let customWsRpcResolver: ((body: NormalizedWsRpcRequestBody) => unknown | undefined) | null = null;
+const deferredThreadDetailIds = new Set<ThreadId>();
+let deferShellSnapshot = false;
 const wsLink = ws.link(/ws(s)?:\/\/.*/);
 const encodeServerConfig = Schema.encodeSync(ServerConfigSchema);
 
@@ -561,6 +565,58 @@ function addThreadToSnapshot(
   };
 }
 
+function createDeferredNavigationSnapshot(options?: {
+  readonly emptyTarget?: boolean;
+}): OrchestrationReadModel {
+  let snapshot = createSnapshotForTargetUser({
+    targetMessageId: "msg-user-navigation-source" as MessageId,
+    targetText: "source thread content must disappear immediately",
+  });
+
+  for (let index = 1; index <= 10; index += 1) {
+    snapshot = addThreadToSnapshot(snapshot, `thread-navigation-${index}` as ThreadId);
+  }
+  snapshot = addThreadToSnapshot(snapshot, DEFERRED_NAVIGATION_THREAD_ID);
+
+  return {
+    ...snapshot,
+    threads: snapshot.threads.map((thread, index) => {
+      if (thread.id === DEFERRED_NAVIGATION_THREAD_ID) {
+        return Object.assign({}, thread, {
+          title: DEFERRED_NAVIGATION_THREAD_TITLE,
+          createdAt: isoAt(-1_000),
+          updatedAt: isoAt(-1_000),
+          messages: options?.emptyTarget
+            ? []
+            : [
+                createAssistantMessage({
+                  id: "msg-navigation-target" as MessageId,
+                  text: "deferred target detail has loaded",
+                  offsetSeconds: -900,
+                }),
+              ],
+        });
+      }
+      if (thread.id === THREAD_ID) {
+        return Object.assign({}, thread, {
+          messages: [
+            createAssistantMessage({
+              id: "msg-navigation-source" as MessageId,
+              text: "source thread content must disappear immediately",
+              offsetSeconds: 0,
+            }),
+          ],
+        });
+      }
+      return Object.assign({}, thread, {
+        title: `Navigation thread ${index}`,
+        createdAt: isoAt(100 + index),
+        updatedAt: isoAt(100 + index),
+      });
+    }),
+  };
+}
+
 function toShellThread(thread: OrchestrationReadModel["threads"][number]) {
   return {
     id: thread.id,
@@ -643,6 +699,27 @@ function sendShellThreadUpsert(
     coveredSequenceStart: fixture.snapshot.snapshotSequence,
     coveredSequenceEnd: fixture.snapshot.snapshotSequence,
     thread: shellThread,
+  });
+}
+
+function sendShellSnapshot(): void {
+  rpcHarness.emitStreamValue(ORCHESTRATION_WS_METHODS.subscribeShell, {
+    kind: "snapshot",
+    snapshot: toShellSnapshot(fixture.snapshot),
+  });
+}
+
+function sendThreadDetailSnapshot(threadId: ThreadId): void {
+  const thread = fixture.snapshot.threads.find((entry) => entry.id === threadId);
+  if (!thread) {
+    throw new Error(`Expected thread ${threadId} in snapshot.`);
+  }
+  rpcHarness.emitStreamValue(ORCHESTRATION_WS_METHODS.subscribeThread, {
+    kind: "snapshot",
+    snapshot: {
+      snapshotSequence: fixture.snapshot.snapshotSequence,
+      thread,
+    },
   });
 }
 
@@ -1652,10 +1729,18 @@ async function mountChatView(options: {
   configureFixture?: (fixture: TestFixture) => void;
   resolveRpc?: (body: NormalizedWsRpcRequestBody) => unknown | undefined;
   initialPath?: string;
+  deferredThreadIds?: readonly ThreadId[];
+  deferBootstrapShell?: boolean;
+  waitForBootstrap?: boolean;
 }): Promise<MountedChatView> {
   fixture = buildFixture(options.snapshot);
   options.configureFixture?.(fixture);
   customWsRpcResolver = options.resolveRpc ?? null;
+  deferredThreadDetailIds.clear();
+  for (const threadId of options.deferredThreadIds ?? []) {
+    deferredThreadDetailIds.add(threadId);
+  }
+  deferShellSnapshot = options.deferBootstrapShell ?? false;
   await setViewport(options.viewport);
   await waitForProductionStyles();
 
@@ -1685,11 +1770,15 @@ async function mountChatView(options: {
   );
 
   await waitForWsClient();
-  await waitForAppBootstrap();
+  if (options.waitForBootstrap !== false) {
+    await waitForAppBootstrap();
+  }
   await waitForLayout();
 
   const cleanup = async () => {
     customWsRpcResolver = null;
+    deferredThreadDetailIds.clear();
+    deferShellSnapshot = false;
     await screen.unmount();
     host.remove();
     await waitForLayout();
@@ -1734,6 +1823,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
   });
 
   beforeEach(async () => {
+    deferredThreadDetailIds.clear();
+    deferShellSnapshot = false;
     await rpcHarness.reset({
       resolveUnary: resolveWsRpc,
       getInitialStreamValues: (request) => {
@@ -1757,6 +1848,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
           ];
         }
         if (request._tag === ORCHESTRATION_WS_METHODS.subscribeShell) {
+          if (deferShellSnapshot) {
+            return [];
+          }
           return [
             {
               kind: "snapshot",
@@ -1765,6 +1859,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
           ];
         }
         if (request._tag === ORCHESTRATION_WS_METHODS.subscribeThread) {
+          if (deferredThreadDetailIds.has(request.threadId as ThreadId)) {
+            return [];
+          }
           const thread = fixture.snapshot.threads.find((entry) => entry.id === request.threadId);
           return thread
             ? [
@@ -1824,6 +1921,165 @@ describe("ChatView timeline estimator parity (full app)", () => {
     customWsRpcResolver = null;
     resetPrimaryEnvironmentDescriptorForTests();
     document.body.innerHTML = "";
+  });
+
+  it("shows the selected shell immediately while a directly clicked cold thread loads", async () => {
+    localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarThreadPreviewCount: 15,
+      }),
+    );
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDeferredNavigationSnapshot(),
+      deferredThreadIds: [DEFERRED_NAVIGATION_THREAD_ID],
+    });
+
+    try {
+      await expect
+        .element(page.getByText("source thread content must disappear immediately"))
+        .toBeVisible();
+      const targetRow = page.getByTestId(`thread-row-${DEFERRED_NAVIGATION_THREAD_ID}`);
+      await expect.element(targetRow).toBeInTheDocument();
+      expect(
+        wsRequests
+          .filter((request) => request._tag === ORCHESTRATION_WS_METHODS.subscribeThread)
+          .map((request) => request.threadId),
+      ).toEqual([THREAD_ID]);
+
+      (targetRow.element() as HTMLElement).click();
+      await waitForLayout();
+
+      expect(mounted.router.state.location.pathname).toBe(
+        serverThreadPath(DEFERRED_NAVIGATION_THREAD_ID),
+      );
+      expect((targetRow.element() as HTMLElement).getAttribute("data-active")).toBe("true");
+      await expect
+        .element(page.getByRole("heading", { name: DEFERRED_NAVIGATION_THREAD_TITLE }))
+        .toBeVisible();
+      await expect.element(page.getByRole("status", { name: "Loading thread" })).toBeVisible();
+      expect(document.body.textContent).not.toContain(
+        "source thread content must disappear immediately",
+      );
+      expect(
+        wsRequests.some(
+          (request) =>
+            request._tag === ORCHESTRATION_WS_METHODS.subscribeThread &&
+            request.threadId === DEFERRED_NAVIGATION_THREAD_ID,
+        ),
+      ).toBe(true);
+
+      sendThreadDetailSnapshot(DEFERRED_NAVIGATION_THREAD_ID);
+      await expect.element(page.getByText("deferred target detail has loaded")).toBeVisible();
+      expect(document.querySelector('[role="status"][aria-label="Loading thread"]')).toBeNull();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("prewarms keyboard focus and renders an accepted empty thread normally", async () => {
+    localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarThreadPreviewCount: 15,
+      }),
+    );
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDeferredNavigationSnapshot({ emptyTarget: true }),
+      deferredThreadIds: [DEFERRED_NAVIGATION_THREAD_ID],
+    });
+
+    try {
+      const pointerTargetId = "thread-navigation-1" as ThreadId;
+      await page.getByTestId(`thread-row-${pointerTargetId}`).hover();
+      await vi.waitFor(() => {
+        expect(
+          wsRequests.some(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.subscribeThread &&
+              request.threadId === pointerTargetId,
+          ),
+        ).toBe(true);
+      });
+
+      const targetRow = page.getByTestId(`thread-row-${DEFERRED_NAVIGATION_THREAD_ID}`);
+      const targetElement = targetRow.element() as HTMLElement;
+      targetElement.focus();
+      await waitForLayout();
+      expect(
+        wsRequests.some(
+          (request) =>
+            request._tag === ORCHESTRATION_WS_METHODS.subscribeThread &&
+            request.threadId === DEFERRED_NAVIGATION_THREAD_ID,
+        ),
+      ).toBe(true);
+
+      targetElement.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      await waitForLayout();
+      expect(mounted.router.state.location.pathname).toBe(
+        serverThreadPath(DEFERRED_NAVIGATION_THREAD_ID),
+      );
+      await expect.element(page.getByRole("status", { name: "Loading thread" })).toBeVisible();
+
+      sendThreadDetailSnapshot(DEFERRED_NAVIGATION_THREAD_ID);
+      await expect
+        .element(page.getByText("Send a message to start the conversation."))
+        .toBeVisible();
+      await expect.element(page.getByTestId("composer-editor")).toBeInTheDocument();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps cached content visible during a reconnect refresh", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDeferredNavigationSnapshot(),
+    });
+
+    try {
+      await expect
+        .element(page.getByText("source thread content must disappear immediately"))
+        .toBeVisible();
+      useStore.getState().markThreadDetailSubscriptionLoading(THREAD_REF);
+      await waitForLayout();
+
+      await expect
+        .element(page.getByText("source thread content must disappear immediately"))
+        .toBeVisible();
+      expect(document.querySelector('[role="status"][aria-label="Loading thread"]')).toBeNull();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("renders a stable loading shell on a direct route before bootstrap completes", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-direct-bootstrap" as MessageId,
+        targetText: "direct bootstrap",
+      }),
+      deferBootstrapShell: true,
+      waitForBootstrap: false,
+    });
+
+    try {
+      await expect.element(page.getByRole("status", { name: "Loading thread" })).toBeVisible();
+      expect(mounted.router.state.location.pathname).toBe(serverThreadPath(THREAD_ID));
+
+      sendShellSnapshot();
+      await waitForAppBootstrap();
+      await expect.element(page.getByRole("heading", { name: THREAD_TITLE })).toBeVisible();
+    } finally {
+      await mounted.cleanup();
+    }
   });
 
   it("continues a completed assistant message in a new task and navigates after success", async () => {

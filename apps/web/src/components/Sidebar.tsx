@@ -47,7 +47,6 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  parseScopedThreadKey,
   scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
@@ -91,7 +90,7 @@ import { useGitStatus } from "../lib/gitStatusState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { retainThreadDetailSubscription } from "../environments/runtime/service";
+import { prewarmThreadDetailSubscription } from "../environments/runtime/service";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
@@ -163,7 +162,6 @@ import {
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
-  getSidebarThreadIdsToPrewarm,
   resolveAdjacentThreadId,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
@@ -418,6 +416,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
     [handleThreadClick, orderedProjectThreadKeys, threadRef],
   );
+  const handleThreadIntent = useCallback(() => {
+    prewarmThreadDetailSubscription(threadRef.environmentId, threadRef.threadId);
+  }, [threadRef]);
   const handleRowKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key !== "Enter" && event.key !== " ") return;
@@ -557,6 +558,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           isSelected,
         })} relative isolate`}
         onClick={handleRowClick}
+        onPointerEnter={handleThreadIntent}
+        onFocus={handleThreadIntent}
         onKeyDown={handleRowKeyDown}
         onContextMenu={handleRowContextMenu}
       >
@@ -1574,6 +1577,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
+      prewarmThreadDetailSubscription(threadRef.environmentId, threadRef.threadId);
       if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
         clearSelection();
       }
@@ -1616,6 +1620,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (currentSelectionCount > 0) {
         clearSelection();
       }
+      prewarmThreadDetailSubscription(threadRef.environmentId, threadRef.threadId);
       setSelectionAnchor(threadKey);
       if (isMobile) {
         setOpenMobile(false);
@@ -3150,6 +3155,7 @@ export default function Sidebar() {
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
+      prewarmThreadDetailSubscription(threadRef.environmentId, threadRef.threadId);
       if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
         clearSelection();
       }
@@ -3369,31 +3375,6 @@ export default function Sidebar() {
     ? threadJumpLabelByKey
     : EMPTY_THREAD_JUMP_LABELS;
   const orderedSidebarThreadKeys = visibleSidebarThreadKeys;
-  const prewarmedSidebarThreadKeys = useMemo(
-    () => getSidebarThreadIdsToPrewarm(visibleSidebarThreadKeys),
-    [visibleSidebarThreadKeys],
-  );
-  const prewarmedSidebarThreadRefs = useMemo(
-    () =>
-      prewarmedSidebarThreadKeys.flatMap((threadKey) => {
-        const ref = parseScopedThreadKey(threadKey);
-        return ref ? [ref] : [];
-      }),
-    [prewarmedSidebarThreadKeys],
-  );
-
-  useEffect(() => {
-    const releases = prewarmedSidebarThreadRefs.map((ref) =>
-      retainThreadDetailSubscription(ref.environmentId, ref.threadId),
-    );
-
-    return () => {
-      for (const release of releases) {
-        release();
-      }
-    };
-  }, [prewarmedSidebarThreadRefs]);
-
   useEffect(() => {
     updateThreadJumpHintsVisibility(shouldShowThreadJumpHintsNow);
   }, [shouldShowThreadJumpHintsNow, updateThreadJumpHintsVisibility]);

@@ -22,6 +22,7 @@ import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../st
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { RightPanelSheet } from "../components/RightPanelSheet";
+import { ThreadDetailLoadingState } from "../components/chat/ThreadDetailLoadingState";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
@@ -241,8 +242,16 @@ function ChatThreadRouteView() {
     threadRef,
   ]);
 
-  if (!threadRef || !bootstrapComplete || !routeThreadExists) {
+  if (!threadRef) {
     return null;
+  }
+
+  if (!bootstrapComplete || !routeThreadExists) {
+    return (
+      <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
+        <ThreadDetailLoadingState />
+      </SidebarInset>
+    );
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;

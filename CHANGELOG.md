@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve/Web: Start thread detail loading from pointer, focus, click, and shortcut intent instead
+  of speculatively opening the first ten sidebar streams. Thread navigation now shows the selected
+  title and an accessible loading state immediately, distinguishes loaded-empty conversations from
+  pending detail, and keeps cached content visible while reconnecting.
+
 - Change/Docs: Treat GedCode as an independent repository with `origin` as its only canonical
   remote. Remove the standing external-upstream review backlog and replace T3-hosted pairing
   examples in current operational documentation with GedCode-owned deployment examples.
