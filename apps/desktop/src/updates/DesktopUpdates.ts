@@ -7,6 +7,7 @@ import type {
   DesktopUpdateState,
 } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
+import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -29,6 +30,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronSparkleUpdater from "../electron/ElectronSparkleUpdater.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -164,7 +166,8 @@ export type DesktopUpdateConfigureError = never;
 
 export type DesktopUpdateSetChannelError =
   | DesktopUpdateActionInProgressError
-  | DesktopUpdatePersistenceError;
+  | DesktopUpdatePersistenceError
+  | ElectronSparkleUpdater.ElectronSparkleUpdaterError;
 
 export interface DesktopUpdatesShape {
   readonly getState: Effect.Effect<DesktopUpdateState>;
@@ -354,6 +357,7 @@ const make = Effect.gen(function* () {
   const backendManager = yield* DesktopBackendManager.DesktopBackendManager;
   const desktopState = yield* DesktopState.DesktopState;
   const electronApp = yield* ElectronApp.ElectronApp;
+  const electronSparkleUpdater = yield* ElectronSparkleUpdater.ElectronSparkleUpdater;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -366,6 +370,7 @@ const make = Effect.gen(function* () {
   const updateDownloadInFlightRef = yield* Ref.make(false);
   const updateInstallInFlightRef = yield* Ref.make(false);
   const updaterConfiguredRef = yield* Ref.make(false);
+  const sparkleConfiguredRef = yield* Ref.make(false);
   const mockUpdateModeRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const updateStateRef = yield* Ref.make<DesktopUpdateState>(
@@ -375,6 +380,11 @@ const make = Effect.gen(function* () {
       environment.defaultDesktopSettings.updateChannel,
     ),
   );
+  const shouldPreferSparkle =
+    environment.platform === "darwin" &&
+    environment.isPackaged &&
+    !environment.isDevelopment &&
+    !config.mockUpdates;
 
   const emitState = Ref.get(updateStateRef).pipe(
     Effect.flatMap((state) => electronWindow.sendAll(IpcChannels.UPDATE_STATE_CHANNEL, state)),
@@ -404,7 +414,10 @@ const make = Effect.gen(function* () {
   );
 
   const hasUpdateFeedConfig = Ref.get(appUpdateYmlConfigRef).pipe(
-    Effect.map((appUpdateYmlConfig) => Option.isSome(appUpdateYmlConfig) || config.mockUpdates),
+    Effect.map(
+      (appUpdateYmlConfig) =>
+        Option.isSome(appUpdateYmlConfig) || config.mockUpdates || shouldPreferSparkle,
+    ),
   );
 
   const resolveDisabledReason = Effect.gen(function* () {
@@ -686,23 +699,57 @@ const make = Effect.gen(function* () {
     );
   }).pipe(Effect.withSpan("desktop.updates.installDownloadedUpdate"));
 
-  const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
-    yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
-      Effect.andThen(checkForUpdates("startup")),
-      Effect.catchCause((cause) =>
-        logUpdaterError("startup update check failed", { cause: Cause.pretty(cause) }),
+  const checkSparkleForUpdates = Effect.fn("desktop.updates.checkSparkleForUpdates")(function* (
+    reason: string,
+    mode: "interactive" | "background",
+  ) {
+    yield* Effect.annotateCurrentSpan({ reason, mode, updater: "sparkle" });
+    if (yield* Ref.get(desktopState.quitting)) return false;
+    if (!(yield* Ref.get(sparkleConfiguredRef))) return false;
+    if (yield* Ref.get(updateCheckInFlightRef)) return false;
+
+    yield* Ref.set(updateCheckInFlightRef, true);
+    const check =
+      mode === "background"
+        ? electronSparkleUpdater.checkForUpdatesInBackgroundAndDownload
+        : electronSparkleUpdater.checkForUpdates;
+    return yield* check.pipe(
+      Effect.tap((accepted) =>
+        accepted
+          ? logUpdaterInfo("Sparkle update check started", { reason, mode })
+          : logUpdaterWarning("Sparkle update check was unavailable", { reason, mode }),
       ),
-      Effect.forkScoped,
-    );
-    yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
-      Effect.andThen(checkForUpdates("poll")),
-      Effect.forever,
-      Effect.catchCause((cause) =>
-        logUpdaterError("poll update check failed", { cause: Cause.pretty(cause) }),
+      Effect.catch((error) =>
+        logUpdaterError("Sparkle update check failed", {
+          reason,
+          mode,
+          message: error.message,
+        }).pipe(Effect.as(false)),
       ),
-      Effect.forkScoped,
+      Effect.ensuring(Ref.set(updateCheckInFlightRef, false)),
     );
-  }).pipe(Effect.withSpan("desktop.updates.startPollers"));
+  });
+
+  const startUpdatePollers = (
+    poll: (reason: string) => Effect.Effect<boolean>,
+  ): Effect.Effect<void, never, Scope.Scope> =>
+    Effect.gen(function* () {
+      yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
+        Effect.andThen(poll("startup")),
+        Effect.catchCause((cause) =>
+          logUpdaterError("startup update check failed", { cause: Cause.pretty(cause) }),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
+        Effect.andThen(poll("poll")),
+        Effect.forever,
+        Effect.catchCause((cause) =>
+          logUpdaterError("periodic update check failed", { cause: Cause.pretty(cause) }),
+        ),
+        Effect.forkScoped,
+      );
+    }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
     raw: unknown,
@@ -866,6 +913,38 @@ const make = Effect.gen(function* () {
       if (!(yield* shouldEnableAutoUpdates)) {
         return;
       }
+
+      if (shouldPreferSparkle && !mockUpdateMode) {
+        const appcastUrl = sparkleAppcastUrl(settings.updateChannel);
+        const sparkleConfigured = yield* electronSparkleUpdater
+          .configure({ appcastUrl, publicEdKey: SPARKLE_ED_PUBLIC_KEY })
+          .pipe(
+            Effect.catch((error) =>
+              logUpdaterError("failed to configure Sparkle; using manual release checks", {
+                message: error.message,
+              }).pipe(Effect.as(false)),
+            ),
+          );
+        yield* Ref.set(sparkleConfiguredRef, sparkleConfigured);
+        if (sparkleConfigured) {
+          yield* logUpdaterInfo("using Sparkle for unsigned macOS updates", {
+            appcastUrl,
+            channel: settings.updateChannel,
+          });
+          yield* startUpdatePollers((reason) => checkSparkleForUpdates(reason, "background"));
+          return;
+        }
+
+        // A missing or unloadable native bridge must never fall back to
+        // Squirrel.Mac for an unsigned build. Keep users informed through the
+        // existing public GitHub release checker and manual download action.
+        yield* logUpdaterWarning(
+          "Sparkle is unavailable; falling back to automatic GitHub release notifications",
+        );
+        yield* startUpdatePollers(checkGitHubReleasesForManualUpdate);
+        return;
+      }
+
       yield* Ref.set(updaterConfiguredRef, true);
 
       yield* electronUpdater.setAutoDownload(false);
@@ -904,7 +983,7 @@ const make = Effect.gen(function* () {
         runEffect(handleUpdateDownloaded(info));
       });
 
-      yield* startUpdatePollers;
+      yield* startUpdatePollers(checkForUpdates);
     }).pipe(Effect.withSpan("desktop.updates.configure")),
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
@@ -927,6 +1006,24 @@ const make = Effect.gen(function* () {
       const enabled = !config.disableAutoUpdate;
       yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
 
+      if (yield* Ref.get(sparkleConfiguredRef)) {
+        const appcastUrl = sparkleAppcastUrl(nextChannel);
+        const updated = yield* electronSparkleUpdater.setFeedURL(appcastUrl);
+        if (!updated) {
+          return yield* new ElectronSparkleUpdater.ElectronSparkleUpdaterError({
+            operation: "configure",
+            cause: "Sparkle bridge became unavailable while changing update channel.",
+          });
+        }
+        yield* checkSparkleForUpdates("channel-change", "background");
+        return yield* Ref.get(updateStateRef);
+      }
+
+      if (shouldPreferSparkle) {
+        yield* checkGitHubReleasesForManualUpdate("channel-change");
+        return yield* Ref.get(updateStateRef);
+      }
+
       if (!(yield* shouldEnableAutoUpdates) || !(yield* Ref.get(updaterConfiguredRef))) {
         return yield* Ref.get(updateStateRef);
       }
@@ -941,6 +1038,13 @@ const make = Effect.gen(function* () {
     }),
     check: Effect.fn("desktop.updates.check")(function* (reason: string) {
       yield* Effect.annotateCurrentSpan({ reason });
+      if (yield* Ref.get(sparkleConfiguredRef)) {
+        const checked = yield* checkSparkleForUpdates(reason, "interactive");
+        return {
+          checked,
+          state: yield* Ref.get(updateStateRef),
+        };
+      }
       if (!(yield* Ref.get(updaterConfiguredRef))) {
         const checked = yield* checkGitHubReleasesForManualUpdate(reason);
         return {
@@ -966,6 +1070,20 @@ const make = Effect.gen(function* () {
       if (yield* Ref.get(desktopState.quitting)) {
         return {
           accepted: false,
+          completed: false,
+          state: yield* Ref.get(updateStateRef),
+        };
+      }
+      if (yield* Ref.get(sparkleConfiguredRef)) {
+        const accepted = yield* electronSparkleUpdater.installUpdateNow.pipe(
+          Effect.catch((error) =>
+            logUpdaterError("failed to open Sparkle install flow", {
+              message: error.message,
+            }).pipe(Effect.as(false)),
+          ),
+        );
+        return {
+          accepted,
           completed: false,
           state: yield* Ref.get(updateStateRef),
         };

@@ -21,6 +21,7 @@ import * as ElectronMenu from "./electron/ElectronMenu.ts";
 import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
 import * as DesktopSecretStorage from "./electron/ElectronSafeStorage.ts";
 import * as ElectronShell from "./electron/ElectronShell.ts";
+import * as ElectronSparkleUpdater from "./electron/ElectronSparkleUpdater.ts";
 import * as ElectronTheme from "./electron/ElectronTheme.ts";
 import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
@@ -100,6 +101,7 @@ const electronLayer = Layer.mergeAll(
   ElectronProtocol.layer,
   DesktopSecretStorage.layer,
   ElectronShell.layer,
+  ElectronSparkleUpdater.layer,
   ElectronTheme.layer,
   ElectronUpdater.layer,
   ElectronWindow.layer,
