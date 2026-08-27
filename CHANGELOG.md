@@ -18,16 +18,18 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   shown with a "Superseded" badge instead of Approve/Reject buttons, and stop counting toward PM
   settlement accounting.
 
-- Fix: Recover a missed stage-completed settlement on the next reconciliation sweep without an app
-  restart. Stage completions flip their projection row before the event is published, so a lost
-  live delivery was previously invisible to the redrive sweep forever; the sweep now replays
-  indexed stage completions that have no durable consumption marker, exactly once.
+- Fix: Recover missed Orchestrator settlements on the next reconciliation sweep even when a later
+  event already advanced the project's cursor. Per-settlement markers are now authoritative, acted
+  events are pruned from the in-memory reconciliation index, and each sweep retains only unresolved
+  work instead of scanning every project's full settlement history.
 
 - Fix: Recover orchestration from provider deaths and long-uptime drift. A provider process dying
   mid-stage now interrupts and settles the stuck stage immediately (plus a periodic orphan-stage
   sweep as the backstop) instead of waiting for an app restart; the PM reconciliation sweep reads
   only new events each tick instead of replaying the entire event log every minute; and changing a
-  project's PM model/config no longer leaks a background event-bridge fiber per change.
+  project's PM model/config no longer leaks a background event-bridge fiber per change. The orphan
+  sweep now ignores newly projected stages during their startup grace window and treats retained
+  provider sessions in error or closed state as terminal rather than live.
 
 - Fix: Clicking turn chips in an Orchestrator task's diff panel no longer escapes into the worker
   subagent's chat view. Embedded diff panels now filter turns locally in place; the chat route's
@@ -42,11 +44,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   follow-up changes since landed" so a stale landing is distinguishable from first-round work.
 
 - Fix: Keep the Orchestrator PM wake chain from wedging permanently. A PM turn that never receives a
-  terminal provider event now fails after a 10-minute watchdog instead of holding the re-entry queue
-  forever, a PM session exit or error state promptly fails any in-flight prompt, and all long-lived
-  orchestration stream consumers (runtime ingestion, checkpoint/command reactors, PM runtime
-  subscriptions, per-instance provider bridges) restart with logged backoff after a failure or
-  defect instead of dying silently.
+  terminal provider event now interrupts the exact provider turn and fails after a 10-minute
+  watchdog instead of holding the re-entry queue forever. Prompt ownership is registered before a
+  provider can synchronously emit completion, send failures restore idle state, and late events from
+  timed-out turns are quarantined so they cannot settle a newer prompt. A PM session exit or error
+  state promptly fails any in-flight prompt, and all long-lived orchestration stream consumers
+  restart with logged backoff after a failure or defect instead of dying silently.
 
 - Fix: Require Orchestrator verify stages to run their full planned check set and report all findings
   as one enumerated list (severity + file references) before ending the turn, instead of stopping at
@@ -63,7 +66,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   against the workspace before diffing, so dangling refs (pruned checkpoints, recreated worktrees,
   never-captured turn-0 baselines) fail loudly instead of presenting a single file, only state
   files, or the whole repository as a turn's changes. Turn summaries whose pre-turn baseline is
-  missing degrade to an explicit error state instead of describing unrelated content.
+  missing degrade to an explicit error state instead of describing unrelated content, and an active
+  worker stage cannot settle successfully from that untrusted error summary.
 - Fix: Stop offering disabled, not-installed, unavailable, or model-less provider instances in the
   Orchestrator backend pickers (project settings, capability presets, global defaults). Selecting
   such an instance previously failed silently — the dropdown snapped back and Save stayed disabled.

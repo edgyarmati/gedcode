@@ -7,6 +7,7 @@ import { toPersistenceSqlError } from "../Errors.ts";
 import { withBusyRetry } from "../retryPolicy.ts";
 import {
   GetPmRuntimeCursorInput,
+  GetPmConsumedSettlementInput,
   ListPendingPmSettlementsInput,
   ListPmConsumedSettlementsInput,
   PmConsumedSettlement,
@@ -76,6 +77,28 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
       `,
   });
 
+  const getConsumedSettlementRow = SqlSchema.findOneOption({
+    Request: GetPmConsumedSettlementInput,
+    Result: PmConsumedSettlement,
+    execute: ({ projectId, kind, settlementKey }) =>
+      sql`
+        SELECT
+          project_id AS "projectId",
+          kind,
+          settlement_key AS "settlementKey",
+          consumed_at AS "consumedAt",
+          status,
+          retry_attempts AS "retryAttempts",
+          hold_reason AS "holdReason",
+          next_retry_at AS "nextRetryAt",
+          delivery_episode AS "deliveryEpisode"
+        FROM pm_consumed_settlements
+        WHERE project_id = ${projectId}
+          AND kind = ${kind}
+          AND settlement_key = ${settlementKey}
+      `,
+  });
+
   const getCursor: PmRuntimeStateRepositoryShape["getCursor"] = (input) =>
     getCursorRow(input).pipe(
       Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.getCursor:query")),
@@ -93,6 +116,11 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
   const listPending: PmRuntimeStateRepositoryShape["listPending"] = (input) =>
     listPendingSettlementRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.listPending:query")),
+    );
+
+  const getSettlement: PmRuntimeStateRepositoryShape["getSettlement"] = (input) =>
+    getConsumedSettlementRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("PmRuntimeStateRepository.getSettlement:query")),
     );
 
   const consumeSettlementAndAdvanceCursor: PmRuntimeStateRepositoryShape["consumeSettlementAndAdvanceCursor"] =
@@ -243,6 +271,7 @@ const makePmRuntimeStateRepository = Effect.gen(function* () {
   return {
     getCursor,
     listConsumedSettlements,
+    getSettlement,
     consumeSettlementAndAdvanceCursor,
     markActed,
     listPending,
