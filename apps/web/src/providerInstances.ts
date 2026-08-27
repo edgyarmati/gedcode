@@ -188,14 +188,21 @@ export function sortProviderInstanceEntries(
 
 /**
  * True when an instance can back a backend (instance + model) selection:
- * enabled, installed, and available. Snapshot models are deliberately not
+ * enabled, installed, available, and either ready or warning. A warning means
+ * the health probe is uncertain but the provider remains usable; an error is
+ * never offered for new work. Snapshot models are deliberately not
  * part of this check — settings-authored custom models can back a selection
  * even while the probed model list is still empty (e.g. before the first
  * probe completes). Callers that require models should layer that check on
  * top of this predicate.
  */
 export function isSelectableProviderInstanceEntry(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.installed && entry.isAvailable;
+  return (
+    entry.enabled &&
+    entry.installed &&
+    entry.isAvailable &&
+    (entry.status === "ready" || entry.status === "warning")
+  );
 }
 
 /**
@@ -221,26 +228,20 @@ export function getProviderInstanceModels(
 }
 
 /**
- * Resolve the routing key for a selection that may reference an instance
- * id that no longer exists (e.g. a persisted thread selection after the
- * user deleted the custom instance). Returns the first enabled instance
- * as a fallback so downstream code can still send a turn.
+ * Resolve a routing key without rewriting an existing persisted selection.
+ * An explicit id is retained even when it is disabled, errored, or no longer
+ * present so the UI can explain the problem and require a deliberate choice.
+ * Only a missing selection receives the first currently selectable default.
  */
 export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId | undefined,
 ): ProviderInstanceId | undefined {
   if (instanceId === undefined) {
-    return deriveProviderInstanceEntries(providers).find(
-      (entry) => entry.enabled && entry.isAvailable,
-    )?.instanceId;
+    return deriveProviderInstanceEntries(providers).find(isSelectableProviderInstanceEntry)
+      ?.instanceId;
   }
-  const entries = deriveProviderInstanceEntries(providers);
-  const requested = entries.find((entry) => entry.instanceId === instanceId);
-  if (requested && requested.enabled && requested.isAvailable) {
-    return instanceId;
-  }
-  return entries.find((entry) => entry.enabled && entry.isAvailable)?.instanceId;
+  return instanceId;
 }
 
 /**

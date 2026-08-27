@@ -2460,6 +2460,7 @@ function applyEnvironmentOrchestrationEvent(
     case "task.verification-recorded":
       return updateTaskState(state, String(event.payload.taskId), (task) => ({
         ...task,
+        status: "review" as const,
         verification: {
           stageThreadId: event.payload.stageThreadId,
           head: event.payload.head,

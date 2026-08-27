@@ -13,7 +13,7 @@ import { page, userEvent } from "vitest/browser";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 
-import DiffPanel from "./DiffPanel";
+import DiffPanel, { buildEmbeddedDiffSelectionIdentity } from "./DiffPanel";
 import { initialEnvironmentState, useStore, type AppState } from "../store";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -101,6 +101,25 @@ function renderEmbeddedDiffPanel() {
 }
 
 describe("DiffPanel embedded turn selection", () => {
+  it("scopes local selection to environment, thread, and host stage identity", () => {
+    const first = buildEmbeddedDiffSelectionIdentity(
+      scopeThreadRef(EnvironmentId.make("environment-a"), threadId),
+      "task-a:stage-a",
+    );
+    expect(
+      buildEmbeddedDiffSelectionIdentity(
+        scopeThreadRef(EnvironmentId.make("environment-b"), threadId),
+        "task-a:stage-a",
+      ),
+    ).not.toBe(first);
+    expect(
+      buildEmbeddedDiffSelectionIdentity(
+        scopeThreadRef(EnvironmentId.make("environment-a"), threadId),
+        "task-a:stage-b",
+      ),
+    ).not.toBe(first);
+  });
+
   it("filters turns locally without navigating away from the host route", async () => {
     seedEmbeddedThread();
     const { router } = renderEmbeddedDiffPanel();
