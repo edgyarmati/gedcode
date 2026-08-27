@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { listSavedEnvironmentRecords } from "../environments/runtime";
-import { resolveDefaultLanding } from "./defaultLanding.logic";
+import { resolveDefaultLanding } from "../navigation/defaultLanding.logic";
 
 export const Route = createFileRoute("/")({
   beforeLoad: ({ context }) => {
