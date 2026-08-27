@@ -79,7 +79,9 @@ Windows signing is optional. If any required value is missing, Windows artifacts
 
 ## Desktop Auto-Update Notes
 
-- Runtime updater: `electron-updater` in `apps/desktop/src/main.ts`.
+- Runtime updaters: Sparkle 2 on production macOS; `electron-updater` on Windows, Linux, and local
+  mock-update builds. See [sparkle-updates.md](./sparkle-updates.md) for signing-key custody,
+  transfer, feed publication, and the one-time manual bridge from pre-Sparkle releases.
 - Provider: GitHub Releases (`provider: github`) configured at build time.
 - The workflow publishes `latest*.yml` updater metadata for stable releases and copies those
   manifests to `nightly*.yml` so nightly subscribers can move onto stable releases.
@@ -88,8 +90,8 @@ Windows signing is optional. If any required value is missing, Windows artifacts
   stable update candidates.
 - macOS release assets must include both installer DMGs and zip updater payloads.
 - The current release only publishes Apple Silicon (`arm64`) macOS artifacts.
-- The desktop UI does not automatically download or install updates. Users start the download from
-  the update button (rocket/update action), then restart/install after download completes.
+- Sparkle checks and downloads macOS updates in the background, then requires the user to confirm
+  install and relaunch. Other platforms keep the explicit download and install actions.
 - To exercise the full updater flow locally against a non-GitHub feed, see
   [desktop-updater-local-testing.md](./desktop-updater-local-testing.md).
 
