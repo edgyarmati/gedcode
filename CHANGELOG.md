@@ -9,9 +9,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   Mismatched clients now stop at an update-required screen with reload/download guidance instead of
   subscribing with incompatible schemas.
 
-- Fix: Protect updates with retained pre-migration SQLite backups and an executable forward-migration
-  matrix covering every published stable and nightly GedCode release. Migration failures stop startup
-  with recovery paths and never reset user data; the existing one-time `~/.t3` import remains supported.
+- Fix: Protect updates with retained pre-migration SQLite backups and immutable forward-migration
+  fixtures generated from every distinct published stable and nightly GedCode release schema and
+  per-release browser payloads. Migration failures stop startup with recovery paths and never reset
+  user data; the existing one-time `~/.t3` import remains supported.
 
 - Fix/UI: Keep provider health and durable task state consistent in Orchestrator views: warning
   providers remain selectable with a visible warning, errored providers are blocked without silently
