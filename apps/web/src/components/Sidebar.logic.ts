@@ -18,9 +18,6 @@ export const SIDEBAR_PROJECT_SORT_LABELS: Record<SidebarProjectSortOrder, string
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
-// Visible sidebar rows are prewarmed into the thread-detail cache so opening a
-// nearby thread usually reuses an already-hot subscription.
-export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
 export type SidebarNewThreadEnvMode = "local" | "worktree";
 type SidebarProject = {
   id: string;
@@ -267,13 +264,6 @@ export function shouldShowSidebarProjectThreadPanel(input: {
     return false;
   }
   return input.projectExpanded || input.pinnedCollapsedThreadPresent;
-}
-
-export function getSidebarThreadIdsToPrewarm<TThreadId>(
-  visibleThreadIds: readonly TThreadId[],
-  limit = SIDEBAR_THREAD_PREWARM_LIMIT,
-): TThreadId[] {
-  return visibleThreadIds.slice(0, Math.max(0, limit));
 }
 
 export function resolveAdjacentThreadId<T>(input: {

@@ -873,6 +873,9 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
     return true;
   }
 
+  const threadRef = scopeThreadRef(entry.environmentId, entry.threadId);
+  useStore.getState().markThreadDetailSubscriptionLoading(threadRef);
+
   const connection = readEnvironmentConnection(entry.environmentId);
   if (!connection) {
     return false;
@@ -899,6 +902,11 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
         return;
       }
       applyEnvironmentThreadDetailEvent(item.event, entry.environmentId, item.coveredSequenceEnd);
+    },
+    {
+      onResubscribe: () => {
+        useStore.getState().markThreadDetailSubscriptionLoading(threadRef);
+      },
     },
   );
   return true;
@@ -947,6 +955,9 @@ function detachThreadDetailSubscriptionsForEnvironment(environmentId: Environmen
     }
     entry.unsubscribe();
     entry.unsubscribe = NOOP;
+    useStore
+      .getState()
+      .markThreadDetailSubscriptionLoading(scopeThreadRef(entry.environmentId, entry.threadId));
     watchThreadDetailSubscriptionConnection(entry);
   }
 }
@@ -1104,6 +1115,14 @@ export function retainThreadDetailSubscription(
       evictIdleThreadDetailSubscriptionsToCapacity();
     }
   };
+}
+
+export function prewarmThreadDetailSubscription(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): void {
+  const release = retainThreadDetailSubscription(environmentId, threadId);
+  release();
 }
 
 export function retainOrchestratorProjectSubscription(

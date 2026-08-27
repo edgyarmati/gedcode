@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Improve/Web: Start thread detail loading from pointer, focus, click, and shortcut intent instead
+  of speculatively opening the first ten sidebar streams. Thread navigation now shows the selected
+  title and an accessible loading state immediately, distinguishes loaded-empty conversations from
+  pending detail, and keeps cached content visible while reconnecting.
+
 - Performance: Load Orchestrator project subscriptions from lightweight projection state plus only
   the selected project's complete PM thread, and load task subscriptions from lightweight command
   state, avoiding global message, activity, and checkpoint hydration on project/task navigation.

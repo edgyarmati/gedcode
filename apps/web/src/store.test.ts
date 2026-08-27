@@ -15,6 +15,8 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationShellSnapshot,
+  type OrchestrationThread,
   type OrchestrationStageHistoryEntry,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
@@ -22,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyOrchestrationEvent,
   applyOrchestrationEvents,
+  markThreadDetailSubscriptionLoading,
   removeEnvironmentState,
   selectEnvironmentState,
   selectPendingGateById,
@@ -36,11 +39,14 @@ import {
   selectTasksForEnvironment,
   selectTasksForProjectRef,
   selectThreadByRef,
+  selectThreadDetailReadinessByRef,
   selectThreadExistsByRef,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
   syncOrchestratorProjectSnapshot,
   syncOrchestratorTaskSnapshot,
+  syncServerShellSnapshot,
+  syncServerThreadDetail,
   type AppState,
   type EnvironmentState,
 } from "./store";
@@ -204,6 +210,7 @@ function makeState(thread: Thread): AppState {
         thread.turnDiffSummaries.map((summary) => [summary.turnId, summary] as const),
       ) as EnvironmentState["turnDiffSummaryByThreadId"][ThreadId],
     },
+    threadDetailReadinessByThreadId: {},
     sidebarThreadSummaryById: {},
     bootstrapComplete: true,
   };
@@ -239,6 +246,7 @@ function makeEmptyState(overrides: Partial<AppState & EnvironmentState> = {}): A
     proposedPlanByThreadId: {},
     turnDiffIdsByThreadId: {},
     turnDiffSummaryByThreadId: {},
+    threadDetailReadinessByThreadId: {},
     sidebarThreadSummaryById: {},
     bootstrapComplete: true,
   };
@@ -291,6 +299,146 @@ function makeEvent<T extends OrchestrationEvent["type"]>(
     ...overrides,
   } as Extract<OrchestrationEvent, { type: T }>;
 }
+
+function makeServerThread(overrides: Partial<OrchestrationThread> = {}): OrchestrationThread {
+  return {
+    id: ThreadId.make("thread-1"),
+    projectId: ProjectId.make("project-1"),
+    title: "Thread",
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+    },
+    runtimeMode: DEFAULT_RUNTIME_MODE,
+    interactionMode: DEFAULT_INTERACTION_MODE,
+    branch: null,
+    worktreePath: null,
+    latestTurn: null,
+    createdAt: "2026-02-13T00:00:00.000Z",
+    updatedAt: "2026-02-13T00:00:00.000Z",
+    archivedAt: null,
+    deletedAt: null,
+    pendingPmHandoff: null,
+    messages: [],
+    proposedPlans: [],
+    activities: [],
+    checkpoints: [],
+    session: null,
+    ...overrides,
+  };
+}
+
+describe("thread detail readiness", () => {
+  it("distinguishes first load, accepted empty detail, and reconnect refresh", () => {
+    const thread = makeThread();
+    const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+    const initial = makeState(thread);
+
+    expect(selectThreadDetailReadinessByRef(initial, threadRef)).toBe("unrequested");
+
+    const loading = markThreadDetailSubscriptionLoading(initial, threadRef);
+    expect(selectThreadDetailReadinessByRef(loading, threadRef)).toBe("loading");
+    expect(markThreadDetailSubscriptionLoading(loading, threadRef)).toBe(loading);
+
+    const ready = syncServerThreadDetail(
+      loading,
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
+    expect(selectThreadDetailReadinessByRef(ready, threadRef)).toBe("ready");
+    expect(selectThreadByRef(ready, threadRef)?.messages).toEqual([]);
+
+    const refreshing = markThreadDetailSubscriptionLoading(ready, threadRef);
+    expect(selectThreadDetailReadinessByRef(refreshing, threadRef)).toBe("refreshing");
+    expect(selectThreadByRef(refreshing, threadRef)?.messages).toBe(
+      selectThreadByRef(ready, threadRef)?.messages,
+    );
+
+    const refreshed = syncServerThreadDetail(
+      refreshing,
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
+    expect(selectThreadDetailReadinessByRef(refreshed, threadRef)).toBe("ready");
+  });
+
+  it("retains readiness for surviving shell rows and drops removed rows", () => {
+    const thread = makeThread();
+    const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+    const ready = syncServerThreadDetail(
+      makeState(thread),
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
+    const shellThread: OrchestrationShellSnapshot["threads"][number] = {
+      id: thread.id,
+      projectId: thread.projectId,
+      title: thread.title,
+      modelSelection: thread.modelSelection,
+      runtimeMode: thread.runtimeMode,
+      interactionMode: thread.interactionMode,
+      branch: thread.branch,
+      worktreePath: thread.worktreePath,
+      latestTurn: null,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt ?? thread.createdAt,
+      archivedAt: null,
+      pendingPmHandoff: null,
+      session: null,
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    };
+
+    const retained = syncServerShellSnapshot(
+      ready,
+      {
+        snapshotSequence: 1,
+        projects: [],
+        threads: [shellThread],
+        updatedAt: "2026-02-27T00:00:00.000Z",
+      },
+      thread.environmentId,
+    );
+    expect(selectThreadDetailReadinessByRef(retained, threadRef)).toBe("ready");
+
+    const removed = syncServerShellSnapshot(
+      retained,
+      {
+        snapshotSequence: 2,
+        projects: [],
+        threads: [],
+        updatedAt: "2026-02-27T00:00:01.000Z",
+      },
+      thread.environmentId,
+    );
+    expect(selectThreadDetailReadinessByRef(removed, threadRef)).toBe("unrequested");
+  });
+
+  it("cleans readiness when a thread or its environment is removed", () => {
+    const thread = makeThread();
+    const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+    const ready = syncServerThreadDetail(
+      makeState(thread),
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
+
+    const deleted = applyOrchestrationEvent(
+      ready,
+      makeEvent("thread.deleted", {
+        threadId: thread.id,
+        deletedAt: "2026-02-27T00:00:01.000Z",
+      }),
+      thread.environmentId,
+    );
+    expect(selectThreadDetailReadinessByRef(deleted, threadRef)).toBe("unrequested");
+
+    const removedEnvironment = removeEnvironmentState(ready, thread.environmentId);
+    expect(selectThreadDetailReadinessByRef(removedEnvironment, threadRef)).toBe("unrequested");
+  });
+});
 
 describe("environment state removal", () => {
   it("drops local state for removed environments", () => {

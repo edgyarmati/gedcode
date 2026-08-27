@@ -401,6 +401,73 @@ describe("retainThreadDetailSubscription", () => {
     await resetEnvironmentServiceForTests();
   });
 
+  it("prewarms intent once and tracks initial, stale, and reconnect snapshot readiness", async () => {
+    const {
+      prewarmThreadDetailSubscription,
+      retainThreadDetailSubscription,
+      startEnvironmentConnectionService,
+      resetEnvironmentServiceForTests,
+    } = await import("./service");
+    const { selectThreadDetailReadinessByRef, selectThreadByRef, useStore } =
+      await import("../../store");
+    const { scopeThreadRef } = await import("@t3tools/client-runtime");
+
+    const stop = startEnvironmentConnectionService(new QueryClient());
+    const environmentId = EnvironmentId.make("env-1");
+    const threadId = ThreadId.make("thread-intent");
+    const threadRef = scopeThreadRef(environmentId, threadId);
+
+    prewarmThreadDetailSubscription(environmentId, threadId);
+    prewarmThreadDetailSubscription(environmentId, threadId);
+    expect(mockSubscribeThread).toHaveBeenCalledTimes(1);
+    expect(selectThreadDetailReadinessByRef(useStore.getState(), threadRef)).toBe("loading");
+
+    const onThreadItem = mockSubscribeThread.mock.calls[0]?.[1];
+    const subscriptionOptions = mockSubscribeThread.mock.calls[0]?.[2];
+    expect(onThreadItem).toBeTypeOf("function");
+    expect(subscriptionOptions?.onResubscribe).toBeTypeOf("function");
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 2,
+        thread: makeThreadDetail({ threadId }),
+      },
+    });
+    expect(selectThreadDetailReadinessByRef(useStore.getState(), threadRef)).toBe("ready");
+    const acceptedThread = selectThreadByRef(useStore.getState(), threadRef);
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 1,
+        thread: makeThreadDetail({ threadId }),
+      },
+    });
+    expect(selectThreadDetailReadinessByRef(useStore.getState(), threadRef)).toBe("ready");
+    expect(selectThreadByRef(useStore.getState(), threadRef)).toBe(acceptedThread);
+
+    subscriptionOptions.onResubscribe();
+    expect(selectThreadDetailReadinessByRef(useStore.getState(), threadRef)).toBe("refreshing");
+    expect(selectThreadByRef(useStore.getState(), threadRef)).toBe(acceptedThread);
+
+    onThreadItem({
+      kind: "snapshot",
+      snapshot: {
+        snapshotSequence: 3,
+        thread: makeThreadDetail({ threadId }),
+      },
+    });
+    expect(selectThreadDetailReadinessByRef(useStore.getState(), threadRef)).toBe("ready");
+
+    const release = retainThreadDetailSubscription(environmentId, threadId);
+    expect(mockSubscribeThread).toHaveBeenCalledTimes(1);
+    release();
+
+    stop();
+    await resetEnvironmentServiceForTests();
+  });
+
   it("retains a live PM user message when a stale thread snapshot arrives later", async () => {
     const {
       retainOrchestratorProjectSubscription,
