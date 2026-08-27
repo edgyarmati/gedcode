@@ -110,9 +110,10 @@ only by an exact package-and-advisory entry in `scripts/audit-production-depende
 code comment explaining why the affected module cannot ship in a GedCode artifact. New advisories
 for the same package remain blocking by default.
 
-The current residual advisory is a low-severity `esbuild` development-server file-read issue on
-Windows. `esbuild` is supplied by Vite for development and build tooling; GedCode does not ship the
-Vite development server in a desktop or server release.
+The current residual advisories are a low-severity `esbuild` development-server file-read issue on
+Windows and a high-severity `path-to-regexp` issue in the dev-only `@vercel/config` tree. GedCode
+does not ship either development server/tooling path. Production Express/router uses the fixed
+`path-to-regexp` 8.x line.
 
 ## Release Steps
 

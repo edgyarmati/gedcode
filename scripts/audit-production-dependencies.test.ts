@@ -47,6 +47,17 @@ describe("production dependency audit policy", () => {
     expect(classified.blocking).toHaveLength(1);
   });
 
+  it("allows only the documented dev-only path-to-regexp advisory", () => {
+    const classified = classifyProductionAudit({
+      "path-to-regexp": [
+        finding("high", "https://github.com/advisories/GHSA-9wv6-86v2-598j"),
+        finding("high", "https://github.com/advisories/GHSA-new-path-to-regexp"),
+      ],
+    });
+    expect(classified.residual).toHaveLength(1);
+    expect(classified.blocking).toHaveLength(1);
+  });
+
   it("renders package, severity, title, and advisory URL", () => {
     const [entry] = classifyProductionAudit({
       dependency: [finding("moderate", "https://github.com/advisories/GHSA-moderate")],

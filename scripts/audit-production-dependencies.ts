@@ -16,6 +16,10 @@ const buildOnlyExceptions: Readonly<Record<string, ReadonlySet<string>>> = {
   // Electron uses extract-zip only while its npm install script obtains the Electron binary. The
   // module is not bundled into GedCode's packaged application, and no fixed 2.x release exists.
   "extract-zip": new Set(["https://github.com/advisories/GHSA-jmr9-qjv8-65gv"]),
+  // The vulnerable 6.1.0 copy is reachable only through the web package's dev-only
+  // @vercel/config tooling. Production Express/router resolves path-to-regexp 8.x, while MSW's
+  // separate development copy resolves the fixed 6.3.0 release.
+  "path-to-regexp": new Set(["https://github.com/advisories/GHSA-9wv6-86v2-598j"]),
 };
 
 export interface ClassifiedAudit {
