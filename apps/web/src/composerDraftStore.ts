@@ -48,7 +48,7 @@ const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
-const COMPOSER_DRAFT_STORAGE_VERSION = 7;
+export const COMPOSER_DRAFT_STORAGE_VERSION = 7;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
 
@@ -859,7 +859,9 @@ function legacyReplaceProviderModelOptions(
 ): ProviderOptionSelectionsByProvider | null {
   const { [provider]: _discardedProviderModelOptions, ...otherProviderModelOptions } =
     currentModelOptions ?? {};
-  const merged: ProviderOptionSelectionsByProvider = { ...otherProviderModelOptions };
+  const merged: ProviderOptionSelectionsByProvider = {
+    ...otherProviderModelOptions,
+  };
   if (nextProviderOptions && nextProviderOptions.length > 0) {
     merged[provider] = nextProviderOptions;
   }
@@ -1488,7 +1490,10 @@ function normalizePersistedDraftThreads(
     }
   }
 
-  return { draftThreadsByThreadKey, logicalProjectDraftThreadKeyByLogicalProjectKey };
+  return {
+    draftThreadsByThreadKey,
+    logicalProjectDraftThreadKeyByLogicalProjectKey,
+  };
 }
 
 function normalizePersistedDraftsByThreadId(
@@ -1627,7 +1632,9 @@ function normalizePersistedDraftsByThreadId(
           : (() => {
               const environmentId = environmentIdByThreadId.get(threadKeyOrId as ThreadId);
               return environmentId
-                ? normalizeLegacyComposerStorageKey(threadKeyOrId, { environmentId })
+                ? normalizeLegacyComposerStorageKey(threadKeyOrId, {
+                    environmentId,
+                  })
                 : threadKeyOrId;
             })();
     nextDraftsByThreadKey[normalizedThreadKey] = {
@@ -1651,7 +1658,7 @@ function normalizePersistedDraftsByThreadId(
   return nextDraftsByThreadKey;
 }
 
-function migratePersistedComposerDraftStoreState(
+export function migratePersistedComposerDraftStoreState(
   persistedState: unknown,
 ): PersistedComposerDraftStoreState {
   if (!persistedState || typeof persistedState !== "object") {
