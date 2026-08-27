@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Change/Docs: Treat GedCode as an independent repository with `origin` as its only canonical
+  remote. Remove the standing external-upstream review backlog and replace T3-hosted pairing
+  examples in current operational documentation with GedCode-owned deployment examples.
+
 - Fix: Give the Orchestrator PM an explicit rebase ladder for post-verification target movement:
   identical and documentation-only outcomes may preserve verification, while substantive conflicts
   or content drift return to Work and a fresh Verify.
