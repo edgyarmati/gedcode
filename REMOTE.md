@@ -30,12 +30,15 @@ The default endpoint controls the QR code and primary copy action for pairing li
 When no user default is saved, the app uses the built-in LAN endpoint for pairing links when
 available. You can set another endpoint as the default from the expanded endpoint list.
 
-- HTTPS/WSS-compatible endpoints work from a hosted web app such as `https://app.t3.codes` or
-  your own fork-hosted domain, but are not made the default automatically.
+- HTTPS/WSS-compatible endpoints work from a GedCode web deployment such as
+  `https://app.gedcode.example`, but are not made the default automatically.
 - Non-loopback HTTP endpoints are useful for direct LAN pairing.
 - Loopback-only endpoints are not useful for another device unless that device is the same machine.
 
-If the copied link points directly at `http://192.168.x.y:3773`, open it from a client that can reach that LAN address. If it points at a hosted web URL such as `https://app.t3.codes/pair?...` or your own hosted domain, the hosted web app will save the environment and connect directly to the backend URL in the link.
+If the copied link points directly at `http://192.168.x.y:3773`, open it from a client that can reach
+that LAN address. If it points at a hosted web URL such as
+`https://app.gedcode.example/pair?...`, the hosted web app will save the environment and connect
+directly to the backend URL in the link.
 
 ### Tailscale Endpoints
 
@@ -55,7 +58,10 @@ Serve to proxy HTTPS traffic to the local backend.
 
 The Tailscale support is an endpoint provider add-on. The core remote model still works without Tailscale: LAN HTTP endpoints, custom HTTPS endpoints, future tunnels, and SSH-launched environments all use the same saved environment and pairing flow.
 
-For a hosted HTTPS app such as `https://app.t3.codes` or your own hosted domain, prefer an HTTPS Tailnet or other HTTPS endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser mixed-content rules.
+For a hosted HTTPS app such as `https://app.gedcode.example`, prefer an HTTPS Tailnet or other HTTPS
+endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another
+browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser
+mixed-content rules.
 
 ### Option 2: Headless Server (CLI)
 
@@ -169,15 +175,11 @@ After pairing, future access is session-based. You do not need to keep reusing t
 The hosted web app can save a remote backend in browser local storage from a URL like:
 
 ```text
-https://app.t3.codes/pair?host=https://backend.example.com:3773#token=PAIRCODE
-```
-
-`https://app.t3.codes` is the upstream T3 Code hosted client. A GedCode or fork deployment can use
-the same flow on its own domain, for example:
-
-```text
 https://app.gedcode.example/pair?host=https://backend.example.com:3773#token=PAIRCODE
 ```
+
+A GedCode deployment can use this flow on any domain it controls. Set the hosted app origin as
+described below so generated pairing links point to that deployment.
 
 Use hosted pairing when the backend is reachable from the browser over HTTPS/WSS. This includes a backend behind a trusted HTTPS tunnel or another HTTPS endpoint you operate.
 
@@ -185,7 +187,7 @@ Do not use hosted pairing for plain HTTP LAN URLs such as `http://192.168.x.y:37
 
 Hosted pairing does not proxy traffic through GedCode. The browser still connects directly to the backend URL in the pairing link.
 
-For fork-hosted deployments, set `VITE_HOSTED_APP_URL` to the public hosted web origin used in
+For hosted deployments, set `VITE_HOSTED_APP_URL` to the public hosted web origin used in
 generated pairing links. For the Vercel router deployment, the router and channel origins can also
 be configured without source edits:
 

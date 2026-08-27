@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Change/Docs: Treat GedCode as an independent repository with `origin` as its only canonical
+  remote. Remove the standing external-upstream review backlog and replace T3-hosted pairing
+  examples in current operational documentation with GedCode-owned deployment examples.
+
 - Security/Release: Update production and release-tool dependencies to patched compatible versions,
   add a release-blocking audit gate for unresolved high/critical runtime advisories, validate exact
   per-platform updater payloads and manifests before publication, and exercise release metadata,

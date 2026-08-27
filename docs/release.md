@@ -40,7 +40,7 @@ The current workflow does not include:
 - Vercel or hosted web app deployment
 
 When a hosted web deployment is added, configure the hosted pairing origin explicitly so generated
-pairing links use the GedCode-owned router rather than the upstream T3 Code domain:
+pairing links use the GedCode-owned router:
 
 - `VITE_HOSTED_APP_URL`, for example `https://app.gedcode.example`
 - `HOSTED_WEB_ROUTER_HOST`, for example `app.gedcode.example`

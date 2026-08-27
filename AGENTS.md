@@ -62,6 +62,8 @@ Docs:
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
-## Upstream Decision Tracking
+## Repository Independence
 
-Before categorizing, cherry-picking, or reimplementing upstream-only work from `pingdotgg/t3code`, check `docs/upstream-decisions.md`. Keep that document updated when upstream work is accepted, deferred, or ruled out. After completing a task from the document's "Want To Implement" section, remove that completed item from the list in the same change.
+Treat `origin` (`edgyarmati/gedcode`) as the only canonical repository. Do not fetch, compare,
+cherry-pick, or reimplement changes from another project unless the user explicitly names that
+project as a reference for the current task.

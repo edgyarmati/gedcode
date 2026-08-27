@@ -4,12 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-GedCode is an independently maintained fork of [T3 Code](https://github.com/pingdotgg/t3code). Its
-focus is a structured Orchestrator workflow that lets a project manager agent plan and delegate work
-to isolated worker agents through Codex, Claude, or OpenCode without requiring changes to those
-harnesses. The repository is branded and released as GedCode under `edgyarmati/gedcode`.
+GedCode is an independently maintained project focused on a structured Orchestrator workflow. It
+lets a project manager agent plan and delegate work to isolated worker agents through Codex, Claude,
+or OpenCode without requiring changes to those harnesses. The canonical repository is
+`edgyarmati/gedcode`.
 
-**Branch strategy:** `main` is the working branch. Upstream (t3code) is tracked via the `upstream` remote — sync with `git fetch upstream`.
+**Branch strategy:** `main` is the working branch and `origin` is the only canonical remote. Do not
+sync from or compare against an external project unless the maintainer explicitly names it for the
+current task.
 
 ## Build & Verification
 
