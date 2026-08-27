@@ -51,6 +51,7 @@ import { resolveWorkerStageRuntimeMode } from "./workerSafety.ts";
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeOrchestratorConfig = Schema.decodeUnknownOption(OrchestratorProjectConfig);
 const defaultOrchestratorConfig = Option.getOrThrow(decodeOrchestratorConfig({}));
+const retiredTaskTypeIds = new Set(["release"]);
 const ACTIVE_PROJECT_CONTEXT_RUN_STATUSES = new Set(["pending", "running", "pending-review"]);
 
 function requireNoActiveProjectContextRun(input: {
@@ -159,7 +160,7 @@ function requireOrchestratorConfig(input: {
   const configuredIds = new Set<string>();
   for (const taskType of config.value.taskTypes) {
     const taskTypeId = String(taskType.id);
-    if (!defaultTaskTypeRegistry.has(taskTypeId)) {
+    if (!defaultTaskTypeRegistry.has(taskTypeId) && !retiredTaskTypeIds.has(taskTypeId)) {
       return Effect.fail(
         invariantError(
           input.command.type,
@@ -192,55 +193,6 @@ function requireRegisteredTaskType(input: {
           `Unknown orchestration task type '${input.taskTypeId}'. Registered task types: ${defaultTaskTypeRegistry.ids().join(", ")}.`,
         ),
       );
-}
-
-function requireReleaseSource(input: {
-  readonly command: OrchestrationCommand;
-  readonly readModel: OrchestrationReadModel;
-  readonly projectId: OrchestrationProject["id"];
-  readonly taskTypeId: string;
-  readonly dependsOnTaskIds: ReadonlyArray<OrchestrationReadModel["tasks"][number]["id"]>;
-}): Effect.Effect<void, OrchestrationCommandInvariantError> {
-  if (input.taskTypeId !== "release") {
-    return Effect.void;
-  }
-  if (input.dependsOnTaskIds.length !== 1) {
-    return Effect.fail(
-      invariantError(
-        input.command.type,
-        "A release task must identify exactly one landed feature task as releaseSourceTaskId.",
-      ),
-    );
-  }
-  const sourceTaskId = input.dependsOnTaskIds[0]!;
-  const source = input.readModel.tasks.find((task) => task.id === sourceTaskId);
-  if (source === undefined) {
-    return Effect.fail(
-      invariantError(input.command.type, `Release source task '${sourceTaskId}' does not exist.`),
-    );
-  }
-  if (source.projectId !== input.projectId) {
-    return Effect.fail(
-      invariantError(
-        input.command.type,
-        `Release source task '${sourceTaskId}' belongs to a different project.`,
-      ),
-    );
-  }
-  if (source.archivedAt !== null || source.deletedAt !== null) {
-    return Effect.fail(
-      invariantError(input.command.type, `Release source task '${sourceTaskId}' must be visible.`),
-    );
-  }
-  if (source.type !== "feature" || source.status !== "landed" || source.prUrl === null) {
-    return Effect.fail(
-      invariantError(
-        input.command.type,
-        `Release source task '${sourceTaskId}' must be a fully landed feature task with a pull request.`,
-      ),
-    );
-  }
-  return Effect.void;
 }
 
 function isTerminalTaskStatus(status: OrchestrationReadModel["tasks"][number]["status"]): boolean {
@@ -2126,19 +2078,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         taskTypeId: command.taskType,
       });
-      if (command.taskType !== "release" && (command.dependsOnTaskIds?.length ?? 0) > 0) {
+      if ((command.dependsOnTaskIds?.length ?? 0) > 0) {
         return yield* invariantError(
           command.type,
-          "Only release tasks may set dependencies directly at task creation.",
+          "Task dependencies cannot be set directly at task creation.",
         );
       }
-      yield* requireReleaseSource({
-        command,
-        readModel,
-        projectId: command.projectId,
-        taskTypeId: command.taskType,
-        dependsOnTaskIds: command.dependsOnTaskIds ?? [],
-      });
       yield* requireTaskAbsent({
         readModel,
         command,
@@ -2307,12 +2252,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           command,
           taskTypeId: child.taskType,
         });
-        if (child.taskType === "release") {
-          return yield* invariantError(
-            command.type,
-            "Release tasks cannot be split children; create one with releaseSourceTaskId after its feature source lands.",
-          );
-        }
         yield* requireTaskAbsent({ readModel, command, taskId: child.taskId });
         if (child.acceptanceCriteria.length === 0 || child.acceptanceCriteria.length > 12) {
           return yield* invariantError(
@@ -2402,13 +2341,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       yield* requireRegisteredTaskType({
         command,
         taskTypeId: command.taskType,
-      });
-      yield* requireReleaseSource({
-        command,
-        readModel,
-        projectId: task.projectId,
-        taskTypeId: command.taskType,
-        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
       });
       return {
         ...(yield* withEventBase({
@@ -2591,13 +2523,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
-      yield* requireReleaseSource({
-        command,
-        readModel,
-        projectId: task.projectId,
-        taskTypeId: task.type,
-        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
-      });
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const allowedStages = resolveStages({
         config: projectConfig,
@@ -3468,6 +3393,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       yield* requireOrchestratorConfig({ command, project });
       yield* requireRegisteredTaskType({ command, taskTypeId: task.type });
+      if (command.gate === "release") {
+        return yield* invariantError(
+          command.type,
+          "The Orchestrator release approval gate has been retired.",
+        );
+      }
       if (command.gate === "land") {
         if (command.pullRequest === undefined) {
           return yield* invariantError(
@@ -3493,21 +3424,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           command.type,
           `Pull-request content is valid only for a land approval gate.`,
         );
-      }
-      if (command.gate === "release") {
-        if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
-          return yield* invariantError(
-            command.type,
-            "Release approval requires a fully landed release task with a pull request.",
-          );
-        }
-        yield* requireReleaseSource({
-          command,
-          readModel,
-          projectId: task.projectId,
-          taskTypeId: task.type,
-          dependsOnTaskIds: task.dependsOnTaskIds ?? [],
-        });
       }
       const projectConfig = explicitlySetProjectConfig(project.orchestratorConfig);
       const gatePolicy = resolveGatePolicy({
@@ -3566,7 +3482,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
 
-      if (gatePolicy !== "auto" || command.gate === "land" || command.gate === "release") {
+      if (gatePolicy !== "auto" || command.gate === "land") {
         return [...supersededGateEvents, gateRequestedEvent];
       }
 
@@ -3957,110 +3873,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "task.release.dispatch.request": {
-      const task = yield* requireTask({
-        readModel,
-        command,
-        taskId: command.taskId,
-      });
-      yield* requireTaskNotCancelling({ command, task });
-      if (task.type !== "release" || task.status !== "landed" || task.prUrl === null) {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' must be a fully landed release task before dispatch.`,
-        );
-      }
-      if (task.currentStageThreadId !== null) {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' cannot dispatch while a worker stage is active.`,
-        );
-      }
-      yield* requireReleaseSource({
-        command,
-        readModel,
-        projectId: task.projectId,
-        taskTypeId: task.type,
-        dependsOnTaskIds: task.dependsOnTaskIds ?? [],
-      });
-      if (task.releaseDispatch !== null) {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' already has an authoritative release dispatch attempt.`,
-        );
-      }
-      const latestReleaseGate = (readModel.pendingGates ?? []).findLast(
-        (gate) => gate.taskId === command.taskId && gate.gate === "release",
-      );
-      if (
-        latestReleaseGate === undefined ||
-        latestReleaseGate.status !== "resolved" ||
-        latestReleaseGate.decision !== "approved" ||
-        latestReleaseGate.approvedHash !== command.contentHash ||
-        latestReleaseGate.contentHash !== command.contentHash
-      ) {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' cannot dispatch without a content-matched approved release gate.`,
-        );
-      }
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "task",
-          aggregateId: command.taskId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        type: "task.release-dispatch-requested",
-        payload: {
-          taskId: command.taskId,
-          workflow: command.workflow,
-          ref: command.ref,
-          inputs: command.inputs,
-          contentHash: command.contentHash,
-          requestedAt: command.createdAt,
-          updatedAt: command.createdAt,
-        },
-      };
-    }
-
+    case "task.release.dispatch.request":
     case "task.release.dispatch.complete":
     case "task.release.dispatch.fail": {
-      const task = yield* requireTask({
-        readModel,
-        command,
-        taskId: command.taskId,
-      });
-      if (task.releaseDispatch?.status !== "dispatching") {
-        return yield* invariantError(
-          command.type,
-          `Task '${command.taskId}' has no in-progress release dispatch.`,
-        );
-      }
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "task",
-          aggregateId: command.taskId,
-          occurredAt: command.createdAt,
-          commandId: command.commandId,
-        })),
-        type:
-          command.type === "task.release.dispatch.complete"
-            ? "task.release-dispatched"
-            : "task.release-dispatch-failed",
-        payload:
-          command.type === "task.release.dispatch.complete"
-            ? {
-                taskId: command.taskId,
-                workflowUrl: command.workflowUrl,
-                updatedAt: command.createdAt,
-              }
-            : {
-                taskId: command.taskId,
-                message: command.message,
-                updatedAt: command.createdAt,
-              },
-      };
+      return yield* invariantError(
+        command.type,
+        "The Orchestrator release dispatch actuator has been retired.",
+      );
     }
 
     case "task.pr.opened": {

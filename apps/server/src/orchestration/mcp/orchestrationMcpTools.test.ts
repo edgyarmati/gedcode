@@ -99,3 +99,18 @@ describe("orchestration MCP task rebase inputs", () => {
     },
   );
 });
+
+describe("orchestration MCP release retirement", () => {
+  it("does not expose release tasks, gates, or dispatch tools", () => {
+    expect(ORCHESTRATION_MCP_TOOL_NAMES).not.toContain("requestReleaseApproval");
+    expect(ORCHESTRATION_MCP_TOOL_NAMES).not.toContain("dispatchRelease");
+    expect(mcpInputSchemas.createTask).not.toHaveProperty("releaseSourceTaskId");
+    expect(
+      z.object(mcpInputSchemas.requestApproval).safeParse({
+        taskId: "task-1",
+        gate: "release",
+        contentHash: "hash",
+      }).success,
+    ).toBe(false);
+  });
+});

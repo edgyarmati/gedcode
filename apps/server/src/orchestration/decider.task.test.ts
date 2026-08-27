@@ -277,141 +277,43 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
     }),
   );
 
-  it.effect("creates a release task only from one fully landed feature source", () =>
+  it.effect("rejects the retired release task type", () =>
     Effect.gen(function* () {
-      const landed = yield* taskReadModel({
-        status: "landed",
-        prUrl: "https://github.com/example/repo/pull/1",
-        currentStageThreadId: null,
-      });
-      const release = yield* decideOrchestrationCommand({
-        readModel: landed,
-        command: {
-          type: "task.create",
-          commandId: asCommandId("cmd-create-release"),
-          taskId: asTaskId("task-release"),
-          projectId: asProjectId("project-1"),
-          taskType: asTaskTypeId("release"),
-          title: "Release landed feature",
-          pmMessageId: null,
-          branch: null,
-          dependsOnTaskIds: [asTaskId("task-1")],
-          createdAt: now,
-        },
-      });
-
-      const event = Array.isArray(release) ? release[0] : release;
-      expect(event?.type).toBe("task.created");
-      expect(event?.payload).toMatchObject({
-        taskType: "release",
-        dependsOnTaskIds: ["task-1"],
-      });
-
-      const unlanded = yield* taskReadModel({
-        status: "working",
-        currentStageThreadId: null,
-      });
+      const readModel = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
       const error = yield* Effect.flip(
         decideOrchestrationCommand({
-          readModel: unlanded,
+          readModel,
           command: {
             type: "task.create",
-            commandId: asCommandId("cmd-create-release-too-early"),
-            taskId: asTaskId("task-release-early"),
+            commandId: asCommandId("cmd-create-release"),
+            taskId: asTaskId("task-release"),
             projectId: asProjectId("project-1"),
             taskType: asTaskTypeId("release"),
-            title: "Premature release",
+            title: "Release landed feature",
             pmMessageId: null,
             branch: null,
-            dependsOnTaskIds: [asTaskId("task-1")],
             createdAt: now,
           },
         }),
       );
+
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
       if (error._tag === "OrchestrationCommandInvariantError") {
-        expect(error.detail).toContain("must be a fully landed feature task");
+        expect(error.detail).toContain("Unknown orchestration task type 'release'");
       }
-
-      const legacyReleaseEvent = makeTaskCreatedEvent({ sequence: 3 });
-      const withPrematureRelease = yield* projectEvent(unlanded, {
-        ...legacyReleaseEvent,
-        eventId: asEventId("evt-premature-release"),
-        aggregateId: asTaskId("task-release-replayed"),
-        payload: {
-          ...legacyReleaseEvent.payload,
-          taskId: asTaskId("task-release-replayed"),
-          taskType: asTaskTypeId("release"),
-          dependsOnTaskIds: [asTaskId("task-1")],
-        },
-      });
-      const dispatchError = yield* Effect.flip(
-        decideOrchestrationCommand({
-          readModel: withPrematureRelease,
-          command: {
-            type: "task.stage.start",
-            commandId: asCommandId("cmd-start-premature-release"),
-            taskId: asTaskId("task-release-replayed"),
-            role: "work",
-            instructions: "Dispatch the release",
-            createdAt: now,
-          },
-        }),
-      );
-      expect(dispatchError._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 
-  it.effect("requires a content-matched release gate and prevents duplicate dispatch", () =>
+  it.effect("rejects retired release gates and dispatch commands", () =>
     Effect.gen(function* () {
-      const source = yield* taskReadModel({
-        status: "landed",
-        prUrl: "https://github.com/example/repo/pull/1",
-        currentStageThreadId: null,
-      });
-      const withRelease = yield* projectEvent(source, {
-        sequence: 3,
-        eventId: asEventId("evt-release-task"),
-        aggregateKind: "task",
-        aggregateId: asTaskId("task-release"),
-        type: "task.created",
-        occurredAt: now,
-        commandId: asCommandId("cmd-release-task"),
-        causationEventId: null,
-        correlationId: asCommandId("cmd-release-task"),
-        metadata: {},
-        payload: {
-          taskId: asTaskId("task-release"),
-          projectId: asProjectId("project-1"),
-          taskType: asTaskTypeId("release"),
-          title: "Release feature",
-          branch: "orchestrator/task-release",
-          worktreePath: "/tmp/project/.gedcode/orchestrator/tasks/task-release",
-          pmMessageId: null,
-          playbookVersion: "release@v1",
-          dependsOnTaskIds: [asTaskId("task-1")],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-      const ready: OrchestrationReadModel = {
-        ...withRelease,
-        tasks: withRelease.tasks.map((task) =>
-          task.id === asTaskId("task-release")
-            ? Object.assign({}, task, {
-                status: "landed" as const,
-                prUrl: "https://github.com/example/repo/pull/2",
-              })
-            : task,
-        ),
-      };
-      const gateRequest = toEvents(
-        yield* decideOrchestrationCommand({
-          readModel: ready,
+      const readModel = yield* taskReadModel({ currentStageThreadId: null });
+      const gateError = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
           command: {
             type: "task.gate.request",
             commandId: asCommandId("cmd-release-gate"),
-            taskId: asTaskId("task-release"),
+            taskId: asTaskId("task-1"),
             gateId: asGateId("gate-release"),
             gate: "release",
             contentHash: "release-hash",
@@ -420,32 +322,13 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           },
         }),
       );
-      expect(gateRequest.map((event) => event.type)).toEqual(["task.gate-requested"]);
-      const pending = yield* applyEvents(ready, gateRequest);
-      const gateResolution = toEvents(
-        yield* decideOrchestrationCommand({
-          readModel: pending,
-          command: {
-            type: "task.gate.resolve",
-            commandId: asCommandId("cmd-release-approve"),
-            taskId: asTaskId("task-release"),
-            gateId: asGateId("gate-release"),
-            gate: "release",
-            approvedHash: "release-hash",
-            decision: "approved",
-            origin: "human",
-            createdAt: now,
-          },
-        }),
-      );
-      const approved = yield* applyEvents(pending, gateResolution);
-      const dispatch = toEvents(
-        yield* decideOrchestrationCommand({
-          readModel: approved,
+      const dispatchError = yield* Effect.flip(
+        decideOrchestrationCommand({
+          readModel,
           command: {
             type: "task.release.dispatch.request",
             commandId: asCommandId("cmd-release-dispatch"),
-            taskId: asTaskId("task-release"),
+            taskId: asTaskId("task-1"),
             workflow: "release.yml",
             ref: "main",
             inputs: { version: "1.2.3" },
@@ -454,28 +337,15 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
           },
         }),
       );
-      expect(dispatch[0]?.type).toBe("task.release-dispatch-requested");
-      const dispatching = yield* applyEvents(approved, dispatch);
-      expect(
-        dispatching.tasks.find((task) => task.id === asTaskId("task-release"))?.releaseDispatch
-          ?.status,
-      ).toBe("dispatching");
-      const duplicate = yield* Effect.flip(
-        decideOrchestrationCommand({
-          readModel: dispatching,
-          command: {
-            type: "task.release.dispatch.request",
-            commandId: asCommandId("cmd-release-dispatch-again"),
-            taskId: asTaskId("task-release"),
-            workflow: "release.yml",
-            ref: "main",
-            inputs: { version: "1.2.3" },
-            contentHash: "release-hash",
-            createdAt: now,
-          },
-        }),
-      );
-      expect(duplicate._tag).toBe("OrchestrationCommandInvariantError");
+
+      expect(gateError._tag).toBe("OrchestrationCommandInvariantError");
+      if (gateError._tag === "OrchestrationCommandInvariantError") {
+        expect(gateError.detail).toContain("release approval gate has been retired");
+      }
+      expect(dispatchError._tag).toBe("OrchestrationCommandInvariantError");
+      if (dispatchError._tag === "OrchestrationCommandInvariantError") {
+        expect(dispatchError.detail).toContain("release dispatch actuator has been retired");
+      }
     }),
   );
 
@@ -498,6 +368,48 @@ it.layer(NodeServices.layer)("task decider invariants", (it) => {
       if (error._tag === "OrchestrationCommandInvariantError") {
         expect(error.detail).toContain("Unknown orchestration task type 'unknown'");
       }
+    }),
+  );
+
+  it.effect("tolerates retired release configuration and allows cancelling a legacy task", () =>
+    Effect.gen(function* () {
+      const empty = yield* projectEvent(createEmptyReadModel(now), makeProjectCreatedEvent());
+      const configUpdate = yield* decideOrchestrationCommand({
+        readModel: empty,
+        command: {
+          type: "project.meta.update",
+          commandId: asCommandId("cmd-preserve-retired-release-config"),
+          projectId: asProjectId("project-1"),
+          orchestratorConfig: { taskTypes: [{ id: "release" }] },
+        },
+      });
+      expect(toEvents(configUpdate)[0]?.type).toBe("project.meta-updated");
+
+      const current = yield* taskReadModel({ status: "planning", currentStageThreadId: null });
+      const legacy: OrchestrationReadModel = {
+        ...current,
+        projects: current.projects.map((project) =>
+          Object.assign({}, project, {
+            orchestratorConfig: { taskTypes: [{ id: TaskTypeId.make("release") }] },
+          }),
+        ),
+        tasks: current.tasks.map((task) =>
+          Object.assign({}, task, {
+            type: TaskTypeId.make("release"),
+          }),
+        ),
+      };
+      const cancellation = yield* decideOrchestrationCommand({
+        readModel: legacy,
+        command: {
+          type: "task.cancellation.request",
+          commandId: asCommandId("cmd-cancel-legacy-release"),
+          taskId: asTaskId("task-1"),
+          createdAt: now,
+        },
+      });
+
+      expect(toEvents(cancellation)[0]?.type).toBe("task.cancellation-requested");
     }),
   );
 

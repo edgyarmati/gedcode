@@ -1689,12 +1689,10 @@ describe("PmRuntime", () => {
       }).pipe(Effect.scoped, Effect.provide(makeFactoryCaptureLayer()));
 
       const resolved = defaultPlaybookLoader.resolve("feature");
-      const release = defaultPlaybookLoader.resolve("release");
       assert.ok(resolved);
-      assert.ok(release);
       assert.strictEqual(captured.length, 1);
       assert.strictEqual(resourceCalls.length, 1);
-      assert.deepStrictEqual(resourceCalls[0]?.skills, [resolved.skill, release.skill]);
+      assert.deepStrictEqual(resourceCalls[0]?.skills, [resolved.skill]);
       assert.strictEqual(resourceCalls[0]?.skills?.[0]?.name, resolved.skill.name);
       assert.strictEqual(resourceCalls[0]?.skills?.[0]?.description, resolved.skill.description);
     }),
@@ -4074,6 +4072,17 @@ describe("buildPmSystemPrompt", () => {
     assert.notInclude(prompt, "worker-network");
     assert.notInclude(prompt, "credential");
     assert.notInclude(prompt, "authenticated host");
+  });
+
+  it("runs explicitly requested GitHub workflows without an Orchestrator release gate", () => {
+    const prompt = buildPmSystemPrompt(project, codexDriver);
+
+    assert.include(prompt, "Do not create a special release task or release approval gate");
+    assert.include(prompt, "explicitly asks in the current conversation");
+    assert.include(prompt, "ordinary shell access and the GitHub CLI");
+    assert.include(prompt, "that request is the publishing approval boundary");
+    assert.notInclude(prompt, "requestReleaseApproval");
+    assert.notInclude(prompt, "dispatchRelease");
   });
 
   it("uses plain-text decision guidance for Codex PM prompts", () => {

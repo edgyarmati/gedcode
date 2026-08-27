@@ -2360,4 +2360,71 @@ describe("orchestration projector", () => {
       abandoned: 1,
     });
   });
+
+  it("replays historical release dispatch state after active release gating is retired", async () => {
+    const occurredAt = "2026-08-01T12:00:00.000Z";
+    const events = [
+      makeEvent({
+        sequence: 1,
+        type: "task.created",
+        aggregateKind: "task",
+        aggregateId: "legacy-release-task",
+        occurredAt,
+        commandId: "cmd-create-legacy-release",
+        payload: {
+          taskId: "legacy-release-task",
+          projectId: "project-1",
+          taskType: "release",
+          title: "Legacy release",
+          branch: null,
+          worktreePath: null,
+          pmMessageId: null,
+          playbookVersion: "builtin:legacy-release",
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      }),
+      makeEvent({
+        sequence: 2,
+        type: "task.release-dispatch-requested",
+        aggregateKind: "task",
+        aggregateId: "legacy-release-task",
+        occurredAt,
+        commandId: "cmd-request-legacy-release",
+        payload: {
+          taskId: "legacy-release-task",
+          workflow: "release.yml",
+          ref: "main",
+          inputs: { version: "0.4.3" },
+          contentHash: "legacy-release-hash",
+          requestedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "task.release-dispatched",
+        aggregateKind: "task",
+        aggregateId: "legacy-release-task",
+        occurredAt,
+        commandId: "cmd-complete-legacy-release",
+        payload: {
+          taskId: "legacy-release-task",
+          workflowUrl: "https://github.com/example/gedcode/actions/workflows/release.yml",
+          updatedAt: occurredAt,
+        },
+      }),
+    ];
+    let model = createEmptyReadModel(occurredAt);
+    for (const event of events) {
+      model = await Effect.runPromise(projectEvent(model, event));
+    }
+
+    expect(model.tasks[0]?.type).toBe("release");
+    expect(model.tasks[0]?.releaseDispatch).toMatchObject({
+      status: "dispatched",
+      workflow: "release.yml",
+      workflowUrl: "https://github.com/example/gedcode/actions/workflows/release.yml",
+    });
+  });
 });
