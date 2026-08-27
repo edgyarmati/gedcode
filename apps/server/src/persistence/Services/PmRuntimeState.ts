@@ -67,6 +67,13 @@ export const ListPmConsumedSettlementsInput = Schema.Struct({
 });
 export type ListPmConsumedSettlementsInput = typeof ListPmConsumedSettlementsInput.Type;
 
+export const GetPmConsumedSettlementInput = Schema.Struct({
+  projectId: ProjectId,
+  kind: PmConsumedSettlementKind,
+  settlementKey: TrimmedNonEmptyString,
+});
+export type GetPmConsumedSettlementInput = typeof GetPmConsumedSettlementInput.Type;
+
 export const ConsumePmSettlementInput = Schema.Struct({
   projectId: ProjectId,
   kind: PmConsumedSettlementKind,
@@ -127,6 +134,10 @@ export interface PmRuntimeStateRepositoryShape {
   readonly listConsumedSettlements: (
     input: ListPmConsumedSettlementsInput,
   ) => Effect.Effect<ReadonlyArray<PmConsumedSettlement>, ProjectionRepositoryError>;
+
+  readonly getSettlement: (
+    input: GetPmConsumedSettlementInput,
+  ) => Effect.Effect<Option.Option<PmConsumedSettlement>, ProjectionRepositoryError>;
 
   readonly consumeSettlementAndAdvanceCursor: (
     input: ConsumePmSettlementInput,

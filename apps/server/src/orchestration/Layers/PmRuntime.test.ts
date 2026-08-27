@@ -624,6 +624,7 @@ const makeLayer = (input: {
   readonly releaseDeliveryHoldCalls?: ReleasePmLifecycleDeliveryHoldsInput[];
   readonly resetDeliveryRecoveryCalls?: ProjectId[];
   readonly pendingSettlements?: PmConsumedSettlement[];
+  readonly getSettlementCalls?: string[];
   readonly providerEvents?: Stream.Stream<ProviderRuntimeEvent>;
   readonly pmDrain?: Effect.Effect<void, PmRuntimeError>;
   readonly pendingApprovals?: ReadonlyArray<ProjectionPendingApproval>;
@@ -752,6 +753,33 @@ const makeLayer = (input: {
               : Option.some({ projectId, lastConsumedSequence, updatedAt: now });
           }),
         listConsumedSettlements: () => Effect.succeed([]),
+        getSettlement: ({ projectId, kind, settlementKey }) =>
+          Effect.sync(() => {
+            input.getSettlementCalls?.push(`${projectId}:${kind}:${settlementKey}`);
+            const pending = input.pendingSettlements?.find(
+              (settlement) =>
+                settlement.projectId === projectId &&
+                settlement.kind === kind &&
+                settlement.settlementKey === settlementKey,
+            );
+            if (pending !== undefined) {
+              return Option.some(pending);
+            }
+            const key = `${projectId}:${kind}:${settlementKey}`;
+            return input.consumed.has(key)
+              ? Option.some({
+                  projectId,
+                  kind,
+                  settlementKey,
+                  consumedAt: now,
+                  status: "acted" as const,
+                  retryAttempts: 0,
+                  holdReason: null,
+                  nextRetryAt: null,
+                  deliveryEpisode: 0,
+                })
+              : Option.none();
+          }),
         listPending: () => Effect.succeed(input.pendingSettlements ?? []),
         recordDeliveryFailure: (deliveryFailure) =>
           Effect.sync(() => {
@@ -817,11 +845,17 @@ const makeLayer = (input: {
           }),
         consumeSettlementAndAdvanceCursor: (consumeInput: ConsumePmSettlementInput) =>
           Effect.sync(() => {
-            input.consumeCalls.push(consumeInput);
             const key = `${consumeInput.projectId}:${consumeInput.kind}:${consumeInput.settlementKey}`;
-            if (input.consumed.has(key)) {
+            const pending = input.pendingSettlements?.some(
+              (settlement) =>
+                settlement.projectId === consumeInput.projectId &&
+                settlement.kind === consumeInput.kind &&
+                settlement.settlementKey === consumeInput.settlementKey,
+            );
+            if (input.consumed.has(key) || pending === true) {
               return false;
             }
+            input.consumeCalls.push(consumeInput);
             input.consumed.add(key);
             cursorByProject.set(
               String(consumeInput.projectId),
@@ -2567,6 +2601,72 @@ describe("PmRuntime", () => {
     }),
   );
 
+  it.effect("recovers a missed stage settlement below a later project cursor exactly once", () =>
+    Effect.gen(function* () {
+      const stageKey = `${projectId}:stage:${stageThreadId}::${turnId}`;
+      const laterTaskKey = `${projectId}:task:force-land-request:${taskId}`;
+      const consumed = new Set<string>([laterTaskKey]);
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const cursorByProject = new Map<string, number>([[String(projectId), 12]]);
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent, forceLandRequestEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        cursorByProject,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.retryProject(projectId);
+        yield* runtime.retryProject(projectId);
+        yield* runtime.drain;
+      }).pipe(Effect.scoped, Effect.provide(layer));
+
+      assert.deepStrictEqual(consumed.has(stageKey), true);
+      assert.strictEqual(messages.length, 1);
+      assert.match(messages[0] ?? "", /A detached worker stage completed/);
+      assert.deepStrictEqual(
+        consumeCalls.map(({ kind, settlementKey, sequence }) => ({
+          kind,
+          settlementKey,
+          sequence,
+        })),
+        [{ kind: "stage", settlementKey: `${stageThreadId}::${turnId}`, sequence: 10 }],
+      );
+    }),
+  );
+
+  it.effect("prunes acted settlement events from later reconciliation sweeps", () =>
+    Effect.gen(function* () {
+      const consumed = new Set<string>();
+      const messages: string[] = [];
+      const consumeCalls: ConsumePmSettlementInput[] = [];
+      const getSettlementCalls: string[] = [];
+      const layer = makeLayer({
+        liveEvents: [],
+        historicalEvents: [stageCompletedEvent],
+        consumed,
+        messages,
+        consumeCalls,
+        getSettlementCalls,
+      });
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* PmRuntime;
+        yield* runtime.start();
+        yield* runtime.retryProject(projectId);
+        const callsAfterFirstSweep = getSettlementCalls.length;
+        assert.ok(callsAfterFirstSweep > 0);
+        yield* runtime.retryProject(projectId);
+        assert.strictEqual(getSettlementCalls.length, callsAfterFirstSweep);
+      }).pipe(Effect.scoped, Effect.provide(layer));
+    }),
+  );
+
   it.effect("replays duplicate settled worker stages exactly once", () =>
     Effect.gen(function* () {
       const consumed = new Set<string>();
@@ -2696,10 +2796,7 @@ describe("PmRuntime", () => {
       );
       assert.deepStrictEqual(
         consumeCalls.map(({ kind, settlementKey }) => ({ kind, settlementKey })),
-        [
-          { kind: "task", settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}` },
-          { kind: "task", settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}` },
-        ],
+        [{ kind: "task", settlementKey: `pull-request-merged:${taskId}:${pullRequestUrl}` }],
       );
     }),
   );

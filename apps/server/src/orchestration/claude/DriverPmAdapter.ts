@@ -224,6 +224,12 @@ type ActiveTool = {
   readonly includeResultDetails: boolean;
 };
 
+type ActivePrompt = {
+  readonly ownerId: number;
+  readonly turnId: TurnId | undefined;
+  readonly deferred: Deferred.Deferred<AssistantMessage, PmRuntimeError>;
+};
+
 export type DriverPmProviderAdapter = Pick<
   ProviderAdapterShape<ProviderAdapterError>,
   | "provider"
@@ -261,13 +267,9 @@ export const makeDriverPmAdapter = (
     const currentModelSelection = yield* Ref.make(options.modelSelection);
     const resources = yield* Ref.make<AgentHarnessResources>({});
     const bridgeClosing = yield* Ref.make(false);
-    const activePrompt = yield* Ref.make<
-      | {
-          readonly turnId: TurnId;
-          readonly deferred: Deferred.Deferred<AssistantMessage, PmRuntimeError>;
-        }
-      | undefined
-    >(undefined);
+    const activePrompt = yield* Ref.make<ActivePrompt | undefined>(undefined);
+    const promptOwnerSequence = yield* Ref.make(0);
+    const invalidatedTurnIds = yield* Ref.make<ReadonlyArray<TurnId>>([]);
     const activeAssistant = yield* Ref.make<ActiveAssistant | undefined>(undefined);
     const activeTools = new Map<string, ActiveTool>();
     const threadId = pmThreadIdForProject(options.project);
@@ -275,6 +277,49 @@ export const makeDriverPmAdapter = (
 
     const offer = (event: PmEventProjectionEvent) =>
       Queue.offer(eventQueue, event).pipe(Effect.asVoid);
+
+    const isInvalidatedTurn = (turnId: TurnId): Effect.Effect<boolean> =>
+      Ref.get(invalidatedTurnIds).pipe(
+        Effect.map((turnIds) => turnIds.some((candidate) => candidate === turnId)),
+      );
+
+    const invalidateTurn = (turnId: TurnId): Effect.Effect<void> =>
+      Ref.update(invalidatedTurnIds, (turnIds) => {
+        const withoutDuplicate = turnIds.filter((candidate) => candidate !== turnId);
+        return [...withoutDuplicate, turnId].slice(-64);
+      });
+
+    const eventBelongsToActivePrompt = (turnId: TurnId | undefined): Effect.Effect<boolean> =>
+      Ref.get(activePrompt).pipe(
+        Effect.map(
+          (promptState) =>
+            promptState === undefined ||
+            turnId === undefined ||
+            promptState.turnId === undefined ||
+            promptState.turnId === turnId,
+        ),
+      );
+
+    const claimPromptForTurn = (turnId: TurnId): Effect.Effect<ActivePrompt | undefined> =>
+      Ref.modify(activePrompt, (promptState) => {
+        if (
+          promptState === undefined ||
+          (promptState.turnId !== undefined && promptState.turnId !== turnId)
+        ) {
+          return [undefined, promptState];
+        }
+        return [promptState, undefined];
+      });
+
+    const releasePromptOwnership = (ownerId: number): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const released = yield* Ref.modify(activePrompt, (promptState) =>
+          promptState?.ownerId === ownerId ? [true, undefined] : ([false, promptState] as const),
+        );
+        if (released) {
+          yield* Ref.set(idle, true);
+        }
+      });
 
     const persistSession = Effect.gen(function* () {
       const sessions = yield* options.providerAdapter.listSessions();
@@ -363,10 +408,24 @@ export const makeDriverPmAdapter = (
         if (event.threadId !== threadId) {
           return;
         }
+        if (event.turnId !== undefined && (yield* isInvalidatedTurn(event.turnId))) {
+          return;
+        }
 
         switch (event.type) {
           case "turn.started": {
-            yield* Ref.set(idle, false);
+            if (!(yield* eventBelongsToActivePrompt(event.turnId))) {
+              return;
+            }
+            const promptState = yield* Ref.get(activePrompt);
+            yield* Ref.update(activePrompt, (promptState) =>
+              promptState !== undefined && promptState.turnId === undefined
+                ? { ...promptState, turnId: event.turnId }
+                : promptState,
+            );
+            if (promptState !== undefined) {
+              yield* Ref.set(idle, false);
+            }
             yield* Ref.set(lastTurnUsedOrchestrationTool, false);
             yield* offer({ type: "agent_start" } satisfies AgentHarnessEvent);
             yield* offer({ type: "turn_start" } satisfies AgentHarnessEvent);
@@ -374,6 +433,9 @@ export const makeDriverPmAdapter = (
           }
 
           case "content.delta": {
+            if (!(yield* eventBelongsToActivePrompt(event.turnId))) {
+              return;
+            }
             if (event.payload.streamKind !== "assistant_text") {
               return;
             }
@@ -404,6 +466,9 @@ export const makeDriverPmAdapter = (
           }
 
           case "item.started": {
+            if (!(yield* eventBelongsToActivePrompt(event.turnId))) {
+              return;
+            }
             const data = lifecycleToolData(event.payload);
             if (!data || !event.itemId) {
               return;
@@ -429,6 +494,9 @@ export const makeDriverPmAdapter = (
           }
 
           case "item.updated": {
+            if (!(yield* eventBelongsToActivePrompt(event.turnId))) {
+              return;
+            }
             const data = lifecycleToolData(event.payload);
             if (!data || !event.itemId) {
               return;
@@ -445,6 +513,9 @@ export const makeDriverPmAdapter = (
           }
 
           case "item.completed": {
+            if (!(yield* eventBelongsToActivePrompt(event.turnId))) {
+              return;
+            }
             if (event.payload.itemType === "assistant_message") {
               yield* completeAssistant({ turnId: event.turnId });
               return;
@@ -513,6 +584,14 @@ export const makeDriverPmAdapter = (
           }
 
           case "turn.completed": {
+            if (event.turnId === undefined) {
+              return;
+            }
+            const promptState = yield* claimPromptForTurn(event.turnId);
+            if (promptState === undefined) {
+              return;
+            }
+            yield* invalidateTurn(event.turnId);
             const failed = event.payload.state === "failed";
             const interrupted = event.payload.state === "interrupted";
             if (failed || interrupted) {
@@ -553,25 +632,29 @@ export const makeDriverPmAdapter = (
             } satisfies AgentHarnessEvent);
             yield* Ref.set(idle, true);
             yield* persistSession;
-            const promptState = yield* Ref.get(activePrompt);
-            if (promptState && promptState.turnId === event.turnId) {
-              yield* Ref.set(activePrompt, undefined);
-              if (failed) {
-                yield* Deferred.fail(
-                  promptState.deferred,
-                  new PmRuntimeError({
-                    operation: "DriverPmAdapter.prompt",
-                    detail: event.payload.errorMessage ?? "Driver PM turn failed.",
-                  }),
-                );
-              } else {
-                yield* Deferred.succeed(promptState.deferred, completedMessage);
-              }
+            if (failed) {
+              yield* Deferred.fail(
+                promptState.deferred,
+                new PmRuntimeError({
+                  operation: "DriverPmAdapter.prompt",
+                  detail: event.payload.errorMessage ?? "Driver PM turn failed.",
+                }),
+              );
+            } else {
+              yield* Deferred.succeed(promptState.deferred, completedMessage);
             }
             return;
           }
 
           case "turn.aborted": {
+            if (event.turnId === undefined) {
+              return;
+            }
+            const promptState = yield* claimPromptForTurn(event.turnId);
+            if (promptState === undefined) {
+              return;
+            }
+            yield* invalidateTurn(event.turnId);
             yield* Ref.set(idle, true);
             yield* offer({
               type: "provider_runtime_turn_abnormal_end",
@@ -582,17 +665,13 @@ export const makeDriverPmAdapter = (
               type: "settled",
               nextTurnCount: 0,
             } satisfies AgentHarnessEvent);
-            const promptState = yield* Ref.get(activePrompt);
-            if (promptState && promptState.turnId === event.turnId) {
-              yield* Ref.set(activePrompt, undefined);
-              yield* Deferred.fail(
-                promptState.deferred,
-                new PmRuntimeError({
-                  operation: "DriverPmAdapter.prompt",
-                  detail: event.payload.reason,
-                }),
-              );
-            }
+            yield* Deferred.fail(
+              promptState.deferred,
+              new PmRuntimeError({
+                operation: "DriverPmAdapter.prompt",
+                detail: event.payload.reason,
+              }),
+            );
             return;
           }
 
@@ -629,16 +708,35 @@ export const makeDriverPmAdapter = (
     // Fails the in-flight prompt (if any) and settles the projected turn, so a
     // dead session cannot hold the PM re-entry semaphore forever. When
     // `expectedTurnId` is given, only that turn's prompt is torn down.
-    const failActivePrompt = (reason: string, expectedTurnId?: TurnId) =>
+    const failActivePrompt = (reason: string, expectedTurnId?: TurnId, interruptProvider = false) =>
       Effect.gen(function* () {
-        const promptState = yield* Ref.get(activePrompt);
+        const candidate = yield* Ref.get(activePrompt);
         if (
-          promptState === undefined ||
-          (expectedTurnId !== undefined && promptState.turnId !== expectedTurnId)
+          candidate === undefined ||
+          (expectedTurnId !== undefined && candidate.turnId !== expectedTurnId)
         ) {
           return;
         }
-        yield* Ref.set(activePrompt, undefined);
+        const promptState = yield* Ref.modify(activePrompt, (current) =>
+          current?.ownerId === candidate.ownerId
+            ? [current, undefined]
+            : ([undefined, current] as const),
+        );
+        if (promptState === undefined) {
+          return;
+        }
+        if (interruptProvider && promptState.turnId !== undefined) {
+          yield* invalidateTurn(promptState.turnId);
+          yield* options.providerAdapter.interruptTurn(threadId, promptState.turnId).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Driver PM watchdog failed to interrupt timed-out provider turn", {
+                projectId: String(options.project.id),
+                turnId: String(promptState.turnId),
+                cause,
+              }),
+            ),
+          );
+        }
         yield* Ref.set(idle, true);
         yield* offer({
           type: "provider_runtime_turn_abnormal_end",
@@ -756,41 +854,51 @@ export const makeDriverPmAdapter = (
           resources: yield* Ref.get(resources),
         } satisfies AgentHarnessEvent);
         const deferred = yield* Deferred.make<AssistantMessage, PmRuntimeError>();
-        const selection = yield* Ref.get(currentModelSelection);
-        const turn = yield* options.providerAdapter
-          .sendTurn({
-            threadId,
-            input: text,
-            modelSelection: selection,
-            interactionMode: "default",
-          })
-          .pipe(
-            Effect.mapError(
-              toPmRuntimeError("DriverPmAdapter.prompt", "Failed to send driver PM turn."),
-            ),
+        const ownerId = yield* Ref.modify(promptOwnerSequence, (sequence) => [
+          sequence + 1,
+          sequence + 1,
+        ]);
+        yield* Ref.set(activePrompt, { ownerId, turnId: undefined, deferred });
+        return yield* Effect.gen(function* () {
+          const selection = yield* Ref.get(currentModelSelection);
+          const turn = yield* options.providerAdapter
+            .sendTurn({
+              threadId,
+              input: text,
+              modelSelection: selection,
+              interactionMode: "default",
+            })
+            .pipe(
+              Effect.mapError(
+                toPmRuntimeError("DriverPmAdapter.prompt", "Failed to send driver PM turn."),
+              ),
+            );
+          yield* Ref.update(activePrompt, (promptState) =>
+            promptState?.ownerId === ownerId
+              ? { ...promptState, turnId: turn.turnId }
+              : promptState,
           );
-        yield* Ref.set(activePrompt, { turnId: turn.turnId, deferred });
-        const turnTimeout = options.turnTimeout ?? DRIVER_PM_TURN_TIMEOUT;
-        const timeoutDetail = `Driver PM turn did not complete within ${Duration.format(
-          Duration.fromInputUnsafe(turnTimeout),
-        )}.`;
-        return yield* Deferred.await(deferred).pipe(
-          Effect.timeoutOrElse({
-            duration: turnTimeout,
-            orElse: () =>
-              failActivePrompt(timeoutDetail, turn.turnId).pipe(
-                Effect.flatMap(() =>
-                  Effect.fail(
-                    new PmRuntimeError({
-                      operation: "DriverPmAdapter.prompt",
-                      detail: timeoutDetail,
-                    }),
+          const turnTimeout = options.turnTimeout ?? DRIVER_PM_TURN_TIMEOUT;
+          const timeoutDetail = `Driver PM turn did not complete within ${Duration.format(
+            Duration.fromInputUnsafe(turnTimeout),
+          )}.`;
+          return yield* Deferred.await(deferred).pipe(
+            Effect.timeoutOrElse({
+              duration: turnTimeout,
+              orElse: () =>
+                failActivePrompt(timeoutDetail, turn.turnId, true).pipe(
+                  Effect.flatMap(() =>
+                    Effect.fail(
+                      new PmRuntimeError({
+                        operation: "DriverPmAdapter.prompt",
+                        detail: timeoutDetail,
+                      }),
+                    ),
                   ),
                 ),
-              ),
-          }),
-          Effect.ensuring(Ref.set(idle, true)),
-        );
+            }),
+          );
+        }).pipe(Effect.ensuring(releasePromptOwnership(ownerId)));
       });
 
     return {
