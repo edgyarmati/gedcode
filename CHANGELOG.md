@@ -5,6 +5,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Performance: Load Orchestrator project subscriptions from lightweight projection state plus only
+  the selected project's complete PM thread, and load task subscriptions from lightweight command
+  state, avoiding global message, activity, and checkpoint hydration on project/task navigation.
+
 - Change/UI: Open GedCode on Orchestrator by default while preserving direct Chat access and
   hosted-browser connection onboarding at `/chat`.
 

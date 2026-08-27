@@ -181,6 +181,7 @@ function makeReadModel(input: {
 function makeProjectionSnapshotQueryLayer(getReadModel: () => OrchestrationReadModel) {
   return Layer.succeed(ProjectionSnapshotQuery, {
     getCommandReadModel: () => Effect.succeed(getReadModel()),
+    getOrchestratorProjectSnapshotBasis: () => unsupported(),
     getSnapshot: () => Effect.succeed(getReadModel()),
     getShellSnapshot: () => unsupported(),
     getArchivedShellSnapshot: () => unsupported(),

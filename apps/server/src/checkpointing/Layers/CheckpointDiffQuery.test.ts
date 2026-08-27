@@ -78,6 +78,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -185,6 +187,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -267,6 +271,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -335,6 +341,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -428,6 +436,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -490,6 +500,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
@@ -553,6 +565,8 @@ describe("CheckpointDiffQueryLive", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () =>
             Effect.die("CheckpointDiffQuery should not request the command read model"),
+          getOrchestratorProjectSnapshotBasis: () =>
+            Effect.die("CheckpointDiffQuery should not request an orchestrator project snapshot"),
           getSnapshot: () =>
             Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
           getShellSnapshot: () =>
