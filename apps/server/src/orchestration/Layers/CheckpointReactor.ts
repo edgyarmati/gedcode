@@ -429,7 +429,7 @@ const make = Effect.gen(function* () {
     // only the terminal turn.completed path may settle the active stage and
     // re-enter the PM. Wrapped in catch(log) so a duplicate/rejected dispatch
     // never fails checkpoint capture.
-    if (input.settleStage && input.status !== "missing") {
+    if (input.settleStage && summaryStatus === "ready") {
       yield* settleStageOnCapturedDiff({
         threadId: input.threadId,
         turnId: input.turnId,

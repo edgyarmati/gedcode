@@ -3,8 +3,10 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Option from "effect/Option";
 
-import { runMigrations } from "../Migrations.ts";
+import { CURRENT_SCHEMA_MIGRATION_ID, runMigrations } from "../Migrations.ts";
+import { PersistenceMigrationError } from "../Errors.ts";
 import {
   DEFAULT_PERSISTENCE_RETRY_POLICY,
   type PersistenceRetryPolicy,
@@ -42,14 +44,130 @@ const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
  * backstops the residual cases. The value is a controlled integer (no binding
  * is possible for PRAGMA arguments), so `sql.unsafe` is safe here.
  */
+const migrationMarkerPath = (dbPath: string) => `${dbPath}.schema-version`;
+
+export interface MigrationBackupPreparation {
+  readonly backupPath: string | null;
+  readonly markerPath: string;
+}
+
+export const prepareMigrationBackup = Effect.fn("prepareMigrationBackup")(function* (
+  dbPath: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const markerPath = migrationMarkerPath(dbPath);
+  const databaseExists = yield* fs.exists(dbPath).pipe(Effect.orElseSucceed(() => false));
+  if (!databaseExists) {
+    return { backupPath: null, markerPath } satisfies MigrationBackupPreparation;
+  }
+
+  const recordedVersion = yield* fs.readFileString(markerPath).pipe(
+    Effect.map((value) => Number.parseInt(value.trim(), 10)),
+    Effect.option,
+  );
+  if (
+    Option.isSome(recordedVersion) &&
+    Number.isSafeInteger(recordedVersion.value) &&
+    recordedVersion.value === CURRENT_SCHEMA_MIGRATION_ID
+  ) {
+    return { backupPath: null, markerPath } satisfies MigrationBackupPreparation;
+  }
+
+  if (
+    Option.isSome(recordedVersion) &&
+    Number.isSafeInteger(recordedVersion.value) &&
+    recordedVersion.value > CURRENT_SCHEMA_MIGRATION_ID
+  ) {
+    return yield* Effect.fail(
+      new PersistenceMigrationError({
+        dbPath,
+        backupPath: null,
+        cause: `Database schema ${recordedVersion.value} is newer than supported schema ${CURRENT_SCHEMA_MIGRATION_ID}.`,
+      }),
+    );
+  }
+
+  const backupRoot = path.join(path.dirname(dbPath), "migration-backups");
+  const backupPath = path.join(
+    backupRoot,
+    `${path.basename(dbPath)}.before-schema-${CURRENT_SCHEMA_MIGRATION_ID}`,
+  );
+  const backupExists = yield* fs.exists(backupPath).pipe(Effect.orElseSucceed(() => false));
+  if (!backupExists) {
+    const stagingPath = `${backupPath}.tmp-${process.pid}`;
+    yield* fs.makeDirectory(backupRoot, { recursive: true });
+    yield* fs.remove(stagingPath, { recursive: true, force: true });
+    yield* fs.makeDirectory(stagingPath, { recursive: true });
+    for (const suffix of ["", "-wal", "-shm", ".schema-version"] as const) {
+      const source = `${dbPath}${suffix}`;
+      if (yield* fs.exists(source).pipe(Effect.orElseSucceed(() => false))) {
+        yield* fs.copy(source, path.join(stagingPath, `${path.basename(dbPath)}${suffix}`));
+      }
+    }
+    yield* fs.writeFileString(
+      path.join(stagingPath, "RECOVERY.txt"),
+      [
+        `GedCode pre-migration backup for schema ${CURRENT_SCHEMA_MIGRATION_ID}.`,
+        `Original database: ${dbPath}`,
+        "Quit GedCode before restoring the database and any -wal/-shm sidecars.",
+        `Restore ${path.basename(markerPath)} too when it is present in this backup; otherwise remove the current marker before restarting GedCode.`,
+        "Keep this directory until the upgraded application and your data are verified.",
+        "",
+      ].join("\n"),
+    );
+    yield* fs.rename(stagingPath, backupPath);
+  }
+
+  return { backupPath, markerPath } satisfies MigrationBackupPreparation;
+});
+
+const applySqliteSetup = (busyTimeoutMs: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`PRAGMA journal_mode = WAL;`;
+    yield* sql`PRAGMA foreign_keys = ON;`;
+    yield* sql.unsafe(`PRAGMA busy_timeout = ${Math.trunc(busyTimeoutMs)};`);
+  });
+
 const makeSetup = (busyTimeoutMs: number) =>
   Layer.effectDiscard(
     Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* sql`PRAGMA journal_mode = WAL;`;
-      yield* sql`PRAGMA foreign_keys = ON;`;
-      yield* sql.unsafe(`PRAGMA busy_timeout = ${Math.trunc(busyTimeoutMs)};`);
+      yield* applySqliteSetup(busyTimeoutMs);
       yield* runMigrations();
+    }),
+  );
+
+const makeLiveSetup = (
+  busyTimeoutMs: number,
+  migration: {
+    readonly dbPath: string;
+    readonly preparation: MigrationBackupPreparation;
+    readonly fileSystem: FileSystem.FileSystem;
+  },
+) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      yield* applySqliteSetup(busyTimeoutMs);
+      yield* Effect.gen(function* () {
+        yield* runMigrations();
+        const tempMarkerPath = `${migration.preparation.markerPath}.${process.pid}.tmp`;
+        yield* migration.fileSystem.writeFileString(
+          tempMarkerPath,
+          `${CURRENT_SCHEMA_MIGRATION_ID}\n`,
+        );
+        yield* migration.fileSystem.rename(tempMarkerPath, migration.preparation.markerPath);
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.fail(
+            new PersistenceMigrationError({
+              dbPath: migration.dbPath,
+              backupPath: migration.preparation.backupPath,
+              cause,
+            }),
+          ),
+        ),
+      );
     }),
   );
 
@@ -60,10 +178,27 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
+  const migrationPreparation = yield* prepareMigrationBackup(dbPath).pipe(
+    Effect.catch((error) =>
+      error instanceof PersistenceMigrationError
+        ? Effect.fail(error)
+        : Effect.fail(
+            new PersistenceMigrationError({
+              dbPath,
+              backupPath: null,
+              cause: error,
+            }),
+          ),
+    ),
+  );
 
   return Layer.merge(
     Layer.provideMerge(
-      makeSetup(policy.busyTimeoutMs),
+      makeLiveSetup(policy.busyTimeoutMs, {
+        dbPath,
+        preparation: migrationPreparation,
+        fileSystem: fs,
+      }),
       makeRuntimeSqliteLayer({
         filename: dbPath,
         spanAttributes: {

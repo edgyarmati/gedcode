@@ -8,6 +8,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -28,6 +29,10 @@ import { withTaskLifecycleLock } from "../taskLifecycleCoordinator.ts";
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const RECONCILE_LAST_ERROR = "Provider session was not live during server startup reconciliation.";
 const DEFAULT_RECONCILIATION_INTERVAL = Duration.minutes(1);
+const DEFAULT_STAGE_STARTUP_GRACE = Duration.minutes(2);
+
+const isLiveProviderSession = (session: ProviderSession): boolean =>
+  session.status === "connecting" || session.status === "ready" || session.status === "running";
 
 export interface OrphanedActiveStage {
   readonly taskId: TaskId;
@@ -45,19 +50,37 @@ export interface OrphanedActiveStage {
 export function findOrphanedActiveStages(input: {
   readonly readModel: OrchestrationReadModel;
   readonly liveProviderSessions: ReadonlyArray<ProviderSession>;
+  readonly nowMs?: number;
+  readonly startupGraceMs?: number;
 }): ReadonlyArray<OrphanedActiveStage> {
   const liveThreadIds = new Set(
-    input.liveProviderSessions.map((session) => String(session.threadId)),
+    input.liveProviderSessions
+      .filter(isLiveProviderSession)
+      .map((session) => String(session.threadId)),
   );
+  const startupGraceMs = Math.max(0, input.startupGraceMs ?? 0);
+  const nowMs = input.nowMs ?? Number.POSITIVE_INFINITY;
 
   return input.readModel.tasks.flatMap((task) => {
     const threadId = task.currentStageThreadId;
+    const stage = threadId === null ? undefined : input.readModel.stageHistory[threadId];
+    const startedAtMs = Date.parse(stage?.startedAt ?? task.updatedAt);
+    const stageAgeMs = nowMs - startedAtMs;
+    // The projected stage timestamp is a durable startup lease. It closes the
+    // gap between task.stage.start committing and ProviderCommandReactor
+    // acquiring the in-process lifecycle lock to create/send the provider turn.
+    const isWithinStartupGrace =
+      startupGraceMs > 0 &&
+      Number.isFinite(startedAtMs) &&
+      stageAgeMs >= -startupGraceMs &&
+      stageAgeMs < startupGraceMs;
     if (
       threadId === null ||
       task.cancellation != null ||
       task.status === "landed" ||
       task.status === "abandoned" ||
-      input.readModel.stageHistory[threadId]?.status === "paused" ||
+      stage?.status === "paused" ||
+      isWithinStartupGrace ||
       liveThreadIds.has(String(threadId))
     ) {
       return [];
@@ -89,6 +112,7 @@ interface OrphanTurnReconcilerOptions {
   readonly maxAttempts?: number;
   readonly retryDelayMs?: number;
   readonly reconciliationIntervalMs?: number;
+  readonly stageStartupGraceMs?: number;
 }
 
 const make = (options?: OrphanTurnReconcilerOptions) =>
@@ -100,7 +124,17 @@ const make = (options?: OrphanTurnReconcilerOptions) =>
     const reconcileOnce = Effect.fn("OrphanTurnReconciler.reconcileOnce")(function* () {
       const readModel = yield* projectionSnapshotQuery.getSnapshot();
       const liveProviderSessions = yield* providerService.listSessions();
-      const orphanedStages = findOrphanedActiveStages({ readModel, liveProviderSessions });
+      const currentTimeMs = yield* Clock.currentTimeMillis;
+      const startupGraceMs = Math.max(
+        0,
+        options?.stageStartupGraceMs ?? Duration.toMillis(DEFAULT_STAGE_STARTUP_GRACE),
+      );
+      const orphanedStages = findOrphanedActiveStages({
+        readModel,
+        liveProviderSessions,
+        nowMs: currentTimeMs,
+        startupGraceMs,
+      });
       if (orphanedStages.length === 0) {
         return { pendingCount: 0, reconciledCount: 0 };
       }
@@ -118,9 +152,12 @@ const make = (options?: OrphanTurnReconcilerOptions) =>
               // became live while reconciliation was waiting.
               const freshReadModel = yield* projectionSnapshotQuery.getSnapshot();
               const freshLiveSessions = yield* providerService.listSessions();
+              const freshCurrentTimeMs = yield* Clock.currentTimeMillis;
               const freshStage = findOrphanedActiveStages({
                 readModel: freshReadModel,
                 liveProviderSessions: freshLiveSessions,
+                nowMs: freshCurrentTimeMs,
+                startupGraceMs,
               }).find(
                 (candidate) =>
                   candidate.taskId === stage.taskId && candidate.threadId === stage.threadId,

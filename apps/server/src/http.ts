@@ -76,7 +76,10 @@ export const serverEnvironmentRouteLayer = HttpRouter.add(
     );
     return HttpServerResponse.jsonUnsafe(descriptor, {
       status: 200,
-      headers: browserApiCorsHeaders,
+      headers: {
+        ...browserApiCorsHeaders,
+        "Cache-Control": "no-store",
+      },
     });
   }),
 );

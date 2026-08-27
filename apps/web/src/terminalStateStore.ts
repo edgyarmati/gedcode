@@ -39,6 +39,7 @@ export interface TerminalEventEntry {
 }
 
 const TERMINAL_STATE_STORAGE_KEY = "t3code:terminal-state:v1";
+export const TERMINAL_STATE_STORAGE_VERSION = 2;
 const EMPTY_TERMINAL_EVENT_ENTRIES: ReadonlyArray<TerminalEventEntry> = [];
 const MAX_TERMINAL_EVENT_BUFFER = 200;
 
@@ -363,7 +364,10 @@ function upsertTerminalIntoGroups(
       fallbackGroupId(normalized.activeTerminalId),
       usedGroupIds,
     );
-    terminalGroups.push({ id: nextGroupId, terminalIds: [normalized.activeTerminalId] });
+    terminalGroups.push({
+      id: nextGroupId,
+      terminalIds: [normalized.activeTerminalId],
+    });
     activeGroupIndex = terminalGroups.length - 1;
   }
 
@@ -746,7 +750,9 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
               state.terminalLaunchContextByThreadKey[threadKey] !== undefined;
             const { [threadKey]: _removed, ...remainingLaunchContexts } =
               state.terminalLaunchContextByThreadKey;
-            const nextTerminalEventEntriesByKey = { ...state.terminalEventEntriesByKey };
+            const nextTerminalEventEntriesByKey = {
+              ...state.terminalEventEntriesByKey,
+            };
             let removedEventEntries = false;
             for (const key of Object.keys(nextTerminalEventEntriesByKey)) {
               if (key.startsWith(`${threadKey}\u0000`)) {
@@ -773,7 +779,9 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             const hadTerminalState = state.terminalStateByThreadKey[threadKey] !== undefined;
             const hadLaunchContext =
               state.terminalLaunchContextByThreadKey[threadKey] !== undefined;
-            const nextTerminalEventEntriesByKey = { ...state.terminalEventEntriesByKey };
+            const nextTerminalEventEntriesByKey = {
+              ...state.terminalEventEntriesByKey,
+            };
             let removedEventEntries = false;
             for (const key of Object.keys(nextTerminalEventEntriesByKey)) {
               if (key.startsWith(`${threadKey}\u0000`)) {
@@ -784,9 +792,13 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             if (!hadTerminalState && !hadLaunchContext && !removedEventEntries) {
               return state;
             }
-            const nextTerminalStateByThreadKey = { ...state.terminalStateByThreadKey };
+            const nextTerminalStateByThreadKey = {
+              ...state.terminalStateByThreadKey,
+            };
             delete nextTerminalStateByThreadKey[threadKey];
-            const nextLaunchContexts = { ...state.terminalLaunchContextByThreadKey };
+            const nextLaunchContexts = {
+              ...state.terminalLaunchContextByThreadKey,
+            };
             delete nextLaunchContexts[threadKey];
             return {
               terminalStateByThreadKey: nextTerminalStateByThreadKey,
@@ -802,7 +814,9 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             const orphanedLaunchContextIds = Object.keys(
               state.terminalLaunchContextByThreadKey,
             ).filter((key) => !activeThreadKeys.has(key));
-            const nextTerminalEventEntriesByKey = { ...state.terminalEventEntriesByKey };
+            const nextTerminalEventEntriesByKey = {
+              ...state.terminalEventEntriesByKey,
+            };
             let removedEventEntries = false;
             for (const key of Object.keys(nextTerminalEventEntriesByKey)) {
               const [threadKey] = key.split("\u0000");
@@ -822,7 +836,9 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
             for (const id of orphanedIds) {
               delete next[id];
             }
-            const nextLaunchContexts = { ...state.terminalLaunchContextByThreadKey };
+            const nextLaunchContexts = {
+              ...state.terminalLaunchContextByThreadKey,
+            };
             for (const id of orphanedLaunchContextIds) {
               delete nextLaunchContexts[id];
             }
@@ -836,7 +852,7 @@ export const useTerminalStateStore = create<TerminalStateStoreState>()(
     },
     {
       name: TERMINAL_STATE_STORAGE_KEY,
-      version: 2,
+      version: TERMINAL_STATE_STORAGE_VERSION,
       storage: createJSONStorage(createTerminalStateStorage),
       migrate: migratePersistedTerminalStateStoreState,
       partialize: (state) => ({

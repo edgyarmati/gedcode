@@ -15,6 +15,7 @@ import {
   type OrchestratorProjectDetailSnapshot,
 } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "../../branding";
 
 const mockSubscribeThread = vi.fn();
 const mockSubscribeProject = vi.fn();
@@ -31,6 +32,7 @@ const mockReadSavedEnvironmentBearerToken = vi.fn();
 const mockSavedEnvironmentRegistrySubscribe = vi.fn();
 const mockGetPrimaryKnownEnvironment = vi.hoisted(() => vi.fn());
 const mockFetchRemoteSessionState = vi.fn();
+const mockFetchRemoteEnvironmentDescriptor = vi.fn();
 const mockConnectionReconnects: Array<ReturnType<typeof vi.fn>> = [];
 let savedEnvironmentRegistryListener: (() => void) | null = null;
 
@@ -44,7 +46,7 @@ vi.mock("../primary", () => ({
 
 vi.mock("../remote/api", () => ({
   bootstrapRemoteBearerSession: vi.fn(),
-  fetchRemoteEnvironmentDescriptor: vi.fn(),
+  fetchRemoteEnvironmentDescriptor: mockFetchRemoteEnvironmentDescriptor,
   fetchRemoteSessionState: mockFetchRemoteSessionState,
   isRemoteEnvironmentAuthHttpError: vi.fn(() => false),
   resolveRemoteWebSocketConnectionUrl: vi.fn(async () => "ws://remote.example.test/ws"),
@@ -357,6 +359,7 @@ describe("retainThreadDetailSubscription", () => {
       authenticated: true,
       role: "client",
     });
+    mockFetchRemoteEnvironmentDescriptor.mockReset();
     mockConnectionReconnects.length = 0;
   });
 
@@ -983,6 +986,13 @@ describe("retainThreadDetailSubscription", () => {
     mockListSavedEnvironmentRecords.mockReturnValue([record]);
     mockGetSavedEnvironmentRecord.mockReturnValue(record);
     mockReadSavedEnvironmentBearerToken.mockResolvedValue("bearer-token");
+    mockFetchRemoteEnvironmentDescriptor.mockResolvedValue({
+      environmentId,
+      label: record.label,
+      platform: { os: "linux", arch: "x64" },
+      serverVersion: APP_VERSION,
+      capabilities: { repositoryIdentity: true },
+    });
 
     const {
       disconnectSavedEnvironment,

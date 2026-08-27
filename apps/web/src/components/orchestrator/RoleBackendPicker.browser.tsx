@@ -21,6 +21,7 @@ function makeEntry(input: {
   displayName: string;
   enabled?: boolean;
   installed?: boolean;
+  status?: ProviderInstanceEntry["status"];
   models?: ReadonlyArray<ProviderInstanceEntry["models"][number]>;
 }): ProviderInstanceEntry {
   return {
@@ -29,7 +30,7 @@ function makeEntry(input: {
     displayName: input.displayName,
     enabled: input.enabled ?? true,
     installed: input.installed ?? true,
-    status: "ready",
+    status: input.status ?? "ready",
     isDefault: true,
     isAvailable: true,
     snapshot: {} as ProviderInstanceEntry["snapshot"],
@@ -164,6 +165,70 @@ describe("BackendModelPicker", () => {
     // but model-less OpenCode Custom instance (no custom options passed) are
     // both withheld.
     expect(itemTexts).toEqual(["Use global default", "Codex", "Claude"]);
+  });
+
+  it("offers warning providers with a visible warning and blocks error providers", async () => {
+    const warning = makeEntry({
+      instanceId: ProviderInstanceId.make("codex_warning"),
+      driverKind: "codex",
+      displayName: "Codex Warning",
+      status: "warning",
+      models: instanceEntries[0]!.models,
+    });
+    const errored = makeEntry({
+      instanceId: ProviderInstanceId.make("codex_error"),
+      driverKind: "codex",
+      displayName: "Codex Error",
+      status: "error",
+      models: instanceEntries[0]!.models,
+    });
+
+    await render(
+      <BackendModelPicker
+        selection={null}
+        instanceEntries={[warning, errored]}
+        unsetLabel="Use global default"
+        unsetOptionLabel="Use global default"
+        backendAriaLabel="PM backend"
+        modelAriaLabel="PM model"
+        onSelectionChange={() => {}}
+      />,
+    );
+
+    await userEvent.click(page.getByLabelText("PM backend"));
+    const itemTexts = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="select-item"]'),
+    ).map((item) => item.textContent ?? "");
+    expect(itemTexts).toContain("Codex Warning — Warning");
+    expect(itemTexts).not.toContain("Codex Error — Unavailable");
+  });
+
+  it("keeps an existing errored selection visible without remapping it", async () => {
+    const errored = makeEntry({
+      instanceId: ProviderInstanceId.make("codex_error"),
+      driverKind: "codex",
+      displayName: "Codex Error",
+      status: "error",
+      models: instanceEntries[0]!.models,
+    });
+    const changes: Array<ModelSelection | null> = [];
+
+    await render(
+      <BackendModelPicker
+        selection={{ instanceId: errored.instanceId, model: "gpt-5" }}
+        instanceEntries={[errored, instanceEntries[0]!]}
+        unsetLabel="Use global default"
+        unsetOptionLabel="Use global default"
+        backendAriaLabel="PM backend"
+        modelAriaLabel="PM model"
+        onSelectionChange={(next) => changes.push(next)}
+      />,
+    );
+
+    expect(page.getByLabelText("PM backend").element()?.textContent).toContain(
+      "Codex Error — Unavailable",
+    );
+    expect(changes).toEqual([]);
   });
 
   it("emits a selection for an instance backed only by custom model options", async () => {

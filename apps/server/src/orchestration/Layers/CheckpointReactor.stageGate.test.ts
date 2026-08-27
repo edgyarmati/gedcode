@@ -519,6 +519,54 @@ describe("CheckpointReactor stage-completion diff gate", () => {
     }
   });
 
+  it("keeps a stage active when turn completion cannot resolve its pre-turn baseline", async () => {
+    const harness = await createHarness();
+    const stageThreadId = await startWorkingStage(harness);
+    const turnId = asTurnId("turn-stage-gate-missing-baseline");
+
+    // Establish the runtime turn, then simulate loss of its captured baseline
+    // ref across a restart. The post-turn checkpoint is still useful as the
+    // next turn's baseline, but this turn's diff cannot be trusted.
+    harness.provider.emit({
+      type: "turn.started",
+      eventId: EventId.make("evt-stage-gate-missing-baseline-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: stageThreadId,
+      turnId,
+    });
+    await harness.drain();
+    runGit(harness.worktreePath, [
+      "update-ref",
+      "-d",
+      checkpointRefForThreadTurn(stageThreadId, 0),
+    ]);
+    fs.writeFileSync(path.join(harness.worktreePath, "UNTRACKED.md"), "unknown origin\n", "utf8");
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.make("evt-stage-gate-missing-baseline-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: stageThreadId,
+      turnId,
+      payload: { state: "completed" },
+    });
+
+    const events = await waitForEvent(
+      harness.engine,
+      (event) =>
+        event.type === "thread.turn-diff-completed" &&
+        event.payload.turnId === turnId &&
+        event.payload.status === "error",
+    );
+    await harness.drain();
+
+    expect(events.filter((event) => event.type === "task.stage-completed")).toHaveLength(0);
+    expect(
+      (await harness.readModel()).tasks.find((task) => task.id === TaskId.make("task-stage-gate")),
+    ).toMatchObject({ status: "working", currentStageThreadId: stageThreadId });
+  });
+
   it("server-finalizes dirty verifier documentation before recording the clean exact HEAD", async () => {
     const harness = await createHarness();
     const workStageThreadId = await startWorkingStage(harness);

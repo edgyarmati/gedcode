@@ -1323,8 +1323,8 @@ function SavedBackendListRow({
           {versionMismatch ? (
             <p className="flex items-center gap-1 text-warning text-xs">
               <TriangleAlertIcon className="size-3.5 shrink-0" />
-              Version drift: client {versionMismatch.clientVersion}, server{" "}
-              {versionMismatch.serverVersion}.
+              Connection blocked: client {versionMismatch.clientVersion}, server{" "}
+              {versionMismatch.serverVersion}. Update or reload GedCode.
             </p>
           ) : null}
         </div>
@@ -2453,13 +2453,13 @@ export function ConnectionsSettings() {
           <SettingsSection title="Manage local backend">
             {primaryVersionMismatch ? (
               <SettingsRow
-                title="Version drift"
+                title="Update required"
                 description={
                   <span className="flex items-center gap-1 text-warning">
                     <TriangleAlertIcon className="size-3.5 shrink-0" />
                     Client {primaryVersionMismatch.clientVersion}, server{" "}
-                    {primaryVersionMismatch.serverVersion}. Sync them if RPC calls or reconnects
-                    fail.
+                    {primaryVersionMismatch.serverVersion}. Update or reload GedCode before
+                    reconnecting.
                   </span>
                 }
               />
