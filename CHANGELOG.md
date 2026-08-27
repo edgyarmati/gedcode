@@ -5,6 +5,15 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Security/Release: Update production and release-tool dependencies to patched compatible versions,
+  add a release-blocking audit gate for unresolved high/critical runtime advisories, validate exact
+  per-platform updater payloads and manifests before publication, and exercise release metadata,
+  browser behavior, and desktop startup in CI and release preflight.
+- Fix/Release: Make local dry runs non-writing and require the reviewed HEAD to match remote `main`,
+  reject manual version input before it reaches shell syntax, keep Bun lockfile workspace versions
+  aligned with release manifests, and retry stable-version finalization when `main` moves without
+  changing the already-published tag SHA.
+
 - Fix: Give the Orchestrator PM an explicit rebase ladder for post-verification target movement:
   identical and documentation-only outcomes may preserve verification, while substantive conflicts
   or content drift return to Work and a fresh Verify.

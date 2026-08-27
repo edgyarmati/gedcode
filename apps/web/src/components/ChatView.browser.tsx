@@ -638,6 +638,8 @@ function sendShellThreadUpsert(
   rpcHarness.emitStreamValue(ORCHESTRATION_WS_METHODS.subscribeShell, {
     kind: "thread-upserted",
     sequence: fixture.snapshot.snapshotSequence,
+    coveredSequenceStart: fixture.snapshot.snapshotSequence,
+    coveredSequenceEnd: fixture.snapshot.snapshotSequence,
     thread: shellThread,
   });
 }
