@@ -401,6 +401,20 @@ jobs:
 
           verify_app_signature "$app_path"
 
+          sparkle_framework="$app_path/Contents/Frameworks/Sparkle.framework"
+          sparkle_addon="$(find "$app_path/Contents/Resources/app.asar.unpacked" -type f -name 'sparkle_bridge.node' | head -n 1)"
+          if [[ ! -d "$sparkle_framework" || -z "$sparkle_addon" ]]; then
+            echo "macOS app is missing the Sparkle framework or native Electron bridge." >&2
+            exit 1
+          fi
+          if [[ "$(plutil -extract SUPublicEDKey raw -o - "$app_path/Contents/Info.plist")" != "OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=" ]]; then
+            echo "macOS app contains an unexpected Sparkle public key." >&2
+            exit 1
+          fi
+          plutil -extract SUFeedURL raw -o - "$app_path/Contents/Info.plist" | grep -q '/sparkle-feed/appcast-'
+          otool -L "$sparkle_addon" | grep -q 'Sparkle.framework'
+          codesign --verify --deep --strict --verbose=2 "$sparkle_framework"
+
           mount_dir="$(mktemp -d)"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$dmg"
           trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true; rm -rf "$tmp_dir" "$mount_dir"' EXIT
@@ -445,10 +459,66 @@ jobs:
           path: release-publish/*
           if-no-files-found: error
 
-  release:
-    name: Publish GitHub Release
+  sparkle_feed:
+    name: Generate signed Sparkle feed
     needs: [preflight, build]
     if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success' }}
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Download macOS release archive
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-mac-arm64
+          path: mac-release-assets
+
+      - name: Fetch pinned Sparkle release tools
+        run: bash apps/desktop/node_modules/electron-sparkle-updater/native/scripts/fetch-sparkle.sh
+
+      - name: Generate and verify signed appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_CHANNEL: ${{ needs.preflight.outputs.release_channel }}
+        run: |
+          if [[ "$RELEASE_CHANNEL" == "stable" ]]; then
+            sparkle_channel="latest"
+          else
+            sparkle_channel="nightly"
+          fi
+          node scripts/generate-sparkle-feed.ts \
+            --tag "$RELEASE_TAG" \
+            --channel "$sparkle_channel" \
+            --release-assets-dir mac-release-assets \
+            --output-dir sparkle-feed \
+            --sparkle-bin apps/desktop/node_modules/electron-sparkle-updater/native/vendor/bin
+
+      - name: Upload signed Sparkle feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkle-feed-${{ needs.preflight.outputs.release_channel }}
+          path: sparkle-feed/*.xml
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [preflight, build, sparkle_feed]
+    if: ${{ !failure() && !cancelled() && needs.preflight.result == 'success' && needs.build.result == 'success' && needs.sparkle_feed.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -474,6 +544,12 @@ jobs:
           merge-multiple: true
           path: release-assets
 
+      - name: Download signed Sparkle feed
+        uses: actions/download-artifact@v4
+        with:
+          name: sparkle-feed-${{ needs.preflight.outputs.release_channel }}
+          path: sparkle-feed
+
       - name: Publish stable updater manifests to nightly channel
         if: needs.preflight.outputs.is_prerelease == 'false'
         run: node scripts/promote-stable-update-manifests.ts --release-assets-dir release-assets
@@ -492,6 +568,21 @@ jobs:
             --prerelease "${{ needs.preflight.outputs.is_prerelease }}" \
             --make-latest "${{ needs.preflight.outputs.make_latest }}" \
             --release-assets-dir release-assets
+
+      - name: Publish durable Sparkle feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: ${{ needs.preflight.outputs.ref }}
+        run: |
+          if ! gh release view sparkle-feed >/dev/null 2>&1; then
+            gh release create sparkle-feed \
+              --target "$RELEASE_TARGET" \
+              --title "GedCode Sparkle update feeds" \
+              --notes "Machine-managed signed update feeds for GedCode macOS releases." \
+              --prerelease \
+              --latest=false
+          fi
+          gh release upload sparkle-feed sparkle-feed/*.xml --clobber
 
   finalize:
     name: Finalize release

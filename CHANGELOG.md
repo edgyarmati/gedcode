@@ -14,6 +14,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   reject manual version input before it reaches shell syntax, keep Bun lockfile workspace versions
   aligned with release manifests, and retry stable-version finalization when `main` moves without
   changing the already-published tag SHA.
+- Add: Use a pinned, signed Sparkle 2 feed for production macOS updates so ad-hoc-signed GedCode
+  builds can check for and download updates without an Apple Developer account. Installation and
+  relaunch still require explicit user confirmation; users on a pre-Sparkle release need one manual
+  bridge install. Release automation verifies the embedded public key, native bridge/framework,
+  complete ad-hoc signature, generated appcast, and archive signature before publication.
 
 - Change: Require an exact GedCode client/server version match before WebSocket RPC starts.
   Mismatched clients now stop at an update-required screen with reload/download guidance instead of

@@ -15,6 +15,7 @@ import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronSparkleUpdater from "../electron/ElectronSparkleUpdater.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -30,6 +31,7 @@ interface UpdatesHarnessOptions {
   readonly env?: Record<string, string | undefined>;
   readonly platform?: NodeJS.Platform;
   readonly resourcesPath?: string;
+  readonly sparkleAvailable?: boolean;
 }
 
 const flushCallbacks = Effect.yieldNow;
@@ -49,6 +51,11 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   let backendStartCount = 0;
   let destroyAllCount = 0;
   let appQuitCount = 0;
+  let sparkleInteractiveCheckCount = 0;
+  let sparkleBackgroundCheckCount = 0;
+  let sparkleInstallCount = 0;
+  const sparkleFeedUrls: string[] = [];
+  const sparkleConfigurations: Array<{ appcastUrl: string; publicEdKey: string }> = [];
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -104,6 +111,31 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
           }),
       ).pipe(Effect.asVoid),
   } satisfies ElectronUpdater.ElectronUpdaterShape);
+
+  const sparkleUpdaterLayer = Layer.succeed(ElectronSparkleUpdater.ElectronSparkleUpdater, {
+    configure: (configuration) =>
+      Effect.sync(() => {
+        sparkleConfigurations.push(configuration);
+        return options.sparkleAvailable ?? false;
+      }),
+    checkForUpdates: Effect.sync(() => {
+      sparkleInteractiveCheckCount += 1;
+      return options.sparkleAvailable ?? false;
+    }),
+    checkForUpdatesInBackgroundAndDownload: Effect.sync(() => {
+      sparkleBackgroundCheckCount += 1;
+      return options.sparkleAvailable ?? false;
+    }),
+    setFeedURL: (url) =>
+      Effect.sync(() => {
+        sparkleFeedUrls.push(url);
+        return options.sparkleAvailable ?? false;
+      }),
+    installUpdateNow: Effect.sync(() => {
+      sparkleInstallCount += 1;
+      return options.sparkleAvailable ?? false;
+    }),
+  } satisfies ElectronSparkleUpdater.ElectronSparkleUpdaterShape);
 
   const windowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
@@ -186,6 +218,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(updaterLayer),
+    Layer.provideMerge(sparkleUpdaterLayer),
     Layer.provideMerge(windowLayer),
     Layer.provideMerge(appLayer),
     Layer.provideMerge(backendLayer),
@@ -213,6 +246,11 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
     appQuitCount: () => appQuitCount,
     destroyAllCount: () => destroyAllCount,
     lastChannel: () => lastChannel,
+    sparkleInteractiveCheckCount: () => sparkleInteractiveCheckCount,
+    sparkleBackgroundCheckCount: () => sparkleBackgroundCheckCount,
+    sparkleInstallCount: () => sparkleInstallCount,
+    sparkleFeedUrls: () => sparkleFeedUrls,
+    sparkleConfigurations: () => sparkleConfigurations,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(
         (total, eventListeners) => total + eventListeners.size,
@@ -267,6 +305,53 @@ describe("resolveMockUpdateMode", () => {
 });
 
 describe("DesktopUpdates", () => {
+  it.effect(
+    "uses Sparkle for production macOS checks, downloads, channel changes, and installs",
+    () => {
+      const harness = makeHarness({
+        platform: "darwin",
+        sparkleAvailable: true,
+        env: { T3CODE_DESKTOP_MOCK_UPDATES: "false" },
+      });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+
+          assert.deepEqual(harness.sparkleConfigurations(), [
+            {
+              appcastUrl:
+                "https://github.com/edgyarmati/gedcode/releases/download/sparkle-feed/appcast-latest.xml",
+              publicEdKey: "OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=",
+            },
+          ]);
+          assert.equal(harness.listenerCount(), 0);
+          assert.equal(harness.checkCount(), 0);
+
+          yield* TestClock.adjust(Duration.millis(15_000));
+          assert.equal(harness.sparkleBackgroundCheckCount(), 1);
+
+          const checkResult = yield* updates.check("menu");
+          assert.equal(checkResult.checked, true);
+          assert.equal(harness.sparkleInteractiveCheckCount(), 1);
+
+          yield* updates.setChannel("nightly");
+          assert.deepEqual(harness.sparkleFeedUrls(), [
+            "https://github.com/edgyarmati/gedcode/releases/download/sparkle-feed/appcast-nightly.xml",
+          ]);
+          assert.equal(harness.sparkleBackgroundCheckCount(), 2);
+
+          const installResult = yield* updates.install;
+          assert.equal(installResult.accepted, true);
+          assert.equal(installResult.completed, false);
+          assert.equal(harness.sparkleInstallCount(), 1);
+          assert.equal(harness.backendStopCount(), 0);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
 
