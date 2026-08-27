@@ -5,6 +5,8 @@ import {
 } from "@t3tools/contracts";
 import { HttpResponse, http } from "msw";
 
+import { APP_VERSION } from "../src/branding";
+
 const TEST_SESSION_EXPIRES_AT = "2026-05-01T12:00:00.000Z";
 const TEST_ENVIRONMENT_DESCRIPTOR: ExecutionEnvironmentDescriptor = {
   environmentId: EnvironmentId.make("environment-local"),
@@ -13,7 +15,7 @@ const TEST_ENVIRONMENT_DESCRIPTOR: ExecutionEnvironmentDescriptor = {
     os: "darwin",
     arch: "arm64",
   },
-  serverVersion: "0.0.0-test",
+  serverVersion: APP_VERSION,
   capabilities: {
     repositoryIdentity: true,
   },

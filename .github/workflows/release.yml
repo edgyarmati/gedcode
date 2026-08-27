@@ -10,6 +10,10 @@ on:
         description: "Release version (e.g. 1.2.3 or v1.2.3)"
         required: true
         type: string
+      reviewed_sha:
+        description: "Optional exact reviewed main SHA supplied by release.sh"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -44,6 +48,27 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Confirm release target is current main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REVIEWED_SHA: ${{ github.event.inputs.reviewed_sha }}
+        run: |
+          git fetch origin main
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "Release target must exactly match the current origin/main SHA." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && -n "$REVIEWED_SHA" ]]; then
+            if [[ ! "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Reviewed SHA must be a complete lowercase Git SHA-1." >&2
+              exit 1
+            fi
+            if [[ "$(git rev-parse HEAD)" != "$REVIEWED_SHA" ]]; then
+              echo "Release target no longer matches the locally reviewed SHA $REVIEWED_SHA." >&2
+              exit 1
+            fi
+          fi
+
       - name: Ensure Electron runtime is installed
         run: |
           if ! node -e "require('./apps/desktop/node_modules/electron')" >/dev/null 2>&1; then
@@ -55,11 +80,15 @@ jobs:
       - id: meta
         name: Resolve release version
         shell: bash
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_VERSION: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            raw="${{ github.event.inputs.version }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            raw="$DISPATCH_VERSION"
           else
-            raw="${GITHUB_REF_NAME}"
+            raw="$TAG_VERSION"
           fi
 
           version="${raw#v}"
@@ -89,6 +118,15 @@ jobs:
       - name: Format check
         run: bun run fmt:check
 
+      - name: Verify release package versions
+        run: bun run release:versions:check
+
+      - name: Verify release metadata tooling
+        run: bun run release:smoke
+
+      - name: Audit production dependencies
+        run: bun run release:audit
+
       - name: Lint
         run: bun run lint
 
@@ -97,6 +135,12 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Install browser test runtime
+        run: bun run --filter=@t3tools/web test:browser:install
+
+      - name: Browser tests
+        run: bun run --filter=@t3tools/web test:browser
 
       - id: previous_tag
         name: Resolve previous release tag
@@ -309,6 +353,10 @@ jobs:
 
           bun run dist:desktop:artifact -- "${args[@]}"
 
+      - name: Smoke test desktop startup
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a bun run test:desktop-smoke
+
       - name: Verify macOS artifact signature
         if: matrix.platform == 'mac'
         shell: bash
@@ -436,6 +484,8 @@ jobs:
         run: |
           node scripts/publish-github-release.ts \
             --tag "${{ needs.preflight.outputs.tag }}" \
+            --version "${{ needs.preflight.outputs.version }}" \
+            --channel "${{ needs.preflight.outputs.release_channel }}" \
             --target "${{ needs.preflight.outputs.ref }}" \
             --name "${{ needs.preflight.outputs.release_name }}" \
             --previous-tag "${{ needs.preflight.outputs.previous_tag }}" \
@@ -467,31 +517,41 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --filter=@t3tools/scripts
 
-      - id: update_versions
-        name: Update version strings
-        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}" --github-output
-
-      - name: Format package.json files
-        if: steps.update_versions.outputs.changed == 'true'
-        run: bunx oxfmt apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json
-
-      - name: Refresh lockfile
-        if: steps.update_versions.outputs.changed == 'true'
-        run: bun install --lockfile-only --ignore-scripts
-
-      - name: Commit and push version bump
-        if: steps.update_versions.outputs.changed == 'true'
+      - name: Reconcile version bump onto current main
         env:
           RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
-          if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock; then
-            echo "No version changes to commit."
-            exit 0
-          fi
+          set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock
-          git commit -m "chore(release): prepare $RELEASE_TAG"
-          git push origin HEAD:main
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B release-finalize origin/main
+
+            node scripts/update-release-package-versions.ts "$RELEASE_VERSION" --preserve-newer
+            if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json; then
+              if bun run release:versions:check; then
+                echo "Main already records $RELEASE_VERSION or a newer version with synchronized lock metadata."
+                exit 0
+              fi
+              echo "Package versions are current, but bun.lock workspace metadata needs repair."
+            fi
+
+            bunx oxfmt apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json
+            bun install --lockfile-only --ignore-scripts
+            bun run release:versions:check
+
+            git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock
+            git commit -m "chore(release): prepare $RELEASE_TAG" -m "Record the published stable version in every releasable package and synchronize Bun workspace metadata. The release tag remains pinned to the SHA that was built and published."
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+
+            echo "Main moved while finalizing $RELEASE_TAG; retrying from the new tip ($attempt/5)." >&2
+          done
+
+          echo "Could not finalize $RELEASE_TAG after five concurrent-main retries." >&2
+          exit 1

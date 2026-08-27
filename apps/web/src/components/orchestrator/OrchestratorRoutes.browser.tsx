@@ -919,7 +919,9 @@ it("requests force land from Review or Verify without a gate and shows durable p
 
   const trigger = page.getByRole("button", { name: "Force land now" });
   await expect.element(trigger).toBeInTheDocument();
-  await expect.element(page.getByRole("button", { name: "Force land" })).not.toBeInTheDocument();
+  await expect
+    .element(page.getByRole("button", { name: "Force land", exact: true }))
+    .not.toBeInTheDocument();
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Confirm force land" });
   await expect.element(dialog).toBeInTheDocument();
@@ -971,7 +973,9 @@ it("does not offer force land for non-land or resolved gates", async () => {
   );
 
   await expect.element(page.getByRole("button", { name: "Approve" }).first()).toBeInTheDocument();
-  await expect.element(page.getByRole("button", { name: "Force land" })).not.toBeInTheDocument();
+  await expect
+    .element(page.getByRole("button", { name: "Force land", exact: true }))
+    .not.toBeInTheDocument();
 });
 
 it("retries a durable exhausted landing failure", async () => {

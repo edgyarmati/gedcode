@@ -13,6 +13,10 @@ This document describes the current GedCode release workflow in `.github/workflo
   - `bun run lint`
   - `bun run typecheck`
   - `bun run test`
+  - `bun run release:versions:check`
+  - `bun run release:smoke`
+  - `bun run release:audit`
+  - the web browser suites
 - Desktop build matrix:
   - macOS `arm64` DMG
   - Linux `x64` AppImage
@@ -94,10 +98,22 @@ Repository slug source:
 - `T3CODE_DESKTOP_UPDATE_REPOSITORY` in build/runtime config, if set.
 - Otherwise `GITHUB_REPOSITORY` from GitHub Actions.
 
-Temporary private-repo updater auth workaround:
+GedCode's updater feed is the public GedCode GitHub repository. Private-repository updater tokens
+are neither needed nor forwarded by the desktop runtime.
 
-- Set `T3CODE_DESKTOP_UPDATE_GITHUB_TOKEN` or `GH_TOKEN` in the desktop app runtime environment.
-- The app forwards it as an `Authorization: Bearer <token>` request header for updater HTTP calls.
+## Dependency Audit Policy
+
+`bun run release:audit` blocks a release on every unresolved high or critical advisory reachable
+from the production dependency graph. Moderate and low advisories remain visible in the command
+output but do not block publication. A high or critical advisory may be classified as build-only
+only by an exact package-and-advisory entry in `scripts/audit-production-dependencies.ts`, with a
+code comment explaining why the affected module cannot ship in a GedCode artifact. New advisories
+for the same package remain blocking by default.
+
+The current residual advisories are a low-severity `esbuild` development-server file-read issue on
+Windows and a high-severity `path-to-regexp` issue in the dev-only `@vercel/config` tree. GedCode
+does not ship either development server/tooling path. Production Express/router uses the fixed
+`path-to-regexp` 8.x line.
 
 ## Release Steps
 
@@ -111,7 +127,9 @@ Temporary private-repo updater auth workaround:
    bun lint
    bun typecheck
    bun run test
+   bun run release:versions:check
    bun run release:smoke
+   bun run release:audit
    ```
 
    Alternatively, use the release wrapper, which checks the clean worktree, changelog section, local
@@ -120,6 +138,7 @@ Temporary private-repo updater auth workaround:
    ```sh
    ./release.sh stable patch
    ./release.sh nightly minor
+   ./release.sh stable patch --dry-run
    ```
 
 4. Decide the release version, for example `0.1.0`.
@@ -138,8 +157,9 @@ Temporary private-repo updater auth workaround:
    - all desktop matrix builds pass
    - GitHub Release is created with expected assets
 7. Download and smoke test each desktop artifact.
-8. For stable `X.Y.Z` releases, confirm the `Finalize release` job updated version strings on
-   `main` when needed.
+8. For stable `X.Y.Z` releases, confirm the `Finalize release` job updated version strings and Bun
+   lockfile workspace metadata on `main` when needed. The job retries from the latest `main` after a
+   concurrent push and never moves or rebuilds the already-published tag SHA.
 
 ## Local Build Wrapper
 
@@ -154,7 +174,11 @@ Use `./build.sh` for local desktop artifacts. It defaults to a dev patch build:
 
 ## Rehearsal Guidance
 
-There is no true dry-run mode in the current workflow. For a rehearsal, use one of these safer options:
+`./release.sh ... --dry-run` runs the same local, non-writing gates and confirms the reviewed local
+SHA exactly matches remote `main`, but stops before dispatching GitHub Actions. It does not format or
+otherwise rewrite tracked files.
+
+For a full GitHub Actions rehearsal, use one of these options:
 
 - run the local repo gates before tagging
 - test the workflow in a fork or temporary private repository

@@ -5,6 +5,16 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Security/Release: Update production and release-tool dependencies to patched compatible versions,
+  add a release-blocking audit gate for unresolved high/critical runtime advisories, validate exact
+  per-platform updater payloads and manifests before publication, and exercise release metadata,
+  browser behavior, and desktop startup in CI and release preflight. Keep Effect test typechecks
+  stable across clean installs by importing Vitest assertions from their owning package.
+- Fix/Release: Make local dry runs non-writing and require the reviewed HEAD to match remote `main`,
+  reject manual version input before it reaches shell syntax, keep Bun lockfile workspace versions
+  aligned with release manifests, and retry stable-version finalization when `main` moves without
+  changing the already-published tag SHA.
+
 - Change: Require an exact GedCode client/server version match before WebSocket RPC starts.
   Mismatched clients now stop at an update-required screen with reload/download guidance instead of
   subscribing with incompatible schemas.

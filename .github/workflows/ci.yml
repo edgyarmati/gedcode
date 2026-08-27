@@ -45,6 +45,15 @@ jobs:
       - name: Format
         run: bun run fmt:check
 
+      - name: Verify release package versions
+        run: bun run release:versions:check
+
+      - name: Verify release metadata tooling
+        run: bun run release:smoke
+
+      - name: Audit production dependencies
+        run: bun run release:audit
+
       - name: Lint
         run: bun run lint
 
@@ -53,3 +62,15 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Install browser test runtime
+        run: bun run --filter=@t3tools/web test:browser:install
+
+      - name: Browser tests
+        run: bun run --filter=@t3tools/web test:browser
+
+      - name: Build desktop startup target
+        run: bun run build:desktop
+
+      - name: Smoke test desktop startup
+        run: xvfb-run -a bun run test:desktop-smoke
