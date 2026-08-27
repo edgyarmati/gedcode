@@ -8,7 +8,7 @@ import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
 import { useSavedEnvironmentRegistryStore } from "../environments/runtime";
 import { APP_DISPLAY_NAME } from "~/branding";
 
-function ChatIndexRouteView() {
+function ChatHomeRouteView() {
   const { authGateState } = Route.useRouteContext();
   const savedEnvironmentCount = useSavedEnvironmentRegistryStore(
     (state) => Object.keys(state.byId).length,
@@ -21,8 +21,8 @@ function ChatIndexRouteView() {
   return <NoActiveThreadState />;
 }
 
-export const Route = createFileRoute("/_chat/")({
-  component: ChatIndexRouteView,
+export const Route = createFileRoute("/_chat/chat")({
+  component: ChatHomeRouteView,
 });
 
 function HostedStaticOnboardingState() {

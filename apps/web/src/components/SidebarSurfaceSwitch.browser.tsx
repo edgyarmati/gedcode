@@ -28,9 +28,9 @@ it("switches between the restored Chat sidebar and Orchestrator with the animate
       </SidebarProvider>
     ),
   });
-  const indexRoute = createRoute({
+  const chatRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/",
+    path: "/chat",
     component: () => null,
   });
   const orchestratorRoute = createRoute({
@@ -39,8 +39,8 @@ it("switches between the restored Chat sidebar and Orchestrator with the animate
     component: () => null,
   });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, orchestratorRoute]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([chatRoute, orchestratorRoute]),
+    history: createMemoryHistory({ initialEntries: ["/chat"] }),
   });
 
   await render(<RouterProvider router={router} />);
@@ -56,5 +56,12 @@ it("switches between the restored Chat sidebar and Orchestrator with the animate
   await expect.poll(() => router.state.location.pathname).toBe("/orch");
   await expect
     .element(surfaceSwitch.getByRole("button", { name: "Orchestrator", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+
+  await surfaceSwitch.getByRole("button", { name: "Chat", exact: true }).click();
+
+  await expect.poll(() => router.state.location.pathname).toBe("/chat");
+  await expect
+    .element(surfaceSwitch.getByRole("button", { name: "Chat", exact: true }))
     .toHaveAttribute("aria-pressed", "true");
 });
