@@ -382,7 +382,7 @@ export function OrchestratorProjectRoute(props: { environmentId: string; project
       });
       return;
     }
-    void navigate({ to: "/" });
+    void navigate({ to: "/chat" });
   }, [chatThreadId, environmentId, navigate, projectDraftId]);
 
   useEffect(() => {
