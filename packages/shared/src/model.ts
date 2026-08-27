@@ -196,18 +196,26 @@ export function getProviderOptionCurrentLabel(
 // Static display labels for the reasoning-related provider options shown next to
 // the model in Orchestrator task views. Deliberately capability-free: task views
 // project durable history without resolving live provider descriptors.
-const REASONING_EFFORT_OPTION_IDS: ReadonlyArray<string> = ["reasoningEffort", "effort"];
+const REASONING_EFFORT_OPTION_IDS: ReadonlyArray<string> = ["reasoningEffort", "effort", "variant"];
 const THINKING_OPTION_ID = "thinking";
+const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  xhigh: "Extra High",
+};
 
 function capitalizeFirst(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
 
+function reasoningEffortLabel(value: string): string {
+  return REASONING_EFFORT_LABELS[value] ?? capitalizeFirst(value);
+}
+
 /**
  * Renders a compact display suffix such as `"Reasoning High · Thinking On"` for
  * the reasoning-related provider options, or null when none of them are set.
- * Driver-specific reasoning effort ids (`reasoningEffort`, `effort`) collapse
- * into a single label; every other option id is ignored.
+ * Driver-specific reasoning effort ids (`reasoningEffort`, `effort`, and
+ * OpenCode's `variant`) collapse into a single label; every other option id
+ * is ignored.
  */
 export function formatModelOptionsSuffix(
   selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
@@ -216,7 +224,7 @@ export function formatModelOptionsSuffix(
   for (const id of REASONING_EFFORT_OPTION_IDS) {
     const value = trimOrNull(getProviderOptionStringSelectionValue(selections, id));
     if (value !== null) {
-      parts.push(`Reasoning ${capitalizeFirst(value)}`);
+      parts.push(`Reasoning ${reasoningEffortLabel(value)}`);
       break;
     }
   }

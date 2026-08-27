@@ -13,6 +13,7 @@ function provider(input: {
   enabled?: boolean;
   installed?: boolean;
   availability?: ServerProvider["availability"];
+  status?: ServerProvider["status"];
   displayName?: string;
 }): ServerProvider {
   return {
@@ -22,7 +23,7 @@ function provider(input: {
     enabled: input.enabled ?? true,
     installed: input.installed ?? true,
     version: null,
-    status: "ready",
+    status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
@@ -55,7 +56,7 @@ describe("isSelectableProviderInstanceEntry", () => {
     expect(entries.map(isSelectableProviderInstanceEntry)).toEqual([true]);
   });
 
-  it("rejects disabled, not-installed, and unavailable instances", () => {
+  it("allows warnings but rejects errors, disabled, not-installed, and unavailable instances", () => {
     const entries = deriveProviderInstanceEntries([
       provider({
         provider: ProviderDriverKind.make("opencode"),
@@ -72,9 +73,25 @@ describe("isSelectableProviderInstanceEntry", () => {
         instanceId: "claudeAgent_fork",
         availability: "unavailable",
       }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_error",
+        status: "error",
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_warning",
+        status: "warning",
+      }),
     ]);
 
-    expect(entries.map(isSelectableProviderInstanceEntry)).toEqual([false, false, false]);
+    expect(entries.map(isSelectableProviderInstanceEntry)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
   });
 });
 
@@ -89,7 +106,7 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
   });
 
-  it("falls back to the first enabled and available instance", () => {
+  it("preserves an explicitly selected invalid instance instead of silently remapping it", () => {
     const disabled = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claudeAgent");
     const providers = [
@@ -101,10 +118,10 @@ describe("resolveSelectableProviderInstance", () => {
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: fallback }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, disabled)).toBe(fallback);
+    expect(resolveSelectableProviderInstance(providers, disabled)).toBe(disabled);
   });
 
-  it("does not return disabled, unavailable, or unknown instances when none are sendable", () => {
+  it("preserves disabled, unavailable, and unknown persisted selections", () => {
     const disabled = ProviderInstanceId.make("codex");
     const unavailable = ProviderInstanceId.make("claudeAgent");
     const unknown = ProviderInstanceId.make("removed_instance");
@@ -121,9 +138,9 @@ describe("resolveSelectableProviderInstance", () => {
       }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, disabled)).toBeUndefined();
-    expect(resolveSelectableProviderInstance(providers, unavailable)).toBeUndefined();
-    expect(resolveSelectableProviderInstance(providers, unknown)).toBeUndefined();
+    expect(resolveSelectableProviderInstance(providers, disabled)).toBe(disabled);
+    expect(resolveSelectableProviderInstance(providers, unavailable)).toBe(unavailable);
+    expect(resolveSelectableProviderInstance(providers, unknown)).toBe(unknown);
   });
 });
 

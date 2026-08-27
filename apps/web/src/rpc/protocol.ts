@@ -6,6 +6,7 @@ import * as Schedule from "effect/Schedule";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 import type { RpcGroup } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
+import { APP_VERSION } from "../branding";
 
 import {
   acknowledgeRpcRequest,
@@ -81,6 +82,7 @@ function resolveWsRpcSocketUrl(rawUrl: string): string {
   }
 
   resolved.pathname = "/ws";
+  resolved.searchParams.set("clientVersion", APP_VERSION);
   return resolved.toString();
 }
 

@@ -1485,7 +1485,7 @@ function TaskDetailRail({
         project={project}
         stageThread={stageThread}
       />
-      <TaskDiffPanel stageThreadRef={stageThreadRef} />
+      <TaskDiffPanel stageThreadRef={stageThreadRef} taskId={taskId} />
     </div>
   );
 }
@@ -1517,7 +1517,13 @@ export function StageProposedPlan({
   );
 }
 
-function TaskDiffPanel({ stageThreadRef }: { stageThreadRef: ScopedThreadRef | null }) {
+function TaskDiffPanel({
+  stageThreadRef,
+  taskId,
+}: {
+  stageThreadRef: ScopedThreadRef | null;
+  taskId: TaskId;
+}) {
   if (!stageThreadRef) {
     return (
       <section className="rounded-lg border border-border bg-card p-4">
@@ -1539,7 +1545,11 @@ function TaskDiffPanel({ stageThreadRef }: { stageThreadRef: ScopedThreadRef | n
               </DiffPanelShell>
             }
           >
-            <LazyDiffPanel mode="sidebar" threadRef={stageThreadRef} />
+            <LazyDiffPanel
+              mode="sidebar"
+              selectionScope={`${String(taskId)}:${String(stageThreadRef.threadId)}`}
+              threadRef={stageThreadRef}
+            />
           </Suspense>
         </DiffWorkerPoolProvider>
       </div>
