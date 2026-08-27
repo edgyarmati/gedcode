@@ -1854,3 +1854,48 @@ it.effect("task rebase command and event contracts remain bounded and internal",
     assert.strictEqual(decodedEvent.type, "task.rebased");
   }),
 );
+
+it.effect("decodes historical release dispatch events after the actuator is retired", () =>
+  Effect.gen(function* () {
+    const occurredAt = "2026-08-01T12:00:00.000Z";
+    const base = {
+      sequence: 1,
+      aggregateKind: "task",
+      aggregateId: "legacy-release-task",
+      occurredAt,
+      causationEventId: null,
+      correlationId: "legacy-release-command",
+      metadata: {},
+    } as const;
+    const requested = yield* decodeOrchestrationEvent({
+      ...base,
+      eventId: "legacy-release-requested",
+      commandId: "legacy-release-command",
+      type: "task.release-dispatch-requested",
+      payload: {
+        taskId: "legacy-release-task",
+        workflow: "release.yml",
+        ref: "main",
+        inputs: { version: "0.4.3" },
+        contentHash: "legacy-release-hash",
+        requestedAt: occurredAt,
+        updatedAt: occurredAt,
+      },
+    });
+    const completed = yield* decodeOrchestrationEvent({
+      ...base,
+      sequence: 2,
+      eventId: "legacy-release-completed",
+      commandId: "legacy-release-complete-command",
+      type: "task.release-dispatched",
+      payload: {
+        taskId: "legacy-release-task",
+        workflowUrl: "https://github.com/example/gedcode/actions/workflows/release.yml",
+        updatedAt: occurredAt,
+      },
+    });
+
+    assert.strictEqual(requested.type, "task.release-dispatch-requested");
+    assert.strictEqual(completed.type, "task.release-dispatched");
+  }),
+);

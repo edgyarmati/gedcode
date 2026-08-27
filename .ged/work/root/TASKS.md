@@ -2,5 +2,6 @@
 
 | ID | Status | Slice | Verification |
 | --- | --- | --- | --- |
-| SC-01 | DONE | Add regression coverage and gate checkpoint-driven stage settlement on terminal turn completion, including the already-captured-checkpoint path. | Focused checkpoint stage-gate tests prove no mid-turn completion and exactly-once terminal settlement. |
-| SC-02 | DONE | Document the fix and run required repository checks. | `CHANGELOG.md` updated; `bun fmt`, `bun lint`, narrow server typecheck, and focused tests pass. |
+| RG-01 | DONE | Remove active release-task registration, PM instructions, MCP/tool entrypoints, provenance parameters, and the release-dispatch actuator. Add the direct human-request `gh` workflow guidance. | Registry, PM prompt, MCP schema, PM tool, and decider tests prove only feature tasks and plan/land gates remain active. |
+| RG-02 | DONE | Preserve and test the legacy compatibility boundary for old release configuration, events, projections, persisted dispatch state, and task retention operations. | Focused compatibility/migration/projector tests prove old snapshots decode while new release operations are rejected. |
+| RG-03 | DONE | Document the change and run required focused and repository checks. | `CHANGELOG.md` updated; focused tests, `bun fmt`, `bun lint`, server/web typechecks, and `git diff --check` pass. |

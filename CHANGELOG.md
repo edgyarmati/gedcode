@@ -5,6 +5,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Change/Orchestrator: Retire the dedicated release task, approval gate, and workflow-dispatch
+  actuator. An explicit operator request can now run an existing repository GitHub Actions workflow
+  directly through the PM's ordinary shell and `gh` access. GedCode continues to decode and display
+  historical release records, while repository release workflows, packaging, signing, and updater
+  publication remain unchanged.
+
 - Improve/Web: Start thread detail loading from pointer, focus, click, and shortcut intent instead
   of speculatively opening the first ten sidebar streams. Thread navigation now shows the selected
   title and an accessible loading state immediately, distinguishes loaded-empty conversations from

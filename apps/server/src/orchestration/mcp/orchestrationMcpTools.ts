@@ -34,8 +34,6 @@ export const ORCHESTRATION_MCP_TOOL_NAMES = [
   "rebaseTaskBranch",
   "continueTaskRebase",
   "landTask",
-  "requestReleaseApproval",
-  "dispatchRelease",
   "archiveTask",
   "restoreTask",
   "deleteTask",
@@ -60,7 +58,6 @@ export const mcpInputSchemas = {
     idempotencyKey: z.string().trim().min(1),
     taskType: z.string().optional(),
     supersedesTaskId: z.string().optional(),
-    releaseSourceTaskId: z.string().optional(),
   },
   splitTask: {
     parentTaskId: z.string().trim().min(1),
@@ -95,7 +92,7 @@ export const mcpInputSchemas = {
   },
   requestApproval: {
     taskId: z.string(),
-    gate: z.enum(["plan", "land", "release"]),
+    gate: z.enum(["plan", "land"]),
     contentHash: z.string(),
     stageThreadId: z.string().optional(),
     pullRequest: z
@@ -191,18 +188,6 @@ export const mcpInputSchemas = {
   },
   landTask: {
     taskId: z.string(),
-  },
-  requestReleaseApproval: {
-    taskId: z.string(),
-    workflow: z.string().trim().min(1),
-    ref: z.string().trim().min(1),
-    inputs: z.record(z.string(), z.string()).optional(),
-  },
-  dispatchRelease: {
-    taskId: z.string(),
-    workflow: z.string().trim().min(1),
-    ref: z.string().trim().min(1),
-    inputs: z.record(z.string(), z.string()).optional(),
   },
   archiveTask: {
     taskId: z.string(),

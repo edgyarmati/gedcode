@@ -1099,29 +1099,28 @@ it.effect("createTask rejects an unregistered task type before dispatch", () =>
   }),
 );
 
-it.effect("createTask carries release provenance into the durable dependency", () =>
+it.effect("createTask rejects the retired release task type", () =>
   Effect.gen(function* () {
     const dispatched: OrchestrationCommand[] = [];
     const tools = yield* makePmTools.pipe(Effect.provide(makeLayer(dispatched)));
     const createTask = findTool(tools, "createTask");
 
-    yield* Effect.promise(() =>
-      createTask.execute("tool-create-release", {
-        projectId: "project-1",
-        title: "Release landed feature",
-        idempotencyKey: "release:task-1",
-        taskType: "release",
-        releaseSourceTaskId: "task-1",
-      }),
-    );
+    const error = yield* Effect.promise(async () => {
+      try {
+        await createTask.execute("tool-create-release", {
+          projectId: "project-1",
+          title: "Release landed feature",
+          idempotencyKey: "release:task-1",
+          taskType: "release",
+        });
+        return null;
+      } catch (cause) {
+        return cause;
+      }
+    });
 
-    const command = dispatched[0];
-    assert.strictEqual(command?.type, "task.create");
-    if (command?.type === "task.create") {
-      assert.strictEqual(command.taskType, TaskTypeId.make("release"));
-      assert.strictEqual(command.branch, "ged/release/release-landed-feature");
-      assert.deepStrictEqual(command.dependsOnTaskIds, [TaskId.make("task-1")]);
-    }
+    assert.match(String(error), /Unknown orchestration task type 'release'/);
+    assert.strictEqual(dispatched.length, 0);
   }),
 );
 

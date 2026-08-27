@@ -2,37 +2,46 @@
 
 ## Focused automated coverage
 
-- Run the checkpoint stage-gate test file.
-- Assert a placeholder-triggered real checkpoint is captured while the task stays `working` and no
-  `task.stage-completed` event exists.
-- Emit the matching completed provider turn and assert exactly one stage completion with the shared
-  deterministic command ID.
-- Retain coverage for the ordinary terminal-completion capture path.
+- Task registry/playbook tests assert only `feature` is active and `release` is unavailable.
+- PM prompt tests assert explicit operator-requested GitHub Actions dispatch uses ordinary shell/`gh`
+  access without a GedCode release task or gate.
+- PM/MCP tests assert release tools and release-source input are absent and generic approvals reject
+  `release`.
+- Decider tests assert release task creation and legacy release-dispatch commands are rejected while
+  feature task identity and ordinary plan/land flows remain stable.
+- Configuration tests assert legacy `release` task-type entries are tolerated during upgrade while
+  arbitrary unknown entries still fail.
+- Existing event/projector/migration and published-release fixtures prove historical release state
+  remains decodable and visible.
 
 ## Repository checks
 
+- Focused Vitest files via `bun run test`; never invoke `bun test`.
 - `bun fmt`
 - `bun lint`
-- Narrowest server package typecheck command discovered from package scripts.
-- Focused Vitest invocation via `bun run test`; never invoke `bun test`.
+- `bun run typecheck` from `apps/server`
+- `bun run typecheck` from `apps/web`
+- `git diff --check`
+- Verify no diff under `.github/workflows/release.yml`, `release.sh`, or release publication scripts.
 
 ## Expected outcome
 
-Checkpoint progress remains observable during a running turn, but task/PM state cannot advance until
-the provider declares the turn terminal.
+The PM can honor an explicit request to run a repository GitHub Actions workflow directly. GedCode
+has no active release task, gate, or dispatch actuator, while all historical persisted release data
+continues to load safely after upgrade.
 
 ## Evidence
 
-- `bun run test src/orchestration/Layers/CheckpointReactor.test.ts
-  src/orchestration/Layers/CheckpointReactor.stageGate.test.ts` from `apps/server` passed: 2 files,
-  19 tests. The regression proves a real mid-turn checkpoint does not emit
-  `task.stage-completed`, the task stays `working`, the terminal event completes exactly once, and
-  the terminal checkpoint includes a file created after the early checkpoint.
-- `bun fmt` passed across 1,447 files.
-- `bun lint` passed with warnings and no errors. Reported warnings are existing repository warnings;
-  the warning in the touched stage-gate test points to the pre-existing harness helper.
-- `bun run typecheck` from `apps/server` passed.
+- Server focused tests passed: 9 files, 271 tests covering task registration, playbook loading, MCP exposure, PM
+  tools/prompt behavior, decider retirement guards, migration 053, and published-release database
+  fixtures, plus replay of historical release-dispatch projection state.
+- Contracts focused tests passed: 1 file, 72 tests, including historical release-dispatch event
+  decoding.
+- Web focused tests passed: 2 files, 87 tests covering legacy release status rendering and every
+  published browser persistence fixture.
+- `bun fmt` passed across 1,477 files.
+- `bun lint` passed with existing repository warnings and no errors.
+- `bun run typecheck` passed in `apps/server`, `apps/web`, and `packages/contracts`.
 - `git diff --check` passed.
-- Acceptance review confirmed interrupted/cancelled runtime states map to `missing`, for which the
-  checkpoint path does not settle a stage, and the existing deterministic completion command ID is
-  unchanged.
+- Diff guards confirmed `.github/workflows/release.yml`, `release.sh`, `docs/release.md`, and release
+  publication scripts are unchanged, and active server source has no release tool/actuator symbols.
