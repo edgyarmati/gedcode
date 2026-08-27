@@ -16,7 +16,7 @@ export const Route = createFileRoute("/pair")({
     }
 
     if (authGateState.status === "authenticated" || authGateState.status === "hosted-static") {
-      throw redirect({ to: "/", replace: true });
+      throw redirect({ to: "/orch", replace: true });
     }
     return {
       authGateState,
@@ -42,7 +42,7 @@ function PairRouteView() {
     <PairingRouteSurface
       auth={authGateState.auth}
       onAuthenticated={() => {
-        void navigate({ to: "/", replace: true });
+        void navigate({ to: "/orch", replace: true });
       }}
       {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
     />

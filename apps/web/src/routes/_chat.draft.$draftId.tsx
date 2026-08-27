@@ -50,7 +50,7 @@ function DraftChatThreadRouteView() {
     if (draftSession || canonicalEnvironmentId || canonicalThreadId) {
       return;
     }
-    void navigate({ to: "/", replace: true });
+    void navigate({ to: "/chat", replace: true });
   }, [canonicalEnvironmentId, canonicalThreadId, draftSession, navigate]);
 
   if (canonicalThreadRef) {
