@@ -1,8 +1,6 @@
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
+import type { ExecutionEnvironmentDescriptor, ServerConfig } from "@t3tools/contracts";
 
 import { APP_VERSION } from "./branding";
-import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
 export interface VersionMismatch {
   readonly clientVersion: string;
@@ -10,13 +8,18 @@ export interface VersionMismatch {
   readonly hint: string;
 }
 
-export const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "t3code:version-mismatch-dismissals:v1";
+export class GedCodeVersionMismatchError extends Error {
+  readonly mismatch: VersionMismatch;
 
-const VersionMismatchDismissalsSchema = Schema.Struct({
-  keys: Schema.Array(Schema.String),
-});
-
-type VersionMismatchDismissals = typeof VersionMismatchDismissalsSchema.Type;
+  constructor(mismatch: VersionMismatch) {
+    super(
+      `GedCode ${mismatch.clientVersion} cannot connect to server ${mismatch.serverVersion}. ` +
+        "Reload after updating GedCode so the client and server versions match exactly.",
+    );
+    this.name = "GedCodeVersionMismatchError";
+    this.mismatch = mismatch;
+  }
+}
 
 function normalizeVersion(version: string | null | undefined): string | null {
   const trimmed = version?.trim();
@@ -39,7 +42,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same GedCode version.",
+    hint: "Update or reload GedCode so the client and server use the exact same version.",
   };
 }
 
@@ -49,56 +52,14 @@ export function resolveServerConfigVersionMismatch(
   return resolveVersionMismatch(serverConfig?.environment.serverVersion);
 }
 
-export function buildVersionMismatchDismissalKey(
-  environmentId: EnvironmentId,
-  mismatch: Pick<VersionMismatch, "clientVersion" | "serverVersion">,
-): string {
-  return `${environmentId}:${mismatch.clientVersion}:${mismatch.serverVersion}`;
-}
-
-function readVersionMismatchDismissals(): VersionMismatchDismissals {
-  try {
-    return (
-      getLocalStorageItem(
-        VERSION_MISMATCH_DISMISSALS_STORAGE_KEY,
-        VersionMismatchDismissalsSchema,
-      ) ?? { keys: [] }
-    );
-  } catch {
-    return { keys: [] };
+export function assertCompatibleEnvironmentDescriptor(
+  descriptor: ExecutionEnvironmentDescriptor,
+): ExecutionEnvironmentDescriptor {
+  const mismatch = resolveVersionMismatch(descriptor.serverVersion);
+  if (mismatch) {
+    throw new GedCodeVersionMismatchError(mismatch);
   }
-}
-
-function writeVersionMismatchDismissals(document: VersionMismatchDismissals): void {
-  try {
-    setLocalStorageItem(
-      VERSION_MISMATCH_DISMISSALS_STORAGE_KEY,
-      document,
-      VersionMismatchDismissalsSchema,
-    );
-  } catch {
-    // Dismissal state is best-effort UI state; a storage failure should not block the banner.
-  }
-}
-
-export function isVersionMismatchDismissed(dismissalKey: string | null | undefined): boolean {
-  if (!dismissalKey) {
-    return false;
-  }
-  return readVersionMismatchDismissals().keys.includes(dismissalKey);
-}
-
-export function dismissVersionMismatch(dismissalKey: string | null | undefined): void {
-  if (!dismissalKey) {
-    return;
-  }
-  const document = readVersionMismatchDismissals();
-  if (document.keys.includes(dismissalKey)) {
-    return;
-  }
-  writeVersionMismatchDismissals({
-    keys: [...document.keys, dismissalKey],
-  });
+  return descriptor;
 }
 
 export function appendVersionMismatchHint(

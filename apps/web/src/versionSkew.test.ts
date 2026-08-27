@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 import { APP_VERSION } from "./branding";
 import {
   appendVersionMismatchHint,
-  buildVersionMismatchDismissalKey,
-  dismissVersionMismatch,
-  isVersionMismatchDismissed,
+  assertCompatibleEnvironmentDescriptor,
+  GedCodeVersionMismatchError,
   resolveServerConfigVersionMismatch,
   resolveVersionMismatch,
 } from "./versionSkew";
@@ -20,7 +19,7 @@ describe("versionSkew", () => {
     expect(resolveVersionMismatch("9.9.9")).toEqual({
       clientVersion: APP_VERSION,
       serverVersion: "9.9.9",
-      hint: "Version mismatch. Try syncing the client and server to the same GedCode version.",
+      hint: "Update or reload GedCode so the client and server use the exact same version.",
     });
   });
 
@@ -45,34 +44,23 @@ describe("versionSkew", () => {
     });
   });
 
-  it("keys dismissals by environment, client version, and server version", () => {
-    const environmentId = EnvironmentId.make("environment-dismissal");
-    const key = buildVersionMismatchDismissalKey(environmentId, {
-      clientVersion: APP_VERSION,
-      serverVersion: "9.9.9",
-    });
-
-    expect(key).toBe(`${environmentId}:${APP_VERSION}:9.9.9`);
-    expect(isVersionMismatchDismissed(key)).toBe(false);
-
-    dismissVersionMismatch(key);
-
-    expect(isVersionMismatchDismissed(key)).toBe(true);
-    expect(
-      isVersionMismatchDismissed(
-        buildVersionMismatchDismissalKey(environmentId, {
-          clientVersion: APP_VERSION,
-          serverVersion: "9.9.10",
-        }),
-      ),
-    ).toBe(false);
+  it("rejects incompatible environment descriptors before connection bootstrap", () => {
+    expect(() =>
+      assertCompatibleEnvironmentDescriptor({
+        environmentId: EnvironmentId.make("environment-mismatch"),
+        label: "Remote",
+        platform: { os: "linux", arch: "x64" },
+        serverVersion: "9.9.9",
+        capabilities: { repositoryIdentity: true },
+      }),
+    ).toThrow(GedCodeVersionMismatchError);
   });
 
   it("appends a hint to connection errors when versions differ", () => {
     const mismatch = resolveVersionMismatch("9.9.9");
 
     expect(appendVersionMismatchHint("Socket closed.", mismatch)).toBe(
-      "Socket closed. Hint: Version mismatch. Try syncing the client and server to the same GedCode version.",
+      "Socket closed. Hint: Update or reload GedCode so the client and server use the exact same version.",
     );
   });
 });

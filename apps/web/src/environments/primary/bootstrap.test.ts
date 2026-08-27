@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EnvironmentId } from "@t3tools/contracts";
+import { APP_VERSION } from "../../branding";
 
 import {
   getPrimaryKnownEnvironment,
@@ -25,7 +26,7 @@ const BASE_ENVIRONMENT = {
     os: "darwin",
     arch: "arm64",
   },
-  serverVersion: "0.0.0-test",
+  serverVersion: APP_VERSION,
   capabilities: {
     repositoryIdentity: true,
   },
@@ -69,7 +70,7 @@ describe("environmentBootstrap", () => {
         os: "darwin",
         arch: "arm64",
       },
-      serverVersion: "0.0.0-test",
+      serverVersion: APP_VERSION,
       capabilities: {
         repositoryIdentity: true,
       },
@@ -97,7 +98,21 @@ describe("environmentBootstrap", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost/.well-known/t3/environment", {
+      cache: "no-store",
+    });
+  });
+
+  it("rejects a mismatched primary server before websocket bootstrap", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ ...BASE_ENVIRONMENT, serverVersion: "9.9.9" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(resolveInitialPrimaryEnvironmentDescriptor()).rejects.toThrow(
+      "cannot connect to server 9.9.9",
+    );
+    expect(getPrimaryKnownEnvironment()).toBeNull();
   });
 
   it("uses https descriptor urls when the primary environment uses wss", async () => {
@@ -107,7 +122,12 @@ describe("environmentBootstrap", () => {
     vi.stubEnv("VITE_WS_URL", "wss://remote.example.com");
 
     await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://remote.example.com/.well-known/t3/environment",
+      {
+        cache: "no-store",
+      },
+    );
   });
 
   it("derives the websocket url when only VITE_HTTP_URL is configured", async () => {
@@ -116,7 +136,12 @@ describe("environmentBootstrap", () => {
     vi.stubEnv("VITE_HTTP_URL", "https://remote.example.com");
 
     await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://remote.example.com/.well-known/t3/environment",
+      {
+        cache: "no-store",
+      },
+    );
     expect(getPrimaryKnownEnvironment()?.target).toEqual({
       httpBaseUrl: "https://remote.example.com/",
       wsBaseUrl: "wss://remote.example.com/",
@@ -129,7 +154,12 @@ describe("environmentBootstrap", () => {
     vi.stubEnv("VITE_WS_URL", "wss://remote.example.com");
 
     await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://remote.example.com/.well-known/t3/environment",
+      {
+        cache: "no-store",
+      },
+    );
     expect(getPrimaryKnownEnvironment()?.target).toEqual({
       httpBaseUrl: "https://remote.example.com/",
       wsBaseUrl: "wss://remote.example.com/",
@@ -142,7 +172,9 @@ describe("environmentBootstrap", () => {
     installTestBrowser("http://localhost:5735/");
 
     await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:5735/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:5735/.well-known/t3/environment", {
+      cache: "no-store",
+    });
   });
 
   it("uses the vite proxy for desktop-managed loopback descriptor requests during local dev", async () => {
@@ -165,6 +197,8 @@ describe("environmentBootstrap", () => {
     });
 
     await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:5733/.well-known/t3/environment");
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:5733/.well-known/t3/environment", {
+      cache: "no-store",
+    });
   });
 });
