@@ -25,7 +25,6 @@ import {
   applyOrchestrationEvent,
   applyOrchestrationEvents,
   markThreadDetailSubscriptionLoading,
-  markThreadDetailSubscriptionReady,
   removeEnvironmentState,
   selectEnvironmentState,
   selectPendingGateById,
@@ -355,14 +354,22 @@ describe("thread detail readiness", () => {
       selectThreadByRef(ready, threadRef)?.messages,
     );
 
-    const refreshed = markThreadDetailSubscriptionReady(refreshing, threadRef);
+    const refreshed = syncServerThreadDetail(
+      refreshing,
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
     expect(selectThreadDetailReadinessByRef(refreshed, threadRef)).toBe("ready");
   });
 
   it("retains readiness for surviving shell rows and drops removed rows", () => {
     const thread = makeThread();
     const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-    const ready = markThreadDetailSubscriptionReady(makeState(thread), threadRef);
+    const ready = syncServerThreadDetail(
+      makeState(thread),
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
     const shellThread: OrchestrationShellSnapshot["threads"][number] = {
       id: thread.id,
       projectId: thread.projectId,
@@ -412,7 +419,11 @@ describe("thread detail readiness", () => {
   it("cleans readiness when a thread or its environment is removed", () => {
     const thread = makeThread();
     const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-    const ready = markThreadDetailSubscriptionReady(makeState(thread), threadRef);
+    const ready = syncServerThreadDetail(
+      makeState(thread),
+      makeServerThread({ id: thread.id }),
+      thread.environmentId,
+    );
 
     const deleted = applyOrchestrationEvent(
       ready,

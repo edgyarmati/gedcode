@@ -128,7 +128,7 @@ export interface EnvironmentState {
   // Subscription lifecycle metadata for full thread detail. This is kept
   // separate from the detail slices because an empty accepted snapshot is
   // meaningfully different from a shell whose detail has not arrived yet.
-  threadDetailReadinessByThreadId?: Record<ThreadId, ThreadDetailReadiness>;
+  threadDetailReadinessByThreadId: Record<ThreadId, ThreadDetailReadiness>;
 
   // ---------------------------------------------------------------------------
   // Sidebar summary — written ONLY by the shell stream
@@ -1446,7 +1446,7 @@ function removeThreadState(state: EnvironmentState, threadId: ThreadId): Environ
   const { [threadId]: _removedTurnDiffs, ...turnDiffSummaryByThreadId } =
     state.turnDiffSummaryByThreadId;
   const { [threadId]: _removedDetailReadiness, ...threadDetailReadinessByThreadId } =
-    state.threadDetailReadinessByThreadId ?? {};
+    state.threadDetailReadinessByThreadId;
   const { [threadId]: _removedSidebarSummary, ...sidebarThreadSummaryById } =
     state.sidebarThreadSummaryById;
 
@@ -1806,7 +1806,7 @@ function syncEnvironmentShellSnapshot(
       nextThreadIds,
     ),
     threadDetailReadinessByThreadId: retainThreadScopedRecord(
-      state.threadDetailReadinessByThreadId ?? {},
+      state.threadDetailReadinessByThreadId,
       nextThreadIds,
     ),
     bootstrapComplete: true,
@@ -1840,7 +1840,7 @@ function setEnvironmentThreadDetailReadiness(
   threadId: ThreadId,
   readiness: ThreadDetailReadiness,
 ): EnvironmentState {
-  if (state.threadDetailReadinessByThreadId?.[threadId] === readiness) {
+  if (state.threadDetailReadinessByThreadId[threadId] === readiness) {
     return state;
   }
   return {
@@ -1857,28 +1857,13 @@ export function markThreadDetailSubscriptionLoading(
   threadRef: ScopedThreadRef,
 ): AppState {
   const environmentState = getStoredEnvironmentState(state, threadRef.environmentId);
-  const previous = environmentState.threadDetailReadinessByThreadId?.[threadRef.threadId];
+  const previous = environmentState.threadDetailReadinessByThreadId[threadRef.threadId];
   const nextReadiness: ThreadDetailReadiness =
     previous === "ready" || previous === "refreshing" ? "refreshing" : "loading";
   return commitEnvironmentState(
     state,
     threadRef.environmentId,
     setEnvironmentThreadDetailReadiness(environmentState, threadRef.threadId, nextReadiness),
-  );
-}
-
-export function markThreadDetailSubscriptionReady(
-  state: AppState,
-  threadRef: ScopedThreadRef,
-): AppState {
-  return commitEnvironmentState(
-    state,
-    threadRef.environmentId,
-    setEnvironmentThreadDetailReadiness(
-      getStoredEnvironmentState(state, threadRef.environmentId),
-      threadRef.threadId,
-      "ready",
-    ),
   );
 }
 
@@ -3660,7 +3645,7 @@ export function selectThreadDetailReadinessByRef(
     return "unrequested";
   }
   return (
-    selectEnvironmentState(state, ref.environmentId).threadDetailReadinessByThreadId?.[
+    selectEnvironmentState(state, ref.environmentId).threadDetailReadinessByThreadId[
       ref.threadId
     ] ?? "unrequested"
   );
@@ -3808,7 +3793,6 @@ interface AppStore extends AppState {
   ) => void;
   syncServerThreadDetail: (thread: OrchestrationThread, environmentId: EnvironmentId) => void;
   markThreadDetailSubscriptionLoading: (threadRef: ScopedThreadRef) => void;
-  markThreadDetailSubscriptionReady: (threadRef: ScopedThreadRef) => void;
   syncOrchestratorProjectSnapshot: (
     snapshot: OrchestratorProjectDetailSnapshot,
     environmentId: EnvironmentId,
@@ -3852,8 +3836,6 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => syncServerThreadDetail(state, thread, environmentId)),
   markThreadDetailSubscriptionLoading: (threadRef) =>
     set((state) => markThreadDetailSubscriptionLoading(state, threadRef)),
-  markThreadDetailSubscriptionReady: (threadRef) =>
-    set((state) => markThreadDetailSubscriptionReady(state, threadRef)),
   syncOrchestratorProjectSnapshot: (snapshot, environmentId, options) =>
     set((state) => syncOrchestratorProjectSnapshot(state, snapshot, environmentId, options)),
   syncOrchestratorTaskSnapshot: (snapshot, environmentId) =>
