@@ -10,6 +10,13 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   title and an accessible loading state immediately, distinguishes loaded-empty conversations from
   pending detail, and keeps cached content visible while reconnecting.
 
+- Performance: Load Orchestrator project subscriptions from lightweight projection state plus only
+  the selected project's complete PM thread, and load task subscriptions from lightweight command
+  state, avoiding global message, activity, and checkpoint hydration on project/task navigation.
+
+- Change/UI: Open GedCode on Orchestrator by default while preserving direct Chat access and
+  hosted-browser connection onboarding at `/chat`.
+
 - Change/Docs: Treat GedCode as an independent repository with `origin` as its only canonical
   remote. Remove the standing external-upstream review backlog and replace T3-hosted pairing
   examples in current operational documentation with GedCode-owned deployment examples.

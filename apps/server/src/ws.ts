@@ -800,34 +800,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         );
 
       const loadOrchestratorProjectSnapshot = (projectId: ProjectId) =>
-        projectionSnapshotQuery.getSnapshot().pipe(
-          Effect.flatMap((snapshot) =>
+        projectionSnapshotQuery.getOrchestratorProjectSnapshotBasis(projectId).pipe(
+          Effect.flatMap((snapshotBasis) =>
             Effect.gen(function* () {
-              const project = snapshot.projects.find((entry) => entry.id === projectId);
-              if (project === undefined) {
+              if (Option.isNone(snapshotBasis)) {
                 return yield* new OrchestrationGetSnapshotError({
                   message: `Project ${projectId} was not found`,
                   cause: projectId,
                 });
               }
-              const taskIds = new Set(
-                snapshot.tasks
-                  .filter((task) => task.projectId === projectId)
-                  .map((task) => String(task.id)),
-              );
-              const pendingGates = (snapshot.pendingGates ?? []).filter((gate) =>
-                taskIds.has(String(gate.taskId)),
-              );
-              const quotaBlockedStages = snapshot.quotaBlockedStages.filter((stage) =>
-                taskIds.has(String(stage.taskId)),
-              );
-              const stageHistory = Object.fromEntries(
-                Object.entries(snapshot.stageHistory).filter(([, stage]) =>
-                  taskIds.has(String(stage.taskId)),
-                ),
-              );
-              const pmThreadId = pmThreadIdForProject(project);
-              const pmThread = snapshot.threads.find((thread) => thread.id === pmThreadId) ?? null;
+              const snapshot = snapshotBasis.value;
+              const project = snapshot.project;
               const projectConfig = decodeOrchestratorConfig(project.orchestratorConfig ?? {});
               const pmQuotaBlock =
                 Option.isSome(projectConfig) && projectConfig.value.pmModelSelection !== null
@@ -849,21 +832,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                       )
                   : null;
               return {
-                snapshotSequence: snapshot.snapshotSequence,
-                project,
-                pmThreadId,
-                pmThread,
+                ...snapshot,
                 pmQuotaBlock,
-                tasks: snapshot.tasks.filter((task) => task.projectId === projectId),
-                helperRuns: (snapshot.helperRuns ?? []).filter(
-                  (run) => run.projectId === projectId,
-                ),
-                projectContextRuns: snapshot.projectContextRuns.filter(
-                  (run) => run.projectId === projectId,
-                ),
-                pendingGates,
-                quotaBlockedStages,
-                stageHistory,
               };
             }),
           ),
@@ -878,9 +848,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         );
 
       const loadOrchestratorTaskSnapshot = (taskId: TaskId) =>
-        projectionSnapshotQuery.getSnapshot().pipe(
+        projectionSnapshotQuery.getCommandReadModel().pipe(
           Effect.flatMap((snapshot) => {
-            const task = snapshot.tasks.find((entry) => entry.id === taskId);
+            const task = snapshot.tasks.find(
+              (entry) =>
+                entry.id === taskId && entry.archivedAt === null && entry.deletedAt === null,
+            );
             if (task === undefined) {
               return Effect.fail(
                 new OrchestrationGetSnapshotError({

@@ -212,10 +212,10 @@ export function useThreadActions() {
               replace: true,
             });
           } else {
-            await router.navigate({ to: "/", replace: true });
+            await router.navigate({ to: "/chat", replace: true });
           }
         } else {
-          await router.navigate({ to: "/", replace: true });
+          await router.navigate({ to: "/chat", replace: true });
         }
       }
 

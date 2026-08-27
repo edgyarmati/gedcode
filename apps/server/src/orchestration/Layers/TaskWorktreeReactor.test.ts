@@ -241,6 +241,7 @@ function makeProjectionSnapshotQueryLayer(
 ) {
   return Layer.succeed(ProjectionSnapshotQuery, {
     getCommandReadModel,
+    getOrchestratorProjectSnapshotBasis: () => Effect.die("unused"),
     getSnapshot: () => Effect.succeed(readModelRef.current),
     getShellSnapshot: () => unsupportedProjectionQuery(),
     getArchivedShellSnapshot: () => unsupportedProjectionQuery(),

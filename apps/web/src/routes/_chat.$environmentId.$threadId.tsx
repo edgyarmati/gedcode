@@ -216,7 +216,7 @@ function ChatThreadRouteView() {
     }
 
     if (!routeThreadExists && environmentHasAnyThreads) {
-      void navigate({ to: "/", replace: true });
+      void navigate({ to: "/chat", replace: true });
     }
   }, [
     bootstrapComplete,

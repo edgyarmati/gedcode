@@ -14,6 +14,20 @@ type TestRoute = {
   };
 };
 
+function collectRouteIds(route: TestRoute): ReadonlySet<string> {
+  const routeIds = new Set<string>();
+  const visit = (candidate: TestRoute) => {
+    if (candidate.options?.id) {
+      routeIds.add(candidate.options.id);
+    }
+    for (const child of candidate.children ?? []) {
+      visit(child);
+    }
+  };
+  visit(route);
+  return routeIds;
+}
+
 describe("orchestrator route tree", () => {
   it("keeps task detail routes as siblings of the project route", () => {
     const root = routeTree as unknown as TestRoute;
@@ -28,5 +42,21 @@ describe("orchestrator route tree", () => {
     expect(projectRoute).toBeDefined();
     expect(taskRoute).toBeDefined();
     expect(projectRoute?.children ?? []).not.toContain(taskRoute);
+  });
+
+  it("keeps the default landing and every app deep-link surface addressable", () => {
+    const routeIds = collectRouteIds(routeTree as unknown as TestRoute);
+
+    expect([...routeIds]).toEqual(
+      expect.arrayContaining([
+        "/",
+        "/chat",
+        "/$environmentId/$threadId",
+        "/draft/$draftId",
+        "/orch/",
+        "/pair",
+        "/settings",
+      ]),
+    );
   });
 });

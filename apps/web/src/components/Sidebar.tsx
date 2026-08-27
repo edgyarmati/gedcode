@@ -2531,7 +2531,7 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
             <Link
               aria-label="Go to threads"
               className="ml-1 flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md outline-hidden ring-ring transition-colors hover:text-foreground focus-visible:ring-2"
-              to="/"
+              to="/chat"
             >
               <GedWordmark />
               <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
@@ -2594,7 +2594,7 @@ export const SidebarSurfaceSwitch = memo(function SidebarSurfaceSwitch() {
           return;
         }
       }
-      void navigate({ to: "/" });
+      void navigate({ to: "/chat" });
       return;
     }
     // Return to the last-visited orchestrator workspace when it still exists;

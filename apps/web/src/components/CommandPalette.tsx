@@ -998,7 +998,7 @@ function OpenCommandPaletteDialog() {
     run: async () => {
       const nextMode = !orchestratorMode;
       setOrchestratorMode(nextMode);
-      await navigate({ to: nextMode ? "/orch" : "/" });
+      await navigate({ to: nextMode ? "/orch" : "/chat" });
     },
   });
 
