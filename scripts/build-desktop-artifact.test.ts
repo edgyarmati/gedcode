@@ -156,6 +156,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         target: ["dmg", "zip"],
         icon: "icon.icns",
         category: "public.app-category.developer-tools",
+        extendInfo: {
+          SUFeedURL:
+            "https://github.com/edgyarmati/gedcode/releases/download/sparkle-feed/appcast-latest.xml",
+          SUPublicEDKey: "OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=",
+          SUEnableAutomaticChecks: false,
+          SUAllowsAutomaticUpdates: false,
+          SUAutomaticallyUpdate: false,
+          SUEnableInstallerLauncherService: false,
+          SUVerifyUpdateBeforeExtraction: true,
+          SURequireSignedFeed: true,
+          SUSignedFeedFailureExpirationInterval: 0,
+        },
         hardenedRuntime: true,
         gatekeeperAssess: false,
         notarize: true,
@@ -170,11 +182,26 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       const buildConfig = yield* createBuildConfig("mac", "dmg", "0.0.17", false, false, undefined);
 
       assert.equal(buildConfig.forceCodeSigning, false);
+      assert.equal(buildConfig.publish, undefined);
       assert.deepStrictEqual(buildConfig.mac, {
         target: ["dmg", "zip"],
         icon: "icon.icns",
         category: "public.app-category.developer-tools",
+        extendInfo: {
+          SUFeedURL:
+            "https://github.com/edgyarmati/gedcode/releases/download/sparkle-feed/appcast-latest.xml",
+          SUPublicEDKey: "OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=",
+          SUEnableAutomaticChecks: false,
+          SUAllowsAutomaticUpdates: false,
+          SUAutomaticallyUpdate: false,
+          SUEnableInstallerLauncherService: false,
+          SUVerifyUpdateBeforeExtraction: true,
+          SURequireSignedFeed: true,
+          SUSignedFeedFailureExpirationInterval: 0,
+        },
       });
+      assert.equal(buildConfig.afterPack, "scripts/sparkle-after-pack.cjs");
+      assert.deepStrictEqual(buildConfig.dmg, { writeUpdateInfo: false });
     }),
   );
 
