@@ -11,7 +11,7 @@ export type ReleaseChannel = "stable" | "nightly";
 
 const platformAssets = (version: string) => ({
   mac: [`GedCode-${version}-arm64.zip`, `GedCode-${version}-arm64.dmg`],
-  linux: [`GedCode-${version}-x64.AppImage`],
+  linux: [`GedCode-${version}-x86_64.AppImage`],
   win: [`GedCode-${version}-x64.exe`, `GedCode-${version}-x64.exe.blockmap`],
 });
 
@@ -21,7 +21,6 @@ function expectedManifests(channel: ReleaseChannel): ReadonlyArray<{
 }> {
   const prefix = channel === "stable" ? "latest" : "nightly";
   return [
-    { name: `${prefix}-mac.yml`, assets: [`GedCode-VERSION-arm64.zip`] },
     { name: `${prefix}-linux.yml`, assets: platformAssets("VERSION").linux },
     { name: `${prefix}.yml`, assets: [`GedCode-VERSION-x64.exe`] },
   ];

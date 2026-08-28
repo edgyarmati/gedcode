@@ -32,7 +32,7 @@ function assetsDirectory(channel: ReleaseChannel): string {
   const root = mkdtempSync(join(tmpdir(), "gedcode-assets-"));
   const platformAssets = {
     mac: [`GedCode-${version}-arm64.zip`, `GedCode-${version}-arm64.dmg`],
-    linux: [`GedCode-${version}-x64.AppImage`],
+    linux: [`GedCode-${version}-x86_64.AppImage`],
     win: [`GedCode-${version}-x64.exe`, `GedCode-${version}-x64.exe.blockmap`],
   };
   for (const name of Object.values(platformAssets).flat()) {
@@ -40,7 +40,6 @@ function assetsDirectory(channel: ReleaseChannel): string {
   }
   const prefix = channel === "stable" ? "latest" : "nightly";
   const manifests = [
-    [`${prefix}-mac.yml`, platformAssets.mac],
     [`${prefix}-linux.yml`, platformAssets.linux],
     [`${prefix}.yml`, platformAssets.win],
   ] as const;
@@ -73,6 +72,18 @@ describe("validateReleaseAssets", () => {
       expect(() =>
         validateReleaseAssets({ releaseAssetsDir: root, version, channel: "stable" }),
       ).toThrow("latest-linux.yml");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects legacy macOS updater manifests now that Sparkle owns the macOS feed", () => {
+    const root = assetsDirectory("stable");
+    try {
+      writeManifest(root, "latest-mac.yml", [`GedCode-${version}-arm64.zip`]);
+      expect(() =>
+        validateReleaseAssets({ releaseAssetsDir: root, version, channel: "stable" }),
+      ).toThrow("Unexpected release assets: latest-mac.yml");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

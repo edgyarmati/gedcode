@@ -2,6 +2,7 @@ export interface UpdateManifestFile {
   readonly url: string;
   readonly sha512: string;
   readonly size: number;
+  readonly extras: Readonly<Record<string, UpdateManifestScalar>>;
 }
 
 export type UpdateManifestScalar = string | number | boolean;
@@ -17,6 +18,7 @@ interface MutableUpdateManifestFile {
   url?: string;
   sha512?: string;
   size?: number;
+  extras?: Record<string, UpdateManifestScalar>;
 }
 
 function stripSingleQuotes(value: string): string {
@@ -48,6 +50,7 @@ function parseFileRecord(
     url: currentFile.url,
     sha512: currentFile.sha512,
     size: currentFile.size,
+    extras: currentFile.extras ?? {},
   };
 }
 
@@ -86,7 +89,7 @@ export function parseUpdateManifest(
     if (fileUrlMatch?.[1]) {
       const finalized = parseFileRecord(currentFile, sourcePath, lineNumber, platformLabel);
       if (finalized) files.push(finalized);
-      currentFile = { url: stripSingleQuotes(fileUrlMatch[1].trim()) };
+      currentFile = { url: stripSingleQuotes(fileUrlMatch[1].trim()), extras: {} };
       inFiles = true;
       continue;
     }
@@ -110,6 +113,18 @@ export function parseUpdateManifest(
         );
       }
       currentFile.size = Number(fileSizeMatch[1]);
+      continue;
+    }
+
+    const fileExtraMatch = line.match(/^    ([A-Za-z][A-Za-z0-9]*):\s*(.+)$/);
+    if (fileExtraMatch?.[1] && fileExtraMatch[2] !== undefined) {
+      if (currentFile === null) {
+        throw new Error(
+          `Invalid ${platformLabel} update manifest at ${sourcePath}:${lineNumber}: file metadata without a file entry.`,
+        );
+      }
+      currentFile.extras ??= {};
+      currentFile.extras[fileExtraMatch[1]] = parseScalarValue(fileExtraMatch[2]);
       continue;
     }
 
@@ -205,6 +220,14 @@ function mergeExtras(
   return merged;
 }
 
+function fileMetadataMatches(
+  primary: Readonly<Record<string, UpdateManifestScalar>>,
+  secondary: Readonly<Record<string, UpdateManifestScalar>>,
+): boolean {
+  const keys = new Set([...Object.keys(primary), ...Object.keys(secondary)]);
+  return [...keys].every((key) => primary[key] === secondary[key]);
+}
+
 export function mergeUpdateManifests(
   primary: UpdateManifest,
   secondary: UpdateManifest,
@@ -219,7 +242,12 @@ export function mergeUpdateManifests(
   const filesByUrl = new Map<string, UpdateManifestFile>();
   for (const file of [...primary.files, ...secondary.files]) {
     const existing = filesByUrl.get(file.url);
-    if (existing && (existing.sha512 !== file.sha512 || existing.size !== file.size)) {
+    if (
+      existing &&
+      (existing.sha512 !== file.sha512 ||
+        existing.size !== file.size ||
+        !fileMetadataMatches(existing.extras, file.extras))
+    ) {
       throw new Error(
         `Cannot merge ${platformLabel} update manifests: conflicting file entry for ${file.url}.`,
       );
@@ -259,6 +287,15 @@ export function serializeUpdateManifest(
     lines.push(`  - url: ${file.url}`);
     lines.push(`    sha512: ${file.sha512}`);
     lines.push(`    size: ${file.size}`);
+    for (const key of Object.keys(file.extras).toSorted()) {
+      const value = file.extras[key];
+      if (value === undefined) {
+        throw new Error(
+          `Cannot serialize ${options.platformLabel} update manifest: missing file value for '${key}'.`,
+        );
+      }
+      lines.push(`    ${key}: ${serializeScalarValue(value)}`);
+    }
   }
 
   for (const key of Object.keys(manifest.extras).toSorted()) {

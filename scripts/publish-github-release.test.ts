@@ -21,7 +21,7 @@ function assetsDirectory(): string {
   const assets = [
     "GedCode-0.3.0-arm64.dmg",
     "GedCode-0.3.0-arm64.zip",
-    "GedCode-0.3.0-x64.AppImage",
+    "GedCode-0.3.0-x86_64.AppImage",
     "GedCode-0.3.0-x64.exe",
     "GedCode-0.3.0-x64.exe.blockmap",
   ];
@@ -29,7 +29,6 @@ function assetsDirectory(): string {
     writeFileSync(join(directory, name), name);
   }
   const manifests = {
-    "latest-mac.yml": assets.slice(0, 2),
     "latest-linux.yml": assets.slice(2, 3),
     "latest.yml": assets.slice(3),
   };

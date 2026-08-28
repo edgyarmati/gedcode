@@ -184,6 +184,7 @@ files:
   - url: GedCode-1.0-x64.exe
     sha512: exesha
     size: 1
+    blockMapSize: 42
 releaseDate: '2026-03-07T10:36:07.540Z'
 `,
       "latest-win-x64.yml",
@@ -194,6 +195,8 @@ releaseDate: '2026-03-07T10:36:07.540Z'
 
     const reparsed = parsePlatformUpdateManifest("win", serialized, "latest-win-x64.yml");
     assert.equal(reparsed.version, "1.0");
+    assert.equal(reparsed.files[0]?.extras.blockMapSize, 42);
+    assert.ok(serialized.includes("    blockMapSize: 42"));
   });
 });
 
