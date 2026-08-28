@@ -185,6 +185,28 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
     }),
   );
 
+  it.effect("repairs stale lock metadata to a preserved newer version", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "update-release-package-versions-newer-stale-lock-",
+      });
+
+      yield* writePackageJsonFixtures(baseDir, "2.0.0", "1.9.0");
+
+      const result = yield* updateReleasePackageVersions("1.9.0", {
+        rootDir: baseDir,
+        preserveNewer: true,
+      });
+      const versions = yield* readReleaseVersions(baseDir);
+      const lockVersions = yield* readLockVersions(baseDir);
+
+      assert.deepStrictEqual(result, { changed: true });
+      assert.deepStrictEqual(new Set(versions.values()), new Set(["2.0.0"]));
+      assert.deepStrictEqual(new Set(lockVersions.values()), new Set(["2.0.0"]));
+    }),
+  );
+
   it.effect("accepts flags before the version positional and appends changed output", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
