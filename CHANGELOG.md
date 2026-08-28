@@ -38,6 +38,10 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
   reject manual version input before it reaches shell syntax, keep Bun lockfile workspace versions
   aligned with release manifests, and retry stable-version finalization when `main` moves without
   changing the already-published tag SHA.
+- Fix/Release: Publish only the exact platform deliverables produced by Electron Builder, recognize
+  its `x86_64` Linux AppImage name and per-file manifest metadata, and keep legacy electron-updater
+  manifests out of macOS releases now that the separately signed Sparkle appcast is the
+  authoritative macOS update feed.
 - Add: Use a pinned, signed Sparkle 2 feed for production macOS updates so ad-hoc-signed GedCode
   builds can check for and download updates without an Apple Developer account. Installation and
   relaunch still require explicit user confirmation; users on a pre-Sparkle release need one manual

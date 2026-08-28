@@ -439,17 +439,45 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
 
-          shopt -s nullglob
-          for pattern in \
-            "release/*.dmg" \
-            "release/*.zip" \
-            "release/*.AppImage" \
-            "release/*.exe" \
-            "release/*.blockmap" \
-            "release/*.yml"; do
-            for file in $pattern; do
-              cp "$file" release-publish/
-            done
+          version="${{ needs.preflight.outputs.version }}"
+          if [[ "${{ needs.preflight.outputs.release_channel }}" == "stable" ]]; then
+            manifest_prefix="latest"
+          else
+            manifest_prefix="nightly"
+          fi
+
+          case "${{ matrix.platform }}" in
+            mac)
+              assets=(
+                "release/GedCode-$version-arm64.dmg"
+                "release/GedCode-$version-arm64.zip"
+              )
+              ;;
+            linux)
+              assets=(
+                "release/GedCode-$version-x86_64.AppImage"
+                "release/$manifest_prefix-linux.yml"
+              )
+              ;;
+            win)
+              assets=(
+                "release/GedCode-$version-x64.exe"
+                "release/GedCode-$version-x64.exe.blockmap"
+                "release/$manifest_prefix.yml"
+              )
+              ;;
+            *)
+              echo "Unsupported release platform: ${{ matrix.platform }}" >&2
+              exit 1
+              ;;
+          esac
+
+          for file in "${assets[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "Missing required ${{ matrix.platform }} release artifact: $file" >&2
+              exit 1
+            fi
+            cp "$file" release-publish/
           done
 
       - name: Upload build artifacts
