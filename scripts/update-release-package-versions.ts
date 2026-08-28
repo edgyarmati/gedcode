@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/unstable/cli";
+import { applyEdits, modify as modifyJsonc } from "jsonc-parser";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 
@@ -27,6 +28,34 @@ const PackageJsonPrettyJson = fromJsonStringPretty(PackageJsonSchema);
 const decodePackageJson = Schema.decodeUnknownEffect(PackageJsonPrettyJson);
 const encodePackageJson = Schema.encodeEffect(PackageJsonPrettyJson);
 
+const updateLockWorkspaceVersions = Effect.fn("updateLockWorkspaceVersions")(function* (
+  rootDir: string,
+  version: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const lockPath = path.join(rootDir, "bun.lock");
+  const original = yield* fs.readFileString(lockPath);
+  let updated = original;
+
+  for (const relativePath of releasePackageFiles) {
+    updated = applyEdits(
+      updated,
+      modifyJsonc(updated, ["workspaces", path.dirname(relativePath), "version"], version, {
+        formattingOptions: {
+          insertSpaces: true,
+          tabSize: 2,
+          eol: "\n",
+        },
+      }),
+    );
+  }
+
+  if (updated === original) return false;
+  yield* fs.writeFileString(lockPath, updated);
+  return true;
+});
+
 export const updateReleasePackageVersions = Effect.fn("updateReleasePackageVersions")(function* (
   version: string,
   options: UpdateReleasePackageVersionsOptions = {},
@@ -35,6 +64,7 @@ export const updateReleasePackageVersions = Effect.fn("updateReleasePackageVersi
   const path = yield* Path.Path;
   const rootDir = path.resolve(options.rootDir ?? process.cwd());
   let changed = false;
+  let targetVersion = version;
   const manifests = yield* Effect.forEach(releasePackageFiles, (relativePath) => {
     const filePath = path.join(rootDir, relativePath);
     return fs.readFileString(filePath).pipe(
@@ -55,19 +85,24 @@ export const updateReleasePackageVersions = Effect.fn("updateReleasePackageVersi
     }
     const currentVersion = currentVersions[0];
     if (currentVersion && compareSemverVersions(currentVersion, version) > 0) {
-      return { changed: false };
+      targetVersion = currentVersion;
     }
   }
 
   for (const { filePath, packageJson } of manifests) {
-    if (packageJson.version === version) {
+    if (packageJson.version === targetVersion) {
       continue;
     }
 
-    const packageJsonString = yield* encodePackageJson({ ...packageJson, version });
+    const packageJsonString = yield* encodePackageJson({
+      ...packageJson,
+      version: targetVersion,
+    });
     yield* fs.writeFileString(filePath, `${packageJsonString}\n`);
     changed = true;
   }
+
+  changed = (yield* updateLockWorkspaceVersions(rootDir, targetVersion)) || changed;
 
   return { changed };
 });

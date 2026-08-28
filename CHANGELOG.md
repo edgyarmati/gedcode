@@ -5,6 +5,9 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/Release: Update Bun workspace version metadata directly during stable finalization so the
+  published version is recorded without platform-dependent lockfile regeneration.
+
 ## 0.4.4 - 2026-08-28
 
 - Change/Orchestrator: Retire the dedicated release task, approval gate, and workflow-dispatch
