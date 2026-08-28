@@ -651,7 +651,7 @@ jobs:
             git checkout -B release-finalize origin/main
 
             node scripts/update-release-package-versions.ts "$RELEASE_VERSION" --preserve-newer
-            if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json; then
+            if git diff --quiet -- apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock; then
               if bun run release:versions:check; then
                 echo "Main already records $RELEASE_VERSION or a newer version with synchronized lock metadata."
                 exit 0
@@ -660,7 +660,6 @@ jobs:
             fi
 
             bunx oxfmt apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json
-            bun install --lockfile-only --ignore-scripts
             bun run release:versions:check
 
             git add apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json bun.lock

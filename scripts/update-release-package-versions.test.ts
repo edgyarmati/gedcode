@@ -22,10 +22,24 @@ const PackageJsonSchema = Schema.Record(Schema.String, Schema.Unknown);
 const PackageJsonPrettyJson = fromJsonStringPretty(PackageJsonSchema);
 const decodePackageJson = Schema.decodeEffect(PackageJsonPrettyJson);
 const encodePackageJson = Schema.encodeEffect(PackageJsonPrettyJson);
+const BunLockSchema = Schema.Struct({
+  lockfileVersion: Schema.Number,
+  workspaces: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      name: Schema.String,
+      version: Schema.optional(Schema.String),
+    }),
+  ),
+});
+const BunLockPrettyJson = fromJsonStringPretty(BunLockSchema);
+const decodeBunLock = Schema.decodeEffect(BunLockPrettyJson);
+const encodeBunLock = Schema.encodeEffect(BunLockPrettyJson);
 
 const writePackageJsonFixtures = Effect.fn("writePackageJsonFixtures")(function* (
   rootDir: string,
   version: string,
+  lockVersion = version,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -42,6 +56,19 @@ const writePackageJsonFixtures = Effect.fn("writePackageJsonFixtures")(function*
       })}\n`,
     );
   }
+
+  yield* fs.writeFileString(
+    path.join(rootDir, "bun.lock"),
+    `${yield* encodeBunLock({
+      lockfileVersion: 1,
+      workspaces: Object.fromEntries(
+        releasePackageFiles.map((relativePath) => [
+          path.dirname(relativePath),
+          { name: relativePath, version: lockVersion },
+        ]),
+      ),
+    })}\n`,
+  );
 });
 
 const readReleaseVersions = Effect.fn("readReleaseVersions")(function* (rootDir: string) {
@@ -67,6 +94,20 @@ const captureLogs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     return { result, logs };
   });
 
+const readLockVersions = Effect.fn("readLockVersions")(function* (rootDir: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const lock = yield* fs
+    .readFileString(path.join(rootDir, "bun.lock"))
+    .pipe(Effect.flatMap(decodeBunLock));
+  return new Map(
+    releasePackageFiles.map((relativePath) => {
+      const workspace = path.dirname(relativePath);
+      return [workspace, lock.workspaces[workspace]?.version] as const;
+    }),
+  );
+});
+
 it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
   it.effect("updates all release package versions under the provided root", () =>
     Effect.gen(function* () {
@@ -79,12 +120,14 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
 
       const result = yield* updateReleasePackageVersions("1.2.3", { rootDir: baseDir });
       const versions = yield* readReleaseVersions(baseDir);
+      const lockVersions = yield* readLockVersions(baseDir);
 
       assert.deepStrictEqual(result, { changed: true });
       assert.deepStrictEqual(
         Array.from(versions.entries()),
         releasePackageFiles.map((relativePath) => [relativePath, "1.2.3"]),
       );
+      assert.deepStrictEqual(new Set(lockVersions.values()), new Set(["1.2.3"]));
     }),
   );
 
@@ -103,6 +146,23 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
     }),
   );
 
+  it.effect("repairs stale Bun workspace metadata when package versions already match", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "update-release-package-versions-stale-lock-",
+      });
+
+      yield* writePackageJsonFixtures(baseDir, "1.2.3", "1.2.2");
+
+      const result = yield* updateReleasePackageVersions("1.2.3", { rootDir: baseDir });
+      const lockVersions = yield* readLockVersions(baseDir);
+
+      assert.deepStrictEqual(result, { changed: true });
+      assert.deepStrictEqual(new Set(lockVersions.values()), new Set(["1.2.3"]));
+    }),
+  );
+
   it.effect("preserves a newer version during delayed release finalization", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -117,9 +177,11 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
         preserveNewer: true,
       });
       const versions = yield* readReleaseVersions(baseDir);
+      const lockVersions = yield* readLockVersions(baseDir);
 
       assert.deepStrictEqual(result, { changed: false });
       assert.deepStrictEqual(new Set(versions.values()), new Set(["2.0.0"]));
+      assert.deepStrictEqual(new Set(lockVersions.values()), new Set(["2.0.0"]));
     }),
   );
 
