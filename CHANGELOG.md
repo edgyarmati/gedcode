@@ -5,6 +5,8 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.4.4 - 2026-08-28
+
 - Change/Orchestrator: Retire the dedicated release task, approval gate, and workflow-dispatch
   actuator. An explicit operator request can now run an existing repository GitHub Actions workflow
   directly through the PM's ordinary shell and `gh` access. GedCode continues to decode and display
