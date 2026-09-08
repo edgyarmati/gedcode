@@ -17,6 +17,8 @@ import {
 } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
+import { applySchemaCompatibility, schemaCompatibilityImport } from "./schemaCompatibility.ts";
+
 const UPSTREAM_REF = "b39f943a634a6e7ba86c3d6e8cf6d5f35e612566";
 const USER_AGENT = "effect-codex-app-server-generator";
 const GITHUB_API_BASE =
@@ -603,7 +605,7 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
   if (output.length > 0) {
     for (const entry of collectSchemaEntries(output)) {
       if (!generatedEntries.has(entry.name)) {
-        generatedEntries.set(entry.name, entry.code);
+        generatedEntries.set(entry.name, applySchemaCompatibility(entry.name, entry.code));
       }
     }
   }
@@ -636,6 +638,7 @@ const generateFiles = Effect.fn("generateFiles")(function* () {
   const schemaOutput = [
     ...prelude,
     'import * as Schema from "effect/Schema";',
+    schemaCompatibilityImport,
     "",
     [...generatedEntries.values()].join("\n\n"),
     "",

@@ -5,6 +5,11 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+- Fix/Codex: Recognize Codex 0.149.1 business, enterprise, and education account plans so valid
+  ChatGPT logins no longer fail the provider probe. Support the verified GPT-6 Astra model ID
+  (`gpt-6-astra`, alias `astra`) without changing defaults or claiming account access; select it
+  through catalog discovery or explicit custom-model configuration.
+
 - Fix/Release: Update Bun workspace version metadata directly during stable finalization so the
   published version is recorded without platform-dependent lockfile regeneration.
 

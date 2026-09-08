@@ -724,3 +724,87 @@ describe("resolveCodexSessionEnvironment", () => {
     assert.equal(env.CODEX_HOME, path.join(os.homedir(), ".codex_work"));
   });
 });
+
+describe("verified GPT-6 Astra selection", () => {
+  it.each([undefined, "existing-provider-thread"])(
+    "preserves Astra on thread open (resume=%s)",
+    async (resumeThreadId) => {
+      const calls: Array<{
+        method: "thread/start" | "thread/resume";
+        model: string | null | undefined;
+      }> = [];
+      const client = {
+        request: <M extends "thread/start" | "thread/resume">(
+          method: M,
+          payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push({ method, model: payload.model });
+          return Effect.succeed({
+            ...makeThreadOpenResponse("astra-thread"),
+            model: "gpt-6-astra",
+          } as CodexRpc.ClientRequestResponsesByMethod[M]);
+        },
+      };
+      const opened = await Effect.runPromise(
+        openCodexThread({
+          client,
+          threadId: ThreadId.make("astra-thread"),
+          runtimeMode: "approval-required",
+          cwd: "/tmp/project",
+          requestedModel: "gpt-6-astra",
+          serviceTier: undefined,
+          systemPromptAppend: undefined,
+          config: undefined,
+          resumeThreadId,
+        }),
+      );
+      assert.equal(opened.model, "gpt-6-astra");
+      assert.deepStrictEqual(calls, [
+        { method: resumeThreadId ? "thread/resume" : "thread/start", model: "gpt-6-astra" },
+      ]);
+    },
+  );
+
+  it.each(["default", "plan"] as const)(
+    "sends Astra unchanged in %s turns and surfaces access errors without substitution",
+    async (interactionMode) => {
+      const params = Effect.runSync(
+        buildTurnStartParams({
+          threadId: "astra-thread",
+          runtimeMode: "approval-required",
+          prompt: "Inspect only.",
+          model: "gpt-6-astra",
+          effort: "catalog-effort",
+          interactionMode,
+        }),
+      );
+      assert.equal(params.model, "gpt-6-astra");
+      assert.equal(params.effort, "catalog-effort");
+      assert.equal(params.collaborationMode?.settings.model, "gpt-6-astra");
+      assert.equal(params.collaborationMode?.settings.reasoning_effort, "catalog-effort");
+      const rejection = new CodexErrors.CodexAppServerRequestError({
+        code: -32602,
+        errorMessage: "Model unavailable for this account",
+      });
+      const calls: unknown[] = [];
+      const result = await Effect.runPromise(
+        requestCodexTurn({
+          client: {
+            raw: {
+              request: (method, payload) => {
+                calls.push({ method, payload });
+                return Effect.fail(rejection);
+              },
+            },
+            request: () => Effect.die("Unexpected steer request"),
+          },
+          startParams: params,
+          steerParams: { threadId: "astra-thread", expectedTurnId: "unused", input: [] },
+        }).pipe(Effect.result),
+      );
+      assert.equal(result._tag, "Failure");
+      assert.equal(result.failure, rejection);
+      assert.deepStrictEqual(calls, [{ method: "turn/start", payload: params }]);
+    },
+  );
+});

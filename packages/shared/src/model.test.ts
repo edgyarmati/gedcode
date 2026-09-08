@@ -73,6 +73,20 @@ const claudeCaps: ModelCapabilities = createModelCapabilities({
 });
 
 describe("normalizeModelSlug", () => {
+  it("resolves the verified Astra alias without substituting another model", () => {
+    const codex = ProviderDriverKind.make("codex");
+    expect(normalizeModelSlug("astra", codex)).toBe("gpt-6-astra");
+    expect(normalizeModelSlug("  gpt-6-astra  ", codex)).toBe("gpt-6-astra");
+    expect(resolveModelSlugForProvider(codex, "astra")).toBe("gpt-6-astra");
+    expect(resolveModelSlugForProvider(codex, "gpt-6-astra")).toBe("gpt-6-astra");
+    expect(normalizeModelSlug("astra", ProviderDriverKind.make("claudeAgent"))).toBe("astra");
+    expect(
+      resolveSelectableModel(codex, "astra", [{ slug: "gpt-6-astra", name: "GPT-6 Astra" }]),
+    ).toBe("gpt-6-astra");
+    expect(
+      resolveSelectableModel(codex, "gpt-6-astra", [{ slug: DEFAULT_MODEL, name: "Default" }]),
+    ).toBeNull();
+  });
   it("maps known aliases to canonical slugs", () => {
     const claude = ProviderDriverKind.make("claudeAgent");
     expect(normalizeModelSlug("gpt-5-codex")).toBe("gpt-5.4");
