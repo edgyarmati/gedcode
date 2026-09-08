@@ -10,12 +10,13 @@ import {
   type ProviderApprovalDecision,
   ProviderInstanceId,
   type ServerProvider,
-  type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
+  type OrchestrationQueuedMessage,
+  QueuedMessageId,
   ProviderInteractionMode,
   ProviderDriverKind,
   RuntimeMode,
@@ -35,7 +36,7 @@ import {
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -72,7 +73,7 @@ import {
 import {
   selectProjectsAcrossEnvironments,
   selectThreadDetailReadinessByRef,
-  selectThreadsAcrossEnvironments,
+  selectThreadShellsAcrossEnvironments,
   useStore,
 } from "../store";
 import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
@@ -88,7 +89,6 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
-  type SessionPhase,
   type Thread,
   type TurnDiffSummary,
 } from "../types";
@@ -101,7 +101,6 @@ import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon, WifiOffIcon } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -128,7 +127,6 @@ import {
 } from "../environments/runtime";
 import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
-  type ComposerQueuedMessage,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   useComposerDraftStore,
@@ -159,12 +157,9 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   collectUserMessageBlobPreviewUrls,
-  createLocalDispatchSnapshot,
   deriveComposerSendState,
-  hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
-  type LocalDispatchSnapshot,
   PullRequestDialogState,
   cloneComposerImageForRetry,
   deriveLockedProvider,
@@ -185,15 +180,13 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
-import {
-  canAutoDrainQueuedMessage,
-  queuedMessageAttachmentsForTurn,
-  shouldQueueComposerSubmission,
-} from "./chatQueue.logic";
+import { shouldQueueComposerSubmission } from "./chatQueue.logic";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { Button } from "./ui/button";
 import { sidebarTitlebarLeftInsetClass, useSidebar } from "./ui/sidebar";
+import { PersistentThreadTerminalDrawer } from "./chat/PersistentThreadTerminalDrawer";
+import { useLocalDispatchState } from "./chat/useLocalDispatchState";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -202,7 +195,7 @@ const EMPTY_PROPOSED_PLANS: Thread["proposedPlans"] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-const EMPTY_QUEUED_MESSAGES: ComposerQueuedMessage[] = [];
+const EMPTY_QUEUED_MESSAGES: OrchestrationQueuedMessage[] = [];
 type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -362,251 +355,6 @@ interface TerminalLaunchContext {
   worktreePath: string | null;
 }
 
-type PersistentTerminalLaunchContext = Pick<TerminalLaunchContext, "cwd" | "worktreePath">;
-
-function useLocalDispatchState(input: {
-  activeThread: Thread | undefined;
-  activeLatestTurn: Thread["latestTurn"] | null;
-  phase: SessionPhase;
-  activePendingApproval: ApprovalRequestId | null;
-  activePendingUserInput: ApprovalRequestId | null;
-  threadError: string | null | undefined;
-}) {
-  const [localDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
-
-  const beginLocalDispatch = useCallback(
-    (options?: { preparingWorktree?: boolean }) => {
-      const preparingWorktree = Boolean(options?.preparingWorktree);
-      setLocalDispatch((current) => {
-        if (current) {
-          return current.preparingWorktree === preparingWorktree
-            ? current
-            : { ...current, preparingWorktree };
-        }
-        return createLocalDispatchSnapshot(input.activeThread, options);
-      });
-    },
-    [input.activeThread],
-  );
-
-  const resetLocalDispatch = useCallback(() => {
-    setLocalDispatch(null);
-  }, []);
-
-  const serverAcknowledgedLocalDispatch = useMemo(
-    () =>
-      hasServerAcknowledgedLocalDispatch({
-        localDispatch,
-        phase: input.phase,
-        latestTurn: input.activeLatestTurn,
-        session: input.activeThread?.session ?? null,
-        hasPendingApproval: input.activePendingApproval !== null,
-        hasPendingUserInput: input.activePendingUserInput !== null,
-        threadError: input.threadError,
-      }),
-    [
-      input.activeLatestTurn,
-      input.activePendingApproval,
-      input.activePendingUserInput,
-      input.activeThread?.session,
-      input.phase,
-      input.threadError,
-      localDispatch,
-    ],
-  );
-
-  useEffect(() => {
-    if (!serverAcknowledgedLocalDispatch) {
-      return;
-    }
-    resetLocalDispatch();
-  }, [resetLocalDispatch, serverAcknowledgedLocalDispatch]);
-
-  return {
-    beginLocalDispatch,
-    resetLocalDispatch,
-    localDispatchStartedAt: localDispatch?.startedAt ?? null,
-    isPreparingWorktree: localDispatch?.preparingWorktree ?? false,
-    isSendBusy: localDispatch !== null && !serverAcknowledgedLocalDispatch,
-  };
-}
-
-interface PersistentThreadTerminalDrawerProps {
-  threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
-  threadId: ThreadId;
-  visible: boolean;
-  launchContext: PersistentTerminalLaunchContext | null;
-  focusRequestId: number;
-  splitShortcutLabel: string | undefined;
-  newShortcutLabel: string | undefined;
-  closeShortcutLabel: string | undefined;
-  keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
-}
-
-const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
-  threadRef,
-  threadId,
-  visible,
-  launchContext,
-  focusRequestId,
-  splitShortcutLabel,
-  newShortcutLabel,
-  closeShortcutLabel,
-  keybindings,
-  onAddTerminalContext,
-}: PersistentThreadTerminalDrawerProps) {
-  const serverThread = useStore(useMemo(() => createThreadSelectorByRef(threadRef), [threadRef]));
-  const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const projectRef = serverThread
-    ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
-    : draftThread
-      ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
-      : null;
-  const project = useStore(useMemo(() => createProjectSelectorByRef(projectRef), [projectRef]));
-  const terminalState = useTerminalStateStore((state) =>
-    selectThreadTerminalState(state.terminalStateByThreadKey, threadRef),
-  );
-  const storeSetTerminalHeight = useTerminalStateStore((state) => state.setTerminalHeight);
-  const storeSplitTerminal = useTerminalStateStore((state) => state.splitTerminal);
-  const storeNewTerminal = useTerminalStateStore((state) => state.newTerminal);
-  const storeSetActiveTerminal = useTerminalStateStore((state) => state.setActiveTerminal);
-  const storeCloseTerminal = useTerminalStateStore((state) => state.closeTerminal);
-  const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
-  const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
-  const effectiveWorktreePath = useMemo(() => {
-    if (launchContext !== null) {
-      return launchContext.worktreePath;
-    }
-    return worktreePath;
-  }, [launchContext, worktreePath]);
-  const cwd = useMemo(
-    () =>
-      launchContext?.cwd ??
-      (project
-        ? projectScriptCwd({
-            project: { cwd: project.cwd },
-            worktreePath: effectiveWorktreePath,
-          })
-        : null),
-    [effectiveWorktreePath, launchContext?.cwd, project],
-  );
-  const runtimeEnv = useMemo(
-    () =>
-      project
-        ? projectScriptRuntimeEnv({
-            project: { cwd: project.cwd },
-            worktreePath: effectiveWorktreePath,
-          })
-        : {},
-    [effectiveWorktreePath, project],
-  );
-
-  const bumpFocusRequestId = useCallback(() => {
-    if (!visible) {
-      return;
-    }
-    setLocalFocusRequestId((value) => value + 1);
-  }, [visible]);
-
-  const setTerminalHeight = useCallback(
-    (height: number) => {
-      storeSetTerminalHeight(threadRef, height);
-    },
-    [storeSetTerminalHeight, threadRef],
-  );
-
-  const splitTerminal = useCallback(() => {
-    storeSplitTerminal(threadRef, `terminal-${randomUUID()}`);
-    bumpFocusRequestId();
-  }, [bumpFocusRequestId, storeSplitTerminal, threadRef]);
-
-  const createNewTerminal = useCallback(() => {
-    storeNewTerminal(threadRef, `terminal-${randomUUID()}`);
-    bumpFocusRequestId();
-  }, [bumpFocusRequestId, storeNewTerminal, threadRef]);
-
-  const activateTerminal = useCallback(
-    (terminalId: string) => {
-      storeSetActiveTerminal(threadRef, terminalId);
-      bumpFocusRequestId();
-    },
-    [bumpFocusRequestId, storeSetActiveTerminal, threadRef],
-  );
-
-  const closeTerminal = useCallback(
-    (terminalId: string) => {
-      const api = readEnvironmentApi(threadRef.environmentId);
-      if (!api) return;
-      const isFinalTerminal = terminalState.terminalIds.length <= 1;
-      const fallbackExitWrite = () =>
-        api.terminal.write({ threadId, terminalId, data: "exit\n" }).catch(() => undefined);
-
-      if ("close" in api.terminal && typeof api.terminal.close === "function") {
-        void (async () => {
-          if (isFinalTerminal) {
-            await api.terminal.clear({ threadId, terminalId }).catch(() => undefined);
-          }
-          await api.terminal.close({
-            threadId,
-            terminalId,
-            deleteHistory: true,
-          });
-        })().catch(() => fallbackExitWrite());
-      } else {
-        void fallbackExitWrite();
-      }
-
-      storeCloseTerminal(threadRef, terminalId);
-      bumpFocusRequestId();
-    },
-    [bumpFocusRequestId, storeCloseTerminal, terminalState.terminalIds.length, threadId, threadRef],
-  );
-
-  const handleAddTerminalContext = useCallback(
-    (selection: TerminalContextSelection) => {
-      if (!visible) {
-        return;
-      }
-      onAddTerminalContext(selection);
-    },
-    [onAddTerminalContext, visible],
-  );
-
-  if (!project || !terminalState.terminalOpen || !cwd) {
-    return null;
-  }
-
-  return (
-    <div className={visible ? undefined : "hidden"}>
-      <ThreadTerminalDrawer
-        threadRef={threadRef}
-        threadId={threadId}
-        cwd={cwd}
-        worktreePath={effectiveWorktreePath}
-        runtimeEnv={runtimeEnv}
-        visible={visible}
-        height={terminalState.terminalHeight}
-        terminalIds={terminalState.terminalIds}
-        activeTerminalId={terminalState.activeTerminalId}
-        terminalGroups={terminalState.terminalGroups}
-        activeTerminalGroupId={terminalState.activeTerminalGroupId}
-        focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
-        onSplitTerminal={splitTerminal}
-        onNewTerminal={createNewTerminal}
-        splitShortcutLabel={visible ? splitShortcutLabel : undefined}
-        newShortcutLabel={visible ? newShortcutLabel : undefined}
-        closeShortcutLabel={visible ? closeShortcutLabel : undefined}
-        keybindings={keybindings}
-        onActiveTerminalChange={activateTerminal}
-        onCloseTerminal={closeTerminal}
-        onHeightChange={setTerminalHeight}
-        onAddTerminalContext={handleAddTerminalContext}
-      />
-    </div>
-  );
-});
-
 export default function ChatView(props: ChatViewProps) {
   const { open: sidebarOpen } = useSidebar();
   const {
@@ -665,12 +413,6 @@ export default function ChatView(props: ChatViewProps) {
   const composerGedWorkflowEnabled = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.gedWorkflowEnabled ?? null,
   );
-  const composerQueuedMessages = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.queuedMessages ?? EMPTY_QUEUED_MESSAGES,
-  );
-  const composerQueueingEnabled = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.queueingEnabled ?? true,
-  );
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
@@ -688,14 +430,6 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setGedWorkflowEnabled,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
-  const enqueueComposerMessage = useComposerDraftStore((store) => store.enqueueMessage);
-  const removeComposerQueuedMessage = useComposerDraftStore((store) => store.removeQueuedMessage);
-  const editComposerQueuedMessage = useComposerDraftStore((store) => store.editQueuedMessage);
-  const setComposerQueueingEnabled = useComposerDraftStore((store) => store.setQueueingEnabled);
-  const setComposerQueuedMessageStatus = useComposerDraftStore(
-    (store) => store.setQueuedMessageStatus,
-  );
-  const failComposerQueuedMessage = useComposerDraftStore((store) => store.failQueuedMessage);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const getDraftSessionByLogicalProjectKey = useComposerDraftStore(
     (store) => store.getDraftSessionByLogicalProjectKey,
@@ -764,7 +498,6 @@ export default function ChatView(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
-  const queuedDispatchInFlightRef = useRef<string | null>(null);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
 
   const terminalState = useTerminalStateStore((state) =>
@@ -782,12 +515,13 @@ export default function ChatView(props: ChatViewProps) {
   const storeNewTerminal = useTerminalStateStore((s) => s.newTerminal);
   const storeSetActiveTerminal = useTerminalStateStore((s) => s.setActiveTerminal);
   const storeCloseTerminal = useTerminalStateStore((s) => s.closeTerminal);
-  const serverThreadKeys = useStore(
-    useShallow((state) =>
-      selectThreadsAcrossEnvironments(state).map((thread) =>
+  const serverThreadShells = useStore(useShallow(selectThreadShellsAcrossEnvironments));
+  const serverThreadKeys = useMemo(
+    () =>
+      serverThreadShells.map((thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       ),
-    ),
+    [serverThreadShells],
   );
   const storeServerTerminalLaunchContext = useTerminalStateStore(
     (s) => s.terminalLaunchContextByThreadKey[scopedThreadKey(routeThreadRef)] ?? null,
@@ -873,6 +607,12 @@ export default function ChatView(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const serverQueuedMessages =
+    isServerThread && activeThread
+      ? (activeThread.queuedMessages ?? EMPTY_QUEUED_MESSAGES)
+      : EMPTY_QUEUED_MESSAGES;
+  const serverMessageQueueEnabled =
+    isServerThread && activeThread ? (activeThread.messageQueueEnabled ?? true) : true;
   const existingOpenTerminalThreadKeys = useMemo(() => {
     const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
     return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
@@ -2206,145 +1946,82 @@ export default function ChatView(props: ChatViewProps) {
     [environmentId, serverThread],
   );
 
-  const dispatchQueuedMessage = useCallback(
-    async (message: ComposerQueuedMessage, mode: "drain" | "steer"): Promise<boolean> => {
-      if (
-        !isServerThread ||
-        !activeThread ||
-        queuedDispatchInFlightRef.current !== null ||
-        sendInFlightRef.current
-      ) {
-        return false;
-      }
-      const api = readEnvironmentApi(activeThread.environmentId);
-      if (!api) {
-        return false;
-      }
-
-      const tracksNewTurn = mode === "drain" || phase !== "running";
-      queuedDispatchInFlightRef.current = message.id;
-      setComposerQueuedMessageStatus(composerDraftTarget, message.id, "dispatching");
-      if (tracksNewTurn) {
-        beginLocalDispatch({ preparingWorktree: false });
-      }
-      try {
-        await persistThreadSettingsForNextTurn({
-          threadId: activeThread.id,
-          createdAt: message.createdAt,
-          modelSelection: message.modelSelection,
-          gedWorkflowEnabled: message.gedWorkflowEnabled,
-          runtimeMode: message.runtimeMode,
-          interactionMode: message.interactionMode,
-        });
-        await api.orchestration.dispatchCommand({
-          type: "thread.turn.start",
-          commandId: message.commandId,
-          threadId: activeThread.id,
-          message: {
-            messageId: message.messageId,
-            role: "user",
-            text: message.text,
-            attachments: queuedMessageAttachmentsForTurn(message),
-          },
-          modelSelection: message.modelSelection,
-          gedWorkflowEnabled: message.gedWorkflowEnabled,
-          runtimeMode: message.runtimeMode,
-          interactionMode: message.interactionMode,
-          createdAt: message.createdAt,
-        });
-        removeComposerQueuedMessage(composerDraftTarget, message.id);
-        return true;
-      } catch (error) {
-        const detail =
-          error instanceof Error ? error.message : "The queued message could not be sent.";
-        failComposerQueuedMessage(composerDraftTarget, message.id, detail);
-        if (tracksNewTurn) {
-          resetLocalDispatch();
-        }
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: mode === "steer" ? "Could not steer message" : "Could not send queued message",
-            description: detail,
-          }),
-        );
-        return false;
-      } finally {
-        queuedDispatchInFlightRef.current = null;
-      }
-    },
-    [
-      activeThread,
-      beginLocalDispatch,
-      composerDraftTarget,
-      failComposerQueuedMessage,
-      isServerThread,
-      persistThreadSettingsForNextTurn,
-      phase,
-      removeComposerQueuedMessage,
-      resetLocalDispatch,
-      setComposerQueuedMessageStatus,
-    ],
-  );
-
-  const queuedMessageHead = composerQueuedMessages[0];
-
   const handleSteerQueuedMessage = useCallback(
-    (message: ComposerQueuedMessage) => {
-      void dispatchQueuedMessage(message, "steer");
+    (message: OrchestrationQueuedMessage) => {
+      if (!isServerThread || !activeThread) return;
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) return;
+      void api.orchestration
+        .dispatchCommand({
+          type: "thread.queue.dispatch",
+          commandId: newCommandId(),
+          threadId: activeThread.id,
+          queueItemId: message.id,
+          createdAt: new Date().toISOString(),
+        })
+        .catch((error) =>
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title:
+                message.status === "failed" ? "Could not retry message" : "Could not steer message",
+              description:
+                error instanceof Error ? error.message : "The queued message could not be sent.",
+            }),
+          ),
+        );
     },
-    [dispatchQueuedMessage],
+    [activeThread, isServerThread],
   );
 
   const handleDeleteQueuedMessage = useCallback(
     (messageId: string) => {
-      removeComposerQueuedMessage(composerDraftTarget, messageId);
+      if (!isServerThread || !activeThread) return;
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) return;
+      void api.orchestration.dispatchCommand({
+        type: "thread.queue.delete",
+        commandId: newCommandId(),
+        threadId: activeThread.id,
+        queueItemId: QueuedMessageId.make(messageId),
+        createdAt: new Date().toISOString(),
+      });
     },
-    [composerDraftTarget, removeComposerQueuedMessage],
+    [activeThread, isServerThread],
   );
 
   const handleEditQueuedMessage = useCallback(
     (messageId: string, text: string) => {
-      editComposerQueuedMessage(composerDraftTarget, messageId, text);
+      if (!isServerThread || !activeThread) return;
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) return;
+      void api.orchestration.dispatchCommand({
+        type: "thread.queue.edit",
+        commandId: newCommandId(),
+        threadId: activeThread.id,
+        queueItemId: QueuedMessageId.make(messageId),
+        text,
+        createdAt: new Date().toISOString(),
+      });
     },
-    [composerDraftTarget, editComposerQueuedMessage],
+    [activeThread, isServerThread],
   );
 
   const handleComposerQueueingEnabledChange = useCallback(
     (enabled: boolean) => {
-      setComposerQueueingEnabled(composerDraftTarget, enabled);
+      if (!isServerThread || !activeThread) return;
+      const api = readEnvironmentApi(activeThread.environmentId);
+      if (!api) return;
+      void api.orchestration.dispatchCommand({
+        type: "thread.queue.preference.set",
+        commandId: newCommandId(),
+        threadId: activeThread.id,
+        enabled,
+        createdAt: new Date().toISOString(),
+      });
     },
-    [composerDraftTarget, setComposerQueueingEnabled],
+    [activeThread, isServerThread],
   );
-
-  useEffect(() => {
-    if (
-      !canAutoDrainQueuedMessage({
-        isServerThread,
-        phase,
-        isSendBusy,
-        isConnecting,
-        environmentUnavailable: activeEnvironmentUnavailable,
-        hasPendingApproval: activePendingApproval !== null,
-        hasPendingUserInput: activePendingUserInput !== null,
-        head: queuedMessageHead,
-      }) ||
-      !queuedMessageHead
-    ) {
-      return;
-    }
-    void dispatchQueuedMessage(queuedMessageHead, "drain");
-  }, [
-    activeEnvironmentUnavailable,
-    activePendingApproval,
-    activePendingUserInput,
-    dispatchQueuedMessage,
-    isConnecting,
-    isSendBusy,
-    isServerThread,
-    phase,
-    queuedMessageHead,
-  ]);
 
   // Scroll helpers — LegendList handles auto-scroll via maintainScrollAtEnd.
   const scrollToEnd = useCallback((animated = false) => {
@@ -2887,23 +2564,27 @@ export default function ChatView(props: ChatViewProps) {
       shouldQueueComposerSubmission({
         isServerThread,
         phase,
-        queueingEnabled: composerQueueingEnabled,
+        messageQueueEnabled: serverMessageQueueEnabled,
       })
     ) {
       try {
-        const attachments = await persistedAttachmentsPromise;
-        enqueueComposerMessage(composerDraftTarget, {
-          id: String(messageIdForSend),
+        const api = readEnvironmentApi(activeThread.environmentId);
+        if (!api) throw new Error("The server is unavailable.");
+        await api.orchestration.dispatchCommand({
+          type: "thread.queue.enqueue",
           commandId: newCommandId(),
-          messageId: messageIdForSend,
-          text: outgoingMessageText,
-          attachments,
+          threadId: activeThread.id,
+          queueItemId: QueuedMessageId.make(randomUUID()),
+          message: {
+            messageId: messageIdForSend,
+            text: outgoingMessageText,
+            attachments: await turnAttachmentsPromise,
+          },
           modelSelection: ctxSelectedModelSelection,
           gedWorkflowEnabled,
           runtimeMode,
           interactionMode,
           createdAt: messageCreatedAt,
-          status: "queued",
         });
         setThreadError(threadIdForSend, null);
         if (expiredTerminalContextCount > 0) {
@@ -3890,8 +3571,8 @@ export default function ChatView(props: ChatViewProps) {
               <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
               <div className="relative z-10">
                 <QueuedMessagesPanel
-                  messages={composerQueuedMessages}
-                  queueingEnabled={composerQueueingEnabled}
+                  messages={serverQueuedMessages}
+                  queueingEnabled={serverMessageQueueEnabled}
                   onSteer={handleSteerQueuedMessage}
                   onDelete={handleDeleteQueuedMessage}
                   onEdit={handleEditQueuedMessage}

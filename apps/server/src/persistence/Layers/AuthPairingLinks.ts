@@ -15,7 +15,7 @@ import {
   type AuthPairingLinkRepositoryShape,
   ConsumeAuthPairingLinkInput,
   CreateAuthPairingLinkInput,
-  GetAuthPairingLinkByCredentialInput,
+  GetAuthPairingLinkByCredentialDigestInput,
   ListActiveAuthPairingLinksInput,
   RevokeAuthPairingLinkInput,
 } from "../Services/AuthPairingLinks.ts";
@@ -36,7 +36,7 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
       sql`
         INSERT INTO auth_pairing_links (
           id,
-          credential,
+          credential_digest,
           method,
           role,
           subject,
@@ -48,7 +48,7 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
         )
         VALUES (
           ${input.id},
-          ${input.credential},
+          ${input.credentialDigest},
           ${input.method},
           ${input.role},
           ${input.subject},
@@ -64,17 +64,16 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
   const consumeAvailablePairingLinkRow = SqlSchema.findOneOption({
     Request: ConsumeAuthPairingLinkInput,
     Result: AuthPairingLinkRecord,
-    execute: ({ credential, consumedAt, now }) =>
+    execute: ({ credentialDigest, consumedAt, now }) =>
       sql`
         UPDATE auth_pairing_links
         SET consumed_at = ${consumedAt}
-        WHERE credential = ${credential}
+        WHERE credential_digest = ${credentialDigest}
           AND revoked_at IS NULL
           AND consumed_at IS NULL
           AND expires_at > ${now}
         RETURNING
           id AS "id",
-          credential AS "credential",
           method AS "method",
           role AS "role",
           subject AS "subject",
@@ -93,7 +92,6 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
       sql`
         SELECT
           id AS "id",
-          credential AS "credential",
           method AS "method",
           role AS "role",
           subject AS "subject",
@@ -124,14 +122,13 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
       `,
   });
 
-  const getPairingLinkRowByCredential = SqlSchema.findOneOption({
-    Request: GetAuthPairingLinkByCredentialInput,
+  const getPairingLinkRowByCredentialDigest = SqlSchema.findOneOption({
+    Request: GetAuthPairingLinkByCredentialDigestInput,
     Result: AuthPairingLinkRecord,
-    execute: ({ credential }) =>
+    execute: ({ credentialDigest }) =>
       sql`
         SELECT
           id AS "id",
-          credential AS "credential",
           method AS "method",
           role AS "role",
           subject AS "subject",
@@ -141,7 +138,7 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
           consumed_at AS "consumedAt",
           revoked_at AS "revokedAt"
         FROM auth_pairing_links
-        WHERE credential = ${credential}
+        WHERE credential_digest = ${credentialDigest}
       `,
   });
 
@@ -186,12 +183,12 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
       Effect.map((rows) => rows.length > 0),
     );
 
-  const getByCredential: AuthPairingLinkRepositoryShape["getByCredential"] = (input) =>
-    getPairingLinkRowByCredential(input).pipe(
+  const getByCredentialDigest: AuthPairingLinkRepositoryShape["getByCredentialDigest"] = (input) =>
+    getPairingLinkRowByCredentialDigest(input).pipe(
       Effect.mapError(
         toPersistenceSqlOrDecodeError(
-          "AuthPairingLinkRepository.getByCredential:query",
-          "AuthPairingLinkRepository.getByCredential:decodeRow",
+          "AuthPairingLinkRepository.getByCredentialDigest:query",
+          "AuthPairingLinkRepository.getByCredentialDigest:decodeRow",
         ),
       ),
     );
@@ -201,7 +198,7 @@ const makeAuthPairingLinkRepository = Effect.gen(function* () {
     consumeAvailable,
     listActive,
     revoke,
-    getByCredential,
+    getByCredentialDigest,
   } satisfies AuthPairingLinkRepositoryShape;
 });
 

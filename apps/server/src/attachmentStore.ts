@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 
 import type { ChatAttachment } from "@t3tools/contracts";
@@ -40,6 +40,33 @@ export function createAttachmentId(threadId: string): string | null {
     return null;
   }
   return `${threadSegment}-${randomUUID()}`;
+}
+
+export function createDeterministicAttachmentId(input: {
+  readonly threadId: string;
+  readonly commandId: string;
+  readonly attachmentIndex: number;
+  readonly name: string;
+  readonly mimeType: string;
+  readonly bytes: Uint8Array;
+}): string | null {
+  const threadSegment = toSafeThreadAttachmentSegment(input.threadId);
+  if (!threadSegment) return null;
+  const digest = createHash("sha256")
+    .update(input.threadId)
+    .update("\0")
+    .update(input.commandId)
+    .update("\0")
+    .update(String(input.attachmentIndex))
+    .update("\0")
+    .update(input.name)
+    .update("\0")
+    .update(input.mimeType)
+    .update("\0")
+    .update(input.bytes)
+    .digest("hex");
+  const uuid = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
+  return `${threadSegment}-${uuid}`;
 }
 
 export function parseThreadSegmentFromAttachmentId(attachmentId: string): string | null {

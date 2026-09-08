@@ -21,6 +21,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
       sql`
         INSERT INTO orchestration_command_receipts (
           command_id,
+          command_fingerprint,
           aggregate_kind,
           aggregate_id,
           accepted_at,
@@ -30,6 +31,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
         )
         VALUES (
           ${receipt.commandId},
+          ${receipt.commandFingerprint},
           ${receipt.aggregateKind},
           ${receipt.aggregateId},
           ${receipt.acceptedAt},
@@ -55,6 +57,7 @@ const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
       sql`
         SELECT
           command_id AS "commandId",
+          command_fingerprint AS "commandFingerprint",
           aggregate_kind AS "aggregateKind",
           aggregate_id AS "aggregateId",
           accepted_at AS "acceptedAt",

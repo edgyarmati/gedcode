@@ -23,6 +23,8 @@ Status: migrated
 ## GedCode app data directory
 
 - Date: 2026-07-09
+- Status: Superseded on 2026-08-30. GedCode now supports upgrades from `v0.4.4` onward and no
+  longer imports pre-GedCode `~/.t3` data or selects legacy T3 Electron user-data directories.
 - Decision: Fresh GedCode installs use `~/.gedcode` as the default app data base directory. Desktop startup copies existing default `~/.t3` data into `~/.gedcode` when `~/.gedcode` is absent, preserving the old directory as a backup. If `~/.gedcode` already exists but the active state directory (`userdata` for stable, `dev` for dev builds) is absent, startup copies the matching legacy state directory from `~/.t3`. Explicit `T3CODE_HOME` / `--base-dir` values remain respected and are not migrated automatically.
 - Rationale: The persisted data path should match the product name while keeping upgrade behavior safe and non-destructive.
 

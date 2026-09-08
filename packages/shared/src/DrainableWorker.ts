@@ -28,8 +28,15 @@ export interface DrainableWorker<A> {
   readonly drain: Effect.Effect<void>;
 }
 
+export interface DrainableWorkerOptions {
+  /** Maximum number of pending items, excluding the item currently processing. */
+  readonly capacity?: number;
+}
+
+export const DRAINABLE_WORKER_DEFAULT_CAPACITY = 256;
+
 /**
- * Create a drainable worker that processes items from an unbounded queue.
+ * Create a drainable worker that processes items from a bounded queue.
  *
  * The worker is forked into the current scope and will be interrupted when
  * the scope closes. A finalizer shuts down the queue.
@@ -39,9 +46,14 @@ export interface DrainableWorker<A> {
  */
 export const makeDrainableWorker = <A, E, R>(
   process: (item: A) => Effect.Effect<void, E, R>,
+  options?: DrainableWorkerOptions,
 ): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
   Effect.gen(function* () {
-    const queue = yield* Effect.acquireRelease(TxQueue.unbounded<A>(), TxQueue.shutdown);
+    const capacity = Math.max(
+      1,
+      Math.trunc(options?.capacity ?? DRAINABLE_WORKER_DEFAULT_CAPACITY),
+    );
+    const queue = yield* Effect.acquireRelease(TxQueue.bounded<A>(capacity), TxQueue.shutdown);
     const outstanding = yield* TxRef.make(0);
 
     yield* TxQueue.take(queue).pipe(
@@ -60,10 +72,11 @@ export const makeDrainableWorker = <A, E, R>(
       Effect.tx,
     );
 
-    const enqueue = (element: A): Effect.Effect<boolean, never, never> =>
+    const enqueue = (element: A): Effect.Effect<void, never, never> =>
       TxQueue.offer(queue, element).pipe(
         Effect.tap(() => TxRef.update(outstanding, (n) => n + 1)),
         Effect.tx,
+        Effect.asVoid,
       );
 
     return { enqueue, drain } satisfies DrainableWorker<A>;

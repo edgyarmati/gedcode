@@ -15,13 +15,20 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, OrchestrationThreadOwnership, PendingPmHandoff } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  OrchestrationQueuedMessage,
+  OrchestrationThreadOwnership,
+  PendingPmHandoff,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     orchestrationOwnership: Schema.NullOr(Schema.fromJsonString(OrchestrationThreadOwnership)),
     gedWorkflowEnabled: Schema.Number,
+    queuedMessages: Schema.fromJsonString(Schema.Array(OrchestrationQueuedMessage)),
+    messageQueueEnabled: Schema.Number,
     pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
   }),
 );
@@ -30,6 +37,8 @@ type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
 const mapProjectionThreadDbRow = (row: ProjectionThreadDbRow): ProjectionThread => ({
   ...row,
   gedWorkflowEnabled: row.gedWorkflowEnabled !== 0,
+  queuedMessages: row.queuedMessages,
+  messageQueueEnabled: row.messageQueueEnabled !== 0,
 });
 
 const makeProjectionThreadRepository = Effect.gen(function* () {
@@ -54,8 +63,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           created_at,
           updated_at,
           archived_at,
-          inbox_lifecycle,
-          inbox_wake_at,
+          queued_messages_json,
+          message_queue_enabled,
           latest_user_message_at,
           pending_approval_count,
           pending_user_input_count,
@@ -81,8 +90,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.createdAt},
           ${row.updatedAt},
           ${row.archivedAt},
-          ${row.inboxLifecycle ?? "active"},
-          ${row.inboxWakeAt ?? null},
+          ${JSON.stringify(row.queuedMessages ?? [])},
+          ${(row.messageQueueEnabled ?? true) ? 1 : 0},
           ${row.latestUserMessageAt},
           ${row.pendingApprovalCount},
           ${row.pendingUserInputCount},
@@ -106,8 +115,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           archived_at = excluded.archived_at,
-          inbox_lifecycle = excluded.inbox_lifecycle,
-          inbox_wake_at = excluded.inbox_wake_at,
+          queued_messages_json = excluded.queued_messages_json,
+          message_queue_enabled = excluded.message_queue_enabled,
           latest_user_message_at = excluded.latest_user_message_at,
           pending_approval_count = excluded.pending_approval_count,
           pending_user_input_count = excluded.pending_user_input_count,
@@ -138,8 +147,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
@@ -172,8 +181,8 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",

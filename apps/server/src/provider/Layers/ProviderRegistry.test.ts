@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -187,24 +188,6 @@ function recordingMockSpawnerLayer(
     }),
   );
   return { layer, commands };
-}
-
-function mockCommandSpawnerLayer(
-  handler: (
-    command: string,
-    args: ReadonlyArray<string>,
-  ) => { stdout: string; stderr: string; code: number },
-) {
-  return Layer.succeed(
-    ChildProcessSpawner.ChildProcessSpawner,
-    ChildProcessSpawner.make((command) => {
-      const cmd = command as unknown as {
-        command: string;
-        args: ReadonlyArray<string>;
-      };
-      return Effect.succeed(mockHandle(handler(cmd.command, cmd.args)));
-    }),
-  );
 }
 
 function failingSpawnerLayer(description: string) {
@@ -678,6 +661,126 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
         }),
       );
 
+      it.effect("coalesces stalled registry subscribers to the latest complete snapshot", () =>
+        Effect.gen(function* () {
+          const driver = ProviderDriverKind.make("codex");
+          const instanceId = ProviderInstanceId.make("codex");
+          const initialProvider = {
+            instanceId,
+            driver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated" },
+            checkedAt: "2026-08-30T00:00:00.000Z",
+            version: "0",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          } as const satisfies ServerProvider;
+          const sourceChanges = yield* PubSub.unbounded<ServerProvider>();
+          const registryChanges = yield* PubSub.unbounded<void>();
+          const instance = {
+            instanceId,
+            driverKind: driver,
+            continuationIdentity: {
+              driverKind: driver,
+              continuationKey: "codex:instance:codex",
+            },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              maintenanceCapabilities: makeManualOnlyProviderMaintenanceCapabilities({
+                provider: driver,
+                packageName: null,
+              }),
+              getSnapshot: Effect.succeed(initialProvider),
+              refresh: Effect.succeed(initialProvider),
+              streamChanges: Stream.fromPubSub(sourceChanges),
+            },
+            adapter: {} as ProviderInstance["adapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } satisfies ProviderInstance;
+          const instanceRegistryLayer = Layer.succeed(ProviderInstanceRegistry, {
+            getInstance: (candidateId) =>
+              Effect.succeed(candidateId === instanceId ? instance : undefined),
+            listInstances: Effect.succeed([instance]),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.fromPubSub(registryChanges),
+            subscribeChanges: PubSub.subscribe(registryChanges),
+          });
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const runtimeServices = yield* Layer.build(
+            ProviderRegistryLive.pipe(
+              Layer.provideMerge(instanceRegistryLayer),
+              Layer.provideMerge(
+                ServerConfig.layerTest(process.cwd(), {
+                  prefix: "t3-provider-registry-sliding-snapshot-",
+                }),
+              ),
+              Layer.provideMerge(NodeServices.layer),
+            ),
+          ).pipe(Scope.provide(scope));
+
+          yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry;
+            const firstSnapshotBlocked = yield* Deferred.make<void>();
+            const releaseFirstSnapshot = yield* Deferred.make<void>();
+            const latestSnapshotPublished = yield* Deferred.make<void>();
+            let isFirstSnapshot = true;
+            yield* registry.streamChanges.pipe(
+              Stream.runForEach((snapshot) =>
+                snapshot[0]?.version === "3"
+                  ? Deferred.succeed(latestSnapshotPublished, undefined)
+                  : Effect.void,
+              ),
+              Effect.forkScoped({ startImmediately: true }),
+            );
+            const snapshotsFiber = yield* registry.streamChanges.pipe(
+              Stream.mapEffect((snapshot) =>
+                Effect.gen(function* () {
+                  if (isFirstSnapshot) {
+                    isFirstSnapshot = false;
+                    yield* Deferred.succeed(firstSnapshotBlocked, undefined);
+                    yield* Deferred.await(releaseFirstSnapshot);
+                  }
+                  return snapshot;
+                }),
+              ),
+              Stream.take(2),
+              Stream.runCollect,
+              Effect.forkScoped({ startImmediately: true }),
+            );
+            const publishAndAwaitSnapshot = (version: string) =>
+              Effect.gen(function* () {
+                const checkedAt = `2026-08-30T00:00:0${version}.000Z`;
+                yield* PubSub.publish(sourceChanges, {
+                  ...initialProvider,
+                  version,
+                  checkedAt,
+                });
+                while ((yield* registry.getProviders)[0]?.checkedAt !== checkedAt) {
+                  yield* Effect.yieldNow;
+                }
+              });
+
+            yield* publishAndAwaitSnapshot("1");
+            yield* Deferred.await(firstSnapshotBlocked);
+            yield* publishAndAwaitSnapshot("2");
+            yield* publishAndAwaitSnapshot("3");
+            yield* Deferred.await(latestSnapshotPublished);
+            yield* Deferred.succeed(releaseFirstSnapshot, undefined);
+
+            const snapshots = Array.from(yield* Fiber.join(snapshotsFiber));
+            assert.deepStrictEqual(
+              snapshots.map((snapshot) => snapshot[0]?.version),
+              ["1", "3"],
+            );
+          }).pipe(Effect.provide(runtimeServices));
+        }),
+      );
+
       it("persists merged provider snapshots for the providers that were refreshed", () => {
         const previousProviders = [
           {
@@ -1050,8 +1153,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
         }),
       );
 
-      // This test intentionally avoids `mockCommandSpawnerLayer` so the real
-      // `probeCodexAppServerProvider` path runs — including the full
+      // Exercise the real `probeCodexAppServerProvider` path, including the full
       // `codex app-server` RPC handshake via `CodexClient.layerCommand`.
       // We point `binaryPath` at a name that cannot exist on any machine so
       // the real `ChildProcessSpawner` deterministically returns ENOENT; the

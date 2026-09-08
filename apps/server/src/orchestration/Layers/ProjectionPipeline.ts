@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type ChatAttachment,
   type OrchestrationEvent,
+  type OrchestrationQueuedMessage,
   type OrchestrationSessionStatus,
   ThreadId,
 } from "@t3tools/contracts";
@@ -319,14 +320,15 @@ function retainProjectionProposedPlansAfterRevert(
 function collectThreadAttachmentRelativePaths(
   threadId: string,
   messages: ReadonlyArray<ProjectionThreadMessage>,
+  queuedMessages: ReadonlyArray<OrchestrationQueuedMessage> = [],
 ): Set<string> {
   const threadSegment = toSafeThreadAttachmentSegment(threadId);
   if (!threadSegment) {
     return new Set();
   }
   const relativePaths = new Set<string>();
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) {
+  const collectAttachments = (attachments: ReadonlyArray<ChatAttachment>) => {
+    for (const attachment of attachments) {
       if (attachment.type !== "image") {
         continue;
       }
@@ -336,6 +338,12 @@ function collectThreadAttachmentRelativePaths(
       }
       relativePaths.add(attachmentRelativePath(attachment));
     }
+  };
+  for (const message of messages) {
+    collectAttachments(message.attachments ?? []);
+  }
+  for (const queuedMessage of queuedMessages) {
+    collectAttachments(queuedMessage.attachments);
   }
   return relativePaths;
 }
@@ -606,14 +614,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             archivedAt: null,
-            inboxLifecycle: "active",
-            inboxWakeAt: null,
             latestUserMessageAt: null,
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
             lastClearedSequence: null,
             pendingPmHandoff: null,
+            queuedMessages: [],
+            messageQueueEnabled: true,
             deletedAt: null,
           });
           return;
@@ -643,29 +651,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             archivedAt: null,
-            updatedAt: event.payload.updatedAt,
-          });
-          return;
-        }
-
-        case "thread.inbox-settled":
-        case "thread.inbox-snoozed":
-        case "thread.inbox-reopened": {
-          const existingRow = yield* projectionThreadRepository.getById({
-            threadId: event.payload.threadId,
-          });
-          if (Option.isNone(existingRow)) {
-            return;
-          }
-          yield* projectionThreadRepository.upsert({
-            ...existingRow.value,
-            inboxLifecycle:
-              event.type === "thread.inbox-settled"
-                ? "settled"
-                : event.type === "thread.inbox-snoozed"
-                  ? "snoozed"
-                  : "active",
-            inboxWakeAt: event.type === "thread.inbox-snoozed" ? event.payload.wakeAt : null,
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -726,6 +711,123 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "thread.message-queued":
+        case "thread.queued-message-edited":
+        case "thread.queued-message-deleted":
+        case "thread.message-queue-preference-set":
+        case "thread.queued-message-dispatch-requested":
+        case "thread.queued-message-dispatch-succeeded":
+        case "thread.queued-message-dispatch-failed":
+        case "thread.turn-interrupt-requested": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) return;
+          const current = existingRow.value.queuedMessages ?? [];
+          const deliveredQueueMessage =
+            event.type === "thread.queued-message-dispatch-succeeded"
+              ? current.find(
+                  (entry) =>
+                    entry.id === event.payload.queueItemId &&
+                    entry.dispatchCommandId === event.payload.dispatchCommandId,
+                )
+              : undefined;
+          const queuedMessages = (() => {
+            switch (event.type) {
+              case "thread.message-queued":
+                return [...current, event.payload.queuedMessage];
+              case "thread.queued-message-edited":
+                return current.map((entry) =>
+                  entry.id === event.payload.queueItemId
+                    ? {
+                        ...entry,
+                        text: event.payload.text,
+                        status: "queued" as const,
+                        dispatchCommandId: null,
+                        error: null,
+                        updatedAt: event.payload.updatedAt,
+                      }
+                    : entry,
+                );
+              case "thread.queued-message-deleted":
+                return current.filter((entry) => entry.id !== event.payload.queueItemId);
+              case "thread.queued-message-dispatch-requested":
+                return current.map((entry) =>
+                  entry.id === event.payload.queueItemId
+                    ? {
+                        ...entry,
+                        status: "dispatching" as const,
+                        attemptCount: entry.attemptCount + 1,
+                        dispatchCommandId: event.payload.dispatchCommandId,
+                        error: null,
+                        updatedAt: event.payload.updatedAt,
+                      }
+                    : entry,
+                );
+              case "thread.queued-message-dispatch-succeeded":
+                return current.filter(
+                  (entry) =>
+                    entry.id !== event.payload.queueItemId ||
+                    entry.dispatchCommandId !== event.payload.dispatchCommandId,
+                );
+              case "thread.queued-message-dispatch-failed":
+                return current.map((entry) =>
+                  entry.id === event.payload.queueItemId &&
+                  entry.dispatchCommandId === event.payload.dispatchCommandId
+                    ? {
+                        ...entry,
+                        status: "failed" as const,
+                        error: event.payload.error,
+                        updatedAt: event.payload.updatedAt,
+                      }
+                    : entry,
+                );
+              case "thread.turn-interrupt-requested":
+                return current.map((entry) =>
+                  entry.status === "queued"
+                    ? { ...entry, status: "held" as const, updatedAt: event.payload.createdAt }
+                    : entry,
+                );
+              case "thread.message-queue-preference-set":
+                return current;
+            }
+          })();
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            queuedMessages,
+            ...(deliveredQueueMessage
+              ? {
+                  modelSelection: deliveredQueueMessage.modelSelection,
+                  gedWorkflowEnabled: deliveredQueueMessage.gedWorkflowEnabled,
+                  runtimeMode: deliveredQueueMessage.runtimeMode,
+                  interactionMode: deliveredQueueMessage.interactionMode,
+                }
+              : {}),
+            messageQueueEnabled:
+              event.type === "thread.message-queue-preference-set"
+                ? event.payload.enabled
+                : (existingRow.value.messageQueueEnabled ?? true),
+            updatedAt: event.occurredAt,
+          });
+          if (
+            event.type === "thread.queued-message-deleted" ||
+            event.type === "thread.queued-message-dispatch-succeeded"
+          ) {
+            const messages = yield* projectionThreadMessageRepository.listByThreadId({
+              threadId: event.payload.threadId,
+            });
+            attachmentSideEffects.prunedThreadRelativePaths.set(
+              event.payload.threadId,
+              collectThreadAttachmentRelativePaths(
+                event.payload.threadId,
+                messages,
+                queuedMessages,
+              ),
+            );
+          }
+          return;
+        }
+
         case "thread.deleted": {
           attachmentSideEffects.deletedThreadIds.add(event.payload.threadId);
           const existingRow = yield* projectionThreadRepository.getById({
@@ -736,6 +838,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
+            queuedMessages: [],
             deletedAt: event.payload.deletedAt,
             updatedAt: event.payload.deletedAt,
           });
@@ -758,6 +861,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
+            queuedMessages:
+              event.type === "thread.cleared" ? [] : (existingRow.value.queuedMessages ?? []),
             latestTurnId: event.type === "thread.cleared" ? null : existingRow.value.latestTurnId,
             latestUserMessageAt:
               event.type === "thread.cleared" ? null : existingRow.value.latestUserMessageAt,

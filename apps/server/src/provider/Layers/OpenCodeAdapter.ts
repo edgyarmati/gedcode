@@ -27,6 +27,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import { makeProviderRuntimeEventBuffer } from "../ProviderRuntimeEventBuffer.ts";
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -443,7 +444,7 @@ export function makeOpenCodeAdapter(
     // `options.nativeEventLogger`, they own its lifecycle.
     const managedNativeEventLogger =
       options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
-    const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    const runtimeEvents = yield* makeProviderRuntimeEventBuffer;
     const sessions = new Map<ThreadId, OpenCodeSessionContext>();
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
       Effect.mapError(

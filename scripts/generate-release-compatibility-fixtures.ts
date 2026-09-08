@@ -1,13 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off
 
 /**
- * Regenerates immutable upgrade fixtures from published GedCode tags.
+ * Regenerates immutable historical regression fixtures from published GedCode tags.
  *
  * Each tag is checked out in an isolated temporary worktree, installs the
  * dependencies recorded by that tag, and executes that tag's migration/store
  * implementation. Current source code is never used to construct historical
  * artifacts. The generated manifest records tag commits, source-tree/blob
- * identities, and SHA-256 checksums for review and test-time verification.
+ * identities, and SHA-256 checksums for review and test-time verification. The
+ * retained tag set predates the current compatibility floor and does not define
+ * the supported upgrade matrix.
  *
  * Run from any directory:
  *   node scripts/generate-release-compatibility-fixtures.ts

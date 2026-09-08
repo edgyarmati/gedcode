@@ -54,6 +54,7 @@ import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
 } from "../Services/ProviderSessionDirectory.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../ProviderRuntimeEventBuffer.ts";
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 const isModelSelection = Schema.is(ModelSelection);
@@ -224,7 +225,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const registry = yield* ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory;
-  const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventPubSub = yield* PubSub.bounded<ProviderRuntimeEvent>(
+    PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY,
+  );
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
@@ -958,7 +961,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   });
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
-    const threadIds = yield* directory.listThreadIds();
     const currentAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(

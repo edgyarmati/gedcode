@@ -9,6 +9,7 @@ import type {
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
   OrchestrationPendingGate,
+  OrchestrationQueuedMessage,
   OrchestrationTask,
   ProjectScript as ContractProjectScript,
   ThreadId,
@@ -122,6 +123,8 @@ export interface Thread {
   interactionMode: ProviderInteractionMode;
   session: ThreadSession | null;
   messages: ChatMessage[];
+  queuedMessages?: OrchestrationQueuedMessage[];
+  messageQueueEnabled?: boolean;
   proposedPlans: ProposedPlan[];
   error: string | null;
   createdAt: string;
@@ -150,12 +153,12 @@ export interface ThreadShell {
   error: string | null;
   createdAt: string;
   archivedAt: string | null;
-  inboxLifecycle?: "active" | "snoozed" | "settled";
-  inboxWakeAt?: string | null;
   updatedAt?: string | undefined;
   lastClearedSequence?: number | undefined;
   branch: string | null;
   worktreePath: string | null;
+  queuedMessages?: OrchestrationQueuedMessage[];
+  messageQueueEnabled?: boolean;
 }
 
 export interface ThreadTurnState {
@@ -173,8 +176,6 @@ export interface SidebarThreadSummary {
   session: ThreadSession | null;
   createdAt: string;
   archivedAt: string | null;
-  inboxLifecycle?: "active" | "snoozed" | "settled";
-  inboxWakeAt?: string | null;
   updatedAt?: string | undefined;
   lastClearedSequence?: number | undefined;
   latestTurn: OrchestrationLatestTurn | null;

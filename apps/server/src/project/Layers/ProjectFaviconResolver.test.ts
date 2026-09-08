@@ -73,5 +73,22 @@ it.layer(TestLayer)("ProjectFaviconResolverLive", (it) => {
         expect(resolved).toBeNull();
       }),
     );
+
+    it.effect("does not follow favicon symlinks outside the project", () =>
+      Effect.gen(function* () {
+        const resolver = yield* ProjectFaviconResolver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        const outsideIcon = path.join(outside, "private.svg");
+        yield* fileSystem.writeFileString(outsideIcon, "<svg>private</svg>");
+        yield* fileSystem.symlink(outsideIcon, path.join(cwd, "favicon.svg"));
+
+        const resolved = yield* resolver.resolvePath(cwd);
+
+        expect(resolved).toBeNull();
+      }),
+    );
   });
 });

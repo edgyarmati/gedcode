@@ -18,7 +18,6 @@ import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
-import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
 import * as DesktopSecretStorage from "./electron/ElectronSafeStorage.ts";
 import * as ElectronShell from "./electron/ElectronShell.ts";
 import * as ElectronSparkleUpdater from "./electron/ElectronSparkleUpdater.ts";
@@ -45,6 +44,7 @@ import * as DesktopSshRemoteApi from "./ssh/DesktopSshRemoteApi.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
+import * as DesktopDocumentSecurity from "./window/DesktopDocumentSecurity.ts";
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -94,18 +94,20 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+const desktopDocumentSecurity = DesktopDocumentSecurity.make();
+
 const electronLayer = Layer.mergeAll(
   ElectronApp.layer,
   ElectronDialog.layer,
   ElectronMenu.layer,
-  ElectronProtocol.layer,
   DesktopSecretStorage.layer,
   ElectronShell.layer,
   ElectronSparkleUpdater.layer,
   ElectronTheme.layer,
   ElectronUpdater.layer,
   ElectronWindow.layer,
-  Layer.succeed(DesktopIpc.DesktopIpc, DesktopIpc.make(Electron.ipcMain)),
+  Layer.succeed(DesktopDocumentSecurity.DesktopDocumentSecurity, desktopDocumentSecurity),
+  Layer.succeed(DesktopIpc.DesktopIpc, DesktopIpc.make(Electron.ipcMain, desktopDocumentSecurity)),
 );
 
 const desktopFoundationLayer = Layer.mergeAll(
@@ -142,15 +144,11 @@ const desktopApplicationLayer = Layer.mergeAll(
   desktopSshLayer,
 ).pipe(Layer.provideMerge(DesktopUpdates.layer), Layer.provideMerge(desktopBackendLayer));
 
-const desktopRuntimeLayer = ElectronProtocol.layerSchemePrivileges.pipe(
-  Layer.flatMap(() =>
-    desktopApplicationLayer.pipe(
-      Layer.provideMerge(NodeServices.layer),
-      Layer.provideMerge(NodeHttpClient.layerUndici),
-      Layer.provideMerge(NetService.layer),
-      Layer.provideMerge(electronLayer),
-    ),
-  ),
+const desktopRuntimeLayer = desktopApplicationLayer.pipe(
+  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(NodeHttpClient.layerUndici),
+  Layer.provideMerge(NetService.layer),
+  Layer.provideMerge(electronLayer),
 );
 
 DesktopApp.program.pipe(Effect.provide(desktopRuntimeLayer), NodeRuntime.runMain);

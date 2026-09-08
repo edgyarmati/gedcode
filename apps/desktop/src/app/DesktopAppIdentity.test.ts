@@ -102,7 +102,6 @@ const withIdentity = <A, E, R>(
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
     readonly existingUserDataPaths?: ReadonlyArray<string>;
-    readonly legacyPathExists?: boolean;
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
   } = {},
@@ -118,11 +117,7 @@ const withIdentity = <A, E, R>(
       DesktopAppIdentity.layer.pipe(
         Layer.provideMerge(
           FileSystem.layerNoop({
-            exists: (path) =>
-              Effect.succeed(
-                input.existingUserDataPaths?.includes(path) === true ||
-                  (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")),
-              ),
+            exists: (path) => Effect.succeed(input.existingUserDataPaths?.includes(path) === true),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -165,37 +160,37 @@ describe("DesktopAppIdentity", () => {
     ),
   );
 
-  it.effect("keeps using the legacy slug userData path when it already exists", () =>
+  it.effect("ignores a legacy slug userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gedcode");
       }),
       { existingUserDataPaths: ["/Users/alice/Library/Application Support/t3code"] },
     ),
   );
 
-  it.effect("keeps using the legacy display-name userData path when it already exists", () =>
+  it.effect("ignores a legacy display-name userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gedcode");
       }),
       { existingUserDataPaths: ["/Users/alice/Library/Application Support/T3 Code (Alpha)"] },
     ),
   );
 
-  it.effect("keeps using the legacy dev slug userData path when it already exists", () =>
+  it.effect("ignores a legacy dev slug userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code-dev");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/gedcode-dev");
       }),
       {
         environment: {

@@ -70,8 +70,9 @@ export interface ProviderRegistryShape {
   }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**
-   * Stream of provider snapshot updates — one emission per aggregated
-   * change. The array contains the full current state.
+   * Complete ordered provider snapshots. Slow subscribers may skip
+   * superseded intermediate snapshots, but always retain the newest pending
+   * aggregate state.
    */
   readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
 }

@@ -920,11 +920,29 @@ const make = Effect.gen(function* () {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
-      return setThreadSessionErrorOnTurnStartFailure({
-        threadId: event.payload.threadId,
-        detail,
-        createdAt: event.payload.createdAt,
-      }).pipe(
+      const settleQueuedAttempt =
+        event.payload.queueItemId !== undefined &&
+        event.payload.queueDispatchCommandId !== undefined
+          ? orchestrationEngine
+              .dispatch({
+                type: "thread.queue.dispatch.fail",
+                commandId: CommandId.make(`${event.payload.queueDispatchCommandId}:failed`),
+                threadId: event.payload.threadId,
+                queueItemId: event.payload.queueItemId,
+                dispatchCommandId: event.payload.queueDispatchCommandId,
+                error: detail,
+                createdAt: event.payload.createdAt,
+              })
+              .pipe(Effect.asVoid)
+          : Effect.void;
+      return settleQueuedAttempt.pipe(
+        Effect.flatMap(() =>
+          setThreadSessionErrorOnTurnStartFailure({
+            threadId: event.payload.threadId,
+            detail,
+            createdAt: event.payload.createdAt,
+          }),
+        ),
         Effect.flatMap(() =>
           appendProviderFailureActivity({
             threadId: event.payload.threadId,
@@ -980,6 +998,19 @@ const make = Effect.gen(function* () {
       });
 
       const result = yield* providerService.sendTurn(sendTurnRequest);
+      if (
+        event.payload.queueItemId !== undefined &&
+        event.payload.queueDispatchCommandId !== undefined
+      ) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.queue.dispatch.succeed",
+          commandId: CommandId.make(`${event.payload.queueDispatchCommandId}:succeeded`),
+          threadId: event.payload.threadId,
+          queueItemId: event.payload.queueItemId,
+          dispatchCommandId: event.payload.queueDispatchCommandId,
+          createdAt: event.payload.createdAt,
+        });
+      }
       if (result.delivery !== undefined) {
         yield* appendTurnDeliveryActivity({
           threadId: event.payload.threadId,

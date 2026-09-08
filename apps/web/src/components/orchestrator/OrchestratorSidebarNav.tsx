@@ -533,7 +533,7 @@ const OrchestratorSidebarProjectRow = memo(function OrchestratorSidebarProjectRo
             <GripVerticalIcon className="size-3" />
           </span>
         ) : null}
-        <ProjectFavicon environmentId={environmentId} cwd={project.cwd} />
+        <ProjectFavicon environmentId={environmentId} projectId={project.id} />
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/90">
           {project.name}
         </span>

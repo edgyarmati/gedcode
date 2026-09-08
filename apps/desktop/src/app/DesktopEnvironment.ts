@@ -43,8 +43,6 @@ export interface DesktopEnvironmentShape {
   readonly homeDirectory: string;
   readonly appDataDirectory: string;
   readonly baseDir: string;
-  readonly usesDefaultBaseDir: boolean;
-  readonly legacyDefaultBaseDir: string;
   readonly stateDir: string;
   readonly desktopSettingsPath: string;
   readonly clientSettingsPath: string;
@@ -69,8 +67,6 @@ export interface DesktopEnvironmentShape {
   readonly linuxDesktopEntryName: string;
   readonly linuxWmClass: string;
   readonly userDataDirName: string;
-  readonly legacyUserDataDirName: string;
-  readonly legacyUserDataDirNames: readonly string[];
   readonly defaultDesktopSettings: DesktopSettings;
   readonly runtimeInfo: DesktopRuntimeInfo;
   readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -159,8 +155,6 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
   const defaultBaseDir = path.join(homeDirectory, ".gedcode");
-  const legacyDefaultBaseDir = path.join(homeDirectory, ".t3");
-  const usesDefaultBaseDir = Option.isNone(config.t3Home);
   const baseDir = Option.getOrElse(config.t3Home, () => defaultBaseDir);
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -171,10 +165,6 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, usesDevIdentity ? "dev" : "userdata");
   const userDataDirName = usesDevIdentity ? "gedcode-dev" : "gedcode";
-  const legacyUserDataDirNames = usesDevIdentity
-    ? ["t3code-dev", "T3 Code (Dev)"]
-    : ["t3code", "T3 Code (Alpha)"];
-  const legacyUserDataDirName = legacyUserDataDirNames[0] ?? userDataDirName;
   const resourcesPath = input.resourcesPath;
 
   return DesktopEnvironment.of({
@@ -190,8 +180,6 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     homeDirectory,
     appDataDirectory,
     baseDir,
-    usesDefaultBaseDir,
-    legacyDefaultBaseDir,
     stateDir,
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
     clientSettingsPath: path.join(stateDir, "client-settings.json"),
@@ -218,8 +206,6 @@ const makeDesktopEnvironment = Effect.fn("desktop.environment.make")(function* (
     linuxDesktopEntryName: usesDevIdentity ? "gedcode-dev.desktop" : "gedcode.desktop",
     linuxWmClass: usesDevIdentity ? "gedcode-dev" : "gedcode",
     userDataDirName,
-    legacyUserDataDirName,
-    legacyUserDataDirNames,
     defaultDesktopSettings: resolveDefaultDesktopSettings(appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

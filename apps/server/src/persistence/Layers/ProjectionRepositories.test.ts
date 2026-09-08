@@ -1,4 +1,11 @@
-import { ProjectId, TaskId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
+  QueuedMessageId,
+  TaskId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -183,6 +190,62 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
           ?.orchestrationOwnership,
         null,
       );
+    }),
+  );
+
+  it.effect("round-trips the durable FIFO and queueing preference", () =>
+    Effect.gen(function* () {
+      const threads = yield* ProjectionThreadRepository;
+      const threadId = ThreadId.make("thread-message-queue");
+      const now = "2026-08-30T12:00:00.000Z";
+      const queuedMessage = {
+        id: QueuedMessageId.make("queue-item-1"),
+        messageId: MessageId.make("message-1"),
+        text: "follow up",
+        attachments: [],
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6" },
+        gedWorkflowEnabled: true,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        status: "queued" as const,
+        attemptCount: 0,
+        dispatchCommandId: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      yield* threads.upsert({
+        threadId,
+        projectId: ProjectId.make("project-message-queue"),
+        orchestrationOwnership: null,
+        title: "Queued chat",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        latestTurnId: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        queuedMessages: [queuedMessage],
+        messageQueueEnabled: false,
+        latestUserMessageAt: null,
+        pendingApprovalCount: 0,
+        pendingUserInputCount: 0,
+        hasActionableProposedPlan: 0,
+        lastClearedSequence: null,
+        pendingPmHandoff: null,
+        deletedAt: null,
+      });
+
+      const persisted = Option.getOrThrow(yield* threads.getById({ threadId }));
+      assert.strictEqual(persisted.messageQueueEnabled, false);
+      assert.deepStrictEqual(persisted.queuedMessages, [queuedMessage]);
     }),
   );
 });

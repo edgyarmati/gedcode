@@ -46,8 +46,8 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-describe("published release SQLite upgrade fixtures", () => {
-  it("records immutable provenance for every published release", () => {
+describe("historical release SQLite migration fixtures", () => {
+  it("records immutable provenance for every retained historical release", () => {
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.generatedBy).toBe("scripts/generate-release-compatibility-fixtures.ts");
     expect(manifest.publishedGedcodeReleases).toEqual([

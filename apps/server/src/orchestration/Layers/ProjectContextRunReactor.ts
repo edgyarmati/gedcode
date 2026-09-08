@@ -26,6 +26,7 @@ import { ProjectionProjectContextRunRepositoryLive } from "../../persistence/Lay
 import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
 import { ProjectionProjectContextRunRepository } from "../../persistence/Services/ProjectionProjectContextRuns.ts";
 import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../../provider/ProviderRuntimeEventBuffer.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectContextScanner } from "../../project/Services/ProjectContextScanner.ts";
 import { GedManifestManager } from "../../project/Services/GedManifest.ts";
@@ -713,7 +714,7 @@ export const makeProjectContextRunReactor = Effect.gen(function* () {
         capacity: "unbounded",
       });
       const providerEvents = yield* Stream.toQueue(providers.streamEvents, {
-        capacity: "unbounded",
+        capacity: PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY,
       });
       yield* Effect.forkScoped(
         Stream.runForEach(Stream.fromQueue(domainEvents), (event) => domainWorker.enqueue(event)),

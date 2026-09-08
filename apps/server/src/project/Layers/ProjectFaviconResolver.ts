@@ -73,18 +73,24 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
   };
 
   const findExistingFile = Effect.fn("ProjectFaviconResolver.findExistingFile")(function* (
-    projectCwd: string,
+    projectRoot: string,
     candidates: ReadonlyArray<string>,
   ): Effect.fn.Return<string | null> {
     for (const candidate of candidates) {
-      if (!isPathWithinProject(projectCwd, candidate)) {
+      if (!isPathWithinProject(projectRoot, candidate)) {
+        continue;
+      }
+      const realCandidate = yield* fileSystem
+        .realPath(candidate)
+        .pipe(Effect.catch(() => Effect.succeed(null)));
+      if (realCandidate === null || !isPathWithinProject(projectRoot, realCandidate)) {
         continue;
       }
       const stats = yield* fileSystem
-        .stat(candidate)
+        .stat(realCandidate)
         .pipe(Effect.catch(() => Effect.succeed(null)));
       if (stats?.type === "File") {
-        return candidate;
+        return realCandidate;
       }
     }
     return null;
@@ -93,16 +99,26 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
   const resolvePath: ProjectFaviconResolverShape["resolvePath"] = Effect.fn(
     "ProjectFaviconResolver.resolvePath",
   )(function* (cwd: string): Effect.fn.Return<string | null> {
+    const projectRoot = yield* fileSystem
+      .realPath(cwd)
+      .pipe(Effect.catch(() => Effect.succeed(null)));
+    if (projectRoot === null) {
+      return null;
+    }
+
     for (const candidate of FAVICON_CANDIDATES) {
-      const resolved = path.join(cwd, candidate);
-      const existing = yield* findExistingFile(cwd, [resolved]);
+      const resolved = path.join(projectRoot, candidate);
+      const existing = yield* findExistingFile(projectRoot, [resolved]);
       if (existing) {
         return existing;
       }
     }
 
     for (const sourceFile of ICON_SOURCE_FILES) {
-      const sourcePath = path.join(cwd, sourceFile);
+      const sourcePath = yield* findExistingFile(projectRoot, [path.join(projectRoot, sourceFile)]);
+      if (sourcePath === null) {
+        continue;
+      }
       const source = yield* fileSystem
         .readFileString(sourcePath)
         .pipe(Effect.catch(() => Effect.succeed(null)));
@@ -113,7 +129,7 @@ export const makeProjectFaviconResolver = Effect.gen(function* () {
       if (!href) {
         continue;
       }
-      const existing = yield* findExistingFile(cwd, resolveIconHref(cwd, href));
+      const existing = yield* findExistingFile(projectRoot, resolveIconHref(projectRoot, href));
       if (existing) {
         return existing;
       }

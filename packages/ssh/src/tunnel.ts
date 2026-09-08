@@ -33,6 +33,7 @@ import {
   buildSshHostSpecEffect,
   collectProcessOutput,
   getLastNonEmptyOutputLine,
+  redactSshDiagnosticOutput,
   remoteStateKey,
   resolveSshTarget,
   runSshCommand,
@@ -194,6 +195,11 @@ const decodeRemoteLaunchOutput = (stdout: string) =>
 
 const decodeRemotePairingOutput = (stdout: string) =>
   decodeRemoteJsonOutput(stdout, decodeRemotePairingResult);
+
+function redactSshDiagnosticCause(cause: unknown): Error {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return new Error(redactSshDiagnosticOutput(message));
+}
 
 const remoteNodeEngineCheckMain = function remoteNodeEngineCheckMain() {
   const range = process.argv[2] || "";
@@ -740,7 +746,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     if (!getLastNonEmptyOutputLine(result.stdout)) {
       return yield* new SshLaunchError({
         message: "SSH launch did not return a remote port.",
-        stdout: result.stdout,
+        stdout: redactSshDiagnosticOutput(result.stdout),
       });
     }
     const parsed = yield* decodeRemoteLaunchOutput(result.stdout).pipe(
@@ -748,15 +754,15 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
         (cause) =>
           new SshLaunchError({
             message: "SSH launch returned unparseable output.",
-            stdout: result.stdout,
-            cause,
+            stdout: redactSshDiagnosticOutput(result.stdout),
+            cause: redactSshDiagnosticCause(cause),
           }),
       ),
     );
     if (!Number.isInteger(parsed.remotePort)) {
       return yield* new SshLaunchError({
         message: `SSH launch returned an invalid remote port: ${String(parsed.remotePort)}.`,
-        stdout: result.stdout,
+        stdout: redactSshDiagnosticOutput(result.stdout),
       });
     }
     yield* Effect.logInfo("ssh.remoteServer.launch.ready", {
@@ -797,7 +803,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   if (!getLastNonEmptyOutputLine(result.stdout)) {
     return yield* new SshPairingError({
       message: "SSH pairing did not return a credential.",
-      stdout: result.stdout,
+      stdout: redactSshDiagnosticOutput(result.stdout),
     });
   }
   const parsed = yield* decodeRemotePairingOutput(result.stdout).pipe(
@@ -805,15 +811,15 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
       (cause) =>
         new SshPairingError({
           message: "SSH pairing returned unparseable output.",
-          stdout: result.stdout,
-          cause,
+          stdout: redactSshDiagnosticOutput(result.stdout),
+          cause: redactSshDiagnosticCause(cause),
         }),
     ),
   );
   if (parsed.credential.trim().length === 0) {
     return yield* new SshPairingError({
       message: "SSH pairing command returned an invalid credential.",
-      stdout: result.stdout,
+      stdout: redactSshDiagnosticOutput(result.stdout),
     });
   }
   yield* Effect.logDebug("ssh.remoteServer.pairingToken.created", {

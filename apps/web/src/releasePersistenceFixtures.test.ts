@@ -65,8 +65,8 @@ function readPayload(fixture: BrowserFixtureManifestEntry): PersistedPayload {
   return JSON.parse(bytes.toString("utf8")) as PersistedPayload;
 }
 
-describe("published release browser persistence fixtures", () => {
-  it("captures browser state independently from every published GedCode tag", () => {
+describe("historical release browser persistence fixtures", () => {
+  it("captures browser state independently from every retained historical tag", () => {
     expect(manifest.browser.composer.map((entry) => entry.tag).toSorted()).toEqual(
       manifest.publishedGedcodeReleases.toSorted(),
     );

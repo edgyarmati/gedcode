@@ -53,6 +53,17 @@ export class OrchestrationCommandPreviouslyRejectedError extends Schema.TaggedEr
   }
 }
 
+export class OrchestrationCommandIdConflictError extends Schema.TaggedErrorClass<OrchestrationCommandIdConflictError>()(
+  "OrchestrationCommandIdConflictError",
+  {
+    commandId: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Command id '${this.commandId}' was reused with different command content.`;
+  }
+}
+
 export class OrchestrationProjectorDecodeError extends Schema.TaggedErrorClass<OrchestrationProjectorDecodeError>()(
   "OrchestrationProjectorDecodeError",
   {
@@ -81,6 +92,7 @@ export class OrchestrationListenerCallbackError extends Schema.TaggedErrorClass<
 
 export type OrchestrationDispatchError =
   | ProjectionRepositoryError
+  | OrchestrationCommandIdConflictError
   | OrchestrationCommandInvariantError
   | OrchestrationCommandPreviouslyRejectedError
   | OrchestrationProjectorDecodeError

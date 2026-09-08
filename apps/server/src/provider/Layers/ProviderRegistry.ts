@@ -192,10 +192,11 @@ export const ProviderRegistryLive = Layer.effect(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
 
-    // Aggregator PubSub — consumers (WS gateway, etc.) subscribe here for
-    // coalesced updates across every instance.
+    // Aggregator emissions contain the complete ordered provider snapshot.
+    // A slow UI only needs the newest pending value, so slide the old value
+    // rather than accumulating stale snapshots or backpressuring probes.
     const changesPubSub = yield* Effect.acquireRelease(
-      PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
+      PubSub.sliding<ReadonlyArray<ServerProvider>>(1),
       PubSub.shutdown,
     );
 

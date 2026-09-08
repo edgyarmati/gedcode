@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { FolderIcon } from "lucide-react";
 import { useState } from "react";
 import { resolveEnvironmentHttpUrl } from "../environments/runtime";
@@ -7,7 +7,7 @@ const loadedProjectFaviconSrcs = new Set<string>();
 
 export function ProjectFavicon(input: {
   environmentId: EnvironmentId;
-  cwd: string;
+  projectId: ProjectId;
   className?: string;
 }) {
   const src = (() => {
@@ -15,7 +15,7 @@ export function ProjectFavicon(input: {
       return resolveEnvironmentHttpUrl({
         environmentId: input.environmentId,
         pathname: "/api/project-favicon",
-        searchParams: { cwd: input.cwd },
+        searchParams: { projectId: input.projectId },
       });
     } catch {
       return null;

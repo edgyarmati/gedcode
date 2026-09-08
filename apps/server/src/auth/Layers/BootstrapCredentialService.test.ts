@@ -1,9 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import { createHash } from "node:crypto";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type { ServerConfigShape } from "../../config.ts";
 import { ServerConfig } from "../../config.ts";
@@ -138,6 +143,8 @@ it.layer(NodeServices.layer)("BootstrapCredentialServiceLive", (it) => {
       const activeBeforeRevoke = yield* bootstrapCredentials.listActive();
       expect(activeBeforeRevoke.map((entry) => entry.id)).toContain(first.id);
       expect(activeBeforeRevoke.map((entry) => entry.id)).toContain(second.id);
+      expect("credential" in (activeBeforeRevoke[0] ?? {})).toBe(false);
+      expect("credentialDigest" in (activeBeforeRevoke[0] ?? {})).toBe(false);
 
       const revoked = yield* bootstrapCredentials.revoke(first.id);
       const activeAfterRevoke = yield* bootstrapCredentials.listActive();
@@ -149,5 +156,89 @@ it.layer(NodeServices.layer)("BootstrapCredentialServiceLive", (it) => {
       expect(revokedConsume.message).toContain("no longer available");
       expect(revokedConsume.status).toBe(401);
     }).pipe(Effect.provide(makeBootstrapCredentialLayer())),
+  );
+
+  it.effect("streams pairing link metadata without the issued credential", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* BootstrapCredentialService;
+      const firstChange = yield* bootstrapCredentials.streamChanges.pipe(
+        Stream.runHead,
+        Effect.forkChild({ startImmediately: true }),
+      );
+
+      const issued = yield* bootstrapCredentials.issueOneTimeToken({ label: "Travel phone" });
+      const change = yield* Fiber.join(firstChange);
+
+      expect(change._tag).toBe("Some");
+      if (change._tag === "Some" && change.value.type === "pairingLinkUpserted") {
+        expect(change.value.pairingLink.id).toBe(issued.id);
+        expect("credential" in change.value.pairingLink).toBe(false);
+        expect("credentialDigest" in change.value.pairingLink).toBe(false);
+      }
+    }).pipe(Effect.provide(makeBootstrapCredentialLayer())),
+  );
+
+  it.effect("backpressures ordered pairing changes while auth snapshot delivery is blocked", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* BootstrapCredentialService;
+      const subscription = yield* bootstrapCredentials.subscribeChanges;
+      const releaseSnapshot = yield* Deferred.make<void>();
+      const changeCount = 257;
+
+      const changesFiber = yield* Deferred.await(releaseSnapshot).pipe(
+        Effect.andThen(
+          Stream.fromSubscription(subscription).pipe(Stream.take(changeCount), Stream.runCollect),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      const producerFiber = yield* Effect.forEach(
+        Array.from({ length: changeCount }, (_, index) => index),
+        (index) =>
+          bootstrapCredentials.issueOneTimeToken({
+            label: `Pairing client ${index}`,
+          }),
+        { discard: true },
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+
+      while ((yield* bootstrapCredentials.listActive()).length < changeCount) {
+        yield* Effect.yieldNow;
+      }
+      yield* Effect.yieldNow;
+
+      expect(producerFiber.pollUnsafe()).toBeUndefined();
+
+      yield* Deferred.succeed(releaseSnapshot, undefined);
+      yield* Fiber.join(producerFiber);
+      const changes = Array.from(yield* Fiber.join(changesFiber));
+
+      expect(changes).toHaveLength(changeCount);
+      expect(
+        changes.map((change) =>
+          change.type === "pairingLinkUpserted" ? change.pairingLink.label : null,
+        ),
+      ).toEqual(Array.from({ length: changeCount }, (_, index) => `Pairing client ${index}`));
+    }).pipe(Effect.provide(makeBootstrapCredentialLayer())),
+  );
+
+  it.effect("stores issued pairing credentials only as SHA-256 digests", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* BootstrapCredentialService;
+      const sql = yield* SqlClient.SqlClient;
+      const issued = yield* bootstrapCredentials.issueOneTimeToken();
+
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(auth_pairing_links)`;
+      const rows = yield* sql<{ readonly credentialDigest: string }>`
+        SELECT credential_digest AS "credentialDigest"
+        FROM auth_pairing_links
+        WHERE id = ${issued.id}
+      `;
+
+      expect(columns.map((column) => column.name)).not.toContain("credential");
+      expect(rows).toEqual([
+        {
+          credentialDigest: createHash("sha256").update(issued.credential, "utf8").digest("hex"),
+        },
+      ]);
+    }).pipe(Effect.provide(Layer.merge(makeBootstrapCredentialLayer(), SqlitePersistenceMemory))),
   );
 });

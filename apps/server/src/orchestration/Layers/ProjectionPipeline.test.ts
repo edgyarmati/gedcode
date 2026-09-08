@@ -10,11 +10,13 @@ import {
   ProjectContextRunId,
   ProjectContextSchemaVersion,
   ProjectId,
+  QueuedMessageId,
   OrchestrationTaskAggregateProgress,
   OrchestrationTaskChangeReview,
   OrchestrationTaskLanding,
   OrchestrationTaskNoChangesNeeded,
   OrchestrationTaskVerification,
+  OrchestrationQueuedMessage,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -47,7 +49,6 @@ import {
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
-import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
@@ -73,6 +74,12 @@ const decodeTaskVerificationJson = Schema.decodeUnknownSync(
 );
 const decodeTaskNoChangesNeededJson = Schema.decodeUnknownSync(
   Schema.fromJsonString(OrchestrationTaskNoChangesNeeded),
+);
+const decodeQueuedMessagesJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Array(OrchestrationQueuedMessage)),
+);
+const decodeModelSelectionIdentityJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ instanceId: Schema.String })),
 );
 
 const exists = (filePath: string) =>
@@ -216,6 +223,250 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       for (const row of stateRows) {
         assert.equal(row.lastAppliedSequence, 3);
       }
+    }),
+  );
+
+  it.effect("projects durable message queue state onto the thread row", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { attachmentsDir } = yield* ServerConfig;
+      const now = "2026-08-30T12:00:00.000Z";
+      const threadId = ThreadId.make("thread-durable-queue");
+      const removedAttachmentId = "thread-durable-queue-00000000-0000-4000-8000-000000000001";
+      const keptAttachmentId = "thread-durable-queue-00000000-0000-4000-8000-000000000002";
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-queue-thread"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-queue-thread"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-queue-thread"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-durable-queue"),
+          title: "Queue",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.message-queued",
+        eventId: EventId.make("evt-message-queued"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-queued"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-message-queued"),
+        metadata: {},
+        payload: {
+          threadId,
+          queuedMessage: {
+            id: QueuedMessageId.make("queue-item"),
+            messageId: MessageId.make("queue-message"),
+            text: "later",
+            attachments: [
+              {
+                type: "image",
+                id: removedAttachmentId,
+                name: "removed.png",
+                mimeType: "image/png",
+                sizeBytes: 7,
+              },
+            ],
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6" },
+            gedWorkflowEnabled: true,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            status: "queued",
+            attemptCount: 0,
+            dispatchCommandId: null,
+            error: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.message-queued",
+        eventId: EventId.make("evt-message-queued-kept"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-queued-kept"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-message-queued-kept"),
+        metadata: {},
+        payload: {
+          threadId,
+          queuedMessage: {
+            id: QueuedMessageId.make("queue-item-kept"),
+            messageId: MessageId.make("queue-message-kept"),
+            text: "still later",
+            attachments: [
+              {
+                type: "image",
+                id: keptAttachmentId,
+                name: "kept.png",
+                mimeType: "image/png",
+                sizeBytes: 4,
+              },
+            ],
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-opus-4-6",
+            },
+            gedWorkflowEnabled: false,
+            runtimeMode: "approval-required",
+            interactionMode: "plan",
+            status: "queued",
+            attemptCount: 0,
+            dispatchCommandId: null,
+            error: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.queued-message-deleted",
+        eventId: EventId.make("evt-message-queued-deleted"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-message-queued-deleted"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-message-queued-deleted"),
+        metadata: {},
+        payload: {
+          threadId,
+          queueItemId: QueuedMessageId.make("queue-item"),
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.message-queue-preference-set",
+        eventId: EventId.make("evt-queue-preference"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-queue-preference"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-queue-preference"),
+        metadata: {},
+        payload: { threadId, enabled: false, updatedAt: now },
+      });
+      yield* eventStore.append({
+        type: "thread.queued-message-dispatch-requested",
+        eventId: EventId.make("evt-queue-dispatch-requested"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-queue-dispatch-requested"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-queue-dispatch-requested"),
+        metadata: {},
+        payload: {
+          threadId,
+          queueItemId: QueuedMessageId.make("queue-item-kept"),
+          dispatchCommandId: CommandId.make("cmd-queue-provider-delivery"),
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-queue-message-sent"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-queue-provider-delivery"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-queue-provider-delivery"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("queue-message-kept"),
+          role: "user",
+          text: "still later",
+          attachments: [
+            {
+              type: "image",
+              id: keptAttachmentId,
+              name: "kept.png",
+              mimeType: "image/png",
+              sizeBytes: 4,
+            },
+          ],
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* eventStore.append({
+        type: "thread.queued-message-dispatch-succeeded",
+        eventId: EventId.make("evt-queue-dispatch-succeeded"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-queue-dispatch-succeeded"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-queue-provider-delivery"),
+        metadata: {},
+        payload: {
+          threadId,
+          queueItemId: QueuedMessageId.make("queue-item-kept"),
+          dispatchCommandId: CommandId.make("cmd-queue-provider-delivery"),
+          updatedAt: now,
+        },
+      });
+      yield* fileSystem.makeDirectory(attachmentsDir, { recursive: true });
+      const removedAttachmentPath = path.join(attachmentsDir, `${removedAttachmentId}.png`);
+      const keptAttachmentPath = path.join(attachmentsDir, `${keptAttachmentId}.png`);
+      yield* fileSystem.writeFileString(removedAttachmentPath, "removed");
+      yield* fileSystem.writeFileString(keptAttachmentPath, "kept");
+
+      yield* projectionPipeline.bootstrap;
+      const rows = yield* sql<{
+        queuedMessagesJson: string;
+        messageQueueEnabled: number;
+        modelSelectionJson: string;
+        gedWorkflowEnabled: number;
+        runtimeMode: string;
+        interactionMode: string;
+      }>`
+        SELECT queued_messages_json AS "queuedMessagesJson",
+               message_queue_enabled AS "messageQueueEnabled",
+               model_selection_json AS "modelSelectionJson",
+               ged_workflow_enabled AS "gedWorkflowEnabled",
+               runtime_mode AS "runtimeMode",
+               interaction_mode AS "interactionMode"
+        FROM projection_threads WHERE thread_id = ${threadId}
+      `;
+      const queuedMessages = yield* decodeQueuedMessagesJson(rows[0]!.queuedMessagesJson);
+      assert.deepStrictEqual(queuedMessages, []);
+      assert.equal(rows[0]!.messageQueueEnabled, 0);
+      const persistedModelSelection = yield* decodeModelSelectionIdentityJson(
+        rows[0]!.modelSelectionJson,
+      );
+      assert.equal(persistedModelSelection.instanceId, "claudeAgent");
+      assert.equal(rows[0]!.gedWorkflowEnabled, 0);
+      assert.equal(rows[0]!.runtimeMode, "approval-required");
+      assert.equal(rows[0]!.interactionMode, "plan");
+      assert.isFalse(yield* exists(removedAttachmentPath));
+      assert.isTrue(yield* exists(keptAttachmentPath));
     }),
   );
 
@@ -3732,101 +3983,6 @@ it.effect("restores pending turn-start metadata across projection pipeline resta
       ),
     ),
   ),
-);
-
-it.effect(
-  "keeps a settled normal task in the ordinary shell snapshot after projection restart",
-  () =>
-    Effect.gen(function* () {
-      const { dbPath } = yield* ServerConfig;
-      const persistenceLayer = makeSqlitePersistenceLive(dbPath);
-      const firstProjectionLayer = OrchestrationProjectionPipelineLive.pipe(
-        Layer.provideMerge(OrchestrationEventStoreLive),
-        Layer.provideMerge(persistenceLayer),
-      );
-      const restartedProjectionLayer = OrchestrationProjectionPipelineLive.pipe(
-        Layer.provideMerge(OrchestrationEventStoreLive),
-        Layer.provideMerge(persistenceLayer),
-      );
-      const snapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
-        Layer.provideMerge(RepositoryIdentityResolverLive),
-        Layer.provideMerge(persistenceLayer),
-      );
-      const createdAt = "2026-07-30T11:00:00.000Z";
-      const settledAt = "2026-07-30T11:01:00.000Z";
-      const threadId = ThreadId.make("thread-settled-restart");
-
-      yield* Effect.gen(function* () {
-        const eventStore = yield* OrchestrationEventStore;
-        const projectionPipeline = yield* OrchestrationProjectionPipeline;
-
-        yield* eventStore.append({
-          type: "thread.created",
-          eventId: EventId.make("evt-settled-restart-created"),
-          aggregateKind: "thread",
-          aggregateId: threadId,
-          occurredAt: createdAt,
-          commandId: CommandId.make("cmd-settled-restart-created"),
-          causationEventId: null,
-          correlationId: null,
-          metadata: {},
-          payload: {
-            threadId,
-            projectId: ProjectId.make("project-settled-restart"),
-            title: "Settled normal task",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("codex"),
-              model: "gpt-5-codex",
-            },
-            runtimeMode: "approval-required",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        });
-        yield* eventStore.append({
-          type: "thread.inbox-settled",
-          eventId: EventId.make("evt-settled-restart-settled"),
-          aggregateKind: "thread",
-          aggregateId: threadId,
-          occurredAt: settledAt,
-          commandId: CommandId.make("cmd-settled-restart-settled"),
-          causationEventId: null,
-          correlationId: null,
-          metadata: {},
-          payload: {
-            threadId,
-            settledAt,
-            updatedAt: settledAt,
-          },
-        });
-        yield* projectionPipeline.bootstrap;
-      }).pipe(Effect.provide(firstProjectionLayer));
-
-      yield* Effect.gen(function* () {
-        const projectionPipeline = yield* OrchestrationProjectionPipeline;
-        yield* projectionPipeline.bootstrap;
-      }).pipe(Effect.provide(restartedProjectionLayer));
-
-      const shellSnapshot = yield* Effect.gen(function* () {
-        const snapshotQuery = yield* ProjectionSnapshotQuery;
-        return yield* snapshotQuery.getShellSnapshot();
-      }).pipe(Effect.provide(snapshotLayer));
-      const thread = shellSnapshot.threads.find((candidate) => candidate.id === threadId);
-      assert.equal((thread as { inboxLifecycle?: string } | undefined)?.inboxLifecycle, "settled");
-      assert.equal(thread?.archivedAt, null);
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          ServerConfig.layerTest(process.cwd(), {
-            prefix: "t3-projection-pipeline-inbox-lifecycle-restart-",
-          }),
-          NodeServices.layer,
-        ),
-      ),
-    ),
 );
 
 const engineLayer = it.layer(

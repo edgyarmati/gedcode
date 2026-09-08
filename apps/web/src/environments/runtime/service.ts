@@ -30,7 +30,6 @@ import {
   markPromotedDraftThreadsByRef,
   useComposerDraftStore,
 } from "~/composerDraftStore";
-import { ensureLocalApi } from "~/localApi";
 import { collectActiveTerminalThreadIds } from "~/lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
 import { projectQueryKeys } from "~/lib/projectReactQuery";
@@ -49,10 +48,10 @@ import {
   hasSavedEnvironmentRegistryHydrated,
   listSavedEnvironmentRecords,
   persistSavedEnvironmentRecord,
+  persistSavedEnvironmentRegistry,
   readSavedEnvironmentBearerToken,
   removeSavedEnvironmentBearerToken,
   type SavedEnvironmentRecord,
-  toPersistedSavedEnvironmentRecord,
   useSavedEnvironmentRegistryStore,
   useSavedEnvironmentRuntimeStore,
   waitForSavedEnvironmentRegistryHydration,
@@ -1322,9 +1321,7 @@ async function persistSavedEnvironmentRegistryRollback(
     delete byId[environmentId];
   }
   const records = Object.values(byId);
-  await ensureLocalApi().persistence.setSavedEnvironmentRegistry(
-    records.map((entry) => toPersistedSavedEnvironmentRecord(entry)),
-  );
+  await persistSavedEnvironmentRegistry(records);
   useSavedEnvironmentRegistryStore.setState({
     byId,
   });

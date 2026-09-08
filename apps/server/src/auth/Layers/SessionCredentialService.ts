@@ -2,6 +2,7 @@ import { AuthSessionId, type AuthClientMetadata, type AuthClientSession } from "
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -34,6 +35,7 @@ import {
 const SIGNING_SECRET_NAME = "server-signing-key";
 const DEFAULT_SESSION_TTL = Duration.days(30);
 const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
+const SESSION_CREDENTIAL_CHANGE_BUFFER_CAPACITY = 256;
 
 const SessionClaims = Schema.Struct({
   v: Schema.Literal(1),
@@ -97,7 +99,10 @@ export const makeSessionCredentialService = Effect.gen(function* () {
   const authSessions = yield* AuthSessionRepository;
   const signingSecret = yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
   const connectedSessionsRef = yield* Ref.make(new Map<string, number>());
-  const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
+  const invalidationWaitersRef = yield* Ref.make(new Map<string, Set<Deferred.Deferred<void>>>());
+  const changesPubSub = yield* PubSub.bounded<SessionCredentialChange>(
+    SESSION_CREDENTIAL_CHANGE_BUFFER_CAPACITY,
+  );
   const cookieName = resolveSessionCookieName({
     mode: serverConfig.mode,
     port: serverConfig.port,
@@ -120,6 +125,18 @@ export const makeSessionCredentialService = Effect.gen(function* () {
       type: "clientRemoved",
       sessionId,
     }).pipe(Effect.asVoid);
+
+  const signalInvalidation = (sessionId: AuthSessionId) =>
+    Ref.get(invalidationWaitersRef).pipe(
+      Effect.flatMap((waitersBySession) => {
+        const waiters = waitersBySession.get(sessionId);
+        return waiters === undefined
+          ? Effect.void
+          : Effect.forEach(waiters, (waiter) => Deferred.succeed(waiter, undefined), {
+              discard: true,
+            });
+      }),
+    );
 
   const loadActiveSession = (sessionId: AuthSessionId) =>
     Effect.gen(function* () {
@@ -475,6 +492,7 @@ export const makeSessionCredentialService = Effect.gen(function* () {
           next.delete(sessionId);
           return next;
         });
+        yield* signalInvalidation(sessionId);
         yield* emitRemoved(sessionId);
       }
       return revoked;
@@ -497,7 +515,10 @@ export const makeSessionCredentialService = Effect.gen(function* () {
         });
         yield* Effect.forEach(
           revokedSessionIds,
-          (revokedSessionId) => emitRemoved(revokedSessionId),
+          (revokedSessionId) =>
+            signalInvalidation(revokedSessionId).pipe(
+              Effect.andThen(emitRemoved(revokedSessionId)),
+            ),
           {
             concurrency: "unbounded",
             discard: true,
@@ -506,6 +527,51 @@ export const makeSessionCredentialService = Effect.gen(function* () {
       }
       return revokedSessionIds.length;
     }).pipe(Effect.mapError(toSessionCredentialError("Failed to revoke other sessions.")));
+
+  const awaitInvalidation: SessionCredentialServiceShape["awaitInvalidation"] = (sessionId) =>
+    Effect.acquireUseRelease(
+      Deferred.make<void>().pipe(
+        Effect.tap((waiter) =>
+          Ref.update(invalidationWaitersRef, (current) => {
+            const next = new Map(current);
+            const waiters = new Set(next.get(sessionId) ?? []);
+            waiters.add(waiter);
+            next.set(sessionId, waiters);
+            return next;
+          }),
+        ),
+      ),
+      (waiter) =>
+        Effect.gen(function* () {
+          const row = yield* authSessions.getById({ sessionId }).pipe(Effect.orDie);
+          if (Option.isNone(row) || row.value.revokedAt !== null) {
+            return;
+          }
+
+          const now = yield* Clock.currentTimeMillis;
+          const expiresInMs = Math.max(0, row.value.expiresAt.epochMilliseconds - now);
+          yield* Effect.raceFirst(
+            Deferred.await(waiter),
+            Effect.sleep(Duration.millis(expiresInMs)),
+          );
+        }),
+      (waiter) =>
+        Ref.update(invalidationWaitersRef, (current) => {
+          const waiters = current.get(sessionId);
+          if (waiters === undefined) {
+            return current;
+          }
+          const next = new Map(current);
+          const remaining = new Set(waiters);
+          remaining.delete(waiter);
+          if (remaining.size === 0) {
+            next.delete(sessionId);
+          } else {
+            next.set(sessionId, remaining);
+          }
+          return next;
+        }),
+    );
 
   return {
     cookieName,
@@ -517,8 +583,12 @@ export const makeSessionCredentialService = Effect.gen(function* () {
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub);
+    },
     revoke,
     revokeAllExcept,
+    awaitInvalidation,
     markConnected,
     markDisconnected,
   } satisfies SessionCredentialServiceShape;

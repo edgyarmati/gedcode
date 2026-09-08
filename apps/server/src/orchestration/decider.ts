@@ -1279,22 +1279,33 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "thread.inbox.settle": {
-      const thread = yield* requireThread({
+    case "thread.queue.enqueue": {
+      const targetThread = yield* requireThreadNotArchived({
         readModel,
         command,
         threadId: command.threadId,
       });
-      if (thread.orchestrationOwnership != null) {
+      if (targetThread.orchestrationOwnership != null) {
         return yield* invariantError(
           command.type,
-          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
+          `Orchestrator-owned thread '${command.threadId}' cannot use the normal-chat message queue.`,
         );
       }
-      if (thread.inboxLifecycle === "settled") {
+      if (
+        (targetThread.queuedMessages ?? []).some(
+          (entry) =>
+            entry.id === command.queueItemId || entry.messageId === command.message.messageId,
+        )
+      ) {
         return yield* invariantError(
           command.type,
-          `Thread '${command.threadId}' is already settled.`,
+          `Queued message '${command.queueItemId}' or message '${command.message.messageId}' already exists.`,
+        );
+      }
+      if (command.message.text.trim().length === 0 && command.message.attachments.length === 0) {
+        return yield* invariantError(
+          command.type,
+          "A queued message must contain text or an attachment.",
         );
       }
       return {
@@ -1304,113 +1315,277 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
         })),
-        type: "thread.inbox-settled",
+        type: "thread.message-queued",
         payload: {
           threadId: command.threadId,
-          settledAt: command.createdAt,
+          queuedMessage: {
+            id: command.queueItemId,
+            messageId: command.message.messageId,
+            text: command.message.text,
+            attachments: command.message.attachments,
+            modelSelection: command.modelSelection,
+            gedWorkflowEnabled: command.gedWorkflowEnabled,
+            runtimeMode: command.runtimeMode,
+            interactionMode: command.interactionMode,
+            status: "queued",
+            attemptCount: 0,
+            dispatchCommandId: null,
+            error: null,
+            createdAt: command.createdAt,
+            updatedAt: command.createdAt,
+          },
+        },
+      };
+    }
+
+    case "thread.queue.edit": {
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const queuedMessage = (thread.queuedMessages ?? []).find(
+        (entry) => entry.id === command.queueItemId,
+      );
+      if (!queuedMessage) {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' does not exist.`,
+        );
+      }
+      if (queuedMessage.status === "dispatching") {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' is already dispatching.`,
+        );
+      }
+      if (command.text.trim().length === 0 && queuedMessage.attachments.length === 0) {
+        return yield* invariantError(
+          command.type,
+          "A queued message must contain text or an attachment.",
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.queued-message-edited",
+        payload: {
+          threadId: command.threadId,
+          queueItemId: command.queueItemId,
+          text: command.text,
           updatedAt: command.createdAt,
         },
       };
     }
 
-    case "thread.inbox.snooze": {
-      const thread = yield* requireThread({
+    case "thread.queue.delete": {
+      const thread = yield* requireThreadNotArchived({
         readModel,
         command,
         threadId: command.threadId,
       });
-      if (thread.orchestrationOwnership != null) {
-        return yield* invariantError(
-          command.type,
-          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
-        );
-      }
-      const occurredAt = yield* nowIso;
-      if (Date.parse(command.wakeAt) <= Date.parse(occurredAt)) {
-        return yield* invariantError(
-          command.type,
-          `Thread '${command.threadId}' must be snoozed until a future deadline.`,
-        );
-      }
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt,
-          commandId: command.commandId,
-        })),
-        type: "thread.inbox-snoozed",
-        payload: {
-          threadId: command.threadId,
-          wakeAt: command.wakeAt,
-          updatedAt: occurredAt,
-        },
-      };
-    }
-
-    case "thread.inbox.reopen": {
-      const thread = yield* requireThread({
-        readModel,
-        command,
-        threadId: command.threadId,
-      });
-      if (thread.orchestrationOwnership != null) {
-        return yield* invariantError(
-          command.type,
-          `Thread '${command.threadId}' is owned by the Orchestrator and has no normal-task Inbox lifecycle.`,
-        );
-      }
-      if ((thread.inboxLifecycle ?? "active") === "active") {
-        return yield* invariantError(
-          command.type,
-          `Thread '${command.threadId}' is already active.`,
-        );
-      }
-      const occurredAt = yield* nowIso;
-      return {
-        ...(yield* withEventBase({
-          aggregateKind: "thread",
-          aggregateId: command.threadId,
-          occurredAt,
-          commandId: command.commandId,
-        })),
-        type: "thread.inbox-reopened",
-        payload: {
-          threadId: command.threadId,
-          reopenedAt: occurredAt,
-          updatedAt: occurredAt,
-        },
-      };
-    }
-
-    case "thread.inbox.wake-due": {
-      const occurredAt = yield* nowIso;
-      const dueThreads = readModel.threads.filter(
-        (thread) =>
-          (command.threadId === undefined || thread.id === command.threadId) &&
-          thread.orchestrationOwnership == null &&
-          thread.inboxLifecycle === "snoozed" &&
-          thread.inboxWakeAt != null &&
-          Date.parse(thread.inboxWakeAt) <= Date.parse(occurredAt),
+      const queuedMessage = (thread.queuedMessages ?? []).find(
+        (entry) => entry.id === command.queueItemId,
       );
-      return yield* Effect.forEach(dueThreads, (thread) =>
-        Effect.gen(function* () {
-          return {
-            ...(yield* withEventBase({
-              aggregateKind: "thread",
-              aggregateId: thread.id,
-              occurredAt,
-              commandId: command.commandId,
-            })),
-            type: "thread.inbox-reopened" as const,
+      if (!queuedMessage) {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' does not exist.`,
+        );
+      }
+      if (queuedMessage.status === "dispatching") {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' is already dispatching.`,
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.queued-message-deleted",
+        payload: {
+          threadId: command.threadId,
+          queueItemId: command.queueItemId,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.queue.preference.set": {
+      yield* requireThreadNotArchived({ readModel, command, threadId: command.threadId });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-queue-preference-set",
+        payload: {
+          threadId: command.threadId,
+          enabled: command.enabled,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.queue.dispatch":
+    case "thread.queue.auto-dispatch": {
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const queuedMessage = (thread.queuedMessages ?? []).find(
+        (entry) => entry.id === command.queueItemId,
+      );
+      if (!queuedMessage) {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' does not exist.`,
+        );
+      }
+      if (queuedMessage.status === "dispatching") {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' is already dispatching.`,
+        );
+      }
+      if (command.type === "thread.queue.auto-dispatch") {
+        if (thread.updatedAt !== command.expectedThreadUpdatedAt) {
+          return yield* invariantError(
+            command.type,
+            `Thread '${command.threadId}' changed before its queued message could dispatch.`,
+          );
+        }
+        const fifoHead = thread.queuedMessages?.[0];
+        if (queuedMessage.status !== "queued" || fifoHead?.id !== queuedMessage.id) {
+          return yield* invariantError(
+            command.type,
+            `Queued message '${command.queueItemId}' is not the FIFO head ready for automatic dispatch.`,
+          );
+        }
+        const turnIsActive = thread.latestTurn !== null && thread.latestTurn.completedAt === null;
+        const sessionIsBusy =
+          thread.session?.status === "starting" || thread.session?.status === "running";
+        if (turnIsActive || sessionIsBusy) {
+          return yield* invariantError(
+            command.type,
+            `Thread '${command.threadId}' is not ready for automatic queue dispatch.`,
+          );
+        }
+      }
+      const dispatchRequestedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.queued-message-dispatch-requested",
+        payload: {
+          threadId: command.threadId,
+          queueItemId: command.queueItemId,
+          dispatchCommandId: command.commandId,
+          updatedAt: command.createdAt,
+        },
+      };
+      const messageSentEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: dispatchRequestedEvent.eventId,
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: queuedMessage.messageId,
+          role: "user",
+          text: queuedMessage.text,
+          attachments: queuedMessage.attachments,
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const turnStartRequestedEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: messageSentEvent.eventId,
+        type: "thread.turn-start-requested",
+        payload: {
+          threadId: command.threadId,
+          messageId: queuedMessage.messageId,
+          modelSelection: queuedMessage.modelSelection,
+          gedWorkflowEnabled: queuedMessage.gedWorkflowEnabled,
+          runtimeMode: queuedMessage.runtimeMode,
+          interactionMode: queuedMessage.interactionMode,
+          queueItemId: queuedMessage.id,
+          queueDispatchCommandId: command.commandId,
+          createdAt: command.createdAt,
+        },
+      };
+      return [dispatchRequestedEvent, messageSentEvent, turnStartRequestedEvent];
+    }
+
+    case "thread.queue.dispatch.succeed":
+    case "thread.queue.dispatch.fail": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const queuedMessage = (thread.queuedMessages ?? []).find(
+        (entry) => entry.id === command.queueItemId,
+      );
+      if (
+        queuedMessage?.status !== "dispatching" ||
+        queuedMessage.dispatchCommandId !== command.dispatchCommandId
+      ) {
+        return yield* invariantError(
+          command.type,
+          `Queued message '${command.queueItemId}' is not dispatching attempt '${command.dispatchCommandId}'.`,
+        );
+      }
+      const base = yield* withEventBase({
+        aggregateKind: "thread",
+        aggregateId: command.threadId,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+      });
+      return command.type === "thread.queue.dispatch.succeed"
+        ? {
+            ...base,
+            type: "thread.queued-message-dispatch-succeeded",
             payload: {
-              threadId: thread.id,
-              reopenedAt: occurredAt,
-              updatedAt: occurredAt,
+              threadId: command.threadId,
+              queueItemId: command.queueItemId,
+              dispatchCommandId: command.dispatchCommandId,
+              updatedAt: command.createdAt,
+            },
+          }
+        : {
+            ...base,
+            type: "thread.queued-message-dispatch-failed",
+            payload: {
+              threadId: command.threadId,
+              queueItemId: command.queueItemId,
+              dispatchCommandId: command.dispatchCommandId,
+              error: command.error,
+              updatedAt: command.createdAt,
             },
           };
-        }),
-      );
     }
 
     case "thread.turn.start": {
@@ -1463,24 +1638,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
-      const reopenEvent: Omit<OrchestrationEvent, "sequence"> | null =
-        (targetThread.inboxLifecycle ?? "active") !== "active" &&
-        targetThread.orchestrationOwnership == null
-          ? {
-              ...(yield* withEventBase({
-                aggregateKind: "thread",
-                aggregateId: command.threadId,
-                occurredAt: command.createdAt,
-                commandId: command.commandId,
-              })),
-              type: "thread.inbox-reopened",
-              payload: {
-                threadId: command.threadId,
-                reopenedAt: command.createdAt,
-                updatedAt: command.createdAt,
-              },
-            }
-          : null;
       const turnStartRequestedEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -1504,9 +1661,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           createdAt: command.createdAt,
         },
       };
-      return reopenEvent === null
-        ? [userMessageEvent, turnStartRequestedEvent]
-        : [reopenEvent, userMessageEvent, turnStartRequestedEvent];
+      return [userMessageEvent, turnStartRequestedEvent];
     }
 
     case "thread.turn.interrupt": {

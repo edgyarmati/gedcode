@@ -6,6 +6,45 @@ import * as Effect from "effect/Effect";
 import { makeDrainableWorker } from "./DrainableWorker.ts";
 
 describe("makeDrainableWorker", () => {
+  it.live("backpressures producers when its bounded queue is full", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const processed: string[] = [];
+        const firstStarted = yield* Deferred.make<void>();
+        const releaseFirst = yield* Deferred.make<void>();
+        const thirdEnqueued = yield* Deferred.make<void>();
+        const worker = yield* makeDrainableWorker(
+          (item: string) =>
+            Effect.gen(function* () {
+              if (item === "first") {
+                yield* Deferred.succeed(firstStarted, undefined).pipe(Effect.orDie);
+                yield* Deferred.await(releaseFirst);
+              }
+              processed.push(item);
+            }),
+          { capacity: 1 },
+        );
+
+        yield* worker.enqueue("first");
+        yield* Deferred.await(firstStarted);
+        yield* worker.enqueue("second");
+        yield* Effect.forkChild(
+          worker
+            .enqueue("third")
+            .pipe(Effect.tap(() => Deferred.succeed(thirdEnqueued, undefined).pipe(Effect.orDie))),
+        );
+        yield* Effect.yieldNow;
+
+        expect(yield* Deferred.isDone(thirdEnqueued)).toBe(false);
+
+        yield* Deferred.succeed(releaseFirst, undefined);
+        yield* Deferred.await(thirdEnqueued);
+        yield* worker.drain;
+        expect(processed).toEqual(["first", "second", "third"]);
+      }),
+    ),
+  );
+
   it.live("waits for work enqueued during active processing before draining", () =>
     Effect.scoped(
       Effect.gen(function* () {

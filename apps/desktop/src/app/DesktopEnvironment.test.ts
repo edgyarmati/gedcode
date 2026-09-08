@@ -53,8 +53,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.isDevelopment, true);
       assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
       assert.equal(environment.baseDir, "/tmp/t3");
-      assert.equal(environment.usesDefaultBaseDir, false);
-      assert.equal(environment.legacyDefaultBaseDir, "/Users/alice/.t3");
       assert.equal(environment.stateDir, "/tmp/t3/dev");
       assert.equal(environment.desktopSettingsPath, "/tmp/t3/dev/desktop-settings.json");
       assert.equal(environment.clientSettingsPath, "/tmp/t3/dev/client-settings.json");
@@ -66,7 +64,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
       assert.equal(environment.userDataDirName, "gedcode-dev");
-      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code-dev", "T3 Code (Dev)"]);
       assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
       assert.equal(environment.linuxDesktopEntryName, "gedcode-dev.desktop");
       assert.equal(environment.linuxWmClass, "gedcode-dev");
@@ -87,8 +84,6 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment();
 
       assert.equal(environment.baseDir, "/Users/alice/.gedcode");
-      assert.equal(environment.legacyDefaultBaseDir, "/Users/alice/.t3");
-      assert.equal(environment.usesDefaultBaseDir, true);
       assert.equal(environment.stateDir, "/Users/alice/.gedcode/userdata");
       assert.equal(environment.serverSettingsPath, "/Users/alice/.gedcode/userdata/settings.json");
     }),
@@ -121,7 +116,6 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(environment.isDevelopment, false);
       assert.equal(environment.userDataDirName, "gedcode");
-      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code", "T3 Code (Alpha)"]);
       assert.equal(environment.appUserModelId, "com.t3tools.gedcode");
       assert.equal(environment.linuxDesktopEntryName, "gedcode.desktop");
       assert.equal(environment.linuxWmClass, "gedcode");
@@ -147,7 +141,6 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.displayName, "GedCode (Dev)");
       assert.equal(environment.stateDir, "/tmp/t3/dev");
       assert.equal(environment.userDataDirName, "gedcode-dev");
-      assert.deepEqual(environment.legacyUserDataDirNames, ["t3code-dev", "T3 Code (Dev)"]);
       assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
       assert.equal(environment.linuxDesktopEntryName, "gedcode-dev.desktop");
       assert.equal(environment.linuxWmClass, "gedcode-dev");

@@ -1,5 +1,10 @@
 # GedCode First-Release Rebrand Implementation Plan
 
+> [!NOTE]
+> This is a historical implementation plan, not current architecture guidance. The privileged
+> Electron `t3://` protocol and `ElectronProtocol.ts` named below were removed after this plan was
+> completed. See [`docs/architecture.md`](../../architecture.md) for the current desktop boundary.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prepare GedCode for first release: add a GitHub Sponsors button, rebrand the published CLI `t3` → `gedcode`, and make all user-facing docs accurate (Releases + npm only).

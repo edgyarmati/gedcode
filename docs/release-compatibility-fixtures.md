@@ -1,24 +1,31 @@
-# Published release compatibility fixtures
+# Historical release migration fixtures
 
-GedCode treats every published stable or nightly release as a contractual upgrade input. `v0.1.0`
-is the first tag whose desktop product name is `GedCode`; earlier tags identify the separate
-upstream product as `T3 Code (Alpha)` and are intentionally outside this matrix. Existing data from
-that product remains covered by GedCode's one-time legacy `~/.t3` import. The
-compatibility tests do not reconstruct an old schema by running today's migration code to a lower
+GedCode's supported upgrade floor is `v0.4.4`. Data directories and browser state from older
+GedCode releases or the separate `T3 Code (Alpha)` product are not supported compatibility inputs.
+In particular, desktop startup no longer imports `~/.t3` or selects legacy Electron user-data
+directories.
+
+The repository retains fixtures from `v0.1.0` through `v0.4.3` as non-contractual regression
+evidence. They are useful for exercising long migration chains, but passing them does not extend the
+support floor. An immutable `v0.4.4` fixture has not been recorded because this checkout has no
+`v0.4.4` tag. Capture that baseline from the exact published ref before deleting browser hydration
+code solely because it predates the support floor.
+
+The fixture tests do not reconstruct an old schema by running today's migration code to a lower
 migration ID. They consume immutable artifacts produced by the code that actually shipped.
 
 ## Fixture contents
 
 The fixture set contains:
 
-- one compressed SQLite database for every distinct migration tree published through `v0.4.3`;
+- one compressed SQLite database for every distinct historical migration tree through `v0.4.3`;
 - seeded orchestration-event and checkpoint-diff rows, so tests prove data survives as well as the
   schema;
-- one serialized composer and terminal payload generated independently from every published
-  GedCode tag;
+- one serialized composer and terminal payload generated independently from every recorded
+  historical GedCode tag;
 - one serialized helper-dismissal payload from every release where that store exists; and
 - a machine-readable manifest with the tag commit, migration tree/blob or store-source blob,
-  published releases covered by that artifact, byte lengths, and SHA-256 checksums.
+  historical releases covered by that artifact, byte lengths, and SHA-256 checksums.
 
 The checked-in manifest is [`release-compatibility-fixtures.json`](release-compatibility-fixtures.json).
 SQLite artifacts live under `apps/server/src/persistence/fixtures/published-releases/`; browser
@@ -53,8 +60,10 @@ artifact; editing version numbers or migration IDs alone is insufficient.
 
 Server tests verify each compressed and raw checksum, inspect the historical database before the
 upgrade, run the current migration implementation against that file, check SQLite integrity and the
-current migration ID, and confirm both seeded durable rows remain intact.
+current migration ID, and confirm both seeded durable rows remain intact. The historical sentinel
+event is deliberately only a storage-integrity marker; focused migration tests must separately
+decode real current event types through `OrchestrationEventStore`.
 
-Web tests verify each per-release serialized payload checksum, run it through the current store migration or
+Web tests verify each recorded payload checksum, run it through the current store migration or
 same-version hydration path, and confirm unsent drafts, terminal layout state, and helper dismissals
-survive. They also require a composer and terminal fixture generated from every published tag.
+survive. This is regression coverage, not a promise to support those pre-`v0.4.4` payloads.

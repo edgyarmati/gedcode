@@ -35,6 +35,7 @@ interface SavedEnvironmentRegistryStore extends SavedEnvironmentRegistryState {
 
 let savedEnvironmentRegistryHydrated = false;
 let savedEnvironmentRegistryHydrationPromise: Promise<void> | null = null;
+let savedEnvironmentRegistryPersistenceTail = Promise.resolve();
 
 export function toPersistedSavedEnvironmentRecord(
   record: SavedEnvironmentRecord,
@@ -60,18 +61,26 @@ function persistSavedEnvironmentRegistryState(
   byId: Record<EnvironmentId, SavedEnvironmentRecord>,
 ): void {
   try {
-    void ensureLocalApi()
-      .persistence.setSavedEnvironmentRegistry(
-        valuesOfSavedEnvironmentRegistry(byId).map((record) =>
-          toPersistedSavedEnvironmentRecord(record),
-        ),
-      )
-      .catch((error) => {
-        console.error("[SAVED_ENVIRONMENTS] persist failed", error);
-      });
+    void enqueueSavedEnvironmentRegistryPersistence(byId).catch((error) => {
+      console.error("[SAVED_ENVIRONMENTS] persist failed", error);
+    });
   } catch (error) {
     console.error("[SAVED_ENVIRONMENTS] persist failed", error);
   }
+}
+
+function enqueueSavedEnvironmentRegistryPersistence(
+  byId: Record<EnvironmentId, SavedEnvironmentRecord>,
+): Promise<void> {
+  const persistence = ensureLocalApi().persistence;
+  const records = valuesOfSavedEnvironmentRegistry(byId).map((record) =>
+    toPersistedSavedEnvironmentRecord(record),
+  );
+  const write = savedEnvironmentRegistryPersistenceTail.then(() =>
+    persistence.setSavedEnvironmentRegistry(records),
+  );
+  savedEnvironmentRegistryPersistenceTail = write.catch(() => undefined);
+  return write;
 }
 
 function replaceSavedEnvironmentRegistryState(
@@ -99,10 +108,10 @@ async function hydrateSavedEnvironmentRegistry(): Promise<void> {
     try {
       const persistedRecords = await ensureLocalApi().persistence.getSavedEnvironmentRegistry();
       replaceSavedEnvironmentRegistryState(persistedRecords);
+      savedEnvironmentRegistryHydrated = true;
     } catch (error) {
       console.error("[SAVED_ENVIRONMENTS] hydrate failed", error);
-    } finally {
-      savedEnvironmentRegistryHydrated = true;
+      throw error;
     }
   })();
 
@@ -230,6 +239,7 @@ export function resolveEnvironmentHttpUrl(input: {
 export function resetSavedEnvironmentRegistryStoreForTests() {
   savedEnvironmentRegistryHydrated = false;
   savedEnvironmentRegistryHydrationPromise = null;
+  savedEnvironmentRegistryPersistenceTail = Promise.resolve();
   useSavedEnvironmentRegistryStore.setState({ byId: {} });
 }
 
@@ -239,9 +249,16 @@ export async function persistSavedEnvironmentRecord(record: SavedEnvironmentReco
     [record.environmentId]: record,
   };
 
-  await ensureLocalApi().persistence.setSavedEnvironmentRegistry(
-    valuesOfSavedEnvironmentRegistry(byId).map((entry) => toPersistedSavedEnvironmentRecord(entry)),
-  );
+  await enqueueSavedEnvironmentRegistryPersistence(byId);
+}
+
+export async function persistSavedEnvironmentRegistry(
+  records: ReadonlyArray<SavedEnvironmentRecord>,
+): Promise<void> {
+  const byId = Object.fromEntries(
+    records.map((record) => [record.environmentId, record]),
+  ) as Record<EnvironmentId, SavedEnvironmentRecord>;
+  await enqueueSavedEnvironmentRegistryPersistence(byId);
 }
 
 export async function readSavedEnvironmentBearerToken(

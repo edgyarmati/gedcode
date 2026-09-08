@@ -17,6 +17,7 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
+import * as DesktopDocumentSecurity from "./DesktopDocumentSecurity.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 const environmentInput = {
@@ -32,10 +33,15 @@ const environmentInput = {
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
 function makeFakeBrowserWindow() {
+  const webContentsListeners = new Map<string, (...args: Array<any>) => void>();
+  const mainFrame = { url: "http://127.0.0.1:5733/" } as Electron.WebFrameMain;
   const webContents = {
     copyImageAt: vi.fn(),
     isLoadingMainFrame: vi.fn(() => false),
-    on: vi.fn(),
+    mainFrame,
+    on: vi.fn((eventName: string, listener: (...args: Array<any>) => void) => {
+      webContentsListeners.set(eventName, listener);
+    }),
     once: vi.fn(),
     openDevTools: vi.fn(),
     replaceMisspelling: vi.fn(),
@@ -61,6 +67,15 @@ function makeFakeBrowserWindow() {
 
   return {
     window: window as unknown as Electron.BrowserWindow,
+    mainFrame,
+    webContents: webContents as unknown as Electron.WebContents,
+    emitWebContents: (eventName: string, ...args: Array<any>) => {
+      const listener = webContentsListeners.get(eventName);
+      if (!listener) {
+        throw new Error(`No webContents listener registered for ${eventName}.`);
+      }
+      listener(...args);
+    },
     loadURL: window.loadURL,
     openDevTools: webContents.openDevTools,
   };
@@ -107,23 +122,27 @@ const electronThemeLayer = Layer.succeed(ElectronTheme.ElectronTheme, {
   onUpdated: () => Effect.void,
 } satisfies ElectronTheme.ElectronThemeShape);
 
-const desktopEnvironmentLayer = DesktopEnvironment.layer(environmentInput).pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      NodeServices.layer,
-      DesktopConfig.layerTest({
-        T3CODE_PORT: "3773",
-        VITE_DEV_SERVER_URL: "http://127.0.0.1:5733",
-      }),
+const makeDesktopEnvironmentLayer = (isPackaged = false) =>
+  DesktopEnvironment.layer({ ...environmentInput, isPackaged }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        DesktopConfig.layerTest({
+          T3CODE_PORT: "3773",
+          ...(isPackaged ? {} : { VITE_DEV_SERVER_URL: "http://127.0.0.1:5733" }),
+        }),
+      ),
     ),
-  ),
-);
+  );
 
 function makeTestLayer(input: {
   readonly window: Electron.BrowserWindow;
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
+  readonly isPackaged?: boolean;
+  readonly security?: DesktopDocumentSecurity.DesktopDocumentSecurityShape;
 }) {
+  const security = input.security ?? DesktopDocumentSecurity.make();
   const electronWindowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Ref.update(input.createCount, (count) => count + 1).pipe(Effect.as(input.window)),
     main: Ref.get(input.mainWindow),
@@ -141,19 +160,151 @@ function makeTestLayer(input: {
     Layer.provide(
       Layer.mergeAll(
         desktopAssetsLayer,
-        desktopEnvironmentLayer,
+        makeDesktopEnvironmentLayer(input.isPackaged),
         desktopServerExposureLayer,
         DesktopState.layer,
         electronMenuLayer,
         electronShellLayer,
         electronThemeLayer,
         electronWindowLayer,
+        Layer.succeed(DesktopDocumentSecurity.DesktopDocumentSecurity, security),
       ),
     ),
   );
 }
 
 describe("DesktopWindow", () => {
+  it.effect("keeps production navigation on the configured backend origin", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        isPackaged: true,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+
+        const trustedNavigation = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-navigate", {
+          ...trustedNavigation,
+          isMainFrame: true,
+          url: "http://127.0.0.1:3773/settings",
+        });
+        assert.equal(trustedNavigation.preventDefault.mock.calls.length, 0);
+
+        const untrustedNavigation = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-navigate", {
+          ...untrustedNavigation,
+          isMainFrame: true,
+          url: "https://untrusted.example/settings",
+        });
+        assert.equal(untrustedNavigation.preventDefault.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("keeps development navigation on the configured dev-server origin", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+
+        const trustedNavigation = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-navigate", {
+          ...trustedNavigation,
+          isMainFrame: true,
+          url: "http://127.0.0.1:5733/settings",
+        });
+        assert.equal(trustedNavigation.preventDefault.mock.calls.length, 0);
+
+        const backendNavigation = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-navigate", {
+          ...backendNavigation,
+          isMainFrame: true,
+          url: "http://127.0.0.1:3773/settings",
+        });
+        assert.equal(backendNavigation.preventDefault.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("keeps top-level redirects on the configured document origin", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        isPackaged: true,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+
+        const trustedRedirect = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-redirect", {
+          ...trustedRedirect,
+          isMainFrame: true,
+          url: "http://127.0.0.1:3773/chat",
+        });
+        assert.equal(trustedRedirect.preventDefault.mock.calls.length, 0);
+
+        const untrustedRedirect = { preventDefault: vi.fn() };
+        fakeWindow.emitWebContents("will-redirect", {
+          ...untrustedRedirect,
+          isMainFrame: true,
+          url: "https://untrusted.example/chat",
+        });
+        assert.equal(untrustedRedirect.preventDefault.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("trusts the loaded main document for privileged IPC", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const security = DesktopDocumentSecurity.make();
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        security,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+      }).pipe(Effect.provide(layer));
+
+      assert.isTrue(
+        security.isTrustedIpcEvent({
+          sender: fakeWindow.webContents,
+          senderFrame: fakeWindow.mainFrame,
+        }),
+      );
+    }),
+  );
+
   it.effect("does not open a development window until the backend is ready", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();

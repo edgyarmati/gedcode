@@ -25,8 +25,14 @@ import type * as Effect from "effect/Effect";
 
 import type { OrchestrationCommandReceiptRepositoryError } from "../Errors.ts";
 
+export const OrchestrationCommandFingerprint = Schema.String.check(
+  Schema.isPattern(/^sha256:[a-f0-9]{64}$/),
+);
+export type OrchestrationCommandFingerprint = typeof OrchestrationCommandFingerprint.Type;
+
 export const OrchestrationCommandReceipt = Schema.Struct({
   commandId: CommandId,
+  commandFingerprint: OrchestrationCommandFingerprint,
   aggregateKind: OrchestrationAggregateKind,
   aggregateId: Schema.Union([ProjectId, ThreadId, TaskId, HelperRunId, ProjectContextRunId]),
   acceptedAt: IsoDateTime,

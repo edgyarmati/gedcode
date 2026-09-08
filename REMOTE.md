@@ -102,10 +102,9 @@ By default this configures Tailscale Serve on HTTPS port 443 and advertises
 gedcode serve --tailscale-serve --tailscale-serve-port 8443
 ```
 
-> Note
-> The GUIs do not currently support adding projects on remote environments.
-> For now, use `gedcode project ...` on the server machine instead.
-> Full GUI support for remote project management is coming soon.
+To add a project on a remote environment from the web or desktop UI, open the add-project command,
+select the target environment, then browse for an existing directory or clone from a Git URL or
+source-control provider. `gedcode project ...` remains available as a headless alternative.
 
 ### Option 3: Desktop-Managed SSH Launch
 
@@ -125,10 +124,12 @@ SSH launch is a desktop feature because it needs local process and SSH access. O
 
 The desktop SSH launcher connects with a non-interactive `sh` session, writes a small launcher script under `~/.gedcode/ssh-launch/<host-key>/`, starts or reuses a remote GedCode server, and forwards the remote loopback port back to your desktop.
 
-The remote host must have a compatible Node.js runtime. GedCode uses the server package's `engines.node` requirement:
+The remote host must have a Node.js runtime that satisfies the requirement in
+[`apps/server/package.json`](./apps/server/package.json). The desktop launcher checks this before
+starting the remote server. For this checkout, the requirement is:
 
 ```text
-^22.16 || ^23.11 || >=24.10
+^24.13.1
 ```
 
 During SSH launch, GedCode first checks whether `node` is already available on `PATH`. If it is missing, the launcher tries common non-interactive shell locations and version-manager shims/activation hooks:
@@ -206,6 +207,10 @@ Typical uses:
 - issue additional pairing credentials
 - inspect active sessions
 - revoke old pairing links or sessions
+
+A newly issued pairing credential is shown once. Save or share it at creation time; later listings
+show only link metadata and cannot redisplay the secret. Revoke and recreate a link if its credential
+is lost.
 
 Use `gedcode auth --help` and the nested subcommand help pages for the full reference.
 

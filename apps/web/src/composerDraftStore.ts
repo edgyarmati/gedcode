@@ -1,11 +1,9 @@
 import {
-  CommandId,
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   type EnvironmentId,
   ModelSelection,
-  MessageId,
   ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
@@ -78,23 +76,6 @@ export const PersistedComposerImageAttachment = Schema.Struct({
 });
 export type PersistedComposerImageAttachment = typeof PersistedComposerImageAttachment.Type;
 
-export const ComposerQueuedMessage = Schema.Struct({
-  id: Schema.String,
-  commandId: CommandId,
-  messageId: MessageId,
-  text: Schema.String,
-  attachments: Schema.Array(PersistedComposerImageAttachment),
-  modelSelection: ModelSelection,
-  gedWorkflowEnabled: Schema.Boolean,
-  runtimeMode: RuntimeMode,
-  interactionMode: ProviderInteractionMode,
-  createdAt: Schema.String,
-  status: Schema.Literals(["queued", "dispatching", "failed"]),
-  error: Schema.optionalKey(Schema.String),
-});
-export type ComposerQueuedMessage = typeof ComposerQueuedMessage.Type;
-const isComposerQueuedMessage = Schema.is(ComposerQueuedMessage);
-
 export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "previewUrl"> {
   previewUrl: string;
   file: File;
@@ -114,8 +95,6 @@ type PersistedTerminalContextDraft = typeof PersistedTerminalContextDraft.Type;
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
-  queuedMessages: Schema.optionalKey(Schema.Array(ComposerQueuedMessage)),
-  queueingEnabled: Schema.optionalKey(Schema.Boolean),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
   // instances (e.g. `codex_personal`) round-trip alongside the built-in
@@ -238,8 +217,6 @@ export interface ComposerThreadDraftState {
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
-  queuedMessages: ComposerQueuedMessage[];
-  queueingEnabled: boolean;
   /**
    * Per-instance model selection. Keyed by `ProviderInstanceId` (open
    * branded slug) so a default `codex` instance and a user-authored
@@ -431,16 +408,6 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     attachments: PersistedComposerImageAttachment[],
   ) => void;
-  enqueueMessage: (threadRef: ComposerThreadTarget, message: ComposerQueuedMessage) => void;
-  editQueuedMessage: (threadRef: ComposerThreadTarget, queueItemId: string, text: string) => void;
-  removeQueuedMessage: (threadRef: ComposerThreadTarget, queueItemId: string) => void;
-  setQueuedMessageStatus: (
-    threadRef: ComposerThreadTarget,
-    queueItemId: string,
-    status: ComposerQueuedMessage["status"],
-  ) => void;
-  failQueuedMessage: (threadRef: ComposerThreadTarget, queueItemId: string, error: string) => void;
-  setQueueingEnabled: (threadRef: ComposerThreadTarget, enabled: boolean) => void;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
 }
 
@@ -487,14 +454,6 @@ function cloneModelSelection(selection: ModelSelection): DeepMutable<ModelSelect
   } as DeepMutable<ModelSelection>;
 }
 
-function cloneQueuedMessage(message: ComposerQueuedMessage): DeepMutable<ComposerQueuedMessage> {
-  return {
-    ...message,
-    attachments: message.attachments.map((attachment) => ({ ...attachment })),
-    modelSelection: cloneModelSelection(message.modelSelection),
-  };
-}
-
 function compactModelSelectionByProvider(
   selections: Partial<Record<ProviderInstanceId, ModelSelection>>,
 ): DeepMutable<Record<ProviderInstanceId, ModelSelection>> {
@@ -519,11 +478,9 @@ const EMPTY_IMAGES: ComposerImageAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
-const EMPTY_QUEUED_MESSAGES: ComposerQueuedMessage[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
-Object.freeze(EMPTY_QUEUED_MESSAGES);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
   Object.freeze({});
 const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
@@ -537,8 +494,6 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
-  queuedMessages: EMPTY_QUEUED_MESSAGES,
-  queueingEnabled: true,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   gedWorkflowEnabled: null,
@@ -553,8 +508,6 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
-    queuedMessages: [],
-    queueingEnabled: true,
     modelSelectionByProvider: {},
     activeProvider: null,
     gedWorkflowEnabled: null,
@@ -626,8 +579,6 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.images.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
-    draft.queuedMessages.length === 0 &&
-    draft.queueingEnabled &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     (draft.gedWorkflowEnabled ?? null) === null &&
@@ -1541,12 +1492,6 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
-    const queuedMessages = Array.isArray(draftCandidate.queuedMessages)
-      ? draftCandidate.queuedMessages
-          .filter((message): message is ComposerQueuedMessage => isComposerQueuedMessage(message))
-          .map(cloneQueuedMessage)
-      : [];
-    const queueingEnabled = draftCandidate.queueingEnabled !== false;
     const runtimeMode = isRuntimeMode(draftCandidate.runtimeMode)
       ? draftCandidate.runtimeMode
       : null;
@@ -1614,8 +1559,6 @@ function normalizePersistedDraftsByThreadId(
       promptCandidate.length === 0 &&
       attachments.length === 0 &&
       terminalContexts.length === 0 &&
-      queuedMessages.length === 0 &&
-      queueingEnabled &&
       !hasModelData &&
       gedWorkflowEnabled === null &&
       !runtimeMode &&
@@ -1640,8 +1583,6 @@ function normalizePersistedDraftsByThreadId(
     nextDraftsByThreadKey[normalizedThreadKey] = {
       prompt,
       attachments,
-      ...(queuedMessages.length > 0 ? { queuedMessages } : {}),
-      ...(!queueingEnabled ? { queueingEnabled: false } : {}),
       ...(terminalContexts.length > 0 ? { terminalContexts } : {}),
       ...(hasModelData
         ? {
@@ -1726,8 +1667,6 @@ function partializeComposerDraftStoreState(
       draft.prompt.length === 0 &&
       draft.persistedAttachments.length === 0 &&
       draft.terminalContexts.length === 0 &&
-      draft.queuedMessages.length === 0 &&
-      draft.queueingEnabled &&
       !hasModelData &&
       (draft.gedWorkflowEnabled ?? null) === null &&
       draft.runtimeMode === null &&
@@ -1738,12 +1677,6 @@ function partializeComposerDraftStoreState(
     const persistedDraft: DeepMutable<PersistedComposerThreadDraftState> = {
       prompt: draft.prompt,
       attachments: draft.persistedAttachments,
-      ...(draft.queuedMessages.length > 0
-        ? {
-            queuedMessages: draft.queuedMessages.map(cloneQueuedMessage),
-          }
-        : {}),
-      ...(!draft.queueingEnabled ? { queueingEnabled: false } : {}),
       ...(draft.terminalContexts.length > 0
         ? {
             terminalContexts: draft.terminalContexts.map((context) => ({
@@ -1996,8 +1929,6 @@ function toHydratedThreadDraft(
         ...context,
         text: "",
       })) ?? [],
-    queuedMessages: persistedDraft.queuedMessages?.map(cloneQueuedMessage) ?? [],
-    queueingEnabled: persistedDraft.queueingEnabled ?? true,
     modelSelectionByProvider,
     activeProvider,
     gedWorkflowEnabled: persistedDraft.gedWorkflowEnabled ?? null,
@@ -2088,8 +2019,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 (composerDraft.prompt.length > 0 ||
                   composerDraft.images.length > 0 ||
                   composerDraft.persistedAttachments.length > 0 ||
-                  composerDraft.terminalContexts.length > 0 ||
-                  composerDraft.queuedMessages.length > 0);
+                  composerDraft.terminalContexts.length > 0);
               if (
                 newestMatch === null ||
                 (candidateHasContent && !newestMatchHasContent) ||
@@ -3029,173 +2959,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           });
           Promise.resolve().then(() => {
             verifyPersistedAttachments(threadKey, attachments, set);
-          });
-        },
-        enqueueMessage: (threadRef, message) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (
-            threadKey.length === 0 ||
-            !isComposerQueuedMessage(message) ||
-            message.id.length === 0 ||
-            message.text.trim().length === 0
-          ) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
-            if (current.queuedMessages.some((queued) => queued.id === message.id)) {
-              return state;
-            }
-            return {
-              draftsByThreadKey: {
-                ...state.draftsByThreadKey,
-                [threadKey]: {
-                  ...current,
-                  queuedMessages: [...current.queuedMessages, cloneQueuedMessage(message)],
-                },
-              },
-            };
-          });
-        },
-        editQueuedMessage: (threadRef, queueItemId, text) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0 || queueItemId.length === 0 || text.trim().length === 0) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current) {
-              return state;
-            }
-            const messageIndex = current.queuedMessages.findIndex(
-              (message) => message.id === queueItemId,
-            );
-            const message = current.queuedMessages[messageIndex];
-            if (!message || message.text === text) {
-              return state;
-            }
-            const queuedMessages = [...current.queuedMessages];
-            const { error: _previousError, ...editableMessage } = message;
-            queuedMessages[messageIndex] = {
-              ...editableMessage,
-              text,
-              status: "queued",
-            };
-            return {
-              draftsByThreadKey: {
-                ...state.draftsByThreadKey,
-                [threadKey]: { ...current, queuedMessages },
-              },
-            };
-          });
-        },
-        removeQueuedMessage: (threadRef, queueItemId) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0 || queueItemId.length === 0) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current) {
-              return state;
-            }
-            const queuedMessages = current.queuedMessages.filter(
-              (message) => message.id !== queueItemId,
-            );
-            if (queuedMessages.length === current.queuedMessages.length) {
-              return state;
-            }
-            const nextDraft = { ...current, queuedMessages };
-            const draftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete draftsByThreadKey[threadKey];
-            } else {
-              draftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey };
-          });
-        },
-        setQueuedMessageStatus: (threadRef, queueItemId, status) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0 || queueItemId.length === 0) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current) {
-              return state;
-            }
-            const messageIndex = current.queuedMessages.findIndex(
-              (message) => message.id === queueItemId,
-            );
-            const message = current.queuedMessages[messageIndex];
-            if (!message || message.status === status) {
-              return state;
-            }
-            const queuedMessages = [...current.queuedMessages];
-            const { error: _previousError, ...statusMessage } = message;
-            queuedMessages[messageIndex] = { ...statusMessage, status };
-            return {
-              draftsByThreadKey: {
-                ...state.draftsByThreadKey,
-                [threadKey]: { ...current, queuedMessages },
-              },
-            };
-          });
-        },
-        failQueuedMessage: (threadRef, queueItemId, error) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          const normalizedError = error.trim();
-          if (threadKey.length === 0 || queueItemId.length === 0 || normalizedError.length === 0) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current) {
-              return state;
-            }
-            const messageIndex = current.queuedMessages.findIndex(
-              (message) => message.id === queueItemId,
-            );
-            const message = current.queuedMessages[messageIndex];
-            if (!message) {
-              return state;
-            }
-            const queuedMessages = [...current.queuedMessages];
-            queuedMessages[messageIndex] = {
-              ...message,
-              status: "failed",
-              error: normalizedError,
-            };
-            return {
-              draftsByThreadKey: {
-                ...state.draftsByThreadKey,
-                [threadKey]: { ...current, queuedMessages },
-              },
-            };
-          });
-        },
-        setQueueingEnabled: (threadRef, enabled) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) {
-            return;
-          }
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current && enabled) {
-              return state;
-            }
-            const nextDraft = {
-              ...(current ?? createEmptyThreadDraft()),
-              queueingEnabled: enabled,
-            };
-            const draftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete draftsByThreadKey[threadKey];
-            } else {
-              draftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey };
           });
         },
         clearComposerContent: (threadRef) => {

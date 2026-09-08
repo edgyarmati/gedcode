@@ -354,6 +354,35 @@ export type ChatAttachment = typeof ChatAttachment.Type;
 const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);
 export type UploadChatAttachment = typeof UploadChatAttachment.Type;
 
+export const QueuedMessageId = TrimmedNonEmptyString.pipe(Schema.brand("QueuedMessageId"));
+export type QueuedMessageId = typeof QueuedMessageId.Type;
+
+export const OrchestrationQueuedMessageStatus = Schema.Literals([
+  "queued",
+  "held",
+  "dispatching",
+  "failed",
+]);
+export type OrchestrationQueuedMessageStatus = typeof OrchestrationQueuedMessageStatus.Type;
+
+export const OrchestrationQueuedMessage = Schema.Struct({
+  id: QueuedMessageId,
+  messageId: MessageId,
+  text: Schema.String,
+  attachments: Schema.Array(ChatAttachment),
+  modelSelection: ModelSelection,
+  gedWorkflowEnabled: Schema.Boolean,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+  status: OrchestrationQueuedMessageStatus,
+  attemptCount: NonNegativeInt,
+  dispatchCommandId: Schema.NullOr(CommandId),
+  error: Schema.NullOr(Schema.String),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationQueuedMessage = typeof OrchestrationQueuedMessage.Type;
+
 export const ProjectScriptIcon = Schema.Literals([
   "play",
   "test",
@@ -575,9 +604,6 @@ export const OrchestrationLatestTurn = Schema.Struct({
 });
 export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 
-export const ThreadInboxLifecycle = Schema.Literals(["active", "snoozed", "settled"]);
-export type ThreadInboxLifecycle = typeof ThreadInboxLifecycle.Type;
-
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -595,12 +621,16 @@ export const OrchestrationThread = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  inboxLifecycle: Schema.optionalKey(ThreadInboxLifecycle),
-  inboxWakeAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   deletedAt: Schema.NullOr(IsoDateTime),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  queuedMessages: Schema.optionalKey(Schema.Array(OrchestrationQueuedMessage)).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  messageQueueEnabled: Schema.optionalKey(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -1251,8 +1281,6 @@ export const OrchestrationThreadShell = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  inboxLifecycle: Schema.optionalKey(ThreadInboxLifecycle),
-  inboxWakeAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   lastClearedSequence: Schema.optional(NonNegativeInt),
   pendingPmHandoff: Schema.NullOr(PendingPmHandoff).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1420,32 +1448,6 @@ const ThreadUnarchiveCommand = Schema.Struct({
   threadId: ThreadId,
 });
 
-const ThreadInboxSettleCommand = Schema.Struct({
-  type: Schema.Literal("thread.inbox.settle"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  createdAt: IsoDateTime,
-});
-
-const ThreadInboxSnoozeCommand = Schema.Struct({
-  type: Schema.Literal("thread.inbox.snooze"),
-  commandId: CommandId,
-  threadId: ThreadId,
-  wakeAt: IsoDateTime,
-});
-
-const ThreadInboxReopenCommand = Schema.Struct({
-  type: Schema.Literal("thread.inbox.reopen"),
-  commandId: CommandId,
-  threadId: ThreadId,
-});
-
-const ThreadInboxWakeDueCommand = Schema.Struct({
-  type: Schema.Literal("thread.inbox.wake-due"),
-  commandId: CommandId,
-  threadId: Schema.optionalKey(ThreadId),
-});
-
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -1538,6 +1540,73 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   bootstrap: Schema.optional(ThreadTurnStartBootstrap),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
+  createdAt: IsoDateTime,
+});
+
+export const ThreadQueueEnqueueCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.enqueue"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  message: Schema.Struct({
+    messageId: MessageId,
+    text: Schema.String,
+    attachments: Schema.Array(ChatAttachment),
+  }),
+  modelSelection: ModelSelection,
+  gedWorkflowEnabled: Schema.Boolean,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+  createdAt: IsoDateTime,
+});
+
+const ClientThreadQueueEnqueueCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.enqueue"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  message: Schema.Struct({
+    messageId: MessageId,
+    text: Schema.String,
+    attachments: Schema.Array(UploadChatAttachment),
+  }),
+  modelSelection: ModelSelection,
+  gedWorkflowEnabled: Schema.Boolean,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueueEditCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.edit"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  text: Schema.String,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueueDeleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.delete"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueuePreferenceSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.preference.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  enabled: Schema.Boolean,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueueDispatchCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.dispatch"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
   createdAt: IsoDateTime,
 });
 
@@ -2044,12 +2113,14 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
-  ThreadInboxSettleCommand,
-  ThreadInboxSnoozeCommand,
-  ThreadInboxReopenCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadQueueEnqueueCommand,
+  ThreadQueueEditCommand,
+  ThreadQueueDeleteCommand,
+  ThreadQueuePreferenceSetCommand,
+  ThreadQueueDispatchCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -2081,12 +2152,14 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,
-  ThreadInboxSettleCommand,
-  ThreadInboxSnoozeCommand,
-  ThreadInboxReopenCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ClientThreadQueueEnqueueCommand,
+  ThreadQueueEditCommand,
+  ThreadQueueDeleteCommand,
+  ThreadQueuePreferenceSetCommand,
+  ThreadQueueDispatchCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -2205,6 +2278,34 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadQueueAutoDispatchCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.auto-dispatch"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  expectedThreadUpdatedAt: IsoDateTime,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueueDispatchSucceedCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.dispatch.succeed"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  dispatchCommandId: CommandId,
+  createdAt: IsoDateTime,
+});
+
+const ThreadQueueDispatchFailCommand = Schema.Struct({
+  type: Schema.Literal("thread.queue.dispatch.fail"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  dispatchCommandId: CommandId,
+  error: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ProjectContextRunRequestCommand,
   ProjectContextRunPrepareStartCommand,
@@ -2226,6 +2327,9 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
+  ThreadQueueAutoDispatchCommand,
+  ThreadQueueDispatchSucceedCommand,
+  ThreadQueueDispatchFailCommand,
   TaskStageCompleteCommand,
   TaskChangeReviewRequestCommand,
   TaskChangeReviewResolveCommand,
@@ -2277,7 +2381,6 @@ const InternalOrchestrationCommand = Schema.Union([
     helperRunId: HelperRunId,
     createdAt: IsoDateTime,
   }),
-  ThreadInboxWakeDueCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -2295,12 +2398,16 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
-  "thread.inbox-settled",
-  "thread.inbox-snoozed",
-  "thread.inbox-reopened",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
+  "thread.message-queued",
+  "thread.queued-message-edited",
+  "thread.queued-message-deleted",
+  "thread.message-queue-preference-set",
+  "thread.queued-message-dispatch-requested",
+  "thread.queued-message-dispatch-succeeded",
+  "thread.queued-message-dispatch-failed",
   "thread.message-sent",
   "thread.cleared",
   "thread.pm-handoff-requested",
@@ -2441,24 +2548,6 @@ export const ThreadUnarchivedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
-export const ThreadInboxSettledPayload = Schema.Struct({
-  threadId: ThreadId,
-  settledAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-
-export const ThreadInboxSnoozedPayload = Schema.Struct({
-  threadId: ThreadId,
-  wakeAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-
-export const ThreadInboxReopenedPayload = Schema.Struct({
-  threadId: ThreadId,
-  reopenedAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-
 export const ThreadMetaUpdatedPayload = Schema.Struct({
   threadId: ThreadId,
   title: Schema.optional(TrimmedNonEmptyString),
@@ -2495,6 +2584,42 @@ export const ThreadMessageSentPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ThreadMessageQueuedPayload = Schema.Struct({
+  threadId: ThreadId,
+  queuedMessage: OrchestrationQueuedMessage,
+});
+
+export const ThreadQueuedMessageEditedPayload = Schema.Struct({
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  text: Schema.String,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadQueuedMessageDeletedPayload = Schema.Struct({
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadMessageQueuePreferenceSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  enabled: Schema.Boolean,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadQueuedMessageDispatchPayload = Schema.Struct({
+  threadId: ThreadId,
+  queueItemId: QueuedMessageId,
+  dispatchCommandId: CommandId,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadQueuedMessageDispatchFailedPayload = Schema.Struct({
+  ...ThreadQueuedMessageDispatchPayload.fields,
+  error: TrimmedNonEmptyString,
+});
+
 export const ThreadClearedPayload = Schema.Struct({
   threadId: ThreadId,
   clearedAt: IsoDateTime,
@@ -2516,6 +2641,8 @@ export const ThreadPmHandoffCompletedPayload = Schema.Struct({
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
+  queueItemId: Schema.optional(QueuedMessageId),
+  queueDispatchCommandId: Schema.optional(CommandId),
   modelSelection: Schema.optional(ModelSelection),
   gedWorkflowEnabled: Schema.optionalKey(Schema.Boolean),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -3023,12 +3150,6 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
-    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-    type: Schema.Literal("thread.inbox-snoozed"),
-    payload: ThreadInboxSnoozedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
     type: Schema.Literal("project.meta-updated"),
     payload: ProjectMetaUpdatedPayload,
   }),
@@ -3059,18 +3180,6 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
-    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-    type: Schema.Literal("thread.inbox-settled"),
-    payload: ThreadInboxSettledPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
-    sequence: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-    type: Schema.Literal("thread.inbox-reopened"),
-    payload: ThreadInboxReopenedPayload,
-  }),
-  Schema.Struct({
-    ...EventBaseFields,
     type: Schema.Literal("thread.meta-updated"),
     payload: ThreadMetaUpdatedPayload,
   }),
@@ -3083,6 +3192,41 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.interaction-mode-set"),
     payload: ThreadInteractionModeSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.message-queued"),
+    payload: ThreadMessageQueuedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.queued-message-edited"),
+    payload: ThreadQueuedMessageEditedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.queued-message-deleted"),
+    payload: ThreadQueuedMessageDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.message-queue-preference-set"),
+    payload: ThreadMessageQueuePreferenceSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.queued-message-dispatch-requested"),
+    payload: ThreadQueuedMessageDispatchPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.queued-message-dispatch-succeeded"),
+    payload: ThreadQueuedMessageDispatchPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.queued-message-dispatch-failed"),
+    payload: ThreadQueuedMessageDispatchFailedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -3977,8 +4121,16 @@ export type OrchestrationGetFullThreadDiffInput = typeof OrchestrationGetFullThr
 export const OrchestrationGetFullThreadDiffResult = ThreadTurnDiff;
 export type OrchestrationGetFullThreadDiffResult = typeof OrchestrationGetFullThreadDiffResult.Type;
 
+export const ORCHESTRATION_REPLAY_EVENTS_DEFAULT_LIMIT = 1_000;
+export const ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT = 1_000;
+
+const OrchestrationReplayEventsLimit = PositiveInt.check(
+  Schema.isLessThanOrEqualTo(ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT),
+);
+
 export const OrchestrationReplayEventsInput = Schema.Struct({
   fromSequenceExclusive: NonNegativeInt,
+  limit: Schema.optional(OrchestrationReplayEventsLimit),
 });
 export type OrchestrationReplayEventsInput = typeof OrchestrationReplayEventsInput.Type;
 

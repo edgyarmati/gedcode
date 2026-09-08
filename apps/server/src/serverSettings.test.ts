@@ -8,11 +8,14 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "./config.ts";
 import { ServerSettingsLive, ServerSettingsService } from "./serverSettings.ts";
 
@@ -139,6 +142,48 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             { id: "fastMode", value: false },
           ],
         ),
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("coalesces stalled settings subscribers to the latest complete snapshot", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsService;
+      const firstSnapshotBlocked = yield* Deferred.make<void>();
+      const releaseFirstSnapshot = yield* Deferred.make<void>();
+      let isFirstSnapshot = true;
+      const snapshotsFiber = yield* serverSettings.streamChanges.pipe(
+        Stream.mapEffect((snapshot) =>
+          Effect.gen(function* () {
+            if (isFirstSnapshot) {
+              isFirstSnapshot = false;
+              yield* Deferred.succeed(firstSnapshotBlocked, undefined);
+              yield* Deferred.await(releaseFirstSnapshot);
+            }
+            return snapshot;
+          }),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkScoped({ startImmediately: true }),
+      );
+
+      yield* serverSettings.updateSettings({
+        automaticGitFetchInterval: Duration.seconds(1),
+      });
+      yield* Deferred.await(firstSnapshotBlocked);
+      yield* serverSettings.updateSettings({
+        automaticGitFetchInterval: Duration.seconds(2),
+      });
+      yield* serverSettings.updateSettings({
+        automaticGitFetchInterval: Duration.seconds(3),
+      });
+      yield* Deferred.succeed(releaseFirstSnapshot, undefined);
+
+      const snapshots = Array.from(yield* Fiber.join(snapshotsFiber));
+      assert.deepEqual(
+        snapshots.map((snapshot) => Duration.toMillis(snapshot.automaticGitFetchInterval)),
+        [1_000, 3_000],
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );

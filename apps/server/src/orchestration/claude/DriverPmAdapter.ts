@@ -17,6 +17,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import type { ProviderAdapterError } from "../../provider/Errors.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../../provider/ProviderRuntimeEventBuffer.ts";
 import type { ProviderAdapterShape } from "../../provider/Services/ProviderAdapter.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
 import { PmRuntimeError, toPmRuntimeError } from "../pm/Errors.ts";
@@ -260,7 +261,9 @@ export const makeDriverPmAdapter = (
 ): Effect.Effect<PmAdapterShape, never, ProviderSessionDirectory> =>
   Effect.gen(function* () {
     const directory = yield* ProviderSessionDirectory;
-    const eventQueue = yield* Queue.unbounded<AgentHarnessEvent>();
+    const eventQueue = yield* Queue.bounded<AgentHarnessEvent>(
+      PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY,
+    );
     const idle = yield* Ref.make(true);
     const latestUsage = yield* Ref.make<Usage | undefined>(undefined);
     const lastTurnUsedOrchestrationTool = yield* Ref.make(false);

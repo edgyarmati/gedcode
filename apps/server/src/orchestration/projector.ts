@@ -66,18 +66,22 @@ import {
   ThreadCreatedPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
+  ThreadMessageQueuedPayload,
+  ThreadQueuedMessageDeletedPayload,
+  ThreadQueuedMessageEditedPayload,
+  ThreadMessageQueuePreferenceSetPayload,
+  ThreadQueuedMessageDispatchPayload,
+  ThreadQueuedMessageDispatchFailedPayload,
   ThreadMetaUpdatedPayload,
   ThreadPmHandoffCompletedPayload,
   ThreadPmHandoffRequestedPayload,
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
   ThreadUnarchivedPayload,
-  ThreadInboxSettledPayload,
-  ThreadInboxSnoozedPayload,
-  ThreadInboxReopenedPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
+  ThreadTurnInterruptRequestedPayload,
 } from "./Schemas.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
@@ -697,10 +701,10 @@ export function projectEvent(
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             archivedAt: null,
-            inboxLifecycle: "active",
-            inboxWakeAt: null,
             deletedAt: null,
             pendingPmHandoff: null,
+            queuedMessages: [],
+            messageQueueEnabled: true,
             messages: [],
             activities: [],
             checkpoints: [],
@@ -759,42 +763,6 @@ export function projectEvent(
         })),
       );
 
-    case "thread.inbox-settled":
-      return decodeForEvent(ThreadInboxSettledPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            inboxLifecycle: "settled",
-            inboxWakeAt: null,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
-      );
-
-    case "thread.inbox-snoozed":
-      return decodeForEvent(ThreadInboxSnoozedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            inboxLifecycle: "snoozed",
-            inboxWakeAt: payload.wakeAt,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
-      );
-
-    case "thread.inbox-reopened":
-      return decodeForEvent(ThreadInboxReopenedPayload, event.payload, event.type, "payload").pipe(
-        Effect.map((payload) => ({
-          ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
-            inboxLifecycle: "active",
-            inboxWakeAt: null,
-            updatedAt: payload.updatedAt,
-          }),
-        })),
-      );
-
     case "thread.meta-updated":
       return decodeForEvent(ThreadMetaUpdatedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => ({
@@ -839,6 +807,212 @@ export function projectEvent(
             updatedAt: payload.updatedAt,
           }),
         })),
+      );
+
+    case "thread.message-queued":
+      return decodeForEvent(ThreadMessageQueuedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: [...(thread.queuedMessages ?? []), payload.queuedMessage],
+              updatedAt: payload.queuedMessage.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.queued-message-edited":
+      return decodeForEvent(
+        ThreadQueuedMessageEditedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).map((entry) =>
+                entry.id === payload.queueItemId
+                  ? {
+                      ...entry,
+                      text: payload.text,
+                      status: "queued" as const,
+                      dispatchCommandId: null,
+                      error: null,
+                      updatedAt: payload.updatedAt,
+                    }
+                  : entry,
+              ),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.queued-message-deleted":
+      return decodeForEvent(
+        ThreadQueuedMessageDeletedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).filter(
+                (entry) => entry.id !== payload.queueItemId,
+              ),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.message-queue-preference-set":
+      return decodeForEvent(
+        ThreadMessageQueuePreferenceSetPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            messageQueueEnabled: payload.enabled,
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.queued-message-dispatch-requested":
+      return decodeForEvent(
+        ThreadQueuedMessageDispatchPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).map((entry) =>
+                entry.id === payload.queueItemId
+                  ? {
+                      ...entry,
+                      status: "dispatching" as const,
+                      attemptCount: entry.attemptCount + 1,
+                      dispatchCommandId: payload.dispatchCommandId,
+                      error: null,
+                      updatedAt: payload.updatedAt,
+                    }
+                  : entry,
+              ),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.queued-message-dispatch-succeeded":
+      return decodeForEvent(
+        ThreadQueuedMessageDispatchPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          const deliveredQueueMessage = (thread.queuedMessages ?? []).find(
+            (entry) =>
+              entry.id === payload.queueItemId &&
+              entry.dispatchCommandId === payload.dispatchCommandId,
+          );
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).filter(
+                (entry) =>
+                  entry.id !== payload.queueItemId ||
+                  entry.dispatchCommandId !== payload.dispatchCommandId,
+              ),
+              ...(deliveredQueueMessage
+                ? {
+                    modelSelection: deliveredQueueMessage.modelSelection,
+                    gedWorkflowEnabled: deliveredQueueMessage.gedWorkflowEnabled,
+                    runtimeMode: deliveredQueueMessage.runtimeMode,
+                    interactionMode: deliveredQueueMessage.interactionMode,
+                  }
+                : {}),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.queued-message-dispatch-failed":
+      return decodeForEvent(
+        ThreadQueuedMessageDispatchFailedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).map((entry) =>
+                entry.id === payload.queueItemId &&
+                entry.dispatchCommandId === payload.dispatchCommandId
+                  ? {
+                      ...entry,
+                      status: "failed" as const,
+                      error: payload.error,
+                      updatedAt: payload.updatedAt,
+                    }
+                  : entry,
+              ),
+              updatedAt: payload.updatedAt,
+            }),
+          };
+        }),
+      );
+
+    case "thread.turn-interrupt-requested":
+      return decodeForEvent(
+        ThreadTurnInterruptRequestedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => {
+          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          if (!thread) return nextBase;
+          return {
+            ...nextBase,
+            threads: updateThread(nextBase.threads, payload.threadId, {
+              queuedMessages: (thread.queuedMessages ?? []).map((entry) =>
+                entry.status === "queued"
+                  ? { ...entry, status: "held" as const, updatedAt: payload.createdAt }
+                  : entry,
+              ),
+              updatedAt: payload.createdAt,
+            }),
+          };
+        }),
       );
 
     case "thread.message-sent":

@@ -31,10 +31,25 @@ bun install
 At least one supported coding-agent provider must be installed and authenticated to exercise the
 full application. See the provider guides in [`docs/providers/`](docs/providers/).
 
+### Running locally
+
+```sh
+# Web client and server with watch mode
+bun run dev
+
+# Electron app, web client, and server
+bun run dev:desktop
+```
+
+To run multiple desktop development instances without port collisions, give each one a stable
+identifier, for example `T3CODE_DEV_INSTANCE=branch-a bun run dev:desktop`. The development runner
+derives an isolated port set from that value.
+
 ## Development workflow
 
 1. Create a focused branch from `main`.
-2. Read the relevant architecture and provider documentation before changing behavior.
+2. Read the [architecture overview](docs/architecture.md) and relevant provider or decision
+   documentation before changing behavior.
 3. Make the smallest coherent change, keeping shared logic in `packages/` when it is used by both
    the server and web app.
 4. Add or update focused tests for behavior that changed.

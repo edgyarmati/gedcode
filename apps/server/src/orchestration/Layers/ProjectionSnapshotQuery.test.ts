@@ -294,8 +294,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           gedWorkflowEnabled: true,
-          inboxLifecycle: "active",
-          inboxWakeAt: null,
           interactionMode: "default",
           runtimeMode: "full-access",
           branch: null,
@@ -317,6 +315,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           archivedAt: null,
           deletedAt: null,
           pendingPmHandoff: null,
+          queuedMessages: [],
+          messageQueueEnabled: true,
           messages: [
             {
               id: asMessageId("message-1"),
@@ -411,8 +411,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             model: "gpt-5-codex",
           },
           gedWorkflowEnabled: true,
-          inboxLifecycle: "active",
-          inboxWakeAt: null,
           interactionMode: "default",
           runtimeMode: "full-access",
           branch: null,

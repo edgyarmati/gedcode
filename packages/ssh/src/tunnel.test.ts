@@ -13,6 +13,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { SshPasswordPrompt } from "./auth.ts";
 import { SSH_COMMAND } from "./command.ts";
+import { SshLaunchError, SshPairingError } from "./errors.ts";
 import {
   buildRemoteLaunchScript,
   buildRemotePairingScript,
@@ -333,6 +334,64 @@ describe("ssh tunnel scripts", () => {
     return Effect.gen(function* () {
       const result = yield* issueRemotePairingToken(target);
       assert.equal(result.credential, "LCL4R2TPHDKQ");
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("redacts credentials from successful pairing commands with malformed output", () => {
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeSuccessfulProcess('{"credential":"fresh-pairing-secret","unexpected":true'),
+      ),
+    );
+    const processLayer = Layer.merge(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(issueRemotePairingToken(target));
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshPairingError);
+        assert.notInclude(result.failure.stdout, "fresh-pairing-secret");
+        assert.include(result.failure.stdout, '"credential":"[redacted]"');
+        assert.notInclude(String(result.failure.cause), "fresh-pairing-secret");
+      }
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("redacts credential-shaped fields from malformed launch output", () => {
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(makeSuccessfulProcess('{"pairingToken":"launch-secret"}\n')),
+    );
+    const processLayer = Layer.merge(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(launchOrReuseRemoteServer(target));
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshLaunchError);
+        assert.notInclude(result.failure.stdout, "launch-secret");
+        assert.include(result.failure.stdout, '"pairingToken":"[redacted]"');
+        assert.notInclude(String(result.failure.cause), "launch-secret");
+      }
     }).pipe(Effect.provide(processLayer));
   });
 

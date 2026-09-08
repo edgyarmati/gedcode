@@ -66,8 +66,6 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
         nonPersistedImageIds: [],
         persistedAttachments: [],
         terminalContexts: [],
-        queuedMessages: [],
-        queueingEnabled: true,
         modelSelectionByProvider: {
           [instanceId]: createModelSelection(instanceId, model, props?.modelSelection?.options),
         },

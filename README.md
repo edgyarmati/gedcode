@@ -10,7 +10,7 @@ The Orchestrator is the reason GedCode exists. Every participant is an agent, an
 
 - **The PM** is a per-project agent (running on Claude or Codex — your pick) that you chat with. It plans and delegates but never writes code itself. You can switch its harness mid-project and hand off the conversation to the new one.
 - **Workers** are agents the PM spawns to do the actual work. Each runs in its own isolated git worktree with full tool access, and the PM steers and polls them while they run.
-- **Tasks** move through a fixed pipeline — `classify → plan → review → work → verify` — surfaced on a task board organized by what needs your attention. `plan` and `land` are human approval gates.
+- **Tasks** move through a fixed worker pipeline — `plan → work → verify` — surfaced on a task board organized by what needs your attention. The PM owns classification and review, while `plan` and `land` remain human approval gates.
 
 The result: you describe what you want, the PM breaks it into tasks and drives workers through the pipeline, and you approve the moments that matter. The same clarify → plan → implement → verify → commit discipline that GedCode has always been about, now run by an agent you supervise.
 
@@ -34,6 +34,8 @@ GedCode is early and moving quickly. Expect bugs, but the direction is clear: ma
 
 Useful docs:
 
+- Architecture overview: [docs/architecture.md](./docs/architecture.md)
+- Remote access and pairing: [REMOTE.md](./REMOTE.md)
 - Source control integrations: [docs/source-control-providers.md](./docs/source-control-providers.md)
 - Observability guide: [docs/observability.md](./docs/observability.md)
 - Release checklist: [docs/release.md](./docs/release.md)

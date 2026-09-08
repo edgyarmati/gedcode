@@ -34,6 +34,8 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   OrchestratorProjectConfig,
+  ORCHESTRATION_REPLAY_EVENTS_DEFAULT_LIMIT,
+  ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT,
   ORCHESTRATION_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
@@ -117,7 +119,7 @@ import { GitWorkflowService } from "./git/GitWorkflowService.ts";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner.ts";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
-import { ServerAuth } from "./auth/Services/ServerAuth.ts";
+import { ServerAuth, type AuthenticatedSession } from "./auth/Services/ServerAuth.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -295,6 +297,15 @@ function isProjectContextRunEvent(event: OrchestrationEvent): event is Extract<
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+const SNAPSHOT_LIVE_BUFFER_CAPACITY = 256;
+
+/** Attach a hot-stream consumer before any corresponding snapshot I/O begins. */
+const subscribeAndBuffer = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
+  Effect.gen(function* () {
+    const queue = yield* Queue.bounded<A, E | Cause.Done>(SNAPSHOT_LIVE_BUFFER_CAPACITY);
+    yield* stream.pipe(Stream.runIntoQueue(queue), Effect.forkScoped({ startImmediately: true }));
+    return Stream.fromQueue(queue);
+  });
 
 function pmHandoffFallbackReason(error: unknown): string {
   if (typeof error === "object" && error !== null) {
@@ -356,7 +367,7 @@ const shouldGuardOrchestratorMethod = (method: string) =>
   method !== ORCHESTRATOR_WS_METHODS.completePresetMigration &&
   method !== ORCHESTRATOR_WS_METHODS.getProjectContextRunReview;
 
-const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
+const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const crypto = yield* Crypto.Crypto;
@@ -463,7 +474,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const loadAuthAccessSnapshot = () =>
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks().pipe(Effect.orDie),
-          clientSessions: serverAuth.listClientSessions(currentSessionId).pipe(Effect.orDie),
+          clientSessions: serverAuth
+            .listClientSessions(currentSession.sessionId)
+            .pipe(Effect.orDie),
         });
 
       const appendSetupScriptActivity = (input: {
@@ -1212,25 +1225,34 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [ORCHESTRATION_WS_METHODS.replayEvents]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.replayEvents,
-            Stream.runCollect(
-              orchestrationEngine.readEvents(
-                clamp(input.fromSequenceExclusive, {
-                  maximum: Number.MAX_SAFE_INTEGER,
-                  minimum: 0,
-                }),
-              ),
-            ).pipe(
-              Effect.map((events) => Array.from(events)),
-              Effect.flatMap(enrichOrchestrationEvents),
-              Effect.map((events) => events.map(projectActivityEventForWebSocket)),
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationReplayEventsError({
-                    message: "Failed to replay orchestration events",
-                    cause,
-                  }),
-              ),
-            ),
+            Effect.gen(function* () {
+              const limit = clamp(input.limit ?? ORCHESTRATION_REPLAY_EVENTS_DEFAULT_LIMIT, {
+                maximum: ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT,
+                minimum: 1,
+              });
+              return yield* Stream.runCollect(
+                orchestrationEngine
+                  .readEvents(
+                    clamp(input.fromSequenceExclusive, {
+                      maximum: Number.MAX_SAFE_INTEGER,
+                      minimum: 0,
+                    }),
+                    limit,
+                  )
+                  .pipe(Stream.take(limit)),
+              ).pipe(
+                Effect.map((events) => Array.from(events)),
+                Effect.flatMap(enrichOrchestrationEvents),
+                Effect.map((events) => events.map(projectActivityEventForWebSocket)),
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationReplayEventsError({
+                      message: "Failed to replay orchestration events",
+                      cause,
+                    }),
+                ),
+              );
+            }),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.subscribeShell]: (_input) =>
@@ -2618,14 +2640,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 })),
               );
 
+              const liveUpdates = Stream.merge(
+                yield* subscribeAndBuffer(keybindingsUpdates),
+                Stream.merge(
+                  yield* subscribeAndBuffer(providerStatuses),
+                  yield* subscribeAndBuffer(settingsUpdates),
+                ),
+              );
+
               yield* providerRegistry
                 .refresh()
                 .pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
-
-              const liveUpdates = Stream.merge(
-                keybindingsUpdates,
-                Stream.merge(providerStatuses, settingsUpdates),
-              );
 
               return Stream.concat(
                 Stream.make({
@@ -2642,11 +2667,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             WS_METHODS.subscribeServerLifecycle,
             Effect.gen(function* () {
+              const bufferedEvents = yield* subscribeAndBuffer(lifecycleEvents.stream);
               const snapshot = yield* lifecycleEvents.snapshot;
               const snapshotEvents = Array.from(snapshot.events).toSorted(
                 (left, right) => left.sequence - right.sequence,
               );
-              const liveEvents = lifecycleEvents.stream.pipe(
+              const liveEvents = bufferedEvents.pipe(
                 Stream.filter((event) => event.sequence > snapshot.sequence),
               );
               return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
@@ -2657,17 +2683,27 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             WS_METHODS.subscribeAuthAccess,
             Effect.gen(function* () {
-              const initialSnapshot = yield* loadAuthAccessSnapshot();
+              if (currentSession.role !== "owner") {
+                return yield* Effect.die(
+                  new Error("Only owner sessions can subscribe to network access management."),
+                );
+              }
               const revisionRef = yield* Ref.make(1);
+              const bootstrapChangesSubscription = yield* bootstrapCredentials.subscribeChanges;
+              const sessionChangesSubscription = yield* sessions.subscribeChanges;
               const accessChanges: Stream.Stream<
                 BootstrapCredentialChange | SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
+              > = Stream.merge(
+                Stream.fromSubscription(bootstrapChangesSubscription),
+                Stream.fromSubscription(sessionChangesSubscription),
+              );
+              const initialSnapshot = yield* loadAuthAccessSnapshot();
 
               const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
                 Stream.mapEffect((change) =>
                   Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
                     Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
+                      toAuthAccessStreamEvent(change, revision, currentSession.sessionId),
                     ),
                   ),
                 ),
@@ -2719,7 +2755,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           disableTracing: true,
         }).pipe(
           Effect.provide(
-            makeWsRpcLayer(session.sessionId).pipe(
+            makeWsRpcLayer(session).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(
@@ -2742,7 +2778,11 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         );
         return yield* Effect.acquireUseRelease(
           sessions.markConnected(session.sessionId),
-          () => rpcWebSocketHttpEffect,
+          () =>
+            Effect.raceFirst(
+              rpcWebSocketHttpEffect,
+              sessions.awaitInvalidation(session.sessionId).pipe(Effect.andThen(Effect.interrupt)),
+            ),
           () => sessions.markDisconnected(session.sessionId),
         );
       }).pipe(Effect.catchTag("AuthError", respondToAuthError)),

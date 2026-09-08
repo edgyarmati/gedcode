@@ -138,7 +138,6 @@ export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Typ
 
 export const AuthPairingLink = Schema.Struct({
   id: TrimmedNonEmptyString,
-  credential: TrimmedNonEmptyString,
   role: AuthSessionRole,
   subject: TrimmedNonEmptyString,
   label: Schema.optionalKey(TrimmedNonEmptyString),

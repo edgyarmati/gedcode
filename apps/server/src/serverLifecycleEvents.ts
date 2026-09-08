@@ -29,6 +29,11 @@ export class ServerLifecycleEvents extends Context.Service<
 export const ServerLifecycleEventsLive = Layer.effect(
   ServerLifecycleEvents,
   Effect.gen(function* () {
+    // This stream is finite by startup design: one initial welcome, at most
+    // one auto-bootstrap welcome replacement, and one ready event. Snapshot
+    // state retains only the latest event for each of its two event types.
+    // Keep the ordered stream lossless; unlike recurring config snapshots it
+    // cannot accumulate an unbounded production backlog.
     const pubsub = yield* PubSub.unbounded<ServerLifecycleStreamEvent>();
     const state = yield* Ref.make<SnapshotState>({
       sequence: 0,

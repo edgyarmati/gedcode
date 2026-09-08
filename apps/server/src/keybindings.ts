@@ -262,7 +262,8 @@ export interface KeybindingsShape {
   readonly getSnapshot: Effect.Effect<KeybindingsConfigState, KeybindingsConfigError>;
 
   /**
-   * Stream of keybindings config change events.
+   * Complete keybindings snapshots. Slow subscribers may skip superseded
+   * intermediate snapshots, but always retain the newest pending state.
    */
   readonly streamChanges: Stream.Stream<KeybindingsChangeEvent>;
 
@@ -297,7 +298,10 @@ const makeKeybindings = Effect.gen(function* () {
   const path = yield* Path.Path;
   const upsertSemaphore = yield* Semaphore.make(1);
   const resolvedConfigCacheKey = "resolved" as const;
-  const changesPubSub = yield* PubSub.unbounded<KeybindingsChangeEvent>();
+  // Every event is the complete resolved config, so a slow subscriber only
+  // needs the newest pending snapshot. Sliding avoids both stale backlog and
+  // global producer backpressure.
+  const changesPubSub = yield* PubSub.sliding<KeybindingsChangeEvent>(1);
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, KeybindingsConfigError>();
   const watcherScope = yield* Scope.make("sequential");

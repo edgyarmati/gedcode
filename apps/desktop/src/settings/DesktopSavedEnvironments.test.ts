@@ -1,8 +1,13 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import { setTimeout as delay } from "node:timers/promises";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -42,6 +47,9 @@ function makeSafeStorageLayer(input: {
   readonly available: boolean;
   readonly availabilityError?: unknown;
   readonly encryptError?: unknown;
+  readonly encryptString?: (
+    value: string,
+  ) => Effect.Effect<Uint8Array, ElectronSafeStorage.ElectronSafeStorageEncryptError>;
   readonly decryptError?: unknown;
 }) {
   return Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, {
@@ -54,13 +62,15 @@ function makeSafeStorageLayer(input: {
             }),
           ),
     encryptString: (value) =>
-      input.encryptError === undefined
-        ? Effect.succeed(textEncoder.encode(`enc:${value}`))
-        : Effect.fail(
-            new ElectronSafeStorage.ElectronSafeStorageEncryptError({
-              cause: input.encryptError,
-            }),
-          ),
+      input.encryptString
+        ? input.encryptString(value)
+        : input.encryptError === undefined
+          ? Effect.succeed(textEncoder.encode(`enc:${value}`))
+          : Effect.fail(
+              new ElectronSafeStorage.ElectronSafeStorageEncryptError({
+                cause: input.encryptError,
+              }),
+            ),
     decryptString: (value) => {
       if (input.decryptError !== undefined) {
         return Effect.fail(
@@ -89,6 +99,9 @@ function makeLayer(
     readonly availableSecretStorage?: boolean;
     readonly availabilityError?: unknown;
     readonly encryptError?: unknown;
+    readonly encryptString?: (
+      value: string,
+    ) => Effect.Effect<Uint8Array, ElectronSafeStorage.ElectronSafeStorageEncryptError>;
     readonly decryptError?: unknown;
   },
 ) {
@@ -107,6 +120,7 @@ function makeLayer(
       Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({ T3CODE_HOME: baseDir })),
     ),
   );
+  const encryptString = options?.encryptString;
 
   return DesktopSavedEnvironments.layer.pipe(
     Layer.provideMerge(environmentLayer),
@@ -116,6 +130,7 @@ function makeLayer(
         availabilityError: options?.availabilityError,
         encryptError: options?.encryptError,
         decryptError: options?.decryptError,
+        ...(encryptString ? { encryptString } : {}),
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -128,6 +143,9 @@ const withSavedEnvironments = <A, E, R>(
     readonly availableSecretStorage?: boolean;
     readonly availabilityError?: unknown;
     readonly encryptError?: unknown;
+    readonly encryptString?: (
+      value: string,
+    ) => Effect.Effect<Uint8Array, ElectronSafeStorage.ElectronSafeStorageEncryptError>;
     readonly decryptError?: unknown;
   },
 ) =>
@@ -289,18 +307,42 @@ describe("DesktopSavedEnvironments", () => {
     ),
   );
 
-  it.effect("treats malformed saved environment documents as empty", () =>
+  it.effect("surfaces non-missing registry read failures", () =>
+    withSavedEnvironments(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
+        yield* fileSystem.makeDirectory(environment.savedEnvironmentRegistryPath, {
+          recursive: true,
+        });
+
+        const result = yield* Effect.exit(savedEnvironments.getRegistry);
+
+        assert.isTrue(Exit.isFailure(result));
+      }),
+    ),
+  );
+
+  it.effect("does not overwrite a malformed saved environment document", () =>
     withSavedEnvironments(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         const fileSystem = yield* FileSystem.FileSystem;
         const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
         yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(environment.savedEnvironmentRegistryPath, "{not-json");
+        const malformedDocument = "{not-json";
+        yield* fileSystem.writeFileString(
+          environment.savedEnvironmentRegistryPath,
+          malformedDocument,
+        );
 
-        assert.deepEqual(yield* savedEnvironments.getRegistry, []);
-        assert.isTrue(
-          Option.isNone(yield* savedEnvironments.getSecret(savedRegistryRecord.environmentId)),
+        const result = yield* Effect.exit(savedEnvironments.setRegistry([savedRegistryRecord]));
+
+        assert.isTrue(Exit.isFailure(result));
+        assert.equal(
+          yield* fileSystem.readFileString(environment.savedEnvironmentRegistryPath),
+          malformedDocument,
         );
       }),
     ),
@@ -341,4 +383,63 @@ describe("DesktopSavedEnvironments", () => {
       }),
     ),
   );
+
+  it.effect("serializes metadata and secret mutations", () => {
+    let notifyEncryptionStarted!: () => void;
+    const encryptionStarted = new Promise<void>((resolve) => {
+      notifyEncryptionStarted = resolve;
+    });
+    let releaseEncryption!: () => void;
+    const encryptionReleased = new Promise<void>((resolve) => {
+      releaseEncryption = resolve;
+    });
+
+    return withSavedEnvironments(
+      Effect.gen(function* () {
+        const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
+        yield* savedEnvironments.setRegistry([savedRegistryRecord]);
+
+        const secretFiber = yield* savedEnvironments
+          .setSecret({
+            environmentId: savedRegistryRecord.environmentId,
+            secret: "bearer-token",
+          })
+          .pipe(Effect.forkScoped);
+        yield* Effect.promise(() => encryptionStarted);
+
+        const renamedRecord = {
+          ...savedRegistryRecord,
+          label: "Renamed environment",
+        };
+        let notifyRegistryFinished!: () => void;
+        const registryFinished = new Promise<void>((resolve) => {
+          notifyRegistryFinished = resolve;
+        });
+        const registryFiber = yield* savedEnvironments
+          .setRegistry([renamedRecord])
+          .pipe(Effect.ensuring(Effect.sync(notifyRegistryFinished)), Effect.forkScoped);
+        yield* Effect.promise(() =>
+          Promise.race([registryFinished, delay(100).then(() => undefined)]),
+        );
+
+        releaseEncryption();
+        yield* Fiber.join(secretFiber);
+        yield* Fiber.join(registryFiber);
+
+        assert.deepEqual(yield* savedEnvironments.getRegistry, [renamedRecord]);
+        assert.deepEqual(
+          yield* savedEnvironments.getSecret(savedRegistryRecord.environmentId),
+          Option.some("bearer-token"),
+        );
+      }),
+      {
+        encryptString: (value) =>
+          Effect.promise(async () => {
+            notifyEncryptionStarted();
+            await encryptionReleased;
+            return textEncoder.encode(`enc:${value}`);
+          }),
+      },
+    );
+  });
 });

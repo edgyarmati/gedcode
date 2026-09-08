@@ -9,6 +9,8 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as PubSub from "effect/PubSub";
+import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
 export type SessionRole = "owner" | "client";
@@ -77,10 +79,24 @@ export interface SessionCredentialServiceShape {
     SessionCredentialError
   >;
   readonly streamChanges: Stream.Stream<SessionCredentialChange>;
+  /**
+   * Acquire the bounded change subscription before loading an auth-access snapshot.
+   * Publishers backpressure when the subscriber falls 256 changes behind.
+   */
+  readonly subscribeChanges: Effect.Effect<
+    PubSub.Subscription<SessionCredentialChange>,
+    never,
+    Scope.Scope
+  >;
   readonly revoke: (sessionId: AuthSessionId) => Effect.Effect<boolean, SessionCredentialError>;
   readonly revokeAllExcept: (
     sessionId: AuthSessionId,
   ) => Effect.Effect<number, SessionCredentialError>;
+  /**
+   * Completes when the persisted session is revoked, missing, or expired.
+   * Consumers use this to bind long-lived resources to session validity.
+   */
+  readonly awaitInvalidation: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
   readonly markConnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
   readonly markDisconnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
 }

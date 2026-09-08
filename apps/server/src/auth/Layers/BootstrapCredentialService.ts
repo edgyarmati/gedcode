@@ -20,6 +20,7 @@ import {
   type BootstrapGrant,
   type IssuedBootstrapCredential,
 } from "../Services/BootstrapCredentialService.ts";
+import { digestPairingCredential } from "../pairingCredentialDigest.ts";
 
 interface StoredBootstrapGrant extends BootstrapGrant {
   readonly remainingUses: number | "unbounded";
@@ -39,6 +40,7 @@ type ConsumeResult =
 const DEFAULT_ONE_TIME_TOKEN_TTL_MINUTES = Duration.minutes(5);
 const PAIRING_TOKEN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const PAIRING_TOKEN_LENGTH = 12;
+const BOOTSTRAP_CREDENTIAL_CHANGE_BUFFER_CAPACITY = 256;
 
 const generatePairingToken = (): string => {
   const randomBytes = crypto.getRandomValues(new Uint8Array(PAIRING_TOKEN_LENGTH));
@@ -51,7 +53,9 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const pairingLinks = yield* AuthPairingLinkRepository;
   const seededGrantsRef = yield* Ref.make(new Map<string, StoredBootstrapGrant>());
-  const changesPubSub = yield* PubSub.unbounded<BootstrapCredentialChange>();
+  const changesPubSub = yield* PubSub.bounded<BootstrapCredentialChange>(
+    BOOTSTRAP_CREDENTIAL_CHANGE_BUFFER_CAPACITY,
+  );
 
   const invalidBootstrapCredentialError = (message: string) =>
     new BootstrapCredentialError({
@@ -110,7 +114,6 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
         row.label
           ? ({
               id: row.id,
-              credential: row.credential,
               role: row.role,
               subject: row.subject,
               label: row.label,
@@ -119,7 +122,6 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
             } satisfies AuthPairingLink)
           : ({
               id: row.id,
-              credential: row.credential,
               role: row.role,
               subject: row.subject,
               createdAt: row.createdAt,
@@ -156,7 +158,7 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
       };
       yield* pairingLinks.create({
         id,
-        credential,
+        credentialDigest: digestPairingCredential(credential),
         method: "one-time-token",
         role: input?.role ?? "client",
         subject: input?.subject ?? "one-time-token",
@@ -166,7 +168,6 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
       });
       yield* emitUpsert({
         id,
-        credential,
         role: input?.role ?? "client",
         subject: input?.subject ?? "one-time-token",
         ...(input?.label ? { label: input.label } : {}),
@@ -242,8 +243,9 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
         return yield* seededResult.error;
       }
 
+      const credentialDigest = digestPairingCredential(credential);
       const consumed = yield* pairingLinks.consumeAvailable({
-        credential,
+        credentialDigest,
         consumedAt: now,
         now,
       });
@@ -259,7 +261,7 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
         } satisfies BootstrapGrant;
       }
 
-      const matching = yield* pairingLinks.getByCredential({ credential });
+      const matching = yield* pairingLinks.getByCredentialDigest({ credentialDigest });
       if (Option.isNone(matching)) {
         return yield* invalidBootstrapCredentialError("Unknown bootstrap credential.");
       }
@@ -292,6 +294,9 @@ export const makeBootstrapCredentialService = Effect.gen(function* () {
     listActive,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
+    },
+    get subscribeChanges() {
+      return PubSub.subscribe(changesPubSub);
     },
     revoke,
     consume,

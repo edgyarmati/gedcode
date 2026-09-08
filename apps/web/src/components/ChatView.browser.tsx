@@ -2,7 +2,6 @@
 import "../index.css";
 
 import {
-  CommandId,
   EventId,
   ORCHESTRATION_WS_METHODS,
   EnvironmentId,
@@ -12,6 +11,7 @@ import {
   type ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  QueuedMessageId,
   type ServerConfig,
   type ServerLifecycleWelcomePayload,
   type ThreadId,
@@ -4275,20 +4275,18 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("queues an active-turn submission and drains it once after the thread settles", async () => {
-    const turnStarts: NormalizedWsRpcRequestBody[] = [];
+  it("enqueues an active-turn submission on the authoritative server queue", async () => {
+    const commands: NormalizedWsRpcRequestBody[] = [];
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
       snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-queue-drain" as MessageId,
-        targetText: "queue drain target",
+        targetMessageId: "msg-user-server-queue" as MessageId,
+        targetText: "server queue target",
         sessionStatus: "running",
       }),
       resolveRpc: (body) => {
         if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
-          if (body.type === "thread.turn.start") {
-            turnStarts.push(body);
-          }
+          commands.push(body);
           return { sequence: fixture.snapshot.snapshotSequence + 1 };
         }
         return undefined;
@@ -4300,42 +4298,14 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await waitForComposerText("queued follow up");
       await pressComposerKey("Enter");
 
-      let queuedCommandId = "";
-      let queuedMessageId = "";
       await vi.waitFor(() => {
-        const queued = composerDraftFor(THREAD_KEY)?.queuedMessages ?? [];
-        expect(queued).toHaveLength(1);
-        expect(queued[0]).toMatchObject({
-          text: "queued follow up",
-          status: "queued",
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toMatchObject({
+          type: "thread.queue.enqueue",
+          threadId: THREAD_ID,
+          message: { text: "queued follow up" },
         });
-        queuedCommandId = String(queued[0]?.commandId ?? "");
-        queuedMessageId = String(queued[0]?.messageId ?? "");
-        expect(turnStarts).toHaveLength(0);
-      });
-
-      fixture.snapshot = updateThreadSessionInSnapshot(fixture.snapshot, THREAD_ID, {
-        threadId: THREAD_ID,
-        status: "ready",
-        providerName: "codex",
-        runtimeMode: "full-access",
-        activeTurnId: null,
-        lastError: null,
-        updatedAt: isoAt(2_000),
-      });
-      sendShellThreadUpsert(THREAD_ID);
-
-      await vi.waitFor(() => {
-        expect(turnStarts).toHaveLength(1);
-        expect(turnStarts[0]).toMatchObject({
-          type: "thread.turn.start",
-          commandId: queuedCommandId,
-          message: {
-            messageId: queuedMessageId,
-            text: "queued follow up",
-          },
-        });
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
+        expect(composerDraftFor(THREAD_KEY)?.prompt ?? "").toBe("");
       });
     } finally {
       await mounted.cleanup();
@@ -4344,13 +4314,20 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
   it("sends an active-turn submission directly when queueing is disabled", async () => {
     const turnStarts: NormalizedWsRpcRequestBody[] = [];
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-direct-steer" as MessageId,
+      targetText: "direct steer target",
+      sessionStatus: "running",
+    });
+    const queueDisabledSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: snapshot.threads.map((thread) =>
+        thread.id === THREAD_ID ? { ...thread, messageQueueEnabled: false } : thread,
+      ),
+    };
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-direct-steer" as MessageId,
-        targetText: "direct steer target",
-        sessionStatus: "running",
-      }),
+      snapshot: queueDisabledSnapshot,
       resolveRpc: (body) => {
         if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
           if (body.type === "thread.turn.start") {
@@ -4363,7 +4340,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      useComposerDraftStore.getState().setQueueingEnabled(THREAD_REF, false);
       useComposerDraftStore.getState().setPrompt(THREAD_REF, "steer immediately");
       await waitForComposerText("steer immediately");
       await pressComposerKey("Enter");
@@ -4374,102 +4350,77 @@ describe("ChatView timeline estimator parity (full app)", () => {
           type: "thread.turn.start",
           message: { text: "steer immediately" },
         });
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
       });
     } finally {
       await mounted.cleanup();
     }
   });
 
-  it("persists one failed drain without retrying it in a hot loop", async () => {
-    let turnStartAttempts = 0;
-    let retriedCommandId = "";
+  it("renders the server queue and dispatches its edit, delete, preference, and retry commands", async () => {
+    const commands: NormalizedWsRpcRequestBody[] = [];
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-queue-controls" as MessageId,
+      targetText: "queue controls target",
+      sessionStatus: "running",
+    });
+    const queuedSnapshot: OrchestrationReadModel = {
+      ...snapshot,
+      threads: snapshot.threads.map((thread) =>
+        thread.id !== THREAD_ID
+          ? thread
+          : {
+              ...thread,
+              queuedMessages: [
+                {
+                  id: QueuedMessageId.make("queue-edit-browser"),
+                  messageId: MessageId.make("message-queue-edit-browser"),
+                  text: "edit this message",
+                  attachments: [],
+                  modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+                  gedWorkflowEnabled: true,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  status: "failed",
+                  attemptCount: 1,
+                  dispatchCommandId: null,
+                  error: "Environment disconnected",
+                  createdAt: isoAt(2_200),
+                  updatedAt: isoAt(2_200),
+                },
+                {
+                  id: QueuedMessageId.make("queue-delete-browser"),
+                  messageId: MessageId.make("message-queue-delete-browser"),
+                  text: "delete this message",
+                  attachments: [],
+                  modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
+                  gedWorkflowEnabled: true,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  status: "queued",
+                  attemptCount: 0,
+                  dispatchCommandId: null,
+                  error: null,
+                  createdAt: isoAt(2_201),
+                  updatedAt: isoAt(2_201),
+                },
+              ],
+              messageQueueEnabled: true,
+            },
+      ),
+    };
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-queue-failure" as MessageId,
-        targetText: "queue failure target",
-      }),
+      snapshot: queuedSnapshot,
+      resolveRpc: (body) => {
+        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
+          commands.push(body);
+          return { sequence: fixture.snapshot.snapshotSequence + 1 };
+        }
+        return undefined;
+      },
     });
 
     try {
-      __setEnvironmentApiOverrideForTests(
-        LOCAL_ENVIRONMENT_ID,
-        createMockEnvironmentApi({
-          browse: async () => ({ parentPath: "/repo", entries: [] }),
-          dispatchCommand: async (command) => {
-            if (command.type === "thread.turn.start") {
-              turnStartAttempts += 1;
-              retriedCommandId = String(command.commandId);
-              __resetEnvironmentApiOverridesForTests();
-              throw new Error("Environment disconnected");
-            }
-            return { sequence: fixture.snapshot.snapshotSequence + 1 };
-          },
-        }),
-      );
-      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
-        id: "queue-failed-browser",
-        commandId: CommandId.make("command-queue-failed-browser"),
-        messageId: MessageId.make("message-queue-failed-browser"),
-        text: "retry me explicitly",
-        attachments: [],
-        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
-        gedWorkflowEnabled: true,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt: isoAt(2_100),
-        status: "dispatching",
-      });
-
-      await vi.waitFor(() => {
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages[0]).toMatchObject({
-          id: "queue-failed-browser",
-          status: "failed",
-          error: "Environment disconnected",
-        });
-      });
-      await vi.waitFor(() => expect(turnStartAttempts).toBe(1));
-      expect(retriedCommandId).toBe("command-queue-failed-browser");
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("edits, deletes, and disables queueing from the queued-message controls", async () => {
-    const mounted = await mountChatView({
-      viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-queue-controls" as MessageId,
-        targetText: "queue controls target",
-        sessionStatus: "running",
-      }),
-    });
-
-    try {
-      const makeQueuedMessage = (id: string, text: string) => ({
-        id,
-        commandId: CommandId.make(`command-${id}`),
-        messageId: MessageId.make(`message-${id}`),
-        text,
-        attachments: [],
-        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
-        gedWorkflowEnabled: true,
-        runtimeMode: "full-access" as const,
-        interactionMode: "default" as const,
-        createdAt: isoAt(2_200),
-        status: "queued" as const,
-      });
-      useComposerDraftStore
-        .getState()
-        .enqueueMessage(THREAD_REF, makeQueuedMessage("queue-edit-browser", "edit this message"));
-      useComposerDraftStore
-        .getState()
-        .enqueueMessage(
-          THREAD_REF,
-          makeQueuedMessage("queue-delete-browser", "delete this message"),
-        );
-
       await expect.element(page.getByRole("region", { name: "Queued messages" })).toBeVisible();
       await page.getByLabelText("More options for queued message: edit this message").click();
       await page.getByText("Edit message", { exact: true }).click();
@@ -4478,130 +4429,38 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await userEvent.keyboard("{Enter}");
 
       await vi.waitFor(() => {
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages[0]).toMatchObject({
-          id: "queue-edit-browser",
-          text: "edited queued message",
-          commandId: "command-queue-edit-browser",
-          messageId: "message-queue-edit-browser",
-        });
+        expect(commands).toContainEqual(
+          expect.objectContaining({
+            type: "thread.queue.edit",
+            queueItemId: "queue-edit-browser",
+            text: "edited queued message",
+          }),
+        );
       });
 
-      await page.getByLabelText("More options for queued message: edited queued message").click();
+      await page.getByLabelText("More options for queued message: edit this message").click();
       await page.getByText("Turn off queueing", { exact: true }).click();
-      await vi.waitFor(() => {
-        const draft = composerDraftFor(THREAD_KEY);
-        expect(draft?.queueingEnabled).toBe(false);
-        expect(draft?.queuedMessages).toHaveLength(2);
-      });
-
       await page.getByLabelText("Delete queued message: delete this message").click();
-      await vi.waitFor(() => {
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages).toHaveLength(1);
-      });
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("retries a failed queued message immediately through Steer", async () => {
-    const turnStarts: NormalizedWsRpcRequestBody[] = [];
-    const mounted = await mountChatView({
-      viewport: DEFAULT_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-queue-retry" as MessageId,
-        targetText: "queue retry target",
-        sessionStatus: "running",
-      }),
-      resolveRpc: (body) => {
-        if (body._tag === ORCHESTRATION_WS_METHODS.dispatchCommand) {
-          if (body.type === "thread.turn.start") turnStarts.push(body);
-          return { sequence: fixture.snapshot.snapshotSequence + 1 };
-        }
-        return undefined;
-      },
-    });
-
-    try {
-      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
-        id: "queue-retry-browser",
-        commandId: CommandId.make("command-queue-retry-browser"),
-        messageId: MessageId.make("message-queue-retry-browser"),
-        text: "retry through steer",
-        attachments: [],
-        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
-        gedWorkflowEnabled: true,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt: isoAt(2_300),
-        status: "failed",
-        error: "Environment disconnected",
-      });
-
-      await expect
-        .element(page.getByRole("alert", { name: "Environment disconnected" }))
-        .toHaveTextContent("Environment disconnected");
-      await page.getByLabelText("Retry queued message: retry through steer").click();
+      await page.getByLabelText("Retry queued message: edit this message").click();
 
       await vi.waitFor(() => {
-        expect(turnStarts).toHaveLength(1);
-        expect(turnStarts[0]).toMatchObject({
-          type: "thread.turn.start",
-          commandId: "command-queue-retry-browser",
-          message: {
-            messageId: "message-queue-retry-browser",
-            text: "retry through steer",
-          },
-        });
-        expect(composerDraftFor(THREAD_KEY)?.queuedMessages ?? []).toHaveLength(0);
+        expect(commands).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: "thread.queue.preference.set",
+              enabled: false,
+            }),
+            expect.objectContaining({
+              type: "thread.queue.delete",
+              queueItemId: "queue-delete-browser",
+            }),
+            expect.objectContaining({
+              type: "thread.queue.dispatch",
+              queueItemId: "queue-edit-browser",
+            }),
+          ]),
+        );
       });
-    } finally {
-      await mounted.cleanup();
-    }
-  });
-
-  it("keeps queued-message actions accessible in the compact chat layout", async () => {
-    const mounted = await mountChatView({
-      viewport: COMPACT_FOOTER_VIEWPORT,
-      snapshot: createSnapshotForTargetUser({
-        targetMessageId: "msg-user-queue-compact" as MessageId,
-        targetText: "queue compact target",
-        sessionStatus: "running",
-      }),
-    });
-
-    try {
-      useComposerDraftStore.getState().enqueueMessage(THREAD_REF, {
-        id: "queue-compact-browser",
-        commandId: CommandId.make("command-queue-compact-browser"),
-        messageId: MessageId.make("message-queue-compact-browser"),
-        text: "a queued message with enough text to require truncation in the compact layout",
-        attachments: [],
-        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5"),
-        gedWorkflowEnabled: true,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        createdAt: isoAt(2_400),
-        status: "queued",
-      });
-
-      const panel = page.getByRole("region", { name: "Queued messages" });
-      await expect.element(panel).toBeVisible();
-      await expect
-        .element(
-          page.getByLabelText(
-            "Steer queued message: a queued message with enough text to require truncation in the compact layout",
-          ),
-        )
-        .toBeVisible();
-      await expect
-        .element(
-          page.getByLabelText(
-            "Delete queued message: a queued message with enough text to require truncation in the compact layout",
-          ),
-        )
-        .toBeVisible();
-      const panelElement = panel.element() as HTMLElement;
-      expect(panelElement.scrollWidth).toBeLessThanOrEqual(panelElement.clientWidth + 1);
     } finally {
       await mounted.cleanup();
     }

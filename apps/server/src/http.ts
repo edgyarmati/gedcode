@@ -1,11 +1,10 @@
 import Mime from "@effect/platform-node/Mime";
-import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
-import * as Data from "effect/Data";
+import { ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { cast } from "effect/Function";
+import * as Schema from "effect/Schema";
 import {
   HttpBody,
   HttpClient,
@@ -14,7 +13,6 @@ import {
   HttpServerResponse,
   HttpServerRequest,
 } from "effect/unstable/http";
-import { OtlpTracer } from "effect/unstable/observability";
 
 import {
   ATTACHMENTS_ROUTE_PREFIX,
@@ -23,21 +21,89 @@ import {
 } from "./attachmentPaths.ts";
 import { resolveAttachmentPathById } from "./attachmentStore.ts";
 import { resolveStaticDir, ServerConfig } from "./config.ts";
-import { BrowserTraceCollector } from "./observability/Services/BrowserTraceCollector.ts";
+import { recordBrowserTracePayload } from "./observability/browserTraceIngestion.ts";
+import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProjectFaviconResolver } from "./project/Services/ProjectFaviconResolver.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import { respondToAuthError } from "./auth/http.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
+import { sanitizeSvgMarkup } from "./svgSanitizer.ts";
 import {
   browserApiCorsAllowedHeaders,
   browserApiCorsAllowedMethods,
   browserApiCorsHeaders,
 } from "./httpCors.ts";
 
-const PROJECT_FAVICON_CACHE_CONTROL = "public, max-age=3600";
+const PROJECT_FAVICON_CACHE_CONTROL = "private, max-age=3600";
+const ATTACHMENT_CACHE_CONTROL = "private, max-age=31536000, immutable";
+const ASSET_SECURITY_HEADERS = {
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "X-Content-Type-Options": "nosniff",
+} as const;
+const SVG_SECURITY_HEADERS = {
+  ...ASSET_SECURITY_HEADERS,
+  "Content-Security-Policy":
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox",
+} as const;
 const FALLBACK_PROJECT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#6b728080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-fallback="project-favicon"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/></svg>`;
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const BROWSER_OTLP_MAX_BODY_SIZE = FileSystem.MiB(1);
+const BROWSER_OTLP_MAX_RESOURCE_BATCHES = 64;
+const BROWSER_OTLP_MAX_SCOPE_BATCHES = 256;
+const BROWSER_OTLP_MAX_SPANS = 2_048;
+const BROWSER_OTLP_MAX_SPAN_EVENTS = 8_192;
+const BROWSER_OTLP_MAX_SPAN_LINKS = 4_096;
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
+const decodeProjectIdOption = Schema.decodeUnknownOption(ProjectId);
+
+function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function exceedsBrowserOtlpCardinalityLimits(payload: unknown): boolean {
+  if (!isUnknownRecord(payload) || !Array.isArray(payload.resourceSpans)) {
+    return false;
+  }
+  if (payload.resourceSpans.length > BROWSER_OTLP_MAX_RESOURCE_BATCHES) {
+    return true;
+  }
+
+  let scopeBatchCount = 0;
+  let spanCount = 0;
+  let spanEventCount = 0;
+  let spanLinkCount = 0;
+  for (const resourceBatch of payload.resourceSpans) {
+    if (isUnknownRecord(resourceBatch) && Array.isArray(resourceBatch.scopeSpans)) {
+      scopeBatchCount += resourceBatch.scopeSpans.length;
+      if (scopeBatchCount > BROWSER_OTLP_MAX_SCOPE_BATCHES) {
+        return true;
+      }
+      for (const scopeBatch of resourceBatch.scopeSpans) {
+        if (isUnknownRecord(scopeBatch) && Array.isArray(scopeBatch.spans)) {
+          spanCount += scopeBatch.spans.length;
+          if (spanCount > BROWSER_OTLP_MAX_SPANS) {
+            return true;
+          }
+          for (const span of scopeBatch.spans) {
+            if (isUnknownRecord(span) && Array.isArray(span.events)) {
+              spanEventCount += span.events.length;
+              if (spanEventCount > BROWSER_OTLP_MAX_SPAN_EVENTS) {
+                return true;
+              }
+            }
+            if (isUnknownRecord(span) && Array.isArray(span.links)) {
+              spanLinkCount += span.links.length;
+              if (spanLinkCount > BROWSER_OTLP_MAX_SPAN_LINKS) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
 
 export const browserApiCorsLayer = HttpRouter.cors({
   allowedMethods: [...browserApiCorsAllowedMethods],
@@ -84,11 +150,6 @@ export const serverEnvironmentRouteLayer = HttpRouter.add(
   }),
 );
 
-class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
-  readonly cause: unknown;
-  readonly bodyJson: OtlpTracer.TraceData;
-}> {}
-
 export const otlpTracesProxyRouteLayer = HttpRouter.add(
   "POST",
   OTLP_TRACES_PROXY_PATH,
@@ -97,22 +158,29 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const config = yield* ServerConfig;
     const otlpTracesUrl = config.otlpTracesUrl;
-    const browserTraceCollector = yield* BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
-    const bodyJson = cast<unknown, OtlpTracer.TraceData>(yield* request.json);
-
-    yield* Effect.try({
-      try: () => decodeOtlpTraceRecords(bodyJson),
-      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause, bodyJson }),
-    }).pipe(
-      Effect.flatMap((records) => browserTraceCollector.record(records)),
-      Effect.catch((cause) =>
-        Effect.logWarning("Failed to decode browser OTLP traces", {
-          cause,
-          bodyJson,
-        }),
-      ),
+    const bodyTextOption = yield* request.text.pipe(
+      Effect.provideService(HttpServerRequest.MaxBodySize, BROWSER_OTLP_MAX_BODY_SIZE),
+      Effect.option,
     );
+    if (Option.isNone(bodyTextOption)) {
+      return HttpServerResponse.text("Trace payload too large.", { status: 413 });
+    }
+    const bodyJsonOption = yield* Effect.try({
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      try: () => JSON.parse(bodyTextOption.value) as unknown,
+      catch: () => "invalid-json" as const,
+    }).pipe(Effect.option);
+    if (Option.isNone(bodyJsonOption)) {
+      return HttpServerResponse.text("Invalid trace payload.", { status: 400 });
+    }
+    const bodyJson = bodyJsonOption.value;
+
+    if (exceedsBrowserOtlpCardinalityLimits(bodyJson)) {
+      return HttpServerResponse.text("Trace payload exceeds cardinality limits.", { status: 413 });
+    }
+
+    yield* recordBrowserTracePayload(bodyJson);
 
     if (otlpTracesUrl === undefined) {
       return HttpServerResponse.empty({ status: 204 });
@@ -181,10 +249,36 @@ export const attachmentsRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
 
+    const contentType = Mime.getType(filePath) ?? "application/octet-stream";
+    if (contentType === "image/svg+xml") {
+      const svgMarkup = yield* fileSystem
+        .readFileString(filePath)
+        .pipe(Effect.catch(() => Effect.succeed(null)));
+      if (svgMarkup === null) {
+        return HttpServerResponse.text("Internal Server Error", { status: 500 });
+      }
+      const sanitizedSvg = sanitizeSvgMarkup(svgMarkup);
+      if (!sanitizedSvg) {
+        return HttpServerResponse.text("Invalid SVG attachment", {
+          status: 422,
+          headers: SVG_SECURITY_HEADERS,
+        });
+      }
+      return HttpServerResponse.text(sanitizedSvg, {
+        status: 200,
+        contentType,
+        headers: {
+          ...SVG_SECURITY_HEADERS,
+          "Cache-Control": ATTACHMENT_CACHE_CONTROL,
+        },
+      });
+    }
+
     return yield* HttpServerResponse.file(filePath, {
       status: 200,
       headers: {
-        "Cache-Control": "public, max-age=31536000, immutable",
+        ...ASSET_SECURITY_HEADERS,
+        "Cache-Control": ATTACHMENT_CACHE_CONTROL,
       },
     }).pipe(
       Effect.catch(() =>
@@ -205,18 +299,51 @@ export const projectFaviconRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
-    const projectCwd = url.value.searchParams.get("cwd");
-    if (!projectCwd) {
-      return HttpServerResponse.text("Missing cwd parameter", { status: 400 });
+    const projectId = decodeProjectIdOption(url.value.searchParams.get("projectId"));
+    if (Option.isNone(projectId)) {
+      return HttpServerResponse.text("Missing or invalid projectId parameter", { status: 400 });
+    }
+
+    const snapshotQuery = yield* ProjectionSnapshotQuery;
+    const project = yield* snapshotQuery.getProjectShellById(projectId.value);
+    if (Option.isNone(project)) {
+      return HttpServerResponse.text("Project not found", { status: 404 });
     }
 
     const faviconResolver = yield* ProjectFaviconResolver;
-    const faviconFilePath = yield* faviconResolver.resolvePath(projectCwd);
+    const faviconFilePath = yield* faviconResolver.resolvePath(project.value.workspaceRoot);
     if (!faviconFilePath) {
       return HttpServerResponse.text(FALLBACK_PROJECT_FAVICON_SVG, {
         status: 200,
         contentType: "image/svg+xml",
         headers: {
+          ...SVG_SECURITY_HEADERS,
+          "Cache-Control": PROJECT_FAVICON_CACHE_CONTROL,
+        },
+      });
+    }
+
+    const contentType = Mime.getType(faviconFilePath) ?? "application/octet-stream";
+    if (contentType === "image/svg+xml") {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const svgMarkup = yield* fileSystem
+        .readFileString(faviconFilePath)
+        .pipe(Effect.catch(() => Effect.succeed(null)));
+      if (svgMarkup === null) {
+        return HttpServerResponse.text("Internal Server Error", { status: 500 });
+      }
+      const sanitizedSvg = sanitizeSvgMarkup(svgMarkup);
+      if (!sanitizedSvg) {
+        return HttpServerResponse.text("Invalid project favicon", {
+          status: 422,
+          headers: SVG_SECURITY_HEADERS,
+        });
+      }
+      return HttpServerResponse.text(sanitizedSvg, {
+        status: 200,
+        contentType,
+        headers: {
+          ...SVG_SECURITY_HEADERS,
           "Cache-Control": PROJECT_FAVICON_CACHE_CONTROL,
         },
       });
@@ -225,6 +352,7 @@ export const projectFaviconRouteLayer = HttpRouter.add(
     return yield* HttpServerResponse.file(faviconFilePath, {
       status: 200,
       headers: {
+        ...ASSET_SECURITY_HEADERS,
         "Cache-Control": PROJECT_FAVICON_CACHE_CONTROL,
       },
     }).pipe(

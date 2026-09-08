@@ -8,10 +8,8 @@ import * as Ref from "effect/Ref";
 import * as NetService from "@t3tools/shared/Net";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
-import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
-import * as DesktopDataMigration from "./DesktopDataMigration.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -189,7 +187,6 @@ const startup = Effect.gen(function* () {
   const appIdentity = yield* DesktopAppIdentity.DesktopAppIdentity;
   const applicationMenu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
   const electronApp = yield* ElectronApp.ElectronApp;
-  const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
   const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
@@ -199,12 +196,7 @@ const startup = Effect.gen(function* () {
   yield* shellEnvironment.installIntoProcess;
   const userDataPath = yield* appIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
-  const migrationResult = yield* DesktopDataMigration.migrateDefaultAppDataDirectory;
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
-  const migrationLogFields = DesktopDataMigration.migrationResultLogFields(migrationResult);
-  if (Option.isSome(migrationLogFields)) {
-    yield* logStartupInfo("migrated default app data directory", migrationLogFields.value);
-  }
   yield* desktopSettings.load;
 
   if (environment.platform === "linux") {
@@ -221,7 +213,6 @@ const startup = Effect.gen(function* () {
   yield* logStartupInfo("app ready");
   yield* appIdentity.configure;
   yield* applicationMenu.configure;
-  yield* electronProtocol.registerDesktopFileProtocol;
   yield* updates.configure;
   yield* bootstrap.pipe(Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)));
 }).pipe(Effect.withSpan("desktop.startup"));

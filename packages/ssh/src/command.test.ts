@@ -11,6 +11,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   baseSshArgs,
+  buildSshHostSpec,
   getLastNonEmptyOutputLine,
   parseSshResolveOutput,
   resolveRemoteT3CliPackageSpec,
@@ -110,6 +111,31 @@ describe("ssh command", () => {
           { batchMode: "no" },
         ),
         ["-o", "BatchMode=no", "-o", "ConnectTimeout=10", "-p", "2222"],
+      );
+    }),
+  );
+
+  it.effect("rejects option-shaped SSH destinations before spawning", () =>
+    Effect.sync(() => {
+      assert.throws(
+        () =>
+          buildSshHostSpec({
+            alias: "-oProxyCommand=attacker",
+            hostname: "safe.example.com",
+            username: null,
+            port: null,
+          }),
+        /must not start with '-'/u,
+      );
+      assert.throws(
+        () =>
+          buildSshHostSpec({
+            alias: "safe.example.com",
+            hostname: "safe.example.com",
+            username: "-oProxyCommand=attacker",
+            port: null,
+          }),
+        /must not start with '-'/u,
       );
     }),
   );
@@ -247,6 +273,65 @@ describe("ssh command", () => {
         assert.equal(result.failure.message, '{"credential":"[redacted]"}');
         assert.equal(result.failure.stdout, '{"credential":"[redacted]"}\n');
       }
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("redacts credentials from stderr in non-zero command failures", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeFailedProcess({
+          stdout: "",
+          stderr: '{"pairingToken":"stderr-secret"}\n',
+        }),
+      ),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runSshCommand(
+          {
+            alias: "devbox",
+            hostname: "devbox.example.com",
+            username: "julius",
+            port: 2222,
+          },
+          { remoteCommandArgs: ["sh", "-s"] },
+        ),
+      );
+
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshCommandError);
+        assert.equal(result.failure.message, '{"pairingToken":"[redacted]"}');
+        assert.equal(result.failure.stderr, '{"pairingToken":"[redacted]"}\n');
+      }
+    }).pipe(Effect.provide(processLayer));
+  });
+
+  it.effect("bounds captured process output while retaining the final output", () => {
+    const finalLine = "final-result\n";
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(makeSuccessfulProcess(`${"x".repeat(1_000_000)}\n${finalLine}`)),
+    );
+    const spawnerLayer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
+    const processLayer = Layer.mergeAll(NodeServices.layer, spawnerLayer);
+
+    return Effect.gen(function* () {
+      const result = yield* runSshCommand(
+        {
+          alias: "devbox",
+          hostname: "devbox.example.com",
+          username: "julius",
+          port: 2222,
+        },
+        { remoteCommandArgs: ["echo", "ok"] },
+      );
+
+      assert.isBelow(result.stdout.length, 300_000);
+      assert.match(result.stdout, /^\[earlier output truncated\]\n/u);
+      assert.match(result.stdout, /final-result\n$/u);
     }).pipe(Effect.provide(processLayer));
   });
 

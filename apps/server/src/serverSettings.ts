@@ -126,7 +126,10 @@ export interface ServerSettingsShape {
     patch: ServerSettingsPatch,
   ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
-  /** Stream of settings change events. */
+  /**
+   * Complete settings snapshots. Slow subscribers may skip superseded
+   * intermediate snapshots, but always retain the newest pending state.
+   */
   readonly streamChanges: Stream.Stream<ServerSettings>;
 }
 
@@ -263,7 +266,10 @@ const makeServerSettings = Effect.gen(function* () {
   const secretStore = yield* ServerSecretStore;
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
-  const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
+  // Settings updates carry the complete state. Keep only the newest pending
+  // snapshot for a slow subscriber instead of accumulating stale states or
+  // blocking every settings producer behind that subscriber.
+  const changesPubSub = yield* PubSub.sliding<ServerSettings>(1);
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, ServerSettingsError>();
   const watcherScope = yield* Scope.make("sequential");

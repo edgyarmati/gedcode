@@ -86,6 +86,10 @@ import Migration0073 from "./Migrations/073_PmLifecycleDeliveryEpisodes.ts";
 import Migration0074 from "./Migrations/074_ProjectionThreadInboxLifecycle.ts";
 import Migration0075 from "./Migrations/075_ProjectionThreadInboxWakeAt.ts";
 import Migration0076 from "./Migrations/076_ProjectionTaskForceLandRequest.ts";
+import Migration0077 from "./Migrations/077_RemoveProjectionThreadInboxLifecycle.ts";
+import Migration0078 from "./Migrations/078_HashAuthPairingCredentials.ts";
+import Migration0079 from "./Migrations/079_OrchestrationCommandFingerprints.ts";
+import Migration0080 from "./Migrations/080_ProjectionThreadMessageQueue.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadLastClearedSequence.ts";
 import Migration0044 from "./Migrations/044_ProjectionThreadPendingPmHandoff.ts";
 import Migration0045 from "./Migrations/045_BackfillProjectionProjectOrchestratorConfig.ts";
@@ -177,6 +181,10 @@ export const migrationEntries = [
   [74, "ProjectionThreadInboxLifecycle", Migration0074],
   [75, "ProjectionThreadInboxWakeAt", Migration0075],
   [76, "ProjectionTaskForceLandRequest", Migration0076],
+  [77, "RemoveProjectionThreadInboxLifecycle", Migration0077],
+  [78, "HashAuthPairingCredentials", Migration0078],
+  [79, "OrchestrationCommandFingerprints", Migration0079],
+  [80, "ProjectionThreadMessageQueue", Migration0080],
 ] as const;
 
 export const CURRENT_SCHEMA_MIGRATION_ID = migrationEntries.at(-1)![0];

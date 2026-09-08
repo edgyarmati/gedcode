@@ -74,6 +74,7 @@ import {
   orchestrationMcpToolIds,
 } from "../../orchestration/claude/pmMcpServer.ts";
 import { classifyRuntimeErrorClass, mapClaudeRateLimits } from "../rateLimits.ts";
+import { makeProviderRuntimeEventBuffer } from "../ProviderRuntimeEventBuffer.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
@@ -1139,7 +1140,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }) as ClaudeQueryRuntime);
 
   const sessions = new Map<ThreadId, ClaudeSessionContext>();
-  const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventQueue = yield* makeProviderRuntimeEventBuffer;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const randomUUIDv4 = crypto.randomUUIDv4.pipe(

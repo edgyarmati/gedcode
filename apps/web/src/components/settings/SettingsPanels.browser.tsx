@@ -299,7 +299,6 @@ function createEmptyProcessResourceHistoryResult(): ServerProcessResourceHistory
 
 function makePairingLink(input: {
   readonly id: string;
-  readonly credential: string;
   readonly role: "owner" | "client";
   readonly subject: string;
   readonly label?: string;
@@ -795,7 +794,16 @@ describe("GeneralSettingsPanel observability", () => {
         tailscaleServePort: 443,
       },
     });
-    let pairingLinks: Array<AuthAccessSnapshot["pairingLinks"][number]> = [];
+    let pairingLinks: Array<AuthAccessSnapshot["pairingLinks"][number]> = [
+      makePairingLink({
+        id: "pairing-link-existing",
+        role: "client",
+        subject: "one-time-token",
+        label: "Existing tablet",
+        createdAt: "2036-04-06T00:00:00.000Z",
+        expiresAt: "2036-04-10T00:05:00.000Z",
+      }),
+    ];
     let clientSessions: Array<AuthAccessSnapshot["clientSessions"][number]> = [
       makeClientSession({
         sessionId: "session-owner",
@@ -826,9 +834,9 @@ describe("GeneralSettingsPanel observability", () => {
         const method = init?.method ?? "GET";
         if (url.endsWith("/api/auth/pairing-token") && method === "POST") {
           pairingLinks = [
+            ...pairingLinks,
             makePairingLink({
               id: "pairing-link-1",
-              credential: "pairing-token",
               role: "client",
               subject: "one-time-token",
               label: "Julius iPhone",
@@ -844,7 +852,7 @@ describe("GeneralSettingsPanel observability", () => {
               role: "client",
               method: "browser-session-cookie",
               client: {
-                label: "Julius iPhone",
+                label: "Connected phone",
                 deviceType: "mobile",
                 os: "iOS",
                 browser: "Safari",
@@ -889,17 +897,27 @@ describe("GeneralSettingsPanel observability", () => {
     await expect.element(page.getByText("Authorized clients")).toBeInTheDocument();
     await expect.element(page.getByText("Revoke others")).toBeInTheDocument();
     await expect.element(page.getByText("This Mac")).toBeInTheDocument();
+    await expect.element(page.getByText("Existing tablet")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: /^Copy pairing URL for:/ }))
+      .not.toBeInTheDocument();
     await page.getByRole("button", { name: "Create link", exact: true }).click();
     await expect.element(page.getByText("Create pairing link")).toBeInTheDocument();
     await page.getByRole("button", { name: "Create link", exact: true }).click();
-    authAccessHarness.emitPairingLinkUpserted(pairingLinks[0]!);
+    authAccessHarness.emitPairingLinkUpserted(pairingLinks[1]!);
     authAccessHarness.emitClientUpserted(clientSessions[1]!);
     await expect
       .element(page.getByText("Client · Mobile · iOS · Safari · 192.168.1.88"))
       .toBeInTheDocument();
+    await expect.element(page.getByText("Julius iPhone", { exact: true })).toBeInTheDocument();
     await expect
       .element(page.getByRole("button", { name: /^Copy pairing URL for:/ }))
       .toBeInTheDocument();
+    await page.getByRole("button", { name: "Dismiss pairing secret", exact: true }).click();
+    await expect
+      .element(page.getByRole("button", { name: /^Copy pairing URL for:/ }))
+      .not.toBeInTheDocument();
+    await expect.element(page.getByText("Julius iPhone", { exact: true })).toBeInTheDocument();
     const revokeOthersButton = page.getByRole("button", { name: "Revoke others", exact: true });
     await expect.element(revokeOthersButton).toBeInTheDocument();
     await vi.waitFor(async () => {

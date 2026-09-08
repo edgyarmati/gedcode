@@ -59,6 +59,7 @@ import {
   type OrchestrationMcpEndpoint,
 } from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { classifyRuntimeErrorClass, mapCodexRateLimits } from "../rateLimits.ts";
+import { makeProviderRuntimeEventBuffer } from "../ProviderRuntimeEventBuffer.ts";
 import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
@@ -1407,7 +1408,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       : undefined);
   const managedNativeEventLogger =
     options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
-  const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+  const runtimeEventQueue = yield* makeProviderRuntimeEventBuffer;
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
 
   // The hook script and its trusted hash depend only on this provider instance,

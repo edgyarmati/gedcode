@@ -256,7 +256,7 @@ function ProjectGridCard({ project }: { project: Project }) {
       className="group flex min-h-32 min-w-0 flex-col rounded-lg border border-border bg-card p-4 text-card-foreground outline-hidden transition-colors hover:border-ring/50 hover:bg-accent/35 focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex min-w-0 items-start gap-3">
-        <ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />
+        <ProjectFavicon environmentId={project.environmentId} projectId={project.id} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{project.name}</h2>
           <p className="mt-1 truncate text-xs text-muted-foreground">{project.cwd}</p>

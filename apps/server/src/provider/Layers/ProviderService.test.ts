@@ -22,6 +22,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -60,6 +61,7 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../ProviderRuntimeEventBuffer.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
 const defaultServerSettingsLayer = ServerSettingsService.layerTest();
@@ -1528,6 +1530,77 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
 const fanout = makeProviderServiceLayer();
 fanout.layer("ProviderServiceLive fanout", (it) => {
+  it.effect("backpressures adapter events behind a stalled subscriber without dropping order", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const threadId = asThreadId("thread-bounded-fanout");
+      const releaseStalledSubscriber = yield* Deferred.make<void>();
+      const stalledSubscriberStarted = yield* Deferred.make<void>();
+      let isFirstStalledEvent = true;
+      const stalledSubscriber = yield* Stream.runForEach(provider.streamEvents, () => {
+        if (!isFirstStalledEvent) {
+          return Effect.void;
+        }
+        isFirstStalledEvent = false;
+        return Deferred.succeed(stalledSubscriberStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseStalledSubscriber)),
+        );
+      }).pipe(Effect.forkChild);
+
+      const totalEvents = PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY + 2;
+      const fanoutReachedCapacity = yield* Deferred.make<void>();
+      const received: EventId[] = [];
+      const healthySubscriber = yield* Stream.take(provider.streamEvents, totalEvents).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            received.push(event.eventId);
+            return received.length;
+          }).pipe(
+            Effect.flatMap((receivedCount) =>
+              receivedCount === PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY + 1
+                ? Deferred.succeed(fanoutReachedCapacity, undefined)
+                : Effect.void,
+            ),
+          ),
+        ),
+        Effect.forkChild,
+      );
+      yield* advanceTestClock(50);
+
+      const events = Array.from({ length: totalEvents }, (_, index) => ({
+        type: "turn.completed",
+        eventId: asEventId(`evt-bounded-fanout-${index}`),
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-bounded-fanout"),
+        status: "completed",
+      })) satisfies ReadonlyArray<LegacyProviderRuntimeEvent>;
+      for (const event of events) {
+        fanout.codex.emit(event);
+      }
+
+      yield* Deferred.await(stalledSubscriberStarted);
+      yield* Deferred.await(fanoutReachedCapacity);
+      yield* Effect.yieldNow;
+
+      assert.isUndefined(healthySubscriber.pollUnsafe());
+      assert.deepEqual(
+        received,
+        events.slice(0, PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY + 1).map((event) => event.eventId),
+      );
+
+      yield* Deferred.succeed(releaseStalledSubscriber, undefined);
+      yield* Fiber.join(healthySubscriber);
+      yield* Fiber.interrupt(stalledSubscriber);
+
+      assert.deepEqual(
+        received,
+        events.map((event) => event.eventId),
+      );
+    }),
+  );
+
   it.effect("fans out adapter turn completion events", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService;

@@ -32,6 +32,7 @@ import {
   OrchestrationReleaseDispatch,
   OrchestrationThread,
   OrchestrationThreadOwnership,
+  OrchestrationQueuedMessage,
   PendingPmHandoff,
   ProjectScript,
   TurnId,
@@ -117,6 +118,8 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     orchestrationOwnership: Schema.NullOr(Schema.fromJsonString(OrchestrationThreadOwnership)),
     gedWorkflowEnabled: Schema.Number,
     pendingPmHandoff: Schema.NullOr(Schema.fromJsonString(PendingPmHandoff)),
+    queuedMessages: Schema.fromJsonString(Schema.Array(OrchestrationQueuedMessage)),
+    messageQueueEnabled: Schema.Number,
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -524,14 +527,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           deleted_at AS "deletedAt"
         FROM projection_threads
         ORDER BY created_at ASC, thread_id ASC
@@ -558,14 +561,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -594,14 +597,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE deleted_at IS NULL
@@ -1124,14 +1127,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
-          inbox_lifecycle AS "inboxLifecycle",
-          inbox_wake_at AS "inboxWakeAt",
           latest_user_message_at AS "latestUserMessageAt",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           last_cleared_sequence AS "lastClearedSequence",
           pending_pm_handoff_json AS "pendingPmHandoff",
+          queued_messages_json AS "queuedMessages",
+          message_queue_enabled AS "messageQueueEnabled",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -1639,13 +1642,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 archivedAt: row.archivedAt,
-                inboxLifecycle: row.inboxLifecycle ?? "active",
-                inboxWakeAt: row.inboxWakeAt ?? null,
                 deletedAt: row.deletedAt,
                 ...(row.lastClearedSequence !== null
                   ? { lastClearedSequence: row.lastClearedSequence }
                   : {}),
                 pendingPmHandoff: row.pendingPmHandoff,
+                queuedMessages: row.queuedMessages,
+                messageQueueEnabled: row.messageQueueEnabled !== 0,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: activitiesByThread.get(row.threadId) ?? [],
@@ -1966,13 +1969,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 archivedAt: row.archivedAt,
-                inboxLifecycle: row.inboxLifecycle ?? "active",
-                inboxWakeAt: row.inboxWakeAt ?? null,
                 deletedAt: row.deletedAt,
                 ...(row.lastClearedSequence !== null
                   ? { lastClearedSequence: row.lastClearedSequence }
                   : {}),
                 pendingPmHandoff: row.pendingPmHandoff,
+                queuedMessages: row.queuedMessages,
+                messageQueueEnabled: row.messageQueueEnabled !== 0,
                 messages: [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                 activities: [],
@@ -2231,8 +2234,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
                       archivedAt: row.archivedAt,
-                      inboxLifecycle: row.inboxLifecycle ?? "active",
-                      inboxWakeAt: row.inboxWakeAt ?? null,
                       ...(row.lastClearedSequence !== null
                         ? { lastClearedSequence: row.lastClearedSequence }
                         : {}),
@@ -2375,8 +2376,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
-                  inboxLifecycle: row.inboxLifecycle ?? "active",
-                  inboxWakeAt: row.inboxWakeAt ?? null,
                   ...(row.lastClearedSequence !== null
                     ? { lastClearedSequence: row.lastClearedSequence }
                     : {}),
@@ -2627,8 +2626,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
-        inboxLifecycle: threadRow.value.inboxLifecycle ?? "active",
-        inboxWakeAt: threadRow.value.inboxWakeAt ?? null,
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }
           : {}),
@@ -2731,13 +2728,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
-        inboxLifecycle: threadRow.value.inboxLifecycle ?? "active",
-        inboxWakeAt: threadRow.value.inboxWakeAt ?? null,
         deletedAt: null,
         ...(threadRow.value.lastClearedSequence !== null
           ? { lastClearedSequence: threadRow.value.lastClearedSequence }
           : {}),
         pendingPmHandoff: threadRow.value.pendingPmHandoff,
+        queuedMessages: threadRow.value.queuedMessages,
+        messageQueueEnabled: threadRow.value.messageQueueEnabled !== 0,
         messages: messageRows.map(mapMessageRow),
         proposedPlans: proposedPlanRows.map(mapProposedPlanRow),
         activities: activityRows.map(mapActivityRow),

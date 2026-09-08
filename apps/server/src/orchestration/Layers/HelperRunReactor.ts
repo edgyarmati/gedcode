@@ -21,6 +21,7 @@ import { ProjectionHelperRunRepositoryLive } from "../../persistence/Layers/Proj
 import { ProviderQuotaStatusRepositoryLive } from "../../persistence/Layers/ProviderQuotaStatus.ts";
 import { ProjectionHelperRunRepository } from "../../persistence/Services/ProjectionHelperRuns.ts";
 import { ProviderQuotaStatusRepository } from "../../persistence/Services/ProviderQuotaStatus.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../../provider/ProviderRuntimeEventBuffer.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -445,7 +446,7 @@ export const makeHelperRunReactor = Effect.gen(function* () {
       capacity: "unbounded",
     });
     const providerEvents = yield* Stream.toQueue(providers.streamEvents, {
-      capacity: "unbounded",
+      capacity: PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY,
     });
     yield* Effect.forkScoped(
       Stream.runForEach(Stream.fromQueue(domainEvents), (event) => domainWorker.enqueue(event)),

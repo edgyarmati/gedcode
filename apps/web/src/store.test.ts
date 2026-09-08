@@ -10,6 +10,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  QueuedMessageId,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -165,6 +166,8 @@ function makeState(thread: Thread): AppState {
           : {}),
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        queuedMessages: thread.queuedMessages ?? [],
+        messageQueueEnabled: thread.messageQueueEnabled ?? true,
       },
     },
     threadSessionById: {
@@ -871,6 +874,60 @@ describe("incremental orchestration updates", () => {
     expect(localEnvironmentStateOf(next).threadIdsByProjectId[recreatedProjectId]).toEqual([
       threadId,
     ]);
+  });
+
+  it("projects durable queued-message events into server thread detail", () => {
+    const threadId = ThreadId.make("thread-queue-store");
+    const projectId = ProjectId.make("project-queue-store");
+    const now = "2026-08-30T12:00:00.000Z";
+    const state = applyOrchestrationEvents(
+      makeEmptyState(),
+      [
+        makeEvent("thread.created", {
+          threadId,
+          projectId,
+          title: "Queue",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+          runtimeMode: DEFAULT_RUNTIME_MODE,
+          interactionMode: DEFAULT_INTERACTION_MODE,
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        makeEvent("thread.message-queued", {
+          threadId,
+          queuedMessage: {
+            id: QueuedMessageId.make("queue-store"),
+            messageId: MessageId.make("message-queue-store"),
+            text: "later",
+            attachments: [],
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+            gedWorkflowEnabled: true,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+            interactionMode: DEFAULT_INTERACTION_MODE,
+            status: "queued",
+            attemptCount: 0,
+            dispatchCommandId: null,
+            error: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+        makeEvent("thread.message-queue-preference-set", {
+          threadId,
+          enabled: false,
+          updatedAt: now,
+        }),
+      ],
+      localEnvironmentId,
+    );
+    expect(selectThreadByRef(state, { environmentId: localEnvironmentId, threadId })).toMatchObject(
+      {
+        messageQueueEnabled: false,
+        queuedMessages: [{ id: "queue-store", text: "later", status: "queued" }],
+      },
+    );
   });
 
   it("reduces task events into project task and pending-gate selectors", () => {

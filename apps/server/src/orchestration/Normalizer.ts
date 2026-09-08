@@ -8,9 +8,10 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 
-import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import { createDeterministicAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
+import { sanitizeSvgMarkup } from "../svgSanitizer.ts";
 import { WorkspacePaths } from "../workspace/Services/WorkspacePaths.ts";
 
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
@@ -65,13 +66,13 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       } satisfies OrchestrationCommand;
     }
 
-    if (command.type !== "thread.turn.start") {
+    if (command.type !== "thread.turn.start" && command.type !== "thread.queue.enqueue") {
       return command as OrchestrationCommand;
     }
 
     const normalizedAttachments = yield* Effect.forEach(
       command.message.attachments,
-      (attachment) =>
+      (attachment, attachmentIndex) =>
         Effect.gen(function* () {
           const parsed = parseBase64DataUrl(attachment.dataUrl);
           if (!parsed || !parsed.mimeType.startsWith("image/")) {
@@ -80,14 +81,35 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             });
           }
 
-          const bytes = Buffer.from(parsed.base64, "base64");
-          if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+          const uploadedBytes = Buffer.from(parsed.base64, "base64");
+          if (
+            uploadedBytes.byteLength === 0 ||
+            uploadedBytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+          ) {
             return yield* new OrchestrationDispatchCommandError({
               message: `Image attachment '${attachment.name}' is empty or too large.`,
             });
           }
 
-          const attachmentId = createAttachmentId(command.threadId);
+          const mimeType = parsed.mimeType.toLowerCase();
+          const bytes =
+            mimeType === "image/svg+xml"
+              ? Buffer.from(sanitizeSvgMarkup(uploadedBytes.toString("utf8")))
+              : uploadedBytes;
+          if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+            return yield* new OrchestrationDispatchCommandError({
+              message: `Image attachment '${attachment.name}' is invalid after sanitization.`,
+            });
+          }
+
+          const attachmentId = createDeterministicAttachmentId({
+            threadId: command.threadId,
+            commandId: command.commandId,
+            attachmentIndex,
+            name: attachment.name,
+            mimeType,
+            bytes,
+          });
           if (!attachmentId) {
             return yield* new OrchestrationDispatchCommandError({
               message: "Failed to create a safe attachment id.",
@@ -98,7 +120,7 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             type: "image" as const,
             id: attachmentId,
             name: attachment.name,
-            mimeType: parsed.mimeType.toLowerCase(),
+            mimeType,
             sizeBytes: bytes.byteLength,
           };
 
@@ -134,11 +156,14 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       { concurrency: 1 },
     );
 
+    if (command.type === "thread.queue.enqueue") {
+      return {
+        ...command,
+        message: { ...command.message, attachments: normalizedAttachments },
+      } satisfies OrchestrationCommand;
+    }
     return {
       ...command,
-      message: {
-        ...command.message,
-        attachments: normalizedAttachments,
-      },
+      message: { ...command.message, attachments: normalizedAttachments },
     } satisfies OrchestrationCommand;
   });

@@ -1138,7 +1138,7 @@ describe("OrchestrationEngine", () => {
     await system.dispose();
   });
 
-  it("deduplicates identical task creation receipts and rejects changed content for the same task", async () => {
+  it("deduplicates semantic task creation retries across arrival timestamps and rejects changed content for the same task", async () => {
     const system = await createOrchestrationSystem();
     const { engine } = system;
     const createdAt = now();
@@ -1173,7 +1173,9 @@ describe("OrchestrationEngine", () => {
       createdAt,
     };
     const first = await system.run(engine.dispatch(createCommand));
-    const second = await system.run(engine.dispatch(createCommand));
+    const second = await system.run(
+      engine.dispatch({ ...createCommand, createdAt: "2026-08-30T00:05:00.000Z" }),
+    );
     expect(second).toEqual(first);
 
     const events = Array.from(await system.run(Stream.runCollect(engine.readEvents(0)))).filter(
@@ -1191,6 +1193,53 @@ describe("OrchestrationEngine", () => {
         }),
       ),
     ).rejects.toThrow("already exists");
+
+    await system.dispose();
+  });
+
+  it("rejects command id reuse with different command content without appending events", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine } = system;
+    const commandId = CommandId.make("cmd-project-command-id-conflict");
+    const projectId = asProjectId("project-command-id-conflict");
+    const createdAt = now();
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId,
+        projectId,
+        title: "Original project",
+        workspaceRoot: "/tmp/project-command-id-conflict",
+        defaultModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+
+    await expect(
+      system.run(
+        engine.dispatch({
+          type: "project.create",
+          commandId,
+          projectId,
+          title: "Different project content",
+          workspaceRoot: "/tmp/project-command-id-conflict",
+          defaultModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          createdAt,
+        }),
+      ),
+    ).rejects.toThrow("reused with different command content");
+
+    const projectEvents = Array.from(
+      await system.run(Stream.runCollect(engine.readEvents(0))),
+    ).filter((event) => event.aggregateId === projectId);
+    expect(projectEvents).toHaveLength(1);
 
     await system.dispose();
   });

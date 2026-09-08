@@ -8,12 +8,12 @@ import {
   XIcon,
 } from "lucide-react";
 
-import type { ComposerQueuedMessage } from "../../composerDraftStore";
+import type { OrchestrationQueuedMessage } from "@t3tools/contracts";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 
-function queuedMessageLabel(message: ComposerQueuedMessage): string {
+function queuedMessageLabel(message: OrchestrationQueuedMessage): string {
   const text = message.text.trim();
   if (text.length > 0) return text;
   const count = message.attachments.length;
@@ -21,9 +21,9 @@ function queuedMessageLabel(message: ComposerQueuedMessage): string {
 }
 
 const QueuedMessageRow = memo(function QueuedMessageRow(props: {
-  message: ComposerQueuedMessage;
+  message: OrchestrationQueuedMessage;
   queueingEnabled: boolean;
-  onSteer: (message: ComposerQueuedMessage) => void;
+  onSteer: (message: OrchestrationQueuedMessage) => void;
   onDelete: (messageId: string) => void;
   onEdit: (messageId: string, text: string) => void;
   onQueueingEnabledChange: (enabled: boolean) => void;
@@ -188,9 +188,9 @@ const QueuedMessageRow = memo(function QueuedMessageRow(props: {
 });
 
 export const QueuedMessagesPanel = memo(function QueuedMessagesPanel(props: {
-  messages: ReadonlyArray<ComposerQueuedMessage>;
+  messages: ReadonlyArray<OrchestrationQueuedMessage>;
   queueingEnabled: boolean;
-  onSteer: (message: ComposerQueuedMessage) => void;
+  onSteer: (message: OrchestrationQueuedMessage) => void;
   onDelete: (messageId: string) => void;
   onEdit: (messageId: string, text: string) => void;
   onQueueingEnabledChange: (enabled: boolean) => void;

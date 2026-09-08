@@ -16,6 +16,8 @@ import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 const PUBLISHABLE_T3_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
+const MAX_SSH_CAPTURED_OUTPUT_LENGTH = 256_000;
+const SSH_OUTPUT_TRUNCATION_PREFIX = "[earlier output truncated]\n";
 export const SSH_COMMAND = process.platform === "win32" ? "ssh.exe" : "ssh";
 
 const encoder = new TextEncoder();
@@ -72,7 +74,26 @@ export function buildSshHostSpec(target: DesktopSshEnvironmentTarget): string {
   if (destination.length === 0) {
     throw new Error("SSH target is missing its alias/hostname.");
   }
-  return target.username ? `${target.username}@${destination}` : destination;
+  assertSafeSshHostPart("SSH destination", destination);
+
+  const username = target.username?.trim() || null;
+  if (username !== null) {
+    assertSafeSshHostPart("SSH username", username);
+  }
+  return username ? `${username}@${destination}` : destination;
+}
+
+function assertSafeSshHostPart(label: string, value: string): void {
+  if (value.startsWith("-")) {
+    throw new Error(`${label} must not start with '-'.`);
+  }
+  const containsWhitespaceOrControl = Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return /\s/u.test(character) || codePoint <= 0x1f || codePoint === 0x7f;
+  });
+  if (containsWhitespaceOrControl) {
+    throw new Error(`${label} must not contain whitespace or control characters.`);
+  }
 }
 
 export const buildSshHostSpecEffect = (
@@ -115,12 +136,33 @@ export const collectProcessOutput = <E>(
   stream.pipe(
     Stream.decodeText(),
     Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
+      () => ({ output: "", truncated: false }),
+      (state, chunk) => {
+        const contentLimit = MAX_SSH_CAPTURED_OUTPUT_LENGTH - SSH_OUTPUT_TRUNCATION_PREFIX.length;
+        if (chunk.length >= contentLimit) {
+          return {
+            output: chunk.slice(-contentLimit),
+            truncated: true,
+          };
+        }
+        if (state.output.length + chunk.length <= contentLimit) {
+          return {
+            output: state.output + chunk,
+            truncated: state.truncated,
+          };
+        }
+        return {
+          output: state.output.slice(-(contentLimit - chunk.length)) + chunk,
+          truncated: true,
+        };
+      },
+    ),
+    Effect.map((state) =>
+      state.truncated ? SSH_OUTPUT_TRUNCATION_PREFIX + state.output : state.output,
     ),
   );
 
-function redactSshErrorOutput(output: string): string {
+export function redactSshDiagnosticOutput(output: string): string {
   const redacted = output.replace(
     /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]+(")/giu,
     "$1[redacted]$2",
@@ -246,22 +288,23 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   );
 
   if (exitCode !== 0) {
-    const diagnosticStdout = redactSshErrorOutput(stdout);
+    const diagnosticStdout = redactSshDiagnosticOutput(stdout);
+    const diagnosticStderr = redactSshDiagnosticOutput(stderr);
     yield* Effect.logWarning("ssh.command.failed", {
       ...sshTargetLogFields(target),
       command: [SSH_COMMAND, ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
     });
     return yield* new SshCommandError({
       command: [SSH_COMMAND, ...args],
       exitCode,
       stdout: diagnosticStdout,
-      stderr,
+      stderr: diagnosticStderr,
       message: normalizeSshErrorMessage({
         stdout: diagnosticStdout,
-        stderr,
+        stderr: diagnosticStderr,
         fallbackMessage: `SSH command failed for ${hostSpec} (exit ${exitCode}).`,
       }),
     });

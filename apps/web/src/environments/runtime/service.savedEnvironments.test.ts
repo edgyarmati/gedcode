@@ -42,6 +42,7 @@ vi.mock("./catalog", () => ({
   hasSavedEnvironmentRegistryHydrated: vi.fn(() => true),
   listSavedEnvironmentRecords: mockListSavedEnvironmentRecords,
   persistSavedEnvironmentRecord: vi.fn(),
+  persistSavedEnvironmentRegistry: vi.fn(),
   readSavedEnvironmentBearerToken: mockReadSavedEnvironmentBearerToken,
   removeSavedEnvironmentBearerToken: vi.fn(),
   useSavedEnvironmentRegistryStore: {

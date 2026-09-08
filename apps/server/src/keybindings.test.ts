@@ -3,12 +3,15 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertFailure } from "@effect/vitest/utils";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { ServerConfig } from "./config.ts";
 
 import {
@@ -550,6 +553,56 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "script.run-tests.run"));
       assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "terminal.toggle"));
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("coalesces stalled keybinding subscribers to the latest complete snapshot", () =>
+    Effect.gen(function* () {
+      const keybindings = yield* Keybindings;
+      const firstSnapshotBlocked = yield* Deferred.make<void>();
+      const releaseFirstSnapshot = yield* Deferred.make<void>();
+      let isFirstSnapshot = true;
+      const snapshotsFiber = yield* keybindings.streamChanges.pipe(
+        Stream.mapEffect((snapshot) =>
+          Effect.gen(function* () {
+            if (isFirstSnapshot) {
+              isFirstSnapshot = false;
+              yield* Deferred.succeed(firstSnapshotBlocked, undefined);
+              yield* Deferred.await(releaseFirstSnapshot);
+            }
+            return snapshot;
+          }),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkScoped({ startImmediately: true }),
+      );
+
+      yield* keybindings.upsertKeybindingRule({
+        key: "mod+a",
+        command: "script.snapshot-latest.run",
+      });
+      yield* Deferred.await(firstSnapshotBlocked);
+      yield* keybindings.upsertKeybindingRule({
+        key: "mod+b",
+        command: "script.snapshot-latest.run",
+        replace: { key: "mod+a", command: "script.snapshot-latest.run" },
+      });
+      yield* keybindings.upsertKeybindingRule({
+        key: "mod+c",
+        command: "script.snapshot-latest.run",
+        replace: { key: "mod+b", command: "script.snapshot-latest.run" },
+      });
+      yield* Deferred.succeed(releaseFirstSnapshot, undefined);
+
+      const snapshots = Array.from(yield* Fiber.join(snapshotsFiber));
+      const snapshotKeys = snapshots.map(
+        (snapshot) =>
+          snapshot.keybindings.find((entry) => entry.command === "script.snapshot-latest.run")
+            ?.shortcut.key,
+      );
+
+      assert.deepEqual(snapshotKeys, ["a", "c"]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 

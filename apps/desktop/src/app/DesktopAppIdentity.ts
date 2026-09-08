@@ -80,30 +80,9 @@ const make = Effect.gen(function* () {
     return commitHash;
   });
 
-  const resolveUserDataPath = Effect.gen(function* () {
-    const canonicalPath = environment.path.join(
-      environment.appDataDirectory,
-      environment.userDataDirName,
-    );
-    const canonicalPathExists = yield* fileSystem
-      .exists(canonicalPath)
-      .pipe(Effect.orElseSucceed(() => false));
-    if (canonicalPathExists) {
-      return canonicalPath;
-    }
-
-    for (const legacyUserDataDirName of environment.legacyUserDataDirNames) {
-      const legacyPath = environment.path.join(environment.appDataDirectory, legacyUserDataDirName);
-      const legacyPathExists = yield* fileSystem
-        .exists(legacyPath)
-        .pipe(Effect.orElseSucceed(() => false));
-      if (legacyPathExists) {
-        return legacyPath;
-      }
-    }
-
-    return canonicalPath;
-  }).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
+  const resolveUserDataPath = Effect.succeed(
+    environment.path.join(environment.appDataDirectory, environment.userDataDirName),
+  ).pipe(Effect.withSpan("desktop.appIdentity.resolveUserDataPath"));
 
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;

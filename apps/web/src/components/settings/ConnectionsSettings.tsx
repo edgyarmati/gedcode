@@ -80,6 +80,7 @@ import {
   revokeServerPairingLink,
   isLoopbackHostname,
   type ServerClientSessionRecord,
+  type ServerIssuedPairingCredentialRecord,
   type ServerPairingLinkRecord,
 } from "~/environments/primary";
 import type { WsRpcClient } from "~/rpc/wsRpcClient";
@@ -493,25 +494,29 @@ function isHostedAppPairingUrl(value: string): boolean {
   }
 }
 
-type PairingLinkListRowProps = {
-  pairingLink: ServerPairingLinkRecord;
+interface IssuedPairingCredentialRecord extends ServerIssuedPairingCredentialRecord {
+  readonly createdAt: string;
+  readonly role: "client";
+}
+
+type IssuedPairingCredentialRowProps = {
+  pairingCredential: IssuedPairingCredentialRecord;
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
   presentation?: AccessSectionPresentation;
-  revokingPairingLinkId: string | null;
-  onRevoke: (id: string) => void;
+  onDismiss: () => void;
 };
 
-const PairingLinkListRow = memo(function PairingLinkListRow({
-  pairingLink,
+const IssuedPairingCredentialRow = memo(function IssuedPairingCredentialRow({
+  pairingCredential,
   endpointUrl,
   endpoints,
   defaultEndpointKey,
   presentation = "current",
-  revokingPairingLinkId,
-  onRevoke,
-}: PairingLinkListRowProps) {
+  onDismiss,
+}: IssuedPairingCredentialRowProps) {
+  const pairingLink = pairingCredential;
   const nowMs = useRelativeTimeTick(1_000);
   const expiresAtMs = useMemo(
     () => new Date(pairingLink.expiresAt).getTime(),
@@ -629,7 +634,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
 
   const expiresAbsolute = formatAccessTimestamp(pairingLink.expiresAt);
 
-  const roleLabel = pairingLink.role === "owner" ? "Owner" : "Client";
+  const roleLabel = "Client";
   const primaryLabel = pairingLink.label ?? `${roleLabel} link`;
   const defaultEndpointCopyOption =
     endpointCopyOptions.find((option) => option.key === defaultEndpointKey) ??
@@ -761,6 +766,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
           <p className="text-xs text-muted-foreground" title={expiresAbsolute}>
             {[roleLabel, formatExpiresInLabel(pairingLink.expiresAt, nowMs)].join(" · ")}
           </p>
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            Copy this secret now. It cannot be shown again after dismissal or reload.
+          </p>
           {shareablePairingUrl === null ? (
             <p className="text-[11px] text-muted-foreground/70">
               Copy the token and pair from another client using this backend&apos;s reachable host.
@@ -865,13 +873,68 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
           </Dialog>
           <Button
             size="xs"
-            variant="destructive-outline"
-            disabled={revokingPairingLinkId === pairingLink.id}
-            onClick={() => void onRevoke(pairingLink.id)}
+            variant="outline"
+            aria-label="Dismiss pairing secret"
+            onClick={onDismiss}
           >
-            {revokingPairingLinkId === pairingLink.id ? "Revoking…" : "Revoke"}
+            Dismiss
           </Button>
         </div>
+      </div>
+    </div>
+  );
+});
+
+type PairingLinkListRowProps = {
+  pairingLink: ServerPairingLinkRecord;
+  presentation?: AccessSectionPresentation;
+  revokingPairingLinkId: string | null;
+  onRevoke: (id: string) => void;
+};
+
+const PairingLinkListRow = memo(function PairingLinkListRow({
+  pairingLink,
+  presentation = "current",
+  revokingPairingLinkId,
+  onRevoke,
+}: PairingLinkListRowProps) {
+  const nowMs = useRelativeTimeTick(1_000);
+  if (new Date(pairingLink.expiresAt).getTime() <= nowMs) {
+    return null;
+  }
+
+  const roleLabel = pairingLink.role === "owner" ? "Owner" : "Client";
+  return (
+    <div className={accessRowClassName(presentation)}>
+      <div className={ITEM_ROW_INNER_CLASSNAME}>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <ConnectionStatusDot
+              tooltipText={`Link created at ${formatAccessTimestamp(pairingLink.createdAt)}`}
+              dotClassName="bg-amber-400"
+            />
+            <h3 className="text-sm font-medium text-foreground">
+              {pairingLink.label ?? `${roleLabel} link`}
+            </h3>
+          </div>
+          <p
+            className="text-xs text-muted-foreground"
+            title={formatAccessTimestamp(pairingLink.expiresAt)}
+          >
+            {[roleLabel, formatExpiresInLabel(pairingLink.expiresAt, nowMs)].join(" · ")}
+          </p>
+          <p className="text-[11px] text-muted-foreground/70">
+            The secret is no longer available. Revoke this link if it should not be used.
+          </p>
+        </div>
+        <Button
+          size="xs"
+          variant="destructive-outline"
+          disabled={revokingPairingLinkId === pairingLink.id}
+          onClick={() => void onRevoke(pairingLink.id)}
+        >
+          {revokingPairingLinkId === pairingLink.id ? "Revoking…" : "Revoke"}
+        </Button>
       </div>
     </div>
   );
@@ -955,12 +1018,14 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
 type AuthorizedClientsHeaderActionProps = {
   clientSessions: ReadonlyArray<ServerClientSessionRecord>;
   isRevokingOtherClients: boolean;
+  onPairingCredentialCreated: (credential: ServerIssuedPairingCredentialRecord) => void;
   onRevokeOtherClients: () => void;
 };
 
 const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderAction({
   clientSessions,
   isRevokingOtherClients,
+  onPairingCredentialCreated,
   onRevokeOtherClients,
 }: AuthorizedClientsHeaderActionProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -970,7 +1035,8 @@ const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderActio
   const handleCreatePairingLink = useCallback(async () => {
     setIsCreatingPairingLink(true);
     try {
-      await createServerPairingCredential(pairingLabel);
+      const issued = await createServerPairingCredential(pairingLabel);
+      onPairingCredentialCreated(issued);
       setPairingLabel("");
       setDialogOpen(false);
     } catch (error) {
@@ -985,7 +1051,7 @@ const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderActio
     } finally {
       setIsCreatingPairingLink(false);
     }
-  }, [pairingLabel]);
+  }, [onPairingCredentialCreated, pairingLabel]);
 
   return (
     <div className="flex items-center gap-2">
@@ -1062,12 +1128,14 @@ type PairingClientsListProps = {
   defaultEndpointKey: string | null;
   presentation?: AccessSectionPresentation;
   isLoading: boolean;
+  issuedPairingCredential: IssuedPairingCredentialRecord | null;
   pairingLinks: ReadonlyArray<ServerPairingLinkRecord>;
   clientSessions: ReadonlyArray<ServerClientSessionRecord>;
   revokingPairingLinkId: string | null;
   revokingClientSessionId: string | null;
   onRevokePairingLink: (id: string) => void;
   onRevokeClientSession: (sessionId: ServerClientSessionRecord["sessionId"]) => void;
+  onDismissPairingCredential: () => void;
 };
 
 const PairingClientsList = memo(function PairingClientsList({
@@ -1076,22 +1144,40 @@ const PairingClientsList = memo(function PairingClientsList({
   defaultEndpointKey,
   presentation = "current",
   isLoading,
+  issuedPairingCredential,
   pairingLinks,
   clientSessions,
   revokingPairingLinkId,
   revokingClientSessionId,
   onRevokePairingLink,
   onRevokeClientSession,
+  onDismissPairingCredential,
 }: PairingClientsListProps) {
+  const visiblePairingLinks = useMemo(
+    () =>
+      issuedPairingCredential === null
+        ? pairingLinks
+        : pairingLinks.filter((pairingLink) => pairingLink.id !== issuedPairingCredential.id),
+    [issuedPairingCredential, pairingLinks],
+  );
+
   return (
     <>
-      {pairingLinks.map((pairingLink) => (
-        <PairingLinkListRow
-          key={pairingLink.id}
-          pairingLink={pairingLink}
+      {issuedPairingCredential ? (
+        <IssuedPairingCredentialRow
+          pairingCredential={issuedPairingCredential}
           endpointUrl={endpointUrl}
           endpoints={endpoints}
           defaultEndpointKey={defaultEndpointKey}
+          presentation={presentation}
+          onDismiss={onDismissPairingCredential}
+        />
+      ) : null}
+
+      {visiblePairingLinks.map((pairingLink) => (
+        <PairingLinkListRow
+          key={pairingLink.id}
+          pairingLink={pairingLink}
           presentation={presentation}
           revokingPairingLinkId={revokingPairingLinkId}
           onRevoke={onRevokePairingLink}
@@ -1108,7 +1194,10 @@ const PairingClientsList = memo(function PairingClientsList({
         />
       ))}
 
-      {pairingLinks.length === 0 && clientSessions.length === 0 && !isLoading ? (
+      {issuedPairingCredential === null &&
+      pairingLinks.length === 0 &&
+      clientSessions.length === 0 &&
+      !isLoading ? (
         <div className={accessRowClassName(presentation)}>
           <p className="text-xs text-muted-foreground/60">No pairing links or client sessions.</p>
         </div>
@@ -1455,6 +1544,8 @@ export function ConnectionsSettings() {
   const [desktopPairingLinks, setDesktopPairingLinks] = useState<
     ReadonlyArray<ServerPairingLinkRecord>
   >([]);
+  const [issuedDesktopPairingCredential, setIssuedDesktopPairingCredential] =
+    useState<IssuedPairingCredentialRecord | null>(null);
   const [desktopClientSessions, setDesktopClientSessions] = useState<
     ReadonlyArray<ServerClientSessionRecord>
   >([]);
@@ -1652,6 +1743,7 @@ export function ConnectionsSettings() {
     setDesktopAccessManagementError(null);
     try {
       await revokeServerPairingLink(id);
+      setIssuedDesktopPairingCredential((current) => (current?.id === id ? null : current));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to revoke pairing link.";
       setDesktopAccessManagementError(message);
@@ -1666,6 +1758,17 @@ export function ConnectionsSettings() {
       setRevokingDesktopPairingLinkId(null);
     }
   }, []);
+
+  const handleDesktopPairingCredentialCreated = useCallback(
+    (credential: ServerIssuedPairingCredentialRecord) => {
+      setIssuedDesktopPairingCredential({
+        ...credential,
+        createdAt: new Date().toISOString(),
+        role: "client",
+      });
+    },
+    [],
+  );
 
   const handleRevokeDesktopClientSession = useCallback(
     async (sessionId: ServerClientSessionRecord["sessionId"]) => {
@@ -1994,6 +2097,9 @@ export function ConnectionsSettings() {
               setDesktopPairingLinks((current) =>
                 removeDesktopPairingLink(current, event.payload.id),
               );
+              setIssuedDesktopPairingCredential((current) =>
+                current?.id === event.payload.id ? null : current,
+              );
               break;
             case "clientUpserted":
               setDesktopClientSessions((current) =>
@@ -2058,6 +2164,7 @@ export function ConnectionsSettings() {
   useEffect(() => {
     if (canManageLocalBackend) return;
     setIsLoadingDesktopAccessManagement(false);
+    setIssuedDesktopPairingCredential(null);
     setDesktopPairingLinks([]);
     setDesktopClientSessions([]);
     setDesktopAccessManagementError(null);
@@ -2375,12 +2482,14 @@ export function ConnectionsSettings() {
         defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
         presentation={presentation}
         isLoading={isLoadingDesktopAccessManagement}
+        issuedPairingCredential={issuedDesktopPairingCredential}
         pairingLinks={visibleDesktopPairingLinks}
         clientSessions={desktopClientSessions}
         revokingPairingLinkId={revokingDesktopPairingLinkId}
         revokingClientSessionId={revokingDesktopClientSessionId}
         onRevokePairingLink={handleRevokeDesktopPairingLink}
         onRevokeClientSession={handleRevokeDesktopClientSession}
+        onDismissPairingCredential={() => setIssuedDesktopPairingCredential(null)}
       />
     </>
   );
@@ -2482,6 +2591,7 @@ export function ConnectionsSettings() {
                 <AuthorizedClientsHeaderAction
                   clientSessions={desktopClientSessions}
                   isRevokingOtherClients={isRevokingOtherDesktopClients}
+                  onPairingCredentialCreated={handleDesktopPairingCredentialCreated}
                   onRevokeOtherClients={handleRevokeOtherDesktopClients}
                 />
               }

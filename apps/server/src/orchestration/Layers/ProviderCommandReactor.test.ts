@@ -18,6 +18,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  QueuedMessageId,
   TaskId,
   TaskTypeId,
   ThreadId,
@@ -542,6 +543,50 @@ describe("ProviderCommandReactor", () => {
       summary: "Provider started turn",
       payload: { delivery: "started" },
     });
+  });
+
+  it("settles a successfully delivered durable queued-message attempt", async () => {
+    const harness = await createHarness({ turnDelivery: "started" });
+    const now = "2026-08-30T12:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.queue.enqueue",
+        commandId: CommandId.make("cmd-queue-enqueue-reactor"),
+        threadId: ThreadId.make("thread-1"),
+        queueItemId: QueuedMessageId.make("queue-reactor"),
+        message: {
+          messageId: MessageId.make("message-queue-reactor"),
+          text: "later",
+          attachments: [],
+        },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        gedWorkflowEnabled: true,
+        runtimeMode: "approval-required",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        createdAt: now,
+      }),
+    );
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.queue.dispatch",
+        commandId: CommandId.make("cmd-queue-dispatch-reactor"),
+        threadId: ThreadId.make("thread-1"),
+        queueItemId: QueuedMessageId.make("queue-reactor"),
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await waitFor(async () => {
+      const snapshot = await harness.readModel();
+      return (
+        snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.queuedMessages
+          ?.length === 0
+      );
+    });
+    await harness.drain();
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.queuedMessages).toEqual([]);
   });
 
   it("does not promote regular chat threads when full-access workers are globally enabled", async () => {

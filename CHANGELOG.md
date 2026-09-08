@@ -8,6 +8,58 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 - Fix/Release: Update Bun workspace version metadata directly during stable finalization so the
   published version is recorded without platform-dependent lockfile regeneration.
 
+- Security: Store pairing credentials only as one-way digests, reveal newly issued credentials
+  once, and remove legacy plaintext credentials from the live SQLite database, WAL, and retained
+  migration backups. Pairing-link listings and access streams now expose metadata only.
+
+- Security: Tie authenticated WebSocket lifetimes to session revocation and expiry, restrict access
+  management streams to owners, buffer live updates before snapshot reads, sanitize uploaded and
+  legacy SVGs, serve private assets with hardened response headers, constrain project favicons to
+  registered project roots, bound and redact SSH failures, and cap rejected browser telemetry by
+  body size and trace cardinality without leaking its payload into logs.
+
+- Security/Desktop: Restrict top-level navigation and redirects to the configured GedCode document
+  origin, validate IPC callers by frame and origin, and remove the unused privileged `t3://` static
+  protocol path.
+
+- Fix/Reliability: Bind orchestration command IDs to canonical content fingerprints so exact retries
+  stay idempotent while conflicting reuse fails before appending events. Bound replay pages to 1,000
+  events and preserve cursor-based pagination; historical receipts intentionally fail closed because
+  their original command content cannot be reconstructed.
+
+- Fix/Reliability: Make saved-environment corruption explicit, serialize secret and browser-state
+  writes, and keep hydration retryable instead of silently replacing unreadable persisted state.
+
+- Fix/Reliability: Bound provider runtime fan-out and worker queues, coalesce full-state
+  configuration feeds to the newest snapshot, and bound scoped authentication update streams so a
+  stalled subscriber cannot grow memory indefinitely or block unrelated publishers.
+
+- Change/Chat: Move queued normal-chat messages from browser-local draft state to the durable,
+  server-authoritative thread model. Queue entries preserve their send settings and attachments,
+  recover predictably after interruption or restart, and remain failed until an explicit retry.
+  Existing browser-local queued entries are intentionally not migrated; ordinary unsent drafts are
+  preserved.
+
+- Change/Orchestrator: Remove the withdrawn Inbox lifecycle commands, events, reconciliation path,
+  projection fields, and UI state. The forward migration removes obsolete projection columns,
+  purges retired lifecycle events, and recompacts each affected event stream so supported `v0.4.4`
+  histories still decode through the current event store.
+
+- Change/Compatibility: Set the supported upgrade floor to `v0.4.4` and remove pre-GedCode
+  `~/.t3` imports plus legacy T3 Electron user-data directory selection. Older immutable fixtures
+  remain as non-contractual migration regression coverage until an exact `v0.4.4` baseline can be
+  recorded.
+
+- Performance/Web: Reuse normalized collection and cross-environment selector results across
+  unrelated state updates, and extract terminal and local-dispatch behavior from the main chat view
+  to reduce repeated derivation and make the component easier to maintain.
+
+- Maintenance: Consolidate current architecture guidance under `docs/`, remove superseded planning
+  archives and completed Ged runtime work records, and drop unused direct runtime dependencies while
+  retaining published migration history and active work state. Remove the unwired ACP package and
+  mock runtime left behind by the retired Cursor provider, and serialize the workspace TSGo wrapper
+  to eliminate nondeterministic parallel module-resolution failures.
+
 ## 0.4.4 - 2026-08-28
 
 - Change/Orchestrator: Retire the dedicated release task, approval gate, and workflow-dispatch

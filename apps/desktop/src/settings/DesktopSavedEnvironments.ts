@@ -12,6 +12,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
@@ -81,6 +82,16 @@ export class DesktopSavedEnvironmentsWriteError extends Data.TaggedError(
   }
 }
 
+export class DesktopSavedEnvironmentsReadError extends Data.TaggedError(
+  "DesktopSavedEnvironmentsReadError",
+)<{
+  readonly cause: PlatformError.PlatformError | Schema.SchemaError;
+}> {
+  override get message() {
+    return `Failed to read desktop saved environments: ${this.cause.message}`;
+  }
+}
+
 export class DesktopSavedEnvironmentSecretDecodeError extends Data.TaggedError(
   "DesktopSavedEnvironmentSecretDecodeError",
 )<{
@@ -92,20 +103,25 @@ export class DesktopSavedEnvironmentSecretDecodeError extends Data.TaggedError(
 }
 
 export type DesktopSavedEnvironmentsGetSecretError =
+  | DesktopSavedEnvironmentsReadError
   | DesktopSavedEnvironmentSecretDecodeError
   | ElectronSafeStorage.ElectronSafeStorageAvailabilityError
   | ElectronSafeStorage.ElectronSafeStorageDecryptError;
 
 export type DesktopSavedEnvironmentsSetSecretError =
+  | DesktopSavedEnvironmentsReadError
   | DesktopSavedEnvironmentsWriteError
   | ElectronSafeStorage.ElectronSafeStorageAvailabilityError
   | ElectronSafeStorage.ElectronSafeStorageEncryptError;
 
 export interface DesktopSavedEnvironmentsShape {
-  readonly getRegistry: Effect.Effect<readonly PersistedSavedEnvironmentRecord[]>;
+  readonly getRegistry: Effect.Effect<
+    readonly PersistedSavedEnvironmentRecord[],
+    DesktopSavedEnvironmentsReadError
+  >;
   readonly setRegistry: (
     records: readonly PersistedSavedEnvironmentRecord[],
-  ) => Effect.Effect<void, DesktopSavedEnvironmentsWriteError>;
+  ) => Effect.Effect<void, DesktopSavedEnvironmentsReadError | DesktopSavedEnvironmentsWriteError>;
   readonly getSecret: (
     environmentId: string,
   ) => Effect.Effect<Option.Option<string>, DesktopSavedEnvironmentsGetSecretError>;
@@ -115,7 +131,7 @@ export interface DesktopSavedEnvironmentsShape {
   }) => Effect.Effect<boolean, DesktopSavedEnvironmentsSetSecretError>;
   readonly removeSecret: (
     environmentId: string,
-  ) => Effect.Effect<void, DesktopSavedEnvironmentsWriteError>;
+  ) => Effect.Effect<void, DesktopSavedEnvironmentsReadError | DesktopSavedEnvironmentsWriteError>;
 }
 
 export class DesktopSavedEnvironments extends Context.Service<
@@ -178,16 +194,21 @@ function normalizeSavedEnvironmentRegistryDocument(
 function readRegistryDocument(
   fileSystem: FileSystem.FileSystem,
   registryPath: string,
-): Effect.Effect<SavedEnvironmentRegistryDocument> {
+): Effect.Effect<SavedEnvironmentRegistryDocument, DesktopSavedEnvironmentsReadError> {
   return fileSystem.readFileString(registryPath).pipe(
-    Effect.option,
+    Effect.map(Option.some),
+    Effect.catch((cause) =>
+      cause.reason._tag === "NotFound"
+        ? Effect.succeed(Option.none<string>())
+        : Effect.fail(new DesktopSavedEnvironmentsReadError({ cause })),
+    ),
     Effect.flatMap(
       Option.match({
         onNone: () => Effect.succeed({ version: 1, records: [] }),
         onSome: (raw) =>
           decodeSavedEnvironmentRegistryDocumentJson(raw).pipe(
             Effect.map(normalizeSavedEnvironmentRegistryDocument),
-            Effect.catch(() => Effect.succeed({ version: 1, records: [] })),
+            Effect.mapError((cause) => new DesktopSavedEnvironmentsReadError({ cause })),
           ),
       }),
     ),
@@ -248,6 +269,7 @@ export const layer = Layer.effect(
     const path = yield* Path.Path;
     const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
     const crypto = yield* Crypto.Crypto;
+    const mutationSemaphore = yield* Semaphore.make(1);
 
     const writeDocument = (document: SavedEnvironmentRegistryDocument) =>
       crypto.randomUUIDv4.pipe(
@@ -271,13 +293,17 @@ export const layer = Layer.effect(
         ),
         Effect.withSpan("desktop.savedEnvironments.getRegistry"),
       ),
-      setRegistry: Effect.fn("desktop.savedEnvironments.setRegistry")(function* (records) {
-        const currentDocument = yield* readRegistryDocument(
-          fileSystem,
-          environment.savedEnvironmentRegistryPath,
-        );
-        yield* writeDocument(preserveExistingSecrets(currentDocument, records));
-      }),
+      setRegistry: Effect.fn("desktop.savedEnvironments.setRegistry")((records) =>
+        mutationSemaphore.withPermits(1)(
+          Effect.gen(function* () {
+            const currentDocument = yield* readRegistryDocument(
+              fileSystem,
+              environment.savedEnvironmentRegistryPath,
+            );
+            yield* writeDocument(preserveExistingSecrets(currentDocument, records));
+          }),
+        ),
+      ),
       getSecret: Effect.fn("desktop.savedEnvironments.getSecret")(function* (environmentId) {
         yield* Effect.annotateCurrentSpan({ environmentId });
         const document = yield* readRegistryDocument(
@@ -295,64 +321,73 @@ export const layer = Layer.effect(
         const secretBytes = yield* decodeSecretBytes(encoded.value);
         return Option.some(yield* safeStorage.decryptString(secretBytes));
       }),
-      setSecret: Effect.fn("desktop.savedEnvironments.setSecret")(function* (input) {
-        const { environmentId, secret } = input;
-        yield* Effect.annotateCurrentSpan({ environmentId });
-        const document = yield* readRegistryDocument(
-          fileSystem,
-          environment.savedEnvironmentRegistryPath,
-        );
+      setSecret: Effect.fn("desktop.savedEnvironments.setSecret")((input) =>
+        mutationSemaphore.withPermits(1)(
+          Effect.gen(function* () {
+            const { environmentId, secret } = input;
+            yield* Effect.annotateCurrentSpan({ environmentId });
+            const document = yield* readRegistryDocument(
+              fileSystem,
+              environment.savedEnvironmentRegistryPath,
+            );
 
-        if (!(yield* safeStorage.isEncryptionAvailable)) {
-          return false;
-        }
-
-        const encryptedBearerToken = Encoding.encodeBase64(
-          yield* safeStorage.encryptString(secret),
-        );
-        let found = false;
-        const nextDocument: SavedEnvironmentRegistryDocument = {
-          version: document.version,
-          records: document.records.map((record) => {
-            if (record.environmentId !== environmentId) {
-              return record;
+            if (!(yield* safeStorage.isEncryptionAvailable)) {
+              return false;
             }
 
-            found = true;
-            return toSavedEnvironmentStorageRecord(record, Option.some(encryptedBearerToken));
-          }),
-        };
+            const encryptedBearerToken = Encoding.encodeBase64(
+              yield* safeStorage.encryptString(secret),
+            );
+            let found = false;
+            const nextDocument: SavedEnvironmentRegistryDocument = {
+              version: document.version,
+              records: document.records.map((record) => {
+                if (record.environmentId !== environmentId) {
+                  return record;
+                }
 
-        if (found) {
-          yield* writeDocument(nextDocument);
-        }
-        return found;
-      }),
-      removeSecret: Effect.fn("desktop.savedEnvironments.removeSecret")(function* (environmentId) {
-        yield* Effect.annotateCurrentSpan({ environmentId });
-        const document = yield* readRegistryDocument(
-          fileSystem,
-          environment.savedEnvironmentRegistryPath,
-        );
-        if (
-          !document.records.some(
-            (record) =>
-              record.environmentId === environmentId && record.encryptedBearerToken !== undefined,
-          )
-        ) {
-          return;
-        }
+                found = true;
+                return toSavedEnvironmentStorageRecord(record, Option.some(encryptedBearerToken));
+              }),
+            };
 
-        yield* writeDocument({
-          version: document.version,
-          records: document.records.map((record) => {
-            if (record.environmentId !== environmentId) {
-              return record;
+            if (found) {
+              yield* writeDocument(nextDocument);
             }
-            return toPersistedSavedEnvironmentRecord(record);
+            return found;
           }),
-        });
-      }),
+        ),
+      ),
+      removeSecret: Effect.fn("desktop.savedEnvironments.removeSecret")((environmentId) =>
+        mutationSemaphore.withPermits(1)(
+          Effect.gen(function* () {
+            yield* Effect.annotateCurrentSpan({ environmentId });
+            const document = yield* readRegistryDocument(
+              fileSystem,
+              environment.savedEnvironmentRegistryPath,
+            );
+            if (
+              !document.records.some(
+                (record) =>
+                  record.environmentId === environmentId &&
+                  record.encryptedBearerToken !== undefined,
+              )
+            ) {
+              return;
+            }
+
+            yield* writeDocument({
+              version: document.version,
+              records: document.records.map((record) => {
+                if (record.environmentId !== environmentId) {
+                  return record;
+                }
+                return toPersistedSavedEnvironmentRecord(record);
+              }),
+            });
+          }),
+        ),
+      ),
     });
   }),
 );

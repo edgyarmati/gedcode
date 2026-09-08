@@ -46,8 +46,22 @@ it.effect(
       assertTrue(Option.isSome(ready));
       assert.equal(ready.value.sequence, 2);
 
+      const replacedWelcome = yield* lifecycleEvents.publish({
+        version: 1,
+        type: "welcome",
+        payload: {
+          environment,
+          cwd: "/tmp/bootstrapped-project",
+          projectName: "bootstrapped-project",
+        },
+      });
+      assert.equal(replacedWelcome.sequence, 3);
+
       const snapshot = yield* lifecycleEvents.snapshot;
-      assert.equal(snapshot.sequence, 2);
+      assert.equal(snapshot.sequence, 3);
+      assert.equal(snapshot.events.length, 2);
       assert.deepEqual(snapshot.events.map((event) => event.type).toSorted(), ["ready", "welcome"]);
+      const latestWelcome = snapshot.events.find((event) => event.type === "welcome");
+      assert.equal(latestWelcome?.payload.cwd, "/tmp/bootstrapped-project");
     }).pipe(Effect.provide(ServerLifecycleEventsLive)),
 );

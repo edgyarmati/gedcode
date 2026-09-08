@@ -34,11 +34,13 @@ import { withBusyRetry } from "../../persistence/retryPolicy.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
+  OrchestrationCommandIdConflictError,
   OrchestrationCommandInvariantError,
   OrchestrationCommandPreviouslyRejectedError,
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
+import { fingerprintOrchestrationCommand } from "../commandFingerprint.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
@@ -161,6 +163,10 @@ export function classifyOrchestrationCommand(
     case "thread.activity.append":
       return "streaming";
     case "thread.turn.start":
+    case "thread.queue.dispatch":
+    case "thread.queue.auto-dispatch":
+    case "thread.queue.dispatch.succeed":
+    case "thread.queue.dispatch.fail":
     case "thread.turn.interrupt":
     case "thread.turn.diff.complete":
     case "thread.approval.respond":
@@ -173,15 +179,15 @@ export function classifyOrchestrationCommand(
     case "thread.delete":
     case "thread.archive":
     case "thread.unarchive":
-    case "thread.inbox.settle":
-    case "thread.inbox.snooze":
-    case "thread.inbox.reopen":
-    case "thread.inbox.wake-due":
     case "thread.meta.update":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
     case "thread.session.set":
     case "thread.session.stop":
+    case "thread.queue.enqueue":
+    case "thread.queue.edit":
+    case "thread.queue.delete":
+    case "thread.queue.preference.set":
       return "thread-control";
     default: {
       // Exhaustiveness guard: a new command type must be classified above.
@@ -203,11 +209,6 @@ function commandToAggregateRef(command: OrchestrationCommand): {
       return {
         aggregateKind: "project",
         aggregateId: command.projectId,
-      };
-    case "thread.inbox.wake-due":
-      return {
-        aggregateKind: "thread",
-        aggregateId: command.threadId ?? ThreadId.make("inbox:wake-due"),
       };
     case "project.context.run.request":
     case "project.context.run.prepare-start":
@@ -388,6 +389,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
     let processingStartedAtMs = 0;
     const aggregateRef = commandToAggregateRef(envelope.command);
+    const commandFingerprint = fingerprintOrchestrationCommand(envelope.command);
     const commandClass = classifyOrchestrationCommand(envelope.command);
     const baseMetricAttributes = {
       commandType: envelope.command.type,
@@ -428,11 +430,15 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           "orchestration.aggregate_kind": aggregateRef.aggregateKind,
           "orchestration.aggregate_id": aggregateRef.aggregateId,
         });
-
         const existingReceipt = yield* commandReceiptRepository.getByCommandId({
           commandId: envelope.command.commandId,
         });
         if (Option.isSome(existingReceipt)) {
+          if (existingReceipt.value.commandFingerprint !== commandFingerprint) {
+            return yield* new OrchestrationCommandIdConflictError({
+              commandId: envelope.command.commandId,
+            });
+          }
           if (existingReceipt.value.status === "accepted") {
             return {
               sequence: existingReceipt.value.resultSequence,
@@ -485,6 +491,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
               yield* commandReceiptRepository.upsert({
                 commandId: envelope.command.commandId,
+                commandFingerprint,
                 aggregateKind: lastSavedEvent.aggregateKind,
                 aggregateId: lastSavedEvent.aggregateId,
                 acceptedAt: lastSavedEvent.occurredAt,
@@ -576,6 +583,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               yield* commandReceiptRepository
                 .upsert({
                   commandId: envelope.command.commandId,
+                  commandFingerprint,
                   aggregateKind: aggregateRef.aggregateKind,
                   aggregateId: aggregateRef.aggregateId,
                   acceptedAt: yield* nowIso,

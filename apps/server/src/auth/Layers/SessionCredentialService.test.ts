@@ -1,8 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import type { ServerConfigShape } from "../../config.ts";
@@ -101,6 +104,27 @@ it.layer(NodeServices.layer)("SessionCredentialServiceLive", (it) => {
     }).pipe(Effect.provide(Layer.merge(makeSessionCredentialLayer(), TestClock.layer()))),
   );
 
+  it.effect("notifies active connection waiters when the parent session expires", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionCredentialService;
+      const issued = yield* sessions.issue({
+        method: "bearer-session-token",
+        subject: "short-lived-connection",
+        ttl: Duration.seconds(1),
+      });
+      const invalidation = yield* sessions
+        .awaitInvalidation(issued.sessionId)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+
+      yield* TestClock.adjust(Duration.millis(999));
+      expect(invalidation.pollUnsafe()).toBeUndefined();
+
+      yield* TestClock.adjust(Duration.millis(1));
+      yield* Fiber.join(invalidation);
+      expect(invalidation.pollUnsafe()).toBeDefined();
+    }).pipe(Effect.provide(Layer.merge(makeSessionCredentialLayer(), TestClock.layer()))),
+  );
+
   it.effect("lists active sessions, tracks connectivity, and revokes other sessions", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionCredentialService;
@@ -189,5 +213,51 @@ it.layer(NodeServices.layer)("SessionCredentialServiceLive", (it) => {
       expect(afterReconnect[0]?.lastConnectedAt).not.toBeNull();
       expect(afterReconnect[0]?.lastConnectedAt?.toString()).not.toBe(firstConnectedAt?.toString());
     }).pipe(Effect.provide(Layer.merge(makeSessionCredentialLayer(), TestClock.layer()))),
+  );
+
+  it.effect("backpressures ordered session changes while auth snapshot delivery is blocked", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionCredentialService;
+      const subscription = yield* sessions.subscribeChanges;
+      const releaseSnapshot = yield* Deferred.make<void>();
+      const changeCount = 257;
+
+      const changesFiber = yield* Deferred.await(releaseSnapshot).pipe(
+        Effect.andThen(
+          Stream.fromSubscription(subscription).pipe(Stream.take(changeCount), Stream.runCollect),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      const producerFiber = yield* Effect.forEach(
+        Array.from({ length: changeCount }, (_, index) => index),
+        (index) =>
+          sessions.issue({
+            subject: `snapshot-blocked-${index}`,
+            client: {
+              label: `Client ${index}`,
+              deviceType: "unknown",
+            },
+          }),
+        { discard: true },
+      ).pipe(Effect.forkScoped({ startImmediately: true }));
+
+      while ((yield* sessions.listActive()).length < changeCount) {
+        yield* Effect.yieldNow;
+      }
+      yield* Effect.yieldNow;
+
+      expect(producerFiber.pollUnsafe()).toBeUndefined();
+
+      yield* Deferred.succeed(releaseSnapshot, undefined);
+      yield* Fiber.join(producerFiber);
+      const changes = Array.from(yield* Fiber.join(changesFiber));
+
+      expect(changes).toHaveLength(changeCount);
+      expect(
+        changes.map((change) =>
+          change.type === "clientUpserted" ? change.clientSession.client.label : null,
+        ),
+      ).toEqual(Array.from({ length: changeCount }, (_, index) => `Client ${index}`));
+    }).pipe(Effect.provide(makeSessionCredentialLayer())),
   );
 });

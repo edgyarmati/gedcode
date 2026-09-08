@@ -4,6 +4,8 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as PubSub from "effect/PubSub";
+import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
 export type BootstrapCredentialRole = "owner" | "client";
@@ -51,6 +53,15 @@ export interface BootstrapCredentialServiceShape {
     BootstrapCredentialError
   >;
   readonly streamChanges: Stream.Stream<BootstrapCredentialChange>;
+  /**
+   * Acquire the bounded change subscription before loading an auth-access snapshot.
+   * Publishers backpressure when the subscriber falls 256 changes behind.
+   */
+  readonly subscribeChanges: Effect.Effect<
+    PubSub.Subscription<BootstrapCredentialChange>,
+    never,
+    Scope.Scope
+  >;
   readonly revoke: (id: string) => Effect.Effect<boolean, BootstrapCredentialError>;
   readonly consume: (credential: string) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
 }

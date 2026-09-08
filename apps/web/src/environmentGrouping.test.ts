@@ -469,6 +469,18 @@ describe("environment grouping", () => {
       const names = projects.map((p) => p.name).toSorted();
       expect(names).toEqual(["local-only", "remote-only", "shared-repo", "shared-repo"]);
     });
+
+    it("keeps a stable result across unrelated app-state updates", () => {
+      const state = makeFixtureState();
+      const first = selectProjectsAcrossEnvironments(state);
+
+      expect(
+        selectProjectsAcrossEnvironments({
+          ...state,
+          activeEnvironmentId: remoteEnvId,
+        }),
+      ).toBe(first);
+    });
   });
 
   describe("selectSidebarThreadsAcrossEnvironments", () => {
@@ -482,6 +494,18 @@ describe("environment grouping", () => {
       expect(ids).toContain(threadR1);
       expect(ids).toContain(threadL1);
       expect(ids).toContain(threadRO1);
+    });
+
+    it("keeps a stable result when normalized sidebar slices are unchanged", () => {
+      const state = makeFixtureState();
+      const first = selectSidebarThreadsAcrossEnvironments(state);
+
+      expect(
+        selectSidebarThreadsAcrossEnvironments({
+          ...state,
+          activeEnvironmentId: remoteEnvId,
+        }),
+      ).toBe(first);
     });
   });
 

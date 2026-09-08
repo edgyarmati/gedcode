@@ -1,12 +1,27 @@
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
-export interface DesktopIpcInvokeEvent {}
+import type * as Electron from "electron";
 
-export interface DesktopIpcSyncEvent {
+import type { DesktopDocumentSecurityShape } from "../window/DesktopDocumentSecurity.ts";
+
+export type DesktopIpcInvokeEvent = Pick<Electron.IpcMainInvokeEvent, "sender" | "senderFrame">;
+
+export type DesktopIpcSyncEvent = Pick<Electron.IpcMainEvent, "sender" | "senderFrame"> & {
   returnValue: unknown;
+};
+
+export class DesktopIpcUnauthorizedSenderError extends Data.TaggedError(
+  "DesktopIpcUnauthorizedSenderError",
+)<{
+  readonly channel: string;
+}> {
+  override get message() {
+    return `Rejected unauthorized desktop IPC sender for ${this.channel}.`;
+  }
 }
 
 export type DesktopIpcHandleListener = (
@@ -46,7 +61,10 @@ export class DesktopIpc extends Context.Service<DesktopIpc, DesktopIpcShape>()(
   "@t3tools/desktop/ipc/DesktopIpc",
 ) {}
 
-export const make = (ipcMain: DesktopIpcMain): DesktopIpcShape =>
+export const make = (
+  ipcMain: DesktopIpcMain,
+  security: DesktopDocumentSecurityShape,
+): DesktopIpcShape =>
   DesktopIpc.of({
     handle: Effect.fn("desktop.ipc.registerInvoke")(function* <E, R>({
       channel,
@@ -59,10 +77,13 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpcShape =>
       yield* Effect.acquireRelease(
         Effect.sync(() => {
           ipcMain.removeHandler(channel);
-          ipcMain.handle(channel, (_event, raw) =>
+          ipcMain.handle(channel, (event, raw) =>
             runPromise(
               Effect.gen(function* () {
                 yield* Effect.annotateCurrentSpan({ channel });
+                if (!security.isTrustedIpcEvent(event)) {
+                  return yield* new DesktopIpcUnauthorizedSenderError({ channel });
+                }
                 return yield* handler(raw);
               }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
             ),
@@ -87,6 +108,9 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpcShape =>
             event.returnValue = runSync(
               Effect.gen(function* () {
                 yield* Effect.annotateCurrentSpan({ channel });
+                if (!security.isTrustedIpcEvent(event)) {
+                  return yield* new DesktopIpcUnauthorizedSenderError({ channel });
+                }
                 return yield* handler();
               }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invokeSync")),
             );

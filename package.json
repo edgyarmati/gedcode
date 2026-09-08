@@ -40,7 +40,7 @@
     "start:mock-update-server": "node scripts/mock-update-server.ts",
     "build": "turbo run build",
     "build:desktop": "turbo run build --filter=@t3tools/desktop --filter=gedcode",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck --concurrency=1",
     "lint": "oxlint --report-unused-disable-directives",
     "test": "turbo run test",
     "test:coverage": "turbo run test -- --coverage",

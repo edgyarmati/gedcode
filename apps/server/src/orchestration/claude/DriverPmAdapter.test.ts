@@ -28,6 +28,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import { PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY } from "../../provider/ProviderRuntimeEventBuffer.ts";
 import {
   ProviderSessionDirectory,
   type ProviderRuntimeBinding,
@@ -200,6 +201,75 @@ const collectBridgedEvents = (
   });
 
 describe("DriverPmAdapter", () => {
+  it.effect(
+    "backpressures provider events when its PM event consumer stalls and preserves FIFO",
+    () =>
+      Effect.gen(function* () {
+        const runtimeEvents = yield* Queue.bounded<ProviderRuntimeEvent>(1);
+        const threadId = pmThreadIdForProject(project);
+        const providerAdapter: DriverPmProviderAdapter = {
+          provider,
+          startSession: () => Effect.succeed(providerSession(threadId)),
+          sendTurn: () => Effect.succeed({ threadId, turnId: TurnId.make("turn-backpressure") }),
+          interruptTurn: () => Effect.void,
+          stopSession: () => Effect.void,
+          listSessions: () => Effect.succeed([]),
+          hasSession: () => Effect.succeed(true),
+        };
+        const adapter = yield* makeDriverPmAdapter({
+          project,
+          driverKind: provider,
+          providerAdapter,
+          runtimeEvents: Stream.fromQueue(runtimeEvents),
+          modelSelection,
+        }).pipe(Effect.provide(emptyDirectoryLayer));
+
+        const totalEvents = PROVIDER_RUNTIME_EVENT_BUFFER_CAPACITY + 3;
+        const events = Array.from({ length: totalEvents }, (_, index) =>
+          makeEvent({
+            eventId: `event-pm-backpressure-${index}`,
+            type: "request.resolved",
+            requestId: RuntimeRequestId.make(`request-pm-backpressure-${index}`),
+            payload: {
+              requestType: "command_execution_approval",
+              decision: "accept",
+            },
+          }),
+        );
+        const finalOfferStarted = yield* Deferred.make<void>();
+        const producer = yield* Effect.forEach(
+          events,
+          (event, index) =>
+            (index === totalEvents - 1
+              ? Deferred.succeed(finalOfferStarted, undefined)
+              : Effect.void
+            ).pipe(Effect.andThen(Queue.offer(runtimeEvents, event))),
+          { concurrency: 1, discard: true },
+        ).pipe(Effect.forkChild);
+
+        yield* Deferred.await(finalOfferStarted);
+        yield* TestClock.adjust("50 millis");
+        yield* Effect.yieldNow;
+        assert.isUndefined(producer.pollUnsafe());
+
+        const bridgedEvents = yield* Stream.take(adapter.events, totalEvents).pipe(
+          Stream.runCollect,
+          Effect.map((chunk) => Array.from(chunk)),
+          Effect.forkChild,
+        );
+        yield* Fiber.join(producer);
+        const received = yield* Fiber.join(bridgedEvents);
+        yield* adapter.abort;
+
+        assert.deepEqual(
+          received.map((event) =>
+            event.type === "provider_runtime_approval_resolved" ? event.event.eventId : undefined,
+          ),
+          events.map((event) => event.eventId),
+        );
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("tracks trusted orchestration tool use per turn and resets on the next turn", () =>
     Effect.gen(function* () {
       const runtimeEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();

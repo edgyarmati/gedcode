@@ -25,24 +25,25 @@ it("formats issued pairing credentials with the secret and optional pair URL", (
   expect(output).toContain("https://example.com/pair#token=secret-pairing-token");
 });
 
-it("formats pairing listings without exposing the secret token", () => {
-  const output = formatPairingCredentialList(
-    [
-      {
-        id: "pairing-1",
-        credential: "secret-pairing-token",
-        subject: "one-time-token",
-        label: "Phone",
-        role: "client",
-        createdAt: DateTime.makeUnsafe("2026-04-08T09:00:00.000Z"),
-        expiresAt: DateTime.makeUnsafe("2026-04-08T10:00:00.000Z"),
-      },
-    ],
-    { json: false },
-  );
+it("formats pairing listings without credential or digest fields", () => {
+  const pairingLinks = [
+    {
+      id: "pairing-1",
+      subject: "one-time-token",
+      label: "Phone",
+      role: "client" as const,
+      createdAt: DateTime.makeUnsafe("2026-04-08T09:00:00.000Z"),
+      expiresAt: DateTime.makeUnsafe("2026-04-08T10:00:00.000Z"),
+    },
+  ];
+  const output = formatPairingCredentialList(pairingLinks, { json: false });
+  const jsonOutput = formatPairingCredentialList(pairingLinks, { json: true });
 
   expect(output).toContain("pairing-1");
-  expect(output).not.toContain("secret-pairing-token");
+  expect(output).not.toContain("credential");
+  expect(output).not.toContain("digest");
+  expect(jsonOutput).not.toContain("credential");
+  expect(jsonOutput).not.toContain("digest");
 });
 
 it("formats issued sessions with the bearer token but omits tokens from listings", () => {

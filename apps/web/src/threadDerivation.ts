@@ -9,6 +9,7 @@ import type {
   ThreadTurnState,
   TurnDiffSummary,
 } from "./types";
+import { collectOrderedRecordValues } from "./storeCollection";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_ACTIVITIES: Thread["activities"] = [];
@@ -19,7 +20,6 @@ const EMPTY_ACTIVITY_MAP: Record<string, Thread["activities"][number]> = {};
 const EMPTY_PROPOSED_PLAN_MAP: Record<string, ProposedPlan> = {};
 const EMPTY_TURN_DIFF_MAP: Record<TurnId, TurnDiffSummary> = {};
 
-const collectedByIdsCache = new WeakMap<readonly string[], WeakMap<object, readonly unknown[]>>();
 const threadCache = new WeakMap<
   ThreadShell,
   {
@@ -33,35 +33,8 @@ const threadCache = new WeakMap<
   }
 >();
 
-function collectByIds<TKey extends string, TValue>(
-  ids: readonly TKey[] | undefined,
-  byId: Record<TKey, TValue> | undefined,
-  emptyValue: TValue[],
-): TValue[] {
-  if (!ids || ids.length === 0 || !byId) {
-    return emptyValue;
-  }
-
-  const cachedByRecord = collectedByIdsCache.get(ids);
-  const cached = cachedByRecord?.get(byId);
-  if (cached) {
-    return cached as TValue[];
-  }
-
-  const nextValues = ids.flatMap((id) => {
-    const value = byId[id];
-    return value ? [value] : [];
-  });
-  const nextCachedByRecord = cachedByRecord ?? new WeakMap<object, readonly unknown[]>();
-  nextCachedByRecord.set(byId, nextValues);
-  if (!cachedByRecord) {
-    collectedByIdsCache.set(ids, nextCachedByRecord);
-  }
-  return nextValues;
-}
-
 function selectThreadMessages(state: EnvironmentState, threadId: ThreadId): Thread["messages"] {
-  return collectByIds(
+  return collectOrderedRecordValues(
     state.messageIdsByThreadId[threadId],
     state.messageByThreadId[threadId] ?? EMPTY_MESSAGE_MAP,
     EMPTY_MESSAGES,
@@ -69,7 +42,7 @@ function selectThreadMessages(state: EnvironmentState, threadId: ThreadId): Thre
 }
 
 function selectThreadActivities(state: EnvironmentState, threadId: ThreadId): Thread["activities"] {
-  return collectByIds(
+  return collectOrderedRecordValues(
     state.activityIdsByThreadId[threadId],
     state.activityByThreadId[threadId] ?? EMPTY_ACTIVITY_MAP,
     EMPTY_ACTIVITIES,
@@ -80,7 +53,7 @@ function selectThreadProposedPlans(
   state: EnvironmentState,
   threadId: ThreadId,
 ): Thread["proposedPlans"] {
-  return collectByIds(
+  return collectOrderedRecordValues(
     state.proposedPlanIdsByThreadId[threadId],
     state.proposedPlanByThreadId[threadId] ?? EMPTY_PROPOSED_PLAN_MAP,
     EMPTY_PROPOSED_PLANS,
@@ -91,7 +64,7 @@ function selectThreadTurnDiffSummaries(
   state: EnvironmentState,
   threadId: ThreadId,
 ): Thread["turnDiffSummaries"] {
-  return collectByIds(
+  return collectOrderedRecordValues(
     state.turnDiffIdsByThreadId[threadId],
     state.turnDiffSummaryByThreadId[threadId] ?? EMPTY_TURN_DIFF_MAP,
     EMPTY_TURN_DIFF_SUMMARIES,

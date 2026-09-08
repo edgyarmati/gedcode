@@ -2068,7 +2068,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }`}
             />
           )}
-          <ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />
+          <ProjectFavicon environmentId={project.environmentId} projectId={project.id} />
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-xs font-medium text-foreground/90">
               {project.displayName}

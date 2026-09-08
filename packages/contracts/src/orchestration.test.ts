@@ -5,6 +5,8 @@ import * as Schema from "effect/Schema";
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  ORCHESTRATION_REPLAY_EVENTS_DEFAULT_LIMIT,
+  ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT,
   ClientOrchestrationCommand,
   ModelSelection,
   GedRoleModelSelections,
@@ -24,8 +26,11 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationReadModel,
+  OrchestrationReplayEventsInput,
   OrchestrationSession,
   OrchestrationTask,
+  OrchestrationThread,
+  OrchestrationThreadShell,
   OrchestrationTaskRebasePaths,
   OrchestrationTaskRebaseProofKind,
   ProjectCreateCommand,
@@ -60,6 +65,7 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
+const decodeReplayEventsInput = Schema.decodeUnknownEffect(OrchestrationReplayEventsInput);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
 
@@ -78,6 +84,8 @@ const decodeTaskRebaseProofKind = Schema.decodeUnknownEffect(OrchestrationTaskRe
 const encodeOrchestrationCommand = Schema.encodeEffect(OrchestrationCommand);
 const encodeOrchestrationEvent = Schema.encodeEffect(OrchestrationEvent);
 const decodeOrchestrationTask = Schema.decodeUnknownEffect(OrchestrationTask);
+const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
+const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 const encodeOrchestrationTask = Schema.encodeEffect(OrchestrationTask);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
 const decodeRoleModelSelections = Schema.decodeUnknownEffect(GedRoleModelSelections);
@@ -106,6 +114,37 @@ it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
     });
     assert.strictEqual(parsed.fromTurnCount, 1);
     assert.strictEqual(parsed.toTurnCount, 2);
+  }),
+);
+
+it.effect("accepts replay event requests that omit the optional page size", () =>
+  Effect.gen(function* () {
+    const decoded = yield* decodeReplayEventsInput({ fromSequenceExclusive: 42 });
+
+    assert.strictEqual(decoded.fromSequenceExclusive, 42);
+    assert.isUndefined(decoded.limit);
+    assert.isAtMost(
+      ORCHESTRATION_REPLAY_EVENTS_DEFAULT_LIMIT,
+      ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT,
+    );
+  }),
+);
+
+it.effect("rejects replay event page sizes above the public hard maximum", () =>
+  Effect.gen(function* () {
+    const maximum = yield* decodeReplayEventsInput({
+      fromSequenceExclusive: 0,
+      limit: ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT,
+    });
+    const oversized = yield* Effect.exit(
+      decodeReplayEventsInput({
+        fromSequenceExclusive: 0,
+        limit: ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT + 1,
+      }),
+    );
+
+    assert.strictEqual(maximum.limit, ORCHESTRATION_REPLAY_EVENTS_MAX_LIMIT);
+    assert.strictEqual(oversized._tag, "Failure");
   }),
 );
 
@@ -592,6 +631,133 @@ it.effect("decodes thread archive and unarchive commands", () =>
 
     assert.strictEqual(archive.type, "thread.archive");
     assert.strictEqual(unarchive.type, "thread.unarchive");
+  }),
+);
+
+it.effect("rejects withdrawn normal-thread Inbox lifecycle commands", () =>
+  Effect.gen(function* () {
+    const commands = [
+      {
+        type: "thread.inbox.settle",
+        commandId: "cmd-inbox-settle",
+        threadId: "thread-1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "thread.inbox.snooze",
+        commandId: "cmd-inbox-snooze",
+        threadId: "thread-1",
+        wakeAt: "2026-01-02T00:00:00.000Z",
+      },
+      {
+        type: "thread.inbox.reopen",
+        commandId: "cmd-inbox-reopen",
+        threadId: "thread-1",
+      },
+      {
+        type: "thread.inbox.wake-due",
+        commandId: "cmd-inbox-wake-due",
+        threadId: "thread-1",
+      },
+    ];
+
+    for (const command of commands) {
+      assert.strictEqual((yield* Effect.exit(decodeOrchestrationCommand(command)))._tag, "Failure");
+    }
+  }),
+);
+
+it.effect("rejects withdrawn normal-thread Inbox lifecycle events", () =>
+  Effect.gen(function* () {
+    const eventBase = {
+      sequence: 1,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+    };
+    const events = [
+      {
+        ...eventBase,
+        eventId: "event-inbox-settled",
+        type: "thread.inbox-settled",
+        payload: {
+          threadId: "thread-1",
+          settledAt: eventBase.occurredAt,
+          updatedAt: eventBase.occurredAt,
+        },
+      },
+      {
+        ...eventBase,
+        eventId: "event-inbox-snoozed",
+        type: "thread.inbox-snoozed",
+        payload: {
+          threadId: "thread-1",
+          wakeAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: eventBase.occurredAt,
+        },
+      },
+      {
+        ...eventBase,
+        eventId: "event-inbox-reopened",
+        type: "thread.inbox-reopened",
+        payload: {
+          threadId: "thread-1",
+          reopenedAt: eventBase.occurredAt,
+          updatedAt: eventBase.occurredAt,
+        },
+      },
+    ];
+
+    for (const event of events) {
+      assert.strictEqual((yield* Effect.exit(decodeOrchestrationEvent(event)))._tag, "Failure");
+    }
+  }),
+);
+
+it.effect("omits withdrawn Inbox lifecycle fields from normal-thread snapshots", () =>
+  Effect.gen(function* () {
+    const base = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Plain chat",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      archivedAt: null,
+      inboxLifecycle: "snoozed",
+      inboxWakeAt: "2026-01-02T00:00:00.000Z",
+      pendingPmHandoff: null,
+      session: null,
+    };
+    const thread = yield* decodeOrchestrationThread({
+      ...base,
+      deletedAt: null,
+      messages: [],
+      proposedPlans: [],
+      activities: [],
+      checkpoints: [],
+    });
+    const shell = yield* decodeOrchestrationThreadShell({
+      ...base,
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    });
+
+    for (const snapshot of [thread, shell]) {
+      assert.isFalse("inboxLifecycle" in snapshot);
+      assert.isFalse("inboxWakeAt" in snapshot);
+    }
   }),
 );
 

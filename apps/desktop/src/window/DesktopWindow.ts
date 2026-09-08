@@ -17,6 +17,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
+import * as DesktopDocumentSecurity from "./DesktopDocumentSecurity.ts";
 
 const TITLEBAR_HEIGHT = 40;
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
@@ -33,6 +34,7 @@ type DesktopWindowRuntimeServices =
   | DesktopAssets.DesktopAssets
   | DesktopServerExposure.DesktopServerExposure
   | DesktopState.DesktopState
+  | DesktopDocumentSecurity.DesktopDocumentSecurity
   | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
@@ -153,6 +155,7 @@ const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
   const state = yield* DesktopState.DesktopState;
+  const documentSecurity = yield* DesktopDocumentSecurity.DesktopDocumentSecurity;
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
 
@@ -180,6 +183,10 @@ const make = Effect.gen(function* () {
         sandbox: true,
       },
     });
+    const documentUrl = environment.isDevelopment
+      ? yield* resolveDesktopDevServerUrl(environment)
+      : backendHttpUrl.href;
+    documentSecurity.trustRenderer({ webContents: window.webContents, documentUrl });
 
     window.webContents.on("context-menu", (event, params) => {
       event.preventDefault();
@@ -235,6 +242,16 @@ const make = Effect.gen(function* () {
       }
       return { action: "deny" };
     });
+    window.webContents.on("will-navigate", (event) => {
+      if (!documentSecurity.isTrustedDocumentUrl(event.url)) {
+        event.preventDefault();
+      }
+    });
+    window.webContents.on("will-redirect", (event) => {
+      if (event.isMainFrame && !documentSecurity.isTrustedDocumentUrl(event.url)) {
+        event.preventDefault();
+      }
+    });
 
     window.on("page-title-updated", (event) => {
       event.preventDefault();
@@ -276,11 +293,10 @@ const make = Effect.gen(function* () {
     });
 
     if (environment.isDevelopment) {
-      const devServerUrl = yield* resolveDesktopDevServerUrl(environment);
-      void window.loadURL(devServerUrl);
+      void window.loadURL(documentUrl);
       window.webContents.openDevTools({ mode: "detach" });
     } else {
-      void window.loadURL(backendHttpUrl.href);
+      void window.loadURL(documentUrl);
     }
 
     window.on("closed", () => {

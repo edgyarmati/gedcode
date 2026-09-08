@@ -1,8 +1,12 @@
 # GedCode First-Release Docs, Rebrand & Sponsor Button — Design
 
 **Date:** 2026-06-01
-**Status:** Approved (design phase)
+**Status:** Historical; implemented and superseded
 **Branch:** `feat/first-release-rebrand` (off `chore/sync-upstream-beta73`)
+
+> This records the original release design, not current architecture. The unused `t3://` static
+> protocol path named below was removed during the August 2026 cleanup after packaged-app tests
+> confirmed that updates and navigation do not depend on it.
 
 ## Goal
 

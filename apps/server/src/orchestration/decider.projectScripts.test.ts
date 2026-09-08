@@ -146,6 +146,10 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
           updatedAt: now,
         },
       });
+      const readModelWithRetiredInboxState = { ...readModel };
+      Object.assign(readModelWithRetiredInboxState.threads[0]!, {
+        inboxLifecycle: "settled",
+      });
 
       const result = yield* decideOrchestrationCommand({
         command: {
@@ -166,7 +170,7 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
           runtimeMode: "approval-required",
           createdAt: now,
         },
-        readModel,
+        readModel: readModelWithRetiredInboxState,
       });
 
       expect(Array.isArray(result)).toBe(true);
