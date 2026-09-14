@@ -11,7 +11,8 @@ Release verification and publication status are tracked separately from these no
 
 - Maintenance/Tooling: Migrate the native compiler to TypeScript 7.0.2 with Effect TSGo 0.43.0,
   using the supported install patch and workspace compiler entry point. Keep global diagnostic
-  severities and enforce an exact allowlist for reviewed native-crypto import exceptions.
+  severities and enforce an exact allowlist for reviewed native-crypto import exceptions. Give
+  the multi-workspace compiler integration check a bounded startup budget for shared CI runners.
 
 - Security: Reject persisted signing keys with an incorrect length, including incomplete keys seen
   during concurrent creation. Preserve valid keys without automatic regeneration or rotation;

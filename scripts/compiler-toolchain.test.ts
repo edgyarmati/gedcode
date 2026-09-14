@@ -116,46 +116,51 @@ const probe = Effect.fn("probe")(function* (config: string, source: string, form
 });
 
 it.layer(NodeServices.layer)("supported patched compiler", (it) => {
-  it.effect("aligns the host, patch hook and every workspace typecheck without relaxed flags", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = path.resolve(import.meta.dirname, "..");
-      expect(manifest.workspaces.catalog.typescript).toBe("7.0.2");
-      expect(manifest.workspaces.catalog["@effect/tsgo"]).toBe("0.43.0");
-      expect(manifest.devDependencies.typescript).toBe("catalog:");
-      expect(manifest.devDependencies).not.toHaveProperty("@typescript/native-preview");
-      expect(manifest.scripts.prepare).toBe("effect-tsgo patch --typescript");
-      expect(manifest.scripts.typecheck).toBe("turbo run typecheck --concurrency=1");
-      for (const directory of yield* workspaceDirectories) {
-        const workspace = yield* fs
-          .readFileString(path.join(root, directory, "package.json"))
-          .pipe(Effect.flatMap(decodeManifest));
-        expect(workspace.scripts.typecheck, directory).toBe("tsc --noEmit");
-        const actualRunner = yield* runCommand(
-          "bun",
-          ["run", "typecheck", "--version"],
-          path.join(root, directory),
-        );
-        expect(actualRunner.exitCode, directory + actualRunner.stdout + actualRunner.stderr).toBe(
-          0,
-        );
-        expect(actualRunner.stdout.trim(), directory).toBe("Version 7.0.2+effect-tsgo.0.43.0");
-        const config = yield* fs
-          .readFileString(path.join(root, directory, "tsconfig.json"))
-          .pipe(Effect.flatMap((text) => decodeConfig(parseJsonc(text))));
-        expect(path.resolve(root, directory, config.extends), directory).toBe(
-          path.join(root, "tsconfig.base.json"),
-        );
-        expect(config.compilerOptions.plugins ?? [], directory).toEqual(
-          directory === "apps/web" ? diagnosticPolicy.web : [],
-        );
-      }
-      const result = yield* compiler(["--version"]);
-      expect(result.stderr).toBe("");
-      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
-      expect(result.stdout.trim()).toBe("Version 7.0.2+effect-tsgo.0.43.0");
-    }),
+  it.effect(
+    "aligns the host, patch hook and every workspace typecheck without relaxed flags",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = path.resolve(import.meta.dirname, "..");
+        expect(manifest.workspaces.catalog.typescript).toBe("7.0.2");
+        expect(manifest.workspaces.catalog["@effect/tsgo"]).toBe("0.43.0");
+        expect(manifest.devDependencies.typescript).toBe("catalog:");
+        expect(manifest.devDependencies).not.toHaveProperty("@typescript/native-preview");
+        expect(manifest.scripts.prepare).toBe("effect-tsgo patch --typescript");
+        expect(manifest.scripts.typecheck).toBe("turbo run typecheck --concurrency=1");
+        for (const directory of yield* workspaceDirectories) {
+          const workspace = yield* fs
+            .readFileString(path.join(root, directory, "package.json"))
+            .pipe(Effect.flatMap(decodeManifest));
+          expect(workspace.scripts.typecheck, directory).toBe("tsc --noEmit");
+          const actualRunner = yield* runCommand(
+            "bun",
+            ["run", "typecheck", "--version"],
+            path.join(root, directory),
+          );
+          expect(actualRunner.exitCode, directory + actualRunner.stdout + actualRunner.stderr).toBe(
+            0,
+          );
+          expect(actualRunner.stdout.trim(), directory).toBe("Version 7.0.2+effect-tsgo.0.43.0");
+          const config = yield* fs
+            .readFileString(path.join(root, directory, "tsconfig.json"))
+            .pipe(Effect.flatMap((text) => decodeConfig(parseJsonc(text))));
+          expect(path.resolve(root, directory, config.extends), directory).toBe(
+            path.join(root, "tsconfig.base.json"),
+          );
+          expect(config.compilerOptions.plugins ?? [], directory).toEqual(
+            directory === "apps/web" ? diagnosticPolicy.web : [],
+          );
+        }
+        const result = yield* compiler(["--version"]);
+        expect(result.stderr).toBe("");
+        expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+        expect(result.stdout.trim()).toBe("Version 7.0.2+effect-tsgo.0.43.0");
+      }),
+    // Eleven sequential workspace launches plus the host check compete with the full CI suite.
+    // Bound startup time without relaxing any version, diagnostic, or exit-code assertion.
+    { timeout: 30_000 },
   );
 
   it.effect("keeps standard TypeScript errors release-blocking", () =>
