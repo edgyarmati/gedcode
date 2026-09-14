@@ -17,6 +17,8 @@ import {
   resolveRemoteT3CliPackageSpec,
   runSshCommand,
   SSH_COMMAND,
+  remoteStateKey,
+  targetConnectionKey,
 } from "./command.ts";
 import { SshCommandError } from "./errors.ts";
 
@@ -364,5 +366,61 @@ describe("ssh command", () => {
         assert.include(result.failure.message, "SSH command timed out after 1ms.");
       }
     }).pipe(Effect.provide(processLayer));
+  });
+});
+
+const remoteStateVectors = [
+  {
+    target: {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    },
+    expected: "711bc738002d72fd",
+  },
+  {
+    target: {
+      alias: "a",
+      hostname: "b",
+      username: null,
+      port: null,
+    },
+    expected: "8810e7f8541fdfb6",
+  },
+  {
+    target: {
+      alias: "a",
+      hostname: "b",
+      username: "",
+      port: 0,
+    },
+    expected: "7933bd0dae4da0f6",
+  },
+  {
+    target: {
+      alias: "\u00e9\ud83d\ude00",
+      hostname: "example.com",
+      username: "user",
+      port: 22,
+    },
+    expected: "597a8cb6aa455215",
+  },
+] as const;
+describe("persistent SSH remote state identity", () => {
+  for (const { target, expected } of remoteStateVectors) {
+    it("preserves NUL-delimited SHA-256 truncation for " + expected, () => {
+      assert.equal(remoteStateKey(target), expected);
+    });
+  }
+  it("preserves actual NULs, empty fields and zero port without normalization", () => {
+    assert.equal(
+      targetConnectionKey({ alias: "a", hostname: "b", username: null, port: null }),
+      "a\0b\0\0",
+    );
+    assert.equal(
+      targetConnectionKey({ alias: "a", hostname: "b", username: "", port: 0 }),
+      "a\0b\0\x000",
+    );
   });
 });

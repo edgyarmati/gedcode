@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import { createHash } from "node:crypto";
 
 /** One-way digest used to look up pairing credentials without persisting their raw value. */

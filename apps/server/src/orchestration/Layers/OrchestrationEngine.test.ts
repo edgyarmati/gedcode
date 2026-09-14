@@ -1,3 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import {
   CheckpointRef,
   CommandId,
@@ -25,7 +31,10 @@ import { describe, expect, it } from "vitest";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import {
+  makeSqlitePersistenceLive,
+  SqlitePersistenceMemory,
+} from "../../persistence/Layers/Sqlite.ts";
 import {
   OrchestrationEventStore,
   type OrchestrationEventStoreShape,
@@ -42,16 +51,23 @@ import {
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { stageCompleteCommandId } from "../stageResolution.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem() {
+async function createOrchestrationSystem(database?: string) {
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-orchestration-engine-test-",
   });
+  type Persistence = typeof SqlitePersistenceMemory | ReturnType<typeof makeSqlitePersistenceLive>;
+  const persistence: Layer.Layer<
+    Layer.Success<Persistence>,
+    Layer.Error<Persistence>,
+    Layer.Services<Persistence>
+  > = database === undefined ? SqlitePersistenceMemory : makeSqlitePersistenceLive(database);
   const orchestrationLayer = Layer.mergeAll(
     OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
@@ -62,7 +78,7 @@ async function createOrchestrationSystem() {
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolverLive),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provide(persistence),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(NodeServices.layer),
@@ -1196,6 +1212,140 @@ describe("OrchestrationEngine", () => {
 
     await system.dispose();
   });
+
+  it.each([
+    { role: "plan" as const, timeoutFirst: true, dirty: false, eventCount: 1 },
+    { role: "work" as const, timeoutFirst: false, dirty: true, eventCount: 2 },
+    { role: "verify" as const, timeoutFirst: false, dirty: false, eventCount: 2 },
+  ])(
+    "reconciles $role settlement observations after restart (timeoutFirst=$timeoutFirst)",
+    async ({ role, timeoutFirst, dirty, eventCount }) => {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ged-settlement-receipt-"));
+      const database = path.join(directory, "state.sqlite");
+      let system = await createOrchestrationSystem(database);
+      const createdAt = now();
+      const projectId = ProjectId.make("project-settlement");
+      const taskId = TaskId.make("task-settlement");
+      try {
+        await system.run(
+          system.engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make("create-settlement-project"),
+            projectId,
+            title: "Settlement",
+            workspaceRoot: directory,
+            defaultModelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5-codex",
+            },
+            orchestratorConfig: {},
+            createdAt,
+          }),
+        );
+        await system.run(
+          system.engine.dispatch({
+            type: "task.create",
+            commandId: CommandId.make("create-settlement-task"),
+            taskId,
+            projectId,
+            taskType: TaskTypeId.make("feature"),
+            title: "Settlement",
+            pmMessageId: null,
+            branch: null,
+            createdAt,
+          }),
+        );
+        if (role === "verify") {
+          await system.run(
+            system.engine.dispatch({
+              type: "task.stage.start",
+              commandId: CommandId.make("start-before-verify"),
+              taskId,
+              role: "work",
+              instructions: "Work",
+              createdAt,
+            }),
+          );
+          const workThread = (await system.readModel()).tasks[0]!.currentStageThreadId!;
+          await system.run(
+            system.engine.dispatch({
+              type: "task.stage.complete",
+              commandId: CommandId.make("complete-before-verify"),
+              taskId,
+              role: "work",
+              stageThreadId: workThread,
+              awaitedTurnId: null,
+              worktreeCompletion: { head: "work-head", dirty: false },
+              createdAt,
+            }),
+          );
+        }
+        await system.run(
+          system.engine.dispatch({
+            type: "task.stage.start",
+            commandId: CommandId.make("start-settlement-stage"),
+            taskId,
+            role,
+            instructions: "Complete this stage",
+            createdAt,
+          }),
+        );
+        const stageThreadId = (await system.readModel()).tasks[0]!.currentStageThreadId!;
+        const awaitedTurnId = TurnId.make("settlement-turn");
+        const completion = {
+          type: "task.stage.complete" as const,
+          commandId: stageCompleteCommandId(stageThreadId, awaitedTurnId),
+          taskId,
+          role,
+          stageThreadId,
+          awaitedTurnId,
+          createdAt,
+          ...(timeoutFirst ? { diffComplete: false } : {}),
+          worktreeCompletion: { head: "first-head", dirty },
+        };
+        const before = (await system.readModel()).snapshotSequence;
+        const first = await system.run(system.engine.dispatch(completion));
+        const committed = Array.from(
+          await system.run(Stream.runCollect(system.engine.readEvents(before))),
+        );
+        expect(committed).toHaveLength(eventCount);
+        expect(committed[0]).toMatchObject({
+          type: "task.stage-completed",
+          payload: { worktreeCompletion: completion.worktreeCompletion },
+        });
+        // Close and reopen the actual SQLite file: reconciliation must use durable
+        // receipts/events, not a reactor latch or an engine-local cache.
+        await system.dispose();
+        system = await createOrchestrationSystem(database);
+        const retry = {
+          ...completion,
+          diffComplete: !timeoutFirst,
+          worktreeCompletion: { head: "later-head", dirty: !dirty },
+          ownershipViolationPaths: ["later-observation.ts"],
+          verificationFinalizationError: "Later inspection failed",
+          createdAt: "2026-01-01T00:01:00.000Z",
+        };
+        expect(await system.run(system.engine.dispatch(retry))).toEqual(first);
+        for (const changed of [
+          { ...retry, taskId: TaskId.make("different-task") },
+          { ...retry, role: role === "work" ? ("plan" as const) : ("work" as const) },
+          { ...retry, stageThreadId: ThreadId.make("different-thread") },
+          { ...retry, awaitedTurnId: TurnId.make("different-turn") },
+          { ...retry, awaitedTurnId: null },
+        ]) {
+          await expect(system.run(system.engine.dispatch(changed))).rejects.toThrow(
+            "reused with different command content",
+          );
+        }
+        expect(
+          Array.from(await system.run(Stream.runCollect(system.engine.readEvents(before)))),
+        ).toEqual(committed);
+      } finally {
+        await system.dispose();
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("rejects command id reuse with different command content without appending events", async () => {
     const system = await createOrchestrationSystem();

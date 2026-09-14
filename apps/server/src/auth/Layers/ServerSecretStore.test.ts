@@ -1,11 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import * as Cause from "effect/Cause";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
 import * as PlatformError from "effect/PlatformError";
 
 import { ServerConfig } from "../../config.ts";
@@ -99,52 +96,6 @@ const makeRemoveFailureSecretStoreLayer = () =>
     Layer.provideMerge(RemoveFailureFileSystemLayer),
   );
 
-const ConcurrentReadMissFileSystemLayer = Layer.effect(
-  FileSystem.FileSystem,
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const readCountRef = yield* Ref.make(0);
-    const readBarrier = yield* Deferred.make<void>();
-
-    return {
-      ...fileSystem,
-      readFile: (path) =>
-        String(path).endsWith("/session-signing-key.bin")
-          ? Ref.updateAndGet(readCountRef, (count) => count + 1).pipe(
-              Effect.flatMap((count) => {
-                if (count > 2) {
-                  return fileSystem.readFile(path);
-                }
-                return Effect.gen(function* () {
-                  if (count === 2) {
-                    yield* Deferred.succeed(readBarrier, void 0);
-                  }
-                  yield* Deferred.await(readBarrier);
-                  return yield* Effect.failCause(
-                    Cause.fail(
-                      PlatformError.systemError({
-                        _tag: "NotFound",
-                        module: "FileSystem",
-                        method: "readFile",
-                        pathOrDescriptor: String(path),
-                        description: "Secret file does not exist yet.",
-                      }),
-                    ),
-                  );
-                });
-              }),
-            )
-          : fileSystem.readFile(path),
-    } satisfies FileSystem.FileSystem;
-  }),
-).pipe(Layer.provide(NodeServices.layer));
-
-const makeConcurrentCreateSecretStoreLayer = () =>
-  ServerSecretStoreLive.pipe(
-    Layer.provide(makeServerConfigLayer()),
-    Layer.provideMerge(ConcurrentReadMissFileSystemLayer),
-  );
-
 it.layer(NodeServices.layer)("ServerSecretStoreLive", (it) => {
   it.effect("returns null when a secret file does not exist", () =>
     Effect.gen(function* () {
@@ -165,25 +116,6 @@ it.layer(NodeServices.layer)("ServerSecretStoreLive", (it) => {
 
       expect(Array.from(second)).toEqual(Array.from(first));
     }).pipe(Effect.provide(makeServerSecretStoreLayer())),
-  );
-
-  it.effect("returns the persisted secret when concurrent creators race", () =>
-    Effect.gen(function* () {
-      const secretStore = yield* ServerSecretStore;
-
-      const [first, second] = yield* Effect.all(
-        [
-          secretStore.getOrCreateRandom("session-signing-key", 32),
-          secretStore.getOrCreateRandom("session-signing-key", 32),
-        ],
-        { concurrency: "unbounded" },
-      );
-      const persisted = yield* secretStore.get("session-signing-key");
-
-      expect(persisted).not.toBeNull();
-      expect(Array.from(first)).toEqual(Array.from(persisted ?? new Uint8Array()));
-      expect(Array.from(second)).toEqual(Array.from(persisted ?? new Uint8Array()));
-    }).pipe(Effect.provide(makeConcurrentCreateSecretStoreLayer())),
   );
 
   it.effect("uses restrictive permissions for the secret directory and files", () =>

@@ -16,6 +16,7 @@ import {
   type ProviderSession,
   type ProviderSessionStartInput,
 } from "@t3tools/contracts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import * as NodeServices from "@effect/platform-node/NodeServices";

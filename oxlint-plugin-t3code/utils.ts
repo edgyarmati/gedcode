@@ -6,6 +6,7 @@ type ExpressionWrapper =
   | ESTree.ParenthesizedExpression
   | ESTree.TSNonNullExpression
   | ESTree.TSAsExpression
+  | ESTree.TSSatisfiesExpression
   | ESTree.TSTypeAssertion;
 
 type AstNode = ESTree.Node;
@@ -20,6 +21,7 @@ const isExpressionWrapper = (node: AstNode): node is ExpressionWrapper =>
   node.type === "ParenthesizedExpression" ||
   node.type === "TSNonNullExpression" ||
   node.type === "TSAsExpression" ||
+  node.type === "TSSatisfiesExpression" ||
   node.type === "TSTypeAssertion";
 
 export function unwrapExpression(node: unknown): Option.Option<AstNode> {

@@ -705,7 +705,11 @@ describe("CheckpointReactor stage-completion diff gate", () => {
       payload: { state: "completed" },
     });
 
-    await waitForEvent(harness.engine, (event) => event.type === "task.stage-completed");
+    const beforeTimeout = await waitForEvent(
+      harness.engine,
+      (event) => event.type === "task.stage-completed",
+    );
+    const firstCompletion = beforeTimeout.find((event) => event.type === "task.stage-completed");
 
     // Simulate the fail-loud timeout path firing the SAME deterministic
     // commandId with diffComplete: false. It must dedup against the diff path's
@@ -728,7 +732,9 @@ describe("CheckpointReactor stage-completion diff gate", () => {
         Effect.map((chunk) => Array.from(chunk)),
       ),
     );
-    expect(events.filter((event) => event.type === "task.stage-completed")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "task.stage-completed")).toEqual([
+      firstCompletion,
+    ]);
   });
 
   it("does not settle any stage when no task owns the completing thread", async () => {

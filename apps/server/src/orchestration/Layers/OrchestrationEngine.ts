@@ -41,6 +41,10 @@ import {
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
 import { fingerprintOrchestrationCommand } from "../commandFingerprint.ts";
+import {
+  isDeterministicStageCompletion,
+  matchesAcceptedStageCompletion,
+} from "../stageCompletionReceipt.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
@@ -435,6 +439,22 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         });
         if (Option.isSome(existingReceipt)) {
           if (existingReceipt.value.commandFingerprint !== commandFingerprint) {
+            const receipt = existingReceipt.value;
+            if (receipt.status === "accepted" && isDeterministicStageCompletion(envelope.command)) {
+              // The decider emits the completion plus at most one verification or
+              // change-review event, atomically. Bound the receipt lookup rather
+              // than replaying history or trusting the current task projection.
+              const settlementEvents = yield* Stream.runCollect(
+                eventStore.readFromSequence(Math.max(0, receipt.resultSequence - 2), 2),
+              );
+              if (
+                settlementEvents.some((event) =>
+                  matchesAcceptedStageCompletion(envelope.command, receipt, event),
+                )
+              ) {
+                return { sequence: receipt.resultSequence };
+              }
+            }
             return yield* new OrchestrationCommandIdConflictError({
               commandId: envelope.command.commandId,
             });

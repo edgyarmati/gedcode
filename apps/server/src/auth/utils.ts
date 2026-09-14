@@ -1,5 +1,6 @@
 import type { AuthClientMetadata, AuthClientMetadataDeviceType } from "@t3tools/contracts";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import * as Crypto from "node:crypto";
 
 const SESSION_COOKIE_NAME = "t3_session";

@@ -1,0 +1,77 @@
+{
+  "base": [
+    {
+      "name": "@effect/language-service",
+      "namespaceImportPackages": ["@effect/platform-node", "effect"],
+      "diagnosticSeverity": {
+        "importFromBarrel": "error",
+        "anyUnknownInErrorContext": "error",
+        "unsafeEffectTypeAssertion": "error",
+        "instanceOfSchema": "error",
+        "deterministicKeys": "error",
+        "strictEffectProvide": "off",
+        "missingEffectServiceDependency": "error",
+        "leakingRequirements": "error",
+        "globalErrorInEffectCatch": "error",
+        "globalErrorInEffectFailure": "error",
+        "unknownInEffectCatch": "error",
+        "strictBooleanExpressions": "off",
+        "lazyEffect": "off",
+        "preferSchemaOverJson": "error",
+        "schemaSyncInEffect": "error",
+        "cryptoRandomUUID": "error",
+        "cryptoRandomUUIDInEffect": "error",
+        "nodeBuiltinImport": "error",
+        "globalDate": "error",
+        "globalDateInEffect": "error",
+        "globalConsole": "error",
+        "globalConsoleInEffect": "error",
+        "globalRandom": "error",
+        "globalRandomInEffect": "error",
+        "globalTimers": "error",
+        "globalTimersInEffect": "error",
+        "globalFetch": "error",
+        "globalFetchInEffect": "error"
+      }
+    }
+  ],
+  "web": [
+    {
+      "name": "@effect/language-service",
+      "diagnosticSeverity": {
+        "globalDate": "off",
+        "globalConsole": "off",
+        "globalRandom": "off",
+        "globalTimers": "off",
+        "globalFetch": "off"
+      }
+    }
+  ],
+  "lint": {
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "ignorePatterns": [
+      "dist",
+      "dist-electron",
+      "node_modules",
+      "bun.lock",
+      "*.tsbuildinfo",
+      "**/routeTree.gen.ts",
+      "docs/research"
+    ],
+    "plugins": ["eslint", "oxc", "react", "unicorn", "typescript"],
+    "jsPlugins": ["./oxlint-plugin-t3code/index.ts"],
+    "categories": {
+      "correctness": "warn",
+      "suspicious": "warn",
+      "perf": "warn"
+    },
+    "rules": {
+      "react-in-jsx-scope": "off",
+      "eslint/no-shadow": "off",
+      "eslint/no-await-in-loop": "off",
+      "eslint/no-underscore-dangle": "off",
+      "t3code/no-inline-schema-compile": "warn",
+      "t3code/native-crypto-boundary": "error"
+    }
+  }
+}

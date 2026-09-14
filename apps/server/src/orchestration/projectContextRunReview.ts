@@ -4,6 +4,7 @@ import {
   type ProjectContextRunReviewConflict,
   type ProjectContextRunId,
 } from "@t3tools/contracts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import { createHash } from "node:crypto";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";

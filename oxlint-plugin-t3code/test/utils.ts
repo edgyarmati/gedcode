@@ -73,7 +73,7 @@ const spawnAndCollectOutput = Effect.fnUntraced(function* (command: ChildProcess
   return { exitCode, stdout, stderr };
 }, Effect.scoped);
 
-export const createOxlintRuleHarness = (ruleName: string): RuleHarness => {
+export const createOxlintRuleHarness = (ruleName: string, filename?: string): RuleHarness => {
   const [pluginName, shortRuleName] = ruleName.split("/");
   const diagnosticRuleName =
     pluginName && shortRuleName ? `${pluginName}\\(${shortRuleName}\\)` : ruleName;
@@ -82,9 +82,11 @@ export const createOxlintRuleHarness = (ruleName: string): RuleHarness => {
   const run: RuleHarness["run"] = Effect.fnUntraced(function* (source: string) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const fixtureDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-oxlint-" });
+    const fixtureDir = yield* fs
+      .makeTempDirectoryScoped({ prefix: "t3code-oxlint-" })
+      .pipe(Effect.flatMap(fs.realPath));
     const configPath = path.join(fixtureDir, ".oxlintrc.json");
-    const sourcePath = path.join(fixtureDir, "fixture.ts");
+    const sourcePath = path.join(fixtureDir, filename ?? "fixture.ts");
     const repoRoot = path.join(import.meta.dirname, "..", "..");
     const oxlintBin = path.join(repoRoot, "node_modules", ".bin", "oxlint");
     const pluginPath = path.join(repoRoot, "oxlint-plugin-t3code", "index.ts");
@@ -96,10 +98,13 @@ export const createOxlintRuleHarness = (ruleName: string): RuleHarness => {
         rules: { [ruleName]: "error" },
       }),
     );
+    yield* fs.makeDirectory(path.dirname(sourcePath), { recursive: true });
     yield* fs.writeFileString(sourcePath, source);
 
     const output = yield* spawnAndCollectOutput(
-      ChildProcess.make(oxlintBin, ["--config", configPath, sourcePath], { cwd: repoRoot }),
+      ChildProcess.make(oxlintBin, ["--config", configPath, sourcePath], {
+        cwd: filename ? fixtureDir : repoRoot,
+      }),
     );
 
     if (output.exitCode !== 0) {

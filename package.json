@@ -17,20 +17,19 @@
       "@effect/platform-node-shared": "4.0.0-beta.73",
       "@effect/sql-sqlite-bun": "4.0.0-beta.73",
       "@effect/vitest": "4.0.0-beta.73",
-      "@effect/tsgo": "0.11.4",
+      "@effect/tsgo": "0.43.0",
       "@pierre/diffs": "1.1.20",
       "@types/bun": "^1.3.11",
       "@types/node": "^24.10.13",
-      "@typescript/native-preview": "7.0.0-dev.20260527.2",
       "tsdown": "^0.20.3",
-      "typescript": "~6.0.3",
+      "typescript": "7.0.2",
       "vitest": "4.1.11",
       "@vitest/coverage-v8": "4.1.11"
     }
   },
   "type": "module",
   "scripts": {
-    "prepare": "effect-tsgo patch",
+    "prepare": "effect-tsgo patch --typescript",
     "dev": "node scripts/dev-runner.ts dev",
     "dev:server": "node scripts/dev-runner.ts dev:server",
     "dev:web": "node scripts/dev-runner.ts dev:web",
@@ -66,11 +65,11 @@
     "@effect/tsgo": "catalog:",
     "@oxlint/plugins": "^1.63.0",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "oxfmt": "^0.40.0",
     "oxlint": "^1.63.0",
     "turbo": "^2.3.3",
+    "typescript": "catalog:",
     "vitest": "catalog:"
   },
   "overrides": {
@@ -82,6 +81,7 @@
     "@effect/vitest": "catalog:",
     "@hono/node-server": "^1.19.17",
     "body-parser": "^2.3.0",
+    "browserslist": "^4.28.9",
     "effect": "catalog:",
     "fast-uri": "^3.1.6",
     "hono": "^4.13.5",
@@ -89,6 +89,7 @@
     "js-yaml": "^4.3.2",
     "nanoid": "^3.3.18",
     "postcss": "^8.5.26",
+    "toml": "^4.2.0",
     "vite": "^8.0.0"
   },
   "engines": {

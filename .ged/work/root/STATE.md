@@ -15,3 +15,11 @@
   ordinary shell/`gh` access.
 - Preserve historical release contracts, events, projections, persistence, migration 053, and UI
   rendering; do not auto-mutate legacy user tasks.
+
+## Subsequent release checkpoint (2026-09-14)
+
+- Active release work: `.ged/work/release-patch-0.4.5/`.
+- Local implementation and independent reviews: passed, including final guard re-review.
+- Final full tests: 4,374 passed / one existing skip; full typecheck, formatting and lint passed.
+- Next: commit/push reviewed release candidate; require exact-SHA green CI before dispatch.
+- Publication and cross-platform artifact validation remain pending; no release success claimed.

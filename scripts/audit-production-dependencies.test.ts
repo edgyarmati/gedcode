@@ -25,6 +25,21 @@ describe("production dependency audit policy", () => {
     expect(classifyProductionAudit(report).blocking).toHaveLength(2);
   });
 
+  it("does not exempt the Browserslist or TOML release blockers", () => {
+    const classified = classifyProductionAudit({
+      browserslist: [
+        finding("high", "https://github.com/advisories/GHSA-c83g-rgw3-j3cx"),
+        finding("high", "https://github.com/advisories/GHSA-73wf-gq98-2v4g"),
+      ],
+      toml: [
+        finding("high", "https://github.com/advisories/GHSA-82x6-q7mm-w9cf"),
+        finding("high", "https://github.com/advisories/GHSA-v5mp-jgw5-2x6j"),
+      ],
+    });
+    expect(classified.blocking).toHaveLength(4);
+    expect(classified.residual).toEqual([]);
+  });
+
   it("reports medium and low findings without blocking a release", () => {
     const classified = classifyProductionAudit({
       dependency: [

@@ -1,4 +1,5 @@
 import { OrchestratorPlaybookFrontmatter } from "@t3tools/contracts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import { createHash } from "node:crypto";
 import * as Schema from "effect/Schema";
 

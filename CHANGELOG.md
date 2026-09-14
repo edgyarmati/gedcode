@@ -5,6 +5,25 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+Release verification and publication status are tracked separately from these notes.
+
+## 0.4.5 - 2026-09-14
+
+- Maintenance/Tooling: Migrate the native compiler to TypeScript 7.0.2 with Effect TSGo 0.43.0,
+  using the supported install patch and workspace compiler entry point. Keep global diagnostic
+  severities and enforce an exact allowlist for reviewed native-crypto import exceptions.
+
+- Security: Reject persisted signing keys with an incorrect length, including incomplete keys seen
+  during concurrent creation. Preserve valid keys without automatic regeneration or rotation;
+  interrupted writes can still require explicit operator recovery before authentication starts.
+
+- Security: Update transitive Browserslist and TOML dependencies to patched compatible releases,
+  addressing unbounded memory growth, parser recursion, crashes, and prototype-write advisories.
+
+- Fix/Orchestrator: Reconcile racing diff-capture and timeout stage completions against the first
+  committed receipt, including after restart. Preserve its worktree and safety findings without
+  duplicate completion events, while still rejecting conflicting task, role, thread, or turn IDs.
+
 - Fix/Codex: Recognize Codex 0.149.1 business, enterprise, and education account plans so valid
   ChatGPT logins no longer fail the provider probe. Support the verified GPT-6 Astra model ID
   (`gpt-6-astra`, alias `astra`) without changing defaults or claiming account access; select it

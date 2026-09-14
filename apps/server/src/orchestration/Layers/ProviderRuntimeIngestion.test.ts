@@ -889,9 +889,9 @@ describe("ProviderRuntimeIngestion", () => {
         Effect.map((chunk) => Array.from(chunk)),
       ),
     );
-    expect(
-      eventsAfterLateDiff.filter((event) => event.type === "task.stage-completed"),
-    ).toHaveLength(1);
+    expect(eventsAfterLateDiff.filter((event) => event.type === "task.stage-completed")).toEqual(
+      stageCompletedEvents,
+    );
   });
 
   it("applies provider session.state.changed transitions directly", async () => {

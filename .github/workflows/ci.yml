@@ -74,3 +74,44 @@ jobs:
 
       - name: Smoke test desktop startup
         run: xvfb-run -a bun run test:desktop-smoke
+
+  compiler-platforms:
+    name: Clean compiler (${{ matrix.runner }})
+    # Toolchain-only evidence on every desktop release platform; no publication or secrets.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+      - name: Record clean platform and tool versions
+        run: |
+          node -e "if (require('node:fs').existsSync('node_modules')) process.exit(1); console.log(process.version, process.platform, process.arch)"
+          bun --version
+      - name: Clean frozen install
+        run: bun install --frozen-lockfile
+      - name: Actual workspace runners, native identity and Effect diagnostics
+        run: bun run --filter=@t3tools/scripts test compiler-toolchain.test.ts
+      - name: Repeat install is idempotent
+        run: bun install --frozen-lockfile
+      - name: Recheck native identity and diagnostics after repeat install
+        run: bun run --filter=@t3tools/scripts test compiler-toolchain.test.ts
+      - name: Native exception enforcement fixtures
+        run: bun run --filter=@t3tools/oxlint-plugin-t3code test rules/native-crypto-boundary.test.ts
+      - name: Three cold full-workspace typechecks
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            node -e "const fs=require('node:fs'); const cp=require('node:child_process'); const files=cp.execFileSync('git',['ls-files','--others','--ignored','--exclude-standard','-z','*.tsbuildinfo'],{encoding:'utf8'}).split('\0').filter(Boolean); for(const file of files) { if(!file.split(/[\\\\/]/).includes('node_modules')) fs.unlinkSync(file); } console.log('Cold attempt $attempt, removed', files.length, 'generated build-info candidates');"
+            bun run typecheck
+          done
+      - name: Installation must not alter dependency metadata
+        run: git diff --exit-code -- package.json bun.lock

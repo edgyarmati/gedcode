@@ -38,6 +38,9 @@ describe("fingerprintOrchestrationCommand", () => {
       type: first.type,
     };
 
+    expect(fingerprintOrchestrationCommand(first)).toBe(
+      "sha256:b89955ab11f2f2d6be71867bfa0ebd561e81c69c3d56a54e6370ecdce49dd431",
+    );
     expect(fingerprintOrchestrationCommand(reordered)).toBe(fingerprintOrchestrationCommand(first));
   });
 
@@ -63,6 +66,9 @@ describe("fingerprintOrchestrationCommand", () => {
       title: "Materially changed task",
     };
 
+    expect(fingerprintOrchestrationCommand(first)).toBe(
+      "sha256:ae55381067067b715c24502f52bf67f6f1a7c0bbf09ecf109d302d06b784e900",
+    );
     expect(fingerprintOrchestrationCommand(retried)).toBe(fingerprintOrchestrationCommand(first));
     expect(fingerprintOrchestrationCommand(changed)).not.toBe(
       fingerprintOrchestrationCommand(first),

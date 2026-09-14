@@ -1,0 +1,681 @@
+{
+  "cryptoImports": {
+    "apps/server/src/attachmentStore.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash, randomUUID } from \"node:crypto\";",
+      "operations": ["createHash", "randomUUID"],
+      "exception": "legacy"
+    },
+    "apps/server/src/auth/Layers/BootstrapCredentialService.test.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/auth/Layers/ServerSecretStore.ts": {
+      "module": "node:crypto",
+      "import": "import * as Crypto from \"node:crypto\";",
+      "operations": ["randomBytes", "randomUUID"],
+      "exception": "next-line"
+    },
+    "apps/server/src/auth/pairingCredentialDigest.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/auth/utils.ts": {
+      "module": "node:crypto",
+      "import": "import * as Crypto from \"node:crypto\";",
+      "operations": ["createHmac", "timingSafeEqual"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/Layers/ProjectContextRunReactor.test.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/Layers/ProjectContextRunReactor.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/PlaybookLoader.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/commandFingerprint.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/mcp/OrchestrationMcpHttpServer.ts": {
+      "module": "node:crypto",
+      "import": "import { randomBytes } from \"node:crypto\";",
+      "operations": ["randomBytes"],
+      "exception": "legacy"
+    },
+    "apps/server/src/orchestration/mcp/orchestrationMcpTools.ts": {
+      "module": "node:crypto",
+      "import": "import { randomUUID } from \"node:crypto\";",
+      "operations": ["randomUUID"],
+      "exception": "legacy"
+    },
+    "apps/server/src/orchestration/pm/pmTools.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/projectContextRunReview.test.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/orchestration/projectContextRunReview.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/persistence/releaseMigrationFixtures.test.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "legacy"
+    },
+    "apps/server/src/project/Layers/ProjectContextScanner.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/project/ProjectContext.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/project/ProjectContextRunChanges.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "apps/server/src/vcs/GitVcsDriver.ts": {
+      "module": "node:crypto",
+      "import": "import { randomUUID } from \"node:crypto\";",
+      "operations": ["randomUUID"],
+      "exception": "next-line"
+    },
+    "apps/web/src/releasePersistenceFixtures.test.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "legacy"
+    },
+    "packages/ssh/src/command.ts": {
+      "module": "node:crypto",
+      "import": "import * as Crypto from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "next-line"
+    },
+    "scripts/generate-release-compatibility-fixtures.ts": {
+      "module": "node:crypto",
+      "import": "import { createHash } from \"node:crypto\";",
+      "operations": ["createHash"],
+      "exception": "legacy"
+    },
+    "scripts/generate-sparkle-feed.ts": {
+      "module": "node:crypto",
+      "import": "import { createPrivateKey, createPublicKey } from \"node:crypto\";",
+      "operations": ["createPrivateKey", "createPublicKey"],
+      "exception": "legacy"
+    }
+  },
+  "legacyDirectives": {
+    "scripts/dependency-security.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{spawnSync}from\"node:child_process\";",
+        "import{createRequire}from\"node:module\";"
+      ]
+    },
+    "apps/desktop/src/settings/DesktopSavedEnvironments.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{setTimeoutasdelay}from\"node:timers/promises\";"]
+    },
+    "apps/server/integration/OrchestrationEngineHarness.integration.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{execFileSync}from\"node:child_process\";"]
+    },
+    "apps/server/integration/orchestrationEngine.integration.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importfsfrom\"node:fs\";", "importpathfrom\"node:path\";"]
+    },
+    "apps/server/integration/orchestratorLanding.integration.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{existsSync}from\"node:fs\";"
+      ]
+    },
+    "apps/server/integration/orchestratorLiveGlobals.integration.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{existsSync}from\"node:fs\";"
+      ]
+    },
+    "apps/server/integration/orchestratorWorktreeLease.integration.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{existsSync}from\"node:fs\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/attachmentPaths.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importNodePathfrom\"node:path\";"]
+    },
+    "apps/server/src/attachmentStore.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/attachmentStore.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{createHash,randomUUID}from\"node:crypto\";",
+        "import{existsSync}from\"node:fs\";"
+      ]
+    },
+    "apps/server/src/bin.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises Node HTTP and filesystem boundaries.",
+      "line": 1,
+      "nativeImports": [
+        "import*asNodeHttpfrom\"node:http\";",
+        "import{mkdtempSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join}from\"node:path\";"
+      ]
+    },
+    "apps/server/src/bootstrap.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import*asNFSfrom\"node:fs\";",
+        "import*aspathfrom\"node:path\";",
+        "import{execFileSync,spawn}from\"node:child_process\";"
+      ]
+    },
+    "apps/server/src/bootstrap.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import*asNFSfrom\"node:fs\";",
+        "import*asNetfrom\"node:net\";",
+        "import*asreadlinefrom\"node:readline\";",
+        "importtype{Readable}from\"node:stream\";"
+      ]
+    },
+    "apps/server/src/checkpointing/Layers/CheckpointStore.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/environment/Layers/ServerEnvironment.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import*asnodePathfrom\"node:path\";"]
+    },
+    "apps/server/src/git/GitManager.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importpathfrom\"node:path\";",
+        "import{spawnSync}from\"node:child_process\";",
+        "import{setTimeoutasdelay}from\"node:timers/promises\";"
+      ]
+    },
+    "apps/server/src/git/Utils.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{existsSync}from\"node:fs\";", "import{join}from\"node:path\";"]
+    },
+    "apps/server/src/orchestration/Layers/CheckpointReactor.stageGate.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";",
+        "import{execFileSync}from\"node:child_process\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";",
+        "import{execFileSync}from\"node:child_process\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/TaskWorktreeReactor.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/Layers/TaskWorktreeReactor.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/orchestration/directPublication/DirectPublicationLive.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off - validates a trusted server-owned workspace boundary.",
+      "line": 1,
+      "nativeImports": ["import{isAbsolute}from\"node:path\";"]
+    },
+    "apps/server/src/orchestration/directPublication/DirectPublicationService.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off - this integration test creates isolated Git repositories.",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{existsSync,mkdtempSync,realpathSync,rmSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join}from\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/directPublication/DirectPublicationService.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off - isolated Git publication owns temporary filesystem artifacts.",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdir,mkdtemp,rm,writeFile}from\"node:fs/promises\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join,resolve}from\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/mcp/OrchestrationMcpHttpServer.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importassertfrom\"node:assert/strict\";",
+        "import{request}from\"node:http\";"
+      ]
+    },
+    "apps/server/src/orchestration/mcp/OrchestrationMcpHttpServer.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{randomBytes}from\"node:crypto\";",
+        "import{createServer,typeIncomingMessage,typeServerResponse,typeServer}from\"node:http\";",
+        "importtype{AddressInfo}from\"node:net\";"
+      ]
+    },
+    "apps/server/src/orchestration/mcp/orchestrationMcpTools.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{randomUUID}from\"node:crypto\";"]
+    },
+    "apps/server/src/orchestration/orchestratorLauncher.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/orchestration/orchestratorLauncher.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/orchestration/taskBranchReservation.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{mkdtempSync,rmSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/orchestration/taskWorktreeLease.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/orchestration/workerTripwire.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{spawnSync}from\"node:child_process\";",
+        "import*asfsfrom\"node:fs\";",
+        "import*asosfrom\"node:os\";",
+        "import*aspathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/pathExpansion.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{homedir}from\"node:os\";", "import{join}from\"node:path\";"]
+    },
+    "apps/server/src/pathExpansion.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{homedir}from\"node:os\";", "import{join}from\"node:path\";"]
+    },
+    "apps/server/src/persistence/releaseMigrationFixtures.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{createHash}from\"node:crypto\";",
+        "import{DatabaseSync}from\"node:sqlite\";",
+        "import{mkdtempSync,readFileSync,rmSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join}from\"node:path\";",
+        "import{gunzipSync}from\"node:zlib\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/ClaudeAdapter.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdirSync,mkdtempSync,rmSync,writeFileSync}from\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/CodexAdapter.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importassertfrom\"node:assert/strict\";",
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importassertfrom\"node:assert/strict\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/EventNdjsonLogger.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/EventNdjsonLogger.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importfsfrom\"node:fs\";", "importpathfrom\"node:path\";"]
+    },
+    "apps/server/src/provider/Layers/ProviderService.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/Layers/ProviderSessionDirectory.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "importfsfrom\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/provider/providerMaintenance.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{chmodSync,mkdirSync,symlinkSync,writeFileSync}from\"node:fs\";",
+        "importosfrom\"node:os\";",
+        "importpathfrom\"node:path\";"
+      ]
+    },
+    "apps/server/src/server.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["import{execFileSync}from\"node:child_process\";"]
+    },
+    "apps/server/src/workspace/Layers/WorkspaceEntries.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importfsPromisesfrom\"node:fs/promises\";"]
+    },
+    "apps/server/src/workspace/Layers/WorkspaceEntries.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import*asOSfrom\"node:os\";",
+        "importfsPromisesfrom\"node:fs/promises\";",
+        "importtype{Dirent}from\"node:fs\";"
+      ]
+    },
+    "apps/web/src/releasePersistenceFixtures.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{createHash}from\"node:crypto\";",
+        "import{readFileSync}from\"node:fs\";"
+      ]
+    },
+    "packages/shared/src/logging.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": ["importfsfrom\"node:fs\";", "importpathfrom\"node:path\";"]
+    },
+    "packages/shared/src/shell.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import*asNodeOSfrom\"node:os\";",
+        "import{execFileSync}from\"node:child_process\";",
+        "import{accessSync,constants,statSync}from\"node:fs\";",
+        "import{extname,join}from\"node:path\";"
+      ]
+    },
+    "scripts/audit-production-dependencies.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": []
+    },
+    "scripts/audit-production-dependencies.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": ["import{spawnSync}from\"node:child_process\";"]
+    },
+    "scripts/check-release-package-versions.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdirSync,mkdtempSync,rmSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{dirname,join}from\"node:path\";"
+      ]
+    },
+    "scripts/check-release-package-versions.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": [
+        "import{readFileSync}from\"node:fs\";",
+        "import{dirname,resolve}from\"node:path\";",
+        "import{parseArgs}from\"node:util\";"
+      ]
+    },
+    "scripts/ged-skill-contract.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{readFile}from\"node:fs/promises\";",
+        "import{dirname,resolve}from\"node:path\";",
+        "import{fileURLToPath}from\"node:url\";"
+      ]
+    },
+    "scripts/generate-release-compatibility-fixtures.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{createHash}from\"node:crypto\";",
+        "import{existsSync,mkdtempSync,mkdirSync,readFileSync,readdirSync,rmSync,writeFileSync,}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{dirname,join,resolve}from\"node:path\";",
+        "import{fileURLToPath}from\"node:url\";",
+        "import{gzipSync}from\"node:zlib\";"
+      ]
+    },
+    "scripts/generate-sparkle-feed.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": [
+        "import{cpSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{basename,join}from\"node:path\";",
+        "import{spawnSync}from\"node:child_process\";",
+        "import{createPrivateKey,createPublicKey}from\"node:crypto\";",
+        "import{parseArgs}from\"node:util\";"
+      ]
+    },
+    "scripts/mock-update-server.ts": {
+      "directive": "// @effect-diagnostics-next-line nodeBuiltinImport:off - NodeHttpServer.layer takes `NodeHttp.createServer` as arg",
+      "line": 1,
+      "nativeImports": ["import*asNodeHttpfrom\"node:http\";"]
+    },
+    "scripts/promote-stable-update-manifests.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdtempSync,readFileSync,rmSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join}from\"node:path\";"
+      ]
+    },
+    "scripts/promote-stable-update-manifests.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": [
+        "import{cpSync,existsSync,readdirSync,statSync}from\"node:fs\";",
+        "import{basename,join}from\"node:path\";",
+        "import{parseArgs}from\"node:util\";"
+      ]
+    },
+    "scripts/publish-github-release.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdirSync,writeFileSync}from\"node:fs\";",
+        "import{join}from\"node:path\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{mkdtempSync}from\"node:fs\";"
+      ]
+    },
+    "scripts/publish-github-release.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": [
+        "import{readFileSync}from\"node:fs\";",
+        "import{parseArgs}from\"node:util\";",
+        "import{spawnSync}from\"node:child_process\";"
+      ]
+    },
+    "scripts/release-smoke.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{execFileSync}from\"node:child_process\";",
+        "import{cpSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync,}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{dirname,join,resolve}from\"node:path\";",
+        "import{fileURLToPath}from\"node:url\";"
+      ]
+    },
+    "scripts/resolve-release-version.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off",
+      "line": 2,
+      "nativeImports": ["import{parseArgs}from\"node:util\";"]
+    },
+    "scripts/validate-release-assets.test.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off",
+      "line": 1,
+      "nativeImports": [
+        "import{mkdtempSync,rmSync,writeFileSync}from\"node:fs\";",
+        "import{tmpdir}from\"node:os\";",
+        "import{join}from\"node:path\";"
+      ]
+    },
+    "scripts/validate-release-assets.ts": {
+      "directive": "// @effect-diagnostics nodeBuiltinImport:off globalConsole:off",
+      "line": 2,
+      "nativeImports": [
+        "import{existsSync,readdirSync,readFileSync,statSync}from\"node:fs\";",
+        "import{basename,join}from\"node:path\";",
+        "import{parseArgs}from\"node:util\";"
+      ]
+    }
+  }
+}

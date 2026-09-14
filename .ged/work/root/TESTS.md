@@ -45,3 +45,16 @@ continues to load safely after upgrade.
 - `git diff --check` passed.
 - Diff guards confirmed `.github/workflows/release.yml`, `release.sh`, `docs/release.md`, and release
   publication scripts are unchanged, and active server source has no release tool/actuator symbols.
+
+## Release 0.4.5 final verification (2026-09-14)
+
+- Current release work: `.ged/work/release-patch-0.4.5/` (separate from the completed work above).
+- Parent's final `bun fmt`, `bun lint`, full `bun run typecheck` and `bun run test` passed:
+  11 uncached workspace tasks, 4,374 passed tests, one existing skipped test.
+- Release audit/version/smoke checks, 240 browser tests, and forced desktop build passed earlier
+  in this final parent verification pass; subsequent changes affect only the lint guard and tests.
+- Final guard re-review `0fd8ef06` approved; aggregate review and signing-key review approved.
+- Real plugin tests: 196 passed; compiler-toolchain tests: 14 passed.
+- Exact-SHA remote CI and publication/artifact verification remain pending.
+- Evidence: `.ged/runtime/release-patch-0.4.5/review-fixes/PARENT-RECONCILIATION.md` and
+  `/tmp/ged-release-final-{fmt,lint,typecheck,test}.log`.

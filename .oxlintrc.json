@@ -21,6 +21,7 @@
     "eslint/no-shadow": "off",
     "eslint/no-await-in-loop": "off",
     "eslint/no-underscore-dangle": "off",
-    "t3code/no-inline-schema-compile": "warn"
+    "t3code/no-inline-schema-compile": "warn",
+    "t3code/native-crypto-boundary": "error"
   }
 }

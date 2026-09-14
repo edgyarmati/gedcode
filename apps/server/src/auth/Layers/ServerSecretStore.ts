@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import * as Crypto from "node:crypto";
 
 import * as Effect from "effect/Effect";
@@ -13,6 +14,24 @@ import {
   ServerSecretStore,
   type ServerSecretStoreShape,
 } from "../Services/ServerSecretStore.ts";
+
+// Creation still exposes the exclusive pathname before write/sync. Reject incomplete persisted
+// bytes rather than using a weak key. Crash/race availability recovery is intentionally separate:
+// never rotate, overwrite or retry an existing invalid secret automatically.
+const validateRandomSecret = (name: string, bytes: number, value: Uint8Array | null) =>
+  value === null
+    ? Effect.fail(
+        new SecretStoreError({
+          message: `Failed to read secret ${name} after concurrent creation.`,
+        }),
+      )
+    : value.byteLength !== bytes
+      ? Effect.fail(
+          new SecretStoreError({
+            message: `Invalid length for secret ${name}: expected ${bytes} bytes, received ${value.byteLength}.`,
+          }),
+        )
+      : Effect.succeed(value);
 
 export const makeServerSecretStore = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -101,8 +120,8 @@ export const makeServerSecretStore = Effect.gen(function* () {
   const getOrCreateRandom: ServerSecretStoreShape["getOrCreateRandom"] = (name, bytes) =>
     get(name).pipe(
       Effect.flatMap((existing) => {
-        if (existing) {
-          return Effect.succeed(existing);
+        if (existing !== null) {
+          return validateRandomSecret(name, bytes, existing);
         }
 
         const generated = Crypto.randomBytes(bytes);
@@ -111,15 +130,7 @@ export const makeServerSecretStore = Effect.gen(function* () {
           Effect.catchTag("SecretStoreError", (error) =>
             isPlatformError(error.cause) && error.cause.reason._tag === "AlreadyExists"
               ? get(name).pipe(
-                  Effect.flatMap((created) =>
-                    created !== null
-                      ? Effect.succeed(created)
-                      : Effect.fail(
-                          new SecretStoreError({
-                            message: `Failed to read secret ${name} after concurrent creation.`,
-                          }),
-                        ),
-                  ),
+                  Effect.flatMap((created) => validateRandomSecret(name, bytes, created)),
                 )
               : Effect.fail(error),
           ),

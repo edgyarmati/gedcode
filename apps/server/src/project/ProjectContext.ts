@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off
 import { createHash } from "node:crypto";
 import { ProjectContextFingerprint, ProjectContextSchemaVersion } from "@t3tools/contracts";
 
