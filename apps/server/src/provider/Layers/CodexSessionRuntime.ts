@@ -58,6 +58,9 @@ const BENIGN_ERROR_LOG_SNIPPETS = [
 ];
 const CODEX_APP_SERVER_FORCE_KILL_AFTER = "2 seconds" as const;
 const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
+  // Retain a fresh-start escape hatch if even the compatibility decoder cannot
+  // read the resumed thread metadata.
+  "invalid thread/resume payload",
   "not found",
   "missing thread",
   "no such thread",
@@ -88,6 +91,13 @@ const decodeCodexTurnStartParamsWithCollaborationMode = Schema.decodeUnknownEffe
 export type CodexTurnStartParamsWithCollaborationMode =
   typeof CodexTurnStartParamsWithCollaborationMode.Type;
 const formatSchemaIssue = SchemaIssue.makeFormatterDefault();
+const CodexThreadResumeOpenResponse = Schema.Struct({
+  cwd: Schema.String,
+  model: Schema.String,
+  thread: Schema.Struct({
+    id: Schema.String,
+  }),
+});
 
 export type CodexResumeCursor = typeof CodexResumeCursorSchema.Type;
 type CodexServiceTier = NonNullable<EffectCodexSchema.V2ThreadStartParams["serviceTier"]>;
@@ -565,9 +575,13 @@ export function isRecoverableThreadResumeError(error: unknown): boolean {
   return RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS.some((snippet) => message.includes(snippet));
 }
 
-type CodexThreadOpenResponse =
-  | CodexRpc.ClientRequestResponsesByMethod["thread/start"]
-  | CodexRpc.ClientRequestResponsesByMethod["thread/resume"];
+interface CodexThreadOpenResponse {
+  readonly cwd: string;
+  readonly model: string;
+  readonly thread: {
+    readonly id: string;
+  };
+}
 
 type CodexThreadOpenMethod = "thread/start" | "thread/resume";
 
@@ -576,7 +590,17 @@ interface CodexThreadOpenClient {
     method: M,
     payload: CodexRpc.ClientRequestParamsByMethod[M],
   ) => Effect.Effect<CodexRpc.ClientRequestResponsesByMethod[M], CodexErrors.CodexAppServerError>;
+  readonly raw?: {
+    readonly request: (
+      method: "thread/resume",
+      payload: CodexRpc.ClientRequestParamsByMethod["thread/resume"],
+    ) => Effect.Effect<unknown, CodexErrors.CodexAppServerError>;
+  };
 }
+
+const decodeCodexThreadResumeOpenResponse = Schema.decodeUnknownEffect(
+  CodexThreadResumeOpenResponse,
+);
 
 export const openCodexThread = (input: {
   readonly client: CodexThreadOpenClient;
@@ -607,22 +631,38 @@ export const openCodexThread = (input: {
     return input.client.request("thread/start", startParams);
   }
 
-  return input.client
-    .request("thread/resume", {
-      threadId: resumeThreadId,
-      ...startParams,
-    })
-    .pipe(
-      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error.message,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
-      ),
-    );
+  const resumePayload = {
+    threadId: resumeThreadId,
+    ...startParams,
+  };
+  const resumed = input.client.raw
+    ? input.client.raw
+        .request("thread/resume", resumePayload)
+        .pipe(
+          Effect.flatMap((raw) =>
+            decodeCodexThreadResumeOpenResponse(raw).pipe(
+              Effect.mapError((error) =>
+                CodexErrors.CodexAppServerRequestError.invalidParams(
+                  `Invalid thread/resume payload: ${formatSchemaIssue(error.issue)}`,
+                  { issue: error.issue },
+                ),
+              ),
+            ),
+          ),
+        )
+    : input.client.request("thread/resume", resumePayload);
+
+  return resumed.pipe(
+    Effect.catchIf(isRecoverableThreadResumeError, (error) =>
+      Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+        threadId: input.threadId,
+        requestedRuntimeMode: input.runtimeMode,
+        resumeThreadId,
+        recoverable: true,
+        cause: error.message,
+      }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+    ),
+  );
 };
 
 function readNotificationThreadId(notification: CodexServerNotification): string | undefined {

@@ -7,6 +7,12 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 Release verification and publication status are tracked separately from these notes.
 
+## 0.4.6 - 2026-09-17
+
+- Fix/Codex: Preserve PM sessions when a newer Codex version returns persisted thread items that
+  the bundled protocol schema does not know, while retaining a fresh-thread fallback for genuinely
+  unreadable or missing provider threads.
+
 ## 0.4.5 - 2026-09-14
 
 - Maintenance/Tooling: Migrate the native compiler to TypeScript 7.0.2 with Effect TSGo 0.43.0,

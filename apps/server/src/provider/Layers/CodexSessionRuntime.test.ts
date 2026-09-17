@@ -396,6 +396,19 @@ describe("isRecoverableThreadResumeError", () => {
     );
   });
 
+  it("matches incompatible persisted thread payload errors", () => {
+    assert.equal(
+      isRecoverableThreadResumeError(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32602,
+          errorMessage:
+            'Invalid thread/resume payload: Expected { readonly "type": "userMessage", ... }',
+        }),
+      ),
+      true,
+    );
+  });
+
   it("ignores non-recoverable resume errors", () => {
     assert.equal(
       isRecoverableThreadResumeError(
@@ -431,6 +444,61 @@ describe("isRecoverableThreadResumeError", () => {
 });
 
 describe("openCodexThread", () => {
+  it("resumes without decoding newer persisted thread item variants", async () => {
+    const calls: Array<{ method: string; payload: unknown }> = [];
+    const client = {
+      request: <M extends "thread/start" | "thread/resume">(
+        method: M,
+        payload: CodexRpc.ClientRequestParamsByMethod[M],
+      ) => {
+        calls.push({ method, payload });
+        return Effect.succeed(
+          makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
+        );
+      },
+      raw: {
+        request: (
+          method: "thread/resume",
+          payload: CodexRpc.ClientRequestParamsByMethod["thread/resume"],
+        ) => {
+          calls.push({ method, payload });
+          return Effect.succeed({
+            cwd: "/tmp/project",
+            model: "gpt-5.3-codex",
+            thread: {
+              id: "resumed-thread",
+              turns: [
+                {
+                  items: [{ type: "sleep", durationMs: 1000, id: "sleep-1" }],
+                },
+              ],
+            },
+          });
+        },
+      },
+    };
+
+    const opened = await Effect.runPromise(
+      openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        systemPromptAppend: undefined,
+        config: undefined,
+        resumeThreadId: "provider-thread-1",
+      }),
+    );
+
+    assert.equal(opened.thread.id, "resumed-thread");
+    assert.deepStrictEqual(
+      calls.map((call) => call.method),
+      ["thread/resume"],
+    );
+  });
+
   it("falls back to thread/start when resume fails recoverably", async () => {
     const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
     const started = makeThreadOpenResponse("fresh-thread");
