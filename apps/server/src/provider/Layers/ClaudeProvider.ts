@@ -17,6 +17,7 @@ import {
   getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
+  normalizeModelSlug,
 } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
@@ -48,11 +49,19 @@ const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
 } as const;
-const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
-const MINIMUM_CLAUDE_SONNET_5_VERSION = "2.1.197";
-const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
-const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
-const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
+// Keep release gates in ascending version order for the upgrade advisory.
+// New releases/minimums: https://code.claude.com/docs/en/model-config
+// https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21257
+// https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#21280
+const CLAUDE_MODEL_MINIMUM_VERSIONS: Readonly<Record<string, string>> = {
+  "claude-opus-4-7": "2.1.111",
+  "claude-opus-4-8": "2.1.154",
+  "claude-fable-5": "2.1.169",
+  "claude-sonnet-5": "2.1.197",
+  "claude-opus-5": "2.1.219",
+  "claude-fable-5-1": "2.1.257",
+  "claude-opus-5-5": "2.1.280",
+};
 
 const CLAUDE_EFFORT_OPTIONS = {
   generation5: [
@@ -103,6 +112,29 @@ const CLAUDE_EFFORT_OPTIONS = {
 
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
+    slug: "claude-opus-5-5",
+    name: "Claude Opus 5.5",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      // Native 1M context; no opt-in [1m] variant. Claude Code defaults to medium.
+      // https://code.claude.com/docs/en/model-config#adjust-effort-level
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: CLAUDE_EFFORT_OPTIONS.generation5.map((option) => ({
+            ...option,
+            isDefault: option.value === "medium",
+          })),
+        }),
+        buildBooleanOptionDescriptor({
+          id: "fastMode",
+          label: "Fast Mode",
+        }),
+      ],
+    }),
+  },
+  {
     slug: "claude-opus-5",
     name: "Claude Opus 5",
     isCustom: false,
@@ -125,6 +157,21 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     name: "Claude Sonnet 5",
     isCustom: false,
     capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: CLAUDE_EFFORT_OPTIONS.generation5,
+        }),
+      ],
+    }),
+  },
+  {
+    slug: "claude-fable-5-1",
+    name: "Claude Fable 5.1",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      // Native 1M context, adaptive effort, and no Fast Mode.
       optionDescriptors: [
         buildSelectOptionDescriptor({
           id: "effort",
@@ -286,72 +333,37 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
-function supportsClaudeFable5(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_FABLE_5_VERSION) >= 0 : false;
+function supportsClaudeModel(slug: string, version: string | null | undefined): boolean {
+  const baseSlug = slug.endsWith("[1m]") ? slug.slice(0, -4) : slug;
+  const canonicalSlug = normalizeModelSlug(baseSlug, PROVIDER) ?? baseSlug;
+  const minimumVersion = Object.hasOwn(CLAUDE_MODEL_MINIMUM_VERSIONS, canonicalSlug)
+    ? CLAUDE_MODEL_MINIMUM_VERSIONS[canonicalSlug]
+    : undefined;
+  return !minimumVersion || (!!version && compareSemverVersions(version, minimumVersion) >= 0);
 }
 
-function supportsClaudeSonnet5(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_SONNET_5_VERSION) >= 0 : false;
-}
-
-function supportsClaudeOpus5(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_5_VERSION) >= 0 : false;
-}
-
-function supportsClaudeOpus48(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_4_8_VERSION) >= 0 : false;
-}
-
-function supportsClaudeOpus47(version: string | null | undefined): boolean {
-  return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_4_7_VERSION) >= 0 : false;
-}
-
-function getBuiltInClaudeModelsForVersion(
-  version: string | null | undefined,
+function getClaudeModelsForVersion(
+  settings: ClaudeSettings,
+  version: string | null,
 ): ReadonlyArray<ServerProviderModel> {
-  return BUILT_IN_MODELS.filter((model) => {
-    if (model.slug === "claude-opus-5") {
-      return supportsClaudeOpus5(version);
-    }
-    if (model.slug === "claude-sonnet-5") {
-      return supportsClaudeSonnet5(version);
-    }
-    if (model.slug === "claude-fable-5") {
-      return supportsClaudeFable5(version);
-    }
-    if (model.slug === "claude-opus-4-8") {
-      return supportsClaudeOpus48(version);
-    }
-    if (model.slug === "claude-opus-4-7") {
-      return supportsClaudeOpus47(version);
-    }
-    return true;
-  });
+  // Merge before filtering so a custom entry cannot reintroduce a gated built-in.
+  return providerModelsFromSettings(
+    BUILT_IN_MODELS,
+    PROVIDER,
+    settings.customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  ).filter((model) => supportsClaudeModel(model.slug, version));
 }
 
-function formatClaudeOpus5UpgradeMessage(version: string | null): string {
+function formatClaudeModelUpgradeMessage(version: string | null): string | undefined {
+  const unsupported = Object.entries(CLAUDE_MODEL_MINIMUM_VERSIONS).find(
+    ([slug]) => !supportsClaudeModel(slug, version),
+  );
+  if (!unsupported) return undefined;
+  const [slug, minimumVersion] = unsupported;
+  const name = BUILT_IN_MODELS.find((model) => model.slug === slug)!.name;
   const versionLabel = version ? `v${version}` : "the installed version";
-  return `Claude Code ${versionLabel} is too old for Claude Opus 5. Upgrade to v${MINIMUM_CLAUDE_OPUS_5_VERSION} or newer to access it.`;
-}
-
-function formatClaudeSonnet5UpgradeMessage(version: string | null): string {
-  const versionLabel = version ? `v${version}` : "the installed version";
-  return `Claude Code ${versionLabel} is too old for Claude Sonnet 5. Upgrade to v${MINIMUM_CLAUDE_SONNET_5_VERSION} or newer to access it.`;
-}
-
-function formatClaudeFable5UpgradeMessage(version: string | null): string {
-  const versionLabel = version ? `v${version}` : "the installed version";
-  return `Claude Code ${versionLabel} is too old for Claude Fable 5. Upgrade to v${MINIMUM_CLAUDE_FABLE_5_VERSION} or newer to access it.`;
-}
-
-function formatClaudeOpus48UpgradeMessage(version: string | null): string {
-  const versionLabel = version ? `v${version}` : "the installed version";
-  return `Claude Code ${versionLabel} is too old for Claude Opus 4.8. Upgrade to v${MINIMUM_CLAUDE_OPUS_4_8_VERSION} or newer to access it.`;
-}
-
-function formatClaudeOpus47UpgradeMessage(version: string | null): string {
-  const versionLabel = version ? `v${version}` : "the installed version";
-  return `Claude Code ${versionLabel} is too old for Claude Opus 4.7. Upgrade to v${MINIMUM_CLAUDE_OPUS_4_7_VERSION} or newer to access it.`;
+  return `Claude Code ${versionLabel} is too old for ${name}. Upgrade to v${minimumVersion} or newer to access it.`;
 }
 
 export function getClaudeModelCapabilities(model: string | null | undefined): ModelCapabilities {
@@ -397,6 +409,8 @@ export function normalizeClaudeCliEffort(
   }
   if (
     effort === "xhigh" &&
+    model !== "claude-fable-5-1" &&
+    model !== "claude-opus-5-5" &&
     model !== "claude-fable-5" &&
     model !== "claude-opus-5" &&
     model !== "claude-sonnet-5" &&
@@ -415,6 +429,11 @@ export function isClaudeUltracodeEffort(effort: string | null | undefined): bool
 }
 
 export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
+  // These models use native 1M context even if a selection carries an older
+  // model's context option. Send the official ID, not an opt-in [1m] variant.
+  if (modelSelection.model === "claude-opus-5-5" || modelSelection.model === "claude-fable-5-1") {
+    return modelSelection.model;
+  }
   switch (getModelSelectionStringOptionValue(modelSelection, "contextWindow")) {
     case "1m":
       return `${modelSelection.model}[1m]`;
@@ -704,12 +723,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   ChildProcessSpawner.ChildProcessSpawner | Path.Path
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const allModels = providerModelsFromSettings(
-    BUILT_IN_MODELS,
-    PROVIDER,
-    claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-  );
+  const allModels = getClaudeModelsForVersion(claudeSettings, null);
 
   if (!claudeSettings.enabled) {
     return buildServerProvider({
@@ -789,23 +803,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const models = providerModelsFromSettings(
-    getBuiltInClaudeModelsForVersion(parsedVersion),
-    PROVIDER,
-    claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-  );
-  const versionUpgradeMessage = !supportsClaudeOpus47(parsedVersion)
-    ? formatClaudeOpus47UpgradeMessage(parsedVersion)
-    : !supportsClaudeOpus48(parsedVersion)
-      ? formatClaudeOpus48UpgradeMessage(parsedVersion)
-      : !supportsClaudeFable5(parsedVersion)
-        ? formatClaudeFable5UpgradeMessage(parsedVersion)
-        : !supportsClaudeSonnet5(parsedVersion)
-          ? formatClaudeSonnet5UpgradeMessage(parsedVersion)
-          : !supportsClaudeOpus5(parsedVersion)
-            ? formatClaudeOpus5UpgradeMessage(parsedVersion)
-            : undefined;
+  const models = getClaudeModelsForVersion(claudeSettings, parsedVersion);
+  const versionUpgradeMessage = formatClaudeModelUpgradeMessage(parsedVersion);
 
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
@@ -861,12 +860,7 @@ export const makePendingClaudeProvider = (
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
     const checkedAt = yield* nowIso;
-    const models = providerModelsFromSettings(
-      BUILT_IN_MODELS,
-      PROVIDER,
-      claudeSettings.customModels,
-      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-    );
+    const models = getClaudeModelsForVersion(claudeSettings, null);
 
     if (!claudeSettings.enabled) {
       return buildServerProvider({

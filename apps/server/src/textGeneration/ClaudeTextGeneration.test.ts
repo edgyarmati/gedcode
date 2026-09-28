@@ -190,6 +190,41 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  for (const [model, defaultEffort, supportsFastMode] of [
+    ["claude-opus-5-5", "medium", true],
+    ["claude-fable-5-1", "high", false],
+  ] as const) {
+    for (const effort of [undefined, "xhigh"] as const) {
+      it.effect(`passes ${model} and ${effort ?? "default"} effort to the CLI`, () =>
+        withFakeClaudeEnv(
+          {
+            output: JSON.stringify({ structured_output: { title: "Catalog update" } }),
+            argsMustContain: `--model ${model} --effort ${effort ?? defaultEffort}${supportsFastMode ? ' --settings {"fastMode":true}' : " --dangerously-skip-permissions"}`,
+            argsMustNotContain: "[1m]",
+          },
+          (textGeneration) =>
+            Effect.gen(function* () {
+              const generated = yield* textGeneration.generateThreadTitle({
+                cwd: process.cwd(),
+                message: "Update the catalog",
+                modelSelection: createModelSelection(
+                  ProviderInstanceId.make("claudeAgent"),
+                  model,
+                  [
+                    ...(effort ? [{ id: "effort", value: effort }] : []),
+                    { id: "fastMode", value: true },
+                    { id: "thinking", value: false },
+                    { id: "contextWindow", value: "1m" },
+                  ],
+                ),
+              });
+              expect(generated.title).toBe("Catalog update");
+            }),
+        ),
+      );
+    }
+  }
+
   it.effect("forwards Claude thinking settings for Haiku without passing effort", () =>
     withFakeClaudeEnv(
       {

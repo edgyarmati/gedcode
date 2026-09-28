@@ -764,6 +764,66 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  for (const [model, defaultEffort, supportsFastMode] of [
+    ["claude-opus-5-5", "medium", true],
+    ["claude-fable-5-1", "high", false],
+  ] as const) {
+    for (const effort of [undefined, "low", "medium", "high", "xhigh", "max"] as const) {
+      it.effect(`starts ${model} with native ${effort ?? "default"} effort and model ID`, () => {
+        const harness = makeHarness();
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          yield* adapter.startSession({
+            threadId: THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), model, [
+              ...(effort ? [{ id: "effort", value: effort }] : []),
+              { id: "fastMode", value: true },
+              { id: "thinking", value: false },
+              { id: "contextWindow", value: "1m" },
+            ]),
+            runtimeMode: "full-access",
+          });
+          const options = harness.getLastCreateQueryInput()?.options;
+          assert.equal(options?.model, model);
+          assert.equal(options?.effort, effort ?? defaultEffort);
+          assert.deepEqual(options?.settings, supportsFastMode ? { fastMode: true } : undefined);
+        }).pipe(
+          Effect.provideService(Random.Random, makeDeterministicRandomService()),
+          Effect.provide(harness.layer),
+        );
+      });
+    }
+
+    it.effect(`switches to ${model} without a context suffix or redundant model reset`, () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        for (const options of [undefined, [{ id: "contextWindow", value: "1m" }]]) {
+          yield* adapter.sendTurn({
+            threadId: THREAD_ID,
+            input: "Continue",
+            attachments: [],
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              model,
+              options,
+            ),
+          });
+        }
+        assert.deepEqual(harness.query.setModelCalls, [model]);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+  }
+
   it.effect("preserves xhigh effort for Claude Fable 5", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

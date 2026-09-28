@@ -37,7 +37,7 @@ import {
   OrchestrationMcpHttpServer,
 } from "../../orchestration/mcp/OrchestrationMcpHttpServer.ts";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { checkClaudeProviderStatus, makePendingClaudeProvider } from "./ClaudeProvider.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
@@ -1459,6 +1459,222 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
     // ── checkClaudeProviderStatus tests ──────────────────────────
 
     describe("checkClaudeProviderStatus", () => {
+      for (const { version, expected, message } of [
+        {
+          version: "2.1.256",
+          expected: [],
+          message:
+            "Claude Code v2.1.256 is too old for Claude Fable 5.1. Upgrade to v2.1.257 or newer to access it.",
+        },
+        {
+          version: "2.1.257",
+          expected: ["claude-fable-5-1"],
+          message:
+            "Claude Code v2.1.257 is too old for Claude Opus 5.5. Upgrade to v2.1.280 or newer to access it.",
+        },
+        {
+          version: "2.1.279",
+          expected: ["claude-fable-5-1"],
+          message:
+            "Claude Code v2.1.279 is too old for Claude Opus 5.5. Upgrade to v2.1.280 or newer to access it.",
+        },
+        {
+          version: "2.1.280",
+          expected: ["claude-opus-5-5", "claude-fable-5-1"],
+          message: undefined,
+        },
+        {
+          version: "2.1.283",
+          expected: ["claude-opus-5-5", "claude-fable-5-1"],
+          message: undefined,
+        },
+        {
+          version: "unknown",
+          expected: [],
+          message:
+            "Claude Code the installed version is too old for Claude Opus 4.7. Upgrade to v2.1.111 or newer to access it.",
+        },
+      ]) {
+        it.effect(`gates Opus 5.5 and Fable 5.1 including custom duplicates on ${version}`, () =>
+          Effect.gen(function* () {
+            const status = yield* checkClaudeProviderStatus(
+              {
+                ...defaultClaudeSettings,
+                customModels: [
+                  "claude-opus-5-5",
+                  "opus-5.5",
+                  "claude-opus-5-5[1m]",
+                  "opus-5.5[1m]",
+                  "claude-fable-5-1",
+                  "fable-5.1",
+                  "claude-fable-5-1[1m]",
+                  "fable-5.1[1m]",
+                  "custom/deployment",
+                ],
+              },
+              claudeCapabilities(),
+            );
+            assert.deepStrictEqual(
+              status.models
+                .filter((model) => ["claude-opus-5-5", "claude-fable-5-1"].includes(model.slug))
+                .map((model) => model.slug),
+              expected,
+            );
+            for (const { slugs, supportedVersions } of [
+              {
+                slugs: ["claude-opus-5-5[1m]", "opus-5.5[1m]"],
+                supportedVersions: ["2.1.280", "2.1.283"],
+              },
+              {
+                slugs: ["claude-fable-5-1[1m]", "fable-5.1[1m]"],
+                supportedVersions: ["2.1.257", "2.1.279", "2.1.280", "2.1.283"],
+              },
+            ]) {
+              for (const slug of slugs) {
+                assert.strictEqual(
+                  status.models.some((model) => model.slug === slug),
+                  supportedVersions.includes(version),
+                  `${slug} should follow its base model's CLI version gate`,
+                );
+              }
+            }
+            assert.strictEqual(status.message, message);
+            assert.strictEqual(
+              status.models.some((model) => model.slug.includes("mythos")),
+              false,
+            );
+            assert.strictEqual(
+              status.models.find((model) => model.slug === "custom/deployment")?.isCustom,
+              true,
+            );
+            for (const slug of expected) {
+              assert.strictEqual(
+                status.models.find((model) => model.slug === slug)?.isCustom,
+                false,
+              );
+            }
+            if (version !== "unknown") {
+              for (const slug of [
+                "claude-opus-5",
+                "claude-sonnet-5",
+                "claude-fable-5",
+                "claude-opus-4-8",
+              ]) {
+                assert.strictEqual(
+                  status.models.some((model) => model.slug === slug),
+                  true,
+                );
+              }
+            }
+          }).pipe(
+            Effect.provide(
+              mockSpawnerLayer(() => ({ stdout: `${version} (Claude Code)`, stderr: "", code: 0 })),
+            ),
+          ),
+        );
+      }
+
+      it.effect(
+        "exposes native Opus 5.5 and Fable 5.1 capabilities without opt-in context variants",
+        () =>
+          Effect.gen(function* () {
+            const status = yield* checkClaudeProviderStatus(
+              defaultClaudeSettings,
+              claudeCapabilities(),
+            );
+            for (const [slug, name, defaultEffort, fastMode] of [
+              ["claude-opus-5-5", "Claude Opus 5.5", "medium", true],
+              ["claude-fable-5-1", "Claude Fable 5.1", "high", false],
+            ] as const) {
+              const model = status.models.find((model) => model.slug === slug);
+              assert.strictEqual(model?.name, name);
+              const descriptors = model?.capabilities?.optionDescriptors ?? [];
+              assert.deepStrictEqual(
+                descriptors.map((descriptor) => descriptor.id),
+                fastMode ? ["effort", "fastMode"] : ["effort"],
+              );
+              assert.deepStrictEqual(
+                descriptors[0],
+                selectDescriptor("effort", "Reasoning", [
+                  { id: "low", label: "Low" },
+                  {
+                    id: "medium",
+                    label: "Medium",
+                    ...(defaultEffort === "medium" ? { isDefault: true } : {}),
+                  },
+                  {
+                    id: "high",
+                    label: "High",
+                    ...(defaultEffort === "high" ? { isDefault: true } : {}),
+                  },
+                  { id: "xhigh", label: "Extra High" },
+                  { id: "max", label: "Max" },
+                ]),
+              );
+              if (fastMode)
+                assert.deepStrictEqual(descriptors[1], booleanDescriptor("fastMode", "Fast Mode"));
+            }
+          }).pipe(
+            Effect.provide(mockSpawnerLayer(() => ({ stdout: "2.1.280", stderr: "", code: 0 }))),
+          ),
+      );
+
+      it.effect("does not advertise version-gated models before a successful version probe", () =>
+        Effect.gen(function* () {
+          const suffixedCustomModels = [
+            "claude-opus-5-5[1m]",
+            "opus-5.5[1m]",
+            "claude-fable-5-1[1m]",
+            "fable-5.1[1m]",
+          ];
+          const settingsWithCustomModels = {
+            ...defaultClaudeSettings,
+            customModels: suffixedCustomModels,
+          };
+          const disabled = { ...settingsWithCustomModels, enabled: false };
+          const snapshots = [
+            yield* makePendingClaudeProvider(settingsWithCustomModels),
+            yield* makePendingClaudeProvider(disabled),
+            yield* checkClaudeProviderStatus(disabled),
+            yield* checkClaudeProviderStatus(settingsWithCustomModels).pipe(
+              Effect.provide(failingSpawnerLayer("spawn claude ENOENT")),
+            ),
+            yield* checkClaudeProviderStatus(settingsWithCustomModels).pipe(
+              Effect.provide(
+                mockSpawnerLayer(() => ({ stdout: "2.1.280", stderr: "failed", code: 1 })),
+              ),
+            ),
+          ];
+          const killCalls = yield* Ref.make(0);
+          const timedOut = yield* checkClaudeProviderStatus(settingsWithCustomModels).pipe(
+            Effect.provide(hangingScopedSpawnerLayer(killCalls)),
+            Effect.forkChild,
+          );
+          yield* TestClock.adjust("5 seconds");
+          snapshots.push(yield* Fiber.join(timedOut));
+          for (const snapshot of snapshots) {
+            assert.strictEqual(
+              snapshot.models.some((model) => model.slug === "claude-opus-5-5"),
+              false,
+            );
+            assert.strictEqual(
+              snapshot.models.some((model) => model.slug === "claude-fable-5-1"),
+              false,
+            );
+            assert.strictEqual(
+              snapshot.models.some((model) => model.slug.includes("mythos")),
+              false,
+            );
+            for (const slug of suffixedCustomModels) {
+              assert.strictEqual(
+                snapshot.models.some((model) => model.slug === slug),
+                false,
+              );
+            }
+          }
+        }),
+      );
+
       it.effect("returns ready when claude is installed and authenticated", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(

@@ -7,6 +7,14 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 Release verification and publication status are tracked separately from these notes.
 
+## 0.4.7 - 2026-09-28
+
+- Provider/Claude: Add Claude Opus 5.5 (`claude-opus-5-5`, Claude Code v2.1.280+) and
+  Fable 5.1 (`claude-fable-5-1`, v2.1.257+) to the built-in picker with native 1M context,
+  supported reasoning levels, Opus 5.5's medium default and Fast Mode, and versioned aliases.
+  Hide version-gated built-ins until CLI compatibility is verified, including custom duplicates.
+  Existing defaults and unversioned aliases are unchanged; restricted Mythos models are not listed.
+
 ## 0.4.6 - 2026-09-17
 
 - Fix/Codex: Preserve PM sessions when a newer Codex version returns persisted thread items that
