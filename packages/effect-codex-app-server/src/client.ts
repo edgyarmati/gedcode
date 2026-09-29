@@ -1,6 +1,8 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stdio from "effect/Stdio";
@@ -19,6 +21,7 @@ import {
 import { makeChildStdio, makeTerminationError } from "./_internal/stdio.ts";
 
 const DEFAULT_APP_SERVER_FORCE_KILL_AFTER = "2 seconds" as const;
+const MAX_APP_SERVER_STDERR_DIAGNOSTIC_LENGTH = 4_000;
 
 export interface CodexAppServerClientOptions {
   readonly logIncoming?: boolean;
@@ -260,8 +263,26 @@ export const layerChildProcess = (
 const makeChildProcessClient = Effect.fn(
   "effect-codex-app-server/CodexAppServerClient.makeChildProcessClient",
 )(function* (handle: ChildProcessSpawner.ChildProcessHandle, options: CodexAppServerClientOptions) {
-  yield* Stream.runDrain(handle.stderr).pipe(Effect.ignore, Effect.forkScoped);
-  return yield* make(makeChildStdio(handle), options, makeTerminationError(handle));
+  const stderrRef = yield* Ref.make("");
+  const stderrFiber = yield* handle.stderr.pipe(
+    Stream.decodeText(),
+    Stream.runForEach((chunk) =>
+      Ref.update(stderrRef, (current) => {
+        const combined = current + chunk;
+        return combined.length > MAX_APP_SERVER_STDERR_DIAGNOSTIC_LENGTH
+          ? combined.slice(-MAX_APP_SERVER_STDERR_DIAGNOSTIC_LENGTH)
+          : combined;
+      }),
+    ),
+    Effect.ignore,
+    Effect.forkScoped,
+  );
+  const stderrAfterExit = Fiber.join(stderrFiber).pipe(Effect.andThen(Ref.get(stderrRef)));
+  return yield* make(
+    makeChildStdio(handle),
+    options,
+    makeTerminationError(handle, stderrAfterExit),
+  );
 });
 
 export interface CodexAppServerCommandLayerOptions extends CodexAppServerClientOptions {

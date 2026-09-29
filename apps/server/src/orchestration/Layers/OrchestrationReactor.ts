@@ -132,7 +132,7 @@ export const startMessageQueueReactor = Effect.fn("startMessageQueueReactor")(fu
   ).pipe(Effect.forkIn(listenerScope));
 
   const recover = Effect.gen(function* () {
-    const snapshot = yield* projectionSnapshotQuery.getSnapshot();
+    const snapshot = yield* projectionSnapshotQuery.getCommandReadModel();
     for (const thread of snapshot.threads) {
       for (const queuedMessage of thread.queuedMessages ?? []) {
         if (queuedMessage.status !== "dispatching" || queuedMessage.dispatchCommandId === null) {

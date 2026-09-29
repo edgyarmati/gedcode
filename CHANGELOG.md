@@ -5,6 +5,16 @@ Release notes are grouped by released version. Add a `## X.Y.Z` section before r
 
 ## Unreleased
 
+## 0.4.8 - 2026-09-29
+
+- Fix/Orchestrator: Keep startup queue recovery and orphan-turn reconciliation on the lightweight
+  command read model, avoiding loading all persisted conversation messages and activities into
+  memory during server startup.
+- Fix/Codex: Include a bounded tail of Codex App Server stderr when the process exits during
+  startup, so launch failures show the CLI diagnostic instead of only exit code 1.
+- Security: Update `fast-uri` to 3.1.8 to clear the release-blocking high-severity advisories and
+  include the latest compatible security fix.
+
 Release verification and publication status are tracked separately from these notes.
 
 ## 0.4.7 - 2026-09-28

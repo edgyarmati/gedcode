@@ -159,7 +159,7 @@ describe("OrchestrationReactor", () => {
       updatedAt: now,
     } as OrchestrationReadModel;
     const query = {
-      getSnapshot: () =>
+      getCommandReadModel: () =>
         Effect.sleep("10 millis").pipe(
           Effect.map(() => {
             const liveDispatch = commands.find(
@@ -209,7 +209,7 @@ describe("OrchestrationReactor", () => {
       streamShellEvents: Stream.never,
     } as OrchestrationEngineShape;
     const query = {
-      getSnapshot: () =>
+      getCommandReadModel: () =>
         Deferred.await(listenerStarted).pipe(
           Effect.andThen(
             new PersistenceSqlError({
@@ -234,6 +234,18 @@ describe("OrchestrationReactor", () => {
 
   it("starts orchestration reactors after startup reconciliation", async () => {
     const started: string[] = [];
+    const readModel = {
+      snapshotSequence: 0,
+      projects: [],
+      threads: [],
+      tasks: [],
+      helperRuns: [],
+      projectContextRuns: [],
+      pendingGates: [],
+      quotaBlockedStages: [],
+      stageHistory: {},
+      updatedAt: "2026-08-30T12:00:00.000Z",
+    } as OrchestrationReadModel;
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
@@ -353,19 +365,8 @@ describe("OrchestrationReactor", () => {
         ),
         Layer.provideMerge(
           Layer.mock(ProjectionSnapshotQuery, {
-            getSnapshot: () =>
-              Effect.succeed({
-                snapshotSequence: 0,
-                projects: [],
-                threads: [],
-                tasks: [],
-                helperRuns: [],
-                projectContextRuns: [],
-                pendingGates: [],
-                quotaBlockedStages: [],
-                stageHistory: {},
-                updatedAt: "2026-08-30T12:00:00.000Z",
-              }),
+            getCommandReadModel: () => Effect.succeed(readModel),
+            getSnapshot: () => Effect.succeed(readModel),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadShellById: () => Effect.succeed(Option.none()),
           }),

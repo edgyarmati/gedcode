@@ -83,7 +83,7 @@
     "body-parser": "^2.3.0",
     "browserslist": "^4.28.9",
     "effect": "catalog:",
-    "fast-uri": "^3.1.6",
+    "fast-uri": "^3.1.8",
     "hono": "^4.13.5",
     "ip-address": "^10.5.0",
     "js-yaml": "^4.3.2",

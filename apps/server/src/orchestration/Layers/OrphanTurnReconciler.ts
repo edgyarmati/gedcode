@@ -122,7 +122,7 @@ const make = (options?: OrphanTurnReconcilerOptions) =>
     const providerService = yield* ProviderService;
 
     const reconcileOnce = Effect.fn("OrphanTurnReconciler.reconcileOnce")(function* () {
-      const readModel = yield* projectionSnapshotQuery.getSnapshot();
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       const liveProviderSessions = yield* providerService.listSessions();
       const currentTimeMs = yield* Clock.currentTimeMillis;
       const startupGraceMs = Math.max(
@@ -150,7 +150,7 @@ const make = (options?: OrphanTurnReconcilerOptions) =>
               // ownership and live provider state after acquiring it so an
               // initial orphan snapshot can never interrupt a worker that
               // became live while reconciliation was waiting.
-              const freshReadModel = yield* projectionSnapshotQuery.getSnapshot();
+              const freshReadModel = yield* projectionSnapshotQuery.getCommandReadModel();
               const freshLiveSessions = yield* providerService.listSessions();
               const freshCurrentTimeMs = yield* Clock.currentTimeMillis;
               const freshStage = findOrphanedActiveStages({
