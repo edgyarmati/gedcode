@@ -106,3 +106,22 @@ and a `.ged/work/root/STATE.md` phase machine that no longer exists. Stale memor
 absent memory because it is followed confidently. Notably, the old `verify` skill mandated a
 repo-wide typecheck and test run, which directly violates upstream's standing rule that CI owns the
 full suite.
+
+## 2026-10-11 — The memory MCP toolkit gets a bounded upstream exception
+
+**Decision:** The memory toolkit lives in new files under
+`apps/server/src/mcp/toolkits/memory/` (`tools.ts` + `handlers.ts`, matching the existing `project`
+toolkit), builds its layer with the **exported** `McpHttpServer.toolkitRegistration` helper, and is
+wired in by adding two imports and one entry to the `Layer.mergeAll` at
+`apps/server/src/mcp/McpHttpServer.ts:869`. That three-line edit is the only upstream change
+permitted for this component.
+
+**Rationale:** Toolkit registration has no plugin seam — the final `layer` merge is the sole
+assembly point, and nothing outside the module composes it (only tests import the individual
+layers). So some upstream edit is unavoidable. Three lines in a merge list is close to the minimum
+conflict surface available: it is additive within the file, so a rebase conflicts only if upstream
+reorders that exact list.
+
+Recorded explicitly because the standing rule is "never modify an upstream file where a new file
+would do" — here no new file would do, and the exception needs to be visible rather than discovered
+later in a rebase.
