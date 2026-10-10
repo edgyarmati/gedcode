@@ -1,23 +1,46 @@
 ---
 name: sync-upstream
-description: Sync local main from upstream t3code, then rebase the gedcode branch onto the updated main. User-triggered only.
-disable-model-invocation: true
+description: Rebase the Ged commits on main onto the latest upstream t3code main. User-triggered only.
 ---
 
-Sync the fork with upstream t3code and rebase the working branch.
+Pull upstream T3 Code and replay the Ged layer on top of it.
+
+## Layout
+
+`main` is upstream's `main` plus a small number of **purely additive** Ged commits. There is no
+separate working branch.
+
+| Remote     | Points at                             |
+| ---------- | ------------------------------------- |
+| `origin`   | `edgyarmati/gedcode` — ours           |
+| `upstream` | `pingdotgg/t3code` — read-only source |
 
 ## Steps
 
-1. Fetch upstream: `git fetch upstream`
-2. Switch to main: `git checkout main`
-3. Fast-forward main: `git merge --ff-only upstream/main`
-4. Switch back to gedcode: `git checkout gedcode`
-5. Rebase onto updated main: `git rebase main`
+```sh
+git fetch upstream
+git status --porcelain          # must be clean before starting
+git rebase upstream/main
+```
 
-## On Conflict
+Then re-run the narrow checks for anything that looks affected — see the
+[verify](../verify/SKILL.md) skill. Do not run repo-wide checks.
 
-If the rebase has conflicts, stop and report the conflicting files. Do not auto-resolve — let the user decide how to handle each conflict.
+## On conflict
 
-## After Success
+**Stop and report the conflicting files. Do not auto-resolve.**
 
-Report how many commits were pulled from upstream and confirm gedcode is rebased. Remind the user to `git push --force-with-lease origin gedcode` if they want to update the remote.
+A conflict here is a signal worth taking seriously, not just a chore. The Ged layer modifies zero
+upstream files precisely so that this rebase stays trivial — that is the constraint the whole
+re-land was built around (see `.ged/DECISIONS.md`). A conflict means either an upstream file was
+modified when a new file would have done, or upstream has started using a path we claimed. Report
+which, and let the user decide.
+
+## After success
+
+Report how many commits came from upstream and confirm the Ged commits replayed cleanly. Re-verify
+anything the orchestrator depends on — the mechanism inventory in `.ged/ORCHESTRATION.md` §2 is
+explicitly marked load-bearing and re-check-after-merge, since the delegation design rests on
+behavior that upstream could change without notice.
+
+Pushing is the user's call: `git push --force-with-lease origin main`.
