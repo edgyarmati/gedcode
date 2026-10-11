@@ -147,17 +147,22 @@ regression nobody notices.
 All additive. None modifies an upstream file — which is the condition for staying
 mergeable against ~800 upstream commits a month.
 
-| # | Component | Where | Status |
-| - | --------- | ----- | ------ |
-| 1 | **Role briefs** — the real role definitions, since `role` is only a prompt prefix | `.ged/roles/` | built |
-| 2 | **Lead playbook** — the delegation policy, as a skill rather than server code | `.agents/skills/ged-lead/` | built |
-| 3 | **Verdict records** — branch-keyed, with SHA provenance inside | `.ged/verdicts/` | built (format + gate enforcement) |
-| 4 | **Land gate** — refuses to land without a current, passing, independent verdict | `.ged/bin/land-gate.sh` | built, tested |
-| 5 | **Memory MCP toolkit** — serves the above to every provider | `apps/server/src/mcp/toolkits/` | not started (needs a working install) |
-| 6 | **`ProjectMemory` service** — ported from v1's scanner tier | `packages/` | not started |
+| #   | Component                                                                         | Where                                  | Status                            |
+| --- | --------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------- |
+| 1   | **Role briefs** — the real role definitions, since `role` is only a prompt prefix | `.ged/roles/`                          | built                             |
+| 2   | **Lead playbook** — the delegation policy, as a skill rather than server code     | `.agents/skills/ged-lead/`             | built                             |
+| 3   | **Verdict records** — branch-keyed, with SHA provenance inside                    | `.ged/verdicts/`                       | built (format + gate enforcement) |
+| 4   | **Land gate** — refuses to land without a current, passing, independent verdict   | `.ged/bin/land-gate.sh`                | built, tested                     |
+| 5   | **Memory MCP toolkit** — serves the above to every provider                       | `apps/server/src/mcp/toolkits/memory/` | built, tested                     |
+| 6   | **`ProjectMemory` service** — resolves, reads and writes the `.ged/` tree         | `apps/server/src/ged/`                 | built, tested                     |
 
-Components 1–4 are plain files and need no build step, so they work today. 5–6 are TypeScript and
-are blocked on toolchain bootstrap.
+All six are built. The toolkit exposes `ged_memory_list`, `ged_memory_read`, `ged_role_brief`,
+`ged_verdict_write` and `ged_land_check`; `ged_land_check` runs component 4 rather than
+reimplementing it, so the tool and the pre-push hook cannot give different answers.
+
+One upstream file is modified: `apps/server/src/mcp/McpHttpServer.ts`, 10 lines, to import the
+toolkit, provide `ProjectMemory.layer`, and add one entry to the layer merge. That exception is
+recorded in [DECISIONS.md](./DECISIONS.md).
 
 ## 8. Failure modes to watch
 
@@ -168,7 +173,12 @@ are blocked on toolchain bootstrap.
   cancel the child — it sets `waitTimedOut: true` and the lead must continue via
   `task_status`.
 - **Verdict staleness.** A verdict keyed to a SHA is invalidated by any amend or
-  rebase. The gate must compare against the _current_ head, not merely find a record.
+  rebase. The gate compares against the _current_ head rather than merely finding a record.
+- **Slug drift.** `ProjectMemory.verdictSlug` and the slug rule in `land-gate.sh` must map a
+  branch to the same filename. If they diverge, an agent writes a record the gate never looks for
+  and the gate fails open. A test pins this; keep it pinned.
+- **Forged verdicts.** The record is unsigned and self-asserted. The gate stops omission, not
+  dishonesty — see [DECISIONS.md](./DECISIONS.md).
 - **`role` drift.** If upstream gives `role` real semantics later, re-check that our
   briefs do not conflict with injected role text.
 - **Unbounded fan-out.** The orchestrator imposes no delegation depth limit and no

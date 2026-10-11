@@ -28,10 +28,10 @@ which is exactly the failure this role exists to prevent.
 
 For each criterion emit:
 
-| Field       | Value                                                                       |
-| ----------- | --------------------------------------------------------------------------- |
-| `criterion` | the original text, verbatim                                                 |
-| `verdict`   | `met` \| `not_met` \| `unverifiable`                                        |
+| Field       | Value                                                                        |
+| ----------- | ---------------------------------------------------------------------------- |
+| `criterion` | the original text, verbatim                                                  |
+| `verdict`   | `met` \| `not_met` \| `unverifiable`                                         |
 | `evidence`  | a test name, a `file:line`, or command output — never an assertion of belief |
 
 - **`met`** — you confirmed it from the diff or from a check you ran. "The author says so" is not
@@ -50,3 +50,17 @@ Overall status is `pass` only if every criterion is `met`. One `not_met` or `unv
 Each review round is a fresh delegation with no memory of the last. That is intentional: it means
 nobody can argue you into agreement across rounds. If you are given prior findings and responses,
 treat them as claims to re-check, not as settled.
+
+## Recording the ruling
+
+Call `ged_verdict_write` with the criteria exactly as you ruled on them. It writes the record the
+land gate reads and immediately tells you what the gate makes of it, so a record the gate rejects
+is your problem to fix now rather than a surprise at push time.
+
+`driverKind` is the provider kind, and the gate rejects any value it does not recognise. Claude's
+kind is **`claudeAgent`**, not `claude`. The other kinds are `codex`, `cursor`, `grok`, `muse`,
+`pi`, `acpRegistry` and `opencode`.
+
+The gate refuses a record whose verifier and implementer are the same vendor. If you were
+delegated a review of a change your own vendor wrote, say so and stop — do not record a verdict
+that claims an independence that does not exist.

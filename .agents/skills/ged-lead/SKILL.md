@@ -12,12 +12,12 @@ passing, independent verdict**. Plan backwards from that.
 
 ## Scale the process to the work
 
-| Work                          | Delegate                                            |
-| ----------------------------- | --------------------------------------------------- |
-| Typo, comment, rename         | Nothing. Do it. It still needs a verdict to land.    |
-| One clear bounded change      | Implementer, then verifier.                          |
-| Anything you can't fully state | Planner first, then implementer(s), then verifier.   |
-| Refactor across modules       | Planner, implementers in dependency order, verification rounds per slice. |
+| Work                           | Delegate                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| Typo, comment, rename          | Nothing. Do it. It still needs a verdict to land.                         |
+| One clear bounded change       | Implementer, then verifier.                                               |
+| Anything you can't fully state | Planner first, then implementer(s), then verifier.                        |
+| Refactor across modules        | Planner, implementers in dependency order, verification rounds per slice. |
 
 Delegating a planner for a typo is the waste the old stage machine institutionalized. Skipping one
 for a refactor is how you get an expensive wrong plan. Judge honestly: if you cannot write the
@@ -66,13 +66,22 @@ work. If you need real isolation, it needs a new launch, not a prompt instructio
 `mode: "wait"` blocks your turn. A wait timeout does **not** cancel the child — it sets
 `waitTimedOut: true` and you continue via `task_status`.
 
+## Reading the briefs
+
+Do not brief a child from memory. Call `ged_role_brief` for the role you are about to delegate; it
+returns that role's brief and the project's model policy from the branch you are working on, so a
+project that has tightened its own briefs gets the tightened version. `ged_memory_list` and
+`ged_memory_read` reach the rest of the `.ged/` tree.
+
 ## Landing
 
-Write the verdict record to `.ged/verdicts/<branch>.json` per `.ged/verdicts/README.md`, then run:
+Have the **verifier** call `ged_verdict_write`. Then check the gate:
 
-```sh
-.ged/bin/land-gate.sh
-```
+- `ged_land_check` — asks the gate and returns its ruling.
+- `.ged/bin/land-gate.sh` — the same script, from a shell or a pre-push hook.
+
+These are the same answer by construction: the tool runs the script rather than reimplementing its
+rules, so the two cannot drift apart.
 
 Any amend or rebase after verification invalidates the record — the gate compares against the live
 head. Re-verify rather than editing the SHA; editing it is forging evidence.

@@ -125,3 +125,63 @@ reorders that exact list.
 Recorded explicitly because the standing rule is "never modify an upstream file where a new file
 would do" — here no new file would do, and the exception needs to be visible rather than discovered
 later in a rebase.
+
+## Verdict records are untracked, and the gate is a local control
+
+- Date: 2026-10-11
+- Status: accepted
+
+A tracked verdict record and HEAD chase each other. Committing a record changes HEAD, which makes
+the `headSha` inside the record it just committed stale. There is no fixed point, so a tracked
+record can never satisfy the gate's own freshness rule.
+
+Records are therefore untracked — `.ged/verdicts/.gitignore` — and the gate skips that directory
+when it checks for a dirty tree. The nested ignore keeps the root `.gitignore`, an upstream file,
+untouched.
+
+The consequence is stated rather than hidden: **the land gate is a local, pre-push control.** CI
+cannot see these records. Giving CI the same guarantee needs a separate transport — a check-run
+annotation, a PR comment, or an artifact — and that is not built. A reviewer who assumes CI
+enforces this would be wrong.
+
+## The land gate guards omission, not forgery
+
+- Date: 2026-10-11
+- Status: accepted
+
+The verdict record is self-asserted and unsigned. Any agent that can write to `.ged/verdicts/` can
+write a passing record, including the implementer's own agent naming a verifier that never ran.
+
+This is accepted deliberately, because the failure the gate exists to stop is a _lazy_ lead, not a
+_dishonest_ one: a lead that skipped verification, verified an older tree, or let a same-vendor
+reviewer agree with itself. Against all three the gate works, and it works without the server-side
+machinery an attestation would need.
+
+Raising it to resist forgery means an attestation the agent cannot mint — a signature from the
+orchestrator process, or the verdict recorded in the task record server-side rather than on disk.
+Worth doing before this is relied on beyond a solo workflow. Recorded here so that it is a known
+limit rather than an assumed guarantee.
+
+## Project memory is served through MCP, not through prompts
+
+- Date: 2026-10-11
+- Status: accepted
+
+The role briefs are useless if only one harness can read them. A Codex worker and a Claude worker
+must be briefed identically or the cross-vendor verification in ORCHESTRATION.md §5 means nothing —
+the two would be answering different questions.
+
+So `.ged/` is served as an MCP toolkit (`ged_memory_list`, `ged_memory_read`, `ged_role_brief`,
+`ged_verdict_write`, `ged_land_check`) backed by `apps/server/src/ged/ProjectMemory.ts`. Every
+provider the orchestrator can drive reaches the same documents, from the branch it is working on
+rather than from the project root, so a lead revising the briefs on its own branch gets its own
+revision.
+
+`ged_land_check` **runs** `.ged/bin/land-gate.sh` rather than reimplementing its rules in
+TypeScript. Two implementations of a fail-closed rule is two chances to fail open, and the one that
+drifts is the one nobody runs. The cost is spawning a repo-local script; that is not new exposure,
+since an agent that could rewrite the script could equally defeat the git-hook path.
+
+The service lives in `apps/server/src/ged/` rather than in a new workspace package. A package would
+have to be added to `apps/server/package.json` — a second upstream file — to buy a reuse nobody
+needs yet. One upstream file (`McpHttpServer.ts`, 8 lines) remains the whole surface.
