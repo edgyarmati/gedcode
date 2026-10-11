@@ -59,18 +59,24 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                   | Lines | Why                                                      |
-| -------------------------------------- | ----- | -------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits                 |
-| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors           |
-| `pnpm-workspace.yaml`                  | 8     | Drops `apps/mobile` from the workspace                   |
-| `knip.jsonc`                           | 36    | Scopes the export audit off mobile-only upstream exports |
-| `pnpm-lock.yaml`                       | gen   | Generated; regenerate on conflict, never merge by hand   |
+| File                                   | Lines | Why                                                       |
+| -------------------------------------- | ----- | --------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits                  |
+| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors            |
+| `pnpm-workspace.yaml`                  | 8     | Drops `apps/mobile` from the workspace                    |
+| `knip.jsonc`                           | 36    | Scopes the export audit off mobile-only upstream exports  |
+| `pnpm-lock.yaml`                       | gen   | Generated; regenerate on conflict, never merge by hand    |
+| `README.md`                            | all   | Upstream's is T3 Code branding and T3 Code installers     |
+| `CONTRIBUTING.md`                      | 8     | Fork preamble; upstream repo links; triage is manual here |
+| `LICENSE`                              | 1     | Adds our copyright line; upstream's is retained           |
 
 The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —
 Blacksmith runners, T3's Cloudflare and hosting credentials, the dropped mobile app, T3's
 contribution process — are disabled in repository settings, and our gate is a new file,
-`.github/workflows/ged-ci.yml`. Keep it that way; a `runs-on:` edit is 37 conflicts a sync.
+`.github/workflows/ged-ci.yml`. Keep it that way; a `runs-on:` edit is 37 conflicts a sync. Upstream's
+release workflows (`Release`, `Release desktop build`, `Publish AUR package`) are disabled for the
+same reason: they publish the npm `t3` and `@t3code/*` packages, which are not ours to publish. Our
+release path is desktop artifacts on GitHub Releases, and it is unbuilt.
 
 ## Code conventions
 

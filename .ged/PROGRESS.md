@@ -196,3 +196,22 @@ The reason these were reported locally as passing is worth keeping: the package 
 read by grepping its output for `error TS`, and the layer defect was a `warning`. Exit codes are the
 check; output is commentary. The whole repo now typechecks at exit zero, 31 packages, and that is
 what `ged-ci.yml` runs.
+
+## 2026-10-11 — Fork identity restored: README, license, notices, Ged user docs
+
+The re-fork had carried none of this over, so the tree read as T3 Code to anyone who landed on it.
+Now: `README.md` is GedCode's and leads with what the Ged layer actually guarantees rather than with
+its ancestry; `LICENSE` carries both copyrights; `THIRD_PARTY_NOTICES.md` covers the `grilling`
+skill's MIT attribution, which the generated in-app manifests do not reach because it is not an npm
+package; `CONTRIBUTING.md` says plainly that it is a fork, that the triage automation it describes is
+upstream's and disabled here, and points at our issues.
+
+`docs/ged/workflow.md` is new, not a port. The v0.4 document described clarify/plan/implement/verify
+phases with checkpoints — a state machine this version deliberately dropped. The new one explains why
+a verdict can be trusted by naming the mechanism under each claim (lead-spawned verifier, no
+implementer summary, cross-vendor, `approval-required` pin, fresh thread per round) and ends with the
+two things it does not claim.
+
+Also disabled upstream's `Release`, `Release desktop build` and `Publish AUR package` workflows. They
+publish the npm `t3` and `@t3code/*` packages; those are not ours to publish, and leaving them armed
+on a tag push was the kind of thing that is only noticed afterwards.

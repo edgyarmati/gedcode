@@ -397,3 +397,27 @@ Registering them means editing a large, hot upstream catalog for cosmetics. Unde
 rule that is a bad trade, so the limit stands. `registration.test.ts` asserts the fallback rather
 than the catalog, so if upstream ever changes the unknown-tool path from graceful to broken, we find
 out from a failing test instead of from a user.
+
+## 2026-10-11 — The fork's identity lives in four files, and upstream's docs tree is left alone
+
+- Status: accepted.
+
+A fork that reads as its upstream is a bug: upstream's `README.md` offers T3 Code's installers
+(`t3.codes`, winget, scoop, brew, AUR) and T3's release page, none of which install this. So four
+root files are ours — `README.md` (rewritten), `LICENSE` (our copyright added beside T3 Tools'),
+`CONTRIBUTING.md` (fork preamble plus repo links; upstream's standards kept, because staying
+mergeable is the point), and a new `THIRD_PARTY_NOTICES.md` for the `grilling` skill, which is
+adapted from `mattpocock/skills` under MIT and is not covered by the generated in-app license
+manifests.
+
+Everything under `docs/` stays upstream's and unedited. It documents the same harness, it is a hot
+tree, and rebranding it would buy nothing and cost a conflict per sync. GedCode's own user
+documentation is additive, at `docs/ged/`, and is linked from our `README.md` rather than from
+upstream's `docs/README.md` index.
+
+`docs/ged/workflow.md` is written against the v0.5 model — PM thread, task lead, role children,
+verdict records, land gate — and is not a port of v0.4's `docs/ged-workflow.md`, whose phases and
+checkpoints describe a state machine that no longer exists. It states the two known limits
+(unsigned records, no CI transport) rather than implying a guarantee the gate does not provide.
+
+Upstream's release workflows are disabled alongside the rest; see STANDARDS.md.

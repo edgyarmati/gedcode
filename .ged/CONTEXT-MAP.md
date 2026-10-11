@@ -34,11 +34,20 @@ The Ged layer is mostly plain files, but two pieces are TypeScript in `apps/serv
 | `apps/server/src/ged/ProjectMemory.ts` | Path-confined reader/writer for the `.ged/` tree; runs the gate |
 | `apps/server/src/mcp/toolkits/memory/` | The MCP toolkit that serves it to every provider                |
 
-Five upstream files are modified: ten lines in `apps/server/src/mcp/McpHttpServer.ts` to register
-that toolkit, `.github/pull_request_template.md`, and the three that drop the out-of-scope Expo app
-from the workspace (`pnpm-workspace.yaml`, `knip.jsonc`, and the generated `pnpm-lock.yaml`).
+Eight upstream files are modified: ten lines in `apps/server/src/mcp/McpHttpServer.ts` to register
+that toolkit, `.github/pull_request_template.md`, the three that drop the out-of-scope Expo app
+from the workspace (`pnpm-workspace.yaml`, `knip.jsonc`, and the generated `pnpm-lock.yaml`), and
+the three that carry the fork's identity (`README.md`, `CONTRIBUTING.md`, `LICENSE`).
 `STANDARDS.md` carries the full list with line counts, and keeping it short is what keeps upstream
 merges cheap.
+
+## User-facing documentation
+
+`docs/` is upstream's and stays unedited — it documents the same harness. GedCode's own user
+documentation is additive at `docs/ged/`, starting with `workflow.md`, and is linked from the root
+`README.md` rather than from upstream's `docs/README.md` index. Root `THIRD_PARTY_NOTICES.md` covers
+attribution that the generated in-app license manifests cannot reach, because it is not an npm
+package.
 
 ## Not here
 

@@ -1,5 +1,15 @@
 # Contributing
 
+GedCode is a fork of [T3 Code](https://github.com/pingdotgg/t3code) and keeps its contribution
+standards, because the Ged layer is built to stay mergeable with upstream: a PR that would make a
+future upstream sync harder is a PR that costs more than it gives. Changes to upstream files need a
+reason recorded in `.ged/STANDARDS.md`; additive work under `.ged/`, `.agents/skills/`,
+`apps/server/src/ged/` and `apps/server/src/mcp/toolkits/memory/` is the cheap path.
+
+The triage and labelling automation described below is upstream's. It is documented here because the
+rules it encodes still apply to review, but the workflows that run it are disabled in this
+repository — triage here is manual.
+
 ## Developer setup
 
 See the [development runbook](docs/operations/development.md#first-checkout) for the initial checkout,
@@ -19,9 +29,9 @@ the same reasons as a ready PR; converting a PR to draft does not exempt it from
 Focused bug fixes, reliability fixes, performance improvements, and maintenance work are the most
 likely to be accepted. Unsolicited features, opinionated rewrites, and unrelated cleanup are not.
 
-Report bugs in issues. Feature requests and proposals belong in
-[Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-Search existing reports, discussions, and documented workflows before starting work.
+Report bugs, feature requests and proposals in
+[issues](https://github.com/edgyarmati/gedcode/issues). Search existing reports and documented
+workflows before starting work.
 
 <a id="prior-approval"></a>
 
@@ -114,7 +124,7 @@ vouching, collaborator or bot status, repository write access, and previous succ
 establish an exemption. Other contributors, including vouched contributors, go through triage.
 Passing once does not grant permanent trust.
 
-Every live run freshly resolves `pingdotgg/t3code`'s `refs/heads/main` to a commit SHA and loads the
+Every live run freshly resolves this repository's `refs/heads/main` to a commit SHA and loads the
 contribution-triage skill, this guide, its policy dependencies (including `AGENTS.md` documentation
 rules), and the exemption list from that same SHA. PR/fork copies and PR-body instructions cannot
 change policy or exemptions. Missing, incomplete, or malformed trusted files leave routing unresolved;
