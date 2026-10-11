@@ -113,16 +113,12 @@ upstream fails loudly rather than disappearing into a package-wide rule. Two exp
 Modified upstream files go from two to five; `pnpm-lock.yaml` is generated and self-heals on
 conflict. The table in [STANDARDS.md](./STANDARDS.md) is the list a PR has to justify adding to.
 
-**Blocked, and it needs a decision.** No GitHub Actions run has ever happened on `next`. The cause
-is now diagnosed: PR #92 targets v0.4's `main`, the two branches diverged at `e3accd6e9`, and v0.4
-modified 451 files upstream also changed — so the PR is `CONFLICTING`, `refs/pull/92/merge` does not
-exist, and Actions never creates a check suite for a `pull_request` it cannot merge. Only
-third-party apps, which work off `refs/pull/92/head`, report. The `push` trigger will not cover it
-either; it is filtered to `main`, and widening it means editing `ci.yml`.
-
-Nothing automated has checked this tree. Every green result so far is local. The fix is not to
-resolve 450 conflicts — `next` is meant to replace `main`, not merge into it — so it is a call about
-what the trunk should be, not a task.
+**No GitHub Actions run had ever happened on `next`** — diagnosed, then fixed, see the next entry.
+PR #92 targeted v0.4's `main`, the two branches diverged at `e3accd6e9`, and v0.4 modified 451 files
+upstream also changed, so the PR was `CONFLICTING`, `refs/pull/92/merge` did not exist, and Actions
+never creates a check suite for a `pull_request` it cannot merge. Only third-party apps, which work
+off `refs/pull/92/head`, reported. The `push` trigger would not have covered it either; it is
+filtered to `main`.
 
 **Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
 which is a key-custody decision and not code.
@@ -144,3 +140,18 @@ because the shipped version is a build input — `--build-version` / `T3CODE_DES
 resolved at `scripts/build-desktop-artifact.ts:1750` — so the 0.5.x train costs zero upstream file
 edits. That also settles slice 1 of the Sparkle plan: reuse the existing key pair and `sparkle-feed`
 release, because the whole point is to reach the installs already trusting that key.
+
+## 2026-10-11 — This tree is `main` now, and v0.4's history is still under it
+
+`main` was fast-forwarded onto this tree. No force-push, nothing rewritten: a `git merge -s ours`
+of `origin/main` into `next` records v0.4's tip as the second parent while taking this tree's
+content wholesale, which makes `next` a strict descendant of `main` and the push an ordinary
+fast-forward. Anyone with a clone pulls cleanly. `v0.4-final` tags `c3a9813f39`, and v0.4's release
+tags are untouched.
+
+PR #92 closed as merged the moment its commits reached `main`, and CI started on the same push —
+the first automated check this tree has ever had. The diagnosis in the previous entry held exactly:
+the conflict was the whole cause.
+
+The branch `next` still exists and is identical to `main`; it has no further purpose. Work continues
+on `main`, which is what [sync-upstream](../.agents/skills/sync-upstream/SKILL.md) already assumed.
