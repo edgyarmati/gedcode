@@ -93,6 +93,13 @@ Early and moving quickly. Expect bugs. GedCode tracks upstream closely on purpos
 built to be additive so that upstream's work keeps arriving, which is also why the repository carries
 its own [contribution guide](./CONTRIBUTING.md).
 
+## Privacy
+
+GedCode collects no usage analytics and has no accounts or servers of its own. It talks to the
+network for the coding agents you run (each through its own provider and your own credentials),
+and to this repository on GitHub for update checks, release downloads and the model list. Your
+projects, threads and settings stay on the machine that runs the GedCode server.
+
 ## License
 
 GedCode is available under the [MIT License](./LICENSE), and retains T3 Code's copyright alongside

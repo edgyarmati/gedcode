@@ -38,6 +38,7 @@ import {
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { applySparkleBuildConfig } from "./sparkle/buildConfig.ts";
+import { applyGedStagePackageIdentity, rebrandStagedBundles } from "./ged/identity.ts";
 import { stageSparkle } from "./sparkle/stage.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -3759,6 +3760,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
+  yield* rebrandStagedBundles(
+    (options.platform === "win"
+      ? ["apps/desktop/dist-electron"]
+      : ["apps/desktop/dist-electron", "apps/server/dist"]
+    ).map((dir) => path.join(stageAppDir, dir)),
+  );
   yield* stageResourceMonitor({
     repoRoot,
     stageResourcesDir,
@@ -3906,7 +3913,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     },
   };
 
-  const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
+  const stagePackageJsonString = yield* encodeJsonString(
+    applyGedStagePackageIdentity(stagePackageJson, {
+      channel: resolveDesktopUpdateChannel(appVersion),
+      version: appVersion,
+    }),
+  );
   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
   const stageWorkspaceConfig = createStageWorkspaceConfig({
     platform: options.platform,

@@ -254,3 +254,13 @@ the next background poll left the app stuck on "checking", because Sparkle defer
 during an open update session and never answers it. Fixed in the adapter, with tests that model the
 deferral. The release workflow now also refuses non-GedCode bundle identities and any version other
 than `X.Y.Z` or `X.Y.Z-nightly.YYYYMMDD.N`, and CI runs the Sparkle suites.
+
+## 2026-10-11 — The app is GedCode again
+
+Packaged builds carry v0.4's identity (`com.t3tools.gedcode`, `GedCode`, userData `gedcode`), so
+Sparkle can update a v0.4 install in place and keep its data. The icon is a new GC mark (white G,
+grey C; nightly and dev on indigo and blue), used for the app, favicons, the in-app mark and the DMG.
+Every user-visible "T3 Code", and plain "T3" in prose, is rewritten in the staged bundles. T3's
+telemetry, hosted pairing links, release and manifest endpoints and mobile beta prompt are gone or
+pointed at this repository. The release workflow's identity check, which refused every build until
+now, passes. See DECISIONS for what stays upstream's and why.

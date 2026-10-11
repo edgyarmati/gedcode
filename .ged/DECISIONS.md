@@ -428,3 +428,27 @@ checkpoints describe a state machine that no longer exists. It states the two kn
 (unsigned records, no CI transport) rather than implying a guarantee the gate does not provide.
 
 Upstream's release workflows are disabled alongside the rest; see STANDARDS.md.
+
+## 2026-10-11 — GedCode's identity is set in source; its product name at build time
+
+- Status: accepted.
+
+v0.5 must update v0.4 installs in place through Sparkle, so it has to be the same app: bundle
+identifier `com.t3tools.gedcode`, product name `GedCode`, Electron userData `gedcode` /
+`gedcode-dev`, home `~/.gedcode`, URL schemes `gedcode` / `gedcode-dev`. Those are constants in
+about twenty upstream files (desktop identity and paths, server home and origins, the auth return
+schemes) and are edited there: a one-line constant edit per file is a cheap conflict, and an
+identity that differs between source and build is how data ends up in the wrong profile.
+
+The user-visible name is not edited in source. About 180 upstream files say "T3 Code", and
+rewriting them would make every sync a conflict storm. `scripts/ged/identity.ts` rewrites
+"T3 Code", "T3 Connect" and plain "T3" before a word ("a T3 thread") in the staged bundles and the electron-builder config instead, so a
+packaged build says GedCode everywhere. The cost: `vp run dev` still shows upstream's strings,
+because dev serves unstaged sources.
+
+T3's services are cut rather than rebranded. Telemetry has no key and is off; the model manifest,
+CLI release index and release notes point at this repository; pairing links are direct server links
+because there is no hosted web app; the T3 mobile beta prompt is hidden; the desktop never imports
+a T3 Code profile, so a machine with both apps keeps them apart. The remote tunnel (Clerk +
+Cloudflare relay), the `t3.json` schema URL and the `t3` CLI command name are left as upstream has
+them and dormant — each needs a service of ours before it can be renamed meaningfully.

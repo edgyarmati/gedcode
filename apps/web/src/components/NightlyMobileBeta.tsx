@@ -22,6 +22,9 @@ import { toastManager } from "./ui/toast";
 export const IS_NIGHTLY_BUILD =
   parseSemver(APP_VERSION)?.prerelease[0] === "nightly" || HOSTED_APP_CHANNEL === "nightly";
 
+// GedCode ships no mobile app, so none of this is shown.
+const MOBILE_BETA_AVAILABLE = false;
+
 const IOS_TESTFLIGHT_URL = "https://testflight.apple.com/join/XgaxaRtd";
 const ANDROID_BETA_GROUP_URL = "https://groups.google.com/g/t3-code-v2-beta";
 const ANDROID_PLAY_TESTING_URL = "https://play.google.com/apps/testing/com.t3tools.t3code";
@@ -56,7 +59,7 @@ export function NightlyMobileBetaNotice() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!IS_NIGHTLY_BUILD || noticeShown || isNoticeDismissed()) return;
+    if (!MOBILE_BETA_AVAILABLE || !IS_NIGHTLY_BUILD || noticeShown || isNoticeDismissed()) return;
     noticeShown = true;
     const toastId = toastManager.add({
       title: "Nightly needs the beta mobile app",
@@ -103,6 +106,7 @@ function BetaLinkQr({ url, label }: { url: string; label: string }) {
 
 /** Settings → General → About row with the beta app links. Render it only for Nightly. */
 export function NightlyMobileBetaRow() {
+  if (!MOBILE_BETA_AVAILABLE) return null;
   return (
     <SettingsRow
       id={ROW_ID}
