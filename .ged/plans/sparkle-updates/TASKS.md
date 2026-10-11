@@ -2,11 +2,17 @@
 
 Dependency-ordered. Each slice is independently verifiable.
 
-## 1. Decide key custody
+## 1. Decide key custody — **done, 2026-10-11: reuse**
 
-Not code. Decide whether v1 reuses v0's EdDSA key pair and `sparkle-feed` release or mints its own,
-and confirm the `SPARKLE_ED_PRIVATE_KEY` secret exists on `edgyarmati/gedcode` for whichever is
-chosen. Blocks everything downstream: the public key is compiled into the app.
+v0.5 reuses v0.4's EdDSA key pair and the `sparkle-feed` prerelease. Verified on the repo:
+`SPARKLE_ED_PRIVATE_KEY` is present (added 2026-08-27) and `sparkle-feed` still serves
+`appcast-latest.xml` advertising 0.4.8. Minting a new pair would strand every existing install
+behind a manual bridge release, which is the failure Sparkle was kept to avoid. The embedded
+`SUPublicEDKey` therefore stays `OEqTyWgHzGWLdI/c38qOQw+fwKdK+npBmpSEum8e4U4=` and the keychain
+account stays `gedcode-updates`.
+
+Still to confirm before slice 6: that the private seed in the repo secret matches that public key,
+by running `generate_keys -p` against the keychain item on this Mac. Never print or paste the seed.
 
 ## 2. Pin the dependency
 

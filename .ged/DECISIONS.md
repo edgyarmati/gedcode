@@ -35,11 +35,11 @@
 ## Rebase onto T3 Code V2 orchestrator
 
 - Date: 2026-10-11
-- Decision: Abandon the v0 fork lineage and re-fork from T3 Code `main` (`9afde1c6d`, #17848).
+- Decision: Abandon the v0.4 fork lineage and re-fork from T3 Code `main` (`9afde1c6d`, #17848).
   Adopt the upstream V2 orchestrator as-is rather than porting GedCode's own orchestration
   domain. GedCode's contribution becomes the Ged workflow layer — durable project memory,
   role briefs, the lead playbook, and the land gate — built additively on top.
-- Rationale: The v0 fork diverged 741/3775 commits across 4.5 months, and 450 of the 451
+- Rationale: The v0.4 fork diverged 741/3775 commits across 4.5 months, and 450 of the 451
   upstream files it modified were also changed upstream, leaving no clean-merge surface.
   Upstream independently built a more capable delegation engine (durable child tasks,
   checkpoints, context handoffs, ten provider adapters). Maintaining a parallel orchestrator
@@ -94,7 +94,7 @@ dropped in favour of an outcome gate is that the gate cannot be satisfied by pas
 only by producing evidence. An override would restore exactly the weakness being removed. Verified
 against all six failure modes plus the passing case.
 
-## 2026-10-11 — Carried v0 memory and skills rewritten, not imported
+## 2026-10-11 — Carried v0.4 memory and skills rewritten, not imported
 
 **Decision:** `.ged/STANDARDS.md` and `.ged/PROJECT.md` were rewritten from scratch for the new
 base, and the `verify`, `ged-planning`, `ged-execution`, `ged-verification`, `grill-me`, and
@@ -186,23 +186,31 @@ The service lives in `apps/server/src/ged/` rather than in a new workspace packa
 have to be added to `apps/server/package.json` — a second upstream file — to buy a reuse nobody
 needs yet. `McpHttpServer.ts` (10 lines) stays the only upstream _code_ file we touch.
 
-## 2026-10-11 — This tree is GedCode v1; the old fork is v0
+## 2026-10-11 — One version line: the 0.4.x fork continues as 0.5.x
 
-- Status: accepted
+- Status: accepted. Supersedes an earlier decision that called this tree v1.
 
-The fork that ran from `e3accd6e95` to `c3a9813f39`, tagged up to v0.4.8, is **v0**. This tree is
-**v1**. A re-fork that abandons the old lineage, drops the orchestration domain, and rebuilds the
-discipline on a different engine is a generation boundary, not a minor version, and calling it
-anything else invites someone to read v0's tags as this tree's history. They are not.
+The fork that ran from `e3accd6e95` to `c3a9813f39`, tagged up to v0.4.8, is **v0.4**. This tree is
+**v0.5**. It was briefly called v1, on the reasoning that a re-fork abandoning the old lineage is a
+generation boundary rather than a minor version. That reasoning was about the code. The version
+number is not about the code.
 
-Case carries meaning here, because two numbering schemes meet: lowercase `v0`/`v1` is a GedCode
-generation, uppercase `V1`/`V2` is upstream's own (the V2 orchestrator, the V1 sqlite projections).
-GedCode v1 runs on upstream's V2 orchestrator; both numbers are right and they count different
-things.
+There are real v0.4.8 installs updating from a live Sparkle appcast. Sparkle offers an update only
+when the advertised version is higher, so the number has exactly one job: be greater than 0.4.8.
+Continuing the line at 0.5.x does that and keeps every existing install on the update path. Starting
+over at 1.0.0 would also have worked numerically but claims a stability this tree has not earned;
+staying on upstream's 0.0.45 would have stranded every existing user silently, which is the same
+class of failure Sparkle exists to prevent.
 
-Package versions are **not** being set to 1.0.0. They track upstream's release train (0.0.45) and
-are wired into upstream's release automation; renumbering them buys nothing and breaks that. The
-generation is a project fact recorded here, not a field in a manifest.
+Package manifests are **not** renumbered. `apps/{web,desktop,server}` and `packages/contracts` stay
+on upstream's 0.0.45 train, because they are wired into upstream's release automation and editing
+them would add four hot upstream files to the modified list for nothing. The shipped version is a
+build input — `--build-version`, or `T3CODE_DESKTOP_VERSION` — resolved in
+`scripts/build-desktop-artifact.ts:1750`. The release train is a release-time fact, not a manifest
+field.
+
+This also retires the lowercase/uppercase convention. With no bare `v1` of our own, upstream's `V1`
+and `V2` are unambiguous on their own.
 
 ## 2026-10-11 — Our own pull request template
 
@@ -224,7 +232,7 @@ content does not apply to us, and a conflict in a 31-line template is cheap to r
 
 - Status: accepted
 
-v0 imported its own `AGENTS.md` and `CLAUDE.md` verbatim into `STANDARDS.md`. The copy went stale
+v0.4 imported its own `AGENTS.md` and `CLAUDE.md` verbatim into `STANDARDS.md`. The copy went stale
 within weeks and had to be rewritten, which is the predictable outcome: a duplicated document has
 no mechanism that keeps it true.
 
@@ -239,7 +247,7 @@ it overrides, never as a second full copy.
 
 - Status: accepted
 
-`.ged/` carried eleven files and four directories from v0 that contained nothing but a heading or a
+`.ged/` carried eleven files and four directories from v0.4 that contained nothing but a heading or a
 README: `ARCHITECTURE.md`, `PATTERNS.md`, `GLOSSARY.md`, `IDEAS.md`, three JSON state files for
 tooling that no longer exists, and `specs/`, `tasks/`, `research/`, `project-skills/`. They were
 removed.
@@ -266,7 +274,7 @@ behaviour goes in a brief, and a skill has to justify why a brief would not do.
 
 Upstream ships `electron-updater`, which on macOS cannot install an update onto an ad-hoc-signed
 app. Without an Apple Developer Program membership that means no auto-update on macOS, ever, and
-users silently stranded on old builds. v0 solved this with Sparkle 2, which verifies updates with
+users silently stranded on old builds. v0.4 solved this with Sparkle 2, which verifies updates with
 its own EdDSA signature instead of the system code signature. That capability is kept.
 
 It is the most expensive thing the additive-only constraint will be asked to absorb: it takes the
@@ -281,8 +289,8 @@ same interface on darwin, so upstream's 1042-line `DesktopUpdates.ts` and everyt
 untouched. If the interface turns out not to fit, that is a finding to report — widening it is a
 different and much worse trade.
 
-v0's diffs are a reference, not a patch set. Upstream's updater, build script, and release workflow
-have all changed substantially since v0 forked.
+v0.4's diffs are a reference, not a patch set. Upstream's updater, build script, and release workflow
+have all changed substantially since v0.4 forked.
 
 Not deferred, not dropped: `.ged/plans/sparkle-updates/`.
 

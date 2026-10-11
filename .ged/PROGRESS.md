@@ -4,7 +4,7 @@ Ongoing log of project progress.
 
 ## 2026-10-11 — Ged layer re-landed on the V2 orchestrator base
 
-Rebuilt `.ged/` and the Ged skills on a fresh T3 Code checkout (`9afde1c6d`, #17848) after v0's
+Rebuilt `.ged/` and the Ged skills on a fresh T3 Code checkout (`9afde1c6d`, #17848) after v0.4's
 fork point proved unmergeable. **Zero upstream files modified**, which is the constraint the
 re-land exists to satisfy.
 
@@ -16,14 +16,14 @@ Built and working (plain files, no build step):
 - `verdicts/` — branch-keyed records with SHA provenance
 - `bin/land-gate.sh` — tested against all six failure modes plus the passing case
 
-Rewrote the carried v0 memory and realigned six skills that still drove the dropped
+Rewrote the carried v0.4 memory and realigned six skills that still drove the dropped
 `.ged/work/root/STATE.md` phase machine.
 
 Toolchain bootstrapped: Node 24.13.1 via nvm, Vite+ `vp` 1.1.0 installed globally. Note the repo
 pins `vite-plus@1.0.0` locally while the global CLI is 1.1.0.
 
 **Next:** the memory MCP toolkit (`apps/server/src/mcp/toolkits/`) and the `ProjectMemory` service.
-Both are TypeScript and were blocked on the install until now. v0's `ProjectContextRunChanges.ts`
+Both are TypeScript and were blocked on the install until now. v0.4's `ProjectContextRunChanges.ts`
 is deliberately not being ported — it is being rebuilt as a toolkit, which drops its supervised-write
 review gate unless that is deliberately rebuilt too.
 
@@ -57,10 +57,10 @@ called over the wire.
 
 ## 2026-10-11 — Generation naming settled, and a PR template that fits
 
-This tree is GedCode **v1**; the fork it replaces is **v0**. The docs had been calling the old
-fork v1, which left no name for this one and invited its 0.4.x tags to be read as this tree's
-history. Renamed throughout `.ged/`, leaving upstream's uppercase `V1`/`V2` alone — those are the
-sqlite projections and the orchestrator, and GedCode v1 runs _on_ upstream's V2 orchestrator.
+This tree is GedCode **v0.5**; the fork it replaces is **v0.4**. The docs had been naming the old
+fork as if it were the current one, which left no name for this tree and invited its 0.4.x tags to
+be read as this tree's history. Renamed throughout `.ged/`, leaving upstream's uppercase `V1`/`V2`
+alone — those are the sqlite projections and the orchestrator.
 
 Replaced `.github/pull_request_template.md`. Upstream's is addressed to outside contributors
 asking for review capacity — link a triaged issue, show maintainer approval of scope — none of
@@ -86,7 +86,7 @@ a `docs/adr/` tree that do not exist here, and `domain-modeling` instructed agai
 `CONTEXT-MAP.md` this project uses. `grill-me` duplicated `grilling`. Four skills remain:
 `ged-lead`, `verify`, `grilling`, `sync-upstream`.
 
-Planned, with the Sparkle macOS updater kept as a first-class v0 capability rather than quietly
+Planned, with the Sparkle macOS updater kept as a first-class v0.4 capability rather than quietly
 lost: `.ged/plans/sparkle-updates/`. Upstream's `electron-updater` cannot update an ad-hoc-signed
 macOS app, so without Sparkle there is no auto-update without an Apple Developer Program
 membership. The seam is cheap — `ElectronUpdater` is an Effect service chosen by one line in
@@ -114,7 +114,7 @@ Modified upstream files go from two to five; `pnpm-lock.yaml` is generated and s
 conflict. The table in [STANDARDS.md](./STANDARDS.md) is the list a PR has to justify adding to.
 
 **Blocked, and it needs a decision.** No GitHub Actions run has ever happened on `next`. The cause
-is now diagnosed: PR #92 targets v0's `main`, the two branches diverged at `e3accd6e9`, and v0
+is now diagnosed: PR #92 targets v0.4's `main`, the two branches diverged at `e3accd6e9`, and v0.4
 modified 451 files upstream also changed — so the PR is `CONFLICTING`, `refs/pull/92/merge` does not
 exist, and Actions never creates a check suite for a `pull_request` it cannot merge. Only
 third-party apps, which work off `refs/pull/92/head`, report. The `push` trigger will not cover it
@@ -126,3 +126,21 @@ what the trunk should be, not a task.
 
 **Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
 which is a key-custody decision and not code.
+
+## 2026-10-11 — v0.5, not v1
+
+Checked the live Sparkle feed before answering "what version is this tree?" and the answer changed.
+`sparkle-feed` on `edgyarmati/gedcode` is a real prerelease advertising `0.4.8` to real installs,
+and `SPARKLE_ED_PRIVATE_KEY` is still on the repo. Sparkle offers an update only when the advertised
+version is higher, so staying on upstream's `0.0.45` would have left every existing user silently
+stranded — the exact failure Sparkle was kept for.
+
+So this tree is **v0.5** and the old fork is **v0.4**: one product on one version line, renamed
+throughout `.ged/`. The "generation boundary deserves a 1.0" reasoning was about the code; the
+version number is not about the code.
+
+No manifest moves. `apps/{web,desktop,server}` and `packages/contracts` stay on upstream's 0.0.45,
+because the shipped version is a build input — `--build-version` / `T3CODE_DESKTOP_VERSION`,
+resolved at `scripts/build-desktop-artifact.ts:1750` — so the 0.5.x train costs zero upstream file
+edits. That also settles slice 1 of the Sparkle plan: reuse the existing key pair and `sparkle-feed`
+release, because the whole point is to reach the installs already trusting that key.

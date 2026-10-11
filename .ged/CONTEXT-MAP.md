@@ -52,10 +52,10 @@ when there is something to say that upstream does not say.
 was dropped; see `ORCHESTRATION.md` and the ADRs in `DECISIONS.md`. Plans now live in `plans/`, and
 sequencing is a lead's delegation choice rather than enforced state.
 
-`specs/`, `tasks/`, `research/` and `project-skills/` were README-only directories carried from v0
+`specs/`, `tasks/`, `research/` and `project-skills/` were README-only directories carried from v0.4
 holding nothing. Recreate one when something actually needs storing.
 
-`MANIFEST.json`, `SKILLS-STATE.json` and `IMPORT-STATE.json` were state files for v0 tooling that
+`MANIFEST.json`, `SKILLS-STATE.json` and `IMPORT-STATE.json` were state files for v0.4 tooling that
 no longer exists; nothing read them. The one fact `IMPORT-STATE.json` carried — that upstream's
 `AGENTS.md` and `CLAUDE.md` are deliberately deferred to in place rather than copied — is an ADR in
 `DECISIONS.md`.

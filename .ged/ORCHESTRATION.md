@@ -1,7 +1,7 @@
 # Orchestration Design
 
 > How the Ged plan / implement / verify discipline is expressed on top of T3 Code's
-> V2 orchestrator. Supersedes the v0 durable stage pipeline.
+> V2 orchestrator. Supersedes the v0.4 durable stage pipeline.
 
 - Status: accepted, unimplemented
 - Date: 2026-10-11
@@ -9,7 +9,7 @@
 
 ## 1. What changed
 
-The v0 Orchestrator owned a durable `plan → work → verify` state machine in its own
+The v0.4 Orchestrator owned a durable `plan → work → verify` state machine in its own
 decider and projector. That machine is being dropped — not because the stages were
 wrong, but because encoding them as server-enforced states was.
 
@@ -78,7 +78,7 @@ re-add the state machine, but to gate the outcome:
 That check runs as a git hook / PR gate — outside the model's control. A structural
 guard, consistent with the rest of the Ged model.
 
-This is strictly stronger than the v0 pipeline. v0 could be satisfied by passing
+This is strictly stronger than the v0.4 pipeline. v0.4 could be satisfied by passing
 through a stage. The gate can only be satisfied by producing evidence.
 
 ## 5. Verification
