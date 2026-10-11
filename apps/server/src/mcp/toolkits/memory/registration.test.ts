@@ -61,7 +61,7 @@ const client = McpSchema.McpServerClient.of({
 /** A workspace with one memory document, created per test and torn down with the scope. */
 const withMemory = <A, E, R>(
   use: (root: string) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<A, E | Error, R | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;

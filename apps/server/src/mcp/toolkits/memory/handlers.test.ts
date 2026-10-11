@@ -8,6 +8,7 @@ import {
   type Project as ProjectRecord,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the fixture builds a real checkout synchronously, before any Effect runtime exists to run a Command in.
 import * as NodeChildProcess from "node:child_process";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -100,8 +101,10 @@ const dependencies = (root: string) => {
         Effect.succeed(Option.some({ id: projectId, workspaceRoot: root } as ProjectRecord)),
     }),
     ProjectMemory.layer,
-    NodeServices.layer,
-  );
+    // NodeServices has to come under the merge, not inside it: ProjectMemory
+    // needs its FileSystem, Path, and process spawner, and Layer.mergeAll
+    // builds its members in parallel without satisfying each other.
+  ).pipe(Layer.provideMerge(NodeServices.layer));
 };
 
 /** Drives a tool the way the MCP server does, through the toolkit's own dispatch. */

@@ -176,3 +176,23 @@ repository has no subscription to, so the jobs had nowhere to go. A never-starti
 indistinguishable from a slow one, which is why this took a watch to notice. `.github/workflows/ged-ci.yml`
 is now the gate that actually runs — ours, additive, on GitHub-hosted runners — and the upstream
 workflows that cannot work here are disabled in repository settings rather than edited.
+
+## 2026-10-11 — The first CI run that actually ran found three defects local checks had passed
+
+`ged-ci.yml`'s first run came back with Format/lint/knip and Test green and Typecheck red, on our
+own files:
+
+- `handlers.test.ts` imported `node:child_process` without the `nodeBuiltinImport:off` suppression
+  upstream uses for exactly this case — a synchronous fixture built before any Effect runtime
+  exists. Now suppressed, with the reason on the line.
+- `handlers.test.ts` put `NodeServices.layer` inside the same `Layer.mergeAll` as
+  `ProjectMemory.layer`, which needs its `FileSystem`, `Path`, and process spawner. `mergeAll`
+  builds members in parallel and does not satisfy them for one another; the diagnostic said so as a
+  **warning**, and `tsc` exits non-zero on it. Now `Layer.provideMerge(NodeServices.layer)`.
+- `registration.test.ts`'s scoped helper did not widen the error channel, so `PlatformError`
+  escaped its signature.
+
+The reason these were reported locally as passing is worth keeping: the package typecheck was being
+read by grepping its output for `error TS`, and the layer defect was a `warning`. Exit codes are the
+check; output is commentary. The whole repo now typechecks at exit zero, 31 packages, and that is
+what `ged-ci.yml` runs.
