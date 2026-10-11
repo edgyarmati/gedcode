@@ -72,3 +72,27 @@ third has to be argued for in a PR rather than noticed later.
 
 Package versions stay on upstream's 0.0.45 train. The generation is a project fact, not a manifest
 field, and renumbering would only break upstream's release automation.
+
+## 2026-10-11 — Cut what was empty, and committed to Sparkle
+
+Removed eleven near-empty files and four README-only directories from `.ged/`, and six of the ten
+skills. The deletions were not housekeeping: every agent that reads project memory pays for a
+heading with nothing under it, and `ged-planning` / `ged-execution` / `ged-verification` were each
+a second copy of a role brief with nothing keeping the two equal. The briefs are the better copy —
+`ged_role_brief` serves them to Codex and OpenCode, while a skill only exists inside Claude Code.
+
+`domain-modeling` and `grill-with-docs` were broken on arrival: they drove a root `CONTEXT.md` and
+a `docs/adr/` tree that do not exist here, and `domain-modeling` instructed against the
+`CONTEXT-MAP.md` this project uses. `grill-me` duplicated `grilling`. Four skills remain:
+`ged-lead`, `verify`, `grilling`, `sync-upstream`.
+
+Planned, with the Sparkle macOS updater kept as a first-class v0 capability rather than quietly
+lost: `.ged/plans/sparkle-updates/`. Upstream's `electron-updater` cannot update an ad-hoc-signed
+macOS app, so without Sparkle there is no auto-update without an Apple Developer Program
+membership. The seam is cheap — `ElectronUpdater` is an Effect service chosen by one line in
+`main.ts:140`, so Sparkle drops in as a second layer and upstream's 1042-line `DesktopUpdates.ts`
+stays untouched — but the packaging and release-pipeline edits are not, and the plan says so
+rather than discovering it mid-implementation.
+
+**Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
+which is a key-custody decision and not code.

@@ -4,18 +4,18 @@ What lives where in `.ged/`.
 
 ## Durable, committed
 
-| Path                                                                       | Holds                                                          |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `PROJECT.md`                                                               | What this is, the base it sits on, the toolchain               |
-| `STANDARDS.md`                                                             | Working standards; defers to upstream on toolchain and process |
-| `ORCHESTRATION.md`                                                         | How plan/implement/verify is expressed on the V2 orchestrator  |
-| `DECISIONS.md`                                                             | ADRs about the Ged layer itself, not ordinary domain decisions |
-| `roles/`                                                                   | Role briefs pasted verbatim into delegated child prompts       |
-| `verdicts/`                                                                | Verdict records, branch-keyed with SHA provenance              |
-| `bin/`                                                                     | The land gate                                                  |
-| `plans/`                                                                   | Plans: SPEC.md, TASKS.md, CRITERIA.md per slug                 |
-| `specs/`, `tasks/`, `research/`, `project-skills/`                         | Supporting artifacts                                           |
-| `ARCHITECTURE.md`, `PATTERNS.md`, `GLOSSARY.md`, `IDEAS.md`, `PROGRESS.md` | Accumulated context                                            |
+| Path               | Holds                                                               |
+| ------------------ | ------------------------------------------------------------------- |
+| `PROJECT.md`       | What this is, the base it sits on, the toolchain                    |
+| `STANDARDS.md`     | Working standards; defers to upstream on toolchain and process      |
+| `ORCHESTRATION.md` | How plan/implement/verify is expressed on the V2 orchestrator       |
+| `DECISIONS.md`     | ADRs about the Ged layer itself, not ordinary domain decisions      |
+| `roles/`           | Role briefs pasted verbatim into delegated child prompts            |
+| `verdicts/`        | Verdict records, branch-keyed with SHA provenance                   |
+| `bin/`             | The land gate                                                       |
+| `plans/`           | Plans: SPEC.md, TASKS.md, CRITERIA.md per slug, indexed in INDEX.md |
+| `PROGRESS.md`      | Dated log of what changed and why                                   |
+| `CONTEXT-MAP.md`   | This file                                                           |
 
 ## Ephemeral, gitignored
 
@@ -34,12 +34,26 @@ The Ged layer is mostly plain files, but two pieces are TypeScript in `apps/serv
 | `apps/server/src/ged/ProjectMemory.ts` | Path-confined reader/writer for the `.ged/` tree; runs the gate |
 | `apps/server/src/mcp/toolkits/memory/` | The MCP toolkit that serves it to every provider                |
 
-`apps/server/src/mcp/McpHttpServer.ts` is the one upstream file we modify — ten lines to register
-that toolkit. Keeping the exception to a single file and a single hunk is what keeps upstream
-merges cheap.
+Two upstream files are modified: ten lines in `apps/server/src/mcp/McpHttpServer.ts` to register
+that toolkit, and `.github/pull_request_template.md`. `STANDARDS.md` carries the full list, and
+keeping it short is what keeps upstream merges cheap.
+
+## Not here
+
+There is no `ARCHITECTURE.md`, `PATTERNS.md` or `GLOSSARY.md`. Architecture and conventions are
+upstream's and documented upstream; a second empty copy under `.ged/` only invites drift. Add one
+when there is something to say that upstream does not say.
 
 ## Removed
 
 `work/` held per-branch stage-machine state (`STATE.md` and its phases). The durable stage machine
 was dropped; see `ORCHESTRATION.md` and the ADRs in `DECISIONS.md`. Plans now live in `plans/`, and
 sequencing is a lead's delegation choice rather than enforced state.
+
+`specs/`, `tasks/`, `research/` and `project-skills/` were README-only directories carried from v0
+holding nothing. Recreate one when something actually needs storing.
+
+`MANIFEST.json`, `SKILLS-STATE.json` and `IMPORT-STATE.json` were state files for v0 tooling that
+no longer exists; nothing read them. The one fact `IMPORT-STATE.json` carried — that upstream's
+`AGENTS.md` and `CLAUDE.md` are deliberately deferred to in place rather than copied — is an ADR in
+`DECISIONS.md`.

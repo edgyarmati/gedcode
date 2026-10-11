@@ -184,7 +184,7 @@ since an agent that could rewrite the script could equally defeat the git-hook p
 
 The service lives in `apps/server/src/ged/` rather than in a new workspace package. A package would
 have to be added to `apps/server/package.json` — a second upstream file — to buy a reuse nobody
-needs yet. One upstream file (`McpHttpServer.ts`, 10 lines) remains the whole surface.
+needs yet. `McpHttpServer.ts` (10 lines) stays the only upstream _code_ file we touch.
 
 ## 2026-10-11 — This tree is GedCode v1; the old fork is v0
 
@@ -219,3 +219,69 @@ what was verified, and who verified it independently of whom.
 
 This is the second upstream file we modify. It is a governance document rather than code, its
 content does not apply to us, and a conflict in a 31-line template is cheap to resolve.
+
+## 2026-10-11 — Upstream's AGENTS.md and CLAUDE.md are deferred to, not copied
+
+- Status: accepted
+
+v0 imported its own `AGENTS.md` and `CLAUDE.md` verbatim into `STANDARDS.md`. The copy went stale
+within weeks and had to be rewritten, which is the predictable outcome: a duplicated document has
+no mechanism that keeps it true.
+
+So `STANDARDS.md` points at upstream's files in place and states only what is Ged-specific on top
+of them. The cost is one indirection when reading. The benefit is that upstream's house rules
+cannot silently diverge from what our agents are told, because there is only one copy.
+
+Revisit only if a genuinely Ged-specific overlay is wanted — and then as an overlay that names what
+it overrides, never as a second full copy.
+
+## 2026-10-11 — Memory holds what is written, not slots for what might be
+
+- Status: accepted
+
+`.ged/` carried eleven files and four directories from v0 that contained nothing but a heading or a
+README: `ARCHITECTURE.md`, `PATTERNS.md`, `GLOSSARY.md`, `IDEAS.md`, three JSON state files for
+tooling that no longer exists, and `specs/`, `tasks/`, `research/`, `project-skills/`. They were
+removed.
+
+An empty slot is not neutral. Every agent that reads project memory pays for it, it reads as
+something that exists, and a heading with nothing under it invites filling with restatement rather
+than with anything learned. The directories cost nothing to recreate the day something needs
+storing.
+
+The same reasoning cut six of ten skills. `ged-planning`, `ged-execution` and `ged-verification`
+each restated the role brief it pointed at, which is two copies of the same rules with nothing
+keeping them equal — and the brief is the better copy, because `ged_role_brief` serves it to Codex
+and OpenCode while a skill only exists inside Claude Code. `grill-me` duplicated `grilling`;
+`grill-with-docs` composed it with `domain-modeling`, which drove a root `CONTEXT.md` and a
+`docs/adr/` tree this repo does not have and explicitly instructed against the `CONTEXT-MAP.md`
+this repo does use. Both were broken on arrival.
+
+What survives is `ged-lead`, `verify`, `grilling`, `sync-upstream`. The rule going forward: role
+behaviour goes in a brief, and a skill has to justify why a brief would not do.
+
+## 2026-10-11 — Sparkle stays; it is the one capability worth an expensive upstream edit
+
+- Status: accepted (the capability). Implementation planned, not started.
+
+Upstream ships `electron-updater`, which on macOS cannot install an update onto an ad-hoc-signed
+app. Without an Apple Developer Program membership that means no auto-update on macOS, ever, and
+users silently stranded on old builds. v0 solved this with Sparkle 2, which verifies updates with
+its own EdDSA signature instead of the system code signature. That capability is kept.
+
+It is the most expensive thing the additive-only constraint will be asked to absorb: it takes the
+modified-upstream-file count from three to five, and two of the new entries
+(`scripts/build-desktop-artifact.ts` at 4172 lines, `.github/workflows/release.yml` at 1398) are
+among the most actively developed files upstream. Paying that is a deliberate choice, recorded
+here so a future merge conflict is a known cost rather than a surprise.
+
+What makes it affordable at all: `ElectronUpdater` is an Effect `Context.Service` selected by a
+single line at `apps/desktop/src/main.ts:140`. Sparkle goes in as a second layer satisfying the
+same interface on darwin, so upstream's 1042-line `DesktopUpdates.ts` and everything above it stay
+untouched. If the interface turns out not to fit, that is a finding to report — widening it is a
+different and much worse trade.
+
+v0's diffs are a reference, not a patch set. Upstream's updater, build script, and release workflow
+have all changed substantially since v0 forked.
+
+Not deferred, not dropped: `.ged/plans/sparkle-updates/`.

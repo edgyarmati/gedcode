@@ -46,12 +46,14 @@ can be registered. See the additive-only constraint in
 [STANDARDS.md](./STANDARDS.md#additive-only-constraint) and the ADR recording that exception in
 [DECISIONS.md](./DECISIONS.md).
 
-- `.ged/` — project memory: these documents, plus specs, plans, tasks, and research.
-- `.agents/skills/` — the Ged skills (`ged-planning`, `ged-execution`, `ged-verification`,
-  `grilling`, `grill-me`, `grill-with-docs`, `verify`, `domain-modeling`, `sync-upstream`),
-  alongside upstream's own. `.claude/skills` is a symlink to this directory.
-- Planned, not yet built: a `ProjectMemory` service, a `memory` MCP toolkit exposing it to every
-  provider, role briefs, the task-lead playbook, verdict records, and the land gate.
+- `.ged/` — project memory: these documents, the role briefs, plans, and verdict records.
+- `apps/server/src/ged/ProjectMemory.ts` — the path-confined reader/writer for that tree.
+- `apps/server/src/mcp/toolkits/memory/` — the MCP toolkit that serves it to every provider, so
+  the discipline reaches Codex and OpenCode and not only Claude Code.
+- `.ged/bin/land-gate.sh` — the structural guard.
+- `.agents/skills/` — four Claude Code skills (`ged-lead`, `verify`, `grilling`, `sync-upstream`)
+  alongside upstream's own. `.claude/skills` is a symlink to this directory. Role behaviour lives
+  in `.ged/roles/`, not here, because skills are a single vendor's feature and briefs are not.
 
 v0's `ProjectContextRunChanges.ts` (913 LOC) is deliberately **not** being ported. It is being
 rebuilt as an MCP toolkit following upstream's `apps/server/src/mcp/toolkits/` pattern. Known
@@ -86,3 +88,7 @@ authenticate. Server is 13773, web 5733, offset per worktree. Dev state lives in
 - Model availability is account-specific and discovered at runtime. Verify model IDs against the
   authenticated catalog or official vendor documentation — never from naming guesses.
 - Release process is upstream's; v0's `release.sh` and its gate policy do not apply here.
+- macOS auto-update is a **kept v0 capability, not yet rebuilt.** Upstream's `electron-updater`
+  cannot update an ad-hoc-signed macOS app; Sparkle 2 can, which is why v0 used it and why v1 will.
+  Planned in [plans/sparkle-updates/](./plans/sparkle-updates/SPEC.md), with its upstream cost
+  accounted for there. Until it lands, macOS releases are manual downloads.

@@ -1,32 +1,26 @@
 # Skills
 
-## Installed
+Claude Code skills in `.agents/skills/` (`.claude/skills` is a symlink to it). Four are ours;
+`contribution-triage`, `test-t3-app`, and `test-t3-mobile` are upstream's.
 
-- ged-lead [project] - Delegation playbook for a task lead running plan/implement/verify over the
-  V2 orchestrator. Pairs with the role briefs in `.ged/roles/`.
-- ged-planning / ged-execution / ged-verification [project] - Role mechanics. Realigned to the
-  delegation model after the v0 stage machine was dropped.
-- verify [project] - Narrow format/lint/typecheck/test checks. Scoped, never repo-wide.
-- find-skills [auto-install] - Discover project-relevant skills during init and planning.
-- skill-creator [auto-install] - Create project-specific skills when Ged cannot find one that fits.
-- grill-with-docs [vendored] - Clarify non-trivial work one decision at a time while maintaining
-  canonical project language and warranted architectural decisions.
-- grilling [vendored dependency] - Run the one-question interview used by grill-with-docs.
-- domain-modeling [vendored dependency] - Maintain root CONTEXT.md and sparse docs/adr records inline.
+## Ours
 
-## Recommended
+| Skill           | Does                                                                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ged-lead`      | The task lead's delegation playbook: when to delegate, how to compose a child prompt, the verification rules, and the depth/fan-out caps the orchestrator does not impose itself. |
+| `verify`        | The narrow mechanical check — format, lint, scoped typecheck, scoped tests. Never repo-wide.                                                                                      |
+| `grilling`      | The one-question-at-a-time interview, for stress-testing a plan before any of it is delegated.                                                                                    |
+| `sync-upstream` | Pull upstream `main` into this tree and reconcile the additive layer.                                                                                                             |
 
-- brainstorming [recommend-only] - Useful when Ged is designing or decomposing task slices before implementation.
-- agent-browser [recommend-only] - Useful when the project needs browser automation or UI testing.
+## Why there are not more
 
-## Deferred
+Role behaviour belongs in `.ged/roles/`, not in skills. A brief is served to any provider through
+`ged_role_brief`; a skill only exists inside Claude Code. The planner, implementer, and verifier
+each had a skill that restated its brief, which meant two copies of the same rules free to drift.
+The briefs won.
 
-- None yet
+Likewise, three overlapping interview skills collapsed to `grilling`, and the vendored
+`domain-modeling` skill was dropped: it drove a root `CONTEXT.md` and a `docs/adr/` tree that do
+not exist here, and instructed against the `CONTEXT-MAP.md` this project actually uses.
 
-## Rejected
-
-- None yet
-
-## Usage Notes
-
-- Record why a skill was installed, recommended, or skipped.
+A new skill has to earn its place against a brief that would work everywhere.

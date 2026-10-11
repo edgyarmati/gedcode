@@ -25,6 +25,18 @@ diff, a test result, or a command's output — without asking you what you meant
 scored as your defect, not the implementer's. Criteria that cannot be checked will block the land
 gate, so write them to be checked.
 
+## Where it goes
+
+Write to `.ged/plans/<slug>/`, three files, no placeholders:
+
+| File          | Holds                                                                                |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `SPEC.md`     | Goal, constraints, the approach, the alternatives rejected and why. Under 200 lines. |
+| `TASKS.md`    | The slices, dependency-ordered.                                                      |
+| `CRITERIA.md` | Acceptance criteria per slice, in the form above.                                    |
+
+Add a row to `.ged/plans/INDEX.md`. An artifact with a heading and no content is not done.
+
 ## Constraints
 
 - Respect the additive-only constraint in [../STANDARDS.md](../STANDARDS.md). Prefer a new file to
