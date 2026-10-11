@@ -1,6 +1,6 @@
 # Standards
 
-Working standards for this repository. Supersedes the standards imported from the v1 GedCode
+Working standards for this repository. Supersedes the standards imported from the v0 GedCode
 harness files — those described a Bun/Vitest workspace and modules that no longer exist on this
 base. See [DECISIONS.md](./DECISIONS.md) for why the base changed.
 
@@ -37,13 +37,13 @@ vp run knip:check                     # dead-code check
 `patches/` and `pnpm-workspace.yaml` (~30 `patchedDependencies`, plus `overrides`,
 `packageExtensions`, `allowBuilds`) are load-bearing. Do not regenerate them casually.
 
-## Scope discipline (upstream rule — restated because it reverses v1 habits)
+## Scope discipline (upstream rule — restated because it reverses v0 habits)
 
 > **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck`
 > unless the maintainer asks. CI owns the full suite.
 
-This is the same _policy_ v1 had — focused tests, narrowest package typecheck — with different
-commands. The v1 instinct to reach for a full gate before declaring done is now explicitly wrong.
+This is the same _policy_ v0 had — focused tests, narrowest package typecheck — with different
+commands. The v0 instinct to reach for a full gate before declaring done is now explicitly wrong.
 
 If an unrelated pre-existing failure blocks the narrow check, document it and stop; do not expand
 scope without approval.
@@ -52,10 +52,17 @@ scope without approval.
 
 > Never modify an upstream file where a new file would do.
 
-Unmergeability is what killed v1: 450 of 451 files it had modified were also touched upstream,
+Unmergeability is what killed v0: 450 of 451 files it had modified were also touched upstream,
 leaving no clean-merge surface against roughly 800 upstream commits a month. Ged functionality
 lands as new files, new packages, and new MCP toolkits. When an upstream file genuinely must
 change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
+
+The whole modified surface, which a PR must justify adding to:
+
+| File                                   | Lines | Why                                            |
+| -------------------------------------- | ----- | ---------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits       |
+| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors |
 
 ## Code conventions
 

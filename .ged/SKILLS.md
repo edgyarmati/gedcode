@@ -5,7 +5,7 @@
 - ged-lead [project] - Delegation playbook for a task lead running plan/implement/verify over the
   V2 orchestrator. Pairs with the role briefs in `.ged/roles/`.
 - ged-planning / ged-execution / ged-verification [project] - Role mechanics. Realigned to the
-  delegation model after the v1 stage machine was dropped.
+  delegation model after the v0 stage machine was dropped.
 - verify [project] - Narrow format/lint/typecheck/test checks. Scoped, never repo-wide.
 - find-skills [auto-install] - Discover project-relevant skills during init and planning.
 - skill-creator [auto-install] - Create project-specific skills when Ged cannot find one that fits.

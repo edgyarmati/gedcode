@@ -35,17 +35,17 @@
 ## Rebase onto T3 Code V2 orchestrator
 
 - Date: 2026-10-11
-- Decision: Abandon the v1 fork lineage and re-fork from T3 Code `main` (`9afde1c6d`, #17848).
+- Decision: Abandon the v0 fork lineage and re-fork from T3 Code `main` (`9afde1c6d`, #17848).
   Adopt the upstream V2 orchestrator as-is rather than porting GedCode's own orchestration
   domain. GedCode's contribution becomes the Ged workflow layer — durable project memory,
   role briefs, the lead playbook, and the land gate — built additively on top.
-- Rationale: The v1 fork diverged 741/3775 commits across 4.5 months, and 450 of the 451
+- Rationale: The v0 fork diverged 741/3775 commits across 4.5 months, and 450 of the 451
   upstream files it modified were also changed upstream, leaving no clean-merge surface.
   Upstream independently built a more capable delegation engine (durable child tasks,
   checkpoints, context handoffs, ten provider adapters). Maintaining a parallel orchestrator
   is not a good use of a solo maintainer.
 - Constraint: Never modify an upstream file where a new file would do. Unmergeability is what
-  killed v1.
+  killed v0.
 
 ## Stage discipline as policy, verification as a land gate
 
@@ -94,7 +94,7 @@ dropped in favour of an outcome gate is that the gate cannot be satisfied by pas
 only by producing evidence. An override would restore exactly the weakness being removed. Verified
 against all six failure modes plus the passing case.
 
-## 2026-10-11 — Carried v1 memory and skills rewritten, not imported
+## 2026-10-11 — Carried v0 memory and skills rewritten, not imported
 
 **Decision:** `.ged/STANDARDS.md` and `.ged/PROJECT.md` were rewritten from scratch for the new
 base, and the `verify`, `ged-planning`, `ged-execution`, `ged-verification`, `grill-me`, and
@@ -184,4 +184,38 @@ since an agent that could rewrite the script could equally defeat the git-hook p
 
 The service lives in `apps/server/src/ged/` rather than in a new workspace package. A package would
 have to be added to `apps/server/package.json` — a second upstream file — to buy a reuse nobody
-needs yet. One upstream file (`McpHttpServer.ts`, 8 lines) remains the whole surface.
+needs yet. One upstream file (`McpHttpServer.ts`, 10 lines) remains the whole surface.
+
+## 2026-10-11 — This tree is GedCode v1; the old fork is v0
+
+- Status: accepted
+
+The fork that ran from `e3accd6e95` to `c3a9813f39`, tagged up to v0.4.8, is **v0**. This tree is
+**v1**. A re-fork that abandons the old lineage, drops the orchestration domain, and rebuilds the
+discipline on a different engine is a generation boundary, not a minor version, and calling it
+anything else invites someone to read v0's tags as this tree's history. They are not.
+
+Case carries meaning here, because two numbering schemes meet: lowercase `v0`/`v1` is a GedCode
+generation, uppercase `V1`/`V2` is upstream's own (the V2 orchestrator, the V1 sqlite projections).
+GedCode v1 runs on upstream's V2 orchestrator; both numbers are right and they count different
+things.
+
+Package versions are **not** being set to 1.0.0. They track upstream's release train (0.0.45) and
+are wired into upstream's release automation; renumbering them buys nothing and breaks that. The
+generation is a project fact recorded here, not a field in a manifest.
+
+## 2026-10-11 — Our own pull request template
+
+- Status: accepted
+
+Upstream's template is written for outside contributors to a repository with limited review
+capacity: read CONTRIBUTING.md, link a triaged issue, show explicit maintainer approval of scope.
+Every one of those is noise in a fork whose only contributor is its maintainer, and the prefill
+made the first real PR read like a submission to someone else's project.
+
+Ours asks the questions this repo actually has to answer: what broke, what fixed it, **what it
+cost upstream** (which upstream files this PR edits, since each one conflicts on the next merge),
+what was verified, and who verified it independently of whom.
+
+This is the second upstream file we modify. It is a governance document rather than code, its
+content does not apply to us, and a conflict in a 31-line template is cheap to resolve.

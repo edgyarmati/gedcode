@@ -1,9 +1,6 @@
 {
   "accepted": [],
   "rejected": [],
-  "pending": [
-    "AGENTS.md",
-    "CLAUDE.md"
-  ],
-  "note": "v1 imported its own AGENTS.md and CLAUDE.md verbatim into STANDARDS.md, which went stale and was rewritten. Upstream's AGENTS.md and CLAUDE.md are deliberately NOT imported: STANDARDS.md defers to them in place rather than copying them, so they cannot drift. Revisit only if a Ged-specific overlay is wanted."
+  "pending": ["AGENTS.md", "CLAUDE.md"],
+  "note": "v0 imported its own AGENTS.md and CLAUDE.md verbatim into STANDARDS.md, which went stale and was rewritten. Upstream's AGENTS.md and CLAUDE.md are deliberately NOT imported: STANDARDS.md defers to them in place rather than copying them, so they cannot drift. Revisit only if a Ged-specific overlay is wanted."
 }

@@ -12,22 +12,39 @@ welcome.
 ## Base
 
 This tree is a fresh checkout of T3 Code `main` @ `9afde1c6d` (#17848), not a continuation of the
-v1 GedCode history. v1 forked at `e3accd6e95` and diverged by 741 / 3775 commits; upstream had
-since deleted every file v1 integrated through (`wsServer.ts`, `providerManager.ts`,
+v0 GedCode history. v0 forked at `e3accd6e95` and diverged by 741 / 3775 commits; upstream had
+since deleted every file v0 integrated through (`wsServer.ts`, `providerManager.ts`,
 `codexAppServerManager.ts`, `contracts/src/orchestration.ts`, `web/src/store.ts`). There was no
 clean-merge surface, so the base was retaken and the Ged layer is being re-landed additively.
 
-The v1 repository remains at `~/projects/gedcode` as a read-only reference.
+The v0 repository remains at `~/projects/gedcode` as a read-only reference.
 
-Upstream's V2 orchestrator replaces v1's durable `plan → work → verify` state machine. It is
+### Naming
+
+This tree is **GedCode v1**. The fork that ran from `e3accd6e95` to `c3a9813f39` is **v0** — a
+whole generation, not a release, so its 0.4.x tags belong to v0 and say nothing about v1.
+
+Two unrelated numbering schemes meet in this repo, so the case carries meaning:
+
+- lowercase `v0` / `v1` — a GedCode generation.
+- uppercase `V1` / `V2` — upstream's own components: the V2 orchestrator, the V1 sqlite
+  projections. Unversioned by us and not ours to renumber.
+
+GedCode v1 is built on upstream's V2 orchestrator. Both numbers are correct; they count
+different things.
+
+Upstream's V2 orchestrator replaces v0's durable `plan → work → verify` state machine. It is
 better, and we keep it. How the Ged discipline is expressed on top of it — delegation topology,
 verifier independence, per-role model policy, the land gate — is specified in
 [ORCHESTRATION.md](./ORCHESTRATION.md).
 
 ## What is ours
 
-Everything Ged-specific is additive. Nothing upstream is modified. See the additive-only
-constraint in [STANDARDS.md](./STANDARDS.md#additive-only-constraint).
+Everything Ged-specific is additive. Exactly one upstream file is modified — ten lines in
+`apps/server/src/mcp/McpHttpServer.ts`, because its layer merge is the only place an MCP toolkit
+can be registered. See the additive-only constraint in
+[STANDARDS.md](./STANDARDS.md#additive-only-constraint) and the ADR recording that exception in
+[DECISIONS.md](./DECISIONS.md).
 
 - `.ged/` — project memory: these documents, plus specs, plans, tasks, and research.
 - `.agents/skills/` — the Ged skills (`ged-planning`, `ged-execution`, `ged-verification`,
@@ -36,9 +53,9 @@ constraint in [STANDARDS.md](./STANDARDS.md#additive-only-constraint).
 - Planned, not yet built: a `ProjectMemory` service, a `memory` MCP toolkit exposing it to every
   provider, role briefs, the task-lead playbook, verdict records, and the land gate.
 
-v1's `ProjectContextRunChanges.ts` (913 LOC) is deliberately **not** being ported. It is being
+v0's `ProjectContextRunChanges.ts` (913 LOC) is deliberately **not** being ported. It is being
 rebuilt as an MCP toolkit following upstream's `apps/server/src/mcp/toolkits/` pattern. Known
-trade-off: that drops v1's supervised-write review gate unless it is deliberately rebuilt.
+trade-off: that drops v0's supervised-write review gate unless it is deliberately rebuilt.
 
 ## Toolchain
 
@@ -68,4 +85,4 @@ authenticate. Server is 13773, web 5733, offset per worktree. Dev state lives in
 - Provider auth, configuration, and running applications are operator-owned.
 - Model availability is account-specific and discovered at runtime. Verify model IDs against the
   authenticated catalog or official vendor documentation — never from naming guesses.
-- Release process is upstream's; v1's `release.sh` and its gate policy do not apply here.
+- Release process is upstream's; v0's `release.sh` and its gate policy do not apply here.

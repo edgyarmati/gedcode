@@ -1,39 +1,31 @@
 <!--
-Read CONTRIBUTING.md before opening a PR. Review capacity is limited, and meeting
-the requirements does not guarantee review or merging. Solve one underlying problem.
-The same requirements apply to drafts. Draft status does not defer triage or closure.
-Use a conventional commit title in plain language, such as "fix(web): new threads no longer spike CPU".
+Use a conventional commit title in plain language, e.g. "fix(server): new threads no longer spike CPU".
+Keep a PR to one underlying problem. Delete any section that genuinely does not apply.
 -->
 
 ## Problem
 
-<!-- Explain the problem in a sentence or two. Include expected behavior and
-reproduction steps or environment where relevant. -->
+<!-- The problem in a sentence or two: what is wrong, what was expected, and where it shows up. -->
 
 ## Change
 
-<!-- Explain how this fixes the problem. If it spans components or clients,
-explain why those changes are needed for the same fix. Split independent fixes. -->
+<!-- How this fixes it. If it spans packages, say why one fix needs all of them. -->
 
-## Scope and approval
+## Upstream cost
 
-<!-- Link the triaged bug issue or the discussion with explicit maintainer approval
-of direction and scope, including the approval comment. For a very small, focused
-fix of an obvious bug, explain why it qualifies without a prior issue or discussion.
-For focused configuration of an established capability, explain what already exists,
-what the option controls, and why its effects stay within that capability. Adding a
-setting alone is not a new feature or an approval exemption; broader workflow or
-behavior changes still need approval. Scope and verification requirements still apply.
-There is no line-count or file-count cutoff. -->
+<!-- GedCode is a fork that tracks T3 Code. Every upstream file this PR edits is a file that will
+conflict on the next merge, so name them and justify each. "None — additive only" is the usual and
+preferred answer. -->
 
 ## Verification
 
-<!-- Describe the focused tests or manual checks you ran and the observed results
-for the changed behavior. State anything you could not check. "Tests pass" alone
-is insufficient; broad repo-wide checks are not required.
+<!-- The focused tests and manual checks you actually ran, and what you observed. "Tests pass" alone
+says nothing. Name anything you could not check.
 
-For UI changes, include clear before/after screenshots. Include a short recording
-when motion, timing, transitions, or interaction details are needed to demonstrate
-the change. Upload evidence to GitHub and embed or link it here. Never commit PR-only assets. -->
+For UI changes include before/after screenshots, and a short recording when timing or interaction
+matters. Upload evidence to GitHub; never commit PR-only assets. -->
 
-<!-- If you used an agent, end with the model and harness that did the work. -->
+## Ged discipline
+
+<!-- Who verified, and independently of whom. Paste the verdict record or link it. A change that
+landed without an independent verifier's ruling should say so plainly rather than leave this blank. -->
