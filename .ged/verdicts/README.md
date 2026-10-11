@@ -1,38 +1,76 @@
 # Verdict records
 
-Evidence that an independent verifier ruled on a change. The land gate reads these; nothing merges
-without one. See [../ORCHESTRATION.md](../ORCHESTRATION.md#4-stage-discipline).
+A verdict record is an independent verifier's ruling on one branch. It is the only
+thing that lets a change land: `.ged/bin/land-gate.sh` refuses a branch that has no
+current, passing, independent verdict.
 
-One record per branch, named `<branch-with-slashes-as-dashes>.json`, with SHA provenance recorded
-inside. This resolves the open question of per-task vs per-SHA keying: per-SHA keys churn on every
-amend and leave orphans, while a branch-keyed record with a `headSha` field still lets the gate
-detect staleness — which is the property that actually matters.
+One record per branch, named after the branch with `/` replaced by `-`:
+`feat/memory-toolkit` → `.ged/verdicts/feat-memory-toolkit.json`.
 
-## Schema
+## Shape
 
 ```json
 {
   "schemaVersion": 1,
   "branch": "feat/memory-toolkit",
-  "headSha": "<full 40-char sha the verifier actually reviewed>",
-  "status": "pass | fail",
-  "verifiedAt": "<ISO 8601>",
-  "round": 2,
-  "implementer": { "driverKind": "codex", "model": "..." },
-  "verifier":    { "driverKind": "claude", "model": "...", "taskId": "..." },
+  "headSha": "9afde1c6d...",
+  "status": "pass",
   "criteria": [
-    { "criterion": "<verbatim from the plan>", "verdict": "met", "evidence": "parseRef.test.ts:41" }
-  ]
+    {
+      "criterion": "delegate_task rejects a depth-3 delegation",
+      "verdict": "met",
+      "evidence": "toolkits/memory/handlers.test.ts:84 — asserts DepthExceeded"
+    }
+  ],
+  "implementer": { "driverKind": "codex", "model": "..." },
+  "verifier": { "driverKind": "claudeAgent", "model": "...", "taskId": "..." }
 }
 ```
 
-## Rules the gate enforces
+`driverKind` must be one of the kinds in `packages/contracts/src/model.ts`:
+`codex`, `claudeAgent`, `cursor`, `grok`, `muse`, `pi`, `acpRegistry`, `opencode`.
+Note it is `claudeAgent`, not `claude` — the gate rejects unrecognised kinds rather
+than treating an unknown string as a distinct vendor.
 
-1. A record exists for the current branch.
-2. `headSha` equals the current `HEAD`. A verdict is invalidated by any amend, rebase, or new
-   commit — the gate compares against the live head rather than merely finding a record.
+## What the gate enforces
+
+The gate fails closed: anything it cannot positively confirm blocks the land.
+
+1. The working tree is clean, excluding this directory. The verifier reviewed a
+   commit; uncommitted changes are unverified by construction.
+2. `headSha` equals the current head. Any amend or rebase invalidates the verdict.
 3. `status` is `pass`.
-4. Every criterion is `met`. `unverifiable` is not a pass.
-5. `verifier.driverKind` differs from `implementer.driverKind` — cross-vendor independence.
+4. Every criterion is `met`. `unverifiable` is **not** a pass — it means the
+   criterion was not written to be checkable, which is a planning defect.
+5. Every criterion carries substantive evidence: at least three characters that
+   survive stripping whitespace and zero-width/bidi characters.
+6. `verifier.driverKind` differs from `implementer.driverKind`, compared
+   case-insensitively and after trimming, so `"Codex "` cannot pose as a second
+   vendor.
+7. HEAD is on a named branch whose name maps to a usable filename.
+8. The record is a real file, not a symlink.
 
-The gate fails closed: a malformed, missing, or unreadable record is a failure, never a skip.
+## Why these are not committed
+
+A tracked record and HEAD chase each other: committing a verdict changes HEAD, which
+immediately makes the verdict it contains stale. There is no fixed point.
+
+So records are untracked (`.gitignore` in this directory) and the gate skips this
+directory when it checks for a dirty tree. The consequence is that the gate is a
+**local, pre-push control**. CI cannot see these records and needs a separate
+transport — a PR comment, a check-run annotation, or an artifact — if the same
+guarantee is wanted there. That is unbuilt.
+
+## Trust boundary
+
+The record is **self-asserted and unsigned**. Anyone who can write to this directory
+can forge a pass, and the implementer's own agent could write one naming a verifier
+that never ran.
+
+The gate is therefore a guard against _omission_, not against _forgery_: it stops a
+lead that skipped verification, or that verified an older tree, or that let a
+sycophantic same-vendor reviewer sign off. It does not stop a deliberately dishonest
+agent. Raising it to that bar needs an attestation the agent cannot mint — a
+signature from the orchestrator process, or verification recorded server-side in the
+task record rather than on disk. Also unbuilt, and worth doing before this is relied
+on for anything beyond a solo workflow.

@@ -2,6 +2,8 @@
 # Ged land gate: refuse to land a change without a current, passing, independent verdict.
 # Usage: .ged/bin/land-gate.sh [ref]     (default: HEAD)
 # Exit:  0 = allowed, 1 = blocked, 2 = usage/environment error
+#
+# Fails closed. Every unexpected condition blocks.
 set -eu
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
@@ -9,13 +11,46 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
 cd "$repo_root"
 
 ref=${1:-HEAD}
-head_sha=$(git rev-parse "$ref" 2>/dev/null) || {
-  echo "land-gate: cannot resolve ref '$ref'" >&2; exit 2; }
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+# --end-of-options stops a ref like `--git-dir` being read as an option;
+# ^{commit} resolves annotated tags to the commit they point at.
+head_sha=$(git rev-parse --verify --end-of-options "${ref}^{commit}" 2>/dev/null) || {
+  echo "land-gate: cannot resolve '$ref' to a commit" >&2; exit 2; }
+case "$head_sha" in
+  ????????????????????????????????????????) ;;
+  *) echo "land-gate: resolved SHA is malformed" >&2; exit 2 ;;
+esac
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || {
+  echo "land-gate: cannot determine branch" >&2; exit 2; }
+if [ "$branch" = "HEAD" ]; then
+  echo "land-gate: detached HEAD — no branch to key a verdict to" >&2; exit 2
+fi
+
+# Uncommitted changes are unverified by construction: the verifier reviewed a commit.
+# `.ged/verdicts/` is excluded because verdict records are deliberately untracked —
+# see .ged/verdicts/README.md. Including them would make the tree permanently dirty.
+dirty=$(git status --porcelain=v1 -uall -- ':!.ged/verdicts' 2>/dev/null) || {
+  echo "land-gate: cannot inspect working tree" >&2; exit 2; }
+if [ -n "$dirty" ]; then
+  echo "BLOCKED: working tree is dirty. The verdict covers $head_sha, not your uncommitted changes." >&2
+  printf '%s\n' "$dirty" | sed 's/^/  /' >&2
+  exit 1
+fi
 
 slug=$(printf '%s' "$branch" | tr '/' '-')
-record=".ged/verdicts/${slug}.json"
+# Reject anything that could be read as an option or escape the directory.
+case "$slug" in
+  -*|*/*|*..*|"") echo "land-gate: unusable branch name '$branch'" >&2; exit 2 ;;
+esac
+if printf '%s' "$slug" | LC_ALL=C grep -q '[^A-Za-z0-9._-]'; then
+  echo "land-gate: branch '$branch' contains characters that cannot be mapped to a record name" >&2
+  exit 2
+fi
 
+record=".ged/verdicts/${slug}.json"
+if [ -L "$record" ]; then
+  echo "BLOCKED: $record is a symlink; refusing to follow it" >&2; exit 1
+fi
 if [ ! -f "$record" ]; then
   echo "BLOCKED: no verdict record for branch '$branch' (expected $record)" >&2
   echo "  Nothing lands without an independent verifier's ruling." >&2
@@ -29,15 +64,21 @@ import { readFileSync } from "node:fs";
 const [record, headSha, branch] = process.argv.slice(1);
 const fail = (m) => { console.error("BLOCKED: " + m); process.exit(1); };
 
+// Must match ProviderDriverKind in packages/contracts/src/model.ts.
+const DRIVER_KINDS = new Set([
+  "codex", "claudeagent", "cursor", "grok", "muse", "pi", "acpregistry", "opencode",
+]);
+
 let v;
 try { v = JSON.parse(readFileSync(record, "utf8")); }
 catch (e) { fail(`verdict record is unreadable or not valid JSON (${e.message})`); }
 
+if (v === null || typeof v !== "object" || Array.isArray(v)) fail("verdict record is not a JSON object");
 if (v.schemaVersion !== 1) fail(`unsupported schemaVersion ${JSON.stringify(v.schemaVersion)}`);
 if (v.branch !== branch) fail(`record is for branch ${JSON.stringify(v.branch)}, not ${JSON.stringify(branch)}`);
 
-if (v.headSha !== headSha) {
-  fail(`verdict is stale.\n  verified: ${v.headSha}\n  current:  ${headSha}\n`
+if (typeof v.headSha !== "string" || v.headSha !== headSha) {
+  fail(`verdict is stale or malformed.\n  verified: ${JSON.stringify(v.headSha)}\n  current:  ${headSha}\n`
      + "  The tree changed after verification. Re-verify.");
 }
 if (v.status !== "pass") fail(`verdict status is ${JSON.stringify(v.status)}`);
@@ -45,19 +86,29 @@ if (v.status !== "pass") fail(`verdict status is ${JSON.stringify(v.status)}`);
 const criteria = v.criteria;
 if (!Array.isArray(criteria) || criteria.length === 0) fail("verdict records no criteria");
 
-const unmet = criteria.filter((c) => c?.verdict !== "met");
+const unmet = criteria.filter((c) => c === null || typeof c !== "object" || c.verdict !== "met");
 if (unmet.length > 0) {
   console.error(`BLOCKED: ${unmet.length} of ${criteria.length} criteria did not pass:`);
   for (const c of unmet) console.error(`  [${c?.verdict ?? "missing"}] ${c?.criterion ?? "(no text)"}`);
   console.error("  Note: `unverifiable` is not a pass.");
   process.exit(1);
 }
-if (criteria.some((c) => typeof c.evidence !== "string" || c.evidence.trim() === "")) {
-  fail("a criterion is marked met with no evidence");
+// Strip zero-width and bidi characters before judging emptiness, so an invisible
+// character cannot stand in for evidence.
+const substantive = (s) =>
+  typeof s === "string" && s.replace(/[\s​-‍⁠﻿­]/gu, "").length >= 3;
+for (const c of criteria) {
+  if (!substantive(c.evidence)) {
+    fail(`a criterion is marked met without substantive evidence: ${JSON.stringify(c.criterion ?? "(no text)")}`);
+  }
+  if (!substantive(c.criterion)) fail("a criterion has no text");
 }
 
-const iv = v.implementer?.driverKind, vv = v.verifier?.driverKind;
-if (!iv || !vv) fail("record does not name both implementer and verifier driverKind");
+const norm = (x) => (typeof x === "string" ? x.trim().toLowerCase() : null);
+const iv = norm(v.implementer?.driverKind), vv = norm(v.verifier?.driverKind);
+if (iv === null || vv === null) fail("implementer and verifier driverKind must both be strings");
+if (!DRIVER_KINDS.has(iv)) fail(`unknown implementer driverKind ${JSON.stringify(v.implementer.driverKind)}`);
+if (!DRIVER_KINDS.has(vv)) fail(`unknown verifier driverKind ${JSON.stringify(v.verifier.driverKind)}`);
 if (iv === vv) fail(`verifier and implementer are the same vendor (${vv}); independence is void`);
 
 console.log(`land-gate: OK — ${criteria.length} criteria met, verified by ${vv} against ${iv} at ${headSha.slice(0, 12)}`);

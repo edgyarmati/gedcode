@@ -1,0 +1,2 @@
+# Verdict records are deliberately untracked. See README.md § Why these are not committed.
+*.json
