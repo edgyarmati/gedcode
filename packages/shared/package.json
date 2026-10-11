@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./sparkleUpdate": {
+      "types": "./src/sparkleUpdate.ts",
+      "import": "./src/sparkleUpdate.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"

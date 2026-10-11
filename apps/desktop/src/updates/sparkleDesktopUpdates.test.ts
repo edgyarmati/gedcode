@@ -2,12 +2,13 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import { sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ElectronSparkleUpdater from "../electron/ElectronSparkleUpdater.ts";
 import { makeSparkleTestBridge } from "../electron/sparkleTestBridge.ts";
-import { sparkleAppcastUrl } from "../electron/sparkleFeed.ts";
+
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 

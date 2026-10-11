@@ -5,9 +5,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
 
 import * as ElectronUpdater from "./ElectronUpdater.ts";
-import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "./sparkleFeed.ts";
 
 /**
  * A second implementation of {@link ElectronUpdater.ElectronUpdater}, backed by
@@ -97,7 +97,8 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
 
   const listeners = new Map<string, Set<(...args: Array<unknown>) => void>>();
   const emit = (eventName: string, ...args: Array<unknown>) => {
-    for (const listener of [...(listeners.get(eventName) ?? [])]) listener(...args);
+    // Snapshot, so a listener added while this event is dispatched waits for the next one.
+    for (const listener of Array.from(listeners.get(eventName) ?? [])) listener(...args);
   };
 
   let channel = "latest";
@@ -372,7 +373,7 @@ export function makeLayer(dependencies: ElectronSparkleUpdaterDependencies) {
   return Layer.sync(ElectronUpdater.ElectronUpdater, () => make(dependencies));
 }
 
-export const layer = makeLayer({
+const sparkleLayer = makeLayer({
   loadBridge: async (log) => {
     const { loadSparkleBridgeForApp } = await import("electron-sparkle-updater");
     return loadSparkleBridgeForApp(log);
@@ -386,7 +387,7 @@ export const layer = makeLayer({
 export function layerForPlatform(
   platform: NodeJS.Platform,
 ): Layer.Layer<ElectronUpdater.ElectronUpdater> {
-  return platform === "darwin" ? layer : ElectronUpdater.layer;
+  return platform === "darwin" ? sparkleLayer : ElectronUpdater.layer;
 }
 
 /** {@link layerForPlatform} against the host the app is running on. */

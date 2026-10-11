@@ -59,17 +59,24 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                   | Lines | Why                                                       |
-| -------------------------------------- | ----- | --------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits                  |
-| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors            |
-| `pnpm-workspace.yaml`                  | 8     | Drops `apps/mobile` from the workspace                    |
-| `knip.jsonc`                           | 36    | Scopes the export audit off mobile-only upstream exports  |
-| `pnpm-lock.yaml`                       | gen   | Generated; regenerate on conflict, never merge by hand    |
-| `README.md`                            | all   | Upstream's is T3 Code branding and T3 Code installers     |
-| `CONTRIBUTING.md`                      | 8     | Fork preamble; upstream repo links; triage is manual here |
-| `LICENSE`                              | 1     | Adds our copyright line; upstream's is retained           |
-| `AGENTS.md`                            | 13    | Appended overlay pointing at `.ged/`; overrides nothing   |
+| File                                             | Lines | Why                                                       |
+| ------------------------------------------------ | ----- | --------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts`           | 10    | The only assembly point for MCP toolkits                  |
+| `.github/pull_request_template.md`               | 31    | Upstream's is written for outside contributors            |
+| `pnpm-workspace.yaml`                            | 8     | Drops `apps/mobile` from the workspace                    |
+| `knip.jsonc`                                     | 36    | Scopes the export audit off mobile-only upstream exports  |
+| `pnpm-lock.yaml`                                 | gen   | Generated; regenerate on conflict, never merge by hand    |
+| `README.md`                                      | all   | Upstream's is T3 Code branding and T3 Code installers     |
+| `CONTRIBUTING.md`                                | 8     | Fork preamble; upstream repo links; triage is manual here |
+| `LICENSE`                                        | 1     | Adds our copyright line; upstream's is retained           |
+| `AGENTS.md`                                      | 13    | Appended overlay pointing at `.ged/`; overrides nothing   |
+| `apps/desktop/src/main.ts`                       | 2     | Selects the Sparkle updater layer on macOS                |
+| `apps/desktop/src/updates/updatesTestHarness.ts` | 20    | Lets tests inject the Sparkle updater layer               |
+| `apps/desktop/package.json`                      | 1     | `electron-sparkle-updater` dependency                     |
+| `scripts/package.json`                           | 1     | Same dependency, for the after-pack hook                  |
+| `scripts/lib/desktop-external-packages.ts`       | 1     | Ships the Sparkle package in the staged app               |
+| `scripts/build-desktop-artifact.ts`              | 17    | Applies Sparkle config, stages the framework (additions)  |
+| `packages/shared/package.json`                   | 4     | `./sparkleUpdate` subpath export                          |
 
 The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —
 Blacksmith runners, T3's Cloudflare and hosting credentials, the dropped mobile app, T3's
@@ -77,7 +84,8 @@ contribution process — are disabled in repository settings, and our gate is a 
 `.github/workflows/ged-ci.yml`. Keep it that way; a `runs-on:` edit is 37 conflicts a sync. Upstream's
 release workflows (`Release`, `Release desktop build`, `Publish AUR package`) are disabled for the
 same reason: they publish the npm `t3` and `@t3code/*` packages, which are not ours to publish. Our
-release path is desktop artifacts on GitHub Releases, and it is unbuilt.
+release path is `.github/workflows/ged-release.yml`: the macOS arm64 build on GitHub Releases, with
+a signed Sparkle feed — see [docs/ged/sparkle-updates.md](../docs/ged/sparkle-updates.md).
 
 ## Code conventions
 

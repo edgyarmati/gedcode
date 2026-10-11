@@ -6,7 +6,7 @@ import { assert, expect, vi } from "vite-plus/test";
 import * as ElectronSparkleUpdater from "./ElectronSparkleUpdater.ts";
 import * as ElectronUpdater from "./ElectronUpdater.ts";
 import { makeSparkleTestBridge } from "./sparkleTestBridge.ts";
-import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "./sparkleFeed.ts";
+import { SPARKLE_ED_PUBLIC_KEY, sparkleAppcastUrl } from "@t3tools/shared/sparkleUpdate";
 
 interface RecordedEvent {
   readonly name: string;
