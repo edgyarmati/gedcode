@@ -36,12 +36,16 @@ See [docs/ged/workflow.md](./docs/ged/workflow.md) for how a piece of work actua
 > [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`. The
 > [provider docs](./docs/user/) cover each one.
 
-Desktop builds are published on [GitHub Releases](https://github.com/edgyarmati/gedcode/releases).
-macOS builds are ad-hoc signed, so the first install has to be allowed manually in System Settings;
-in-app updating on macOS is being restored and is tracked in `.ged/plans/sparkle-updates/`.
+[GitHub Releases](https://github.com/edgyarmati/gedcode/releases) carries the v0.4 desktop builds.
+v0.5 is a rebuild on a newer base and has no published build yet — run it from source with the
+[local development](#local-development) steps below until it does.
+
+macOS builds are ad-hoc signed rather than notarized, so the first install has to be allowed
+manually in System Settings. In-app updating on macOS is being restored; the plan is in
+`.ged/plans/sparkle-updates/`.
 
 The package-registry and `curl | sh` installers in upstream's README install **T3 Code**, not
-GedCode, and are not interchangeable with it.
+GedCode, and the two are not interchangeable.
 
 ## Documentation
 
@@ -64,14 +68,24 @@ Building from source? Start at [docs/internals/overview.md](./docs/internals/ove
 
 ## Local development
 
+<a id="install-vp"></a>
+
 GedCode uses [Vite+](https://viteplus.dev/guide/), so install the global `vp` tool first:
 
 ```bash
 curl -fsSL https://vite.plus | bash   # Windows: irm https://vite.plus/ps1 | iex
-vp i
 ```
 
-Then `vp run dev`. The checks are `vp fmt`, `vp lint`, `vp run -r typecheck`, and `vp test run`.
+Then, from the repository root (Node 24 required):
+
+```bash
+vp i
+vp run dev
+```
+
+Open the pairing URL the dev runner prints — the bare origin does not authenticate a new browser.
+The checks are `vp fmt`, `vp lint`, `vp run -r typecheck` and `vp test run`. The
+[development runbook](./docs/operations/development.md) has the rest.
 
 ## Project status
 
