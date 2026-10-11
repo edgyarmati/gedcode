@@ -347,3 +347,53 @@ EAS project id, so personal builds mean editing upstream files. On iOS a persona
 either an Apple Developer Program membership or seven-day free-provisioning re-signs — the same cost
 Sparkle exists to avoid. Android sideload is the only version that is actually cheap, and an
 Android-only app is not a product.
+
+## 2026-10-11 — CI runs on GitHub-hosted runners in an additive workflow; upstream's are disabled
+
+- Status: accepted.
+
+Upstream runs 37 of its 48 jobs on `blacksmith-*` runners — a third-party hosted-runner service T3
+subscribes to and this repository does not. Those jobs do not fail; they queue forever, which is
+worse, because a never-starting check looks the same as a slow one. Watching run `38143401633` for
+several minutes with every job still `queued` is what surfaced it. v0.4 never hit this: its
+`ci.yml` was on `ubuntu-latest`.
+
+Rewriting `runs-on:` would mean editing `.github/workflows/ci.yml` in 37 places plus eight other
+workflow files, all of them hot upstream files, for a conflict on every sync. Instead:
+
+- `.github/workflows/ged-ci.yml` is ours and new — format, lint, `knip:check`, repo-wide typecheck,
+  and the Ged test suites, on `ubuntu-latest`. The repository is public, so GitHub-hosted minutes
+  are free. Nothing upstream is modified, so nothing here can conflict.
+- Upstream's workflows are disabled through **repository settings**, not file edits
+  (`gh workflow disable`). Disabled: CI, Windows Tests, Deploy T3 Connect relay, both Desktop macOS
+  Preview workflows, Web Preview, all four Mobile workflows, PR Size, PR Vouch, Thread Transfer
+  Report, and Forward to Cursor hygiene. Still active: Issue Labels, Publish AUR package, Release
+  desktop build, Release.
+
+The ones beyond Blacksmith were disabled for a reason of their own: the relay deploy wants T3's
+Cloudflare credentials, the previews want T3's hosting, the mobile workflows target an app that is
+no longer in the workspace, and PR Vouch and the Cursor hygiene forwarder are T3's contribution
+process, not ours.
+
+A disabled workflow stays disabled across syncs and shows up plainly in `gh workflow list`, so
+re-enabling one is a deliberate act. The cost of this choice is that an upstream change to CI
+coverage is invisible to us — `ged-ci.yml` has to be kept honest by hand.
+
+## 2026-10-11 — The Ged tools are absent from T3's MCP tool catalog, and stay absent
+
+- Status: accepted.
+
+`packages/shared/src/t3McpToolPresentation.ts` holds `T3_MCP_TOOLS`, the catalog that gives a tool
+its display title and T3 branding in the client. The five `ged_*` tools are not in it, and upstream's
+own test in `apps/server/src/mcp/toolkits/core.test.ts` enumerates a fixed toolkit list that does not
+include `MemoryToolkit`, so they are not checked against it either.
+
+The consequence was read out of `packages/provider-core/src/server/mcpToolPresentation.ts` rather
+than assumed: the fallback is graceful. An unknown tool gets a title derived from its name — `ged
+memory read` — and a generic `kind: "integration"` source instead of T3 branding. It renders; it is
+just not branded.
+
+Registering them means editing a large, hot upstream catalog for cosmetics. Under the additive-only
+rule that is a bad trade, so the limit stands. `registration.test.ts` asserts the fallback rather
+than the catalog, so if upstream ever changes the unknown-tool path from graceful to broken, we find
+out from a failing test instead of from a user.

@@ -149,9 +149,30 @@ content wholesale, which makes `next` a strict descendant of `main` and the push
 fast-forward. Anyone with a clone pulls cleanly. `v0.4-final` tags `c3a9813f39`, and v0.4's release
 tags are untouched.
 
-PR #92 closed as merged the moment its commits reached `main`, and CI started on the same push —
-the first automated check this tree has ever had. The diagnosis in the previous entry held exactly:
-the conflict was the whole cause.
+PR #92 closed as merged the moment its commits reached `main`, and runs were created on the same
+push. The diagnosis in the previous entry held exactly: the conflict was the whole cause. Those runs
+never actually started, for a second reason found afterwards — see the entry below.
 
 The branch `next` still exists and is identical to `main`; it has no further purpose. Work continues
 on `main`, which is what [sync-upstream](../.agents/skills/sync-upstream/SKILL.md) already assumed.
+
+## 2026-10-11 — The MCP registration layer is covered, and CI actually runs
+
+`apps/server/src/mcp/toolkits/memory/registration.test.ts` drives the five `ged_*` tools through
+`McpServer.callTool` — the layer above the direct toolkit dispatch `handlers.test.ts` already
+covers. It asserts what only the server does: that the five names publish with `$ref`-free
+object-root schemas, that a real call round-trips JSON argument decoding into `structuredContent`,
+and that a path refusal comes back as `isError` with readable text rather than a failed effect.
+`McpHttpServer.layerMemoryToolkitRegistration` had to be exported to be testable — one word, in a
+file already on the modified list, matching a style upstream uses for its other registration layers.
+
+The fourth case pins the tool-presentation gap in place: the Ged tools are not in T3's
+`T3_MCP_TOOLS` catalog, the fallback renders them as `ged memory read` with a generic source, and
+the test asserts the fallback stays graceful. See [DECISIONS](./DECISIONS.md).
+
+The previous entry's claim that CI started on the push to `main` was wrong. The runs were created
+and then sat `queued` indefinitely: upstream moved CI onto `blacksmith-*` runners, which this
+repository has no subscription to, so the jobs had nowhere to go. A never-starting check is
+indistinguishable from a slow one, which is why this took a watch to notice. `.github/workflows/ged-ci.yml`
+is now the gate that actually runs — ours, additive, on GitHub-hosted runners — and the upstream
+workflows that cannot work here are disabled in repository settings rather than edited.

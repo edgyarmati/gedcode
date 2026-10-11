@@ -1,0 +1,107 @@
+# Upstream's `ci.yml` runs almost every job on Blacksmith runners, which this
+# repository is not subscribed to, so those jobs queue forever instead of
+# failing. This workflow is the gate that actually runs here: the same checks
+# the Ged layer is held to locally, on GitHub-hosted runners. It is additive —
+# upstream's workflows are left untouched and disabled through repository
+# settings, so a sync never conflicts over CI.
+name: Ged CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ged-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Format, lint, unused code
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # `.repos/` holds vendored reference checkouts no check reads.
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      # knip resolves the desktop app's dependencies, which needs the runtime.
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Format
+        run: vp fmt --check
+
+      - name: Lint
+        run: vp lint --report-unused-disable-directives
+
+      - name: Check unused code
+        run: vp run knip:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Typecheck
+        run: vp run -r --concurrency-limit 2 typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      # The Ged layer lives in apps/server; these are the suites that cover it
+      # plus the upstream MCP surfaces it registers into.
+      - name: Test the Ged layer
+        working-directory: apps/server
+        run: vp test run src/ged src/mcp/toolkits/memory src/mcp/toolkits/core.test.ts src/mcp/McpHttpServer.test.ts

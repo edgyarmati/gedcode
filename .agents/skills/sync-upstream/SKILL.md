@@ -52,6 +52,13 @@ user decide.
 A conflict in `knip.jsonc` usually means upstream added an export whose only consumer is the Expo
 app. Add the file to the scoped `ignoreIssues` blocks; do not widen them to a whole package.
 
+`.github/workflows/` never conflicts, because we do not edit upstream's workflows — the ones that
+cannot run here are disabled in repository settings and ours lives in `ged-ci.yml`. If upstream
+adds a workflow, it arrives **enabled**: check whether it can run here (Blacksmith runners and T3's
+credentials cannot), and disable it with `gh workflow disable "<name>" --repo edgyarmati/gedcode`
+rather than deleting the file. If upstream adds a check `ged-ci.yml` does not cover, say so — that
+file is kept honest by hand.
+
 ## After success
 
 Report how many commits came from upstream and confirm the Ged commits replayed cleanly. Re-verify

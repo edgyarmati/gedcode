@@ -837,7 +837,7 @@ export const layerEnvironmentToolkit = toolkitRegistration(
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
 /** Ged: project memory and the land gate, served to every provider. */
-const layerMemoryToolkitRegistration = toolkitRegistration(
+export const layerMemoryToolkitRegistration = toolkitRegistration(
   MemoryToolkit,
   MemoryHandlers.layer,
 ).pipe(Layer.provide(ProjectMemory.layer));

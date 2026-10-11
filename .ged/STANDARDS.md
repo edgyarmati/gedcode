@@ -67,6 +67,11 @@ The whole modified surface, which a PR must justify adding to:
 | `knip.jsonc`                           | 36    | Scopes the export audit off mobile-only upstream exports |
 | `pnpm-lock.yaml`                       | gen   | Generated; regenerate on conflict, never merge by hand   |
 
+The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —
+Blacksmith runners, T3's Cloudflare and hosting credentials, the dropped mobile app, T3's
+contribution process — are disabled in repository settings, and our gate is a new file,
+`.github/workflows/ged-ci.yml`. Keep it that way; a `runs-on:` edit is 37 conflicts a sync.
+
 ## Code conventions
 
 - **Effect** is used pervasively — follow its patterns for errors, Layers, and runtimes.
