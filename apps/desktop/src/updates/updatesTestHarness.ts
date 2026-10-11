@@ -37,6 +37,13 @@ export interface UpdatesHarnessOptions {
   readonly platform?: NodeJS.Platform;
   /** Contents of the resources/package-type marker a Linux package ships. */
   readonly packageType?: string | undefined;
+  /** Contents of the resources/app-update.yml electron-builder writes into a
+      packaged app, so update feed configuration can be exercised without the
+      mock update server. */
+  readonly appUpdateYml?: string | undefined;
+  /** Replaces the stubbed updater, so a real ElectronUpdater implementation can
+      be driven through DesktopUpdates (see sparkleDesktopUpdates.test.ts). */
+  readonly updaterLayer?: Layer.Layer<ElectronUpdater.ElectronUpdater>;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -67,7 +74,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     }
   };
 
-  const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
+  const layerStubUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
     setFeedURL: (options) =>
       Effect.sync(() => {
         feedUrls.push(options);
@@ -108,6 +115,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
           }),
       ).pipe(Effect.asVoid),
   } satisfies ElectronUpdater.ElectronUpdater["Service"]);
+
+  const layerUpdater = options.updaterLayer ?? layerStubUpdater;
 
   const layerWindow = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
@@ -215,14 +224,16 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     readFileString: (path) =>
       path === "/missing/resources/package-type" && options.packageType !== undefined
         ? Effect.succeed(options.packageType)
-        : Effect.fail(
-            PlatformError.systemError({
-              module: "FileSystem",
-              method: "readFileString",
-              _tag: "NotFound",
-              pathOrDescriptor: path,
-            }),
-          ),
+        : path === "/missing/resources/app-update.yml" && options.appUpdateYml !== undefined
+          ? Effect.succeed(options.appUpdateYml)
+          : Effect.fail(
+              PlatformError.systemError({
+                module: "FileSystem",
+                method: "readFileString",
+                _tag: "NotFound",
+                pathOrDescriptor: path,
+              }),
+            ),
     makeDirectory: () => Effect.void,
     writeFileString: (path) =>
       Effect.sync(() => {

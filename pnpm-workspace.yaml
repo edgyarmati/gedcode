@@ -21,6 +21,8 @@ allowBuilds:
   bufferutil: false
   core-js: false
   electron: true
+  # Deliberate no-op install script; the native addon is rebuilt at package time.
+  electron-sparkle-updater: false
   electron-winstaller: false
   esbuild: true
   msgpackr-extract: true
