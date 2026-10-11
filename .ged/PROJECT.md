@@ -17,7 +17,7 @@ since deleted every file v0.4 integrated through (`wsServer.ts`, `providerManage
 `codexAppServerManager.ts`, `contracts/src/orchestration.ts`, `web/src/store.ts`). There was no
 clean-merge surface, so the base was retaken and the Ged layer is being re-landed additively.
 
-The v0.4 repository remains at `~/projects/gedcode` as a read-only reference.
+The v0.4 repository remains at `~/projects/gedcode-v0.4` as a read-only reference.
 
 ### Naming
 

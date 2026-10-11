@@ -90,6 +90,6 @@ with the `sync-upstream` cost understood — not folded into unrelated work.
 
 ## Reference
 
-v0.4 at `~/projects/gedcode`: PR #83 (`c4f5a09e30`), later `dc69a1d295` (PR #90) and `c0c91fa9ee`.
+v0.4 at `~/projects/gedcode-v0.4`: PR #83 (`c4f5a09e30`), later `dc69a1d295` (PR #90) and `c0c91fa9ee`.
 `docs/sparkle-updates.md` there documents key custody, moving the signing key between Macs, and a
 local release rehearsal; that document is worth porting close to verbatim once the code lands.
