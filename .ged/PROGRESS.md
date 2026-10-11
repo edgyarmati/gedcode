@@ -67,7 +67,7 @@ asking for review capacity — link a triaged issue, show maintainer approval of
 which applies to a fork whose only contributor is its maintainer. Ours asks what broke, what fixed
 it, what it cost upstream, what was verified, and who verified it independently of whom.
 
-That makes two modified upstream files; `STANDARDS.md` now carries the full list, so adding a
+That made two modified upstream files; `STANDARDS.md` now carries the full list, so adding a
 third has to be argued for in a PR rather than noticed later.
 
 Package versions stay on upstream's 0.0.45 train. The generation is a project fact, not a manifest
@@ -93,6 +93,25 @@ membership. The seam is cheap — `ElectronUpdater` is an Effect service chosen 
 `main.ts:140`, so Sparkle drops in as a second layer and upstream's 1042-line `DesktopUpdates.ts`
 stays untouched — but the packaging and release-pipeline edits are not, and the plan says so
 rather than discovering it mid-implementation.
+
+**Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
+which is a key-custody decision and not code.
+
+## 2026-10-11 — Mobile out of the workspace
+
+`apps/mobile` is no longer a workspace project. Two lines in `pnpm-workspace.yaml` instead of 1,197
+deletions and six upstream files; the reasoning and the revival path are in
+[DECISIONS.md](./DECISIONS.md), along with why keeping the app for personal use was looked at
+seriously and declined.
+
+The unobvious part was `knip.jsonc`. Thirty-two exports in `client-runtime`, `contracts`, and
+`shared` existed only for the Expo app, so taking it out of the graph failed `knip:check` — a CI
+step. The audit is now scoped off those specific files, which means a new mobile-only export
+upstream fails loudly rather than disappearing into a package-wide rule. Two exports in our own
+`ProjectMemory.ts` were genuinely unused and are no longer exported.
+
+Modified upstream files go from two to five; `pnpm-lock.yaml` is generated and self-heals on
+conflict. The table in [STANDARDS.md](./STANDARDS.md) is the list a PR has to justify adding to.
 
 **Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
 which is a key-custody decision and not code.

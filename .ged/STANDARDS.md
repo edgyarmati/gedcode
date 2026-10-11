@@ -59,10 +59,13 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                   | Lines | Why                                            |
-| -------------------------------------- | ----- | ---------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits       |
-| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors |
+| File                                   | Lines | Why                                                      |
+| -------------------------------------- | ----- | -------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts` | 10    | The only assembly point for MCP toolkits                 |
+| `.github/pull_request_template.md`     | 31    | Upstream's is written for outside contributors           |
+| `pnpm-workspace.yaml`                  | 8     | Drops `apps/mobile` from the workspace                   |
+| `knip.jsonc`                           | 36    | Scopes the export audit off mobile-only upstream exports |
+| `pnpm-lock.yaml`                       | gen   | Generated; regenerate on conflict, never merge by hand   |
 
 ## Code conventions
 

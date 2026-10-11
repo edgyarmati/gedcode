@@ -19,7 +19,7 @@ import * as ProcessRunner from "../processRunner.ts";
  * by a relative key, never a path the caller composes.
  */
 
-export const MEMORY_DIR = ".ged";
+const MEMORY_DIR = ".ged";
 const VERDICTS_DIR = "verdicts";
 const GATE_SCRIPT = "bin/land-gate.sh";
 
@@ -98,7 +98,7 @@ export const verdictSlug = (branch: string): string | undefined => {
   return slug;
 };
 
-export const make = Effect.fn("ged.ProjectMemory.make")(function* () {
+const make = Effect.fn("ged.ProjectMemory.make")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const processes = yield* ProcessRunner.ProcessRunner;

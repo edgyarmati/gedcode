@@ -1,9 +1,17 @@
 packages:
   - apps/*
+  # GedCode: the Expo app is out of scope. Excluded here rather than deleted so
+  # upstream's apps/mobile changes keep merging cleanly. See DECISIONS.md.
+  - "!apps/mobile"
+  - "!apps/mobile/**"
   - infra/*
   - oxlint-plugin-t3code
   - packages/*
   - scripts
+
+# Excluding apps/mobile leaves its React Native / Expo patches unreferenced.
+# They stay in patches/ so reviving the app needs no upstream edit.
+allowUnusedPatches: true
 
 # Successor to onlyBuiltDependencies/ignoredBuiltDependencies (pnpm 11).
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior

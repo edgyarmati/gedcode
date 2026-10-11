@@ -99,6 +99,42 @@
       // These workspace packages are private to this monorepo.
       "includeEntryExports": true,
     },
+    // GedCode: apps/mobile is out of the workspace (see DECISIONS.md), so exports
+    // whose only consumers were the Expo app now read as unused. They are upstream
+    // code we do not own, so we scope the export audit off those files rather than
+    // delete them. A new entry here means upstream added another mobile-only export.
+    "packages/client-runtime": {
+      "includeEntryExports": true,
+      "ignoreIssues": {
+        "src/operations/projects.ts": ["exports"],
+        "src/state/attachments.ts": ["exports"],
+        "src/state/device.ts": ["exports"],
+        "src/state/gitActions.ts": ["exports"],
+        "src/state/models.ts": ["exports"],
+        "src/state/presentation.ts": ["exports"],
+        "src/state/projectGrouping.ts": ["exports"],
+        "src/state/projects.ts": ["exports"],
+        "src/state/shellPullRequests.ts": ["exports"],
+        "src/state/threadSettled.ts": ["exports"],
+        "src/voice-input/*.ts": ["exports", "nsExports"],
+      },
+    },
+    "packages/contracts": {
+      "includeEntryExports": true,
+      "ignoreIssues": {
+        "src/composerContext.ts": ["exports"],
+        "src/settings.ts": ["exports"],
+      },
+    },
+    "packages/shared": {
+      "includeEntryExports": true,
+      "ignoreIssues": {
+        "src/remote.ts": ["exports"],
+        "src/themePalettes.ts": ["exports"],
+        "src/themePreview.ts": ["exports"],
+        "src/threadLinks.ts": ["exports"],
+      },
+    },
     "packages/effect-acp": {
       "includeEntryExports": true,
       "entry": ["test/fixtures/*.ts"],

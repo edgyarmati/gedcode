@@ -285,3 +285,57 @@ v0's diffs are a reference, not a patch set. Upstream's updater, build script, a
 have all changed substantially since v0 forked.
 
 Not deferred, not dropped: `.ged/plans/sparkle-updates/`.
+
+## 2026-10-11 — The Expo app is dropped from the workspace, not deleted
+
+- Status: accepted.
+
+`apps/mobile` is out of scope: GedCode is a desktop and web workspace, and nothing in the Ged layer
+reaches the phone. It is removed from the pnpm workspace rather than deleted from the tree.
+
+Deleting it would cost six upstream files — `knip.jsonc`, root `package.json`, `.github/workflows/ci.yml`
+(seventeen mentions across two jobs and the gate list), `third-party-licenses.config.json`, root
+`vite.config.ts` (about fifteen globs), plus five mobile workflows — and 1,197 file deletions, every
+one of them a permanent conflict against an app upstream develops actively. Two lines in
+`pnpm-workspace.yaml` buy the same result: mobile is not installed, not built, and not released, and
+upstream's changes to it keep merging without a word from us.
+
+Three upstream files move as a result, and that is the real price:
+
+- `pnpm-workspace.yaml` (8 lines) — the exclusion, plus `allowUnusedPatches: true`. Excluding the app
+  orphans twelve React Native and Expo patches; they stay in `patches/` so reviving mobile needs no
+  further upstream edit, and pnpm refuses to install with unreferenced patches unless told.
+- `pnpm-lock.yaml` — regenerated without the mobile importers (482 insertions, 1,754 deletions). This
+  conflict is self-healing: take upstream's lockfile wholesale and re-run install.
+- `knip.jsonc` (36 lines) — the one that was not obvious. Thirty-two exports in `client-runtime`,
+  `contracts`, and `shared` had the Expo app as their only consumer, so dropping it from the graph
+  made them read as unused and failed `knip:check`. Deleting the app would have caused exactly the
+  same failure, so this cost is not avoidable by choosing differently; it is scoped per file so a new
+  mobile-only export upstream fails loudly and gets a line, rather than being swallowed by a
+  package-wide rule.
+
+Measured saving: `node_modules` 5.8G → 5.2G, 2014 → 1905 pnpm entries. Less than the full React
+Native toolchain because `apps/web` legitimately depends on part of it (`@legendapp/list`,
+`react-native-svg`).
+
+**Reviving it** needs no upstream edit beyond reverting those two workspace lines — plus an Expo
+account of our own, because `apps/mobile/app.config.ts` hardcodes `owner: "pingdotgg"` and an EAS
+project id.
+
+## 2026-10-11 — Keeping the mobile app "just for personal use" was assessed and declined
+
+- Status: accepted.
+
+The question was whether mobile could be kept cheaply against our own server. Architecturally, yes:
+Clerk is confined to settings and auth screens rather than gating boot, and LAN pairing is
+first-class — `apps/mobile/src/features/connection/` carries `LocalEnvironmentList.tsx`, a `pairing.ts`
+that builds a host-plus-token QR URL, and an `environmentSections.ts` that already splits local
+environments from relay-managed ones. Pointing the app at our own server over LAN needs no code.
+
+Shipping it is the problem. Eight custom native modules (43 Swift and Kotlin files) rule out Expo Go,
+so every install is a full native build; `ios/` and `android/` are not committed, so it is
+`expo prebuild` plus Xcode or EAS every time; and `app.config.ts` hardcodes upstream's Expo owner and
+EAS project id, so personal builds mean editing upstream files. On iOS a personal install needs
+either an Apple Developer Program membership or seven-day free-provisioning re-signs — the same cost
+Sparkle exists to avoid. Android sideload is the only version that is actually cheap, and an
+Android-only app is not a product.

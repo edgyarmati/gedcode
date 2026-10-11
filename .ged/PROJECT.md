@@ -40,11 +40,12 @@ verifier independence, per-role model policy, the land gate — is specified in
 
 ## What is ours
 
-Everything Ged-specific is additive. Exactly one upstream file is modified — ten lines in
-`apps/server/src/mcp/McpHttpServer.ts`, because its layer merge is the only place an MCP toolkit
-can be registered. See the additive-only constraint in
-[STANDARDS.md](./STANDARDS.md#additive-only-constraint) and the ADR recording that exception in
-[DECISIONS.md](./DECISIONS.md).
+Everything Ged-specific is additive. Five upstream files are modified and each one is argued for in
+[DECISIONS.md](./DECISIONS.md): ten lines in `apps/server/src/mcp/McpHttpServer.ts`, because its
+layer merge is the only place an MCP toolkit can be registered; `.github/pull_request_template.md`;
+and the three that take the out-of-scope Expo app out of the workspace. See the additive-only
+constraint in [STANDARDS.md](./STANDARDS.md#additive-only-constraint) for the table a new entry has
+to get past.
 
 - `.ged/` — project memory: these documents, the role briefs, plans, and verdict records.
 - `apps/server/src/ged/ProjectMemory.ts` — the path-confined reader/writer for that tree.
