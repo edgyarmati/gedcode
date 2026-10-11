@@ -69,6 +69,7 @@ The whole modified surface, which a PR must justify adding to:
 | `README.md`                            | all   | Upstream's is T3 Code branding and T3 Code installers     |
 | `CONTRIBUTING.md`                      | 8     | Fork preamble; upstream repo links; triage is manual here |
 | `LICENSE`                              | 1     | Adds our copyright line; upstream's is retained           |
+| `AGENTS.md`                            | 13    | Appended overlay pointing at `.ged/`; overrides nothing   |
 
 The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —
 Blacksmith runners, T3's Cloudflare and hosting credentials, the dropped mobile app, T3's

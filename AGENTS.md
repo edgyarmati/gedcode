@@ -162,3 +162,16 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## This fork (GedCode)
+
+This repository is GedCode, a fork of T3 Code. Everything above is upstream's and still applies.
+Three Ged-specific rules sit on top of it, and the files they point at are the overlay:
+
+- Read [`.ged/STANDARDS.md`](.ged/STANDARDS.md) before changing anything. It names the few upstream
+  files this fork modifies and why; adding to that list needs a reason, because every modified
+  upstream file is a permanent merge conflict. Prefer additive work.
+- `.ged/` is durable project memory: `PROJECT.md`, `DECISIONS.md`, `CONTEXT-MAP.md`, `PROGRESS.md`,
+  `ORCHESTRATION.md`, `roles/`, `plans/`. Record what you decide there as part of the task.
+- Nothing lands without an independent verdict: `.ged/bin/land-gate.sh` refuses a branch without
+  one. See [`docs/ged/workflow.md`](docs/ged/workflow.md).

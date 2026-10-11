@@ -243,6 +243,13 @@ cannot silently diverge from what our agents are told, because there is only one
 Revisit only if a genuinely Ged-specific overlay is wanted — and then as an overlay that names what
 it overrides, never as a second full copy.
 
+**2026-10-11 addendum.** That overlay is now wanted and exists. An agent entering this repository
+read upstream's `AGENTS.md` (via the one-line `CLAUDE.md`) and was never told `.ged/` existed — not
+the standards, not the memory, not the land gate. Thirteen lines appended to the end of `AGENTS.md`
+point at those three things and override nothing. Appended at the end deliberately: it is the
+position least likely to conflict, and the overlay stays a pointer, so the no-second-copy rule above
+still holds.
+
 ## 2026-10-11 — Memory holds what is written, not slots for what might be
 
 - Status: accepted

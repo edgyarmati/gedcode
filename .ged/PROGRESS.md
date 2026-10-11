@@ -215,3 +215,16 @@ two things it does not claim.
 Also disabled upstream's `Release`, `Release desktop build` and `Publish AUR package` workflows. They
 publish the npm `t3` and `@t3code/*` packages; those are not ours to publish, and leaving them armed
 on a tag push was the kind of thing that is only noticed afterwards.
+
+## 2026-10-11 — Agents entering the repo are now told the Ged layer exists
+
+The checkouts were renamed: `~/projects/gedcode` is the live v0.5 tree, `~/projects/gedcode-v0.4`
+the frozen reference. The inverted names were a standing hazard — every command needed an explicit
+path, and a mistaken one would have written v0.5 work into a frozen tree.
+
+The rename surfaced a real gap. Root `CLAUDE.md` is upstream's one-line `@AGENTS.md`, and upstream's
+`AGENTS.md` says nothing about `.ged/`. So an agent opening this repository fresh got T3's house
+rules and no idea that project memory, the standards overlay or the land gate existed. Thirteen
+appended lines fix that; the ADR on deferring to upstream's files carries the addendum.
+
+Verified after the rename: lint, server typecheck and the 17 Ged tests all pass from the new path.
