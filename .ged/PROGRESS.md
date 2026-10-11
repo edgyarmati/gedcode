@@ -113,5 +113,16 @@ upstream fails loudly rather than disappearing into a package-wide rule. Two exp
 Modified upstream files go from two to five; `pnpm-lock.yaml` is generated and self-heals on
 conflict. The table in [STANDARDS.md](./STANDARDS.md) is the list a PR has to justify adding to.
 
+**Blocked, and it needs a decision.** No GitHub Actions run has ever happened on `next`. The cause
+is now diagnosed: PR #92 targets v0's `main`, the two branches diverged at `e3accd6e9`, and v0
+modified 451 files upstream also changed — so the PR is `CONFLICTING`, `refs/pull/92/merge` does not
+exist, and Actions never creates a check suite for a `pull_request` it cannot merge. Only
+third-party apps, which work off `refs/pull/92/head`, report. The `push` trigger will not cover it
+either; it is filtered to `main`, and widening it means editing `ci.yml`.
+
+Nothing automated has checked this tree. Every green result so far is local. The fix is not to
+resolve 450 conflicts — `next` is meant to replace `main`, not merge into it — so it is a call about
+what the trunk should be, not a task.
+
 **Next:** exercise the MCP tools against a running server, still. Then slice 1 of the Sparkle plan,
 which is a key-custody decision and not code.
