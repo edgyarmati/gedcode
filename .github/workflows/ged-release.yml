@@ -49,13 +49,11 @@ jobs:
           else
             version="${GITHUB_REF_NAME#v}"
           fi
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid release version: $version"
-            exit 1
-          fi
-          # Preview builds are installed by hand and have no update feed.
-          if [[ "$version" == *-pr.* || "$version" =~ -preview\.[0-9]{8}\.[0-9]+$ ]]; then
-            echo "::error::$version is a preview version; this workflow only publishes updatable releases."
+          # Only the two versions with an update feed: a release (latest feed)
+          # or a nightly (nightly feed). Any other suffix would be filed under
+          # the latest feed and replace the stable release for every install.
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]{8}\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid release version: $version (expected X.Y.Z or X.Y.Z-nightly.YYYYMMDD.N)"
             exit 1
           fi
           prerelease=false
@@ -140,6 +138,19 @@ jobs:
           [[ "$(plutil -extract SURequireSignedFeed raw -o - "$plist")" == "true" ]]
           [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" == "${{ steps.version.outputs.version }}" ]]
 
+          # Sparkle replaces the installed app in place; an app with another
+          # identity would orphan the user's settings and permissions.
+          bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
+          if [[ "$bundle_id" != "com.t3tools.gedcode" ]]; then
+            echo "::error::The app's bundle identifier is $bundle_id, not com.t3tools.gedcode."
+            exit 1
+          fi
+          bundle_name="$(plutil -extract CFBundleName raw -o - "$plist")"
+          if [[ "$bundle_name" != GedCode* ]]; then
+            echo "::error::The app is named $bundle_name, not GedCode."
+            exit 1
+          fi
+
       - name: Extract Sparkle tools
         run: bash apps/desktop/node_modules/electron-sparkle-updater/native/scripts/fetch-sparkle.sh
 
@@ -165,7 +176,12 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then
             flags+=(--prerelease)
           fi
-          gh release create "$TAG" "${flags[@]}" release-assets/*.dmg release-assets/*.zip
+          # A rerun after a later step failed finds the release already made.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/*.dmg release-assets/*.zip --clobber
+          else
+            gh release create "$TAG" "${flags[@]}" release-assets/*.dmg release-assets/*.zip
+          fi
 
       - name: Publish the update feed
         env:

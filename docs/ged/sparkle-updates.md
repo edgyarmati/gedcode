@@ -50,9 +50,11 @@ allowed manually. Every update after that installs in-app.
 
 ## Releasing
 
-Push a tag `vX.Y.Z` (or run **Ged Release** from the Actions tab with a version). The workflow builds
-the Apple Silicon DMG and zip, checks that the app can update itself, generates and verifies the
-feed, publishes the version release, and only then replaces the feed on `sparkle-feed`.
+Push a tag `vX.Y.Z`, or `vX.Y.Z-nightly.YYYYMMDD.N` for a nightly (or run **Ged Release** from the
+Actions tab with a version). Any other version is refused, since it would land in the stable feed.
+The workflow builds the Apple Silicon DMG and zip, checks that the app can update itself and still
+carries GedCode's bundle identity, generates and verifies the feed, publishes the version release,
+and only then replaces the feed on `sparkle-feed`. A failed run can be rerun; it reuses the release.
 
 Only Apple Silicon is built. The feed carries exactly one archive, so an Intel build would need its
 own feed or a universal build.

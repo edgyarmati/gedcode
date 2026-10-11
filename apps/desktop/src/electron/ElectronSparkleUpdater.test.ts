@@ -272,6 +272,53 @@ describe("ElectronSparkleUpdater", () => {
     ),
   );
 
+  it.effect("answers a repeat check from the open session instead of the bridge", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const sparkle = makeSparkleTestBridge();
+        const updater = ElectronSparkleUpdater.make({ loadBridge: sparkle.loadBridge });
+        const events = yield* subscribe(updater);
+
+        yield* updater.checkForUpdates;
+        sparkle.emit({ type: "update-available", version: "1.2.4" });
+        sparkle.emit({ type: "update-downloaded", version: "1.2.4" });
+        events.length = 0;
+
+        yield* updater.checkForUpdates;
+
+        assert.deepEqual(sparkle.calls, ["init", "setAutomaticChecks:false", "checkForUpdates"]);
+        assert.deepEqual(
+          events.map((event) => event.name),
+          ["checking-for-update", "update-available"],
+        );
+        assert.deepEqual(events[1]?.payload, { version: "1.2.4" });
+
+        // Once the session ends, checks reach Sparkle again.
+        sparkle.emit({ type: "error", message: "boom" });
+        yield* updater.checkForUpdates;
+        assert.strictEqual(sparkle.calls.at(-1), "checkForUpdates");
+      }),
+    ),
+  );
+
+  it.effect("fails an in-flight download when Sparkle reports no update", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const sparkle = makeSparkleTestBridge();
+        const updater = ElectronSparkleUpdater.make({ loadBridge: sparkle.loadBridge });
+
+        yield* updater.checkForUpdates;
+        sparkle.emit({ type: "update-available", version: "1.2.4" });
+        const download = yield* updater.downloadUpdate.pipe(Effect.forkChild);
+        yield* Effect.yieldNow;
+
+        sparkle.emit({ type: "update-not-available" });
+        const exit = yield* Fiber.await(download);
+        assert.strictEqual(exit._tag, "Failure");
+      }),
+    ),
+  );
+
   it.effect("installs through Sparkle on quitAndInstall", () =>
     Effect.gen(function* () {
       const { bridge } = makeSparkleTestBridge();

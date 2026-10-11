@@ -33,6 +33,11 @@ import * as ElectronUpdater from "./ElectronUpdater.ts";
  *   is called, then releases them, so the user-facing flow is unchanged.
  * - **Completion.** `downloadUpdate` resolves when the download finishes, as
  *   electron-updater's promise does, not when the request is made.
+ * - **Re-checks.** Once Sparkle has accepted an update, its session stays open
+ *   until the update is installed, and a `checkForUpdates` call on the bridge
+ *   is deferred with no event in reply. DesktopUpdates polls regardless, so
+ *   while a session is open a check replays the update already on offer
+ *   instead of reaching the bridge, as electron-updater answers a repeat check.
  *
  * Settings electron-updater exposes as mutable fields (`autoDownload`,
  * `allowPrerelease`, `fullChangelog`, differential downloads) have no Sparkle
@@ -107,6 +112,9 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
   let bridge: ElectronSparkleBridge | null = null;
   let initializedFeedUrl: string | null = null;
   let gate: DownloadGate = { kind: "idle" };
+  /** The update Sparkle's open session holds, from `update-available` until the
+      session ends. Non-null exactly while the bridge would defer a check. */
+  let offered: UpdatePayload | null = null;
   let resumeDownload: ((outcome: Effect.Effect<void, Error>) => void) | null = null;
 
   const resolveFeedUrl = (): string | ElectronSparkleUpdaterUnavailableError => {
@@ -134,6 +142,13 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
     resume?.(Effect.fail(error));
   };
 
+  /** Sparkle's session ended: nothing is on offer and nothing is downloading. */
+  const endSession = (reason: string) => {
+    offered = null;
+    if (gate.kind === "streaming") failDownload(new Error(reason));
+    else gate = { kind: "idle" };
+  };
+
   const completeDownload = (payload: UpdatePayload) => {
     const resume = resumeDownload;
     resumeDownload = null;
@@ -150,7 +165,7 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
         return;
       }
       case "update-not-available": {
-        gate = { kind: "idle" };
+        endSession("Sparkle found no update while the download was in progress.");
         emit("update-not-available");
         return;
       }
@@ -160,7 +175,8 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
           emit("error", new Error("Sparkle reported an update without a version."));
           return;
         }
-        gate = { kind: "held", percent: null, downloaded: null };
+        offered = payload;
+        if (gate.kind !== "streaming") gate = { kind: "held", percent: null, downloaded: null };
         emit("update-available", payload);
         return;
       }
@@ -189,8 +205,7 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
       }
       case "error": {
         const error = new Error(event.message ?? "The Sparkle updater reported an error.");
-        if (gate.kind === "streaming") failDownload(error);
-        else gate = { kind: "idle" };
+        endSession(error.message);
         emit("error", error);
         return;
       }
@@ -218,6 +233,8 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
               }),
             );
           }
+          // A new feed discards whatever the previous one staged.
+          if (initializedFeedUrl !== null) endSession("The update channel changed.");
           loaded.setEventHandler(handleSparkleEvent);
           // DesktopUpdates owns the poll cadence; Sparkle's own scheduler would
           // check behind its back and bypass this adapter's gate.
@@ -276,8 +293,15 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
     setAllowDowngrade: () => Effect.void,
     setFullChangelog: () => Effect.void,
     setDisableDifferentialDownload: () => Effect.void,
-    checkForUpdates: Effect.suspend(() =>
-      ensureBridge.pipe(
+    checkForUpdates: Effect.suspend(() => {
+      if (offered !== null) {
+        const payload = offered;
+        return Effect.sync(() => {
+          emit("checking-for-update");
+          emit("update-available", payload);
+        });
+      }
+      return ensureBridge.pipe(
         Effect.mapError(
           (cause) => new ElectronUpdater.ElectronUpdaterCheckForUpdatesError({ channel, cause }),
         ),
@@ -289,8 +313,8 @@ export function make(dependencies: ElectronSparkleUpdaterDependencies) {
           }),
         ),
         Effect.asVoid,
-      ),
-    ),
+      );
+    }),
     downloadUpdate: Effect.suspend(() => {
       const failure = (detail: string) =>
         Effect.fail(
@@ -373,12 +397,22 @@ export function makeLayer(dependencies: ElectronSparkleUpdaterDependencies) {
   return Layer.sync(ElectronUpdater.ElectronUpdater, () => make(dependencies));
 }
 
-const sparkleLayer = makeLayer({
-  loadBridge: async (log) => {
-    const { loadSparkleBridgeForApp } = await import("electron-sparkle-updater");
-    return loadSparkleBridgeForApp(log);
-  },
-});
+/** Routes the bridge's diagnostics, including why the addon failed to load,
+    into the app's log. */
+const sparkleLayer = Layer.effect(
+  ElectronUpdater.ElectronUpdater,
+  Effect.map(Effect.context<never>(), (context) =>
+    make({
+      loadBridge: async (log) => {
+        const { loadSparkleBridgeForApp } = await import("electron-sparkle-updater");
+        return loadSparkleBridgeForApp(log);
+      },
+      log: (message) => {
+        void Effect.runPromiseWith(context)(Effect.logInfo(message));
+      },
+    }),
+  ),
+);
 
 /**
  * macOS updates through Sparkle; every other platform keeps electron-updater

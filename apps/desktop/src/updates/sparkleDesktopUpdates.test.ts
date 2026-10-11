@@ -86,6 +86,45 @@ describe("DesktopUpdates on Sparkle", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("keeps an offered and a downloaded update across background polls", () => {
+    const { sparkle, harness } = makeSparkleHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        yield* updates.check("test");
+        yield* flushCallbacks;
+        sparkle.emit({ type: "update-available", version: "1.2.4" });
+        yield* flushCallbacks;
+
+        // A poll while Sparkle's session is open would be deferred by the real
+        // bridge and never answered.
+        yield* updates.check("poll");
+        yield* flushCallbacks;
+        const stillAvailable = yield* updates.getState;
+        assert.equal(stillAvailable.status, "available");
+        assert.equal(stillAvailable.availableVersion, "1.2.4");
+
+        const download = yield* updates.download.pipe(Effect.forkChild);
+        yield* flushCallbacks;
+        sparkle.emit({ type: "update-downloaded", version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* Fiber.join(download);
+
+        yield* updates.check("poll");
+        yield* flushCallbacks;
+        assert.equal((yield* updates.getState).status, "downloaded");
+        assert.notInclude(sparkle.calls, "checkForUpdates:deferred");
+
+        yield* updates.install;
+        yield* flushCallbacks;
+        assert.equal(sparkle.bridge.installUpdateNow.mock.calls.length, 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("surfaces a missing Sparkle addon as a failed check", () => {
     const harness = makeHarness({
       env: { T3CODE_DESKTOP_MOCK_UPDATES: "false" },

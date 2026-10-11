@@ -248,3 +248,9 @@ the feed — a feed every v0.4 install would reject. Verified live: the packaged
 
 Still blocking a v0.5 release: the build is branded `T3 Code (Alpha)` / `com.t3tools.t3code`, not
 GedCode. That is the next piece of work.
+
+An independent review before merge caught a state-machine hang: once Sparkle had offered an update,
+the next background poll left the app stuck on "checking", because Sparkle defers a check made
+during an open update session and never answers it. Fixed in the adapter, with tests that model the
+deferral. The release workflow now also refuses non-GedCode bundle identities and any version other
+than `X.Y.Z` or `X.Y.Z-nightly.YYYYMMDD.N`, and CI runs the Sparkle suites.
