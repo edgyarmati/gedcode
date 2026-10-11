@@ -1,6 +1,48 @@
 # Sparkle updates on macOS
 
-Status: **planned, not started.** Carried forward from v0.4 as a must-keep capability.
+Status: **implemented, 2026-10-11** (branch `sparkle-updates`). Carried forward from v0.4 as a
+must-keep capability. Operator documentation: [`docs/ged/sparkle-updates.md`](../../../docs/ged/sparkle-updates.md).
+
+## As built
+
+The plan below held, at a much lower upstream cost than estimated. Actual edits to upstream files:
+
+| File                                             | Lines  | Why                                                                    |
+| ------------------------------------------------ | ------ | ---------------------------------------------------------------------- |
+| `apps/desktop/src/main.ts`                       | 2      | Selects `ElectronSparkleUpdater.layerAuto`                             |
+| `apps/desktop/src/updates/updatesTestHarness.ts` | +20/−9 | Optional `updaterLayer` / `appUpdateYml` so tests drive Sparkle        |
+| `apps/desktop/package.json`                      | 1      | `electron-sparkle-updater` dependency                                  |
+| `scripts/package.json`                           | 1      | Same dependency, for the after-pack hook                               |
+| `scripts/lib/desktop-external-packages.ts`       | 1      | Ships the package in the staged app                                    |
+| `scripts/build-desktop-artifact.ts`              | 17     | Applies the Sparkle config and stages the framework (added lines only) |
+| `packages/shared/package.json`                   | 4      | `./sparkleUpdate` subpath export                                       |
+| `pnpm-workspace.yaml`                            | 2      | `allowBuilds: false` for the package                                   |
+
+No patch file (0.5.3 bundles a patched Sparkle 2.9.4 and its tools), no `release.yml` edit (our
+pipeline is the new `.github/workflows/ged-release.yml`), and `createBuildConfig` and its upstream
+tests are untouched — the Sparkle fragment is applied at the call site.
+
+Found while rehearsing the real build, and fixed: the package's builder fragment has a top-level
+`zip` key electron-builder 26 rejects; electron-builder resolves `afterPack` from its own working
+directory, so the hook path is absolute; and the fragment omits `SURequireSignedFeed` and friends,
+without which `generate_appcast` emits an **unsigned** feed that every v0.4 install would reject.
+The policy keys are now set explicitly and tested.
+
+Verified locally on an arm64 build: framework packaged, addon smart-unpacked and linked against
+Sparkle 2.9.4, ad-hoc seal intact, key and feed URL embedded; feed generation end to end with a
+throwaway key; and the packaged app checking the live `sparkle-feed` appcast — "up to date" at
+0.5.0, and offered 0.4.8 when relabelled 0.4.0. That the repo secret derives the embedded key is
+only checkable in CI; the release workflow fails closed if it does not.
+
+**Open before the first v0.5 release:** the app still builds as `T3 Code (Alpha)` /
+`com.t3tools.t3code`, while v0.4 installs are `GedCode` / `com.t3tools.gedcode`. Sparkle would
+replace a v0.4 install with an app of a different identity, losing its settings and permissions.
+The rebrand has to land first; the release workflow now refuses any build whose bundle
+identifier is not `com.t3tools.gedcode`, so this cannot ship by accident.
+
+Independent review (2026-10-11) found that a background poll while Sparkle held an offered or
+downloaded update left the app stuck in "checking": Sparkle defers a check made during an open
+session and never answers it. The adapter now answers such a check from the session itself.
 
 ## Goal
 

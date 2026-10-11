@@ -1,0 +1,198 @@
+# Publishes a GedCode macOS release and its signed Sparkle update feed.
+#
+# Upstream's release workflows publish the npm `t3` and `@t3code/*` packages
+# and build on Blacksmith runners; they stay disabled here and untouched. This
+# is our release path: one Apple Silicon build, ad-hoc signed, updated through
+# Sparkle instead of electron-updater so no Apple Developer ID is needed.
+#
+# The feed is the trust boundary for every installed copy, so this workflow
+# fails closed: nothing is published unless the signing seed matches the key
+# embedded in the app and Sparkle's own tools verify the archive and the feed.
+# The version release goes out before the feed, so a failed feed upload leaves
+# installs on the previous version rather than pointing them at a missing file.
+name: Ged Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (for example 0.5.1). Tags the dispatched commit."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ged-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      SPARKLE_BIN: apps/desktop/node_modules/electron-sparkle-updater/native/vendor/bin
+    steps:
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$INPUT_VERSION"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          # Only the two versions with an update feed: a release (latest feed)
+          # or a nightly (nightly feed). Any other suffix would be filed under
+          # the latest feed and replace the stable release for every install.
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]{8}\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid release version: $version (expected X.Y.Z or X.Y.Z-nightly.YYYYMMDD.N)"
+            exit 1
+          fi
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      # Fail before a long build rather than after it.
+      - name: Require the Sparkle signing key
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$SPARKLE_ED_PRIVATE_KEY" ]]; then
+            echo "::error::The SPARKLE_ED_PRIVATE_KEY secret is not set; refusing to build a release that cannot ship an update feed."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # `.repos/` holds vendored reference checkouts the build never reads.
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ steps.version.outputs.version }}"
+
+      # GITHUB_REPOSITORY gives the app its update configuration; without it
+      # the build ships with updates switched off.
+      - name: Build desktop artifact
+        run: >-
+          vp run dist:desktop:artifact
+          --platform mac --target dmg --arch arm64
+          --build-version "${{ steps.version.outputs.version }}"
+          --output-dir release-assets
+          --verbose
+
+      - name: Verify the app can update itself
+        run: |
+          set -euo pipefail
+          zip="$(find release-assets -maxdepth 1 -name '*.zip' -print -quit)"
+          dmg="$(find release-assets -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$zip" || -z "$dmg" ]]; then
+            echo "::error::The build did not produce both a .zip and a .dmg."
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          ditto -x -k "$zip" "$work"
+          app="$(find "$work" -maxdepth 1 -name '*.app' -print -quit)"
+          plist="$app/Contents/Info.plist"
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
+          test -d "$app/Contents/Frameworks/Sparkle.framework"
+          addon="$(find "$app/Contents/Resources/app.asar.unpacked" -type f -name sparkle_bridge.node -print -quit)"
+          test -n "$addon"
+          otool -L "$addon" | grep -q 'Sparkle.framework'
+          test -f "$app/Contents/Resources/app-update.yml"
+
+          expected_key="$(sed -n 's/^export const SPARKLE_ED_PUBLIC_KEY = "\(.*\)";$/\1/p' packages/shared/src/sparkleUpdate.ts)"
+          test -n "$expected_key"
+          [[ "$(plutil -extract SUPublicEDKey raw -o - "$plist")" == "$expected_key" ]]
+          plutil -extract SUFeedURL raw -o - "$plist" | grep -q '/sparkle-feed/appcast-'
+          [[ "$(plutil -extract SURequireSignedFeed raw -o - "$plist")" == "true" ]]
+          [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$plist")" == "${{ steps.version.outputs.version }}" ]]
+
+          # Sparkle replaces the installed app in place; an app with another
+          # identity would orphan the user's settings and permissions.
+          bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
+          if [[ "$bundle_id" != "com.t3tools.gedcode" ]]; then
+            echo "::error::The app's bundle identifier is $bundle_id, not com.t3tools.gedcode."
+            exit 1
+          fi
+          bundle_name="$(plutil -extract CFBundleName raw -o - "$plist")"
+          if [[ "$bundle_name" != GedCode* ]]; then
+            echo "::error::The app is named $bundle_name, not GedCode."
+            exit 1
+          fi
+
+      - name: Extract Sparkle tools
+        run: bash apps/desktop/node_modules/electron-sparkle-updater/native/scripts/fetch-sparkle.sh
+
+      - name: Generate and verify the Sparkle feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: >-
+          node scripts/sparkle/generate-feed.ts
+          --tag "${{ steps.version.outputs.tag }}"
+          --release-assets-dir release-assets
+          --output-dir sparkle-feed
+          --sparkle-bin "$SPARKLE_BIN"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=(--title "GedCode $VERSION" --generate-notes --target "$GITHUB_SHA")
+          if [[ "$PRERELEASE" == "true" ]]; then
+            flags+=(--prerelease)
+          fi
+          # A rerun after a later step failed finds the release already made.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/*.dmg release-assets/*.zip --clobber
+          else
+            gh release create "$TAG" "${flags[@]}" release-assets/*.dmg release-assets/*.zip
+          fi
+
+      - name: Publish the update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view sparkle-feed >/dev/null 2>&1; then
+            gh release create sparkle-feed \
+              --title "GedCode Sparkle update feeds" \
+              --notes "Machine-managed signed update feeds for GedCode macOS releases." \
+              --prerelease \
+              --latest=false
+          fi
+          gh release upload sparkle-feed sparkle-feed/*.xml --clobber

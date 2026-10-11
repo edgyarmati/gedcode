@@ -105,3 +105,12 @@ jobs:
       - name: Test the Ged layer
         working-directory: apps/server
         run: vp test run src/ged src/mcp/toolkits/memory src/mcp/toolkits/core.test.ts src/mcp/McpHttpServer.test.ts
+
+      # Sparkle is how macOS builds update themselves; nothing upstream covers it.
+      - name: Test Sparkle updates (desktop)
+        working-directory: apps/desktop
+        run: vp test run src/electron/ElectronSparkleUpdater.test.ts src/updates/sparkleDesktopUpdates.test.ts
+
+      - name: Test Sparkle updates (release scripts)
+        working-directory: scripts
+        run: vp test run --config ../vite.config.ts sparkle

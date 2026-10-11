@@ -37,6 +37,8 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
+import { applySparkleBuildConfig } from "./sparkle/buildConfig.ts";
+import { stageSparkle } from "./sparkle/stage.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -3889,6 +3891,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+    ).pipe(
+      Effect.map((config) =>
+        applySparkleBuildConfig(config, {
+          platform: options.platform,
+          channel: resolveDesktopUpdateChannel(appVersion),
+          localizations: DESKTOP_ELECTRON_LANGUAGES,
+        }),
+      ),
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3926,6 +3936,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   );
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
   yield* stageKeyringNativeBinaries(stageAppDir, options.platform, options.arch);
+  yield* stageSparkle({
+    stageAppDir,
+    platform: options.platform,
+    arch: options.arch,
+    electronVersion,
+    run: (command, label) => runCommand(command, { label, verbose: options.verbose }),
+  });
 
   // Only the Windows artifact carries the server sidecar and the WSL runtime;
   // other platforms ignore the --wsl-runtime input.

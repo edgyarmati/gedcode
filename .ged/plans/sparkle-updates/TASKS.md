@@ -1,5 +1,9 @@
 # Tasks — Sparkle updates on macOS
 
+All slices done 2026-10-11 — see the "As built" section of [SPEC.md](./SPEC.md). Slice 2 needed no
+patch, slice 7 is a new workflow rather than a `release.yml` edit, and the slice 1 seed check moved
+into CI: this Mac's Keychain holds no copy of the key.
+
 Dependency-ordered. Each slice is independently verifiable.
 
 ## 1. Decide key custody — **done, 2026-10-11: reuse**

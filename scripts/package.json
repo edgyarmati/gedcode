@@ -13,6 +13,7 @@
     "@t3tools/shared": "workspace:*",
     "@t3tools/tailscale": "workspace:*",
     "effect": "catalog:",
+    "electron-sparkle-updater": "0.5.3",
     "plist": "catalog:",
     "pngjs": "7.0.0",
     "sharp": "0.35.4"

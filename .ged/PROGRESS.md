@@ -228,3 +228,29 @@ rules and no idea that project memory, the standards overlay or the land gate ex
 appended lines fix that; the ADR on deferring to upstream's files carries the addendum.
 
 Verified after the rename: lint, server typecheck and the 17 Ged tests all pass from the new path.
+
+## 2026-10-11 — macOS builds update themselves again, through Sparkle
+
+The v0.4 auto-updater is back, without an Apple Developer ID. macOS uses a Sparkle-backed
+implementation of upstream's `ElectronUpdater` service, so upstream's `DesktopUpdates` state machine
+and UI drive it unchanged; Linux and Windows keep `electron-updater`. Upstream cost: eight files,
+about 48 added lines, nothing restructured (see the SPEC's "As built").
+
+Releases now have a path: pushing `vX.Y.Z` runs `.github/workflows/ged-release.yml`, which builds the
+Apple Silicon DMG and zip, checks the app can update itself, signs and verifies the feed with
+Sparkle's tools, and refuses to publish if anything does not check out. It reuses v0.4's key, so v0.4
+installs can follow.
+
+The real build rehearsal caught three defects tests could not, one of them serious: the packaged
+library's config leaves out `SURequireSignedFeed`, and without it Sparkle signs the archive but not
+the feed — a feed every v0.4 install would reject. Verified live: the packaged app reads the real
+`sparkle-feed` appcast and is offered 0.4.8 when labelled older.
+
+Still blocking a v0.5 release: the build is branded `T3 Code (Alpha)` / `com.t3tools.t3code`, not
+GedCode. That is the next piece of work.
+
+An independent review before merge caught a state-machine hang: once Sparkle had offered an update,
+the next background poll left the app stuck on "checking", because Sparkle defers a check made
+during an open update session and never answers it. Fixed in the adapter, with tests that model the
+deferral. The release workflow now also refuses non-GedCode bundle identities and any version other
+than `X.Y.Z` or `X.Y.Z-nightly.YYYYMMDD.N`, and CI runs the Sparkle suites.
