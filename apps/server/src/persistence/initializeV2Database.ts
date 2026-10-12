@@ -5,6 +5,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { rewriteGedV04Snapshot } from "./gedV04Import.ts";
+
 export class V2DatabaseImportError extends Schema.TaggedError<V2DatabaseImportError>()(
   "V2DatabaseImportError",
   { sourcePath: Schema.String, destinationPath: Schema.String, cause: Schema.Defect() },
@@ -37,6 +39,7 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
       } finally {
         database.close();
       }
+      rewriteGedV04Snapshot(snapshotPath);
     });
     // Publish only a complete snapshot, without replacing an existing V2 database.
     yield* fs

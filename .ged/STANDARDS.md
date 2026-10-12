@@ -59,24 +59,25 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                             | Lines   | Why                                                        |
-| ------------------------------------------------ | ------- | ---------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts`           | 10      | The only assembly point for MCP toolkits                   |
-| `.github/pull_request_template.md`               | +16/−24 | Upstream's is written for outside contributors             |
-| `pnpm-workspace.yaml`                            | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package |
-| `knip.jsonc`                                     | 36      | Scopes the export audit off mobile-only upstream exports   |
-| `pnpm-lock.yaml`                                 | gen     | Generated; regenerate on conflict, never merge by hand     |
-| `README.md`                                      | all     | Upstream's is T3 Code branding and T3 Code installers      |
-| `CONTRIBUTING.md`                                | +14/−4  | Fork preamble; upstream repo links; triage is manual here  |
-| `LICENSE`                                        | 1       | Adds our copyright line; upstream's is retained            |
-| `AGENTS.md`                                      | 13      | Appended overlay pointing at `.ged/`; overrides nothing    |
-| `apps/desktop/src/main.ts`                       | 2       | Selects the Sparkle updater layer on macOS                 |
-| `apps/desktop/src/updates/updatesTestHarness.ts` | +20/−9  | Lets tests inject the Sparkle updater layer                |
-| `apps/desktop/package.json`                      | 1       | `electron-sparkle-updater` dependency                      |
-| `scripts/package.json`                           | 1       | Same dependency, for the after-pack hook                   |
-| `scripts/lib/desktop-external-packages.ts`       | 1       | Ships the Sparkle package in the staged app                |
-| `scripts/build-desktop-artifact.ts`              | 17      | Applies Sparkle config, stages the framework (additions)   |
-| `packages/shared/package.json`                   | 4       | `./sparkleUpdate` subpath export                           |
+| File                                                  | Lines   | Why                                                              |
+| ----------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts`                | 10      | The only assembly point for MCP toolkits                         |
+| `.github/pull_request_template.md`                    | +16/−24 | Upstream's is written for outside contributors                   |
+| `pnpm-workspace.yaml`                                 | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
+| `knip.jsonc`                                          | 36      | Scopes the export audit off mobile-only upstream exports         |
+| `pnpm-lock.yaml`                                      | gen     | Generated; regenerate on conflict, never merge by hand           |
+| `README.md`                                           | all     | Upstream's is T3 Code branding and T3 Code installers            |
+| `CONTRIBUTING.md`                                     | +14/−4  | Fork preamble; upstream repo links; triage is manual here        |
+| `LICENSE`                                             | 1       | Adds our copyright line; upstream's is retained                  |
+| `AGENTS.md`                                           | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
+| `apps/desktop/src/main.ts`                            | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
+| `apps/server/src/persistence/initializeV2Database.ts` | 3       | Rewrites a 0.4 snapshot before the V2 import (`gedV04Import.ts`) |
+| `apps/desktop/src/updates/updatesTestHarness.ts`      | +20/−9  | Lets tests inject the Sparkle updater layer                      |
+| `apps/desktop/package.json`                           | 1       | `electron-sparkle-updater` dependency                            |
+| `scripts/package.json`                                | 1       | Same dependency, for the after-pack hook                         |
+| `scripts/lib/desktop-external-packages.ts`            | 1       | Ships the Sparkle package in the staged app                      |
+| `scripts/build-desktop-artifact.ts`                   | 17      | Applies Sparkle config, stages the framework (additions)         |
+| `packages/shared/package.json`                        | 4       | `./sparkleUpdate` subpath export                                 |
 
 The rebrand (see [DECISIONS.md](./DECISIONS.md), "GedCode's identity is set in source") adds
 one-to-few-line edits wherever upstream hard-codes its product identity. Each is a string or
@@ -90,6 +91,7 @@ constant swap; none changes behavior beyond the name, origin, or path it carries
 | Web identity     | `apps/web/index.html`, `apps/web/src/{branding.ts,legalLinks.ts,components/T3Wordmark.tsx,components/NightlyMobileBeta.tsx,components/desktopUpdate.logic.ts,components/settings/pairingUrls.ts,components/sidebar/SidebarChrome.tsx}`                                            | Name, mark, links; no T3 hosted app or mobile beta                        |
 | Build            | `scripts/build-desktop-artifact.ts` (+12), `scripts/dev-runner.ts`, `.env.example`                                                                                                                                                                                                | Product name rewritten at stage time; no T3 cloud identifiers             |
 | Art              | `assets/{prod,nightly,dev}/**`, `apps/web/public/*` icons, `apps/desktop/resources/dmg/*.svg`                                                                                                                                                                                     | GedCode icons and DMG text, replaced wholesale                            |
+| CLI and names    | `apps/server/src/{binCli.ts,cli/invocation.ts,git/GitManager.ts}`, `apps/desktop/src/app/{DesktopCliShim,DesktopCliCommand}.ts`, `packages/shared/src/git.ts`, `packages/contracts/src/settings.ts`, `packages/source-control-bitbucket/src/server/BitbucketApi.ts`               | `gedcode` command and launcher, `gedcode.json`, `gedcode/` branch prefix  |
 | Tests and triage | The `*.test.ts` files beside the above, `.github/triage/PLAYBOOK.md`                                                                                                                                                                                                              | Assert the new identity                                                   |
 
 The same rule shapes CI. Upstream's workflows are **not** edited: the ones that cannot run here —

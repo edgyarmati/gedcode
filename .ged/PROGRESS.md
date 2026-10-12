@@ -264,3 +264,19 @@ Every user-visible "T3 Code", and plain "T3" in prose, is rewritten in the stage
 telemetry, hosted pairing links, release and manifest endpoints and mobile beta prompt are gone or
 pointed at this repository. The release workflow's identity check, which refused every build until
 now, passes. See DECISIONS for what stays upstream's and why.
+
+## 2026-10-12 — No T3 left in what users type or read
+
+The CLI is `gedcode`, the project file `gedcode.json`, and new branches `gedcode/...`. Prose that
+still said "T3", `t3 <command>` or `t3.json` is rewritten in packaged builds. The user guides now
+live in `docs/ged/user/` and the README links there. Desktop-managed SSH still needs CLI release
+archives this repository does not publish yet; the remote-access guide says so.
+
+## 2026-10-12 — Updating from 0.4.8 works, and tells the user what changed
+
+A 0.4.8 install that updated crashed on start: its own migrations 31–80 hid upstream's. The
+import now rewrites 0.4's snapshot first. Proven on a copy of a 0.4.8 database (2 threads, 3
+messages, a PM session): the server starts, migrates to 60, keeps 2/2 threads and 3/3 messages,
+and the original `state.sqlite` is byte-identical afterwards. A pre-Ged database is unaffected.
+PM history is not shown in 0.5; it stays in the old database. The 0.5.0 release notes and a
+one-time dialog on first launch say so.

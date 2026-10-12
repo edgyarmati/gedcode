@@ -157,12 +157,15 @@ jobs:
       - name: Generate and verify the Sparkle feed
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        run: >-
-          node scripts/sparkle/generate-feed.ts
-          --tag "${{ steps.version.outputs.tag }}"
-          --release-assets-dir release-assets
-          --output-dir sparkle-feed
-          --sparkle-bin "$SPARKLE_BIN"
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=(--tag "$TAG" --release-assets-dir release-assets --output-dir sparkle-feed --sparkle-bin "$SPARKLE_BIN")
+          # Written notes go into the feed, where Sparkle shows them before the update installs.
+          notes="docs/ged/releases/$VERSION.md"
+          if [[ -f "$notes" ]]; then args+=(--release-notes "$notes"); fi
+          node scripts/sparkle/generate-feed.ts "${args[@]}"
 
       - name: Publish the release
         env:
@@ -173,6 +176,8 @@ jobs:
         run: |
           set -euo pipefail
           flags=(--title "GedCode $VERSION" --generate-notes --target "$GITHUB_SHA")
+          notes="docs/ged/releases/$VERSION.md"
+          if [[ -f "$notes" ]]; then flags+=(--notes-file "$notes"); fi
           if [[ "$PRERELEASE" == "true" ]]; then
             flags+=(--prerelease)
           fi
