@@ -37,11 +37,76 @@ describe("GedCode identity", () => {
     assert.equal(rebrandText("the T3 Code desktop app"), "the GedCode desktop app");
   });
 
-  it("rewrites plain T3 in prose, but not identifiers or T3 Chat", () => {
+  it("rewrites plain T3 in prose, but not identifiers", () => {
     assert.equal(rebrandText("Read a T3 thread"), "Read a GedCode thread");
     assert.equal(rebrandText("the T3 server restarted"), "the GedCode server restarted");
-    assert.equal(rebrandText("open T3 Chat"), "open T3 Chat");
-    assert.equal(rebrandText("T3CODE_HOME and t3 CLI"), "T3CODE_HOME and t3 CLI");
+    assert.equal(rebrandText("in T3's browser"), "in GedCode's browser");
+    assert.equal(rebrandText("a T3-owned task"), "a GedCode-owned task");
+    assert.equal(rebrandText("rewound outside T3."), "rewound outside GedCode.");
+    assert.equal(rebrandText("label:`T3 Chat`"), "label:`Orchid`");
+    for (const code of [
+      "T3CODE_HOME",
+      "return T3(e,t)",
+      ";T3(f,{scopeElement:o})",
+      "[T3.Env]::Send",
+      "-Namespace T3 -Name Env",
+      "T3_LOCK",
+    ]) {
+      assert.equal(rebrandText(code), code);
+    }
+  });
+
+  it("names the CLI and project file gedcode in prose, but not in code", () => {
+    assert.equal(rebrandText("Run `t3 service install`."), "Run `gedcode service install`.");
+    assert.equal(rebrandText('"Could not install t3"'), '"Could not install gedcode"');
+    assert.equal(rebrandText("title:`Could not remove t3`"), "title:`Could not remove gedcode`");
+    assert.equal(rebrandText("`npm uninstall -g t3`"), "`npm uninstall -g t3`");
+    assert.equal(
+      rebrandText("This t3 runs from a Node script"),
+      "This GedCode install runs from a Node script",
+    );
+    assert.equal(rebrandText('such as "t3 ./my-project"'), 'such as "gedcode ./my-project"');
+    assert.equal(rebrandText("the t3 launcher"), "the gedcode launcher");
+    assert.equal(rebrandText('Use "t3 --help"'), 'Use "gedcode --help"');
+    assert.equal(
+      rebrandText("CLI as `t3` from any terminal"),
+      "CLI as `gedcode` from any terminal",
+    );
+    assert.equal(rebrandText("to run \\`t3\\`."), "to run \\`gedcode\\`.");
+    assert.equal(
+      rebrandText("command:`sudo npx t3 browser setup`"),
+      "command:`sudo gedcode browser setup`",
+    );
+    assert.equal(
+      rebrandText("`t3@${v} is a preview build.`"),
+      "`gedcode@${v} is a preview build.`",
+    );
+    assert.equal(rebrandText("Import from t3.json"), "Import from gedcode.json");
+    assert.equal(
+      rebrandText("For example, t3 or t3/ produces t3/add-search."),
+      "For example, gedcode or gedcode/ produces gedcode/add-search.",
+    );
+    for (const code of [
+      "return t3 in x",
+      "for (const t3 of xs)",
+      "class t3 extends Base",
+      "export { t3 as name }",
+      'import t3 from "t3"',
+      "t3.json()",
+      "foo.t3.json",
+      'credentialOwner: "t3"',
+      "t3-file-icon",
+      "t3_write_pty",
+      "@t3tools/shared",
+      "$HOME/.t3/bin/t3",
+      "refs/t3/checkpoints",
+      "`${runner} t3@${version}`",
+      "npm install -g t3",
+      '"npm install -g t3"',
+      "https://t3.chat",
+    ]) {
+      assert.equal(rebrandText(code), code);
+    }
   });
 
   it("gives the build GedCode's bundle identity, names and URL schemes", () => {

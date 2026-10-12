@@ -29,15 +29,64 @@ const PRODUCT_NAME_REPLACEMENTS: ReadonlyArray<readonly [string, string]> = [
   ["T3 Connect", `${GED_PRODUCT_NAME} Connect`],
 ];
 
-/** Upstream also says plain "T3" in prose ("a T3 thread", "the T3 server").
-    T3 Chat is another product and keeps its name. */
-const BARE_PRODUCT_NAME = /\bT3(?= (?!Code\b|Connect\b|Chat\b)[A-Za-z])/g;
+/** The command the desktop app installs on PATH; upstream calls it `t3`. */
+export const GED_CLI_NAME = "gedcode";
+
+const CLI_EXCLUDED_KEYWORDS = "in|of|instanceof|extends|as|from";
+
+/**
+ * Upstream's other names in prose, applied in order after the product names.
+ * Bundles are rewritten as text, so every rule is anchored where it cannot be
+ * code: an identifier followed by a space and a word is a syntax error in
+ * JavaScript unless the word is a keyword, which the CLI rule excludes, and
+ * `T3`/`t3` are never matched as part of a longer name, a member, a path or a
+ * CSS class. Remote-host paths, unit names and MCP tool names stay as they are:
+ * they are protocol, not prose.
+ */
+const PROSE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  // Upstream names one theme after its sister product.
+  [/\bT3 Chat\b/g, "Orchid"],
+  [/<strong>T3<\/strong> Code/g, `<strong>Ged</strong>Code`],
+  // "a T3 thread", "T3's browser", "T3-owned".
+  [
+    /(?<![\w$.@/[\]-])T3(?= (?!Code\b|Connect\b)[A-Za-z]|'s\b|-(?:owned|managed|injected)\b)/g,
+    GED_PRODUCT_NAME,
+  ],
+  // "outside T3." at the end of a sentence or string.
+  [/(?<= )T3(?=[.,;:!?]?(?:["'`\n]|$| (?!-)))/gm, GED_PRODUCT_NAME],
+  [/(?<![\w$./-])t3\.json(?![\w(])/g, `${GED_CLI_NAME}.json`],
+  [
+    /For example, t3 or t3\/ produces t3\/add-search/g,
+    "For example, gedcode or gedcode/ produces gedcode/add-search",
+  ],
+  [/\bRemove t3 from\b/g, `Remove ${GED_CLI_NAME} from`],
+  [/\bThis t3 runs\b/g, `This ${GED_PRODUCT_NAME} install runs`],
+  [/(?<=["'`])t3(?= \.\/)/g, GED_CLI_NAME],
+  [/--transport http t3(?= )/g, `--transport http ${GED_CLI_NAME}`],
+  [/\bnpx t3(?:@nightly)?(?=[ "'`\\])/g, GED_CLI_NAME],
+  // "t3@1.2.3 is a preview build", but not a package spec ending a template: there is no
+  // GedCode package on npm to suggest.
+  [/(?<![\w$.@/-])t3@(?=\$\{[\w$.]+\}(?!`)|\d)/g, `${GED_CLI_NAME}@`],
+  // "run `t3 update`", "the t3 launcher", "t3 --help".
+  [
+    new RegExp(
+      `(?<![\\w$.@/\\\\-])t3(?= (?!(?:${CLI_EXCLUDED_KEYWORDS})\\b)[A-Za-z]| --[a-z])`,
+      "g",
+    ),
+    GED_CLI_NAME,
+  ],
+  // "Could not install t3", "as `t3` from", "to run \\`t3\\`".
+  [/(?<=[a-z] )(?<!-g )t3(?=["'`])/g, GED_CLI_NAME],
+  [/(?<= `)t3(?=`(?: [a-z]|\.))/g, GED_CLI_NAME],
+  [/(?<=\\`)t3(?=\\`)/g, GED_CLI_NAME],
+];
 
 export function rebrandText(text: string): string {
-  return PRODUCT_NAME_REPLACEMENTS.reduce(
+  const named = PRODUCT_NAME_REPLACEMENTS.reduce(
     (current, [from, to]) => current.replaceAll(from, to),
     text,
-  ).replace(BARE_PRODUCT_NAME, GED_PRODUCT_NAME);
+  );
+  return PROSE_RULES.reduce((current, [pattern, to]) => current.replace(pattern, to), named);
 }
 
 export function resolveGedProductName(channel: "latest" | "nightly"): string {

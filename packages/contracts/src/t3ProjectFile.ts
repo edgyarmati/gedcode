@@ -5,11 +5,12 @@ import { ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { ProjectScriptIcon } from "./project.ts";
 import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.ts";
 
-/** File name of the checked-in T3 project file, resolved at the workspace root. */
-export const T3_PROJECT_FILE_NAME = "t3.json";
+/** File name of the checked-in project file, resolved at the workspace root. */
+export const T3_PROJECT_FILE_NAME = "gedcode.json";
 
 /** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
-export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
+export const T3_PROJECT_FILE_SCHEMA_URL =
+  "https://raw.githubusercontent.com/edgyarmati/gedcode/main/docs/ged/gedcode.schema.json";
 
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;

@@ -3171,8 +3171,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           branch: string,
           submodules: WorktreeSubmodules | null = null,
         ) {
-          yield* writeTextFile(cwd, "t3.json", `{ "worktreeSubmodules": "${fileMode}" }`);
-          yield* git(cwd, ["add", "t3.json"]);
+          yield* writeTextFile(cwd, "gedcode.json", `{ "worktreeSubmodules": "${fileMode}" }`);
+          yield* git(cwd, ["add", "gedcode.json"]);
           // Consecutive cases may reuse a file mode to test the option alone.
           yield* git(cwd, ["commit", "--allow-empty", "-m", `submodules: ${fileMode}`]);
           const worktreePath = pathService.join(worktreesDir, branch);

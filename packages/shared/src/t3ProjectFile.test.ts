@@ -1,3 +1,4 @@
+import { T3_PROJECT_FILE_SCHEMA_URL } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -14,7 +15,7 @@ describe("buildT3ProjectFileJsonSchema", () => {
     const schema = buildT3ProjectFileJsonSchema();
 
     expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
-    expect(schema.$id).toBe("https://t3.codes/schema/t3.json");
+    expect(schema.$id).toBe(T3_PROJECT_FILE_SCHEMA_URL);
     expect(schema.type).toBe("object");
     expect(schema.additionalProperties).toBe(false);
   });

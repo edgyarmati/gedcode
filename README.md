@@ -34,29 +34,27 @@ See [docs/ged/workflow.md](./docs/ged/workflow.md) for how a piece of work actua
 > Install and authenticate at least one provider first — for example install
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`, or install
 > [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`. The
-> [provider docs](./docs/user/) cover each one.
+> [provider docs](./docs/ged/user/) cover each one.
 
 [GitHub Releases](https://github.com/edgyarmati/gedcode/releases) carries the v0.4 desktop builds.
 v0.5 is a rebuild on a newer base and has no published build yet — run it from source with the
 [local development](#local-development) steps below until it does.
 
 macOS builds are ad-hoc signed rather than notarized, so the first install has to be allowed
-manually in System Settings. In-app updating on macOS is being restored; the plan is in
-`.ged/plans/sparkle-updates/`.
+manually in System Settings. After that, the app updates itself through Sparkle.
 
-The package-registry and `curl | sh` installers in upstream's README install **T3 Code**, not
-GedCode, and the two are not interchangeable.
+GedCode has no package-registry or `curl | sh` installer.
 
 ## Documentation
 
-Most of [docs/](./docs) is upstream's and applies unchanged — it is the same harness:
+Using GedCode:
 
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
-- [Source control integrations](./docs/user/source-control.md)
+- [Install and first run](./docs/ged/user/install.md)
+- [Permission modes](./docs/ged/user/permission-modes.md)
+- [Keyboard shortcuts](./docs/ged/user/keybindings.md)
+- [Remote access from another machine or your phone's browser](./docs/ged/user/remote-access.md)
+- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/ged/user/outside-agents.md)
+- [Source control integrations](./docs/ged/user/source-control.md)
 
 GedCode's own:
 
