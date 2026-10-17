@@ -151,6 +151,27 @@ it.effect("leaves a ledger missing shared migrations untouched", () =>
   ),
 );
 
+it.effect("leaves a ledger whose shared migrations are named differently untouched", () =>
+  withTempDatabase((path) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(path);
+      expectUntouched(path, (database) => {
+        database.exec("UPDATE effect_sql_migrations SET name = 'Other' WHERE migration_id = 7");
+        recordLedger(database, v04Ledger);
+      });
+    }),
+  ),
+);
+
+it.effect("leaves a ledger with an id outside the v0.4 range untouched", () =>
+  withTempDatabase((path) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(path);
+      expectUntouched(path, (database) => recordLedger(database, [[0, "Extra"], ...v04Ledger]));
+    }),
+  ),
+);
+
 it.effect("imports a v0.4 database into V2 without writing the original", () =>
   withTempDatabase((sourcePath) =>
     Effect.gen(function* () {

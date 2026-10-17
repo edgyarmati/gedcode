@@ -1,5 +1,7 @@
 import * as NodeSqlite from "node:sqlite";
 
+import { migrationManifest } from "./Migrations.ts";
+
 /**
  * GedCode v0.4 recorded its own migrations at ids 31+ in the shared ledger, so the V2 migrator
  * would treat upstream's 31+ as already applied. Ids 1–30 match upstream.
@@ -91,9 +93,13 @@ const GED_V04_COLUMNS: ReadonlyArray<readonly [table: string, column: string]> =
   ["projection_threads", "queued_messages_json"],
 ];
 
+const SHARED_MIGRATIONS: ReadonlyMap<number, string> = new Map(
+  migrationManifest.filter(([id]) => id <= LAST_SHARED_MIGRATION_ID),
+);
+
 /**
- * A v0.4 ledger has every shared migration 1–30, then v0.4's own from 31 with no gap. Older 0.4
- * releases stop earlier in that list; anything else is not a v0.4 database.
+ * A v0.4 ledger is exactly upstream's migrations 1–30, then v0.4's own from 31, every id in order
+ * with its name. Older 0.4 releases stop earlier in that list; anything else is not a v0.4 database.
  */
 const isGedV04Ledger = (database: NodeSqlite.DatabaseSync) => {
   const ledger = database
@@ -102,24 +108,17 @@ const isGedV04Ledger = (database: NodeSqlite.DatabaseSync) => {
     )
     .get();
   if (ledger === undefined) return false;
-  const shared = database
-    .prepare(
-      "SELECT count(DISTINCT migration_id) AS count FROM effect_sql_migrations WHERE migration_id BETWEEN 1 AND ?",
-    )
-    .get(LAST_SHARED_MIGRATION_ID);
-  if (Number(shared?.count) !== LAST_SHARED_MIGRATION_ID) return false;
   const rows = database
-    .prepare(
-      "SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id > ? ORDER BY migration_id",
-    )
-    .all(LAST_SHARED_MIGRATION_ID);
+    .prepare("SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id")
+    .all();
   return (
-    rows.length > 0 &&
-    rows.every(
-      (row, index) =>
-        Number(row.migration_id) === LAST_SHARED_MIGRATION_ID + 1 + index &&
-        GED_V04_MIGRATIONS.get(Number(row.migration_id)) === row.name,
-    )
+    rows.length > LAST_SHARED_MIGRATION_ID &&
+    rows.every((row, index) => {
+      const id = index + 1;
+      const expected =
+        id <= LAST_SHARED_MIGRATION_ID ? SHARED_MIGRATIONS.get(id) : GED_V04_MIGRATIONS.get(id);
+      return Number(row.migration_id) === id && row.name === expected;
+    })
   );
 };
 

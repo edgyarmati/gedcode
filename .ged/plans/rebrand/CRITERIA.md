@@ -22,7 +22,8 @@ and from command output, by a verifier who did not write the code.
 ## 3. User-visible names
 
 - The CLI is `gedcode`, the project file is `gedcode.json` and only that file is read — there is no
-  `t3.json` fallback — and new branches are prefixed `gedcode/`.
+  `t3.json` fallback — and new branches are prefixed `gedcode/`, or `gedcode-` when a plain
+  `gedcode` branch blocks that namespace (upstream's same fallback, renamed).
 - `scripts/ged/identity.ts` rewrites remaining user-visible "t3" prose in staged bundles, and its
   tests cover each rule including a case that must stay unchanged (`npm uninstall -g t3`).
 
