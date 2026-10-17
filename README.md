@@ -15,7 +15,7 @@ the end of that, where it matters:
 
 - **Nothing lands without an independent verdict.** A task lead spawns a verifier that is never the
   implementer, is handed the original acceptance criteria and the diff — never the implementer's own
-  summary of its work — and is pinned to a mode where it provably cannot edit. Verdicts are
+  summary of its work — and is told to report, not fix. Verdicts are
   per-criterion and recorded against the exact commit they judged.
 - **The gate is outside the model's control.** `.ged/bin/land-gate.sh` refuses a branch with no
   matching verdict record, with a verifier from the same vendor as the implementer, or with a
