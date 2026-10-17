@@ -254,3 +254,36 @@ the next background poll left the app stuck on "checking", because Sparkle defer
 during an open update session and never answers it. Fixed in the adapter, with tests that model the
 deferral. The release workflow now also refuses non-GedCode bundle identities and any version other
 than `X.Y.Z` or `X.Y.Z-nightly.YYYYMMDD.N`, and CI runs the Sparkle suites.
+
+## 2026-10-11 — The app is GedCode again
+
+Packaged builds carry v0.4's identity (`com.t3tools.gedcode`, `GedCode`, userData `gedcode`), so
+Sparkle can update a v0.4 install in place and keep its data. The icon is a new GC mark (white G,
+grey C; nightly and dev on indigo and blue), used for the app, favicons, the in-app mark and the DMG.
+Every user-visible "T3 Code", and plain "T3" in prose, is rewritten in the staged bundles. T3's
+telemetry, hosted pairing links, release and manifest endpoints and mobile beta prompt are gone or
+pointed at this repository. The release workflow's identity check, which refused every build until
+now, passes. See DECISIONS for what stays upstream's and why.
+
+## 2026-10-12 — No T3 left in what users type or read
+
+The CLI is `gedcode`, the project file `gedcode.json`, and new branches `gedcode/...`. Prose that
+still said "T3", `t3 <command>` or `t3.json` is rewritten in packaged builds. The user guides now
+live in `docs/ged/user/` and the README links there. Desktop-managed SSH still needs CLI release
+archives this repository does not publish yet; the remote-access guide says so.
+
+## 2026-10-12 — Updating from 0.4.8 works, and tells the user what changed
+
+A 0.4.8 install that updated crashed on start: its own migrations 31–80 hid upstream's. The
+import now rewrites 0.4's snapshot first. Proven on a copy of a 0.4.8 database (2 threads, 3
+messages, a PM session): the server starts, migrates to 60, keeps 2/2 threads and 3/3 messages,
+and the original `state.sqlite` is byte-identical afterwards. A pre-Ged database is unaffected.
+PM history is not shown in 0.5; it stays in the old database. The 0.5.0 release notes and a
+one-time dialog on first launch say so.
+
+## 2026-10-17 — GedCode is `com.gedcode.app`
+
+The bundle id, Windows app id, Linux desktop entry and launchd label no longer name T3. A local
+arm64 build carries `com.gedcode.app` with its seal intact. 0.4 installs still update in place,
+because Sparkle matches the update by file name and EdDSA key (see DECISIONS); the 0.5 notes tell
+users why macOS may ask for notification permission again. The README points at the release.

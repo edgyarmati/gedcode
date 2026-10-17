@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/edgyarmati/gedcode/main/docs/ged/gedcode.schema.json",
+  "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
+  "scripts": [
+    {
+      "name": "Setup Worktree",
+      "command": "node scripts/setup-worktree.ts",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    }
+  ]
+}

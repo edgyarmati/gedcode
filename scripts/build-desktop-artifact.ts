@@ -38,6 +38,7 @@ import {
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { applySparkleBuildConfig } from "./sparkle/buildConfig.ts";
+import { applyGedStagePackageIdentity, rebrandStagedBundles } from "./ged/identity.ts";
 import { stageSparkle } from "./sparkle/stage.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -3106,6 +3107,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   const serverStageDir = path.join(input.stageRoot, "server");
   yield* fs.makeDirectory(path.join(serverStageDir, "apps/server"), { recursive: true });
   yield* fs.copy(input.serverDistDir, path.join(serverStageDir, "apps/server/dist"));
+  yield* rebrandStagedBundles([path.join(serverStageDir, "apps/server/dist")]);
 
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
@@ -3759,6 +3761,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
+  // The Windows server tree is rebranded in stageWindowsServerSidecar.
+  yield* rebrandStagedBundles(
+    (options.platform === "win"
+      ? ["apps/desktop/dist-electron"]
+      : ["apps/desktop/dist-electron", "apps/server/dist"]
+    ).map((dir) => path.join(stageAppDir, dir)),
+  );
   yield* stageResourceMonitor({
     repoRoot,
     stageResourcesDir,
@@ -3906,7 +3915,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     },
   };
 
-  const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
+  const stagePackageJsonString = yield* encodeJsonString(
+    applyGedStagePackageIdentity(stagePackageJson, {
+      channel: resolveDesktopUpdateChannel(appVersion),
+      version: appVersion,
+    }),
+  );
   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
   const stageWorkspaceConfig = createStageWorkspaceConfig({
     platform: options.platform,

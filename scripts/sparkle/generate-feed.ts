@@ -12,7 +12,11 @@
  *
  *   SPARKLE_ED_PRIVATE_KEY=<seed> node scripts/sparkle/generate-feed.ts \
  *     --tag v0.5.1 --release-assets-dir release \
- *     --output-dir feed --sparkle-bin <electron-sparkle-updater>/native/vendor/bin
+ *     --output-dir feed --sparkle-bin <electron-sparkle-updater>/native/vendor/bin \
+ *     [--release-notes docs/ged/releases/0.5.1.md]
+ *
+ * Release notes are embedded in the appcast, so Sparkle's update window shows
+ * them to existing installs before they update.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -117,6 +121,7 @@ export function generateSparkleFeed(input: {
   readonly sparkleBin: string;
   readonly privateSeed: string | undefined;
   readonly expectedPublicKey?: string;
+  readonly releaseNotesPath?: string;
 }): string {
   const privateSeed = input.privateSeed?.trim();
   if (!privateSeed) {
@@ -141,6 +146,13 @@ export function generateSparkleFeed(input: {
     const archiveName = NodePath.basename(plan.archivePath);
     const stagedArchivePath = NodePath.join(workDir, archiveName);
     NodeFS.cpSync(plan.archivePath, stagedArchivePath);
+    // generate_appcast pairs an archive with the notes file of the same name.
+    if (input.releaseNotesPath !== undefined) {
+      NodeFS.cpSync(
+        input.releaseNotesPath,
+        NodePath.join(workDir, `${NodePath.basename(archiveName, ".zip")}.md`),
+      );
+    }
 
     const generatedAppcastPath = NodePath.join(workDir, "appcast.xml");
     const generated = runSparkleTool(
@@ -154,6 +166,7 @@ export function generateSparkleFeed(input: {
         "1",
         "--maximum-deltas",
         "0",
+        ...(input.releaseNotesPath === undefined ? [] : ["--embed-release-notes"]),
         "-o",
         generatedAppcastPath,
         workDir,
@@ -170,6 +183,9 @@ export function generateSparkleFeed(input: {
       expectedArchiveName: archiveName,
       expectedDownloadUrlPrefix: plan.downloadUrlPrefix,
     });
+    if (input.releaseNotesPath !== undefined && !xml.includes("<description")) {
+      throw new Error("Generated Sparkle appcast is missing the release notes.");
+    }
     const signUpdate = NodePath.join(input.sparkleBin, "sign_update");
     for (const [path, signature] of [
       [generatedAppcastPath, undefined],
@@ -201,6 +217,7 @@ if (import.meta.main) {
       "release-assets-dir": { type: "string" },
       "output-dir": { type: "string" },
       "sparkle-bin": { type: "string" },
+      "release-notes": { type: "string" },
     },
   });
   const releaseAssetsDir = values["release-assets-dir"];
@@ -208,7 +225,7 @@ if (import.meta.main) {
   const sparkleBin = values["sparkle-bin"];
   if (!values.tag || !releaseAssetsDir || !outputDir || !sparkleBin) {
     throw new Error(
-      "Usage: generate-feed.ts --tag <tag> --release-assets-dir <dir> --output-dir <dir> --sparkle-bin <dir>",
+      "Usage: generate-feed.ts --tag <tag> --release-assets-dir <dir> --output-dir <dir> --sparkle-bin <dir> [--release-notes <file.md>]",
     );
   }
   const outputPath = generateSparkleFeed({
@@ -217,6 +234,7 @@ if (import.meta.main) {
     outputDir,
     sparkleBin,
     privateSeed: process.env.SPARKLE_ED_PRIVATE_KEY,
+    ...(values["release-notes"] === undefined ? {} : { releaseNotesPath: values["release-notes"] }),
   });
   process.stdout.write(`Generated and verified ${outputPath}\n`);
 }

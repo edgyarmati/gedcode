@@ -34,11 +34,9 @@ throwaway key; and the packaged app checking the live `sparkle-feed` appcast —
 0.5.0, and offered 0.4.8 when relabelled 0.4.0. That the repo secret derives the embedded key is
 only checkable in CI; the release workflow fails closed if it does not.
 
-**Open before the first v0.5 release:** the app still builds as `T3 Code (Alpha)` /
-`com.t3tools.t3code`, while v0.4 installs are `GedCode` / `com.t3tools.gedcode`. Sparkle would
-replace a v0.4 install with an app of a different identity, losing its settings and permissions.
-The rebrand has to land first; the release workflow now refuses any build whose bundle
-identifier is not `com.t3tools.gedcode`, so this cannot ship by accident.
+The app builds as `GedCode.app` / `com.gedcode.app`. Sparkle replaces a v0.4 install
+(`com.t3tools.gedcode`) because it matches the update by file name and EdDSA key, not bundle id.
+The release workflow refuses any build whose bundle identifier is not `com.gedcode.app`.
 
 Independent review (2026-10-11) found that a background poll while Sparkle held an offered or
 downloaded update left the app stuck in "checking": Sparkle defers a check made during an open

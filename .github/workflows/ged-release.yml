@@ -141,8 +141,8 @@ jobs:
           # Sparkle replaces the installed app in place; an app with another
           # identity would orphan the user's settings and permissions.
           bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
-          if [[ "$bundle_id" != "com.t3tools.gedcode" ]]; then
-            echo "::error::The app's bundle identifier is $bundle_id, not com.t3tools.gedcode."
+          if [[ "$bundle_id" != "com.gedcode.app" ]]; then
+            echo "::error::The app's bundle identifier is $bundle_id, not com.gedcode.app."
             exit 1
           fi
           bundle_name="$(plutil -extract CFBundleName raw -o - "$plist")"
@@ -157,12 +157,15 @@ jobs:
       - name: Generate and verify the Sparkle feed
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        run: >-
-          node scripts/sparkle/generate-feed.ts
-          --tag "${{ steps.version.outputs.tag }}"
-          --release-assets-dir release-assets
-          --output-dir sparkle-feed
-          --sparkle-bin "$SPARKLE_BIN"
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=(--tag "$TAG" --release-assets-dir release-assets --output-dir sparkle-feed --sparkle-bin "$SPARKLE_BIN")
+          # Written notes go into the feed, where Sparkle shows them before the update installs.
+          notes="docs/ged/releases/$VERSION.md"
+          if [[ -f "$notes" ]]; then args+=(--release-notes "$notes"); fi
+          node scripts/sparkle/generate-feed.ts "${args[@]}"
 
       - name: Publish the release
         env:
@@ -173,12 +176,15 @@ jobs:
         run: |
           set -euo pipefail
           flags=(--title "GedCode $VERSION" --generate-notes --target "$GITHUB_SHA")
+          notes="docs/ged/releases/$VERSION.md"
+          if [[ -f "$notes" ]]; then flags+=(--notes-file "$notes"); fi
           if [[ "$PRERELEASE" == "true" ]]; then
             flags+=(--prerelease)
           fi
           # A rerun after a later step failed finds the release already made.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-assets/*.dmg release-assets/*.zip --clobber
+            if [[ -f "$notes" ]]; then gh release edit "$TAG" --notes-file "$notes"; fi
           else
             gh release create "$TAG" "${flags[@]}" release-assets/*.dmg release-assets/*.zip
           fi
