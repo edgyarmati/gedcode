@@ -78,6 +78,7 @@ import {
   SunIcon,
   TextSearchIcon,
 } from "lucide-react";
+import { gedSetupPaletteItem } from "./ged/gedSetupPaletteItem";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useCallback,
@@ -1816,6 +1817,16 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+
+    if (activeProjectTitle && currentProjectEnvironmentId && currentProjectCwd) {
+      actionItems.push(
+        gedSetupPaletteItem({
+          environmentId: currentProjectEnvironmentId,
+          cwd: currentProjectCwd,
+          projectName: activeProjectTitle,
+        }),
+      );
+    }
   }
 
   if (scratchTargetEnvironmentId !== null) {

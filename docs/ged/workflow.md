@@ -8,6 +8,20 @@ has just written code is the worst available judge of it — it will restate its
 you as evidence. Ged's answer is that the agent who wrote the code never gets to rule on it, and
 that nothing lands without a ruling.
 
+## How to start
+
+1. **Set up Ged in the project.** Open the project's settings and choose **Set up Ged**, or run
+   _Set up Ged_ from the command palette, or ask an agent to set it up. GedCode shows the starter
+   `.ged/` files it will add, then adds them on confirmation. Existing files are never changed.
+2. **Fill in the Checks.** `.ged/STANDARDS.md` has a Checks table for the format, lint, typecheck
+   and test commands. Implementers and verifiers run what it names.
+3. **Start a thread at the project root** and describe the work. The agent learns from GedCode that
+   the project uses Ged and follows the lead playbook: it clarifies intent with you first, then
+   delegates, then verifies.
+
+The process itself is served by GedCode through the `ged_playbook` tool, so it is the same for every
+provider and every project, and updates with GedCode rather than living as files you maintain.
+
 ## How work moves
 
 Three levels, each with a different job:
@@ -27,8 +41,8 @@ children are ordinary delegated tasks, so you can watch them, inspect them and c
 UI exactly like any other orchestrator work.
 
 There is no state machine. A typo fix delegates nothing; a refactor might delegate a planner, two
-implementers and three rounds of verification. The lead chooses, guided by the playbook in
-`.agents/skills/ged-lead/`.
+implementers and three rounds of verification. The lead chooses, guided by the lead playbook. A small change
+the lead may make itself; it still needs a verdict to land.
 
 ## Why the verdict can be trusted
 
@@ -41,6 +55,9 @@ Isolation is not a matter of asking politely. Each property below rests on somet
   precisely the artifact that transmits bias, so it is withheld.
 - **The verifier runs a different vendor than the implementer.** Shared training priors and
   self-consistency pressure are the main sources of agreement bias. A different vendor removes both.
+  With only one vendor installed, a same-family verifier is accepted with a warning. Important
+  changes, or a weak foreign option, get two verifiers in parallel: a strong same-family one and a
+  foreign one.
 - **The verifier provably cannot edit.** It is pinned to `approval-required`, the narrowest
   permission rank, enforced server-side. It reports; it cannot quietly fix a problem and then
   declare success.
@@ -53,15 +70,19 @@ Isolation is not a matter of asking politely. Each property below rests on somet
 
 ## The land gate
 
-The verdict is recorded in `.ged/verdicts/`, keyed to the branch and carrying the commit it judged.
+The verdict is recorded in `.ged/verdicts/`, one record per branch carrying the commit it judged and
+every verifier's ruling on it. A ruling on a new commit starts the record over.
 Before anything lands, `.ged/bin/land-gate.sh` checks it, and fails closed — anything it cannot
 positively confirm blocks:
 
 - the working tree is clean, because the verifier reviewed a commit, not your uncommitted edits
 - the recorded commit is still the current head, so an amend or a rebase invalidates the verdict
-- the status is a pass, every criterion is `met`, and every criterion carries real evidence
-- the verifier's vendor differs from the implementer's
+- every recorded verifier passed, every criterion is `met`, and every criterion carries real
+  evidence
+- at least one verifier's vendor differs from the implementer's, unless GedCode recorded that no
+  other vendor was installed, in which case it passes with a warning
 
+The gate is a shell script that runs Node, so `node` must be on the `PATH` of whatever runs it.
 Run it directly, or wire it into a pre-push hook so it is not something anyone has to remember:
 
 ```sh
@@ -76,12 +97,10 @@ rules, so the tool and the hook cannot disagree.
 
 ## Models
 
-Roles are mapped to models in `.ged/roles/model-policy.md`, not hardcoded in a prompt, so the policy
-versions and diffs like everything else. Planning gets the most capable model available;
-implementation gets a cheap, fast one; verification gets a capable model from a different vendor
-than the implementer. If a requested model is unavailable the lead stops and asks you — it does not
-silently fall back to a weaker one, because a silent planner downgrade is exactly the regression
-nobody notices.
+There is no fixed model table. The lead picks each child's model from its own family, matched to
+the task; the verifier is the exception and runs another vendor. Tell the lead which models you
+prefer and it records them in `.ged/model-notes.md`, then tries those first. When one is
+unavailable it uses the closest it can and says so in the thread, so a fallback is never silent.
 
 ## Project memory
 
@@ -95,7 +114,7 @@ reads it rather than being re-told it each session:
 | `DECISIONS.md`   | decisions that are hard to reverse, and why they went that way |
 | `CONTEXT-MAP.md` | where things live                                              |
 | `PROGRESS.md`    | what has happened, in order                                    |
-| `roles/`         | the briefs that actually define each role                      |
+| `model-notes.md` | the models you asked for, by kind of task                      |
 | `plans/`         | specs, task lists and acceptance criteria for work in flight   |
 | `verdicts/`      | verifier rulings (untracked — see below)                       |
 

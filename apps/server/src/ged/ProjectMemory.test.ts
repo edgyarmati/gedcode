@@ -90,21 +90,119 @@ it.effect("reports a project with no memory tree rather than inventing one", () 
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
-it.effect("writes a verdict under the slug the land gate reads", () =>
+const ruling = (
+  verifier: { driverKind: string; model?: string; taskId?: string },
+  overrides: { headSha?: string; status?: "pass" | "fail" } = {},
+) => ({
+  branch: "feat/memory-toolkit",
+  headSha: overrides.headSha ?? "a".repeat(40),
+  implementer: { driverKind: "codex" },
+  review: {
+    verifier,
+    status: overrides.status ?? ("pass" as const),
+    criteria: [{ criterion: "It works", verdict: "met" as const, evidence: "the tests pass" }],
+    otherVendorAvailable: true,
+  },
+});
+
+const readRecord = (root: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const contents = yield* fs.readFileString(
+      path.join(root, ".ged", "verdicts", "feat-memory-toolkit.json"),
+    );
+    return JSON.parse(contents) as {
+      schemaVersion: number;
+      headSha: string;
+      reviews: ReadonlyArray<{ verifier: { driverKind: string }; status: string }>;
+    };
+  });
+
+it.effect("records a ruling under the slug the land gate reads", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const memory = yield* ProjectMemory.ProjectMemory;
+      const written = yield* memory.recordRuling(root, ruling({ driverKind: "claudeAgent" }));
+      expect(written).toBe(".ged/verdicts/feat-memory-toolkit.json");
+      const record = yield* readRecord(root);
+      expect(record.schemaVersion).toBe(2);
+      expect(record.reviews.map((review) => review.verifier.driverKind)).toEqual(["claudeAgent"]);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("keeps every verifier's ruling on one commit, and restarts on a new one", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const memory = yield* ProjectMemory.ProjectMemory;
+      // Parallel verifiers record at once; neither may lose the other's ruling.
+      yield* Effect.all(
+        [
+          memory.recordRuling(root, ruling({ driverKind: "claudeAgent" })),
+          memory.recordRuling(root, ruling({ driverKind: "codex", model: "gpt-6-sol" })),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect((yield* readRecord(root)).reviews).toHaveLength(2);
+
+      // A second run of the same model is another ruling; a later pass cannot
+      // erase an earlier failure on the same commit.
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "a" }, { status: "fail" }),
+      );
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "b" }),
+      );
+      expect((yield* readRecord(root)).reviews.map((r) => r.status)).toEqual([
+        "pass",
+        "pass",
+        "fail",
+        "pass",
+      ]);
+
+      // Only the same task re-recording replaces its own ruling.
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "a" }, { status: "fail" }),
+      );
+      expect((yield* readRecord(root)).reviews).toHaveLength(4);
+
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "claudeAgent" }, { headSha: "b".repeat(40) }),
+      );
+      const restarted = yield* readRecord(root);
+      expect(restarted.headSha).toBe("b".repeat(40));
+      expect(restarted.reviews).toHaveLength(1);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("starts a corrupt or malformed record over instead of failing", () =>
   withProject((root) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const memory = yield* ProjectMemory.ProjectMemory;
-      const written = yield* memory.writeVerdict(root, "feat/memory-toolkit", {
-        schemaVersion: 1,
-        status: "pass",
+      const file = path.join(root, ".ged", "verdicts", "feat-memory-toolkit.json");
+      yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+      const { branch, headSha, implementer } = ruling({ driverKind: "claudeAgent" });
+      // Matches the next ruling's commit, so only the null review can force the restart.
+      const malformed = JSON.stringify({
+        schemaVersion: 2,
+        branch,
+        headSha,
+        implementer,
+        reviews: [null],
       });
-      expect(written).toBe(".ged/verdicts/feat-memory-toolkit.json");
-      const contents = yield* fs.readFileString(
-        path.join(root, ".ged", "verdicts", "feat-memory-toolkit.json"),
-      );
-      expect(contents).toContain('"status": "pass"');
+      for (const contents of ["{ not json", malformed]) {
+        yield* fs.writeFileString(file, contents);
+        yield* memory.recordRuling(root, ruling({ driverKind: "claudeAgent" }));
+        expect((yield* readRecord(root)).reviews).toHaveLength(1);
+      }
     }),
   ).pipe(Effect.provide(layer)),
 );
@@ -114,7 +212,9 @@ it.effect("refuses a branch name that cannot key a verdict", () =>
     Effect.gen(function* () {
       const memory = yield* ProjectMemory.ProjectMemory;
       for (const branch of ["HEAD", "--version", "a/../../b", "wat?", ""]) {
-        const error = yield* Effect.flip(memory.writeVerdict(root, branch, {}));
+        const error = yield* Effect.flip(
+          memory.recordRuling(root, { ...ruling({ driverKind: "claudeAgent" }), branch }),
+        );
         expect(error._tag, `expected branch '${branch}' to be refused`).toBe("GedMemoryError");
       }
     }),

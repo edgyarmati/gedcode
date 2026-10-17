@@ -300,3 +300,17 @@ T3 service; remote-access.md now mentions it.
 
 The sidebar header had the same "GC Code" as the setup page: the GC mark followed by upstream's
 "Code" text. The mark is now the whole name there too.
+
+## 2026-10-17 — Ged works in any project
+
+GedCode now serves the Ged process instead of relying on files in this checkout. `ged_playbook`
+gives every provider the lead playbook, grilling, verify, and the planner, implementer and verifier
+briefs. MCP server instructions tell a connected agent to follow the lead playbook when the project
+has `.ged/`, and otherwise to stay quiet about Ged. Setup adds the starter `.ged/` files a project
+lacks, from Project settings, the command palette or the `ged_init` tool, and never changes an
+existing file. Verdicts are now one record per branch holding every verifier's ruling on one
+commit; the gate accepts a same-family-only record, with a warning, only when GedCode recorded that
+no other vendor was installed. The lead chooses models within its own family and reads
+`model-notes.md` for the user's preferences. This repo's `.ged/roles/` and the `ged-lead` and
+`grilling` skills are retired as copies of what is served. Verified by focused tests on setup, the
+memory toolkit, the gate and RPC authorization, and by an independent verifier before landing.

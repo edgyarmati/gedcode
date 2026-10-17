@@ -50,6 +50,7 @@ GedCode has no package-registry or `curl | sh` installer.
 Using GedCode:
 
 - [Install and first run](./docs/ged/user/install.md)
+- [Set up Ged in a project](./docs/ged/user/ged-setup.md)
 - [Permission modes](./docs/ged/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/ged/user/keybindings.md)
 - [Remote access from another machine or your phone's browser](./docs/ged/user/remote-access.md)

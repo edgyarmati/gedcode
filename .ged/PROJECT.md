@@ -47,14 +47,16 @@ and the three that take the out-of-scope Expo app out of the workspace. See the 
 constraint in [STANDARDS.md](./STANDARDS.md#additive-only-constraint) for the table a new entry has
 to get past.
 
-- `.ged/` — project memory: these documents, the role briefs, plans, and verdict records.
+- `.ged/` — project memory: these documents, model notes, plans, and verdict records.
 - `apps/server/src/ged/ProjectMemory.ts` — the path-confined reader/writer for that tree.
 - `apps/server/src/mcp/toolkits/memory/` — the MCP toolkit that serves it to every provider, so
   the discipline reaches Codex and OpenCode and not only Claude Code.
 - `.ged/bin/land-gate.sh` — the structural guard.
-- `.agents/skills/` — four Claude Code skills (`ged-lead`, `verify`, `grilling`, `sync-upstream`)
-  alongside upstream's own. `.claude/skills` is a symlink to this directory. Role behaviour lives
-  in `.ged/roles/`, not here, because skills are a single vendor's feature and briefs are not.
+- `apps/server/src/ged/playbooks/` — the lead playbook, grilling, verify, and the role briefs,
+  served to every provider by `ged_playbook`; `apps/server/src/ged/starter/` is what Ged setup adds
+  to a project.
+- `.agents/skills/` — two Claude Code skills (`verify`, `sync-upstream`) alongside upstream's own.
+  `.claude/skills` is a symlink to this directory.
 
 v0.4's `ProjectContextRunChanges.ts` (913 LOC) is deliberately **not** being ported. It is being
 rebuilt as an MCP toolkit following upstream's `apps/server/src/mcp/toolkits/` pattern. Known

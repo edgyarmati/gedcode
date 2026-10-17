@@ -46,6 +46,8 @@ import {
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
 import * as WorktreeHandlers from "./toolkits/worktree/handlers.ts";
+import * as GedSetup from "../ged/GedSetup.ts";
+import { GED_MCP_INSTRUCTIONS } from "../ged/playbooks/instructions.ts";
 import * as ProjectMemory from "../ged/ProjectMemory.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
@@ -836,11 +838,18 @@ export const layerEnvironmentToolkit = toolkitRegistration(
 
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
-/** Ged: project memory and the land gate, served to every provider. */
-export const layerMemoryToolkitRegistration = toolkitRegistration(
+/**
+ * Ged: project memory, playbooks and the land gate, served to every provider.
+ * Still needs the provider catalog, so tests can stand in a fixed one.
+ */
+export const memoryToolkitRegistration = toolkitRegistration(
   MemoryToolkit,
   MemoryHandlers.layer,
-).pipe(Layer.provide(ProjectMemory.layer));
+).pipe(Layer.provide(ProjectMemory.layer), Layer.provide(GedSetup.layer));
+
+const layerMemoryToolkitRegistration = memoryToolkitRegistration.pipe(
+  Layer.provide(OrchestratorMcpService.layer),
+);
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
@@ -870,6 +879,7 @@ export const layerDeviceToolkit = Layer.mergeAll(
 export const layerMcpTransport = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
+  instructions: GED_MCP_INSTRUCTIONS,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
   allowSessionTermination: true,
