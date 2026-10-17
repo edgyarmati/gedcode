@@ -59,25 +59,32 @@ change, keep the diff minimal and record it in [DECISIONS.md](./DECISIONS.md).
 
 The whole modified surface, which a PR must justify adding to:
 
-| File                                                  | Lines   | Why                                                              |
-| ----------------------------------------------------- | ------- | ---------------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts`                | 10      | The only assembly point for MCP toolkits                         |
-| `.github/pull_request_template.md`                    | +16/−24 | Upstream's is written for outside contributors                   |
-| `pnpm-workspace.yaml`                                 | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
-| `knip.jsonc`                                          | 36      | Scopes the export audit off mobile-only upstream exports         |
-| `pnpm-lock.yaml`                                      | gen     | Generated; regenerate on conflict, never merge by hand           |
-| `README.md`                                           | all     | Upstream's is T3 Code branding and T3 Code installers            |
-| `CONTRIBUTING.md`                                     | +14/−4  | Fork preamble; upstream repo links; triage is manual here        |
-| `LICENSE`                                             | 1       | Adds our copyright line; upstream's is retained                  |
-| `AGENTS.md`                                           | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
-| `apps/desktop/src/main.ts`                            | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
-| `apps/server/src/persistence/initializeV2Database.ts` | 3       | Rewrites a 0.4 snapshot before the V2 import (`gedV04Import.ts`) |
-| `apps/desktop/src/updates/updatesTestHarness.ts`      | +20/−9  | Lets tests inject the Sparkle updater layer                      |
-| `apps/desktop/package.json`                           | 1       | `electron-sparkle-updater` dependency                            |
-| `scripts/package.json`                                | 1       | Same dependency, for the after-pack hook                         |
-| `scripts/lib/desktop-external-packages.ts`            | 1       | Ships the Sparkle package in the staged app                      |
-| `scripts/build-desktop-artifact.ts`                   | 17      | Applies Sparkle config, stages the framework (additions)         |
-| `packages/shared/package.json`                        | 4       | `./sparkleUpdate` subpath export                                 |
+| File                                                         | Lines   | Why                                                              |
+| ------------------------------------------------------------ | ------- | ---------------------------------------------------------------- |
+| `apps/server/src/mcp/McpHttpServer.ts`                       | 10      | The only assembly point for MCP toolkits                         |
+| `.github/pull_request_template.md`                           | +16/−24 | Upstream's is written for outside contributors                   |
+| `pnpm-workspace.yaml`                                        | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
+| `knip.jsonc`                                                 | 36      | Scopes the export audit off mobile-only upstream exports         |
+| `pnpm-lock.yaml`                                             | gen     | Generated; regenerate on conflict, never merge by hand           |
+| `README.md`                                                  | all     | Upstream's is T3 Code branding and T3 Code installers            |
+| `CONTRIBUTING.md`                                            | +14/−4  | Fork preamble; upstream repo links; triage is manual here        |
+| `LICENSE`                                                    | 1       | Adds our copyright line; upstream's is retained                  |
+| `AGENTS.md`                                                  | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
+| `apps/desktop/src/main.ts`                                   | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
+| `apps/server/src/persistence/initializeV2Database.ts`        | 3       | Rewrites a 0.4 snapshot before the V2 import (`gedV04Import.ts`) |
+| `apps/desktop/src/updates/updatesTestHarness.ts`             | +20/−9  | Lets tests inject the Sparkle updater layer                      |
+| `apps/desktop/package.json`                                  | 1       | `electron-sparkle-updater` dependency                            |
+| `scripts/package.json`                                       | 1       | Same dependency, for the after-pack hook                         |
+| `scripts/lib/desktop-external-packages.ts`                   | 1       | Ships the Sparkle package in the staged app                      |
+| `scripts/build-desktop-artifact.ts`                          | 17      | Applies Sparkle config, stages the framework (additions)         |
+| `packages/shared/package.json`                               | 4       | `./sparkleUpdate` subpath export                                 |
+| `packages/contracts/src/{rpc,index,clientRpcPermissions}.ts` | +7      | Registers the Ged setup RPCs, defined in `ged.ts`; guards apply  |
+| `apps/server/src/auth/RpcAuthorization.ts`                   | +2      | Every RPC must declare its scope; setup reads and writes files   |
+| `apps/server/src/observability/RpcInstrumentation.ts`        | +2      | Every RPC must declare its instrumentation category              |
+| `apps/server/src/ws.ts`                                      | +3      | Spreads `ged/GedRpcHandlers.ts` into the WebSocket handlers      |
+| `apps/web/src/routes/__root.tsx`                             | +3      | Mounts the Ged setup dialog host                                 |
+| `apps/web/src/components/settings/ProjectSettingsPanel.tsx`  | +6      | Project settings entry point for Ged setup                       |
+| `apps/web/src/components/CommandPalette.tsx`                 | +11     | Command palette entry point for Ged setup                        |
 
 The rebrand (see [DECISIONS.md](./DECISIONS.md), "GedCode's identity is set in source") adds
 one-to-few-line edits wherever upstream hard-codes its product identity. Each is a string or

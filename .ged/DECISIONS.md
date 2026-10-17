@@ -498,3 +498,18 @@ What does not carry over is keyed to the bundle id: macOS notification permissio
 own defaults, which the app does not use. Data lives under `~/.gedcode` and the userData directory,
 both keyed by name. A 0.4 install renamed away from `GedCode.app` cannot be matched and needs a
 manual download.
+
+## 2026-10-17 — Ged setup has a client RPC, so the UI entry points touch upstream
+
+- Status: accepted.
+
+The user chose Project settings and the command palette as entry points for setting up Ged, next
+to the `ged_init` agent tool. A client can only reach the server's `GedSetup` through the
+WebSocket RPC group, and upstream requires every RPC to declare a scope and an instrumentation
+category, so the RPCs cost a few lines each in `rpc.ts`, `RpcAuthorization.ts`,
+`RpcInstrumentation.ts` and `ws.ts`. Everything else is Ged-owned: the contract in
+`packages/contracts/src/ged.ts`, the handlers in `apps/server/src/ged/GedRpcHandlers.ts`, the
+dialog in `apps/web/src/components/ged/`. Preview needs `filesystem:read`, apply needs
+`filesystem:write`, matching `projects.writeFile`. The client commands live in `apps/web` rather
+than `client-runtime` because this fork does not build mobile, which spares an export in
+`client-runtime/package.json`.
