@@ -295,3 +295,8 @@ upstream's "Code" text) and claiming GedCode collects anonymous usage data, as d
 Privacy. Telemetry is off with no key, so both now say GedCode collects no usage data, and the
 mark stands alone. Its **Add a computer** pairing is direct (LAN, Tailscale) and works without any
 T3 service; remote-access.md now mentions it.
+
+## 2026-10-17 — The sidebar mark stands alone
+
+The sidebar header had the same "GC Code" as the setup page: the GC mark followed by upstream's
+"Code" text. The mark is now the whole name there too.
