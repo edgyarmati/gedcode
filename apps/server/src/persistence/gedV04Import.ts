@@ -190,10 +190,11 @@ const inspectLegacy = Effect.fnUntraced(function* (databasePath: string) {
  */
 export const upgradeGedV04Database = Effect.fn("upgradeGedV04Database")(
   function* (databasePath: string, recovery = false) {
-    // Healthy V2 starts need only this read-only probe, not a backup or write transaction.
+    // Probe only the owned destination/candidate. A writable connection lets SQLite recover a
+    // hot rollback journal after abrupt exit; healthy V2 needs no application writes or backup.
     if (
       !(yield* inspectLegacy(databasePath).pipe(
-        Effect.provide(NodeSqliteClient.layer({ filename: databasePath, readonly: true })),
+        Effect.provide(NodeSqliteClient.layer({ filename: databasePath })),
       ))
     )
       return false;

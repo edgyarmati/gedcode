@@ -495,8 +495,11 @@ history remains archived there.
 The original snapshot-only fix missed a long-lived Omni23/24 lineage and stranded already-copied
 `statev2.sqlite` files. Startup now also recognizes legacy-only failed imports, even without the
 original. Recovery checks the ledger and V2 schema/import/projection evidence, including the shared
-log's `application_event_version`; mixed or unrecognized Ged histories fail closed. Healthy V2 is
-only probed read-only, never recopied from older V1 work.
+log's `application_event_version`; mixed or unrecognized Ged histories fail closed. The initial
+probe uses a writable connection only on the owned destination/candidate so SQLite can recover a
+hot rollback journal after an interrupted upgrade. Healthy V2 needs no application writes, backup
+or write transaction and is never recopied from older V1 work; the original V1 snapshot remains
+strictly read-only.
 
 Recovery uses a guarded SQLite transaction, not staged inode/sidecar replacement: `BEGIN IMMEDIATE`
 rechecks identity and excludes other writers while a separate read-only connection takes a

@@ -1,8 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Synchronous synthetic SQLite fixtures and file assertions.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
+import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -281,6 +283,86 @@ it.effect("backs up committed WAL, rolls back a failed transformation, and retri
       } finally {
         writer.close();
       }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  ),
+);
+
+it.effect("recovers a hot rollback journal after abrupt exit during the actual upgrade", () =>
+  withTemp((directory) =>
+    Effect.gen(function* () {
+      const destination = NodePath.join(directory, "statev2.sqlite");
+      const source = NodePath.join(directory, "state.sqlite");
+      seedGedV04(destination, { omni: true });
+      const history = (database: NodeSqlite.DatabaseSync) => ({
+        threads: database
+          .prepare("SELECT thread_id, project_id, title FROM projection_threads ORDER BY thread_id")
+          .all(),
+        messages: database
+          .prepare(`SELECT message_id, thread_id, turn_id, role, text, attachments_json,
+            is_streaming, created_at, updated_at FROM projection_thread_messages ORDER BY message_id`)
+          .all(),
+      });
+      const original = withDatabase(destination, (database) => {
+        assert.equal(
+          database.prepare("PRAGMA journal_mode = DELETE").get()?.journal_mode,
+          "delete",
+        );
+        const insert = database.prepare(`
+          INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at)
+          SELECT ?, project_id, ?, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at
+          FROM projection_threads WHERE thread_id = 'legacy-thread'
+        `);
+        database.exec("BEGIN");
+        for (let index = 0; index < 400; index++)
+          insert.run(`spill-thread-${index}`, `Conversation ${index} ${"x".repeat(8192)}`);
+        database.exec("COMMIT");
+        return history(database);
+      });
+      const before = NodeFS.readFileSync(destination);
+      const child = NodeChildProcess.spawnSync(
+        process.execPath,
+        [
+          NodeURL.fileURLToPath(new URL("./fixtures/gedV04InterruptedUpgrade.ts", import.meta.url)),
+          destination,
+        ],
+        { encoding: "utf8" },
+      );
+      assert.isUndefined(child.error);
+      assert.equal(child.signal, null);
+      assert.equal(child.status, 86, child.stderr);
+      assert.equal(backups(directory).length, 1);
+      assert.isFalse(NodeFS.existsSync(source));
+      assert.isTrue(NodeFS.statSync(`${destination}-journal`).size > 512);
+      // A changed database plus SQLITE_READONLY_ROLLBACK proves dirty pages actually spilled,
+      // rather than just exiting with an uncommitted transaction still entirely in memory.
+      assert.notDeepEqual(NodeFS.readFileSync(destination), before);
+      const readOnly = new NodeSqlite.DatabaseSync(destination, { readOnly: true });
+      try {
+        const error = assert.throws(() => readOnly.prepare("SELECT * FROM sqlite_master").all());
+        assert.propertyVal(error, "errcode", 776);
+      } finally {
+        readOnly.close();
+      }
+
+      // No manual read/write probe or V1 source: ordinary initialization must recover itself.
+      yield* initializeV2Database(destination);
+      assertCurrent(destination);
+      assert.deepEqual(withDatabase(destination, history), original);
+      assert.isFalse(NodeFS.existsSync(source));
+      assert.isFalse(NodeFS.existsSync(`${destination}-journal`));
+      assert.equal(backups(directory).length, 2);
+      for (const backup of backups(directory))
+        withDatabase(NodePath.join(directory, backup, "statev2.sqlite"), (database) => {
+          assert.equal(
+            database.prepare("SELECT max(migration_id) AS id FROM effect_sql_migrations").get()?.id,
+            80,
+          );
+          assert.deepEqual(history(database), original);
+        });
+      const upgraded = NodeFS.readFileSync(destination);
+      yield* initializeV2Database(destination);
+      assert.deepEqual(NodeFS.readFileSync(destination), upgraded);
+      assert.equal(backups(directory).length, 2);
     }).pipe(Effect.provide(NodeServices.layer)),
   ),
 );
