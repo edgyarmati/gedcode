@@ -48,7 +48,7 @@ the chat. Model choice is a fixed role table the maintainer does not want.
 `PROJECT.md`, `STANDARDS.md` (with a **Checks** section for this project's format, lint, typecheck and
 test commands, which the served verify playbook reads), `DECISIONS.md`, `CONTEXT-MAP.md`,
 `PROGRESS.md`, `model-notes.md`, `plans/INDEX.md`, `verdicts/.gitignore`, `bin/land-gate.sh`
-(generic: no driver-kind list from this repo).
+(the same script this repo runs; its driver-kind list is GedCode's providers, not this repo's).
 
 ## Out of scope
 

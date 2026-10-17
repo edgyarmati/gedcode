@@ -165,6 +165,32 @@ it.effect("keeps every verifier's ruling on one commit, and restarts on a new on
   ).pipe(Effect.provide(layer)),
 );
 
+it.effect("starts a corrupt or malformed record over instead of failing", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const memory = yield* ProjectMemory.ProjectMemory;
+      const file = path.join(root, ".ged", "verdicts", "feat-memory-toolkit.json");
+      yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+      const { branch, headSha, implementer } = ruling({ driverKind: "claudeAgent" });
+      // Matches the next ruling's commit, so only the null review can force the restart.
+      const malformed = JSON.stringify({
+        schemaVersion: 2,
+        branch,
+        headSha,
+        implementer,
+        reviews: [null],
+      });
+      for (const contents of ["{ not json", malformed]) {
+        yield* fs.writeFileString(file, contents);
+        yield* memory.recordRuling(root, ruling({ driverKind: "claudeAgent" }));
+        expect((yield* readRecord(root)).reviews).toHaveLength(1);
+      }
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
 it.effect("refuses a branch name that cannot key a verdict", () =>
   withProject((root) =>
     Effect.gen(function* () {

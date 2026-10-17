@@ -253,3 +253,53 @@ it.effect("blocks when any one of several verifiers fails", () =>
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
+
+it.effect("blocks records the gate cannot trust, however they were written", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
+      const review = {
+        verifier: { driverKind: "claudeAgent" },
+        status: "pass",
+        criteria: [{ criterion: "It works", verdict: "met", evidence: "the tests pass" }],
+        otherVendorAvailable: true,
+      };
+      const record = (overrides: Record<string, unknown>) => ({
+        schemaVersion: 2,
+        branch: "feat/memory",
+        headSha,
+        implementer: { driverKind: "codex" },
+        reviews: [review],
+        ...overrides,
+      });
+      const cases: ReadonlyArray<[string, unknown]> = [
+        ["an older record", { ...record({}), schemaVersion: 1 }],
+        ["no reviews", record({ reviews: [] })],
+        [
+          "invisible evidence",
+          record({
+            reviews: [
+              {
+                ...review,
+                criteria: [{ criterion: "It works", verdict: "met", evidence: "‪‫‬" }],
+              },
+            ],
+          }),
+        ],
+        [
+          "an unknown vendor",
+          record({ reviews: [{ ...review, verifier: { driverKind: "acme" } }] }),
+        ],
+      ];
+      const file = path.join(root, ".ged", "verdicts", "feat-memory.json");
+      for (const [name, contents] of cases) {
+        yield* fs.writeFileString(file, JSON.stringify(contents));
+        expect((yield* landCheck(root)).allowed, name).toBe(false);
+      }
+      yield* fs.writeFileString(file, JSON.stringify(record({})));
+      expect((yield* landCheck(root)).allowed).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);

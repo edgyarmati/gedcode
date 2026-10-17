@@ -52,6 +52,11 @@ const sameVerifier = (left: VerdictParticipant, right: VerdictParticipant): bool
   sameVendor(left.driverKind, right.driverKind) &&
   (left.model ?? "").trim().toLowerCase() === (right.model ?? "").trim().toLowerCase();
 
+const isReview = (review: unknown): review is VerdictReview =>
+  review !== null &&
+  typeof review === "object" &&
+  typeof (review as Partial<VerdictReview>).verifier?.driverKind === "string";
+
 const isContinuable = (existing: unknown, ruling: VerdictRuling): existing is VerdictRecord => {
   if (existing === null || typeof existing !== "object" || Array.isArray(existing)) return false;
   const record = existing as Partial<VerdictRecord>;
@@ -61,7 +66,8 @@ const isContinuable = (existing: unknown, ruling: VerdictRuling): existing is Ve
     record.headSha === ruling.headSha &&
     typeof record.implementer?.driverKind === "string" &&
     sameVendor(record.implementer.driverKind, ruling.implementer.driverKind) &&
-    Array.isArray(record.reviews)
+    Array.isArray(record.reviews) &&
+    record.reviews.every(isReview)
   );
 };
 

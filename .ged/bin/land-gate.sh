@@ -90,10 +90,11 @@ if (!DRIVER_KINDS.has(iv)) fail(`unknown implementer driverKind ${JSON.stringify
 const reviews = v.reviews;
 if (!Array.isArray(reviews) || reviews.length === 0) fail("verdict records no reviews");
 
-// Strip zero-width and bidi characters before judging emptiness, so an invisible
-// character cannot stand in for evidence.
+// Strip whitespace and every invisible format character (zero-width, bidi
+// controls, soft hyphen) before judging emptiness, so nothing unseen can stand
+// in for evidence.
 const substantive = (s) =>
-  typeof s === "string" && s.replace(/[\s\u200B-\u200D\u2060\uFEFF\u00AD]/gu, "").length >= 3;
+  typeof s === "string" && s.replace(/[\s\p{Cf}]/gu, "").length >= 3;
 
 const verifiers = [];
 for (const r of reviews) {

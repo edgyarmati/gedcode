@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -181,7 +182,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       const file = path.join(dir, `${slug}.json`);
       // A record that is missing or unreadable is started over, like a stale one.
       const existing: unknown = yield* fs.readFileString(file).pipe(
-        Effect.map((text) => JSON.parse(text) as unknown),
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))),
         Effect.orElseSucceed(() => undefined),
       );
       // The toolkit validated the ruling against its schema before handing it over. The
