@@ -300,7 +300,8 @@ T3 service; remote-access.md now mentions it.
 
 The sidebar header and first-run setup showed the GC mark alone at text height, where its dimmed C
 read as a rendering glitch. Both now spell "GedCode", with "Code" muted as in upstream's
-"T3 Code"; the mark stays on tool-call rows and the app icon. The setup dialog's accessible title
+"T3 Code"; in the sidebar it is one size up and centered in the header space after the window
+controls. The mark stays on tool-call rows and the app icon. The setup dialog's accessible title
 no longer says "T3 Code".
 
 ## 2026-10-17 — Ged works in any project
