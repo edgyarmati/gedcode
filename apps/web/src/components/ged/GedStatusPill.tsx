@@ -24,7 +24,7 @@ export function GedStatusPill({
   const status = useEnvironmentQuery(
     access.canReadFiles ? gedSetupStatus({ environmentId, input: { cwd } }) : null,
   );
-  if (status.data === null) return null;
+  if (!status.isSuccess || status.data === null) return null;
   const setUp = status.data.present.length > 0;
 
   return (
