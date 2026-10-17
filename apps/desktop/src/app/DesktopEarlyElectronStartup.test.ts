@@ -83,7 +83,7 @@ describe("DesktopEarlyElectronStartup", () => {
     assert.deepEqual(options, {
       isDevelopment: true,
       linuxWmClass: "gedcode-dev",
-      linuxDesktopEntryName: "com.t3tools.GedCode.Development.desktop",
+      linuxDesktopEntryName: "com.gedcode.GedCode.Development.desktop",
       passwordStore: "gnome-libsecret",
     });
   });

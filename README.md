@@ -36,9 +36,9 @@ See [docs/ged/workflow.md](./docs/ged/workflow.md) for how a piece of work actua
 > [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`. The
 > [provider docs](./docs/ged/user/) cover each one.
 
-[GitHub Releases](https://github.com/edgyarmati/gedcode/releases) carries the v0.4 desktop builds.
-v0.5 is a rebuild on a newer base and has no published build yet — run it from source with the
-[local development](#local-development) steps below until it does.
+Download the macOS (Apple Silicon) build from
+[GitHub Releases](https://github.com/edgyarmati/gedcode/releases). Other platforms run from source
+with the [local development](#local-development) steps below.
 
 macOS builds are ad-hoc signed rather than notarized, so the first install has to be allowed
 manually in System Settings. After that, the app updates itself through Sparkle.

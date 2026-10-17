@@ -15,9 +15,10 @@ describe("gedcode.json schema", () => {
         const committed = yield* fs.readFileString(
           path.join(import.meta.dirname, "../..", GED_PROJECT_FILE_SCHEMA_PATH),
         );
-        assert.equal(
-          committed,
-          renderGedProjectFileSchema(),
+        // The commit hook reformats the file, so compare content, not layout.
+        assert.deepStrictEqual(
+          JSON.parse(committed),
+          JSON.parse(renderGedProjectFileSchema()),
           "Run `node scripts/ged/project-file-schema.ts` to regenerate it.",
         );
       }),

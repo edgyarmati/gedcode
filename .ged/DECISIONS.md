@@ -434,7 +434,7 @@ Upstream's release workflows are disabled alongside the rest; see STANDARDS.md.
 - Status: accepted.
 
 v0.5 must update v0.4 installs in place through Sparkle, so it has to be the same app: bundle
-identifier `com.t3tools.gedcode`, product name `GedCode`, Electron userData `gedcode` /
+identifier `com.gedcode.app` (0.4 shipped `com.t3tools.gedcode`), product name `GedCode`, Electron userData `gedcode` /
 `gedcode-dev`, home `~/.gedcode`, URL schemes `gedcode` / `gedcode-dev`. Those are constants in
 about twenty upstream files (desktop identity and paths, server home and origins, the auth return
 schemes) and are edited there: a one-line constant edit per file is a cheap conflict, and an
@@ -491,5 +491,10 @@ the Sparkle appcast (Markdown, which 0.4.8's Sparkle 2.9.6 renders on a manual c
 `apps/desktop/src/ged/GedUpgradeNotice.ts` shows a one-time dialog on the first launch over a
 0.4 database (`state.sqlite` present, `statev2.sqlite` not yet created).
 
-The bundle id stays `com.t3tools.gedcode`: changing it would make 0.5 a different app to macOS
-and Sparkle, so 0.4 installs could not update in place.
+The bundle id is `com.gedcode.app`, not 0.4's `com.t3tools.gedcode`, so nothing user-visible names
+T3. Sparkle still updates 0.4 in place: it finds the new app by file name (`GedCode.app`) and trusts
+it by the EdDSA key, never by bundle id (Sparkle 2.9.6 `SUInstaller.m`, `SUUpdateValidator.m`).
+What does not carry over is keyed to the bundle id: macOS notification permission and Sparkle's
+own defaults, which the app does not use. Data lives under `~/.gedcode` and the userData directory,
+both keyed by name. A 0.4 install renamed away from `GedCode.app` cannot be matched and needs a
+manual download.

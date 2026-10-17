@@ -14,7 +14,7 @@ import * as Path from "effect/Path";
  * themselves; see `.ged/STANDARDS.md`.
  */
 
-export const GED_APP_ID = "com.t3tools.gedcode";
+export const GED_APP_ID = "com.gedcode.app";
 export const GED_PRODUCT_NAME = "GedCode";
 export const GED_URL_SCHEMES = ["gedcode", "gedcode-dev"] as const;
 export const GED_REPOSITORY_URL = "https://github.com/edgyarmati/gedcode";

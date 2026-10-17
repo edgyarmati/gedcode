@@ -280,3 +280,10 @@ messages, a PM session): the server starts, migrates to 60, keeps 2/2 threads an
 and the original `state.sqlite` is byte-identical afterwards. A pre-Ged database is unaffected.
 PM history is not shown in 0.5; it stays in the old database. The 0.5.0 release notes and a
 one-time dialog on first launch say so.
+
+## 2026-10-17 — GedCode is `com.gedcode.app`
+
+The bundle id, Windows app id, Linux desktop entry and launchd label no longer name T3. A local
+arm64 build carries `com.gedcode.app` with its seal intact. 0.4 installs still update in place,
+because Sparkle matches the update by file name and EdDSA key (see DECISIONS); the 0.5 notes tell
+users why macOS may ask for notification permission again. The README points at the release.

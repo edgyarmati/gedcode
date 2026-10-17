@@ -93,13 +93,13 @@ describe("DesktopPreReadyPlatform", () => {
     let desktopEntry = previousEntry;
     let iconInstalled = false;
     copyFileSyncMock.mockImplementation((_source: string, destination: string) => {
-      iconInstalled = destination === "/xdg/icons/com.t3tools.GedCode.desktop.png";
+      iconInstalled = destination === "/xdg/icons/com.gedcode.GedCode.desktop.png";
     });
     setDesktopNameMock.mockImplementation((name: string) => {
       desktopName = name;
     });
     writeFileSyncMock.mockImplementation((path: string, contents: string) => {
-      if (path === "/xdg/applications/com.t3tools.GedCode.desktop") desktopEntry = contents;
+      if (path === "/xdg/applications/com.gedcode.GedCode.desktop") desktopEntry = contents;
     });
 
     return Effect.scoped(
@@ -115,13 +115,13 @@ describe("DesktopPreReadyPlatform", () => {
           ),
         );
         const identity = yield* Effect.promise(() => portalIdentity);
-        assert.equal(identity.desktopName, "com.t3tools.GedCode.desktop");
+        assert.equal(identity.desktopName, "com.gedcode.GedCode.desktop");
         assert.include(identity.desktopEntry ?? "", 'Exec="/Applications/current.AppImage" %U');
         assert.include(identity.desktopEntry ?? "", "Name=GedCode");
         assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/gedcode;");
         assert.include(
           identity.desktopEntry ?? "",
-          "Icon=/xdg/icons/com.t3tools.GedCode.desktop.png",
+          "Icon=/xdg/icons/com.gedcode.GedCode.desktop.png",
         );
         assert.isTrue(identity.iconInstalled);
       }),

@@ -141,8 +141,8 @@ jobs:
           # Sparkle replaces the installed app in place; an app with another
           # identity would orphan the user's settings and permissions.
           bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$plist")"
-          if [[ "$bundle_id" != "com.t3tools.gedcode" ]]; then
-            echo "::error::The app's bundle identifier is $bundle_id, not com.t3tools.gedcode."
+          if [[ "$bundle_id" != "com.gedcode.app" ]]; then
+            echo "::error::The app's bundle identifier is $bundle_id, not com.gedcode.app."
             exit 1
           fi
           bundle_name="$(plutil -extract CFBundleName raw -o - "$plist")"

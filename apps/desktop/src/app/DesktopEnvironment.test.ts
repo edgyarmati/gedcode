@@ -76,9 +76,9 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.serverRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev");
+      assert.equal(environment.appUserModelId, "com.gedcode.app.dev");
       assert.equal(environment.linuxWmClass, "gedcode-dev");
-      assert.equal(environment.linuxDesktopEntryName, "com.t3tools.GedCode.Development.desktop");
+      assert.equal(environment.linuxDesktopEntryName, "com.gedcode.GedCode.Development.desktop");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -150,7 +150,7 @@ describe("DesktopEnvironment", () => {
         resourcesPath: "/tmp/.mount_t3code/resources",
       });
 
-      assert.equal(environment.linuxDesktopEntryName, "com.t3tools.GedCode.desktop");
+      assert.equal(environment.linuxDesktopEntryName, "com.gedcode.GedCode.desktop");
     }),
   );
 
@@ -172,12 +172,12 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_DESKTOP_APP_USER_MODEL_ID: " com.t3tools.gedcode.dev.local ",
+          T3CODE_DESKTOP_APP_USER_MODEL_ID: " com.gedcode.app.dev.local ",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
         },
       );
 
-      assert.equal(environment.appUserModelId, "com.t3tools.gedcode.dev.local");
+      assert.equal(environment.appUserModelId, "com.gedcode.app.dev.local");
     }),
   );
 
