@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
+import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Project from "../../../project/ProjectService.ts";
@@ -105,6 +106,7 @@ const dependencies = (root: string, installed: Installed) => {
         } as never),
     }),
     ProjectMemory.layer,
+    GedSetup.layer,
     // NodeServices has to come under the merge, not inside it: ProjectMemory
     // needs its FileSystem, Path, and process spawner, and Layer.mergeAll
     // builds its members in parallel without satisfying each other.
@@ -300,6 +302,31 @@ it.effect("blocks records the gate cannot trust, however they were written", () 
       }
       yield* fs.writeFileString(file, JSON.stringify(record({})));
       expect((yield* landCheck(root)).allowed).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("previews setup, then adds only what the project lacks", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const preview = (yield* call(root, "ged_init", {})) as {
+        applied: boolean;
+        missing: ReadonlyArray<string>;
+        present: ReadonlyArray<string>;
+      };
+      expect(preview.applied).toBe(false);
+      expect(preview.missing).toContain(".ged/STANDARDS.md");
+      expect(preview.present).toContain(".ged/bin/land-gate.sh");
+      expect(yield* fs.exists(path.join(root, ".ged", "STANDARDS.md"))).toBe(false);
+
+      const applied = (yield* call(root, "ged_init", { apply: true })) as typeof preview;
+      expect(applied.applied).toBe(true);
+      expect(applied.missing).toEqual(preview.missing);
+      expect(yield* fs.readFileString(path.join(root, ".ged", "STANDARDS.md"))).toContain(
+        "## Checks",
+      );
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );

@@ -2,6 +2,7 @@ import { OrchestratorMcpFailure, ThreadId, TrimmedNonEmptyString } from "@t3tool
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
+import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import { PLAYBOOK_NAMES } from "../../../ged/playbooks/index.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
@@ -17,6 +18,7 @@ const shared = {
     ThreadManagementService.ThreadManagementService,
     ProjectService.ProjectService,
     ProjectMemory.ProjectMemory,
+    GedSetup.GedSetup,
     OrchestratorMcpService.OrchestratorMcpService,
   ],
 };
@@ -67,7 +69,7 @@ const MemoryListTool = Tool.make("ged_memory_list", {
 const MemoryReadTool = Tool.make("ged_memory_read", {
   ...shared,
   description:
-    "Read one Ged project memory document by its key, as ged_memory_list reports it (for example 'roles/verifier.md' or 'STANDARDS.md').",
+    "Read one Ged project memory document by its key, as ged_memory_list reports it (for example 'STANDARDS.md' or 'plans/INDEX.md').",
   parameters: Schema.Struct({
     key: TrimmedNonEmptyString,
     threadId: Schema.optional(ThreadId),
@@ -119,10 +121,28 @@ const LandCheckTool = Tool.make("ged_land_check", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
 
+const InitTool = Tool.make("ged_init", {
+  ...shared,
+  description:
+    "Set up Ged in the calling thread's project by adding the starter .ged/ files it lacks (project, standards with a Checks section, decisions, context map, progress, model notes, plan index, verdicts and the land gate). Only when the user asks. Call first without apply to preview, show the user the list, and call again with apply: true once they agree. Existing files are never changed.",
+  parameters: Schema.Struct({
+    apply: Schema.optional(Schema.Boolean).annotate({
+      description: "false or omitted previews; true writes the missing files.",
+    }),
+    threadId: Schema.optional(ThreadId),
+  }),
+  success: Schema.Struct({
+    applied: Schema.Boolean,
+    missing: Schema.Array(Schema.String),
+    present: Schema.Array(Schema.String),
+  }),
+}).annotate(Tool.Destructive, false);
+
 export const MemoryToolkit = Toolkit.make(
   MemoryListTool,
   MemoryReadTool,
   PlaybookTool,
   VerdictWriteTool,
   LandCheckTool,
+  InitTool,
 );

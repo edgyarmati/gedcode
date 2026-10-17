@@ -46,6 +46,7 @@ import {
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
 import * as WorktreeHandlers from "./toolkits/worktree/handlers.ts";
+import * as GedSetup from "../ged/GedSetup.ts";
 import * as ProjectMemory from "../ged/ProjectMemory.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
@@ -843,7 +844,7 @@ const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHand
 export const memoryToolkitRegistration = toolkitRegistration(
   MemoryToolkit,
   MemoryHandlers.layer,
-).pipe(Layer.provide(ProjectMemory.layer));
+).pipe(Layer.provide(ProjectMemory.layer), Layer.provide(GedSetup.layer));
 
 const layerMemoryToolkitRegistration = memoryToolkitRegistration.pipe(
   Layer.provide(OrchestratorMcpService.layer),

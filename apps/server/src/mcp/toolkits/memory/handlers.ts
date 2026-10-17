@@ -2,6 +2,7 @@ import { OrchestratorMcpFailure, type ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import { PLAYBOOKS } from "../../../ged/playbooks/index.ts";
 import { sameVendor } from "../../../ged/verdictRecord.ts";
@@ -101,6 +102,19 @@ const handlers = {
       const root = yield* resolveRoot(input.threadId);
       const memory = yield* ProjectMemory.ProjectMemory;
       return yield* memory.landCheck(root).pipe(Effect.mapError(memoryFailure));
+    }),
+  ),
+  ged_init: McpToolAccess.writes((input) =>
+    Effect.gen(function* () {
+      const root = yield* resolveRoot(input.threadId);
+      const setup = yield* GedSetup.GedSetup;
+      const failure = (error: GedSetup.GedSetupError) => notFound(error.message);
+      if (input.apply !== true) {
+        const plan = yield* setup.preview(root).pipe(Effect.mapError(failure));
+        return { applied: false, ...plan };
+      }
+      const result = yield* setup.apply(root).pipe(Effect.mapError(failure));
+      return { applied: true, missing: result.written, present: result.skipped };
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof MemoryToolkit.tools>;

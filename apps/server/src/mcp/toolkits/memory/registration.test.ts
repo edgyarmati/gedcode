@@ -123,6 +123,7 @@ it("publishes every Ged tool with a reference-free object-root input schema", ()
   const names = Object.values(MemoryToolkit.tools).map((tool) => tool.name);
   expect(new Set(names).size).toBe(names.length);
   expect(names.toSorted()).toEqual([
+    "ged_init",
     "ged_land_check",
     "ged_memory_list",
     "ged_memory_read",
