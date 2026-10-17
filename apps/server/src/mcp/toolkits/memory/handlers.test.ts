@@ -22,6 +22,7 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as Project from "../../../project/ProjectService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as MemoryHandlers from "./handlers.ts";
 import { MemoryToolkit } from "./tools.ts";
 
@@ -44,16 +45,10 @@ const withCheckout = <A, E, R>(
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped();
     const ged = path.join(root, ".ged");
-    yield* fs.makeDirectory(path.join(ged, "roles"), { recursive: true });
+    yield* fs.makeDirectory(path.join(ged, "plans"), { recursive: true });
     yield* fs.makeDirectory(path.join(ged, "bin"), { recursive: true });
     yield* fs.makeDirectory(path.join(ged, "verdicts"), { recursive: true });
-    yield* fs.writeFileString(
-      path.join(ged, "roles", "verifier.md"),
-      "# Verifier\nRule on each.\n",
-    );
-    yield* fs.writeFileString(path.join(ged, "roles", "planner.md"), "# Planner\n");
-    yield* fs.writeFileString(path.join(ged, "roles", "implementer.md"), "# Implementer\n");
-    yield* fs.writeFileString(path.join(ged, "roles", "model-policy.md"), "# Model policy\n");
+    yield* fs.writeFileString(path.join(ged, "plans", "INDEX.md"), "# Plans\nRule on each.\n");
     yield* fs.writeFileString(path.join(ged, "verdicts", ".gitignore"), "*.json\n");
     yield* fs.copyFile(
       path.resolve(import.meta.dirname, "../../../../../../.ged/bin/land-gate.sh"),
@@ -70,7 +65,10 @@ const withCheckout = <A, E, R>(
     return yield* use(root);
   }).pipe(Effect.scoped);
 
-const dependencies = (root: string) => {
+/** The driver kinds that could run a child task, as the live catalog reports them. */
+type Installed = ReadonlyArray<string>;
+
+const dependencies = (root: string, installed: Installed) => {
   const caller = {
     id: threadId,
     projectId,
@@ -100,6 +98,12 @@ const dependencies = (root: string) => {
       getById: () =>
         Effect.succeed(Option.some({ id: projectId, workspaceRoot: root } as ProjectRecord)),
     }),
+    Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
+      capabilities: () =>
+        Effect.succeed({
+          providers: installed.map((driverKind) => ({ driverKind, canRunChildTask: true })),
+        } as never),
+    }),
     ProjectMemory.layer,
     // NodeServices has to come under the merge, not inside it: ProjectMemory
     // needs its FileSystem, Path, and process spawner, and Layer.mergeAll
@@ -112,9 +116,10 @@ const call = <Name extends keyof typeof MemoryToolkit.tools>(
   root: string,
   name: Name,
   params: unknown,
+  installed: Installed = ["codex", "claudeAgent"],
 ) =>
   Effect.gen(function* () {
-    const layer = dependencies(root);
+    const layer = dependencies(root, installed);
     const toolkit = yield* MemoryToolkit.pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(MemoryHandlers.layer).pipe(Layer.provide(layer)),
@@ -123,7 +128,7 @@ const call = <Name extends keyof typeof MemoryToolkit.tools>(
     const parts = yield* toolkit
       .handle(name, params as never)
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layer));
-    return parts.at(-1)?.result as never;
+    return parts.at(-1)?.result as unknown;
   });
 
 it.effect("serves the memory listing and a document to the calling thread", () =>
@@ -132,8 +137,8 @@ it.effect("serves the memory listing and a document to the calling thread", () =
       const listed = (yield* call(root, "ged_memory_list", {})) as {
         documents: ReadonlyArray<{ key: string }>;
       };
-      expect(listed.documents.map((document) => document.key)).toContain("roles/verifier.md");
-      const read = (yield* call(root, "ged_memory_read", { key: "roles/verifier.md" })) as {
+      expect(listed.documents.map((document) => document.key)).toContain("plans/INDEX.md");
+      const read = (yield* call(root, "ged_memory_read", { key: "plans/INDEX.md" })) as {
         content: string;
       };
       expect(read.content).toContain("Rule on each.");
@@ -141,15 +146,15 @@ it.effect("serves the memory listing and a document to the calling thread", () =
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("hands a role its brief and the model policy in one call", () =>
+it.effect("serves a playbook by name, from GedCode rather than the project", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
-      const brief = (yield* call(root, "ged_role_brief", { role: "verifier" })) as {
-        brief: string;
-        modelPolicy: string | null;
+      const playbook = (yield* call(root, "ged_playbook", { name: "verifier" })) as {
+        name: string;
+        content: string;
       };
-      expect(brief.brief).toContain("# Verifier");
-      expect(brief.modelPolicy).toContain("# Model policy");
+      expect(playbook.name).toBe("verifier");
+      expect(playbook.content).toContain("otherVendorAvailable");
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -165,52 +170,86 @@ it.effect("refuses to serve a document outside the memory tree", () =>
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("blocks the branch until a verdict is written, then allows it", () =>
+const ruling = (headSha: string, verifier: { driverKind: string; model?: string }) => ({
+  branch: "feat/memory",
+  headSha,
+  status: "pass",
+  criteria: [
+    {
+      criterion: "The toolkit is registered",
+      verdict: "met",
+      evidence: "McpHttpServer.ts includes the memory registration layer",
+    },
+  ],
+  implementer: { driverKind: "codex" },
+  verifier,
+});
+
+const landCheck = (root: string) =>
+  call(root, "ged_land_check", {}).pipe(
+    Effect.map((result) => result as { allowed: boolean; detail: string }),
+  );
+
+it.effect("blocks the branch until a foreign verdict is written, then allows it", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
-      const blocked = (yield* call(root, "ged_land_check", {})) as { allowed: boolean };
-      expect(blocked.allowed).toBe(false);
-
+      expect((yield* landCheck(root)).allowed).toBe(false);
       const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
-      const written = (yield* call(root, "ged_verdict_write", {
-        branch: "feat/memory",
-        headSha,
-        status: "pass",
-        criteria: [
-          {
-            criterion: "The toolkit is registered",
-            verdict: "met",
-            evidence: "McpHttpServer.ts:869 includes the memory registration layer",
-          },
-        ],
-        implementer: { driverKind: "codex" },
-        verifier: { driverKind: "claudeAgent" },
-      })) as { path: string; ruling: string };
+      const written = (yield* call(
+        root,
+        "ged_verdict_write",
+        ruling(headSha, { driverKind: "claudeAgent" }),
+      )) as { path: string; ruling: string };
       expect(written.path).toBe(".ged/verdicts/feat-memory.json");
       expect(written.ruling).toMatch(/^allowed/);
-
-      const allowed = (yield* call(root, "ged_land_check", {})) as { allowed: boolean };
-      expect(allowed.allowed).toBe(true);
+      expect((yield* landCheck(root)).allowed).toBe(true);
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("refuses a verdict whose verifier shares the implementer's vendor", () =>
+it.effect("blocks a same-vendor-only verdict while another vendor is installed", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
       const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
-      const refusal = yield* call(root, "ged_verdict_write", {
-        branch: "feat/memory",
-        headSha,
-        status: "pass",
-        criteria: [{ criterion: "It works", verdict: "met", evidence: "the tests pass" }],
-        implementer: { driverKind: "codex" },
-        // Padding and case must not buy independence the record does not have.
-        verifier: { driverKind: " Codex " },
+      // Padding and case must not buy independence the record does not have.
+      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: " Codex " }));
+      const blocked = yield* landCheck(root);
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.detail).toContain("another vendor was installed");
+
+      // A foreign ruling joins the same-vendor one, and together they pass.
+      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: "claudeAgent" }));
+      expect((yield* landCheck(root)).allowed).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("allows a same-vendor verdict, with a warning, when no other vendor is installed", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
+      const written = (yield* call(
+        root,
+        "ged_verdict_write",
+        ruling(headSha, { driverKind: "codex", model: "gpt-6-sol" }),
+        ["codex"],
+      )) as { ruling: string };
+      expect(written.ruling).toMatch(/^allowed/);
+      expect(written.ruling).toContain("no other vendor was installed");
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("blocks when any one of several verifiers fails", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
+      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: "claudeAgent" }));
+      yield* call(root, "ged_verdict_write", {
+        ...ruling(headSha, { driverKind: "codex", model: "gpt-6-sol" }),
+        status: "fail",
       });
-      expect(String(refusal)).toContain("same vendor");
-      const stillBlocked = (yield* call(root, "ged_land_check", {})) as { allowed: boolean };
-      expect(stillBlocked.allowed).toBe(false);
+      expect((yield* landCheck(root)).allowed).toBe(false);
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );

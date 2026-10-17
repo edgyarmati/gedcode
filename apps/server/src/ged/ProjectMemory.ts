@@ -3,17 +3,19 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Semaphore from "effect/Semaphore";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { mergeRuling, type VerdictRuling } from "./verdictRecord.ts";
 
 /**
  * The Ged project memory: the `.ged/` tree a project keeps alongside its code.
  *
- * It holds the role briefs, the model policy, the standards, the decision log,
- * and the verdict records the land gate reads. Serving it through MCP is what
- * makes it available to every provider — a Codex worker and a Claude worker read
- * the same briefs, which is the whole point of keeping them on disk rather than
- * in one harness's prompt.
+ * It holds the project's standards, decision log, context map, model notes,
+ * plans, and the verdict records the land gate reads. Serving it through MCP is
+ * what makes it available to every provider — a Codex worker and a Claude worker
+ * read the same standards, which is the whole point of keeping them on disk
+ * rather than in one harness's prompt.
  *
  * Everything here is path-confined to `<root>/.ged`. Tool input names a document
  * by a relative key, never a path the caller composes.
@@ -56,10 +58,10 @@ export class ProjectMemory extends Context.Service<
     readonly present: (root: string) => Effect.Effect<boolean>;
     readonly list: (root: string) => Effect.Effect<ReadonlyArray<MemoryDocument>, GedMemoryError>;
     readonly read: (root: string, key: string) => Effect.Effect<string, GedMemoryError>;
-    readonly writeVerdict: (
+    /** Adds one verifier's ruling to the branch's verdict record; returns its key. */
+    readonly recordRuling: (
       root: string,
-      branch: string,
-      record: unknown,
+      ruling: VerdictRuling,
     ) => Effect.Effect<string, GedMemoryError>;
     readonly landCheck: (root: string) => Effect.Effect<LandRuling, GedMemoryError>;
   }
@@ -161,28 +163,39 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
         .pipe(Effect.mapError(() => new GedMemoryError(`'${key}' could not be read.`)));
     });
 
-  const writeVerdict = (root: string, branch: string, record: unknown) =>
+  // Parallel verifiers record into the same file; each read-merge-write must see
+  // the previous one's result.
+  const verdictLock = yield* Semaphore.make(1);
+
+  const recordRuling = (root: string, ruling: VerdictRuling) =>
     Effect.gen(function* () {
-      const slug = verdictSlug(branch);
+      const slug = verdictSlug(ruling.branch);
       if (slug === undefined)
-        return yield* fail(`Branch '${branch}' has no name the land gate can key a verdict to.`);
+        return yield* fail(
+          `Branch '${ruling.branch}' has no name the land gate can key a verdict to.`,
+        );
       const dir = path.join(memoryRoot(root), VERDICTS_DIR);
       yield* fs
         .makeDirectory(dir, { recursive: true })
         .pipe(Effect.mapError(() => new GedMemoryError(`Could not open ${MEMORY_DIR}/verdicts.`)));
       const file = path.join(dir, `${slug}.json`);
-      // The toolkit validated this record against its schema before handing it over. It is
-      // written indented rather than through a codec because the gate reads it as a document
-      // a human also opens and edits by hand.
+      // A record that is missing or unreadable is started over, like a stale one.
+      const existing: unknown = yield* fs.readFileString(file).pipe(
+        Effect.map((text) => JSON.parse(text) as unknown),
+        Effect.orElseSucceed(() => undefined),
+      );
+      // The toolkit validated the ruling against its schema before handing it over. The
+      // record is written indented rather than through a codec because the gate reads it
+      // as a document a human also opens and edits by hand.
       // @effect-diagnostics-next-line preferSchemaOverJson:off
-      const body = `${JSON.stringify(record, null, 2)}\n`;
+      const body = `${JSON.stringify(mergeRuling(existing, ruling), null, 2)}\n`;
       yield* fs
         .writeFileString(file, body)
         .pipe(
           Effect.mapError(() => new GedMemoryError(`Could not write the verdict for ${slug}.`)),
         );
       return `${MEMORY_DIR}/${VERDICTS_DIR}/${slug}.json`;
-    });
+    }).pipe(verdictLock.withPermits(1));
 
   /**
    * Runs the gate script rather than reimplementing its rules. One implementation
@@ -212,7 +225,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       return { allowed: false, outcome: "error", detail } satisfies LandRuling;
     });
 
-  return { present, list, read, writeVerdict, landCheck } as const;
+  return { present, list, read, recordRuling, landCheck } as const;
 });
 
 // ProcessRunner is stateless over the spawner, so it is provided here rather than

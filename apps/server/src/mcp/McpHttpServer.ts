@@ -836,11 +836,18 @@ export const layerEnvironmentToolkit = toolkitRegistration(
 
 const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
 
-/** Ged: project memory and the land gate, served to every provider. */
-export const layerMemoryToolkitRegistration = toolkitRegistration(
+/**
+ * Ged: project memory, playbooks and the land gate, served to every provider.
+ * Still needs the provider catalog, so tests can stand in a fixed one.
+ */
+export const memoryToolkitRegistration = toolkitRegistration(
   MemoryToolkit,
   MemoryHandlers.layer,
 ).pipe(Layer.provide(ProjectMemory.layer));
+
+const layerMemoryToolkitRegistration = memoryToolkitRegistration.pipe(
+  Layer.provide(OrchestratorMcpService.layer),
+);
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,

@@ -74,42 +74,63 @@ try { v = JSON.parse(readFileSync(record, "utf8")); }
 catch (e) { fail(`verdict record is unreadable or not valid JSON (${e.message})`); }
 
 if (v === null || typeof v !== "object" || Array.isArray(v)) fail("verdict record is not a JSON object");
-if (v.schemaVersion !== 1) fail(`unsupported schemaVersion ${JSON.stringify(v.schemaVersion)}`);
+if (v.schemaVersion !== 2) fail(`unsupported schemaVersion ${JSON.stringify(v.schemaVersion)}; re-verify to record a current verdict`);
 if (v.branch !== branch) fail(`record is for branch ${JSON.stringify(v.branch)}, not ${JSON.stringify(branch)}`);
 
 if (typeof v.headSha !== "string" || v.headSha !== headSha) {
   fail(`verdict is stale or malformed.\n  verified: ${JSON.stringify(v.headSha)}\n  current:  ${headSha}\n`
      + "  The tree changed after verification. Re-verify.");
 }
-if (v.status !== "pass") fail(`verdict status is ${JSON.stringify(v.status)}`);
 
-const criteria = v.criteria;
-if (!Array.isArray(criteria) || criteria.length === 0) fail("verdict records no criteria");
+const norm = (x) => (typeof x === "string" ? x.trim().toLowerCase() : null);
+const iv = norm(v.implementer?.driverKind);
+if (iv === null) fail("implementer driverKind must be a string");
+if (!DRIVER_KINDS.has(iv)) fail(`unknown implementer driverKind ${JSON.stringify(v.implementer.driverKind)}`);
 
-const unmet = criteria.filter((c) => c === null || typeof c !== "object" || c.verdict !== "met");
-if (unmet.length > 0) {
-  console.error(`BLOCKED: ${unmet.length} of ${criteria.length} criteria did not pass:`);
-  for (const c of unmet) console.error(`  [${c?.verdict ?? "missing"}] ${c?.criterion ?? "(no text)"}`);
-  console.error("  Note: `unverifiable` is not a pass.");
-  process.exit(1);
-}
+const reviews = v.reviews;
+if (!Array.isArray(reviews) || reviews.length === 0) fail("verdict records no reviews");
+
 // Strip zero-width and bidi characters before judging emptiness, so an invisible
 // character cannot stand in for evidence.
 const substantive = (s) =>
-  typeof s === "string" && s.replace(/[\s​-‍⁠﻿­]/gu, "").length >= 3;
-for (const c of criteria) {
-  if (!substantive(c.evidence)) {
-    fail(`a criterion is marked met without substantive evidence: ${JSON.stringify(c.criterion ?? "(no text)")}`);
+  typeof s === "string" && s.replace(/[\s\u200B-\u200D\u2060\uFEFF\u00AD]/gu, "").length >= 3;
+
+const verifiers = [];
+for (const r of reviews) {
+  if (r === null || typeof r !== "object" || Array.isArray(r)) fail("a review is not a JSON object");
+  const vv = norm(r.verifier?.driverKind);
+  if (vv === null) fail("a review has no verifier driverKind");
+  if (!DRIVER_KINDS.has(vv)) fail(`unknown verifier driverKind ${JSON.stringify(r.verifier.driverKind)}`);
+  const who = r.verifier.model ? `${vv} (${r.verifier.model})` : vv;
+  if (r.status !== "pass") fail(`the review by ${who} has status ${JSON.stringify(r.status)}`);
+  const criteria = r.criteria;
+  if (!Array.isArray(criteria) || criteria.length === 0) fail(`the review by ${who} records no criteria`);
+  const unmet = criteria.filter((c) => c === null || typeof c !== "object" || c.verdict !== "met");
+  if (unmet.length > 0) {
+    console.error(`BLOCKED: ${unmet.length} of ${criteria.length} criteria did not pass the review by ${who}:`);
+    for (const c of unmet) console.error(`  [${c?.verdict ?? "missing"}] ${c?.criterion ?? "(no text)"}`);
+    console.error("  Note: `unverifiable` is not a pass.");
+    process.exit(1);
   }
-  if (!substantive(c.criterion)) fail("a criterion has no text");
+  for (const c of criteria) {
+    if (!substantive(c.criterion)) fail(`a criterion in the review by ${who} has no text`);
+    if (!substantive(c.evidence)) {
+      fail(`a criterion is marked met without substantive evidence by ${who}: ${JSON.stringify(c.criterion)}`);
+    }
+  }
+  if (typeof r.otherVendorAvailable !== "boolean") fail(`the review by ${who} does not record otherVendorAvailable`);
+  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable });
 }
 
-const norm = (x) => (typeof x === "string" ? x.trim().toLowerCase() : null);
-const iv = norm(v.implementer?.driverKind), vv = norm(v.verifier?.driverKind);
-if (iv === null || vv === null) fail("implementer and verifier driverKind must both be strings");
-if (!DRIVER_KINDS.has(iv)) fail(`unknown implementer driverKind ${JSON.stringify(v.implementer.driverKind)}`);
-if (!DRIVER_KINDS.has(vv)) fail(`unknown verifier driverKind ${JSON.stringify(v.verifier.driverKind)}`);
-if (iv === vv) fail(`verifier and implementer are the same vendor (${vv}); independence is void`);
+const foreign = verifiers.filter((r) => r.vv !== iv);
+if (foreign.length === 0) {
+  if (verifiers.some((r) => r.otherVendorAvailable)) {
+    fail(`verified only by the implementer vendor (${iv}), while another vendor was installed.\n`
+       + "  Add a review from another vendor; same-vendor review shares the blind spots of the implementer.");
+  }
+  console.error(`WARNING: verified only by the implementer vendor (${iv}); no other vendor was installed.`);
+}
 
-console.log(`land-gate: OK — ${criteria.length} criteria met, verified by ${vv} against ${iv} at ${headSha.slice(0, 12)}`);
+const names = verifiers.map((r) => r.who).join(" + ");
+console.log(`land-gate: OK — ${reviews.length} review(s) passed, verified by ${names} against ${iv} at ${headSha.slice(0, 12)}`);
 ' "$record" "$head_sha" "$branch"

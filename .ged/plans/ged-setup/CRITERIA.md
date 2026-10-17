@@ -17,7 +17,7 @@
    `CONTEXT-MAP.md` and decisions to `DECISIONS.md`.
 6. **Models.** The lead playbook says to choose within the lead's own family, to read
    `model-notes.md` first, to record new user preferences there, and to announce any fallback.
-   `ged_role_brief` no longer returns `model-policy.md`.
+   `ged_role_brief` and `model-policy.md` are gone; `ged_playbook` serves every brief.
 7. **Verification.** The lead playbook encodes the three verification cases in SPEC decision 5.
    A verdict can record more than one verifier. The land gate:
    - passes when every recorded verifier passes at HEAD and at least one is from another vendor;

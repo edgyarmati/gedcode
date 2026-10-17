@@ -22,6 +22,7 @@ import { McpSchema, McpServer, Tool } from "effect/ai";
 
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import { MemoryToolkit } from "./tools.ts";
@@ -66,9 +67,9 @@ const withMemory = <A, E, R>(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped();
-    yield* fs.makeDirectory(path.join(root, ".ged", "roles"), { recursive: true });
+    yield* fs.makeDirectory(path.join(root, ".ged", "plans"), { recursive: true });
     yield* fs.writeFileString(
-      path.join(root, ".ged", "roles", "verifier.md"),
+      path.join(root, ".ged", "plans", "INDEX.md"),
       "# Verifier\nRule on each criterion.\n",
     );
     return yield* use(root);
@@ -84,8 +85,13 @@ const serverLayer = (root: string) => {
     deletedAt: null,
     worktreePath: root,
   } as OrchestrationV2ThreadShell;
-  return McpHttpServer.layerMemoryToolkitRegistration.pipe(
+  return McpHttpServer.memoryToolkitRegistration.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provide(
+      Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
+        capabilities: () => Effect.succeed({ providers: [] } as never),
+      }),
+    ),
     Layer.provide(
       Layer.mock(ThreadManagement.ThreadManagementService)({
         getThreadShell: () => Effect.succeed(caller),
@@ -120,7 +126,7 @@ it("publishes every Ged tool with a reference-free object-root input schema", ()
     "ged_land_check",
     "ged_memory_list",
     "ged_memory_read",
-    "ged_role_brief",
+    "ged_playbook",
     "ged_verdict_write",
   ]);
   for (const tool of Object.values(MemoryToolkit.tools)) {
@@ -137,9 +143,9 @@ it.effect("serves a memory document through the registered server", () =>
       const server = yield* McpServer.McpServer;
       expect(server.tools.map(({ tool }) => tool.name)).toContain("ged_memory_read");
 
-      const result = yield* callTool("ged_memory_read", { key: "roles/verifier.md" });
+      const result = yield* callTool("ged_memory_read", { key: "plans/INDEX.md" });
       expect(result.isError).not.toBe(true);
-      expect(result.structuredContent).toMatchObject({ key: "roles/verifier.md" });
+      expect(result.structuredContent).toMatchObject({ key: "plans/INDEX.md" });
       expect(JSON.stringify(result.structuredContent)).toContain("Rule on each criterion.");
     }).pipe(Effect.provide(serverLayer(root))),
   ).pipe(Effect.provide(NodeServices.layer)),

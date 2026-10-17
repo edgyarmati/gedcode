@@ -3,9 +3,11 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
+import { PLAYBOOK_NAMES } from "../../../ged/playbooks/index.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 
 const shared = {
   failure: OrchestratorMcpFailure,
@@ -15,11 +17,11 @@ const shared = {
     ThreadManagementService.ThreadManagementService,
     ProjectService.ProjectService,
     ProjectMemory.ProjectMemory,
+    OrchestratorMcpService.OrchestratorMcpService,
   ],
 };
 
-/** Named explicitly so a caller cannot invent a role the project has no brief for. */
-const Role = Schema.Literals(["planner", "implementer", "verifier"]);
+const PlaybookName = Schema.Literals(PLAYBOOK_NAMES);
 
 const CriterionVerdict = Schema.Literals(["met", "not_met", "unverifiable"]);
 
@@ -49,7 +51,7 @@ const Participant = Schema.Struct({
 const MemoryListTool = Tool.make("ged_memory_list", {
   ...shared,
   description:
-    "List the Ged project memory documents for the calling thread's checkout: role briefs, model policy, standards, decisions, and existing verdict records. Read the ones relevant to your role before planning or verifying.",
+    "List the Ged project memory documents (.ged/) for the calling thread's checkout: project, standards, decisions, context map, model notes, plans, and verdict records. Read the ones relevant to your work before planning, implementing or verifying.",
   parameters: Schema.Struct({
     threadId: Schema.optional(
       ThreadId.annotate({ description: "Defaults to the calling thread." }),
@@ -75,16 +77,12 @@ const MemoryReadTool = Tool.make("ged_memory_read", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
 
-const RoleBriefTool = Tool.make("ged_role_brief", {
+const PlaybookTool = Tool.make("ged_playbook", {
   ...shared,
   description:
-    "Read the brief for one role plus the project's model policy, in a single call. A task lead calls this before delegating, so the child's brief comes from project memory rather than from the lead's own recollection.",
-  parameters: Schema.Struct({ role: Role, threadId: Schema.optional(ThreadId) }),
-  success: Schema.Struct({
-    role: Role,
-    brief: Schema.String,
-    modelPolicy: Schema.NullOr(Schema.String),
-  }),
+    "Read a Ged playbook. In a project with Ged memory (.ged/), fetch 'lead' before non-trivial work and follow it; it says when to fetch 'grilling' (clarify intent with the user first), 'verify' (the narrow checks), and the role briefs 'planner', 'implementer' and 'verifier' that a lead pastes verbatim into a delegated child's prompt.",
+  parameters: Schema.Struct({ name: PlaybookName }),
+  success: Schema.Struct({ name: PlaybookName, content: Schema.String }),
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
@@ -92,7 +90,7 @@ const RoleBriefTool = Tool.make("ged_role_brief", {
 const VerdictWriteTool = Tool.make("ged_verdict_write", {
   ...shared,
   description:
-    "Record a verifier's ruling for a branch. Nothing lands without one: ged_land_check and the pre-push gate both refuse a branch whose verdict is missing, stale, failing, or produced by the same vendor that implemented the change. Write this from the VERIFIER's findings, never from the implementer's self-assessment. headSha must be the commit actually reviewed; the gate compares it against the live head and blocks on any mismatch.",
+    "Record one verifier's ruling for a branch. Nothing lands without one: ged_land_check and the pre-push gate refuse a branch whose verdict is missing, stale or failing. A branch may carry several rulings for the same commit (one per verifier); all must pass, and at least one must come from a vendor other than the implementer's unless no other vendor is installed, which this tool determines and records. Write this from the VERIFIER's findings, never from the implementer's self-assessment. headSha must be the commit actually reviewed; the gate compares it against the live head and blocks on any mismatch.",
   parameters: Schema.Struct({
     branch: TrimmedNonEmptyString,
     headSha: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).annotate({
@@ -124,7 +122,7 @@ const LandCheckTool = Tool.make("ged_land_check", {
 export const MemoryToolkit = Toolkit.make(
   MemoryListTool,
   MemoryReadTool,
-  RoleBriefTool,
+  PlaybookTool,
   VerdictWriteTool,
   LandCheckTool,
 );
