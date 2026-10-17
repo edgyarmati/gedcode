@@ -368,3 +368,9 @@ current migrations relabeled as history. Tests exercise real persistence plus la
 transcript imports, including attachment metadata, WAL backup, rollback/retry, no-clobber
 publication and rejection of unknown/mixed histories. Independent acceptance review remains the
 parent's gate before push/PR; no live profile or installed app is used for these checks.
+
+Parent-owned snapshot validation then exposed another real Omni schema difference: the derived
+plan-summary INTEGER is nullable with no default. Validation now checks usable column types and
+requires the real backfill, rather than rejecting incidental constraints. Synthetic NULL-valued
+regressions cover fresh import and recovery with/without the source, preserving original bytes
+and the backup's pre-upgrade NULL state.

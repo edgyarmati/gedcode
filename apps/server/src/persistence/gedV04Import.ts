@@ -227,8 +227,6 @@ export const upgradeGedV04Database = Effect.fn("upgradeGedV04Database")(
           const columns = yield* sql<{
             name: string;
             type: string;
-            notnull: number;
-            dflt_value: string | null;
           }>`PRAGMA table_info(projection_threads)`;
           const summaryValid = [
             "latest_user_message_at",
@@ -237,9 +235,9 @@ export const upgradeGedV04Database = Effect.fn("upgradeGedV04Database")(
             "has_actionable_proposed_plan",
           ].every((name) => {
             const column = columns.find((column) => column.name === name);
-            return name === "latest_user_message_at"
-              ? column?.type === "TEXT"
-              : column?.type === "INTEGER" && column.notnull === 1 && column.dflt_value === "0";
+            // Historical Omni summaries may be nullable without defaults. The real backfill
+            // below derives every existing row; the importer needs types, not those constraints.
+            return column?.type === (name === "latest_user_message_at" ? "TEXT" : "INTEGER");
           });
           if (!summaryValid)
             return yield* new GedV04UpgradeError({ databasePath, reason: "invalid-shell-summary" });

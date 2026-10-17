@@ -484,10 +484,13 @@ without the owner's say-so.
 0.4 numbered its own migrations 31–80 in the ledger upstream also numbers from 31. The
 upgrade accepts only contiguous canonical Ged prefixes and the explicitly observed paired
 `OmniPromptProjectionTables` / `OmniPromptProjectionIndexes` names at 23/24, not arbitrary ledger
-aliases. It validates/repairs shell-summary columns and reuses upstream's backfill before naming
-those migrations canonical. PM tables and Ged-only columns are retired, then the actual upstream
-migrations run. Ordinary projects, threads, transcripts and attachment metadata remain available to
-the V2 lazy importer; `state.sqlite` is never written. PM workflow history remains archived there.
+aliases. It validates/repairs shell-summary column types and reuses upstream's backfill before naming
+those migrations canonical. Historical Omni summaries include a nullable INTEGER plan flag without
+a default: accept the required capabilities, not incidental NOT NULL/default constraints, because
+the backfill derives every existing row before import. PM tables and Ged-only columns are retired,
+then the actual upstream migrations run. Ordinary projects, threads, transcripts and attachment
+metadata remain available to the V2 lazy importer; `state.sqlite` is never written. PM workflow
+history remains archived there.
 
 The original snapshot-only fix missed a long-lived Omni23/24 lineage and stranded already-copied
 `statev2.sqlite` files. Startup now also recognizes legacy-only failed imports, even without the

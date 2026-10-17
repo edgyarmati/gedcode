@@ -96,6 +96,57 @@ it.effect.each([
   ),
 );
 
+it.effect.each(["fresh", "existing", "source-absent"] as const)(
+  "%s Omni upgrade backfills a nullable plan summary without a default",
+  (mode) =>
+    withTemp((directory) =>
+      Effect.gen(function* () {
+        const source = NodePath.join(directory, "state.sqlite");
+        const destination = NodePath.join(directory, "statev2.sqlite");
+        const legacyPath = mode === "source-absent" ? destination : source;
+        seedGedV04(legacyPath, { omni: true });
+        withDatabase(legacyPath, (database) => {
+          // Observed historical Omni shape: derived INTEGER column, nullable, no default.
+          database.exec(`ALTER TABLE projection_threads DROP COLUMN has_actionable_proposed_plan;
+            ALTER TABLE projection_threads ADD COLUMN has_actionable_proposed_plan INTEGER`);
+          assert.isNull(
+            database.prepare("SELECT has_actionable_proposed_plan FROM projection_threads").get()
+              ?.has_actionable_proposed_plan,
+          );
+        });
+        const original = NodeFS.readFileSync(legacyPath);
+        if (mode === "existing") NodeFS.copyFileSync(source, destination);
+
+        yield* initializeV2Database(destination);
+
+        assertCurrent(destination);
+        withDatabase(destination, (database) => {
+          const column = database
+            .prepare(
+              "SELECT type, \"notnull\", dflt_value FROM pragma_table_info('projection_threads') WHERE name = 'has_actionable_proposed_plan'",
+            )
+            .get();
+          assert.deepEqual(column, { type: "INTEGER", notnull: 0, dflt_value: null });
+        });
+        if (mode === "source-absent") assert.isFalse(NodeFS.existsSync(source));
+        else assert.deepEqual(NodeFS.readFileSync(source), original);
+        assert.equal(backups(directory).length, mode === "fresh" ? 0 : 1);
+        if (mode !== "fresh") {
+          const backup = NodePath.join(directory, backups(directory)[0]!, "statev2.sqlite");
+          withDatabase(backup, (database) =>
+            assert.isNull(
+              database.prepare("SELECT has_actionable_proposed_plan FROM projection_threads").get()
+                ?.has_actionable_proposed_plan,
+            ),
+          );
+        }
+        const upgraded = NodeFS.readFileSync(destination);
+        yield* initializeV2Database(destination);
+        assert.deepEqual(NodeFS.readFileSync(destination), upgraded);
+      }).pipe(Effect.provide(NodeServices.layer)),
+    ),
+);
+
 it.effect("accepts an older release's shorter migration prefix", () =>
   withTemp((directory) =>
     Effect.gen(function* () {
