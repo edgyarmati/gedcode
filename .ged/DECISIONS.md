@@ -586,8 +586,8 @@ Agents tend to write more code than a task needs. The core of the `ponytail` ski
 "already in the codebase", "the standard library", "an installed dependency" to the minimum code,
 with guardrails that keep it from cutting callers, tests, validation or security. It is adapted
 into the implementer playbook's **Write less** section, which the lead also follows when it
-implements; the verifier reports unneeded code as findings outside the criteria, and the lead may
-send them back. Not bundled as a skill, per the 2026-10-11 rule that a skill must justify why a
+implements; the verifier reports unneeded code as findings outside the criteria, and the lead sends
+them back for another implementer round. Not bundled as a skill, per the 2026-10-11 rule that a skill must justify why a
 brief would not do: a skill reaches Claude Code only, while playbooks reach every provider.
 Its levels, slash commands, hooks and status line are left out. Credit is in
 `THIRD_PARTY_NOTICES.md`.

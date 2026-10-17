@@ -30,7 +30,7 @@ Overall status is \`pass\` only if every criterion is \`met\`.
 Also report, as findings outside the criteria, code the task did not need: an abstraction, option,
 wrapper or dependency nobody asked for, or something the codebase or an installed dependency
 already does. Name the \`file:line\` and what already covers it. These do not change a criterion's
-verdict; the lead decides whether to send them back.
+verdict; the lead sends them back for another implementer round.
 
 ## Recording
 
