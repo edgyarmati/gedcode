@@ -331,3 +331,10 @@ The thread header shows "● Ged" beside the project name when the project has `
 setup. `ged_memory_list` no longer fails without `.ged/`: it reports `setUp` and, the first time
 for a project, `offerSetup`, and the MCP instructions tell the agent to ask once. Verified by a
 focused toolkit test covering the first offer, the second thread, and an already set-up project.
+
+## 2026-10-17 — The one-time setup offer actually reaches the agent
+
+In a project without Ged, Codex never called `ged_memory_list`, so it never asked: the guidance sat
+only in the MCP server's instructions. It now rides in the per-turn orchestration instructions
+Codex, Claude, OpenCode, Pi, Cursor and ACP agents receive (Muse and slash-command ACP openers excepted; see DECISIONS), and tells the agent to call the tool before its first reply.
+Focused tests cover each instruction channel and the Codex turn context.

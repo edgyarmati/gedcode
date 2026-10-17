@@ -553,3 +553,14 @@ record lives in GedCode's state rather than the checkout, so declining leaves no
 user's repository. The offer is keyed by project id, so removing and re-adding a project offers
 again. If the marker cannot be written, the server answers false and logs it: an offer it cannot
 remember would repeat in every thread.
+
+The guidance travels in upstream's per-turn orchestration instructions, not only in the MCP
+server's instructions. With only the latter, Codex skipped `ged_memory_list` in a fresh project and
+never asked. The Ged text lives in `provider-core/src/server/gedInstructions.ts`, is appended to
+`T3_CODE_ORCHESTRATION_INSTRUCTIONS`, and the MCP server instructions reuse the same string. That
+reaches Codex (turn context), Claude (system prompt), OpenCode (system prompt), Pi (extension),
+Cursor (first prompt) and ACP agents (first prompt). It follows upstream's coverage rather than
+widening it: Muse gets no orchestration instructions from upstream, only runtime info, and an ACP
+thread that opens with a slash command gets them with its next ordinary prompt. Those agents still
+see the MCP server's instructions, and the header button is always there. Grok attaches no T3 MCP,
+so it cannot call the tool at all.
