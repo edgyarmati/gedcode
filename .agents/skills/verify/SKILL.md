@@ -36,4 +36,4 @@ steps.
 
 This is the mechanical check, not verification in the Ged sense. Passing it is necessary and not
 sufficient — landing additionally requires an independent verifier's verdict. See
-the verifier brief at `.ged/roles/verifier.md` and `.ged/bin/land-gate.sh`.
+the verifier brief (`ged_playbook` with `verifier`) and `.ged/bin/land-gate.sh`.

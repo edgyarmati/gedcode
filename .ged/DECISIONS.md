@@ -513,3 +513,20 @@ dialog in `apps/web/src/components/ged/`. Preview needs `filesystem:read`, apply
 `filesystem:write`, matching `projects.writeFile`. The client commands live in `apps/web` rather
 than `client-runtime` because this fork does not build mobile, which spares an export in
 `client-runtime/package.json`.
+
+## 2026-10-17 — The Ged process is served, models are chosen in-family, verification scales
+
+- Status: accepted.
+
+The playbooks live in `apps/server/src/ged/playbooks/` and reach agents through `ged_playbook`, so
+every project and provider gets the same process and it updates with GedCode. Files in a project's
+`.ged/` hold only that project's memory. This replaces `.ged/roles/` and the `ged-lead` and
+`grilling` skills.
+
+There is no fixed role → model table. The lead picks from its own family, reads `model-notes.md`
+for the user's preferences, and announces any fallback; the user chose autonomy over the earlier
+block-and-ask rule. The verifier is the exception: one foreign verifier by default, one same-family
+verifier when only one vendor is installed, and both in parallel for important changes or when the
+foreign option is weak. The server records whether another vendor could have verified, so the gate
+can tell "no choice" from "skipped". A small change the lead may implement itself, but it still
+needs a verdict; there is no docs-only exemption.

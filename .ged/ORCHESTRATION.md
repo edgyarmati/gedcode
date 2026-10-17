@@ -95,7 +95,9 @@ through a stage. The gate can only be satisfied by producing evidence.
 3. **Cross-vendor by default.** Set `target.driverKind` so the verifier runs a
    different vendor than the implementer. Shared training priors and self-consistency
    pressure are the main sources of agreement bias; a different vendor removes both.
-   Strongest available lever, costs one field.
+   With only one vendor installed, one same-family verifier is allowed, and the gate warns.
+   Important changes, or a weak foreign option, get two verifiers in parallel: a strong
+   same-family one and a foreign one. The verdict records each ruling.
 4. **`runtimeMode: "approval-required"` on the verifier.** It reports; it cannot fix.
    Separating find from fix stops a verifier from quietly patching and then declaring
    success.
@@ -123,24 +125,27 @@ bounds fan-out or nesting depth, so the lead's own playbook must; see §8.
 
 ## 6. Model policy
 
-The role → model mapping lives in **project memory**, read by the lead at startup.
-Not hardcoded in prompts, so it versions, diffs, and improves like everything else.
+There is no fixed role → model table. The lead picks the model for each child from
+its **own family**, matched to the task, because it knows its family's strengths and
+the best choice changes with every release. The verifier is the exception: it runs
+another vendor (§5).
 
-| Role        | Model                                              | runtimeMode         | interactionMode |
-| ----------- | -------------------------------------------------- | ------------------- | --------------- |
-| Planner     | most capable available                             | `approval-required` | `plan`          |
-| Implementer | cheap / fast                                       | `auto-accept-edits` | `default`       |
-| Verifier    | capable, **different vendor than the implementer** | `approval-required` | `default`       |
+The user's preferences live in `.ged/model-notes.md`. The lead reads it first, tries
+what it names, and records any new preference the user states. When a named model is
+unavailable the lead uses the closest one it can and **says so in the thread**. This
+is a decided exception to the no-unapproved-fallbacks rule: the user asked for
+autonomy here, and announcing the fallback keeps it visible.
+
+| Role        | Model                                 | runtimeMode         | interactionMode |
+| ----------- | ------------------------------------- | ------------------- | --------------- |
+| Planner     | lead's family, chosen for the task    | `approval-required` | `plan`          |
+| Implementer | lead's family, chosen for the task    | `auto-accept-edits` | `default`       |
+| Verifier    | another vendor; see §5 for exceptions | `approval-required` | `default`       |
 
 The lead calls `orchestrator_capabilities` first: it returns registered provider
 instances, advertised models, whether each can run a child task, and model-visible
-reasons for unavailability.
-
-**On unavailability:** a requested model must be advertised by the selected provider,
-else `model_unavailable`. When the premium planner model is absent the lead **blocks
-and asks the operator** — it does not silently downgrade. Consistent with the standing
-rule against unapproved degraded paths, and a silent planner downgrade is exactly the
-regression nobody notices.
+reasons for unavailability. Small changes the lead may implement itself, but every
+change that lands still needs a verdict.
 
 ## 7. Components to build
 
@@ -149,15 +154,15 @@ mergeable against ~800 upstream commits a month.
 
 | #   | Component                                                                         | Where                                  | Status                            |
 | --- | --------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------- |
-| 1   | **Role briefs** — the real role definitions, since `role` is only a prompt prefix | `.ged/roles/`                          | built                             |
-| 2   | **Lead playbook** — the delegation policy, as a skill rather than server code     | `.agents/skills/ged-lead/`             | built                             |
+| 1   | **Role briefs** — the real role definitions, since `role` is only a prompt prefix | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
+| 2   | **Lead playbook** — the delegation policy, served like the briefs                 | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
 | 3   | **Verdict records** — branch-keyed, with SHA provenance inside                    | `.ged/verdicts/`                       | built (format + gate enforcement) |
 | 4   | **Land gate** — refuses to land without a current, passing, independent verdict   | `.ged/bin/land-gate.sh`                | built, tested                     |
 | 5   | **Memory MCP toolkit** — serves the above to every provider                       | `apps/server/src/mcp/toolkits/memory/` | built, tested                     |
 | 6   | **`ProjectMemory` service** — resolves, reads and writes the `.ged/` tree         | `apps/server/src/ged/`                 | built, tested                     |
 
-All six are built. The toolkit exposes `ged_memory_list`, `ged_memory_read`, `ged_role_brief`,
-`ged_verdict_write` and `ged_land_check`; `ged_land_check` runs component 4 rather than
+All six are built. The toolkit exposes `ged_memory_list`, `ged_memory_read`, `ged_playbook`,
+`ged_verdict_write`, `ged_land_check` and `ged_init`; `ged_land_check` runs component 4 rather than
 reimplementing it, so the tool and the pre-push hook cannot give different answers.
 
 One upstream file is modified: `apps/server/src/mcp/McpHttpServer.ts`, 10 lines, to import the

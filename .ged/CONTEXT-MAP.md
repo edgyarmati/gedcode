@@ -10,7 +10,7 @@ What lives where in `.ged/`.
 | `STANDARDS.md`     | Working standards; defers to upstream on toolchain and process      |
 | `ORCHESTRATION.md` | How plan/implement/verify is expressed on the V2 orchestrator       |
 | `DECISIONS.md`     | ADRs about the Ged layer itself, not ordinary domain decisions      |
-| `roles/`           | Role briefs pasted verbatim into delegated child prompts            |
+| `model-notes.md`   | Models the user asked for; the lead reads it before delegating      |
 | `verdicts/`        | Verdict records, branch-keyed with SHA provenance                   |
 | `bin/`             | The land gate                                                       |
 | `plans/`           | Plans: SPEC.md, TASKS.md, CRITERIA.md per slug, indexed in INDEX.md |

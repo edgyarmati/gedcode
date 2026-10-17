@@ -172,6 +172,6 @@ Three Ged-specific rules sit on top of it, and the files they point at are the o
   files this fork modifies and why; adding to that list needs a reason, because every modified
   upstream file is a permanent merge conflict. Prefer additive work.
 - `.ged/` is durable project memory: `PROJECT.md`, `DECISIONS.md`, `CONTEXT-MAP.md`, `PROGRESS.md`,
-  `ORCHESTRATION.md`, `roles/`, `plans/`. Record what you decide there as part of the task.
+  `ORCHESTRATION.md`, `model-notes.md`, `plans/`. Record what you decide there as part of the task.
 - Nothing lands without an independent verdict: `.ged/bin/land-gate.sh` refuses a branch without
   one. See [`docs/ged/workflow.md`](docs/ged/workflow.md).

@@ -37,6 +37,18 @@ vp run knip:check                     # dead-code check
 `patches/` and `pnpm-workspace.yaml` (~30 `patchedDependencies`, plus `overrides`,
 `packageExtensions`, `allowBuilds`) are load-bearing. Do not regenerate them casually.
 
+## Checks
+
+The commands that prove a change works, narrowed to what the change touched. The served `verify`
+playbook and the implementer and verifier briefs point here.
+
+| Check     | Command                                                                         |
+| --------- | ------------------------------------------------------------------------------- |
+| Format    | `vp fmt <files>` (the pre-commit hook also runs it)                             |
+| Lint      | `vp lint <paths>`                                                               |
+| Typecheck | `npx tsc --noEmit -p <package>` for each package touched                        |
+| Test      | `vp test run <files>`; ignore failures under `.claude/worktrees/`, a stale copy |
+
 ## Scope discipline (upstream rule — restated because it reverses v0.4 habits)
 
 > **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck`
@@ -131,8 +143,9 @@ Where these trade against convenience, choose correctness and robustness.
 ## Standing rules
 
 - **No unapproved fallbacks.** If a requested approach is blocked, ask. Do not implement a
-  degraded or alternate path on your own initiative. This also governs model selection — see the
-  `model_unavailable` rule in [ORCHESTRATION.md](./ORCHESTRATION.md#6-model-policy).
+  degraded or alternate path on your own initiative. Model selection is the one decided
+  exception: the lead falls back within its family and says so; see
+  [ORCHESTRATION.md](./ORCHESTRATION.md#6-model-policy).
 - **Changelog.** This repository has no root `CHANGELOG.md` — that file belongs to upstream, and
   adding one is a merge conflict waiting to happen. Record Ged-visible changes in
   [PROGRESS.md](./PROGRESS.md) instead, as part of the task.
