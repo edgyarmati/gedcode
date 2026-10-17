@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { rewriteGedV04Snapshot } from "./gedV04Import.ts";
+import { upgradeGedV04Database } from "./gedV04Import.ts";
 
 export class V2DatabaseImportError extends Schema.TaggedError<V2DatabaseImportError>()(
   "V2DatabaseImportError",
@@ -25,7 +25,10 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
   const directory = path.dirname(destinationPath);
   const sourcePath = path.join(directory, "state.sqlite");
   yield* Effect.gen(function* () {
-    if (yield* fs.exists(destinationPath)) return;
+    if (yield* fs.exists(destinationPath)) {
+      yield* upgradeGedV04Database(destinationPath, true);
+      return;
+    }
     if (!(yield* fs.exists(sourcePath))) return;
     const temporaryDirectory = yield* fs.makeTempDirectoryScoped({
       directory,
@@ -39,8 +42,8 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
       } finally {
         database.close();
       }
-      rewriteGedV04Snapshot(snapshotPath);
     });
+    yield* upgradeGedV04Database(snapshotPath);
     // Publish only a complete snapshot, without replacing an existing V2 database.
     yield* fs
       .link(snapshotPath, destinationPath)

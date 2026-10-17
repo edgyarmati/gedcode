@@ -353,3 +353,18 @@ inherit the lead's access, and the verifier brief says to report rather than fix
 The implementer playbook gains a **Write less** section adapted from the `ponytail` skill (MIT,
 credited in `THIRD_PARTY_NOTICES.md`); the lead follows it when it implements, and verifiers
 report code the task did not need. See DECISIONS.
+
+## 2026-10-18 — Legacy upgrade and failed-import recovery corrected
+
+The first snapshot fix was insufficient for long-lived installs: the observed Omni23/24 ledger
+was rejected, leaving migration80 to hide upstream31–60, and an existing failed `statev2.sqlite`
+was skipped forever. The bounded fix recognizes that pair and canonical historical prefixes,
+validates/backfills shell summaries, and runs upstream migrations transactionally. Existing
+legacy-only failed imports are repaired in place after a retained WAL-aware backup, including
+when `state.sqlite` is absent. Mixed/V2 work is never overwritten from the old source.
+
+Synthetic regression fixtures use the schema and ledger from the published v0.4.3 fixture, not
+current migrations relabeled as history. Tests exercise real persistence plus lazy V2 shell and
+transcript imports, including attachment metadata, WAL backup, rollback/retry, no-clobber
+publication and rejection of unknown/mixed histories. Independent acceptance review remains the
+parent's gate before push/PR; no live profile or installed app is used for these checks.

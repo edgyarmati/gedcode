@@ -83,7 +83,7 @@ The whole modified surface, which a PR must justify adding to:
 | `LICENSE`                                                        | 1       | Adds our copyright line; upstream's is retained                  |
 | `AGENTS.md`                                                      | 13      | Appended overlay pointing at `.ged/`; overrides nothing          |
 | `apps/desktop/src/main.ts`                                       | 4       | Sparkle updater layer on macOS; the 0.4 upgrade notice           |
-| `apps/server/src/persistence/initializeV2Database.ts`            | 3       | Rewrites a 0.4 snapshot before the V2 import (`gedV04Import.ts`) |
+| `apps/server/src/persistence/initializeV2Database.ts`            | +6/−3   | Upgrade 0.4 snapshots; recover legacy-only failed imports safely |
 | `apps/desktop/src/updates/updatesTestHarness.ts`                 | +20/−9  | Lets tests inject the Sparkle updater layer                      |
 | `apps/desktop/package.json`                                      | 1       | `electron-sparkle-updater` dependency                            |
 | `scripts/package.json`                                           | 1       | Same dependency, for the after-pack hook                         |
