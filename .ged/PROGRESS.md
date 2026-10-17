@@ -287,3 +287,11 @@ The bundle id, Windows app id, Linux desktop entry and launchd label no longer n
 arm64 build carries `com.gedcode.app` with its seal intact. 0.4 installs still update in place,
 because Sparkle matches the update by file name and EdDSA key (see DECISIONS); the 0.5 notes tell
 users why macOS may ask for notification permission again. The README points at the release.
+
+## 2026-10-17 — First-run setup tells the truth
+
+Testing the 0.5.0 build showed the setup page rendering "GC Code" (the GC mark followed by
+upstream's "Code" text) and claiming GedCode collects anonymous usage data, as did Settings →
+Privacy. Telemetry is off with no key, so both now say GedCode collects no usage data, and the
+mark stands alone. Its **Add a computer** pairing is direct (LAN, Tailscale) and works without any
+T3 service; remote-access.md now mentions it.

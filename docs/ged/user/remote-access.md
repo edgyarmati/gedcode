@@ -24,7 +24,8 @@ If a server is already running, generate a fresh link without restarting it:
 gedcode pair
 ```
 
-Paste the pairing URL into **Add environment** in the receiving client (**Settings → Connections**).
+Paste the pairing URL into **Add environment** in the receiving client (**Settings → Connections**),
+or into **Add a computer** on the first-run setup page.
 A loopback address such as `127.0.0.1` reaches only the device that opens the link.
 
 Pairing authorizes that device for future connections. Use a fresh one-time link for each new device.
