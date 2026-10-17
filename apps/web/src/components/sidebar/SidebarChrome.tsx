@@ -6,7 +6,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
-import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -100,7 +99,7 @@ export function SidebarBrandWidthProbe({
       ref={observeWidth}
     >
       <div className="ml-[var(--workspace-titlebar-content-left)] flex">
-        <SidebarBrandMark />
+        <SidebarBrandMark onBackdrop={false} />
       </div>
     </div>
   );
@@ -116,16 +115,25 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <SidebarBrandMark />
+      <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>
   );
 }
 
-function SidebarBrandMark() {
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    // The mark is the whole name; `1cap` sizes it to the sidebar's text.
-    <span className="inline-flex min-w-0 items-center text-sm">
-      <T3Wordmark aria-label="GedCode" className="h-[1cap] w-auto shrink-0" />
+    // Center the visible capitals, without the font's ascender/descender space.
+    // Padding keeps ascenders and round-letter overshoot inside the truncation clip.
+    <span className="inline-flex min-w-0 items-baseline text-sm font-medium tracking-tight">
+      <span className="shrink-0">Ged</span>
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        Code
+      </span>
     </span>
   );
 }
