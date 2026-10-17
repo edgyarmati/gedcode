@@ -323,3 +323,11 @@ symlinked path component, and a symlinked or dangling verdict record; the listin
 client is refused. Ported from the unmerged `fix/ged-memory-hardening` (2026-10-11) onto the
 current verdict format; its bidi-evidence fix was already covered by the gate's `\p{Cf}` check,
 which the ported test confirms.
+
+## 2026-10-17 — Ged status in the thread header, and a one-time setup offer
+
+The thread header shows "● Ged" beside the project name when the project has `.ged/`, and
+"Set up Ged" when it does not; both open the setup dialog, which refreshes the status after
+setup. `ged_memory_list` no longer fails without `.ged/`: it reports `setUp` and, the first time
+for a project, `offerSetup`, and the MCP instructions tell the agent to ask once. Verified by a
+focused toolkit test covering the first offer, the second thread, and an already set-up project.

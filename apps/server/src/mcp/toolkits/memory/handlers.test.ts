@@ -18,6 +18,7 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import * as GedSetup from "../../../ged/GedSetup.ts";
+import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Project from "../../../project/ProjectService.ts";
@@ -73,6 +74,7 @@ const dependencies = (
   root: string,
   installed: Installed,
   client?: McpInvocationContext.McpClientCaller,
+  offersDir = `${root}.offers`,
 ) => {
   const caller = {
     id: threadId,
@@ -111,6 +113,7 @@ const dependencies = (
     }),
     ProjectMemory.layer,
     GedSetup.layer,
+    GedSetupOffers.layerAt(offersDir),
     // NodeServices has to come under the merge, not inside it: ProjectMemory
     // needs its FileSystem, Path, and process spawner, and Layer.mergeAll
     // builds its members in parallel without satisfying each other.
@@ -124,9 +127,10 @@ const call = <Name extends keyof typeof MemoryToolkit.tools>(
   params: unknown,
   installed: Installed = ["codex", "claudeAgent"],
   client?: McpInvocationContext.McpClientCaller,
+  offersDir?: string,
 ) =>
   Effect.gen(function* () {
-    const layer = dependencies(root, installed, client);
+    const layer = dependencies(root, installed, client, offersDir);
     const toolkit = yield* MemoryToolkit.pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(MemoryHandlers.layer).pipe(Layer.provide(layer)),
@@ -151,6 +155,27 @@ it.effect("serves the memory listing and a document to the calling thread", () =
       expect(read.content).toContain("Rule on each.");
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("offers Ged setup once per project, and never where Ged is set up", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped();
+    const offers = yield* fs.makeTempDirectoryScoped();
+    const list = () =>
+      call(root, "ged_memory_list", {}, undefined, undefined, offers).pipe(
+        Effect.map((result) => result as { setUp: boolean; offerSetup: boolean }),
+      );
+
+    expect(yield* list()).toMatchObject({ setUp: false, offerSetup: true });
+    // A second thread in the same project, even after a restart, is not asked again.
+    expect(yield* list()).toMatchObject({ setUp: false, offerSetup: false });
+    expect(yield* fs.readDirectory(root)).toEqual([]);
+
+    yield* fs.makeDirectory(path.join(root, ".ged"));
+    expect(yield* list()).toMatchObject({ setUp: true, offerSetup: false });
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("serves a playbook by name, from GedCode rather than the project", () =>

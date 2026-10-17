@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as GedSetup from "../../../ged/GedSetup.ts";
+import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import { PLAYBOOK_NAMES } from "../../../ged/playbooks/index.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
@@ -19,6 +20,7 @@ const shared = {
     ProjectService.ProjectService,
     ProjectMemory.ProjectMemory,
     GedSetup.GedSetup,
+    GedSetupOffers.GedSetupOffers,
     OrchestratorMcpService.OrchestratorMcpService,
   ],
 };
@@ -53,7 +55,7 @@ const Participant = Schema.Struct({
 const MemoryListTool = Tool.make("ged_memory_list", {
   ...shared,
   description:
-    "List the Ged project memory documents (.ged/) for the calling thread's checkout: project, standards, decisions, context map, model notes, plans, and verdict records. Read the ones relevant to your work before planning, implementing or verifying.",
+    "List the Ged project memory documents (.ged/) for the calling thread's checkout: project, standards, decisions, context map, model notes, plans, and verdict records. Read the ones relevant to your work before planning, implementing or verifying. setUp is false when the checkout has no .ged/; offerSetup is true only the first time that is reported for a project.",
   parameters: Schema.Struct({
     threadId: Schema.optional(
       ThreadId.annotate({ description: "Defaults to the calling thread." }),
@@ -61,6 +63,8 @@ const MemoryListTool = Tool.make("ged_memory_list", {
   }),
   success: Schema.Struct({
     documents: Schema.Array(Schema.Struct({ key: Schema.String, bytes: Schema.Number })),
+    setUp: Schema.Boolean,
+    offerSetup: Schema.Boolean,
   }),
 })
   .annotate(Tool.Readonly, true)

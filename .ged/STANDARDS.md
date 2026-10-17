@@ -73,7 +73,7 @@ The whole modified surface, which a PR must justify adding to:
 
 | File                                                         | Lines   | Why                                                              |
 | ------------------------------------------------------------ | ------- | ---------------------------------------------------------------- |
-| `apps/server/src/mcp/McpHttpServer.ts`                       | 10      | The only assembly point for MCP toolkits                         |
+| `apps/server/src/mcp/McpHttpServer.ts`                       | 15      | The only assembly point for MCP toolkits                         |
 | `.github/pull_request_template.md`                           | +16/−24 | Upstream's is written for outside contributors                   |
 | `pnpm-workspace.yaml`                                        | 10      | Drops `apps/mobile`; `allowBuilds` for the Sparkle package       |
 | `knip.jsonc`                                                 | 36      | Scopes the export audit off mobile-only upstream exports         |
@@ -97,6 +97,7 @@ The whole modified surface, which a PR must justify adding to:
 | `apps/web/src/routes/__root.tsx`                             | +3      | Mounts the Ged setup dialog host                                 |
 | `apps/web/src/components/settings/ProjectSettingsPanel.tsx`  | +6      | Project settings entry point for Ged setup                       |
 | `apps/web/src/components/CommandPalette.tsx`                 | +11     | Command palette entry point for Ged setup                        |
+| `apps/web/src/components/chat/ChatHeader.tsx`                | +6      | Ged status beside the project name; opens setup                  |
 
 The rebrand (see [DECISIONS.md](./DECISIONS.md), "GedCode's identity is set in source") adds
 one-to-few-line edits wherever upstream hard-codes its product identity. Each is a string or

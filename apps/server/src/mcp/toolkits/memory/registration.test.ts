@@ -20,6 +20,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { McpSchema, McpServer, Tool } from "effect/ai";
 
+import * as ServerConfig from "../../../config.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -104,6 +105,7 @@ const serverLayer = (root: string) => {
           Effect.succeed(Option.some({ id: projectId, workspaceRoot: root } as ProjectRecord)),
       }),
     ),
+    Layer.provide(ServerConfig.layerTest(root, { prefix: "ged-registration" })),
     Layer.provide(NodeServices.layer),
   );
 };
