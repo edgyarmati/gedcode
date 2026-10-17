@@ -3107,6 +3107,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
   const serverStageDir = path.join(input.stageRoot, "server");
   yield* fs.makeDirectory(path.join(serverStageDir, "apps/server"), { recursive: true });
   yield* fs.copy(input.serverDistDir, path.join(serverStageDir, "apps/server/dist"));
+  yield* rebrandStagedBundles([path.join(serverStageDir, "apps/server/dist")]);
 
   const sidecarDependencies = {
     ...input.runtimeExternalDependencies,
@@ -3760,6 +3761,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
+  // The Windows server tree is rebranded in stageWindowsServerSidecar.
   yield* rebrandStagedBundles(
     (options.platform === "win"
       ? ["apps/desktop/dist-electron"]
