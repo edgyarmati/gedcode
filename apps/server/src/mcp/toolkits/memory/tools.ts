@@ -118,7 +118,8 @@ const LandCheckTool = Tool.make("ged_land_check", {
     detail: Schema.String,
   }),
 })
-  .annotate(Tool.Readonly, true)
+  // Not read-only: it executes .ged/bin/land-gate.sh from the checkout.
+  .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false);
 
 const InitTool = Tool.make("ged_init", {

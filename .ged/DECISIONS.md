@@ -179,8 +179,12 @@ revision.
 
 `ged_land_check` **runs** `.ged/bin/land-gate.sh` rather than reimplementing its rules in
 TypeScript. Two implementations of a fail-closed rule is two chances to fail open, and the one that
-drifts is the one nobody runs. The cost is spawning a repo-local script; that is not new exposure,
-since an agent that could rewrite the script could equally defeat the git-hook path.
+drifts is the one nobody runs. The cost is spawning a repo-local script, which is executing code
+from the checkout — so the tool is declared `McpToolAccess.writes`, not `reads`, and a client
+approved read-only cannot call it. Memory reads and verdict writes refuse any symlink on the way
+to their file, because the checkout is untrusted input and one link in `.ged/` would otherwise
+reach anything the server can read or write. A write/link race remains; Effect's FileSystem has no
+`O_NOFOLLOW` open.
 
 The service lives in `apps/server/src/ged/` rather than in a new workspace package. A package would
 have to be added to `apps/server/package.json` — a second upstream file — to buy a reuse nobody

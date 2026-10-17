@@ -314,3 +314,12 @@ no other vendor was installed. The lead chooses models within its own family and
 `model-notes.md` for the user's preferences. This repo's `.ged/roles/` and the `ged-lead` and
 `grilling` skills are retired as copies of what is served. Verified by focused tests on setup, the
 memory toolkit, the gate and RPC authorization, and by an independent verifier before landing.
+
+## 2026-10-17 — Memory toolkit no longer follows symlinks out of `.ged/`
+
+`ged_memory_list`, `ged_memory_read` and `ged_verdict_write` refuse a symlinked `.ged/`, a
+symlinked path component, and a symlinked or dangling verdict record; the listing skips links.
+`ged_land_check` executes the project's gate script, so it now needs write access and a read-only
+client is refused. Ported from the unmerged `fix/ged-memory-hardening` (2026-10-11) onto the
+current verdict format; its bidi-evidence fix was already covered by the gate's `\p{Cf}` check,
+which the ported test confirms.

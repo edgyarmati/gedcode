@@ -69,7 +69,11 @@ const withCheckout = <A, E, R>(
 /** The driver kinds that could run a child task, as the live catalog reports them. */
 type Installed = ReadonlyArray<string>;
 
-const dependencies = (root: string, installed: Installed) => {
+const dependencies = (
+  root: string,
+  installed: Installed,
+  client?: McpInvocationContext.McpClientCaller,
+) => {
   const caller = {
     id: threadId,
     projectId,
@@ -87,7 +91,7 @@ const dependencies = (root: string, installed: Installed) => {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "session",
       thread: { threadId, providerSessionId: "session", providerInstanceId },
-      client: undefined,
+      client,
       issuedAt: 0,
       capabilities: new Set(["orchestration" as const]),
     }),
@@ -119,9 +123,10 @@ const call = <Name extends keyof typeof MemoryToolkit.tools>(
   name: Name,
   params: unknown,
   installed: Installed = ["codex", "claudeAgent"],
+  client?: McpInvocationContext.McpClientCaller,
 ) =>
   Effect.gen(function* () {
-    const layer = dependencies(root, installed);
+    const layer = dependencies(root, installed, client);
     const toolkit = yield* MemoryToolkit.pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(MemoryHandlers.layer).pipe(Layer.provide(layer)),
@@ -327,6 +332,56 @@ it.effect("previews setup, then adds only what the project lacks", () =>
       expect(yield* fs.readFileString(path.join(root, ".ged", "STANDARDS.md"))).toContain(
         "## Checks",
       );
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("refuses the land check to a read-only client, since it runs a repository script", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const refusal = yield* call(root, "ged_land_check", {}, undefined, {
+        sessionId: "client-session",
+        label: "reader",
+        access: "read-only",
+      });
+      expect(String(refusal)).toContain("read-only");
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("does not count bidirectional control characters as evidence", () =>
+  withCheckout((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
+      // Every character the gate strips: LRM, RLM, the embeddings and overrides, the isolates.
+      const invisible = "‎‏‪‫‬‭‮⁦⁧⁨⁩";
+      for (const evidence of [invisible, `${invisible}ab`]) {
+        yield* fs.writeFileString(
+          path.join(root, ".ged", "verdicts", "feat-memory.json"),
+          JSON.stringify({
+            schemaVersion: 2,
+            branch: "feat/memory",
+            headSha,
+            implementer: { driverKind: "codex" },
+            reviews: [
+              {
+                verifier: { driverKind: "claudeAgent" },
+                status: "pass",
+                criteria: [{ criterion: "It works", verdict: "met", evidence }],
+                otherVendorAvailable: true,
+              },
+            ],
+          }),
+        );
+        const ruling = (yield* call(root, "ged_land_check", {})) as {
+          allowed: boolean;
+          detail: string;
+        };
+        expect(ruling.allowed, JSON.stringify(evidence)).toBe(false);
+        expect(ruling.detail).toContain("substantive evidence");
+      }
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
