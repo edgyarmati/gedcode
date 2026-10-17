@@ -84,11 +84,12 @@ const make = Effect.fn("GedSetup.make")(function* () {
         );
       return yield* fs.writeFileString(full, file.content, { flag: "wx", mode: file.mode }).pipe(
         Effect.as(true),
-        Effect.catchTag("PlatformError", (error) =>
-          error.reason._tag === "AlreadyExists"
-            ? Effect.succeed(false)
-            : Effect.fail(new GedSetupError(`Could not write ${file.path}.`)),
-        ),
+        Effect.catchTags({
+          PlatformError: (error) =>
+            error.reason._tag === "AlreadyExists"
+              ? Effect.succeed(false)
+              : Effect.fail(new GedSetupError(`Could not write ${file.path}.`)),
+        }),
       );
     });
 

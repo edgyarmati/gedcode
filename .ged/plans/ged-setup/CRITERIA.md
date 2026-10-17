@@ -10,9 +10,9 @@
 3. **Served playbooks.** `ged_playbook` returns each of `lead`, `grilling`, `verify`, `planner`,
    `implementer` and `verifier`. None of them names this repo's tooling (`vp`, `pnpm`) or a fixed
    model. `verify` and `implementer` point to the project's `STANDARDS.md` Checks section.
-4. **Discovery.** The MCP server sends instructions that name `ged_playbook` and say to grill first
-   in a project with `.ged/`. Agents in a project without `.ged/` are told nothing beyond "Ged is
-   not set up; `ged_init` can set it up when the user asks".
+4. **Discovery.** The MCP server sends instructions, the same for every project, that name
+   `ged_playbook` and say to clarify intent first in a project with `.ged/`. For a project without
+   `.ged/` they say only that Ged is not set up and `ged_init` can set it up when the user asks.
 5. **Grilling records.** The grilling playbook says that after confirmation, terms go to
    `CONTEXT-MAP.md` and decisions to `DECISIONS.md`.
 6. **Models.** The lead playbook says to choose within the lead's own family, to read

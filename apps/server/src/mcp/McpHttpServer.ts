@@ -47,6 +47,7 @@ import {
 } from "./toolkits/preview/tools.ts";
 import * as WorktreeHandlers from "./toolkits/worktree/handlers.ts";
 import * as GedSetup from "../ged/GedSetup.ts";
+import { GED_MCP_INSTRUCTIONS } from "../ged/playbooks/instructions.ts";
 import * as ProjectMemory from "../ged/ProjectMemory.ts";
 import * as MemoryHandlers from "./toolkits/memory/handlers.ts";
 import { MemoryToolkit } from "./toolkits/memory/tools.ts";
@@ -878,6 +879,7 @@ export const layerDeviceToolkit = Layer.mergeAll(
 export const layerMcpTransport = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
+  instructions: GED_MCP_INSTRUCTIONS,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
   allowSessionTermination: true,
