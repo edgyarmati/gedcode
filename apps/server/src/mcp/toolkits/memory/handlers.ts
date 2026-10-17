@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as GedSetup from "../../../ged/GedSetup.ts";
+import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
 import { PLAYBOOKS } from "../../../ged/playbooks/index.ts";
 import { sameVendor } from "../../../ged/verdictRecord.ts";
@@ -24,15 +25,18 @@ const memoryFailure = (error: ProjectMemory.GedMemoryError) =>
  * memory in that worktree, not the project root's — a lead may be changing the
  * briefs on its own branch, and its children must see the branch's version.
  */
-const resolveRoot = Effect.fn("ged.resolveRoot")(function* (threadId?: ThreadId) {
+const resolveCheckout = Effect.fn("ged.resolveCheckout")(function* (threadId?: ThreadId) {
   const {
     projection: { thread },
   } = yield* readThread(threadId);
   const projects = yield* Project.ProjectService;
   const project = yield* projects.getById(thread.projectId).pipe(Effect.mapError(unavailable));
   if (Option.isNone(project)) return yield* notFound("The project was not found.");
-  return thread.worktreePath ?? project.value.workspaceRoot;
+  return { projectId: thread.projectId, root: thread.worktreePath ?? project.value.workspaceRoot };
 });
+
+const resolveRoot = (threadId?: ThreadId) =>
+  resolveCheckout(threadId).pipe(Effect.map(({ root }) => root));
 
 /**
  * Whether a provider of another vendor than the implementer's could run a child
@@ -53,10 +57,14 @@ const otherVendorAvailable = Effect.fn("ged.otherVendorAvailable")(function* (
 const handlers = {
   ged_memory_list: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
-      const root = yield* resolveRoot(input.threadId);
+      const { projectId, root } = yield* resolveCheckout(input.threadId);
       const memory = yield* ProjectMemory.ProjectMemory;
+      if (!(yield* memory.present(root))) {
+        const offers = yield* GedSetupOffers.GedSetupOffers;
+        return { documents: [], setUp: false, offerSetup: yield* offers.claim(projectId) };
+      }
       const documents = yield* memory.list(root).pipe(Effect.mapError(memoryFailure));
-      return { documents };
+      return { documents, setUp: true, offerSetup: false };
     }),
   ),
   ged_memory_read: McpToolAccess.reads((input) =>

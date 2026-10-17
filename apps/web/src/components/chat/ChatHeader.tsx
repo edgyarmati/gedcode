@@ -29,6 +29,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { GedStatusPill } from "../ged/GedStatusPill";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
@@ -335,6 +336,11 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
+            <GedStatusPill
+              environmentId={activeThreadEnvironmentId}
+              cwd={activeProject.workspaceRoot}
+              projectName={activeProject.title}
+            />
             <WorkspaceBreadcrumbSeparator>
               <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
             </WorkspaceBreadcrumbSeparator>

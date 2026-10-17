@@ -8,9 +8,12 @@ check passing. It works in any project once the project has a `.ged/` folder.
 
 Choose one:
 
+- **Set up Ged** beside the project name at the top of a thread. Once set up, it shows **Ged**
+  with a green dot.
 - **Project settings → Ged → Set up…**
 - **Command palette → Set up Ged in _project_** while a thread in that project is open
-- Ask an agent in the project to set up Ged
+- Ask an agent in the project to set up Ged. In the first thread in a project without Ged, the
+  agent asks you once whether to set it up.
 
 GedCode lists the files it will add and waits for you to confirm. It only adds files: anything
 already in `.ged/` stays exactly as it is, so running setup again is safe. Setting up needs write

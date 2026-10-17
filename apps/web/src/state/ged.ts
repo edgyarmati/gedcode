@@ -1,5 +1,8 @@
 import { WS_METHODS } from "@t3tools/contracts";
-import { createEnvironmentRpcCommand } from "@t3tools/client-runtime/state/runtime";
+import {
+  createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
+} from "@t3tools/client-runtime/state/runtime";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
@@ -20,4 +23,15 @@ export const gedSetupApply = createEnvironmentRpcCommand(connectionAtomRuntime, 
     mode: "serial",
     key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd]),
   },
+});
+
+/**
+ * Whether a project is set up for Ged, for the thread header. The same preview
+ * the setup dialog runs, kept warm so switching threads does not re-ask.
+ */
+export const gedSetupStatus = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:ged:setup-status",
+  tag: WS_METHODS.gedSetupPreview,
+  staleTimeMs: 60_000,
+  idleTtlMs: 300_000,
 });

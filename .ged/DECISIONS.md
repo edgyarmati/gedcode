@@ -534,3 +534,22 @@ verifier when only one vendor is installed, and both in parallel for important c
 foreign option is weak. The server records whether another vendor could have verified, so the gate
 can tell "no choice" from "skipped". A small change the lead may implement itself, but it still
 needs a verdict; there is no docs-only exemption.
+
+## 2026-10-17 — Ged setup is visible in the thread header and offered once per project
+
+- Status: accepted.
+
+Users did not find setup in Project settings or the command palette, so a project without Ged
+looked no different from one with it. The thread header now shows the project's Ged status beside
+its name and opens setup from there; that is one upstream file, `ChatHeader.tsx`, and the pill
+itself lives in `apps/web/src/components/ged/`. The status reuses the setup preview RPC, so no new
+RPC or scope was needed.
+
+The agent also offers setup, but only in the first thread in a project that finds no `.ged/`.
+MCP instructions are the same for every project and agents keep nothing between threads, so the
+server remembers: `ged_memory_list` reports `setUp` and `offerSetup`, and `offerSetup` is true once
+per project, claimed by creating a marker under `<stateDir>/ged-setup-offers/` exclusively. The
+record lives in GedCode's state rather than the checkout, so declining leaves nothing in the
+user's repository. The offer is keyed by project id, so removing and re-adding a project offers
+again. If the marker cannot be written, the server answers false and logs it: an offer it cannot
+remember would repeat in every thread.

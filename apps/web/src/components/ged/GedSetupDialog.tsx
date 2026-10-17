@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -7,7 +7,7 @@ import type { EnvironmentId, GedSetupPreviewResult } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 
-import { gedSetupApply, gedSetupPreview } from "../../state/ged";
+import { gedSetupApply, gedSetupPreview, gedSetupStatus } from "../../state/ged";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import {
@@ -66,6 +66,9 @@ function GedSetupDialog({ target }: { readonly target: GedSetupTarget }) {
   const preview = useAtomCommand(gedSetupPreview, { reportFailure: false });
   const apply = useAtomCommand(gedSetupApply, { reportFailure: false });
   const canApply = useAtomValue(gedSetupApply.permissionAtom(target.environmentId));
+  const refreshStatus = useAtomRefresh(
+    gedSetupStatus({ environmentId: target.environmentId, input: { cwd: target.cwd } }),
+  );
   const [state, setState] = useState<PreviewState>({ _tag: "loading" });
   const [applying, setApplying] = useState(false);
 
@@ -105,6 +108,7 @@ function GedSetupDialog({ target }: { readonly target: GedSetupTarget }) {
           ? "Added 1 starter file."
           : `Added ${result.value.written.length} starter files.`,
     });
+    refreshStatus();
     close();
   };
 
