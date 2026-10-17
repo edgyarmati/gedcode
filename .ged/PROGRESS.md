@@ -336,5 +336,5 @@ focused toolkit test covering the first offer, the second thread, and an already
 
 In a project without Ged, Codex never called `ged_memory_list`, so it never asked: the guidance sat
 only in the MCP server's instructions. It now rides in the per-turn orchestration instructions
-every provider with T3 MCP receives, and tells the agent to call the tool before its first reply.
+Codex, Claude, OpenCode, Pi, Cursor and ACP agents receive (Muse and slash-command ACP openers excepted; see DECISIONS), and tells the agent to call the tool before its first reply.
 Focused tests cover each instruction channel and the Codex turn context.
