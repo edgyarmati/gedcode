@@ -296,10 +296,13 @@ Privacy. Telemetry is off with no key, so both now say GedCode collects no usage
 mark stands alone. Its **Add a computer** pairing is direct (LAN, Tailscale) and works without any
 T3 service; remote-access.md now mentions it.
 
-## 2026-10-17 — The sidebar mark stands alone
+## 2026-10-18 — The name is written out where the GC mark was too small
 
-The sidebar header had the same "GC Code" as the setup page: the GC mark followed by upstream's
-"Code" text. The mark is now the whole name there too.
+The sidebar header and first-run setup showed the GC mark alone at text height, where its dimmed C
+read as a rendering glitch. Both now spell "GedCode", with "Code" muted as in upstream's
+"T3 Code"; in the sidebar it is one size up and centered in the header space after the window
+controls. The mark stays on tool-call rows and the app icon. The setup dialog's accessible title
+no longer says "T3 Code".
 
 ## 2026-10-17 — Ged works in any project
 

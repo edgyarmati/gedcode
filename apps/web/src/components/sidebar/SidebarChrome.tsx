@@ -6,7 +6,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
-import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -62,8 +61,9 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         className="relative top-auto z-10 translate-y-0 md:hidden"
       />
       {/* One visible line: the pill wraps onto the clipped second line once it no longer fits.
-          The padding keeps the brand's focus ring inside the clip. */}
-      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
+          The padding keeps the brand's focus ring inside the clip. From md up, the name (with its pill,
+          as one group) sits centered in the space after the window controls. */}
+      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5 md:ml-[var(--workspace-titlebar-content-left)] md:justify-center">
         <SidebarBrand onBackdrop={backdropVariant !== null} />
         {pillLabel ? (
           <div className="ml-1 flex h-7 items-center">
@@ -100,7 +100,7 @@ export function SidebarBrandWidthProbe({
       ref={observeWidth}
     >
       <div className="ml-[var(--workspace-titlebar-content-left)] flex">
-        <SidebarBrandMark />
+        <SidebarBrandMark onBackdrop={false} />
       </div>
     </div>
   );
@@ -111,21 +111,30 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
     <Link
       aria-label="Go to threads"
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
+        "relative z-10 hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       to="/"
     >
-      <SidebarBrandMark />
+      <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>
   );
 }
 
-function SidebarBrandMark() {
+function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    // The mark is the whole name; `1cap` sizes it to the sidebar's text.
-    <span className="inline-flex min-w-0 items-center text-sm">
-      <T3Wordmark aria-label="GedCode" className="h-[1cap] w-auto shrink-0" />
+    // Center the visible capitals, without the font's ascender/descender space.
+    // Padding keeps ascenders and round-letter overshoot inside the truncation clip.
+    <span className="inline-flex min-w-0 items-baseline text-base font-medium tracking-tight">
+      <span className="shrink-0">Ged</span>
+      <span
+        className={cn(
+          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
+          onBackdrop ? "text-white/70" : "text-muted-foreground",
+        )}
+      >
+        Code
+      </span>
     </span>
   );
 }
