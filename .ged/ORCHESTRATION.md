@@ -30,7 +30,7 @@ load-bearing; re-verify after any large upstream merge.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Child context        | A delegated child receives only the task prompt plus the role prefix. Parent conversation history is **not** copied.                                                                                                                                                                                                                                                         | A verifier is structurally blind to the implementer's reasoning. Isolation is free.                                 |
 | Review rounds        | Each round is a new `delegate_task`. `childThreadId` is backing storage, not a `t3_thread_send` target. There is no task-level follow-up API preserving a reviewer session.                                                                                                                                                                                                  | Upstream deliberately prevents arguing a reviewer into agreement across rounds. Anti-sycophancy by construction.    |
-| Privilege ceiling    | `DispatchModeLimit` caps the broadest modes an MCP-sent command may touch, re-checked inside the thread's command lock so the target's user cannot raise them mid-flight. Runtime rank: `approval-required`(0) < `auto-accept-edits`(1) < `auto`(2) < `full-access`(3); interaction rank: `plan`(0) < `default`(1). Escalation is denied (`runtime_mode_escalation_denied`). | A verifier pinned to `approval-required` — the narrowest rank — provably cannot edit.                               |
+| Privilege ceiling    | `DispatchModeLimit` caps the broadest modes an MCP-sent command may touch, re-checked inside the thread's command lock so the target's user cannot raise them mid-flight. Runtime rank: `approval-required`(0) < `auto-accept-edits`(1) < `auto`(2) < `full-access`(3); interaction rank: `plan`(0) < `default`(1). Escalation is denied (`runtime_mode_escalation_denied`). | Children inherit the lead's mode; a narrower one stalls unattended children on every command.                       |
 | Target selection     | `target: { providerInstanceId?, driverKind?, model? }` per call.                                                                                                                                                                                                                                                                                                             | Per-role model and cross-vendor routing, with no code of ours.                                                      |
 | Plan mode            | `interactionMode: "plan"` is server-enforced; proposed plans are first-class in `t3_thread_read`'s `messages` view.                                                                                                                                                                                                                                                          | Native plan artifact and native approval UI.                                                                        |
 | Worktree inheritance | `makeSubagentChildThread` spreads `...parentThread`, overriding only id/title/lineage/provider/model.                                                                                                                                                                                                                                                                        | **All delegated children share the parent's checkout.** Isolation requires `t3_thread_launch`.                      |
@@ -98,9 +98,9 @@ through a stage. The gate can only be satisfied by producing evidence.
    With only one vendor installed, one same-family verifier is allowed, and the gate warns.
    Important changes, or a weak foreign option, get two verifiers in parallel: a strong
    same-family one and a foreign one. The verdict records each ruling.
-4. **`runtimeMode: "approval-required"` on the verifier.** It reports; it cannot fix.
-   Separating find from fix stops a verifier from quietly patching and then declaring
-   success.
+4. **The verifier reports; it does not fix.** It inherits the lead's mode so it can run
+   the checks unattended, and its brief forbids fixes. Separating find from fix stops a
+   verifier from quietly patching and then declaring success.
 5. **Structured verdicts, never prose.** Prose invites "looks good overall."
 
 ### Verdict shape
@@ -136,11 +136,11 @@ unavailable the lead uses the closest one it can and **says so in the thread**. 
 is a decided exception to the no-unapproved-fallbacks rule: the user asked for
 autonomy here, and announcing the fallback keeps it visible.
 
-| Role        | Model                                 | runtimeMode         | interactionMode |
-| ----------- | ------------------------------------- | ------------------- | --------------- |
-| Planner     | lead's family, chosen for the task    | `approval-required` | `plan`          |
-| Implementer | lead's family, chosen for the task    | `auto-accept-edits` | `default`       |
-| Verifier    | another vendor; see §5 for exceptions | `approval-required` | `default`       |
+| Role        | Model                                 | runtimeMode | interactionMode |
+| ----------- | ------------------------------------- | ----------- | --------------- |
+| Planner     | lead's family, chosen for the task    | inherit     | `plan`          |
+| Implementer | lead's family, chosen for the task    | inherit     | `default`       |
+| Verifier    | another vendor; see §5 for exceptions | inherit     | `default`       |
 
 The lead calls `orchestrator_capabilities` first: it returns registered provider
 instances, advertised models, whether each can run a child task, and model-visible

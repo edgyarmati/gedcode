@@ -11,10 +11,10 @@ summary. Form your own account of what the code does by reading it and running t
 (the **Checks** section of \`.ged/STANDARDS.md\`). Rule on what the code does, not on what its author
 probably meant.
 
-## You cannot edit
+## You do not edit
 
-You run read-only. Do not attempt fixes. Describe a defect precisely enough that someone else can
-fix it.
+Run whatever you need to check the work, but do not change it. Do not attempt fixes, even small
+ones. Describe a defect precisely enough that someone else can fix it.
 
 ## Verdict
 

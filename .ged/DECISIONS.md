@@ -64,13 +64,13 @@
 
 - Date: 2026-10-11
 - Decision: Verification runs as a lead-spawned delegated task that receives the original
-  acceptance criteria and the diff — never the implementer's summary — at
-  `runtimeMode: "approval-required"`, on a different `driverKind` than the implementer, and
+  acceptance criteria and the diff — never the implementer's summary — with the lead's runtime
+  mode (see 2026-10-18), on a different `driverKind` than the implementer, and
   returns a structured per-criterion verdict rather than prose.
 - Rationale: V2 children receive no parent conversation history, so a verifier is structurally
   blind to the implementer's reasoning; passing the implementer's summary would reintroduce
   exactly the bias the topology removes. Cross-vendor routing removes shared training priors
-  and self-consistency pressure. `approval-required` separates find from fix.
+  and self-consistency pressure. The verifier brief separates find from fix.
 - See: `.ged/ORCHESTRATION.md`
 
 ## 2026-10-11 — Verdict records are branch-keyed with SHA provenance
@@ -564,3 +564,15 @@ widening it: Muse gets no orchestration instructions from upstream, only runtime
 thread that opens with a slash command gets them with its next ordinary prompt. Those agents still
 see the MCP server's instructions, and the header button is always there. Grok attaches no T3 MCP,
 so it cannot call the tool at all.
+
+## 2026-10-18 — Children inherit the lead's runtime mode; verifiers are no longer pinned read-only
+
+Verifiers were pinned to `approval-required` so they could not edit. In that mode every shell
+command, even `cd ..` or running the tests, waits for the user to approve it in the child thread.
+Delegated children run unattended, so verifiers stalled, and they could not run the checks their
+brief asks for. No runtime mode allows commands while denying edits. Children now inherit the
+lead's mode, planners and implementers included. Find stays separate from fix through the
+verifier brief alone. That is weaker than the server-enforced pin: a verifier with inherited
+access could patch, commit and then pass its own fix, and the land gate, which checks the verdict
+against the head SHA and a clean tree, cannot tell. The owner chose this over verifiers that
+stall on every command.

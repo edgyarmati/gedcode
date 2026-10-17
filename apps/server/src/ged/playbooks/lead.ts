@@ -51,7 +51,9 @@ one-line reason at the top of the task.
 1. **You spawn verifiers, never the implementer.** A verifier the implementer spawns inherits its
    provider and model and is its creature.
 2. **Never pass the implementer's summary.** Hand the verifier the original criteria and the diff.
-3. **Read-only.** Run verifiers with \`runtimeMode: "approval-required"\` so they report and cannot fix.
+3. **Same access as you.** Leave \`runtimeMode\` unset so every child inherits yours. In a narrower
+   mode each shell command, even \`cd\`, waits for an approval nobody is watching, and the child
+   stalls. Verifiers are told to report, not fix.
 4. **One round each, structured per criterion.** \`unverifiable\` is not a pass.
 
 Who verifies:
