@@ -7,9 +7,12 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 
+const SHOWN_MARKER = "ged-0.5-upgrade-notice-shown";
+
 /**
  * GedCode 0.4 kept its database in `state.sqlite`; 0.5 imports it into `statev2.sqlite` the first
- * time its server starts. Both files existing means the import already ran, so the notice shows once.
+ * time its server starts. Both files existing means the import already ran. The marker covers
+ * launches where the local server never starts, so the notice still shows once.
  */
 export const isFirstLaunchAfterV04 = Effect.fn("GedUpgradeNotice.isFirstLaunchAfterV04")(function* (
   stateDir: string,
@@ -18,7 +21,16 @@ export const isFirstLaunchAfterV04 = Effect.fn("GedUpgradeNotice.isFirstLaunchAf
   const path = yield* Path.Path;
   const hasV04Database = yield* fs.exists(path.join(stateDir, "state.sqlite"));
   const hasV05Database = yield* fs.exists(path.join(stateDir, "statev2.sqlite"));
-  return hasV04Database && !hasV05Database;
+  const alreadyShown = yield* fs.exists(path.join(stateDir, SHOWN_MARKER));
+  return hasV04Database && !hasV05Database && !alreadyShown;
+});
+
+export const markNoticeShown = Effect.fn("GedUpgradeNotice.markNoticeShown")(function* (
+  stateDir: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.writeFileString(path.join(stateDir, SHOWN_MARKER), "");
 });
 
 const NOTICE: Electron.MessageBoxOptions = {
@@ -49,6 +61,7 @@ export const layer = Layer.effectDiscard(
     const dialog = yield* ElectronDialog.ElectronDialog;
     yield* electronApp.whenReady.pipe(
       Effect.andThen(dialog.showMessageBox(NOTICE)),
+      Effect.andThen(markNoticeShown(environment.stateDir)),
       Effect.catchCause((cause) =>
         Effect.logWarning("could not show the GedCode 0.5 upgrade notice", { cause }),
       ),

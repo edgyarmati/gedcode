@@ -184,6 +184,7 @@ jobs:
           # A rerun after a later step failed finds the release already made.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-assets/*.dmg release-assets/*.zip --clobber
+            if [[ -f "$notes" ]]; then gh release edit "$TAG" --notes-file "$notes"; fi
           else
             gh release create "$TAG" "${flags[@]}" release-assets/*.dmg release-assets/*.zip
           fi

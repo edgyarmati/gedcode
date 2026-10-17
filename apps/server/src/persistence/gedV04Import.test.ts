@@ -4,18 +4,14 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 
 import { runMigrations } from "./Migrations.ts";
-import { rewriteGedV04Snapshot } from "./gedV04Import.ts";
-
-/** The first and last of v0.4's own migrations, as its ledger recorded them. */
-const GED_V04_LEDGER = [
-  [31, "ProjectionThreadsGedWorkflowEnabled"],
-  [80, "ProjectionThreadMessageQueue"],
-] as const;
+import { GED_V04_MIGRATIONS, rewriteGedV04Snapshot } from "./gedV04Import.ts";
+import { initializeV2Database } from "./initializeV2Database.ts";
 
 const seedSharedSchema = (path: string) =>
   runMigrations({ toMigrationInclusive: 30 }).pipe(
@@ -29,6 +25,31 @@ const withTempDatabase = <A, E, R>(use: (path: string) => Effect.Effect<A, E, R>
   );
 };
 
+const recordLedger = (
+  database: NodeSqlite.DatabaseSync,
+  rows: ReadonlyArray<readonly [number, string]>,
+) => {
+  const record = database.prepare(
+    "INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)",
+  );
+  for (const [id, name] of rows) record.run(id, name);
+};
+
+/** Seeds a ledger and asserts the rewrite leaves the file byte-identical. */
+const expectUntouched = (path: string, seed: (database: NodeSqlite.DatabaseSync) => void) => {
+  const database = new NodeSqlite.DatabaseSync(path);
+  try {
+    seed(database);
+  } finally {
+    database.close();
+  }
+  const before = NodeFS.readFileSync(path);
+  assert.isFalse(rewriteGedV04Snapshot(path));
+  assert.deepEqual(NodeFS.readFileSync(path), before);
+};
+
+const v04Ledger = [...GED_V04_MIGRATIONS];
+
 const count = (database: NodeSqlite.DatabaseSync, sql: string) =>
   Number(database.prepare(sql).get()?.count);
 
@@ -38,10 +59,7 @@ it.effect("rewrites a v0.4 snapshot so upstream migrations apply and threads sta
       yield* seedSharedSchema(path);
       const v04 = new NodeSqlite.DatabaseSync(path);
       try {
-        const record = v04.prepare(
-          "INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)",
-        );
-        for (const [id, name] of GED_V04_LEDGER) record.run(id, name);
+        recordLedger(v04, [...GED_V04_MIGRATIONS]);
         v04.exec("CREATE TABLE pm_sessions (session_id TEXT PRIMARY KEY)");
         v04.exec("INSERT INTO pm_sessions VALUES ('pm')");
         v04.exec("ALTER TABLE projection_threads ADD COLUMN ged_workflow_enabled INTEGER");
@@ -86,21 +104,90 @@ it.effect("rewrites a v0.4 snapshot so upstream migrations apply and threads sta
   ),
 );
 
+it.effect("rewrites the shorter ledger of an older 0.4 release", () =>
+  withTempDatabase((path) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(path);
+      const v04 = new NodeSqlite.DatabaseSync(path);
+      try {
+        recordLedger(v04, v04Ledger.slice(0, 10));
+      } finally {
+        v04.close();
+      }
+      assert.isTrue(rewriteGedV04Snapshot(path));
+    }),
+  ),
+);
+
 it.effect("leaves a database whose later migrations are not v0.4's untouched", () =>
   withTempDatabase((path) =>
     Effect.gen(function* () {
       yield* seedSharedSchema(path);
-      const other = new NodeSqlite.DatabaseSync(path);
+      expectUntouched(path, (database) => recordLedger(database, [[31, "SomethingElse"]]));
+    }),
+  ),
+);
+
+it.effect("leaves a v0.4-named ledger with a gap untouched", () =>
+  withTempDatabase((path) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(path);
+      expectUntouched(path, (database) =>
+        recordLedger(database, [v04Ledger[0]!, v04Ledger[v04Ledger.length - 1]!]),
+      );
+    }),
+  ),
+);
+
+it.effect("leaves a ledger missing shared migrations untouched", () =>
+  withTempDatabase((path) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(path);
+      expectUntouched(path, (database) => {
+        database.exec("DELETE FROM effect_sql_migrations WHERE migration_id = 5");
+        recordLedger(database, v04Ledger);
+      });
+    }),
+  ),
+);
+
+it.effect("imports a v0.4 database into V2 without writing the original", () =>
+  withTempDatabase((sourcePath) =>
+    Effect.gen(function* () {
+      yield* seedSharedSchema(sourcePath);
+      const v04 = new NodeSqlite.DatabaseSync(sourcePath);
       try {
-        other
-          .prepare("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)")
-          .run(31, "SomethingElse");
+        recordLedger(v04, v04Ledger);
+        v04.exec("CREATE TABLE pm_sessions (session_id TEXT PRIMARY KEY)");
       } finally {
-        other.close();
+        v04.close();
       }
-      const before = NodeFS.readFileSync(path);
-      assert.isFalse(rewriteGedV04Snapshot(path));
-      assert.deepEqual(NodeFS.readFileSync(path), before);
+      const original = NodeFS.readFileSync(sourcePath);
+      const destinationPath = NodePath.join(NodePath.dirname(sourcePath), "statev2.sqlite");
+      NodeFS.renameSync(sourcePath, NodePath.join(NodePath.dirname(sourcePath), "state.sqlite"));
+
+      yield* initializeV2Database(destinationPath).pipe(Effect.provide(NodeServices.layer));
+
+      assert.deepEqual(
+        NodeFS.readFileSync(NodePath.join(NodePath.dirname(sourcePath), "state.sqlite")),
+        original,
+      );
+      const imported = new NodeSqlite.DatabaseSync(destinationPath, { readOnly: true });
+      try {
+        assert.equal(
+          count(imported, "SELECT count(*) AS count FROM sqlite_master WHERE name = 'pm_sessions'"),
+          0,
+        );
+        assert.equal(
+          count(
+            imported,
+            "SELECT count(*) AS count FROM effect_sql_migrations WHERE migration_id > 30",
+          ),
+          0,
+        );
+      } finally {
+        imported.close();
+      }
     }),
   ),
 );

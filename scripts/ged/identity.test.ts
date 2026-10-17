@@ -109,6 +109,16 @@ describe("GedCode identity", () => {
     }
   });
 
+  it("rewrites the dev name, the wordmark and the CLI in commands", () => {
+    assert.equal(rebrandText("T3 Code (Dev)"), "GedCode (Dev)");
+    assert.equal(rebrandText("<strong>T3</strong> Code"), "<strong>Ged</strong>Code");
+    assert.equal(rebrandText("Remove t3 from PATH"), "Remove gedcode from PATH");
+    assert.equal(
+      rebrandText("claude mcp add --transport http t3 http://localhost"),
+      "claude mcp add --transport http gedcode http://localhost",
+    );
+  });
+
   it("gives the build GedCode's bundle identity, names and URL schemes", () => {
     const config = applyGedBuildIdentity(upstreamBuildConfig, {
       channel: "latest",
