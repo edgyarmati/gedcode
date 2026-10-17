@@ -91,7 +91,7 @@ it.effect("reports a project with no memory tree rather than inventing one", () 
 );
 
 const ruling = (
-  verifier: { driverKind: string; model?: string },
+  verifier: { driverKind: string; model?: string; taskId?: string },
   overrides: { headSha?: string; status?: "pass" | "fail" } = {},
 ) => ({
   branch: "feat/memory-toolkit",
@@ -146,13 +146,29 @@ it.effect("keeps every verifier's ruling on one commit, and restarts on a new on
       );
       expect((yield* readRecord(root)).reviews).toHaveLength(2);
 
-      // A verifier that rules again replaces its own earlier ruling.
-      yield* memory.recordRuling(root, ruling({ driverKind: "claudeAgent" }, { status: "fail" }));
-      const replaced = yield* readRecord(root);
-      expect(replaced.reviews).toHaveLength(2);
-      expect(replaced.reviews.find((r) => r.verifier.driverKind === "claudeAgent")?.status).toBe(
-        "fail",
+      // A second run of the same model is another ruling; a later pass cannot
+      // erase an earlier failure on the same commit.
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "a" }, { status: "fail" }),
       );
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "b" }),
+      );
+      expect((yield* readRecord(root)).reviews.map((r) => r.status)).toEqual([
+        "pass",
+        "pass",
+        "fail",
+        "pass",
+      ]);
+
+      // Only the same task re-recording replaces its own ruling.
+      yield* memory.recordRuling(
+        root,
+        ruling({ driverKind: "codex", model: "gpt-6-sol", taskId: "a" }, { status: "fail" }),
+      );
+      expect((yield* readRecord(root)).reviews).toHaveLength(4);
 
       yield* memory.recordRuling(
         root,

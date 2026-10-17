@@ -48,9 +48,13 @@ export interface VerdictRuling {
 export const sameVendor = (left: string, right: string): boolean =>
   left.trim().toLowerCase() === right.trim().toLowerCase();
 
-const sameVerifier = (left: VerdictParticipant, right: VerdictParticipant): boolean =>
-  sameVendor(left.driverKind, right.driverKind) &&
-  (left.model ?? "").trim().toLowerCase() === (right.model ?? "").trim().toLowerCase();
+// Only the same delegated task re-recording its ruling replaces it. Two runs of
+// the same model are two independent rulings, and a later pass must not erase an
+// earlier failure on the same commit.
+const sameTask = (left: VerdictParticipant, right: VerdictParticipant): boolean => {
+  const taskId = left.taskId?.trim();
+  return taskId !== undefined && taskId.length > 0 && taskId === right.taskId?.trim();
+};
 
 const isReview = (review: unknown): review is VerdictReview =>
   review !== null &&
@@ -73,14 +77,14 @@ const isContinuable = (existing: unknown, ruling: VerdictRuling): existing is Ve
 
 /**
  * Adds a ruling to the branch's record. A ruling on the same commit and
- * implementer joins the existing reviews, replacing an earlier ruling by the
- * same verifier; anything else (a new commit, a malformed or older record)
+ * implementer joins the existing reviews, replacing only an earlier ruling by
+ * the same verifier task; anything else (a new commit, a malformed or older record)
  * starts the record over, because rulings on another commit say nothing about
  * this one.
  */
 export const mergeRuling = (existing: unknown, ruling: VerdictRuling): VerdictRecord => {
   const kept = isContinuable(existing, ruling)
-    ? existing.reviews.filter((review) => !sameVerifier(review.verifier, ruling.review.verifier))
+    ? existing.reviews.filter((review) => !sameTask(review.verifier, ruling.review.verifier))
     : [];
   return {
     schemaVersion: 2,
