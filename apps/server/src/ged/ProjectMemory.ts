@@ -19,7 +19,9 @@ import { mergeRuling, type VerdictRuling } from "./verdictRecord.ts";
  * rather than in one harness's prompt.
  *
  * Everything here is path-confined to `<root>/.ged`. Tool input names a document
- * by a relative key, never a path the caller composes.
+ * by a relative key, never a path the caller composes, and no symlink is followed
+ * on the way to it: a checkout is untrusted input, and one link inside `.ged` would
+ * otherwise reach any file the server can read or write.
  */
 
 const MEMORY_DIR = ".ged";
@@ -113,7 +115,44 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
   const present = (root: string) =>
     fs.exists(memoryRoot(root)).pipe(Effect.orElseSucceed(() => false));
 
-  /** Walks `.ged`, skipping `node_modules`-style noise and anything unreadable. */
+  /**
+   * `.ged` resolved through the root's own real path. A `.ged` that is itself a
+   * symlink is refused, since everything beneath it would then live elsewhere.
+   */
+  const realMemoryRoot = (root: string) =>
+    Effect.gen(function* () {
+      const missing = () => new GedMemoryError(`This project has no ${MEMORY_DIR}/ memory tree.`);
+      const expected = path.join(
+        yield* fs.realPath(root).pipe(Effect.mapError(missing)),
+        MEMORY_DIR,
+      );
+      const actual = yield* fs.realPath(expected).pipe(Effect.mapError(missing));
+      if (actual !== expected)
+        return yield* fail(`${MEMORY_DIR}/ is a symlink; refusing to follow it.`);
+      return expected;
+    });
+
+  /**
+   * Whether `full`, built from a real directory and a validated key, resolves to
+   * itself, i.e. no component of it is a symlink. Missing paths are `undefined`.
+   */
+  const resolvesToItself = (full: string) =>
+    fs.realPath(full).pipe(
+      Effect.map((real) => real === full),
+      Effect.orElseSucceed(() => undefined),
+    );
+
+  /** Whether `file` is a symlink, dangling or not. `readLink` fails on anything else. */
+  const isSymlink = (file: string) =>
+    fs.readLink(file).pipe(
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /**
+   * Walks a real directory under `.ged`, skipping dotfiles, symlinks, and anything
+   * unreadable. Skipping links also keeps a link back up the tree from looping.
+   */
   const walk = (
     dir: string,
     prefix: string,
@@ -126,6 +165,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
             if (entry.startsWith(".")) return [] as ReadonlyArray<MemoryDocument>;
             const full = path.join(dir, entry);
             const key = prefix === "" ? entry : `${prefix}/${entry}`;
+            if ((yield* resolvesToItself(full)) !== true) return [];
             const info = yield* fs.stat(full).pipe(Effect.orElseSucceed(() => undefined));
             if (info === undefined) return [];
             if (info.type === "Directory") return yield* walk(full, key);
@@ -142,15 +182,19 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
     Effect.gen(function* () {
       if (!(yield* present(root)))
         return yield* fail(`This project has no ${MEMORY_DIR}/ memory tree.`);
-      return yield* walk(memoryRoot(root), "");
+      return yield* walk(yield* realMemoryRoot(root), "");
     });
 
   const read = (root: string, key: string) =>
     Effect.gen(function* () {
       const problem = validateKey(key);
       if (problem !== undefined) return yield* fail(problem);
-      const full = path.join(memoryRoot(root), key);
+      const full = path.join(yield* realMemoryRoot(root), key);
       // A symlink could point anywhere; the key check above does not cover it.
+      const direct = yield* resolvesToItself(full);
+      if (direct === undefined) return yield* fail(`No memory document '${key}'.`);
+      if (!direct)
+        return yield* fail(`'${key}' is reached through a symlink; refusing to follow it.`);
       const info = yield* fs
         .stat(full)
         .pipe(Effect.mapError(() => new GedMemoryError(`No memory document '${key}'.`)));
@@ -175,11 +219,21 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
         return yield* fail(
           `Branch '${ruling.branch}' has no name the land gate can key a verdict to.`,
         );
-      const dir = path.join(memoryRoot(root), VERDICTS_DIR);
+      const dir = path.join(yield* realMemoryRoot(root), VERDICTS_DIR);
       yield* fs
         .makeDirectory(dir, { recursive: true })
         .pipe(Effect.mapError(() => new GedMemoryError(`Could not open ${MEMORY_DIR}/verdicts.`)));
+      if ((yield* resolvesToItself(dir)) !== true)
+        return yield* fail(
+          `${MEMORY_DIR}/${VERDICTS_DIR} is a symlink; refusing to write through it.`,
+        );
       const file = path.join(dir, `${slug}.json`);
+      // A write follows a link, a dangling one included, so the record must not be one.
+      // The gate refuses a symlinked record too; this stops the write from landing elsewhere.
+      if (yield* isSymlink(file))
+        return yield* fail(
+          `${MEMORY_DIR}/${VERDICTS_DIR}/${slug}.json is a symlink; refusing to write through it.`,
+        );
       // A record that is missing or unreadable is started over, like a stale one.
       const existing: unknown = yield* fs.readFileString(file).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))),

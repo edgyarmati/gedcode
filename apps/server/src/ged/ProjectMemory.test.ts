@@ -262,3 +262,73 @@ it.effect("reports blocked when the gate refuses, and error when it cannot evalu
     }),
   ).pipe(Effect.provide(layer)),
 );
+
+it.effect("refuses to read or list through a symlink that leaves the memory tree", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const ged = path.join(root, ".ged");
+      const outside = path.join(root, "outside");
+      yield* fs.makeDirectory(outside);
+      yield* fs.writeFileString(path.join(outside, "leak.md"), "NOT MEMORY\n");
+      yield* fs.symlink(path.join(root, "secret.md"), path.join(ged, "secret.md"));
+      yield* fs.symlink(outside, path.join(ged, "linked"));
+      const memory = yield* ProjectMemory.ProjectMemory;
+
+      for (const key of ["secret.md", "linked/leak.md"]) {
+        const error = yield* Effect.flip(memory.read(root, key));
+        expect(error._tag, `expected '${key}' to be refused`).toBe("GedMemoryError");
+      }
+      const keys = (yield* memory.list(root)).map((document) => document.key);
+      expect(keys).not.toContain("secret.md");
+      expect(keys).not.toContain("linked/leak.md");
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("refuses to read when .ged itself is a symlink", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped();
+    const elsewhere = yield* fs.makeTempDirectoryScoped();
+    yield* fs.writeFileString(path.join(elsewhere, "STANDARDS.md"), "NOT MEMORY\n");
+    yield* fs.symlink(elsewhere, path.join(root, ".ged"));
+    const memory = yield* ProjectMemory.ProjectMemory;
+    const error = yield* Effect.flip(memory.read(root, "STANDARDS.md"));
+    expect(error._tag).toBe("GedMemoryError");
+  }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
+it.effect("refuses to write a verdict through a symlink", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const memory = yield* ProjectMemory.ProjectMemory;
+      const verdicts = path.join(root, ".ged", "verdicts");
+      yield* fs.makeDirectory(verdicts);
+
+      // A dangling link: following it would create a file outside the tree.
+      const target = path.join(root, "planted.json");
+      yield* fs.symlink(target, path.join(verdicts, "feat-memory-toolkit.json"));
+      const viaFile = yield* Effect.flip(
+        memory.recordRuling(root, ruling({ driverKind: "claudeAgent" })),
+      );
+      expect(viaFile._tag).toBe("GedMemoryError");
+      expect(yield* fs.exists(target)).toBe(false);
+
+      // The verdicts directory itself pointing elsewhere.
+      const elsewhere = path.join(root, "elsewhere");
+      yield* fs.makeDirectory(elsewhere);
+      yield* fs.remove(verdicts, { recursive: true });
+      yield* fs.symlink(elsewhere, verdicts);
+      const viaDir = yield* Effect.flip(
+        memory.recordRuling(root, ruling({ driverKind: "claudeAgent" })),
+      );
+      expect(viaDir._tag).toBe("GedMemoryError");
+      expect(yield* fs.readDirectory(elsewhere)).toEqual([]);
+    }),
+  ).pipe(Effect.provide(layer)),
+);

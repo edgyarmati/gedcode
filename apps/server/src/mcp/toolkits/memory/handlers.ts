@@ -97,7 +97,9 @@ const handlers = {
       return { path, ruling };
     }),
   ),
-  ged_land_check: McpToolAccess.reads((input) =>
+  // Runs the repository's own gate script, so it is a write: a read-only client may not
+  // execute code from the checkout, even code that only reports.
+  ged_land_check: McpToolAccess.writes((input) =>
     Effect.gen(function* () {
       const root = yield* resolveRoot(input.threadId);
       const memory = yield* ProjectMemory.ProjectMemory;
