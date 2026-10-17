@@ -46,7 +46,8 @@ the lead may make itself; it still needs a verdict to land.
 
 ## Why the verdict can be trusted
 
-Isolation is not a matter of asking politely. Each property below rests on something mechanical:
+Isolation is mostly not a matter of asking politely. Each property below rests on something
+mechanical, except where it says otherwise:
 
 - **The verifier is spawned by the lead, never by the implementer.** A verifier spawned by the
   implementer inherits its provider and model, and is contextually its own creature.
@@ -58,9 +59,10 @@ Isolation is not a matter of asking politely. Each property below rests on somet
   With only one vendor installed, a same-family verifier is accepted with a warning. Important
   changes, or a weak foreign option, get two verifiers in parallel: a strong same-family one and a
   foreign one.
-- **The verifier reports; it does not fix.** It runs with the lead's access so it can run the
-  project's checks unattended, and its brief forbids fixes. It cannot quietly patch a problem and
-  then declare success.
+- **The verifier reports; it does not fix.** This one is by instruction, not mechanism. It runs
+  with the lead's access so it can run the project's checks unattended, and its brief forbids
+  fixes. No runtime mode lets a child run commands while denying edits, so a verifier could still
+  patch; the brief and the separate implementer round are what keep find apart from fix.
 - **You cannot argue a verifier into agreement.** Each review round is a fresh delegation with no
   memory of the last one, so pressure does not accumulate across rounds.
 - **Verdicts are structured, never prose.** Each acceptance criterion gets `met`, `not_met` or

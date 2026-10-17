@@ -572,6 +572,7 @@ command, even `cd ..` or running the tests, waits for the user to approve it in 
 Delegated children run unattended, so verifiers stalled, and they could not run the checks their
 brief asks for. No runtime mode allows commands while denying edits. Children now inherit the
 lead's mode, planners and implementers included. Find stays separate from fix through the
-verifier brief, and the verdict's `headSha` ties it to the commit that was reviewed. That is
-weaker than a server-enforced pin: a verifier could edit the working tree, but it could not
-make an unreviewed commit pass the gate.
+verifier brief alone. That is weaker than the server-enforced pin: a verifier with inherited
+access could patch, commit and then pass its own fix, and the land gate, which checks the verdict
+against the head SHA and a clean tree, cannot tell. The owner chose this over verifiers that
+stall on every command.
