@@ -52,6 +52,25 @@ it.effect("leaves a project's existing files byte-identical", () =>
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );
 
+it.effect("refuses to follow a symlinked .ged or .ged/bin out of the project", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const setup = yield* GedSetup.GedSetup;
+
+    for (const linked of [".ged", path.join(".ged", "bin")]) {
+      const root = yield* fs.makeTempDirectoryScoped();
+      const outside = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(path.dirname(path.join(root, linked)), { recursive: true });
+      yield* fs.symlink(outside, path.join(root, linked));
+
+      const error = yield* Effect.flip(setup.apply(root));
+      expect(error._tag).toBe("GedSetupError");
+      expect(yield* fs.readDirectory(outside), `nothing written through ${linked}`).toEqual([]);
+    }
+  }).pipe(Effect.scoped, Effect.provide(layer)),
+);
+
 it.effect("refuses a root that is not a directory", () =>
   Effect.gen(function* () {
     const setup = yield* GedSetup.GedSetup;

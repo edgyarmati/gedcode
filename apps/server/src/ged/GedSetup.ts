@@ -72,16 +72,39 @@ const make = Effect.fn("GedSetup.make")(function* () {
       } satisfies GedSetupPlan;
     });
 
-  // `wx` creates or fails, so a file that appears between the preview and the
-  // write is skipped rather than overwritten.
-  const writeIfAbsent = (root: string, file: (typeof STARTER_FILES)[number]) =>
+  const isWithin = (realRoot: string, candidate: string) =>
+    candidate === realRoot || candidate.startsWith(realRoot + path.sep);
+
+  // A symlinked `.ged` or `.ged/bin` would carry writes outside the project, so
+  // the nearest existing ancestor must resolve inside it before anything is
+  // created, and the directory must still resolve inside it afterwards.
+  const confine = (realRoot: string, dir: string, label: string) =>
     Effect.gen(function* () {
-      const full = path.join(root, file.path);
+      let existing = dir;
+      while (!(yield* fs.exists(existing).pipe(Effect.orElseSucceed(() => false)))) {
+        const parent = path.dirname(existing);
+        if (parent === existing) break;
+        existing = parent;
+      }
+      const resolved = yield* fs.realPath(existing).pipe(Effect.orElseSucceed(() => ""));
+      if (!isWithin(realRoot, resolved))
+        return yield* Effect.fail(
+          new GedSetupError(`${label} resolves outside the project; nothing was written there.`),
+        );
+    });
+
+  // `wx` creates or fails, so a file that appears between the preview and the
+  // write is skipped rather than overwritten, and a symlink at the leaf is
+  // never followed.
+  const writeIfAbsent = (realRoot: string, file: (typeof STARTER_FILES)[number]) =>
+    Effect.gen(function* () {
+      const full = path.join(realRoot, file.path);
+      const label = path.dirname(file.path);
+      yield* confine(realRoot, path.dirname(full), label);
       yield* fs
         .makeDirectory(path.dirname(full), { recursive: true })
-        .pipe(
-          Effect.mapError(() => new GedSetupError(`Could not create ${path.dirname(file.path)}.`)),
-        );
+        .pipe(Effect.mapError(() => new GedSetupError(`Could not create ${label}.`)));
+      yield* confine(realRoot, path.dirname(full), label);
       return yield* fs.writeFileString(full, file.content, { flag: "wx", mode: file.mode }).pipe(
         Effect.as(true),
         Effect.catchTags({
@@ -96,8 +119,11 @@ const make = Effect.fn("GedSetup.make")(function* () {
   const apply = (root: string) =>
     Effect.gen(function* () {
       yield* requireDirectory(root);
+      const realRoot = yield* fs
+        .realPath(root)
+        .pipe(Effect.mapError(() => new GedSetupError(`'${root}' could not be resolved.`)));
       const outcomes = yield* Effect.forEach(STARTER_FILES, (file) =>
-        writeIfAbsent(root, file).pipe(Effect.map((written) => ({ path: file.path, written }))),
+        writeIfAbsent(realRoot, file).pipe(Effect.map((written) => ({ path: file.path, written }))),
       );
       return {
         written: outcomes.filter((file) => file.written).map((file) => file.path),
