@@ -22,6 +22,9 @@ a current, passing, independent verdict** (\`.ged/bin/land-gate.sh\`). Plan back
 | Anything you can't state in criteria | Grill, then a planner, then implementer(s), then verification.         |
 | Refactor across modules              | Planner, implementers in dependency order, verification per slice.     |
 
+When you implement something yourself, the implementer brief's **Write less** section applies to
+you too.
+
 Delegating a planner for a typo is waste. Skipping one for a refactor buys an expensive wrong plan.
 Judge honestly: if you cannot write the acceptance criteria yourself in a few lines, plan first.
 
@@ -68,8 +71,8 @@ Who verifies:
   operations, or when the user says so.
 
 Keep it light: verifiers read the diff and the criteria and run the project's checks; they do not
-re-plan. If one returns \`not_met\`, delegate a fresh implementer round with its findings, then fresh
-verifiers. After three failed rounds, stop and ask the user.
+re-plan. If one returns \`not_met\`, or reports code the task did not need, delegate a fresh
+implementer round with its findings, then fresh verifiers. After three failed rounds, stop and ask the user.
 
 ## Budget
 

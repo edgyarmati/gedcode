@@ -347,3 +347,9 @@ Focused tests cover each instruction channel and the Codex turn context.
 The lead ran verifiers at `approval-required`, so every command they ran, even `cd ..`, waited
 for an approval nobody was watching. The lead playbook now leaves `runtimeMode` unset so children
 inherit the lead's access, and the verifier brief says to report rather than fix (see DECISIONS).
+
+## 2026-10-18 — Implementers are told to write less
+
+The implementer playbook gains a **Write less** section adapted from the `ponytail` skill (MIT,
+credited in `THIRD_PARTY_NOTICES.md`); the lead follows it when it implements, and verifiers
+report code the task did not need. See DECISIONS.

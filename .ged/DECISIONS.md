@@ -576,3 +576,18 @@ verifier brief alone. That is weaker than the server-enforced pin: a verifier wi
 access could patch, commit and then pass its own fix, and the land gate, which checks the verdict
 against the head SHA and a clean tree, cannot tell. The owner chose this over verifiers that
 stall on every command.
+
+## 2026-10-18 — Implementers write less, adapted from ponytail rather than bundled as a skill
+
+- Status: accepted.
+
+Agents tend to write more code than a task needs. The core of the `ponytail` skill
+(DietrichGebert/ponytail, MIT) answers that well: a ladder from "does it need to exist" through
+"already in the codebase", "the standard library", "an installed dependency" to the minimum code,
+with guardrails that keep it from cutting callers, tests, validation or security. It is adapted
+into the implementer playbook's **Write less** section, which the lead also follows when it
+implements; the verifier reports unneeded code as findings outside the criteria, and the lead sends
+them back for another implementer round. Not bundled as a skill, per the 2026-10-11 rule that a skill must justify why a
+brief would not do: a skill reaches Claude Code only, while playbooks reach every provider.
+Its levels, slash commands, hooks and status line are left out. Credit is in
+`THIRD_PARTY_NOTICES.md`.
