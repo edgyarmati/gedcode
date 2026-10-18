@@ -481,14 +481,34 @@ without the owner's say-so.
 
 - Status: accepted.
 
-0.4 numbered its own migrations 31–80 in the ledger upstream also numbers from 31, so the V2
-migrator took upstream's 31+ as applied and the server crashed on the first start after an
-update. `apps/server/src/persistence/gedV04Import.ts` recognises a 0.4 ledger by its exact
-migration names and rewrites the import _snapshot_ back to the shared schema at migration 30:
-the PM tables and 0.4-only columns go, so upstream's migrations apply and threads import as
-ordinary threads. The original `state.sqlite` is never written, so PM history is not deleted,
-only not shown; reinstalling 0.4.8 still reads it. Any other database passes through unchanged.
+0.4 numbered its own migrations 31–80 in the ledger upstream also numbers from 31. The
+upgrade accepts only contiguous canonical Ged prefixes and the explicitly observed paired
+`OmniPromptProjectionTables` / `OmniPromptProjectionIndexes` names at 23/24, not arbitrary ledger
+aliases. It validates/repairs shell-summary column types and reuses upstream's backfill before naming
+those migrations canonical. Historical Omni summaries include a nullable INTEGER plan flag without
+a default: accept the required capabilities, not incidental NOT NULL/default constraints, because
+the backfill derives every existing row before import. PM tables and Ged-only columns are retired,
+then the actual upstream migrations run. Ordinary projects, threads, transcripts and attachment
+metadata remain available to the V2 lazy importer; `state.sqlite` is never written. PM workflow
+history remains archived there.
 
+The original snapshot-only fix missed a long-lived Omni23/24 lineage and stranded already-copied
+`statev2.sqlite` files. Startup now also recognizes legacy-only failed imports, even without the
+original. Recovery checks the ledger and V2 schema/import/projection evidence, including the shared
+log's `application_event_version`; mixed or unrecognized Ged histories fail closed. The initial
+probe uses a writable connection only on the owned destination/candidate so SQLite can recover a
+hot rollback journal after an interrupted upgrade. Healthy V2 needs no application writes, backup
+or write transaction and is never recopied from older V1 work; the original V1 snapshot remains
+strictly read-only.
+
+Recovery uses a guarded SQLite transaction, not staged inode/sidecar replacement: `BEGIN IMMEDIATE`
+rechecks identity and excludes other writers while a separate read-only connection takes a
+WAL-aware SQLite backup into a retained `ged-v04-recovery-*/statev2.sqlite` archive, before any
+transformation. Normalization and all upstream migrations commit together or roll back together.
+This avoids orphaning committed WAL data or replacing a database another process has open. Fresh
+snapshots are similarly upgraded before no-clobber publication. The only production upstream seam
+remains `initializeV2Database.ts` (the existing snapshot hook plus an existing-destination probe);
+regression coverage is Ged-owned and upstream migrations are unchanged.
 The user is told twice, because 0.4's updater installs in the background without showing notes:
 `docs/ged/releases/<version>.md`, when present, goes into the GitHub release and is embedded in
 the Sparkle appcast (Markdown, which 0.4.8's Sparkle 2.9.6 renders on a manual check), and
