@@ -1,5 +1,10 @@
-/** `.ged/bin/land-gate.sh` as GedCode installs it. A test keeps it identical to this repo's own gate. */
-export const LAND_GATE = `#!/usr/bin/env sh
+import { REVIEW_POLICY_SCRIPT } from "../reviewPolicyScript.ts";
+
+/** Custom gates add this marker only after integrating the policy block. */
+export const REVIEW_POLICY_GATE_MARKER = "# Ged review policy: v1";
+
+/** Exact stock gate eligible for explicit upgrade; custom gates are never overwritten. */
+export const LEGACY_LAND_GATE = `#!/usr/bin/env sh
 # Ged land gate: refuse to land a change without a current, passing, independent verdict.
 # Usage: .ged/bin/land-gate.sh [ref]     (default: HEAD)
 # Exit:  0 = allowed, 1 = blocked, 2 = usage/environment error
@@ -137,3 +142,22 @@ const names = verifiers.map((r) => r.who).join(" + ");
 console.log(\`land-gate: OK — \${reviews.length} review(s) passed, verified by \${names} against \${iv} at \${headSha.slice(0, 12)}\`);
 ' "$record" "$head_sha" "$branch"
 `;
+
+/** The evaluator is bundled into the shell script so standalone and MCP policy cannot drift. */
+export const LAND_GATE = LEGACY_LAND_GATE.replace(
+  "# Ged land gate: refuse to land a change without a current, passing, independent verdict.",
+  `# Ged land gate: independent review required unless the user explicitly opted out locally.\n${REVIEW_POLICY_GATE_MARKER}`,
+).replace(
+  'record=".ged/verdicts/',
+  `command -v node >/dev/null 2>&1 || { echo "land-gate: node is required" >&2; exit 2; }
+
+policy_code=0
+node --input-type=module -e '${REVIEW_POLICY_SCRIPT.replaceAll("'", "'\\''")}' gate "$head_sha" || policy_code=$?
+case "$policy_code" in
+  0) exit 0 ;;
+  3) ;; # Required: validate the independent verdict below.
+  *) exit 1 ;;
+esac
+
+record=".ged/verdicts/`,
+);

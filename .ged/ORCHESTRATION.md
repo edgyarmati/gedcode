@@ -14,7 +14,7 @@ decider and projector. That machine is being dropped — not because the stages 
 wrong, but because encoding them as server-enforced states was.
 
 The stage machine enforced _sequence_. What we actually care about is _outcome_: that
-nothing lands without an independent, unbiased verdict. Sequence enforcement made
+independent review is required by default, with only explicit local user opt-outs. Sequence enforcement made
 trivial work expensive (a typo fix paid for a planning stage) and gave no additional
 guarantee at the only point that matters.
 
@@ -73,7 +73,8 @@ sequence, and three verification rounds. The lead decides, guided by a playbook.
 The obvious objection is that a lazy model skips verification. The answer is not to
 re-add the state machine, but to gate the outcome:
 
-> **Nothing merges without a verdict record in project memory keyed to the head SHA.**
+> **Review-required changes need a passing verdict keyed to the head SHA. An explicit user
+> opt-out waives independent review, never the normal checks.**
 
 That check runs as a git hook / PR gate — outside the model's control. A structural
 guard, consistent with the rest of the Ged model.
@@ -145,24 +146,34 @@ autonomy here, and announcing the fallback keeps it visible.
 The lead calls `orchestrator_capabilities` first: it returns registered provider
 instances, advertised models, whether each can run a child task, and model-visible
 reasons for unavailability. Small changes the lead may implement itself, but every
-change that lands still needs a verdict.
+change that lands still needs a verdict unless the user explicitly opted out.
+
+Before verifier delegation, re-read `ged_memory_list` for effective local review policy, scope,
+reason, validity and gate support. Infer project versus change scope only from an explicit user
+request; ask one targeted question if unclear. Never skip automatically for cost, size, quota or
+failed review. A change exemption is recorded only after checks and the final clean commit, for
+that full branch and exact HEAD; it never transfers to a new commit. Project reset clears all local
+exemptions; change reset clears only that branch and may inherit project skip. Keep ordinary
+checks, report independent review SKIPPED separately, and obey `ged_land_check`. See the
+[local review policy decision](./DECISIONS.md#2026-10-21--explicit-local-independent-review-opt-outs).
 
 ## 7. Components to build
 
 All additive. None modifies an upstream file — which is the condition for staying
 mergeable against ~800 upstream commits a month.
 
-| #   | Component                                                                         | Where                                  | Status                            |
-| --- | --------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------- |
-| 1   | **Role briefs** — the real role definitions, since `role` is only a prompt prefix | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
-| 2   | **Lead playbook** — the delegation policy, served like the briefs                 | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
-| 3   | **Verdict records** — branch-keyed, with SHA provenance inside                    | `.ged/verdicts/`                       | built (format + gate enforcement) |
-| 4   | **Land gate** — refuses to land without a current, passing, independent verdict   | `.ged/bin/land-gate.sh`                | built, tested                     |
-| 5   | **Memory MCP toolkit** — serves the above to every provider                       | `apps/server/src/mcp/toolkits/memory/` | built, tested                     |
-| 6   | **`ProjectMemory` service** — resolves, reads and writes the `.ged/` tree         | `apps/server/src/ged/`                 | built, tested                     |
+| #   | Component                                                                          | Where                                  | Status                            |
+| --- | ---------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------- |
+| 1   | **Role briefs** — the real role definitions, since `role` is only a prompt prefix  | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
+| 2   | **Lead playbook** — the delegation policy, served like the briefs                  | `apps/server/src/ged/playbooks/`       | built, served by `ged_playbook`   |
+| 3   | **Verdict records** — branch-keyed, with SHA provenance inside                     | `.ged/verdicts/`                       | built (format + gate enforcement) |
+| 4   | **Land gate** — requires a current independent verdict unless explicitly opted out | `.ged/bin/land-gate.sh`                | built, tested                     |
+| 5   | **Memory MCP toolkit** — serves the above to every provider                        | `apps/server/src/mcp/toolkits/memory/` | built, tested                     |
+| 6   | **`ProjectMemory` service** — resolves, reads and writes the `.ged/` tree          | `apps/server/src/ged/`                 | built, tested                     |
 
 All six are built. The toolkit exposes `ged_memory_list`, `ged_memory_read`, `ged_playbook`,
-`ged_verdict_write`, `ged_land_check` and `ged_init`; `ged_land_check` runs component 4 rather than
+`ged_verdict_write`, `ged_land_check`, `ged_init`, `ged_review_policy_set` and
+`ged_review_gate_update`; `ged_land_check` runs component 4 rather than
 reimplementing it, so the tool and the pre-push hook cannot give different answers.
 
 One upstream file is modified: `apps/server/src/mcp/McpHttpServer.ts`, 10 lines, to import the

@@ -1,7 +1,9 @@
 export const VERIFY = `# Verify playbook
 
 The narrow mechanical check, run before handing work off or landing it. It is necessary, not
-sufficient: landing also needs an independent verdict.
+sufficient: landing also needs an independent verdict unless the user explicitly opted out.
+Read effective review policy from \`ged_memory_list\`; a skip retains every normal check below.
+Report checks separately from "independent review SKIPPED" and obey \`ged_land_check\`.
 
 1. Read the **Checks** section of \`.ged/STANDARDS.md\`. It names this project's format, lint,
    typecheck and test commands and any scope rules. If the section is missing or empty, find the

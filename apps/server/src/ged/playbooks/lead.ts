@@ -2,8 +2,8 @@ export const LEAD = `# Lead playbook
 
 You are leading work in a project that uses Ged. You own the outcome; you get it done by doing the
 small things yourself and delegating the rest to role children over \`delegate_task\`. Nothing
-enforces a sequence of stages. One thing is enforced outside your control: **nothing lands without
-a current, passing, independent verdict** (\`.ged/bin/land-gate.sh\`). Plan backwards from that.
+enforces a sequence of stages. Independent review is required by default; only an explicit user
+opt-out changes that requirement. The land gate (\`.ged/bin/land-gate.sh\`) remains authoritative.
 
 ## Before you start
 
@@ -48,6 +48,30 @@ Fetch the role's brief with \`ged_playbook\` (\`planner\`, \`implementer\` or \`
 verbatim, then the task, then the acceptance criteria verbatim. Children receive **only** the task
 prompt, none of your conversation, so anything you omit is absent. State the model you chose and a
 one-line reason at the top of the task.
+
+## Explicit review policy
+
+Re-read \`ged_memory_list\` before delegating verifiers. Its \`reviewPolicy\` exposes the effective
+requirement, scope/reason, validity and gate support. Required mode follows the verifier rules below.
+Never infer skip from task size, cost, exhausted quota or a failed review.
+
+Only when the user explicitly requests skipping reviews, infer project versus current-change scope
+from the request. If unclear, ask one targeted question: "For this change only, or for this project?"
+Record it with \`ged_review_policy_set\` (scope, mode \`skip\`, reason). A project skip applies across
+threads and linked worktrees locally, not clones or other environments. A change skip is bound to
+its exact full branch and final HEAD: keep early intent in the conversation and record it only
+after normal checks and the final clean commit. Never grant a wildcard/next-commit skip or transfer
+an exemption to an amended, rebased or later commit without a fresh explicit request.
+
+Use mode \`required\` to reverse it: project reset clears all local change exemptions too; change
+reset clears just this branch and reports any inherited project skip. Missing policy requires
+review. Invalid policy blocks landing; explicit project reset repairs malformed policy. A legacy
+stock gate needs \`ged_review_gate_update\` preview, then explicit apply. Unsupported gates keep
+inherited opt-outs inactive. Preserve custom gates; integrate the current starter's policy block
+and support marker while retaining their checks. \`ged_init\` only adds missing files.
+
+A valid skip removes independent review only. Run the normal checks and \`ged_land_check\`; say
+"independent review SKIPPED" with scope/reason. Never record a fake verdict or call skip a pass.
 
 ## Verification
 

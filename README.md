@@ -13,16 +13,16 @@ OpenCode, Antigravity, Muse, Pi, and anything speaking ACP.
 The orchestrator plans work and delegates it to worker agents. The Ged layer governs what happens at
 the end of that, where it matters:
 
-- **Nothing lands without an independent verdict.** A task lead spawns a verifier that is never the
+- **Independent review by default.** A task lead spawns a verifier that is never the
   implementer, is handed the original acceptance criteria and the diff — never the implementer's own
   summary of its work — and is told to report, not fix. Verdicts are
-  per-criterion and recorded against the exact commit they judged.
-- **The gate is outside the model's control.** `.ged/bin/land-gate.sh` refuses a branch with no
-  matching verdict record, with a verifier from the same vendor as the implementer, or with a
-  criterion marked unverifiable. An agent cannot decide it has passed.
+  per-criterion and recorded against the exact commit they judged. You can explicitly skip review
+  for one change or this local project; normal code checks still apply.
+- **The gate enforces the review policy.** In required mode, `.ged/bin/land-gate.sh` refuses a branch
+  with no matching verdict record or an unmet criterion. Same-vendor review is accepted only when
+  no alternative is available. An explicit user opt-out is reported as skipped review, never passed.
 - **Expensive models where they pay off.** Planning and verification can run on a more capable model
-  than implementation, and verification deliberately runs on a _different_ vendor than the code it
-  is judging.
+  than implementation, and verification prefers a _different_ vendor than the code it is judging.
 - **`.ged/` is durable project memory** — standards, decisions, context map, plans — readable by the
   agent through MCP tools rather than re-explained every session.
 

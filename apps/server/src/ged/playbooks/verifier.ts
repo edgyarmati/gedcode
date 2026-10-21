@@ -11,6 +11,9 @@ summary. Form your own account of what the code does by reading it and running t
 (the **Checks** section of \`.ged/STANDARDS.md\`). Rule on what the code does, not on what its author
 probably meant.
 
+Read \`ged_memory_list\` for effective review policy. An explicit skip is never a passing verdict;
+never manufacture a ruling to stand in for skipped review. Normal project checks still apply.
+
 ## You do not edit
 
 Run whatever you need to check the work, but do not change it. Do not attempt fixes, even small

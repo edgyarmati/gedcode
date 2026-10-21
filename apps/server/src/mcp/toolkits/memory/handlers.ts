@@ -59,12 +59,18 @@ const handlers = {
     Effect.gen(function* () {
       const { projectId, root } = yield* resolveCheckout(input.threadId);
       const memory = yield* ProjectMemory.ProjectMemory;
+      const reviewPolicy = yield* memory.reviewStatus(root).pipe(Effect.mapError(memoryFailure));
       if (!(yield* memory.present(root))) {
         const offers = yield* GedSetupOffers.GedSetupOffers;
-        return { documents: [], setUp: false, offerSetup: yield* offers.claim(projectId) };
+        return {
+          documents: [],
+          setUp: false,
+          offerSetup: yield* offers.claim(projectId),
+          reviewPolicy,
+        };
       }
       const documents = yield* memory.list(root).pipe(Effect.mapError(memoryFailure));
-      return { documents, setUp: true, offerSetup: false };
+      return { documents, setUp: true, offerSetup: false, reviewPolicy };
     }),
   ),
   ged_memory_read: McpToolAccess.reads((input) =>
@@ -125,6 +131,22 @@ const handlers = {
       }
       const result = yield* setup.apply(root).pipe(Effect.mapError(failure));
       return { applied: true, missing: result.written, present: result.skipped };
+    }),
+  ),
+  ged_review_policy_set: McpToolAccess.writes((input) =>
+    Effect.gen(function* () {
+      const root = yield* resolveRoot(input.threadId);
+      const memory = yield* ProjectMemory.ProjectMemory;
+      return yield* memory.setReviewPolicy(root, input).pipe(Effect.mapError(memoryFailure));
+    }),
+  ),
+  ged_review_gate_update: McpToolAccess.writes((input) =>
+    Effect.gen(function* () {
+      const root = yield* resolveRoot(input.threadId);
+      const memory = yield* ProjectMemory.ProjectMemory;
+      return yield* memory
+        .updateReviewGate(root, input.apply === true)
+        .pipe(Effect.mapError(memoryFailure));
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof MemoryToolkit.tools>;

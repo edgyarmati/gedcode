@@ -1,8 +1,8 @@
 # Set up Ged in a project
 
 Ged is how GedCode makes agent work trustworthy: the agent clarifies what you want before building,
-another vendor's model checks the result against agreed criteria, and nothing lands without that
-check passing. It works in any project once the project has a `.ged/` folder.
+another vendor's model checks the result against agreed criteria, and independent review is
+required by default. It works in any project once the project has a `.ged/` folder.
 
 ## Set it up
 
@@ -30,3 +30,20 @@ access to files on the environment.
 
 The land gate, `.ged/bin/land-gate.sh`, needs Node.js on the `PATH` to run. To check every push,
 use it as a Git pre-push hook; see [the Ged workflow](../workflow.md#the-land-gate).
+
+## Review preferences and existing projects
+
+You can explicitly ask to skip independent reviews for this project or just the current change.
+The agent infers scope or asks one question when unclear. Project skip persists locally across
+threads and linked worktrees, not clones or other environments; change skip binds the full branch
+and final clean commit, and expires for any different commit. Normal checks remain required.
+Skipped review is reported as **SKIPPED**, never passed.
+
+Ask to require reviews again to reverse it. Project reset clears all local exemptions; change
+reset clears only that branch and can inherit project skip. Missing policy means required;
+invalid policy blocks and can be repaired with explicit project reset.
+
+New setup includes a compatible land gate. For an existing project, ask the agent to preview and
+explicitly apply `ged_review_gate_update`: it upgrades only the exact stock legacy gate, preserving
+customized scripts. Running setup again still leaves existing files untouched. Custom gates need
+manual integration; see [review preferences and gate upgrades](../workflow.md#choosing-whether-to-require-independent-review).

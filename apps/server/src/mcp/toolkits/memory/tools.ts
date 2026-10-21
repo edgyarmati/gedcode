@@ -5,6 +5,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
+import { ReviewPolicyInput } from "../../../ged/reviewPolicyScript.ts";
 import { PLAYBOOK_NAMES } from "../../../ged/playbooks/index.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -55,7 +56,7 @@ const Participant = Schema.Struct({
 const MemoryListTool = Tool.make("ged_memory_list", {
   ...shared,
   description:
-    "List the Ged project memory documents (.ged/) for the calling thread's checkout: project, standards, decisions, context map, model notes, plans, and verdict records. Read the ones relevant to your work before planning, implementing or verifying. setUp is false when the checkout has no .ged/; offerSetup is true only the first time that is reported for a project.",
+    "List Ged memory and effective local reviewPolicy, including reason and gate support. Read before work and again before delegating verifiers. Review is required by default; only an explicit user request permits ged_review_policy_set. setUp is false without .ged/; offerSetup is true only the first time for a project.",
   parameters: Schema.Struct({
     threadId: Schema.optional(
       ThreadId.annotate({ description: "Defaults to the calling thread." }),
@@ -65,6 +66,7 @@ const MemoryListTool = Tool.make("ged_memory_list", {
     documents: Schema.Array(Schema.Struct({ key: Schema.String, bytes: Schema.Number })),
     setUp: Schema.Boolean,
     offerSetup: Schema.Boolean,
+    reviewPolicy: ProjectMemory.ReviewStatus,
   }),
 })
   .annotate(Tool.Readonly, true)
@@ -96,7 +98,7 @@ const PlaybookTool = Tool.make("ged_playbook", {
 const VerdictWriteTool = Tool.make("ged_verdict_write", {
   ...shared,
   description:
-    "Record one verifier's ruling for a branch. Nothing lands without one: ged_land_check and the pre-push gate refuse a branch whose verdict is missing, stale or failing. A branch may carry several rulings for the same commit (one per verifier); all must pass, and at least one must come from a vendor other than the implementer's unless no other vendor is installed, which this tool determines and records. Write this from the VERIFIER's findings, never from the implementer's self-assessment. headSha must be the commit actually reviewed; the gate compares it against the live head and blocks on any mismatch.",
+    "Record one verifier's ruling for a branch when review is required. ged_land_check and the pre-push gate refuse a missing, stale or failing verdict unless the user explicitly opted out. Never write a fake verdict for skipped review. All recorded reviews must pass, with a different vendor unless no other vendor is installed. Write the VERIFIER's findings, never the implementer's self-assessment. headSha must be the commit actually reviewed.",
   parameters: Schema.Struct({
     branch: TrimmedNonEmptyString,
     headSha: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).annotate({
@@ -143,6 +145,25 @@ const InitTool = Tool.make("ged_init", {
   }),
 }).annotate(Tool.Destructive, false);
 
+const ReviewPolicySetTool = Tool.make("ged_review_policy_set", {
+  ...shared,
+  description:
+    "Only on an explicit user request: skip or require independent review locally. Infer project versus current change from the request; if unclear ask one targeted question. Never infer skip from cost, size, quota or failed review. Change skip requires exact branch and final committed headSha with a clean checkout; never transfer it to another commit. Project required clears ALL local exemptions; change required removes only this branch and may inherit project skip. Normal checks remain required. Read gate support in the result; upgrade stock legacy gates explicitly with ged_review_gate_update. Report review SKIPPED, never passed.",
+  parameters: Schema.Struct({ ...ReviewPolicyInput.fields, threadId: Schema.optional(ThreadId) }),
+  success: ProjectMemory.ReviewStatus,
+}).annotate(Tool.Destructive, true);
+
+const ReviewGateUpdateTool = Tool.make("ged_review_gate_update", {
+  ...shared,
+  description:
+    "Preview the installed review gate; apply: true explicitly upgrades only the exact known stock legacy gate to support local review opt-outs. Customized and missing gates are preserved; integrate the current starter manually or use ged_init for missing files. Setup itself remains add-missing-only. Show preview before applying.",
+  parameters: Schema.Struct({
+    apply: Schema.optional(Schema.Boolean),
+    threadId: Schema.optional(ThreadId),
+  }),
+  success: ProjectMemory.GateUpdate,
+}).annotate(Tool.Destructive, false);
+
 export const MemoryToolkit = Toolkit.make(
   MemoryListTool,
   MemoryReadTool,
@@ -150,4 +171,6 @@ export const MemoryToolkit = Toolkit.make(
   VerdictWriteTool,
   LandCheckTool,
   InitTool,
+  ReviewPolicySetTool,
+  ReviewGateUpdateTool,
 );

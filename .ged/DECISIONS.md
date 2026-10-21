@@ -52,8 +52,8 @@
 - Date: 2026-10-11
 - Decision: Remove the durable `plan → work → verify` stage machine. The stages become
   delegation choices made by a task lead, not server-enforced states. The guarantee moves to
-  the land boundary: nothing merges without a structured verdict record from an independent
-  verifier.
+  the land boundary: review is required by default, with a structured verdict record from an
+  independent verifier. Explicit local user opt-outs are the exception (2026-10-21).
 - Rationale: The stage machine enforced sequence; the thing we care about is outcome. It taxed
   trivial work with mandatory stages while adding no guarantee at the point that mattered. A
   pipeline can be satisfied by passing through a stage; a gate can only be satisfied by
@@ -86,13 +86,12 @@ open question recorded in ORCHESTRATION.md §9.
 
 ## 2026-10-11 — The land gate fails closed
 
-**Decision:** `.ged/bin/land-gate.sh` exits non-zero for a missing, malformed, stale, failing,
-evidence-free, or same-vendor verdict. There is no skip path and no override flag.
+**Decision:** In required mode, `.ged/bin/land-gate.sh` exits non-zero for a missing, malformed,
+stale, failing, evidence-free, or unsupported same-vendor verdict. The former no-override policy
+is superseded only for explicit user requests by the 2026-10-21 decision below.
 
-**Rationale:** A gate with an escape hatch is a suggestion. The entire reason the stage machine was
-dropped in favour of an outcome gate is that the gate cannot be satisfied by passing through it —
-only by producing evidence. An override would restore exactly the weakness being removed. Verified
-against all six failure modes plus the passing case.
+**Rationale:** Default review protections remain fail-closed. A user choosing to skip independent
+review is a separate policy decision, never evidence that review passed.
 
 ## 2026-10-11 — Carried v0.4 memory and skills rewritten, not imported
 
@@ -553,7 +552,7 @@ block-and-ask rule. The verifier is the exception: one foreign verifier by defau
 verifier when only one vendor is installed, and both in parallel for important changes or when the
 foreign option is weak. The server records whether another vendor could have verified, so the gate
 can tell "no choice" from "skipped". A small change the lead may implement itself, but it still
-needs a verdict; there is no docs-only exemption.
+needs a verdict by default; explicit user opt-outs are covered by the 2026-10-21 decision below.
 
 ## 2026-10-17 — Ged setup is visible in the thread header and offered once per project
 
@@ -611,3 +610,21 @@ them back for another implementer round. Not bundled as a skill, per the 2026-10
 brief would not do: a skill reaches Claude Code only, while playbooks reach every provider.
 Its levels, slash commands, hooks and status line are left out. Credit is in
 `THIRD_PARTY_NOTICES.md`.
+
+## 2026-10-21 — Explicit local independent-review opt-outs
+
+**Decision:** Review remains required by default. Only an explicit user request permits project
+or current-change skip through Ged's MCP tools. Infer scope from the request or ask one targeted
+question. Never infer permission from cost, task size, quota exhaustion or a failed review.
+
+The policy is local Git-common-dir memory shared by threads and linked worktrees, outside tracked
+`.ged` documents so it cannot silently travel to clones or other environments. Change exemptions
+bind the full branch and final clean committed HEAD; they never transfer to another commit.
+Project reset clears every local exemption; change reset clears just that branch and reports any
+inherited project skip. Invalid policy cannot grant a skip. Both MCP and the standalone gate use
+one bundled evaluator; stock legacy gates require explicit preview/apply upgrade and custom gates
+are preserved. Normal checks remain required and skipped review is labeled SKIPPED, never passed.
+
+**Rationale:** Users must be able to choose whether independent review spends their subscription
+quota. This supersedes the old no-override decision only for explicit requests; automatic quota
+fallback and provider selection changes are separate work. This repository remains review-required.

@@ -130,6 +130,8 @@ it("publishes every Ged tool with a reference-free object-root input schema", ()
     "ged_memory_list",
     "ged_memory_read",
     "ged_playbook",
+    "ged_review_gate_update",
+    "ged_review_policy_set",
     "ged_verdict_write",
   ]);
   for (const tool of Object.values(MemoryToolkit.tools)) {
@@ -178,3 +180,29 @@ it("renders in a client without T3's tool catalog, because it is not in it", () 
     );
   }
 });
+
+it.effect(
+  "validates explicit policy scope, mode, visible reason and full SHA at the MCP boundary",
+  () =>
+    withMemory((root) =>
+      Effect.gen(function* () {
+        for (const args of [
+          { mode: "skip", reason: "User request" },
+          { scope: "project", reason: "User request" },
+          { scope: "project", mode: "skip", reason: " " },
+          { scope: "project", mode: "skip", reason: "\u200b\u202e" },
+          { scope: "project", mode: "skip", reason: "\u0000" },
+          { scope: "change", mode: "skip", reason: "User request", headSha: "next" },
+          { scope: "all", mode: "skip", reason: "User request" },
+        ]) {
+          const error = yield* Effect.flip(callTool("ged_review_policy_set", args));
+          expect(error._tag).toBe("InvalidParams");
+        }
+        const listed = yield* callTool("ged_memory_list", {});
+        expect(listed.isError).not.toBe(true);
+        expect(listed.structuredContent).toMatchObject({
+          reviewPolicy: { required: true, valid: false },
+        });
+      }).pipe(Effect.provide(serverLayer(root))),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);

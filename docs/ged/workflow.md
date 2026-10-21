@@ -6,7 +6,7 @@ question: **how do you know the change an agent just made is actually correct?**
 The usual answer is to ask the agent, which is the one source that cannot be trusted. An agent that
 has just written code is the worst available judge of it — it will restate its own intent back to
 you as evidence. Ged's answer is that the agent who wrote the code never gets to rule on it, and
-that nothing lands without a ruling.
+that independent review is required by default. You can explicitly opt out locally, as described below.
 
 ## How to start
 
@@ -42,7 +42,7 @@ UI exactly like any other orchestrator work.
 
 There is no state machine. A typo fix delegates nothing; a refactor might delegate a planner, two
 implementers and three rounds of verification. The lead chooses, guided by the lead playbook. A small change
-the lead may make itself; it still needs a verdict to land.
+the lead may make itself; it still needs a verdict to land unless you explicitly skipped independent review.
 
 ## Why the verdict can be trusted
 
@@ -74,7 +74,7 @@ mechanical, except where it says otherwise:
 
 The verdict is recorded in `.ged/verdicts/`, one record per branch carrying the commit it judged and
 every verifier's ruling on it. A ruling on a new commit starts the record over.
-Before anything lands, `.ged/bin/land-gate.sh` checks it, and fails closed — anything it cannot
+In required mode, `.ged/bin/land-gate.sh` checks it, and fails closed — anything it cannot
 positively confirm blocks:
 
 - the working tree is clean, because the verifier reviewed a commit, not your uncommitted edits
@@ -96,6 +96,52 @@ chmod +x .git/hooks/pre-push
 
 Agents reach the same script through the `ged_land_check` tool rather than a reimplementation of its
 rules, so the tool and the hook cannot disagree.
+
+## Choosing whether to require independent review
+
+Review is required for existing and new projects unless you explicitly ask to skip it. Tell the
+agent, for example, “Skip independent reviews for this project” or “Skip review for this change
+only.” It infers scope from your request; if unclear, it asks once: “For this change only, or for
+this project?” Task size, cost, exhausted quota and failed reviews never automatically disable it.
+
+The agent uses `ged_review_policy_set` with `scope: project|change`, `mode: skip|required`, and a
+reason. `ged_memory_list` reports the effective requirement, scope, reason, validity and gate
+support before the agent delegates verifiers.
+
+- **Project:** persists across threads and linked worktrees sharing this Git repository. The local
+  policy lives at `<git-common-dir>/ged/review-policy.json`, outside tracked files. It does not
+  travel to clones, CI or another environment.
+- **Current change:** applies only to the exact full branch name and final commit. The agent runs
+  normal checks, commits the finished change, then records that branch and full HEAD with a clean
+  working tree. An early request stays in the conversation until then. Another branch, amend,
+  rebase or later commit needs a fresh explicit request; no next-commit exemptions exist.
+- **Reverse it:** say “Require reviews again for this project” to clear the project setting and
+  every local change exemption. “Require review for this change” clears only this branch; if
+  project skip is still active, the agent reports that inherited policy. Required mode restores
+  the normal verifier workflow and all existing verdict protections.
+
+The gate reports **independent review SKIPPED**, with scope and reason, when an exemption applies.
+This is never a review pass or evidence that checks ran. All normal format, lint, typecheck and
+test checks remain required; the land gate retains its Git checks and does not run those commands
+for you. Invalid or unreadable policy blocks landing; an explicit project reset to `required`
+repairs malformed records. Symlinked policy paths are refused, including on reset.
+
+### Existing project gates
+
+New setup installs support automatically. Existing setup remains add-missing-only: it never
+silently replaces a gate. Ask the agent to preview `ged_review_gate_update`, then explicitly apply
+it. Only the exact stock legacy gate can be upgraded; customized gates stay untouched. Commit the
+upgraded gate before recording a current-change exemption. A `current` gate status means the
+installed script exactly matches the current starter. Unsupported gates refuse new skips and
+report inherited opt-outs as inactive; restoring required reviews always remains available.
+
+For a custom gate, manually integrate the policy block from the current starter
+[`landGate.ts`](../../apps/server/src/ged/starter/landGate.ts), keeping the existing non-review
+checks before it and verdict validation after it. Include the starter's `# Ged review policy: v1`
+marker only after integrating that behavior; `gateSupportsOptOut` reports this declaration.
+Custom gates still report `custom`; inspect and
+exercise their required and skip behavior directly and through `ged_land_check` before relying on
+them. Missing gates can be added through ordinary setup. Always obey the installed land gate.
 
 ## Models
 

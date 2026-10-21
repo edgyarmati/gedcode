@@ -1,8 +1,9 @@
 # Verdict records
 
-A verdict record is an independent verifier's ruling on one branch. It is the only
+A verdict record is an independent verifier's ruling on one branch. In required mode it is the only
 thing that lets a change land: `.ged/bin/land-gate.sh` refuses a branch that has no
-current, passing, independent verdict.
+current, passing, independent verdict. Explicit user opt-outs are recorded separately in local
+Git-common-dir policy, never as fake passing verdicts; normal checks remain required.
 
 One record per branch, named after the branch with `/` replaced by `-`:
 `feat/memory-toolkit` → `.ged/verdicts/feat-memory-toolkit.json`.

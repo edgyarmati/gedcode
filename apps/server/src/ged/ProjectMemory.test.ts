@@ -332,3 +332,21 @@ it.effect("refuses to write a verdict through a symlink", () =>
     }),
   ).pipe(Effect.provide(layer)),
 );
+
+it.effect(
+  "reports required and unavailable outside Git without creating policy or breaking memory",
+  () =>
+    withProject((root) =>
+      Effect.gen(function* () {
+        const memory = yield* ProjectMemory.ProjectMemory;
+        const fs = yield* FileSystem.FileSystem;
+        expect(yield* memory.reviewStatus(root)).toMatchObject({
+          required: true,
+          valid: false,
+          gate: "missing",
+        });
+        expect((yield* memory.list(root)).length).toBeGreaterThan(0);
+        expect(yield* fs.exists(`${root}/.git`)).toBe(false);
+      }),
+    ).pipe(Effect.provide(layer)),
+);

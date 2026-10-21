@@ -8,6 +8,13 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { mergeRuling, type VerdictRuling } from "./verdictRecord.ts";
+import {
+  REVIEW_POLICY_SCRIPT,
+  ReviewPolicyInput,
+  ReviewPolicyStatus,
+  ReviewGateStatus,
+} from "./reviewPolicyScript.ts";
+import { LAND_GATE, LEGACY_LAND_GATE, REVIEW_POLICY_GATE_MARKER } from "./starter/landGate.ts";
 
 /**
  * The Ged project memory: the `.ged/` tree a project keeps alongside its code.
@@ -18,7 +25,8 @@ import { mergeRuling, type VerdictRuling } from "./verdictRecord.ts";
  * read the same standards, which is the whole point of keeping them on disk
  * rather than in one harness's prompt.
  *
- * Everything here is path-confined to `<root>/.ged`. Tool input names a document
+ * Document access is path-confined to `<root>/.ged`. Local review policy has a
+ * separate, fixed accessor anchored to Git's canonical common directory. Tool input names a document
  * by a relative key, never a path the caller composes, and no symlink is followed
  * on the way to it: a checkout is untrusted input, and one link inside `.ged` would
  * otherwise reach any file the server can read or write.
@@ -46,6 +54,15 @@ export interface LandRuling {
   readonly detail: string;
 }
 
+export const ReviewStatus = Schema.Struct({
+  ...ReviewPolicyStatus.fields,
+  gate: ReviewGateStatus,
+  gateSupportsOptOut: Schema.Boolean,
+});
+export const GateUpdate = Schema.Struct({ status: ReviewGateStatus, applied: Schema.Boolean });
+const decodePolicyStatus = Schema.decodeUnknownEffect(Schema.fromJsonString(ReviewPolicyStatus));
+const decodePolicyInput = Schema.decodeUnknownEffect(ReviewPolicyInput);
+
 export class GedMemoryError extends Error {
   readonly _tag = "GedMemoryError";
   constructor(message: string) {
@@ -67,6 +84,17 @@ export class ProjectMemory extends Context.Service<
       ruling: VerdictRuling,
     ) => Effect.Effect<string, GedMemoryError>;
     readonly landCheck: (root: string) => Effect.Effect<LandRuling, GedMemoryError>;
+    readonly reviewStatus: (
+      root: string,
+    ) => Effect.Effect<typeof ReviewStatus.Type, GedMemoryError>;
+    readonly setReviewPolicy: (
+      root: string,
+      input: typeof ReviewPolicyInput.Type,
+    ) => Effect.Effect<typeof ReviewStatus.Type, GedMemoryError>;
+    readonly updateReviewGate: (
+      root: string,
+      apply: boolean,
+    ) => Effect.Effect<typeof GateUpdate.Type, GedMemoryError>;
   }
 >()("t3/ged/ProjectMemory") {}
 
@@ -211,6 +239,95 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
   // Parallel verifiers record into the same file; each read-merge-write must see
   // the previous one's result.
   const verdictLock = yield* Semaphore.make(1);
+  const policyLock = yield* Semaphore.make(1);
+
+  const gateStatus = (root: string) =>
+    Effect.gen(function* () {
+      const file = path.join(memoryRoot(root), GATE_SCRIPT);
+      if (yield* isSymlink(file)) return { status: "custom", supportsOptOut: false } as const;
+      if (!(yield* fs.exists(file))) return { status: "missing", supportsOptOut: false } as const;
+      const dir = yield* realMemoryRoot(root);
+      if ((yield* resolvesToItself(path.join(dir, "bin"))) !== true)
+        return { status: "custom", supportsOptOut: false } as const;
+      const body = yield* fs.readFileString(file);
+      const status =
+        body === LAND_GATE
+          ? ("current" as const)
+          : body === LEGACY_LAND_GATE
+            ? ("legacy" as const)
+            : ("custom" as const);
+      return { status, supportsOptOut: body.split(/\r?\n/).includes(REVIEW_POLICY_GATE_MARKER) };
+    }).pipe(Effect.mapError(() => new GedMemoryError("Could not inspect the review gate.")));
+
+  const runPolicy = (root: string, input?: typeof ReviewPolicyInput.Type) =>
+    Effect.gen(function* () {
+      const output = yield* processes
+        .run({
+          command: "node",
+          args: ["--input-type=module", "-e", REVIEW_POLICY_SCRIPT, input ? "set" : "status"],
+          cwd: root,
+          // Structured input goes over stdin, never through a shell.
+          // @effect-diagnostics-next-line preferSchemaOverJson:off -- bundled Node runtime accepts JSON.
+          stdin: input ? JSON.stringify(input) : undefined,
+          timeout: "30 seconds",
+          maxOutputBytes: 64 * 1024,
+        })
+        .pipe(
+          Effect.mapError(() => new GedMemoryError("Could not run the review policy evaluator.")),
+        );
+      if (output.code !== 0)
+        return yield* fail(output.stderr.trim() || "Could not update review policy.");
+      return yield* decodePolicyStatus(output.stdout).pipe(
+        Effect.mapError(() => new GedMemoryError("Invalid review policy evaluator response.")),
+      );
+    });
+
+  const reviewStatus = (root: string) =>
+    Effect.gen(function* () {
+      const policy = yield* runPolicy(root);
+      const gate = yield* gateStatus(root);
+      const effective =
+        !policy.required && !gate.supportsOptOut
+          ? {
+              ...policy,
+              required: true,
+              scope: null,
+              reason: null,
+              error: "The configured opt-out needs review-policy support in this checkout's gate.",
+            }
+          : policy;
+      return { ...effective, gate: gate.status, gateSupportsOptOut: gate.supportsOptOut };
+    });
+
+  const setReviewPolicy = (root: string, input: typeof ReviewPolicyInput.Type) =>
+    Effect.gen(function* () {
+      yield* realMemoryRoot(root);
+      const checked = yield* decodePolicyInput(input).pipe(
+        Effect.mapError(() => new GedMemoryError("Explicit scope, mode and reason are required.")),
+      );
+      if (checked.mode === "skip" && !(yield* gateStatus(root)).supportsOptOut)
+        return yield* fail(
+          "The installed gate does not support review opt-outs. Upgrade the stock gate or integrate support in the custom gate first.",
+        );
+      yield* runPolicy(root, checked);
+      return yield* reviewStatus(root);
+    }).pipe(policyLock.withPermits(1));
+
+  const updateReviewGate = (root: string, apply: boolean) =>
+    Effect.gen(function* () {
+      const { status } = yield* gateStatus(root);
+      if (!apply || status === "current") return { status, applied: false };
+      if (status !== "legacy")
+        return yield* fail(
+          "Only the exact stock legacy gate can be upgraded. Preserve custom gates and integrate the current starter manually.",
+        );
+      const file = path.join(yield* realMemoryRoot(root), GATE_SCRIPT);
+      // Rechecked on apply, not trusted from the caller's preview.
+      yield* fs
+        .writeFileString(file, LAND_GATE)
+        .pipe(Effect.mapError(() => new GedMemoryError("Could not upgrade the review gate.")));
+      return { status: "current" as const, applied: true };
+    }).pipe(policyLock.withPermits(1));
 
   const recordRuling = (root: string, ruling: VerdictRuling) =>
     Effect.gen(function* () {
@@ -280,7 +397,16 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       return { allowed: false, outcome: "error", detail } satisfies LandRuling;
     });
 
-  return { present, list, read, recordRuling, landCheck } as const;
+  return {
+    present,
+    list,
+    read,
+    recordRuling,
+    landCheck,
+    reviewStatus,
+    setReviewPolicy,
+    updateReviewGate,
+  } as const;
 });
 
 // ProcessRunner is stateless over the spawner, so it is provided here rather than

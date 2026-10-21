@@ -382,3 +382,11 @@ read-only. A subprocess regression interrupts the actual normalization after for
 spill, then verifies automatic initialization preserves all 401 synthetic threads and six messages
 (including attachment metadata) without a V1 source, retains both recovery archives, and is
 idempotent on the next startup.
+
+## 2026-10-21 — Manual independent-review preferences
+
+Added local project and exact branch/commit opt-outs, effective MCP policy status and reversal,
+and an explicit stock-gate upgrade path. Default review, normal checks and required-mode verdict
+protections remain. Guidance distinguishes skipped review from passing review. Checked with scoped
+format/lint, server and provider-core typechecks, 53 focused tests, and shell syntax/template parity.
+No opt-out was created for this repository.

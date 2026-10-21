@@ -173,5 +173,6 @@ Three Ged-specific rules sit on top of it, and the files they point at are the o
   upstream file is a permanent merge conflict. Prefer additive work.
 - `.ged/` is durable project memory: `PROJECT.md`, `DECISIONS.md`, `CONTEXT-MAP.md`, `PROGRESS.md`,
   `ORCHESTRATION.md`, `model-notes.md`, `plans/`. Record what you decide there as part of the task.
-- Nothing lands without an independent verdict: `.ged/bin/land-gate.sh` refuses a branch without
-  one. See [`docs/ged/workflow.md`](docs/ged/workflow.md).
+- Independent review is required by default. An explicit user opt-out may cover this local
+  project or one exact branch/commit; normal checks still apply. `.ged/bin/land-gate.sh` enforces
+  the effective policy. See [`docs/ged/workflow.md`](docs/ged/workflow.md).

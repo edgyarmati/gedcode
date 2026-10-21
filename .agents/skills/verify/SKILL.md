@@ -35,5 +35,7 @@ steps.
 ## Note
 
 This is the mechanical check, not verification in the Ged sense. Passing it is necessary and not
-sufficient — landing additionally requires an independent verifier's verdict. See
+sufficient — landing additionally requires an independent verifier's verdict unless the user
+explicitly opted out through Ged's local review policy. Keep checks and report skipped review
+separately; consult `ged_memory_list` and obey `ged_land_check`. See
 the verifier brief (`ged_playbook` with `verifier`) and `.ged/bin/land-gate.sh`.
