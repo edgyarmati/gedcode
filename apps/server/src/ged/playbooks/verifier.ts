@@ -40,9 +40,14 @@ verdict; the lead sends them back for another implementer round.
 Call \`ged_verdict_write\` with the criteria as you ruled on them, your own \`driverKind\` and model,
 and the implementer's. Claude's driver kind is \`claudeAgent\`; others include \`codex\`, \`cursor\`,
 \`grok\`, \`opencode\`, \`pi\`, \`muse\` and \`acpRegistry\`. Your ruling joins any other verifier's
-on the same commit. GedCode records \`otherVendorAvailable\` from the installed providers, so a
-same-vendor ruling counts alone only when no other vendor could have verified. The tool tells you
-what the land gate makes of the record; a rejection is yours to fix now.
+on the same commit. Cross-vendor review is preferred; fresh same-provider review is accepted with
+an explicit warning even if another vendor is installed. Include the lead's reviewer selection or
+operational fallback reason in \`selectionReason\` (at most 500 characters). GedCode derives
+\`otherVendorAvailable\` from its live catalog; it is informational, not proof of usable auth,
+subscription or quota. Do not fabricate availability. A provider operational failure is not a
+passing review; report pending/unavailable if you cannot review. Never erase actual failing
+findings because a provider failed. The tool tells you what the land gate makes of the record;
+a rejection is yours to fix now.
 
 Each round is a fresh delegation. If you are given prior findings, treat them as claims to
 re-check, not as settled.

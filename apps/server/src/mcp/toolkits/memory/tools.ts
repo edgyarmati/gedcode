@@ -98,7 +98,7 @@ const PlaybookTool = Tool.make("ged_playbook", {
 const VerdictWriteTool = Tool.make("ged_verdict_write", {
   ...shared,
   description:
-    "Record one verifier's ruling for a branch when review is required. ged_land_check and the pre-push gate refuse a missing, stale or failing verdict unless the user explicitly opted out. Never write a fake verdict for skipped review. All recorded reviews must pass, with a different vendor unless no other vendor is installed. Write the VERIFIER's findings, never the implementer's self-assessment. headSha must be the commit actually reviewed.",
+    "Record one verifier's ruling for a branch when review is required. ged_land_check and the pre-push gate refuse a missing, stale or failing verdict unless the user explicitly opted out. Never write a fake verdict for skipped review. All recorded reviews must pass. Cross-vendor review is preferred; fresh same-provider review is accepted with a warning, even when another vendor is installed. Record the selection/fallback reason; installed availability is server-derived and informational. Provider operational failure is not a passing review. Write the VERIFIER's findings, never the implementer's self-assessment. headSha must be the commit actually reviewed.",
   parameters: Schema.Struct({
     branch: TrimmedNonEmptyString,
     headSha: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).annotate({
@@ -108,6 +108,12 @@ const VerdictWriteTool = Tool.make("ged_verdict_write", {
     criteria: Schema.Array(VerdictCriterion).check(Schema.isMinLength(1)),
     implementer: Participant,
     verifier: Participant,
+    selectionReason: Schema.optional(
+      TrimmedNonEmptyString.check(Schema.isMaxLength(500)).annotate({
+        description:
+          "Why this reviewer was selected (max 500 characters), including actual provider unavailability/authentication/subscription/quota failures. Do not guess exhaustion from unknown quota telemetry.",
+      }),
+    ),
     threadId: Schema.optional(ThreadId),
   }),
   success: Schema.Struct({ path: Schema.String, ruling: Schema.String }),
@@ -156,7 +162,7 @@ const ReviewPolicySetTool = Tool.make("ged_review_policy_set", {
 const ReviewGateUpdateTool = Tool.make("ged_review_gate_update", {
   ...shared,
   description:
-    "Preview the installed review gate; apply: true explicitly upgrades only the exact known stock legacy gate to support local review opt-outs. Customized and missing gates are preserved; integrate the current starter manually or use ged_init for missing files. Setup itself remains add-missing-only. Show preview before applying.",
+    "Preview the installed review gate; apply: true explicitly upgrades only exact known stock gates from before or after manual opt-outs to the current review policy. Customized and missing gates are preserved; integrate the current starter manually or use ged_init for missing files. Setup itself remains add-missing-only. Show preview before applying.",
   parameters: Schema.Struct({
     apply: Schema.optional(Schema.Boolean),
     threadId: Schema.optional(ThreadId),

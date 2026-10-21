@@ -34,10 +34,15 @@ One record per branch, named after the branch with `/` replaced by `-`:
 ```
 
 `reviews` holds one entry per verifier that ruled on `headSha`. Usually that is one;
-important changes get two in parallel, a strong same-family verifier and a foreign
-one. A ruling on a new commit starts the record over. `otherVendorAvailable` is what
-GedCode reported when the verifier was chosen: whether any provider other than the
-implementer's was installed.
+important changes get two independent fresh contexts, preferably a strong same-family reviewer
+and a usable foreign reviewer, but both may use the available provider. A ruling on a new commit
+starts the record over. `otherVendorAvailable` is server-derived from the live catalog when the
+ruling is recorded: whether another vendor advertises child-task capability. It does not prove
+usable authentication, subscription or quota and is informational, never a subscription gate.
+Optional `selectionReason` (non-empty, at most 500 characters) records why this reviewer was chosen,
+including actual operational fallback failures. Same-provider-only review warns with this reason
+when present; older schemaVersion 2 records without it remain supported. Cross-vendor review is
+preferred, not required. Operational failure is not a pass and never erases a failing review.
 
 `driverKind` must be one of the kinds in `packages/contracts/src/model.ts`:
 `codex`, `claudeAgent`, `cursor`, `grok`, `muse`, `pi`, `acpRegistry`, `opencode`.
@@ -59,11 +64,10 @@ The gate fails closed: anything it cannot positively confirm blocks the land.
 6. Every criterion carries substantive text and evidence: at least three characters
    that survive stripping whitespace and invisible format characters (zero-width,
    bidi controls, soft hyphen).
-7. At least one verifier's `driverKind` differs from the implementer's, compared
-   case-insensitively and after trimming, so `"Codex "` cannot pose as a second
-   vendor. The one exception: when every review records `otherVendorAvailable:
-false`, a same-vendor verdict passes with a warning, because there was no other
-   vendor to ask.
+7. Every review records the server-derived boolean `otherVendorAvailable`. Same-provider-only
+   reviews pass with a warning whether it is true or false. Vendors compare case-insensitively
+   after trimming; `"Codex "` still counts as same-provider. Optional `selectionReason` is validated
+   when present and included in the warning.
 8. HEAD is on a named branch whose name maps to a usable filename.
 9. The record is a real file, not a symlink.
 
@@ -85,8 +89,7 @@ can forge a pass, and the implementer's own agent could write one naming a verif
 that never ran.
 
 The gate is therefore a guard against _omission_, not against _forgery_: it stops a
-lead that skipped verification, or that verified an older tree, or that let a
-sycophantic same-vendor reviewer sign off. It does not stop a deliberately dishonest
+lead that skipped verification, verified an older tree, or ignored a failing review. It does not stop a deliberately dishonest
 agent. Raising it to that bar needs an attestation the agent cannot mint — a
 signature from the orchestrator process, or verification recorded server-side in the
 task record rather than on disk. Also unbuilt, and worth doing before this is relied

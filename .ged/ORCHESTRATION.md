@@ -93,12 +93,20 @@ through a stage. The gate can only be satisfied by producing evidence.
    implementer's self-assessment — precisely the artifact that transmits bias. The
    verifier's brief contains the **original acceptance criteria** and the **diff**.
    It forms its own view of what the code does.
-3. **Cross-vendor by default.** Set `target.driverKind` so the verifier runs a
-   different vendor than the implementer. Shared training priors and self-consistency
-   pressure are the main sources of agreement bias; a different vendor removes both.
-   With only one vendor installed, one same-family verifier is allowed, and the gate warns.
-   Important changes, or a weak foreign option, get two verifiers in parallel: a strong
-   same-family one and a foreign one. The verdict records each ruling.
+3. **Cross-vendor preferred, not required.** Choose a capable usable foreign reviewer from
+   `orchestrator_capabilities` and available catalogs/known usage. Unknown quota telemetry does not
+   establish exhaustion. If no alternative can run, or a provider attempt fails for availability,
+   authentication, subscription or quota, automatically delegate a strong same-provider reviewer
+   in a fresh context. Announce the reason and pass it for `ged_verdict_write.selectionReason`;
+   do not repeatedly retry an exhausted provider or ask the user to buy/enable another subscription
+   or disable a provider. The server-derived `otherVendorAvailable` remains truthful and
+   informational: installed does not mean usable. The gate accepts same-provider review with a
+   warning even when another vendor is installed. Important changes (auth/security, data/migrations,
+   public APIs, destructive operations, or user-designated), or a weak foreign option, still get
+   two independent fresh contexts; both may use the available provider. Both must pass.
+   Provider operational failure is not a passing review and never erases actual failing findings.
+   If nobody can review, report pending/unavailable; only the user can explicitly opt out. Never
+   shrink scope because of quota.
 4. **The verifier reports; it does not fix.** It inherits the lead's mode so it can run
    the checks unattended, and its brief forbids fixes. Separating find from fix stops a
    verifier from quietly patching and then declaring success.
@@ -128,8 +136,7 @@ bounds fan-out or nesting depth, so the lead's own playbook must; see §8.
 
 There is no fixed role → model table. The lead picks the model for each child from
 its **own family**, matched to the task, because it knows its family's strengths and
-the best choice changes with every release. The verifier is the exception: it runs
-another vendor (§5).
+the best choice changes with every release. The verifier prefers a usable foreign vendor (§5).
 
 The user's preferences live in `.ged/model-notes.md`. The lead reads it first, tries
 what it names, and records any new preference the user states. When a named model is
@@ -137,11 +144,11 @@ unavailable the lead uses the closest one it can and **says so in the thread**. 
 is a decided exception to the no-unapproved-fallbacks rule: the user asked for
 autonomy here, and announcing the fallback keeps it visible.
 
-| Role        | Model                                 | runtimeMode | interactionMode |
-| ----------- | ------------------------------------- | ----------- | --------------- |
-| Planner     | lead's family, chosen for the task    | inherit     | `plan`          |
-| Implementer | lead's family, chosen for the task    | inherit     | `default`       |
-| Verifier    | another vendor; see §5 for exceptions | inherit     | `default`       |
+| Role        | Model                                | runtimeMode | interactionMode |
+| ----------- | ------------------------------------ | ----------- | --------------- |
+| Planner     | lead's family, chosen for the task   | inherit     | `plan`          |
+| Implementer | lead's family, chosen for the task   | inherit     | `default`       |
+| Verifier    | usable foreign vendor preferred (§5) | inherit     | `default`       |
 
 The lead calls `orchestrator_capabilities` first: it returns registered provider
 instances, advertised models, whether each can run a child task, and model-visible

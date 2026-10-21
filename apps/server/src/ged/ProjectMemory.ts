@@ -14,7 +14,12 @@ import {
   ReviewPolicyStatus,
   ReviewGateStatus,
 } from "./reviewPolicyScript.ts";
-import { LAND_GATE, LEGACY_LAND_GATE, REVIEW_POLICY_GATE_MARKER } from "./starter/landGate.ts";
+import {
+  LAND_GATE,
+  LEGACY_LAND_GATE,
+  OPT_OUT_LAND_GATE,
+  REVIEW_POLICY_GATE_MARKER,
+} from "./starter/landGate.ts";
 
 /**
  * The Ged project memory: the `.ged/` tree a project keeps alongside its code.
@@ -253,7 +258,7 @@ const make = Effect.fn("ged.ProjectMemory.make")(function* () {
       const status =
         body === LAND_GATE
           ? ("current" as const)
-          : body === LEGACY_LAND_GATE
+          : body === LEGACY_LAND_GATE || body === OPT_OUT_LAND_GATE
             ? ("legacy" as const)
             : ("custom" as const);
       return { status, supportsOptOut: body.split(/\r?\n/).includes(REVIEW_POLICY_GATE_MARKER) };

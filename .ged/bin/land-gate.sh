@@ -232,16 +232,21 @@ for (const r of reviews) {
     }
   }
   if (typeof r.otherVendorAvailable !== "boolean") fail(`the review by ${who} does not record otherVendorAvailable`);
-  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable });
+  if (r.selectionReason !== undefined && (typeof r.selectionReason !== "string" || !r.selectionReason.trim() || r.selectionReason.length > 500)) {
+    fail(`the review by ${who} has an invalid selectionReason`);
+  }
+  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable, selectionReason: r.selectionReason });
 }
 
 const foreign = verifiers.filter((r) => r.vv !== iv);
 if (foreign.length === 0) {
-  if (verifiers.some((r) => r.otherVendorAvailable)) {
-    fail(`verified only by the implementer vendor (${iv}), while another vendor was installed.\n`
-       + "  Add a review from another vendor; same-vendor review shares the blind spots of the implementer.");
+  const availability = verifiers.some((r) => r.otherVendorAvailable)
+    ? "another vendor was installed; installation does not establish usable authentication, subscription or quota"
+    : "no other vendor was installed";
+  console.error(`WARNING: same-provider review — verified only by the implementer vendor (${iv}); ${availability}. Cross-vendor review is preferred.`);
+  for (const r of verifiers) {
+    if (r.selectionReason) console.error(`WARNING: reviewer selection (${r.who}): ${r.selectionReason}`);
   }
-  console.error(`WARNING: verified only by the implementer vendor (${iv}); no other vendor was installed.`);
 }
 
 const names = verifiers.map((r) => r.who).join(" + ");

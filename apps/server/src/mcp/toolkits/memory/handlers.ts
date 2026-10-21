@@ -39,9 +39,8 @@ const resolveRoot = (threadId?: ThreadId) =>
   resolveCheckout(threadId).pipe(Effect.map(({ root }) => root));
 
 /**
- * Whether a provider of another vendor than the implementer's could run a child
- * task right now. Asked of the same live catalog delegation uses, so a verifier
- * cannot claim there was no alternative when there was one.
+ * Whether the live catalog advertises another vendor able to run child tasks.
+ * This does not establish usable authentication, subscription or quota.
  */
 const otherVendorAvailable = Effect.fn("ged.otherVendorAvailable")(function* (
   implementerKind: string,
@@ -86,7 +85,16 @@ const handlers = {
   ),
   ged_verdict_write: McpToolAccess.writes((input) =>
     Effect.gen(function* () {
-      const { threadId, branch, headSha, implementer, verifier, status, criteria } = input;
+      const {
+        threadId,
+        branch,
+        headSha,
+        implementer,
+        verifier,
+        status,
+        criteria,
+        selectionReason,
+      } = input;
       const root = yield* resolveRoot(threadId);
       const memory = yield* ProjectMemory.ProjectMemory;
       const path = yield* memory
@@ -98,6 +106,7 @@ const handlers = {
             verifier,
             status,
             criteria,
+            ...(selectionReason === undefined ? {} : { selectionReason }),
             otherVendorAvailable: yield* otherVendorAvailable(implementer.driverKind),
           },
         })

@@ -390,3 +390,15 @@ and an explicit stock-gate upgrade path. Default review, normal checks and requi
 protections remain. Guidance distinguishes skipped review from passing review. Checked with scoped
 format/lint, server and provider-core typechecks, 53 focused tests, and shell syntax/template parity.
 No opt-out was created for this repository.
+
+## 2026-10-21 — Same-provider review fallback
+
+Cross-vendor review is preferred rather than a subscription gate. Fresh same-provider verdicts
+warn even with another vendor installed, preserving all verdict and explicit opt-out protections.
+Lead instructions automatically select fresh strong same-provider reviewers on operational
+failure, report/record why, retain two contexts for important work and leave review pending if
+none can run. Installed availability stays server-derived; both shipped stock gates can upgrade.
+
+Checked with scoped format/lint, server and provider-core typechecks, 58 focused tests across seven
+files, shell syntax, exact prior-stock snapshot comparisons and starter/script parity. Live provider
+failures were not exercised; no provider settings or actual review exemptions were changed.

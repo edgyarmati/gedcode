@@ -30,6 +30,22 @@ describe("Ged agent instructions", () => {
     assert.include(instructions, "When `offerSetup` is false, do not bring it up");
   });
 
+  it("prefers usable cross-vendor review and requires fresh fallback without skipping review", () => {
+    const instructions = t3OrchestrationSystemPrompt(true) ?? "";
+    for (const text of [
+      "Cross-vendor review is preferred, never a subscription gate",
+      "unknown quota telemetry is not confirmed exhaustion",
+      "automatically delegate a strong same-provider reviewer in a fresh context",
+      "ged_verdict_write.selectionReason",
+      "never fabricate `otherVendorAvailable`",
+    ])
+      assert.include(instructions, text);
+    assert.include(instructions, "or repeatedly retry an exhausted provider");
+    assert.include(instructions, "two independent fresh review contexts");
+    assert.include(instructions, "Actual failing findings remain blocking");
+    assert.include(instructions, "If no provider can review, report pending/unavailable");
+  });
+
   it("stay out of agents without T3 MCP, which cannot call the tool", () => {
     assert.strictEqual(t3OrchestrationSystemPrompt(false), undefined);
     assert.strictEqual(

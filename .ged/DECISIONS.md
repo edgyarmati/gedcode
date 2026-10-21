@@ -65,8 +65,8 @@
 - Date: 2026-10-11
 - Decision: Verification runs as a lead-spawned delegated task that receives the original
   acceptance criteria and the diff — never the implementer's summary — with the lead's runtime
-  mode (see 2026-10-18), on a different `driverKind` than the implementer, and
-  returns a structured per-criterion verdict rather than prose.
+  mode (see 2026-10-18), preferably on a usable different `driverKind` than the implementer
+  (same-provider fallback updated 2026-10-21), and returns a structured per-criterion verdict.
 - Rationale: V2 children receive no parent conversation history, so a verifier is structurally
   blind to the implementer's reasoning; passing the implementer's summary would reintroduce
   exactly the bias the topology removes. Cross-vendor routing removes shared training priors
@@ -87,7 +87,8 @@ open question recorded in ORCHESTRATION.md §9.
 ## 2026-10-11 — The land gate fails closed
 
 **Decision:** In required mode, `.ged/bin/land-gate.sh` exits non-zero for a missing, malformed,
-stale, failing, evidence-free, or unsupported same-vendor verdict. The former no-override policy
+stale, failing, evidence-free, or unverifiable verdict. Same-provider review is accepted with a
+warning (2026-10-21); cross-vendor review is preferred. The former no-override policy
 is superseded only for explicit user requests by the 2026-10-21 decision below.
 
 **Rationale:** Default review protections remain fail-closed. A user choosing to skip independent
@@ -152,8 +153,8 @@ The verdict record is self-asserted and unsigned. Any agent that can write to `.
 write a passing record, including the implementer's own agent naming a verifier that never ran.
 
 This is accepted deliberately, because the failure the gate exists to stop is a _lazy_ lead, not a
-_dishonest_ one: a lead that skipped verification, verified an older tree, or let a same-vendor
-reviewer agree with itself. Against all three the gate works, and it works without the server-side
+_dishonest_ one: a lead that skipped verification, verified an older tree, or ignored a failing
+review. Against all three the gate works, and it works without the server-side
 machinery an attestation would need.
 
 Raising it to resist forgery means an attestation the agent cannot mint — a signature from the
@@ -548,10 +549,10 @@ every project and provider gets the same process and it updates with GedCode. Fi
 
 There is no fixed role → model table. The lead picks from its own family, reads `model-notes.md`
 for the user's preferences, and announces any fallback; the user chose autonomy over the earlier
-block-and-ask rule. The verifier is the exception: one foreign verifier by default, one same-family
-verifier when only one vendor is installed, and both in parallel for important changes or when the
-foreign option is weak. The server records whether another vendor could have verified, so the gate
-can tell "no choice" from "skipped". A small change the lead may implement itself, but it still
+block-and-ask rule. Verification prefers a capable usable foreign reviewer, with automatic fresh
+same-provider fallback and two independent contexts for important changes or weak foreign options
+(2026-10-21). The server records installed child-task availability as information, not proof of
+usable authentication, subscription or quota. A small change the lead may implement itself, but it still
 needs a verdict by default; explicit user opt-outs are covered by the 2026-10-21 decision below.
 
 ## 2026-10-17 — Ged setup is visible in the thread header and offered once per project
@@ -626,5 +627,25 @@ one bundled evaluator; stock legacy gates require explicit preview/apply upgrade
 are preserved. Normal checks remain required and skipped review is labeled SKIPPED, never passed.
 
 **Rationale:** Users must be able to choose whether independent review spends their subscription
-quota. This supersedes the old no-override decision only for explicit requests; automatic quota
-fallback and provider selection changes are separate work. This repository remains review-required.
+quota. This supersedes the old no-override decision only for explicit requests. Automatic reviewer
+fallback is described below and does not skip review. This repository remains review-required.
+
+## 2026-10-21 — Prefer cross-vendor review without a subscription gate
+
+**Decision:** Fresh passing same-provider review satisfies the gate with a warning even when a
+foreign provider is installed. The lead first prefers a capable usable foreign reviewer, checks
+available catalogs and known usage, then automatically falls back on actual availability/auth/
+subscription/quota failure or no usable alternative. Unknown quota is not exhaustion; do not
+repeatedly retry an exhausted provider. Announce and record the reason in bounded optional review
+`selectionReason`; keep server-derived `otherVendorAvailable` truthful and informational.
+
+Important changes still require two independent fresh contexts, both on the available provider
+when necessary. Provider operational failure is not review success and never clears negative
+findings. If nobody can review, report pending; only explicit user opt-out can skip review. Scope
+and normal verdict protections do not change. Both prior stock gates support explicit upgrade;
+custom gates are preserved.
+
+**Rationale:** Installed capability does not prove a usable subscription or remaining quota.
+Review independence comes from fresh contexts with the original criteria and diff; vendor diversity
+is valuable but must not lock out users with one usable provider. No runtime scheduler, quota
+parser or provider-settings mutation is needed: selection stays in the lead playbook.

@@ -143,8 +143,8 @@ console.log(\`land-gate: OK — \${reviews.length} review(s) passed, verified by
 ' "$record" "$head_sha" "$branch"
 `;
 
-/** The evaluator is bundled into the shell script so standalone and MCP policy cannot drift. */
-export const LAND_GATE = LEGACY_LAND_GATE.replace(
+/** Stock manual-opt-out gate, retained for exact-match upgrades. */
+export const OPT_OUT_LAND_GATE = LEGACY_LAND_GATE.replace(
   "# Ged land gate: refuse to land a change without a current, passing, independent verdict.",
   `# Ged land gate: independent review required unless the user explicitly opted out locally.\n${REVIEW_POLICY_GATE_MARKER}`,
 ).replace(
@@ -160,4 +160,26 @@ case "$policy_code" in
 esac
 
 record=".ged/verdicts/`,
+);
+
+/** Cross-vendor review is preferred; installed providers do not prove usable quota or auth. */
+export const LAND_GATE = OPT_OUT_LAND_GATE.replace(
+  "  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable });",
+  `  if (r.selectionReason !== undefined && (typeof r.selectionReason !== "string" || !r.selectionReason.trim() || r.selectionReason.length > 500)) {
+    fail(\`the review by \${who} has an invalid selectionReason\`);
+  }
+  verifiers.push({ vv, who, otherVendorAvailable: r.otherVendorAvailable, selectionReason: r.selectionReason });`,
+).replace(
+  `  if (verifiers.some((r) => r.otherVendorAvailable)) {
+    fail(\`verified only by the implementer vendor (\${iv}), while another vendor was installed.\\n\`
+       + "  Add a review from another vendor; same-vendor review shares the blind spots of the implementer.");
+  }
+  console.error(\`WARNING: verified only by the implementer vendor (\${iv}); no other vendor was installed.\`);`,
+  `  const availability = verifiers.some((r) => r.otherVendorAvailable)
+    ? "another vendor was installed; installation does not establish usable authentication, subscription or quota"
+    : "no other vendor was installed";
+  console.error(\`WARNING: same-provider review — verified only by the implementer vendor (\${iv}); \${availability}. Cross-vendor review is preferred.\`);
+  for (const r of verifiers) {
+    if (r.selectionReason) console.error(\`WARNING: reviewer selection (\${r.who}): \${r.selectionReason}\`);
+  }`,
 );

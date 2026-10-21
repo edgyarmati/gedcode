@@ -54,11 +54,14 @@ mechanical, except where it says otherwise:
 - **The verifier never sees the implementer's summary.** It is handed the original acceptance
   criteria and the diff, and forms its own view of what the code does. The self-assessment is
   precisely the artifact that transmits bias, so it is withheld.
-- **The verifier runs a different vendor than the implementer.** Shared training priors and
-  self-consistency pressure are the main sources of agreement bias. A different vendor removes both.
-  With only one vendor installed, a same-family verifier is accepted with a warning. Important
-  changes, or a weak foreign option, get two verifiers in parallel: a strong same-family one and a
-  foreign one.
+- **Cross-vendor review is preferred.** A capable reviewer from another vendor reduces shared
+  blind spots. If none can run, including authentication, subscription or quota failures, the lead
+  automatically uses a strong same-provider reviewer in a fresh context and reports why. You do
+  not need another subscription or to disable an installed provider. Unknown quota is not treated
+  as exhausted, and an exhausted provider is not retried repeatedly. Important changes still get
+  two independent fresh review contexts; both can use the available provider. Both must pass.
+  If no provider can review, review stays pending until one can run or you explicitly opt out.
+  Provider failure never counts as a pass or erases negative review findings.
 - **The verifier reports; it does not fix.** This one is by instruction, not mechanism. It runs
   with the lead's access so it can run the project's checks unattended, and its brief forbids
   fixes. No runtime mode lets a child run commands while denying edits, so a verifier could still
@@ -81,8 +84,8 @@ positively confirm blocks:
 - the recorded commit is still the current head, so an amend or a rebase invalidates the verdict
 - every recorded verifier passed, every criterion is `met`, and every criterion carries real
   evidence
-- at least one verifier's vendor differs from the implementer's, unless GedCode recorded that no
-  other vendor was installed, in which case it passes with a warning
+- same-provider-only review produces a warning with the recorded selection reason, even when
+  another vendor is installed; it counts as review, never skipped review
 
 The gate is a shell script that runs Node, so `node` must be on the `PATH` of whatever runs it.
 Run it directly, or wire it into a pre-push hook so it is not something anyone has to remember:
@@ -130,7 +133,7 @@ repairs malformed records. Symlinked policy paths are refused, including on rese
 
 New setup installs support automatically. Existing setup remains add-missing-only: it never
 silently replaces a gate. Ask the agent to preview `ged_review_gate_update`, then explicitly apply
-it. Only the exact stock legacy gate can be upgraded; customized gates stay untouched. Commit the
+it. Both stock versions (before and after manual opt-outs) can be upgraded; customized gates stay untouched. Commit the
 upgraded gate before recording a current-change exemption. A `current` gate status means the
 installed script exactly matches the current starter. Unsupported gates refuse new skips and
 report inherited opt-outs as inactive; restoring required reviews always remains available.
@@ -146,7 +149,7 @@ them. Missing gates can be added through ordinary setup. Always obey the install
 ## Models
 
 There is no fixed model table. The lead picks each child's model from its own family, matched to
-the task; the verifier is the exception and runs another vendor. Tell the lead which models you
+the task; reviewers preferably use another vendor when usable. Tell the lead which models you
 prefer and it records them in `.ged/model-notes.md`, then tries those first. When one is
 unavailable it uses the closest it can and says so in the thread, so a fallback is never silent.
 
@@ -169,7 +172,7 @@ reads it rather than being re-told it each session:
 ## What this does not claim
 
 Verdict records are self-asserted and unsigned. The gate stops **omission** — a lead that skipped
-verification, verified a stale tree, or let a same-vendor reviewer wave it through. It does not stop
+verification, verified a stale tree, or ignored a failing review. It does not stop
 a deliberately dishonest agent, which would need an attestation the agent cannot mint. Records are
 also untracked, so the gate is a local, pre-push control; CI cannot see them yet.
 

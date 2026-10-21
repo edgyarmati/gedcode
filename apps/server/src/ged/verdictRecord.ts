@@ -22,11 +22,13 @@ export interface VerdictReview {
   readonly status: "pass" | "fail";
   readonly criteria: ReadonlyArray<VerdictCriterion>;
   /**
-   * Whether a provider of another vendor than the implementer's could have run
-   * this review. Determined by the server when the ruling is recorded, so the
-   * gate can accept a same-vendor-only record only when there was no choice.
+   * Whether the live catalog advertised another vendor able to run child tasks
+   * when recorded. Informational: installed capability does not prove usable
+   * authentication, subscription or quota. Always derived by the server.
    */
   readonly otherVendorAvailable: boolean;
+  /** Why this reviewer was selected, including any operational fallback (max 500 characters). */
+  readonly selectionReason?: string | undefined;
 }
 
 export interface VerdictRecord {

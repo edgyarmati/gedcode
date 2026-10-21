@@ -19,8 +19,8 @@ the end of that, where it matters:
   per-criterion and recorded against the exact commit they judged. You can explicitly skip review
   for one change or this local project; normal code checks still apply.
 - **The gate enforces the review policy.** In required mode, `.ged/bin/land-gate.sh` refuses a branch
-  with no matching verdict record or an unmet criterion. Same-vendor review is accepted only when
-  no alternative is available. An explicit user opt-out is reported as skipped review, never passed.
+  with no matching verdict record or an unmet criterion. Fresh same-provider review is accepted
+  with a warning and selection reason; another subscription is never required. An explicit user opt-out is reported as skipped review, never passed.
 - **Expensive models where they pay off.** Planning and verification can run on a more capable model
   than implementation, and verification prefers a _different_ vendor than the code it is judging.
 - **`.ged/` is durable project memory** — standards, decisions, context map, plans — readable by the

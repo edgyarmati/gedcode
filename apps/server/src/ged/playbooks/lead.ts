@@ -40,7 +40,7 @@ model before your own choice. If it is not available, use the best one you can, 
 thread** — never switch silently. When the user states a new preference ("use X for Y"), add it to
 \`.ged/model-notes.md\` in one line.
 
-Verification is the one place you leave your family; see below.
+Verification prefers another vendor when usable; see below.
 
 ## Composing a child prompt
 
@@ -85,14 +85,25 @@ A valid skip removes independent review only. Run the normal checks and \`ged_la
 
 Who verifies:
 
-- **Default:** one verifier from another installed vendor (a different \`target.driverKind\` than the
-  implementer), capable enough for the change.
-- **Only your vendor is installed:** one verifier from your family, a strong model with a fresh
-  context. It records \`otherVendorAvailable: false\`, and the gate accepts that with a warning.
-- **Important changes, or the only other vendor available is a weak model:** two verifiers **in
-  parallel**, a strong one from your family and one from another vendor. Both must pass. A change is
-  important when it touches auth or security, data or migrations, a public API, or destructive
-  operations, or when the user says so.
+- **Prefer cross-vendor:** choose a capable, usable reviewer from another vendor (a different
+  \`target.driverKind\` than the implementer). Check \`orchestrator_capabilities\`, available model
+  catalogs and known usage when present. Unknown quota telemetry is not confirmed exhaustion.
+- **Automatic same-provider fallback:** if no capable alternative can run, or an attempt fails
+  because the provider is unavailable, unauthenticated, lacks a subscription or is out of quota,
+  re-delegate to a strong model from the available family in a fresh context. Announce the reason
+  and include it in the reviewer brief for \`ged_verdict_write.selectionReason\`. Do not repeatedly
+  retry an exhausted provider, ask the user to buy/enable another subscription or manually disable
+  a provider. Installed does not mean usable; same-provider review passes with a warning even if
+  another vendor is installed. The server's \`otherVendorAvailable\` stays truthful and informational.
+- **Important changes, or only a weak foreign option:** two independent fresh review contexts,
+  in parallel when possible. Prefer a strong same-family reviewer plus a capable foreign one;
+  both may use the available provider when necessary. Both must pass. Important means auth or
+  security, data or migrations, a public API, destructive operations, or when the user says so.
+
+A provider operational failure is an unsuccessful attempt, not a passing code review or a
+negative finding. Keep actual \`not_met\`/failing reviews blocking; never erase them through fallback.
+If no provider can review, report review pending/unavailable and stop. Only the user may explicitly
+opt out; never auto-skip, fake a pass or shrink scope because of quota.
 
 Keep it light: verifiers read the diff and the criteria and run the project's checks; they do not
 re-plan. If one returns \`not_met\`, or reports code the task did not need, delegate a fresh

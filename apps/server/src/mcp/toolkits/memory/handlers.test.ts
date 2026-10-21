@@ -17,7 +17,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
-import { LAND_GATE, LEGACY_LAND_GATE } from "../../../ged/starter/landGate.ts";
+import { LAND_GATE, LEGACY_LAND_GATE, OPT_OUT_LAND_GATE } from "../../../ged/starter/landGate.ts";
 import * as GedSetup from "../../../ged/GedSetup.ts";
 import * as GedSetupOffers from "../../../ged/GedSetupOffers.ts";
 import * as ProjectMemory from "../../../ged/ProjectMemory.ts";
@@ -188,6 +188,18 @@ it.effect("serves a playbook by name, from GedCode rather than the project", () 
       };
       expect(playbook.name).toBe("verifier");
       expect(playbook.content).toContain("otherVendorAvailable");
+      expect(playbook.content).toContain("selectionReason");
+      const lead = (yield* call(root, "ged_playbook", { name: "lead" })) as { content: string };
+      for (const instruction of [
+        "Prefer cross-vendor",
+        "Automatic same-provider fallback",
+        "Unknown quota telemetry is not confirmed exhaustion",
+        "Do not repeatedly",
+        "two independent fresh review contexts",
+        "never erase them through fallback",
+        "report review pending/unavailable",
+      ])
+        expect(lead.content).toContain(instruction);
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -226,7 +238,9 @@ const landCheck = (root: string) =>
 it.effect("blocks the branch until a foreign verdict is written, then allows it", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
-      expect((yield* landCheck(root)).allowed).toBe(false);
+      const missing = yield* landCheck(root);
+      expect(missing.allowed).toBe(false);
+      expect(missing.detail).toContain("no verdict record");
       const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
       const written = (yield* call(
         root,
@@ -240,21 +254,66 @@ it.effect("blocks the branch until a foreign verdict is written, then allows it"
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("blocks a same-vendor-only verdict while another vendor is installed", () =>
+it.effect("accepts same-provider review with a warning even when another vendor is installed", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
-      const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
-      // Padding and case must not buy independence the record does not have.
-      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: " Codex " }));
-      const blocked = yield* landCheck(root);
-      expect(blocked.allowed).toBe(false);
-      expect(blocked.detail).toContain("another vendor was installed");
-
-      // A foreign ruling joins the same-vendor one, and together they pass.
-      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: "claudeAgent" }));
-      expect((yield* landCheck(root)).allowed).toBe(true);
+      const headSha = git(root, "rev-parse", "HEAD");
+      // Padding and case must not hide that this is same-provider review.
+      const written = (yield* call(root, "ged_verdict_write", {
+        ...ruling(headSha, { driverKind: " Codex " }),
+        verifier: { driverKind: " Codex ", taskId: "fresh-review-1" },
+      })) as { ruling: string };
+      expect(written.ruling).toMatch(/^allowed/);
+      const checked = yield* landCheck(root);
+      expect(checked.allowed).toBe(true);
+      expect(checked.detail).toContain("WARNING: same-provider review");
+      expect(checked.detail).toContain("another vendor was installed");
+      expect(checked.detail).not.toContain("SKIPPED");
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "records fallback reasons without falsifying availability and retains two fresh reviews",
+  () =>
+    withCheckout((root) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const headSha = git(root, "rev-parse", "HEAD");
+        const selectionReason =
+          "Other vendor is out of quota; using a fresh strong same-provider reviewer";
+        for (const taskId of ["fresh-review-1", "fresh-review-2"]) {
+          const written = (yield* call(root, "ged_verdict_write", {
+            ...ruling(headSha, { driverKind: "codex" }),
+            verifier: { driverKind: "codex", taskId },
+            selectionReason,
+            otherVendorAvailable: false, // Untrusted input cannot override the server's catalog.
+          })) as { ruling: string };
+          expect(written.ruling).toMatch(/^allowed/);
+          expect(written.ruling).toContain(selectionReason);
+        }
+        const record = yield* fs.readFileString(`${root}/.ged/verdicts/feat-memory.json`);
+        const { reviews } = JSON.parse(record) as {
+          reviews: ReadonlyArray<{ otherVendorAvailable: boolean; selectionReason: string }>;
+        };
+        expect(reviews).toHaveLength(2);
+        for (const review of reviews) {
+          expect(review).toMatchObject({ otherVendorAvailable: true, selectionReason });
+        }
+        const checked = yield* landCheck(root);
+        expect(checked.allowed).toBe(true);
+        expect(checked.detail).toContain("2 review(s) passed");
+        expect(checked.detail).toContain(selectionReason);
+        // Exercise the standalone entry point as well as ged_land_check.
+        const standalone = NodeChildProcess.spawnSync("sh", [".ged/bin/land-gate.sh"], {
+          cwd: root,
+          encoding: "utf8",
+        });
+        expect(standalone.status).toBe(0);
+        expect(standalone.stderr).toContain("WARNING: same-provider review");
+        expect(standalone.stderr).toContain(selectionReason);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("allows a same-vendor verdict, with a warning, when no other vendor is installed", () =>
@@ -277,12 +336,17 @@ it.effect("blocks when any one of several verifiers fails", () =>
   withCheckout((root) =>
     Effect.gen(function* () {
       const headSha = yield* Effect.sync(() => git(root, "rev-parse", "HEAD"));
-      yield* call(root, "ged_verdict_write", ruling(headSha, { driverKind: "claudeAgent" }));
       yield* call(root, "ged_verdict_write", {
-        ...ruling(headSha, { driverKind: "codex", model: "gpt-6-sol" }),
+        ...ruling(headSha, { driverKind: "claudeAgent" }),
         status: "fail",
       });
-      expect((yield* landCheck(root)).allowed).toBe(false);
+      yield* call(root, "ged_verdict_write", {
+        ...ruling(headSha, { driverKind: "codex", model: "gpt-6-sol" }),
+        selectionReason: "Foreign provider later became unavailable",
+      });
+      const checked = yield* landCheck(root);
+      expect(checked.allowed).toBe(false);
+      expect(checked.detail).toContain('status "fail"');
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -310,6 +374,26 @@ it.effect("blocks records the gate cannot trust, however they were written", () 
       const cases: ReadonlyArray<[string, unknown]> = [
         ["an older record", { ...record({}), schemaVersion: 1 }],
         ["no reviews", record({ reviews: [] })],
+        ["stale verdict", record({ headSha: "0".repeat(40) })],
+        ["wrong branch", record({ branch: "another-branch" })],
+        ["no criteria", record({ reviews: [{ ...review, criteria: [] }] })],
+        [
+          "no availability flag",
+          record({ reviews: [{ ...review, otherVendorAvailable: undefined }] }),
+        ],
+        ...["not_met", "unverifiable"].map(
+          (verdict) =>
+            [
+              verdict,
+              record({ reviews: [{ ...review, criteria: [{ ...review.criteria[0], verdict }] }] }),
+            ] as [string, unknown],
+        ),
+        ["invalid reason type", record({ reviews: [{ ...review, selectionReason: false }] })],
+        ["empty reason", record({ reviews: [{ ...review, selectionReason: " " }] })],
+        [
+          "unbounded reason",
+          record({ reviews: [{ ...review, selectionReason: "x".repeat(501) }] }),
+        ],
         [
           "invisible evidence",
           record({
@@ -331,8 +415,18 @@ it.effect("blocks records the gate cannot trust, however they were written", () 
         yield* fs.writeFileString(file, JSON.stringify(contents));
         expect((yield* landCheck(root)).allowed, name).toBe(false);
       }
+      yield* fs.writeFileString(file, "{ malformed JSON");
+      expect((yield* landCheck(root)).allowed).toBe(false);
       yield* fs.writeFileString(file, JSON.stringify(record({})));
       expect((yield* landCheck(root)).allowed).toBe(true);
+      const outside = `${root}/outside.json`;
+      // Keep the target ignored so the verdict symlink is the gate's rejection reason.
+      yield* fs.writeFileString(`${root}/.git/info/exclude`, "outside.json\n");
+      yield* fs.rename(file, outside);
+      yield* fs.symlink(outside, file);
+      const symlinked = yield* landCheck(root);
+      expect(symlinked.allowed).toBe(false);
+      expect(symlinked.detail).toContain("symlink");
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -636,6 +730,19 @@ it.effect(
         expect((yield* landCheck(root)).allowed).toBe(true);
         yield* setPolicy(root, "project", "required");
         expect((yield* landCheck(root)).allowed).toBe(false);
+        // The manual-opt-out stock gate is also a supported legacy version.
+        yield* fs.writeFileString(gate, OPT_OUT_LAND_GATE);
+        expect(yield* policy(root)).toMatchObject({ gate: "legacy", gateSupportsOptOut: true });
+        expect(yield* call(root, "ged_review_gate_update", {})).toEqual({
+          status: "legacy",
+          applied: false,
+        });
+        expect(yield* fs.readFileString(gate)).toBe(OPT_OUT_LAND_GATE);
+        expect(yield* call(root, "ged_review_gate_update", { apply: true })).toEqual({
+          status: "current",
+          applied: true,
+        });
+        expect(yield* fs.readFileString(gate)).toBe(LAND_GATE);
         const custom = `${LAND_GATE}\n# custom hook\n`;
         yield* fs.writeFileString(gate, custom);
         expect(yield* call(root, "ged_review_gate_update", {})).toEqual({
