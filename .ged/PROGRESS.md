@@ -402,3 +402,9 @@ none can run. Installed availability stays server-derived; both shipped stock ga
 Checked with scoped format/lint, server and provider-core typechecks, 58 focused tests across seven
 files, shell syntax, exact prior-stock snapshot comparisons and starter/script parity. Live provider
 failures were not exercised; no provider settings or actual review exemptions were changed.
+
+## 2026-10-21 — 0.5.3 release preparation
+
+Prepared release notes for review opt-outs and same-provider fallback, including the explicit
+stock-gate upgrade needed by existing projects. Package manifests remain on the upstream version;
+the release workflow supplies 0.5.3 and validates the desktop artifacts and signed update feed.
