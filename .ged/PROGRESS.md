@@ -11,8 +11,13 @@ Production HTTP/assets, authenticated access, native terminals/search, service r
 VM reboot were checked. A daily Proxmox backup retains three local copies; the initial backup
 and its compression integrity check passed. Restore has not been tested.
 
-Codex and Claude are installed. Tailscale enrollment and provider sign-in require the owner's
-account approval before private HTTPS and authenticated provider turns can be verified.
+Private HTTPS is live at `https://gedcode.tail1a8191.ts.net/`, with one-time pairing,
+authenticated reads, replay rejection, and WebSocket connection checks passed. Codex and Claude
+are signed in and answered CLI test prompts; Claude's SDK query passed too. A second VM reboot
+preserved HTTPS and both logins. GedCode's own RPC reports both providers authenticated and ready.
+Clients pair with one-time links; no automated UI pass was performed. Codex browser sign-in used
+an SSH callback tunnel because the workspace
+disallows device-code login. The standalone VM accepts Tailscale DNS for MagicDNS resolution.
 Deployment and recovery instructions live in the homelab repository's `docs/gedcode.md`;
 no product source changes or public release were needed.
 
