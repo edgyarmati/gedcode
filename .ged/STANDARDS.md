@@ -86,6 +86,7 @@ The whole modified surface, which a PR must justify adding to:
 | `apps/server/src/persistence/initializeV2Database.ts`            | +6/−3   | Upgrade 0.4 snapshots; recover legacy-only failed imports safely |
 | `apps/desktop/src/updates/updatesTestHarness.ts`                 | +20/−9  | Lets tests inject the Sparkle updater layer                      |
 | `apps/desktop/package.json`                                      | 1       | `electron-sparkle-updater` dependency                            |
+| `apps/server/package.json`                                       | 1       | Pin patched `node-pty` for lockfile-free desktop staging         |
 | `scripts/package.json`                                           | 1       | Same dependency, for the after-pack hook                         |
 | `scripts/lib/desktop-external-packages.ts`                       | 1       | Ships the Sparkle package in the staged app                      |
 | `scripts/build-desktop-artifact.ts`                              | 17      | Applies Sparkle config, stages the framework (additions)         |

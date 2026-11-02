@@ -432,3 +432,15 @@ unchanged from independently reviewed `e27f303f0`; its scoped checks passed, inc
 tests. The existing Ged Release workflow supplies version 0.5.4, verifies the Apple Silicon app
 and archive, then publishes the release and signed stable Sparkle feed. No package-version or
 release-pipeline changes are needed.
+
+## 2026-11-02 — 0.5.4 staged dependency repair
+
+Release workflow `41519435595` failed before publication: its lockfile-free production install
+selected a newer `node-pty` beta outside the existing beta.15 patch. Pinned the server manifest to
+the already-locked `1.2.0-beta.15` and updated only the lockfile importer specifier. Patch enforcement
+and native build policy remain unchanged. Publication is still pending.
+
+Focused temporary `pnpm@11.10.0 install --prod --ignore-scripts` installs reproduced the range
+selecting beta.18 and failing with `ERR_PNPM_UNUSED_PATCH`; the exact pin installed beta.15 with
+the existing patch hash and both patched files verified. Changed-file format checks and three
+existing staged dependency/patch packaging tests passed. Native builds and publication were not rerun.

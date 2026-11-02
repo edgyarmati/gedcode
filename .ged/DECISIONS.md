@@ -668,3 +668,14 @@ The additive `ClaudeProcessEnvironment.ts` owns the merge. Three upstream seams 
 reads just the entrypoint using its existing config-dir resolution and settings-path discovery.
 This base predates upstream's settings-env reader; no endpoint behavior is backported. Terminals,
 other providers and wire contracts are unchanged. Missing/unreadable/invalid settings stay nonfatal.
+
+## 2026-11-02 — Pin the patched node-pty version for desktop staging
+
+**Decision:** Pin `apps/server/package.json` to the existing `node-pty` version `1.2.0-beta.15`;
+change only its lockfile importer specifier. Keep the resolved version, patch and unused-patch
+enforcement unchanged.
+
+**Rationale:** Desktop packaging forwards server dependencies into a fresh production install
+without the repository lockfile. The caret range can select a newer beta, leaving the beta.15
+patch unused and failing the release install. The manifest is a necessary upstream seam: pinning
+the already-tested version fixes the existing staging path without redesigning packaging.
