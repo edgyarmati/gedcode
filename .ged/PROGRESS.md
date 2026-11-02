@@ -2,6 +2,20 @@
 
 Ongoing log of project progress.
 
+## 2026-11-02 — Durable Proxmox environment provisioned
+
+Deployed source `0bfaa781` as a production Linux build in dedicated Debian 13 VM 106
+(`gedcode`, 4 vCPUs / 8 GiB / 64 GiB), leaving the infrastructure LXC's services intact.
+GedCode runs as a non-root systemd service with persistent state and workspace storage.
+Production HTTP/assets, authenticated access, native terminals/search, service restart, and
+VM reboot were checked. A daily Proxmox backup retains three local copies; the initial backup
+and its compression integrity check passed. Restore has not been tested.
+
+Codex and Claude are installed. Tailscale enrollment and provider sign-in require the owner's
+account approval before private HTTPS and authenticated provider turns can be verified.
+Deployment and recovery instructions live in the homelab repository's `docs/gedcode.md`;
+no product source changes or public release were needed.
+
 ## 2026-10-11 — Ged layer re-landed on the V2 orchestrator base
 
 Rebuilt `.ged/` and the Ged skills on a fresh T3 Code checkout (`9afde1c6d`, #17848) after v0.4's
