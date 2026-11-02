@@ -424,3 +424,11 @@ files (one preexisting unused `layer` warning in `ClaudeAdapterV2.ts`), and
 `npx tsc --noEmit -p apps/server` (exit 0; Effect suggestions only). Focused `vp test run` passed
 216 tests across `ClaudeProcessEnvironment.test.ts`, `ClaudeHome.test.ts`, `ClaudeSkills.test.ts`
 and `ClaudeAdapterV2.test.ts`.
+
+## 2026-11-02 — 0.5.4 release preparation
+
+Prepared release notes for the Claude metering entrypoint backport. The application code is
+unchanged from independently reviewed `e27f303f0`; its scoped checks passed, including 216 focused
+tests. The existing Ged Release workflow supplies version 0.5.4, verifies the Apple Silicon app
+and archive, then publishes the release and signed stable Sparkle feed. No package-version or
+release-pipeline changes are needed.
