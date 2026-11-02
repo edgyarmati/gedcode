@@ -712,8 +712,9 @@ Incoming upstream workflows include new deployment, mobile and issue-automation 
 repository disablement does not cover new IDs automatically: audit and disable inapplicable workflows
 before any future push. This integration does not authorize pushing or publishing releases.
 
-The original stock gate is an exact-byte migration fingerprint. Its historical em dashes cannot be
-rewritten to satisfy a new copy-style rule without breaking safe identification, so that literal
-carries a narrowly reasoned lint exception. New warning copy follows the current style; review and
-upgrade behavior are unchanged. macOS test fixtures canonicalize temporary paths when modeling
-Git or a CLI's real working directory; deliberate registry aliases remain lexical.
+Released stock gates are exact-byte compatibility fingerprints, including the current v0.5.3 gate.
+Their historical text cannot be restyled without making existing projects look custom. Narrow lint
+exceptions preserve both the legacy and current literals. A frozen v0.5.3 fixture checks recognition
+and the explicit upgrade path independently of the generated current gate. macOS test fixtures
+canonicalize temporary paths when modeling Git or a CLI's real working directory; deliberate
+registry aliases remain lexical.

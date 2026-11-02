@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ProjectMemory from "./ProjectMemory.ts";
+import { LAND_GATE } from "./starter/landGate.ts";
 
 // provideMerge so the tests themselves can use FileSystem and Path to build fixtures.
 const layer = ProjectMemory.layer.pipe(Layer.provideMerge(NodeServices.layer));
@@ -28,6 +29,26 @@ const withProject = <A, E, R>(
     yield* fs.writeFileString(path.join(root, "secret.md"), "NOT MEMORY\n");
     return yield* use(root);
   }).pipe(Effect.scoped);
+
+it.effect("recognizes and preserves projects using the released v0.5.3 stock gate", () =>
+  withProject((root) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const memory = yield* ProjectMemory.ProjectMemory;
+      // Frozen release input: do not derive compatibility fixtures from the current generator.
+      const released = yield* fs.readFileString(
+        path.join(import.meta.dirname, "fixtures/stockGateV053.sh"),
+      );
+      const gate = path.join(root, ".ged", "bin", "land-gate.sh");
+      yield* fs.makeDirectory(path.dirname(gate), { recursive: true });
+      yield* fs.writeFileString(gate, released);
+      expect((yield* memory.reviewStatus(root)).gate).toMatch(/^(current|legacy)$/);
+      expect(yield* memory.updateReviewGate(root, true)).toMatchObject({ status: "current" });
+      expect(yield* fs.readFileString(gate)).toBe(LAND_GATE);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
 
 it.effect("lists the memory documents and reads one by key", () =>
   withProject((root) =>
